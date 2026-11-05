@@ -59,6 +59,11 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // The words that changed take their role's ink on their stronger wash, in code and in documents, and the body ink on a picked line (changes.css).
   ...each('--changes-word-ink-added', [wordAdded, [...wordAdded, hover]], 'added words'),
   ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
+  // A document's edited line read once has no wash of its own: its words' washes sit on the code background, and its sign takes the warning ink.
+  ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
+  ...each('--changes-word-ink-removed', [[...context, '--changes-word-removed'], [...context, hover, '--changes-word-removed']], 'removed words in an edited line'),
+  ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
+  ...each('warning', [context, [...context, hover]], 'edited line sign'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
   // A document's lines: body ink on an added line, secondary on a removed one.

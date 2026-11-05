@@ -208,6 +208,23 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 :is(.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true']) .changes-word { color: var(--tt-text); }
 :is(.changes-line[aria-selected='true'][data-kind='add'], .changes-split__row[aria-selected='true'] > [data-kind='add']) .changes-word { background: var(--changes-word-picked-added); }
 :is(.changes-line[aria-selected='true'][data-kind='remove'], .changes-split__row[aria-selected='true'] > [data-kind='remove']) .changes-word { background: var(--changes-word-picked-removed); }
+/* A document's edited line read once (EditedText): the paragraph once, with at each change the words that went, struck
+   through in the removed role's ink, then the words that came in the added role's, each over its role's word wash.
+   The line itself has no wash, only a modified file's edge and the edited sign, so a reworded paragraph reads as one
+   paragraph and its changes are the only colour in it. */
+.changes-diff__rows { --changes-edge-edited: color-mix(in srgb, var(--tt-warning) 60%, transparent); }
+.changes-line[data-kind='edited'] { color: var(--tt-text); box-shadow: inset 2px 0 0 var(--changes-edge-edited); }
+.changes-line[data-kind='edited'] .changes-line__sign { color: var(--tt-warning); }
+.changes-word--edit { text-decoration: none; }
+del.changes-word--edit { background: var(--changes-word-removed); color: var(--changes-word-ink-removed); text-decoration: line-through; text-decoration-thickness: 1px; }
+ins.changes-word--edit { background: var(--changes-word-added); color: var(--changes-word-ink-added); }
+/* Words that went and words that came with no space of their own between them are held a little apart. The wash is
+   sliced where a change wraps, so that gap opens before its first word only, never at the start of a line. */
+.changes-word--edit { -webkit-box-decoration-break: slice; box-decoration-break: slice; }
+.changes-word--edit[data-abut] { margin-inline-start: .3em; }
+.changes-line[aria-selected='true'][data-kind='edited'] .changes-line__sign { color: var(--tt-text); }
+.changes-line[aria-selected='true'][data-kind='edited'] del.changes-word--edit { background: var(--changes-word-picked-removed); }
+.changes-line[aria-selected='true'][data-kind='edited'] ins.changes-word--edit { background: var(--changes-word-picked-added); }
 /* A hunk's head is a quiet divider, one line at any width: where the part starts, then the section around it. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }

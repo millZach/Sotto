@@ -251,9 +251,13 @@ describe('Changes as T3’s diff', () => {
     const grid = words.querySelector('.changes-diff__rows')!
     expect(grid).toHaveAttribute('data-reading', 'document')
     expect(words.querySelector('[data-kind="context"] [data-shape="heading-2"]')).toHaveTextContent('## The plan')
-    expect([...words.querySelectorAll('[data-kind="add"] .changes-word')].map(word => word.textContent)).toEqual(['Five pull requests are'])
+    // An edited line reads once: what went struck out, then what came, and one row quotes both lines.
+    const edited = words.querySelector('[data-kind="edited"]')!
+    expect([...edited.querySelectorAll('del')].map(word => word.textContent)).toEqual(['Removed: Nothing is'])
+    expect([...edited.querySelectorAll('ins')].map(word => word.textContent)).toEqual(['Added: Five pull requests are'])
+    expect(edited).toHaveAttribute('aria-label', 'Removed line 2: Nothing is scheduled for the first cut yet.; Added line 2: Five pull requests are scheduled for the first cut yet.')
     // One number for a line of a document, for more room for its words.
-    expect(words.querySelector('[data-kind="add"]')!.querySelectorAll('.changes-line__number')).toHaveLength(1)
+    expect(edited.querySelectorAll('.changes-line__number')).toHaveLength(1)
   })
 
   it('goes from file to file with Previous and Next, and draws one file at a time when asked', async () => {

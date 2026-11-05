@@ -35,6 +35,8 @@ export interface RowArrangement {
   readonly pairs?: ReadonlyMap<number, number> | undefined
   /** The lines in the order they read best stacked, a document's edited lines under what they replaced. */
   readonly order?: readonly number[] | null | undefined
+  /** Stacked, a removed line (by index) that draws as one row with the added line it became, read once. */
+  readonly together?: ReadonlyMap<number, number> | undefined
 }
 
 /**
@@ -46,9 +48,15 @@ export function diffRows(lines: readonly DiffLine[], split: boolean, arrangement
   let position = 0
   const push = (row: Omit<DiffRow, 'position'>): void => { rows.push({ ...row, position: row.indices.length > 0 ? position++ : null }) }
   if (!split) {
-    const order = arrangement?.order
-    if (order) for (const index of order) push({ key: String(index), line: lines[index]!, indices: reviewLine(lines[index]!) ? [index] : [] })
-    else lines.forEach((line, index) => push({ key: String(index), line, indices: reviewLine(line) ? [index] : [] }))
+    const order = arrangement?.order, together = arrangement?.together
+    if (order) {
+      for (let at = 0; at < order.length; at++) {
+        const index = order[at]!, partner = together?.get(index)
+        // A line read once with what it became is one row that shows, and a comment on it quotes, both lines.
+        if (partner !== undefined && order[at + 1] === partner) { push({ key: String(index), old: lines[index]!, next: lines[partner]!, indices: [index, partner] }); at++ }
+        else push({ key: String(index), line: lines[index]!, indices: reviewLine(lines[index]!) ? [index] : [] })
+      }
+    } else lines.forEach((line, index) => push({ key: String(index), line, indices: reviewLine(line) ? [index] : [] }))
     return rows
   }
   const pairs = arrangement?.pairs

@@ -44,6 +44,11 @@ export interface DiffDecoration {
   /** Which added line (by index) each removed line became. */
   readonly pairs: ReadonlyMap<number, number>
   readonly paint: ReadonlyMap<DiffLine, LinePaint>
+  /**
+   * A document's edited lines read once: each removed line that was edited rather than rewritten, with the stretches
+   * of it and the added line it became. Stacked, the pair draws as one line; split, each side keeps its own.
+   */
+  readonly inline: ReadonlyMap<DiffLine, readonly WordSegment[]>
 }
 
 const DOCUMENT_EXTENSIONS = new Set(['md', 'mdx', 'markdown', 'mdown', 'txt', 'text', 'rst', 'adoc', 'asciidoc'])
@@ -211,6 +216,89 @@ export function changedWords(before: string, after: string, prose = false): { re
   const inkA = inkLength(before), inkB = inkLength(after)
   if (inkA > 0 && inkB > 0 && markedInk(marksA, before) / inkA > REWRITTEN_SHARE && markedInk(marksB, after) / inkB > REWRITTEN_SHARE) return null
   return { before: marksA, after: marksB }
+}
+
+/**
+ * One stretch of an edited line read once, as a sentence reads after an edit: words both sides keep, then at each
+ * change the words it took out and the words it put in. Ranges are into the line they come from, `kept` into the
+ * line after, which has the same words there.
+ */
+export type WordSegment =
+  | { readonly kind: 'kept'; readonly after: TextRange }
+  | { readonly kind: 'changed'; readonly before: TextRange; readonly after: TextRange }
+
+/**
+ * A prose line and what it became as one line: what both keep once, and at each change the removed words then the
+ * added ones. Every character of both lines is in it exactly once, in order. Null when the line was rewritten rather
+ * than edited, or is too long to compare: then the two stand one above the other.
+ */
+export function wordSegments(before: string, after: string): WordSegment[] | null {
+  if (before === after || before.length > MAX_LINE_CHARS || after.length > MAX_LINE_CHARS) return null
+  const a = before.match(WORD) ?? [], b = after.match(WORD) ?? []
+  let start = 0
+  while (start < a.length && start < b.length && a[start] === b[start]) start++
+  let endA = a.length, endB = b.length
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB-- }
+  const edits = shortestEdits(a.slice(start, endA), b.slice(start, endB), MAX_WORD_EDITS)
+  if (!edits) return null
+  const offsets = (tokens: readonly string[]): number[] => { const at = [0]; for (const token of tokens) at.push(at.at(-1)! + token.length); return at }
+  const atA = offsets(a), atB = offsets(b)
+  // Runs of kept tokens and of changes, by token index on each side.
+  interface Run { kept: boolean; a0: number; a1: number; b0: number; b1: number }
+  const runs: Run[] = []
+  const step = (kept: boolean, da: number, db: number): void => {
+    const last = runs.at(-1)
+    if (last && last.kept === kept) { last.a1 += da; last.b1 += db; return }
+    const a0 = last?.a1 ?? 0, b0 = last?.b1 ?? 0
+    runs.push({ kept, a0, a1: a0 + da, b0, b1: b0 + db })
+  }
+  for (let index = 0; index < start; index++) step(true, 1, 1)
+  for (const edit of edits) step(edit.kind === 'same', edit.kind === 'add' ? 0 : 1, edit.kind === 'remove' ? 0 : 1)
+  for (let index = endA; index < a.length; index++) step(true, 1, 1)
+  // Between two changes, a space or a stray mark, or in prose a word or two kept between longer changes, reads as
+  // part of one phrase, as changedWords joins them: the kept words then show in both what went and what came.
+  const ink = (run: Run): number => Math.max(inkLength(before.slice(atA[run.a0], atA[run.a1])), inkLength(after.slice(atB[run.b0], atB[run.b1])))
+  const joinedRuns: Run[] = []
+  for (let index = 0; index < runs.length; index++) {
+    const run = runs[index]!, previous = joinedRuns.at(-1), next = runs[index + 1]
+    if (run.kept && previous && !previous.kept && next && !next.kept) {
+      const gap = after.slice(atB[run.b0], atB[run.b1])
+      const short = gap.length <= 2 && !/[\p{L}\p{N}]/u.test(gap)
+      if (short || (gap.match(WORDS_IN)?.length ?? 0) <= 2 && inkLength(gap) <= Math.max(ink(previous), ink(next))) {
+        previous.a1 = next.a1; previous.b1 = next.b1
+        index++
+        continue
+      }
+    }
+    joinedRuns.push({ ...run })
+  }
+  let changedA = 0, changedB = 0
+  const segments: WordSegment[] = []
+  const keep = (from: number, to: number): void => {
+    if (to <= from) return
+    const last = segments.at(-1)
+    if (last?.kind === 'kept' && last.after.end === from) segments[segments.length - 1] = { kind: 'kept', after: { start: last.after.start, end: to } }
+    else segments.push({ kind: 'kept', after: { start: from, end: to } })
+  }
+  for (const run of joinedRuns) {
+    const removed = { start: atA[run.a0]!, end: atA[run.a1]! }, added = { start: atB[run.b0]!, end: atB[run.b1]! }
+    if (run.kept) { keep(added.start, added.end); continue }
+    // A change starts and ends on a word: space at its edges that both sides share, or that the side with nothing
+    // has no use for, reads as kept.
+    let lead = 0
+    while (lead < Math.min(removed.end - removed.start, added.end - added.start) && before[removed.start + lead] === after[added.start + lead] && /\s/u.test(after[added.start + lead]!)) lead++
+    let trail = 0
+    while (trail < Math.min(removed.end - removed.start, added.end - added.start) - lead && before[removed.end - 1 - trail] === after[added.end - 1 - trail] && /\s/u.test(after[added.end - 1 - trail]!)) trail++
+    keep(added.start, added.start + lead)
+    const change = { kind: 'changed' as const, before: { start: removed.start + lead, end: removed.end - trail }, after: { start: added.start + lead, end: added.end - trail } }
+    segments.push(change)
+    changedA += inkLength(before.slice(change.before.start, change.before.end))
+    changedB += inkLength(after.slice(change.after.start, change.after.end))
+    keep(added.end - trail, added.end)
+  }
+  const inkA = inkLength(before), inkB = inkLength(after)
+  if (inkA > 0 && inkB > 0 && changedA / inkA > REWRITTEN_SHARE && changedB / inkB > REWRITTEN_SHARE) return null
+  return segments
 }
 
 function wordSet(text: string): ReadonlySet<string> {
@@ -427,6 +515,7 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
       if (shaped.shape || shaped.tokens) paint.set(line, shaped)
     }
   } else if (language && highlighter) syntaxPaint(lines, language, highlighter, paint)
+  const inline = new Map<DiffLine, readonly WordSegment[]>()
   let budget = MAX_WORD_CHARS
   for (const [removed, added] of pairs) {
     const before = lines[removed]!, after = lines[added]!
@@ -436,8 +525,21 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
     if (!words) continue
     if (words.before.length) paint.set(before, { ...paint.get(before), marks: words.before })
     if (words.after.length) paint.set(after, { ...paint.get(after), marks: words.after })
+    if (reading !== 'document') continue
+    const segments = wordSegments(before.text, after.text)
+    if (segments) inline.set(before, segments)
   }
-  return { reading, pairs, paint }
+  return { reading, pairs, paint, inline }
+}
+
+/** A stretch of a painted line as a line of its own: the colours that fall inside it, counted from its start. */
+export function paintWithin(paint: LinePaint | undefined, range: TextRange): Pick<LinePaint, 'tokens'> {
+  const tokens: TextToken[] = []
+  for (const token of paint?.tokens ?? []) {
+    const start = Math.max(token.start, range.start), end = Math.min(token.end, range.end)
+    if (end > start) tokens.push({ start: start - range.start, end: end - range.start, className: token.className })
+  }
+  return tokens.length ? { tokens } : {}
 }
 
 /** One stretch of a painted line: its text, its classes and whether its words changed. */

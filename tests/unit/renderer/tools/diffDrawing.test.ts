@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, parseDiffText, readingOrder, wholeSide } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -26,6 +26,49 @@ describe('changedWords', () => {
 
   it('leaves a very long line alone rather than compare it', () => {
     expect(changedWords('a '.repeat(7_000), 'b '.repeat(7_000))).toBeNull()
+  })
+})
+
+/** A line read once as text: kept words plain, then [-went-]{+came+} at each change. */
+const readOnce = (before: string, after: string, segments: readonly WordSegment[]): string => segments.map(segment => segment.kind === 'kept'
+  ? after.slice(segment.after.start, segment.after.end)
+  : `${segment.before.end > segment.before.start ? `[-${before.slice(segment.before.start, segment.before.end)}-]` : ''}${segment.after.end > segment.after.start ? `{+${after.slice(segment.after.start, segment.after.end)}+}` : ''}`).join('')
+
+describe('wordSegments', () => {
+  it('reads an edited sentence once, with what went before what came at each change', () => {
+    const before = 'Status: an idea. Nothing is scheduled.', after = 'Status: an idea. Five pull requests are scheduled.'
+    expect(readOnce(before, after, wordSegments(before, after)!)).toBe('Status: an idea. [-Nothing is-]{+Five pull requests are+} scheduled.')
+  })
+
+  it('keeps every character of both lines, each once and in order', () => {
+    const before = '**Log checkpoint.** A worker thread runs them on a connection of its own, half a second after the last one.'
+    const after = '**Log checkpoint.** The **store worker** runs them between its writes, half a second after the last one finished.'
+    const segments = wordSegments(before, after)!
+    const went = segments.map(segment => segment.kind === 'kept' ? after.slice(segment.after.start, segment.after.end) : before.slice(segment.before.start, segment.before.end)).join('')
+    const came = segments.map(segment => after.slice(segment.after.start, segment.after.end)).join('')
+    expect(went).toBe(before)
+    expect(came).toBe(after)
+  })
+
+  it('leaves the space around a change kept, so each change starts and ends on a word', () => {
+    const before = 'one two three', after = 'one four three'
+    expect(wordSegments(before, after)).toEqual([{ kind: 'kept', after: { start: 0, end: 4 } }, { kind: 'changed', before: { start: 4, end: 7 }, after: { start: 4, end: 8 } }, { kind: 'kept', after: { start: 8, end: 14 } }])
+  })
+
+  it('reads a word or two kept between longer changes as part of one change', () => {
+    const before = 'the quick brown fox jumps', after = 'the slow and steady brown tortoise jumps'
+    expect(readOnce(before, after, wordSegments(before, after)!)).toBe('the [-quick brown fox-]{+slow and steady brown tortoise+} jumps')
+  })
+
+  it('leaves a rewritten line to stand above what it became', () => {
+    expect(wordSegments('completely different words here today', 'nothing alike at all, not one bit')).toBeNull()
+  })
+})
+
+describe('paintWithin', () => {
+  it("cuts a line's colours to a stretch of it, counted from the stretch", () => {
+    expect(paintWithin({ tokens: [{ start: 0, end: 2, className: 'a' }, { start: 5, end: 9, className: 'b' }] }, { start: 1, end: 7 })).toEqual({ tokens: [{ start: 0, end: 1, className: 'a' }, { start: 4, end: 6, className: 'b' }] })
+    expect(paintWithin(undefined, { start: 0, end: 3 })).toEqual({})
   })
 })
 
@@ -151,6 +194,13 @@ describe('decorateDiff', () => {
     const lines = fileLines('@@ -1,3 +1,3 @@\n ```\n # not a heading\n ```\n')
     const decoration = decorateDiff(lines, { reading: 'document' })
     expect(decoration.paint.get(lines[2]!)).toEqual({ shape: 'fence' })
+  })
+
+  it("reads a document's edited line once with what it became, and leaves code as two lines", () => {
+    const patch = '@@ -1 +1 @@\n-Status: an idea. Nothing is scheduled.\n+Status: an idea. Five pull requests are scheduled.\n'
+    const lines = fileLines(patch)
+    expect(decorateDiff(lines, { reading: 'document' }).inline.get(lines[1]!)).toBeDefined()
+    expect(decorateDiff(lines, { reading: 'code' }).inline.size).toBe(0)
   })
 
   it('stays bounded on a very large file, leaving the lines past the cap plain', () => {

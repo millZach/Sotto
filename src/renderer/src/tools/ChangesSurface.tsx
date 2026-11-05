@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { HunkHeading, hangingIndent, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
@@ -575,7 +575,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const isDocument = isDocumentPath(file.path)
   const highlighter = useHighlighter(near && !isDocument)
   const decoration = useMemo(() => !near ? null : decorateDiff(shown, { reading: isDocument ? 'document' : 'code', language: highlighter ? languageOfPath(file.path, highlighter) : null, highlighter }), [isDocument, file.path, highlighter, near, shown])
-  const rows = useMemo(() => diffRows(shown, split, decoration ? { pairs: decoration.pairs, order: isDocument ? readingOrder(shown, decoration.pairs) : null } : undefined), [decoration, isDocument, shown, split])
+  const rows = useMemo(() => {
+    if (!decoration) return diffRows(shown, split)
+    // A document's edited line reads once with what it became, as one row.
+    const together = new Map<number, number>()
+    if (isDocument) for (const [removed, added] of decoration.pairs) if (decoration.inline.has(shown[removed]!)) together.set(removed, added)
+    return diffRows(shown, split, { pairs: decoration.pairs, order: isDocument ? readingOrder(shown, decoration.pairs) : null, together })
+  }, [decoration, isDocument, shown, split])
   const selectable = useMemo(() => selectableRows(rows), [rows])
   const { selection: picked, draft, comments, actions } = review
   const draftRows = useMemo(() => draft ? rowsShowing(shown, rows, draft.lines) : NO_KEYS, [draft, rows, shown])
@@ -686,7 +692,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
         // The draft's own lines stay marked while it is open, and a new pick shows beside them.
         const selected = row.position !== null && (row.position >= from && row.position <= to || draft !== null && draftRows.has(row.key))
         return <Fragment key={row.key}>
-          <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} decoration={decoration} oneNumber={isDocument} />
+          <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} decoration={decoration} oneNumber={isDocument} split={split} />
           {selection && !pickIsDraft && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
             waiting={review.drafting} onPress={() => commentOn(to)} /> : null}
           {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place] ? i18n._(MARKER_NOTE[place]!) : null}
@@ -708,11 +714,12 @@ const commentTitle = (number: number | null | undefined, words: I18n): string | 
  * One row. Rows carry the file and both line numbers as data; a row a comment can cover is also a grid row the
  * keyboard reaches, with its place among them and what a screen reader hears for it.
  */
-const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted, decoration, oneNumber }: {
+const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted, decoration, oneNumber, split }: {
   readonly row: DiffRow; readonly path: string; readonly selected: boolean; readonly current: boolean; readonly noted: boolean
   readonly decoration: DiffDecoration | null
   /** A document gives its lines one number, for more room for its words. */
   readonly oneNumber: boolean
+  readonly split: boolean
 }): ReactNode {
   const { i18n } = useLingui()
   // A document is words; only code breaks its wrapped lines by codeBreaks.
@@ -731,6 +738,18 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
       </>}
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+    </div>
+  }
+  const segments = row.old && row.next && row.old !== row.next ? decoration?.inline.get(row.old) : undefined
+  if (segments && !split) {
+    // A document's line and what it became, read once: one number, the edited sign, and both lines' words in order.
+    const before = row.old!, after = row.next!
+    const number = after.newLine ?? before.oldLine
+    const paintAfter = decoration?.paint.get(after)
+    return <div className="changes-line" role="row" data-kind="edited" data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
+      <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration?.paint.get(before)} paintAfter={paintAfter} /></span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {

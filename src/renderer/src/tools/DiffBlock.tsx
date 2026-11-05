@@ -7,7 +7,7 @@ import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/cod
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
 import { shownLineCount } from '../state/interfaceNumbers'
 import type { DiffLine } from './changesStore'
-import { decorateDiff, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange } from './diffDrawing'
+import { decorateDiff, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
 import './changes.css'
 
 /** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
@@ -112,6 +112,43 @@ export function PaintedText({ text, paint, code = false }: { readonly text: stri
   return out
 }
 
+/** The space at a stretch's edges apart from its words. A stretch that is only space keeps it inside, since that is what changed. */
+function edges(text: string): readonly [string, string, string] {
+  const start = text.length - text.trimStart().length, end = text.trimEnd().length
+  return end <= start ? ['', text, ''] : [text.slice(0, start), text.slice(start, end), text.slice(end)]
+}
+
+const REMOVED_LINE: DiffLine = { kind: 'remove', text: '', oldLine: null, newLine: null }
+const ADDED_LINE: DiffLine = { kind: 'add', text: '', oldLine: null, newLine: null }
+
+/**
+ * A prose line and what it became, read once (wordSegments): the words both keep, then at each change the words it
+ * took out, struck through in the removed role's ink, and the words it put in, in the added role's. Every character of
+ * both lines is drawn, in order, and a screen reader hears which words went and which came.
+ */
+export function EditedText({ before, after, segments, paintBefore, paintAfter }: {
+  readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
+  readonly paintBefore: LinePaint | undefined; readonly paintAfter: LinePaint | undefined
+}): ReactNode {
+  const { i18n } = useLingui()
+  const side = (line: string, range: TextRange, paint: LinePaint | undefined, removed: boolean, abut: boolean): ReactNode => {
+    if (range.end <= range.start) return null
+    const [lead, core, trail] = edges(line.slice(range.start, range.end))
+    const at = range.start + lead.length
+    const Tag = removed ? 'del' : 'ins'
+    return <>{lead}<Tag className="changes-word changes-word--edit" data-abut={abut || undefined}>
+      {spoken(removed ? REMOVED_LINE : ADDED_LINE, i18n)}<PaintedText text={core} paint={paintWithin(paint, { start: at, end: at + core.length })} />
+    </Tag>{trail}</>
+  }
+  return segments.map((segment, index) => {
+    if (segment.kind === 'kept') return <PaintedText key={index} text={after.slice(segment.after.start, segment.after.end)} paint={paintWithin(paintAfter, segment.after)} />
+    const went = before.slice(segment.before.start, segment.before.end), came = after.slice(segment.after.start, segment.after.end)
+    // Words that went and words that came, with no space of their own between them, are held a little apart.
+    const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
+    return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}{side(after, segment.after, paintAfter, false, abut)}</Fragment>
+  })
+}
+
 /** A hunk's head as a quiet divider: the line it starts on and the section around it, on one line whatever its width. */
 export function HunkHeading({ text }: { readonly text: string }): ReactNode {
   const { t } = useLingui()
@@ -139,6 +176,9 @@ export function useHighlighter(wanted: boolean): Highlighter | null {
 /** What a cut body says while the rest of it is on its host (ADR-0025): the line where the rest goes, and the bar's status. */
 export interface DiffBlockCut { readonly line: string; readonly status: ReactNode }
 
+/** The sign of a line read once with what it became: it lost words and gained some. */
+export const EDITED_SIGN = '±'
+
 function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; readonly decoration: DiffDecoration; readonly numbers: boolean; readonly code: boolean }): ReactNode {
   const { i18n } = useLingui()
   const paint = decoration.paint.get(line)
@@ -146,6 +186,18 @@ function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; re
     {numbers ? <span className="changes-line__number" aria-hidden="true">{line.newLine ?? line.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
     <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+  </div>
+}
+
+/** A document's line and what it became, as one line (EditedText). */
+function EditedLine({ before, after, segments, decoration, numbers }: {
+  readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbers: boolean
+}): ReactNode {
+  const paintAfter = decoration.paint.get(after)
+  return <div className="changes-line" data-kind="edited">
+    {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
+    <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
+    <span className="changes-line__text" data-shape={paintAfter?.shape}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration.paint.get(before)} paintAfter={paintAfter} /></span>
   </div>
 }
 
@@ -167,7 +219,17 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
   const highlighter = useHighlighter(reading === 'code')
   const language = useMemo(() => reading !== 'code' || !highlighter ? null : path ? languageOfPath(path, highlighter) : guessLanguage(lines, highlighter), [highlighter, lines, path, reading])
   const decoration = useMemo(() => decorateDiff(shown, { reading, language, highlighter }), [highlighter, language, reading, shown])
-  const order = useMemo(() => reading === 'document' ? readingOrder(shown, decoration.pairs) : null, [decoration, reading, shown])
+  // Each edited line of a document reads once with what it became; the rest are one line each.
+  const rows = useMemo(() => {
+    const order = reading === 'document' ? readingOrder(shown, decoration.pairs) : shown.map((_, index) => index)
+    const out: [number, number | undefined][] = []
+    for (let at = 0; at < order.length; at++) {
+      const index = order[at]!, partner = decoration.pairs.get(index)
+      if (partner !== undefined && order[at + 1] === partner && decoration.inline.has(shown[index]!)) { out.push([index, partner]); at++ }
+      else out.push([index, undefined])
+    }
+    return out
+  }, [decoration, reading, shown])
   const { additions, deletions } = useMemo(() => {
     let added = 0, removed = 0
     for (const line of lines) { if (line.kind === 'add') added++; else if (line.kind === 'remove') removed++ }
@@ -191,7 +253,8 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
       </button>
     </div>
     <div className="changes-diff__rows" data-reading={reading} data-numbers={numbers ? 'one' : 'none'} data-whole={wholeSide(lines)}>
-      {(order ?? shown.map((_, index) => index)).map(index => <Line key={index} line={shown[index]!} decoration={decoration} numbers={numbers} code={reading === 'code'} />)}
+      {rows.map(([index, partner]) => partner === undefined ? <Line key={index} line={shown[index]!} decoration={decoration} numbers={numbers} code={reading === 'code'} />
+        : <EditedLine key={index} before={shown[index]!} after={shown[partner]!} segments={decoration.inline.get(shown[index]!)!} decoration={decoration} numbers={numbers} />)}
       {cut ? <div className="changes-block__cut activity-body__cut">{cut.line}</div> : null}
     </div>
     {shown.length < lines.length ? <div className="changes-diff__more"><span>{t`Showing ${shownCount} of ${lineCount} lines.`}</span>

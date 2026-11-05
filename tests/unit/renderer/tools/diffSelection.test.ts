@@ -15,6 +15,17 @@ describe('rows a comment can cover', () => {
     expect(quotedLines(lines, selectable, 3, 1).map(line => `${line.kind}:${line.text}`)).toEqual(['remove:old one', 'remove:old two', 'add:new one'])
   })
 
+  it('stacked: a line read once with what it became is one row that quotes both lines', () => {
+    // Lines: hunk, keep, old one, old two, new one, new two, new three, tail, note. Old one reads once with new one.
+    const order = [0, 1, 2, 4, 3, 5, 6, 7, 8]
+    const rows = diffRows(lines, false, { order, together: new Map([[2, 4]]) })
+    expect(rows.map(row => [row.line?.text ?? `${row.old?.text} > ${row.next?.text}`, row.position])).toEqual([
+      ['@@ -10,4 +10,5 @@', null], ['keep', 0], ['old one > new one', 1], ['old two', 2], ['new two', 3], ['new three', 4], ['tail', 5], ['No newline at end of file', null],
+    ])
+    expect(quotedLines(lines, selectableRows(rows), 1, 1).map(line => `${line.kind}:${line.text}`)).toEqual(['remove:old one', 'add:new one'])
+    expect(rowLabel(rows[2]!)).toBe('Removed line 11: old one; Added line 11: new one')
+  })
+
   it('split: a row pairs a removal with an addition, and a range quotes each line once in the file’s order', () => {
     const rows = diffRows(lines, true)
     expect(rows.map(row => [row.old?.text ?? null, row.next?.text ?? null, row.position])).toEqual([
