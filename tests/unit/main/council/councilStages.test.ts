@@ -12,11 +12,10 @@ function council(panelists = 3): CouncilRecord {
   const seat = (name: string, role: 'panelist' | 'chair') => ({ seat: name, role, modelId: `native:claude:model:${name}`, modelName: name, provider: 'claude' as const, effort: 'high',
     thread: `thread-${name}`, formerThreads: [], started: true, context: false })
   return {
-    id: '00000000-0000-4000-8000-000000000000', createdAt: new Date(START).toISOString(), originThread: 'origin', originTitle: 'Synthetic origin', projectId: 'project',
-    snapshot: { path: '/synthetic/snapshot', repositoryRoot: '/synthetic', commit: 'a'.repeat(40), branch: 'main', untracked: 0 },
+    id: '00000000-0000-4000-8000-000000000000', mode: 'standard', evidence: [{ kind: 'legacyLive', id: 'source' }], createdAt: new Date(START).toISOString(), originThread: 'origin', originTitle: 'Synthetic origin', projectId: 'project',
     history: { messages: 2, words: 10, tools: 0, parts: 1 },
     seats: [...['A', 'B', 'C', 'D', 'E'].slice(0, panelists).map(name => seat(name, 'panelist')), seat('chair', 'chair')],
-    rounds: [{ index: 0, askedAt: new Date(START).toISOString(), stage: 'framing', leftOut: [], objections: [], question: 'Synthetic question?' }],
+    rounds: [{ index: 0, askedAt: new Date(START).toISOString(), stage: 'framing', leftOut: [], objections: [], question: 'Synthetic question?', evidence: { source: 'source' } }],
     turns: [], deadlineMinutes: 10,
   }
 }

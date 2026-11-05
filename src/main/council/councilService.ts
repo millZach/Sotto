@@ -17,8 +17,9 @@ import type { BranchBundles } from '../agents/branchBundles'
 import type { HostThreadsView } from '../agents/control'
 import { runGitStatusCommand, type RunGitCommand } from '../agents/gitStatus'
 import { watcherTurnOutcome } from '../agents/watcherOutcomes'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { councilFileSchema, savedRecord, type CouncilFile, type CouncilRecord, type CouncilRound, type CouncilSeat, type CouncilTurn } from './councilRecord'
+import { savedRecord, type CouncilRecord, type CouncilRound, type CouncilSeat, type CouncilTurn } from './councilRecord'
+import { CouncilStore } from './councilStore'
+import { clearTemporaryCouncilEvidence } from './councilEvidence'
 import { amendPrompt, answerPrompt, fairnessPrompt, framingPrompt, framingWords, historyAboveWords, historyPartPrompt, historyParts, historyText, HISTORY_INLINE_MAX, preambleFor, quoteHistory,
   repairPrompt, reviewPrompt, verdictPrompt, cruxPrompt, type QuotedHistory } from './councilPrompts'
 import { COUNCIL_WORKTREE_FOLDER, makeCouncilSnapshot, removeCouncilSnapshot } from './councilSnapshot'
@@ -98,7 +99,8 @@ const clip = (text: string, max: number): string => text.length <= max ? text : 
 
 export class CouncilService {
   private records: CouncilRecord[] = []
-  private readonly store: AtomicJsonStore<CouncilFile>
+  private readonly store: CouncilStore
+  private storageError: string | undefined
   private readonly run: RunGitCommand
   private readonly clock: () => number
   private readonly newId: () => string
@@ -123,7 +125,7 @@ export class CouncilService {
     this.clock = options.now ?? Date.now
     this.newId = options.newId ?? randomUUID
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, Math.max(0, delay)); timer.unref?.(); return () => clearTimeout(timer) })
-    this.store = new AtomicJsonStore(join(options.directory, 'councils.json'), input => councilFileSchema.parse(input), (): CouncilFile => ({ version: 1, councils: [] }))
+    this.store = new CouncilStore(options.directory)
   }
 
   /**
@@ -131,11 +133,16 @@ export class CouncilService {
    * from now on and is never sent again. A Council whose words were not kept, with Keep local history off, cannot go on.
    */
   async recover(): Promise<void> {
-    // A record that cannot be read is left as it is rather than written over; Councils asked from now on are saved anew.
-    const file = await this.store.read().catch((): undefined => undefined)
+    // An incompatible or damaged history must never be replaced by the next new Council.
+    const file = await this.store.read().catch(() => {
+      this.storageError = t`Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council.`
+      return undefined
+    })
+    await clearTemporaryCouncilEvidence(this.options.directory)
     this.records = file?.councils ?? []
     const at = new Date(this.clock()).toISOString()
     for (const record of this.records) {
+      for (const evidence of record.evidence) if (evidence.kind === 'frozen' && !evidence.retained && !evidence.removedAt) evidence.removedAt = at
       for (const turn of record.turns) if (turn.delivery === 'dispatching') { turn.delivery = 'unconfirmed'; turn.outcome = 'unknown' }
       const round = currentRound(record)
       if (isOpen(record) && !record.stoppedAt && round.stage !== 'done' && round.question === undefined) { record.stoppedAt = at; record.stoppedBecause = 'words-lost' }
@@ -169,6 +176,7 @@ export class CouncilService {
 
   /** What each thread would read of the origin conversation, for the Ask screen (decision 3). */
   estimate(originThreadId: string): CouncilEstimate {
+    if (this.storageError) return { unavailable: this.storageError }
     const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === originThreadId)
     if (!thread?.providerId) return { unavailable: t`That thread is not on this computer.` }
     const quoted = this.quote(thread)
@@ -180,6 +188,7 @@ export class CouncilService {
 
   async command(command: CouncilCommand): Promise<CouncilCommandResult> {
     if (this.closed) return { ok: false, message: t`Sotto is closing. Nothing was changed.` }
+    if (this.storageError) return { ok: false, message: this.storageError }
     if (command.type === 'start') return this.start(command)
     const record = this.records.find(item => item.id === command.council)
     if (!record) return { ok: false, message: t`That Council is no longer here.` }
@@ -243,11 +252,12 @@ export class CouncilService {
     const parts = text.length <= HISTORY_INLINE_MAX ? [text] : historyParts(origin.title, quoted)
     const now = new Date(this.clock()).toISOString()
     const record: CouncilRecord = {
-      id, createdAt: now, originThread: origin.id, originTitle: clip(origin.title, 512), projectId: origin.projectId,
+      id, mode: 'standard', createdAt: now, originThread: origin.id, originTitle: clip(origin.title, 512), projectId: origin.projectId,
+      evidence: [made === 'none' ? { kind: 'legacyLive', id: `${id}:legacy` } : { kind: 'legacyGit', id: `${id}:legacy`, snapshot: made }],
       ...made === 'none' ? {} : { snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked, dirty: made.dirty } },
       history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, parts: parts.length, ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
       seats: ready.map(entry => this.seatOf(entry.seat, entry.role, entry.model!, entry.choice, this.newId())),
-      rounds: [{ index: 0, askedAt: now, stage: 'framing', leftOut: [], objections: [], question: command.question }],
+      rounds: [{ index: 0, askedAt: now, stage: 'framing', leftOut: [], objections: [], question: command.question, evidence: { source: `${id}:legacy` } }],
       turns: [], deadlineMinutes: this.options.stageDeadline(),
     }
     this.histories.set(id, { title: origin.title, quoted, parts })
@@ -317,6 +327,7 @@ export class CouncilService {
   private async removeSnapshot(record: CouncilRecord): Promise<void> {
     if (!record.snapshot || !await removeCouncilSnapshot(this.run, record.snapshot)) return
     record.snapshot.removedAt = new Date(this.clock()).toISOString()
+    for (const evidence of record.evidence) if (evidence.kind === 'legacyGit') evidence.snapshot.removedAt = record.snapshot.removedAt
     await this.persist()
     this.changed([record])
   }
@@ -740,7 +751,9 @@ export class CouncilService {
       : record.turns.some(turn => !turn.superseded && turn.round === round0.index && (rowActions(record, turn, now, (threads.get(turn.thread)?.requests.length ?? 0) > 0).length > 0
         || !isFinal(turn) && (threads.get(turn.thread)?.requests.length ?? 0) > 0)) ? 'waiting' : 'working'
     return {
-      id: record.id, createdAt: record.createdAt,
+      id: record.id, createdAt: record.createdAt, mode: record.mode,
+      evidence: record.evidence.map(item => item.kind === 'frozen' ? { ...item, removed: item.removedAt !== undefined }
+        : { kind: item.kind, id: item.id, ...(item.kind === 'legacyGit' ? { removed: item.snapshot.removedAt !== undefined } : {}) }),
       origin: { thread: record.originThread, title: threads.get(record.originThread)?.title ?? record.originTitle },
       status, ...record.stoppedBecause && record.stoppedAt ? { stoppedBecause: record.stoppedBecause } : {},
       ...record.snapshot ? { snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true,
@@ -775,6 +788,7 @@ export class CouncilService {
       : { kinds: kindsOf(round), criteria: criteriaOf(round), headings: [], words: 0, angles: [], research, fallback: true }).data ?? null : null
     return {
       index: round.index, question: round.question ?? null, askedAt: round.askedAt, stage: round.stage, framing, rows, leftOut: round.leftOut,
+      ...(round.evidence ? { evidence: round.evidence } : {}),
       reframable: round.index === currentRound(record).index && reframable(record),
       crux: round.crux ? { test: round.crux.test, lookup: round.crux.lookup, sides: round.crux.sides, meanings: round.crux.meanings.map(meaning => `${meaning.result} => ${meaning.meaning}`),
         ...(() => { const result = (round.cruxRunners ?? []).map(runner => held<CouncilCruxResult>(currentTurn(record, round, 'crux', runner))).find(item => item !== undefined); return result ? { result: result.result } : {} })() } : null,
@@ -834,7 +848,8 @@ export class CouncilService {
 
   private save(): Promise<void> {
     const keep = this.options.historyEnabled()
-    return this.store.writeLatest(() => ({ version: 1, councils: this.records.map(record => savedRecord(record, keep)) }))
+    if (this.storageError) return Promise.resolve()
+    return this.store.writeLatest(() => ({ version: 2, councils: this.records.map(record => savedRecord(record, keep)) }), keep)
   }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 

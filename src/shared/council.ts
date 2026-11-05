@@ -6,6 +6,7 @@ import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { withoutUltracode } from './ultracode'
 import { effortRank } from './reasoningEfforts'
 import { defaultModel, fitEffort, type WorkerRoleDefault } from './workerRoles'
+import { councilFrozenEvidenceSchema, councilRoundEvidenceSchema } from './councilEvidence'
 
 /**
  * The Council (ADR-0177, an Owl feature): one question from a thread put to two to five **panelists** and a **chair**,
@@ -335,6 +336,7 @@ export const councilObjectionViewSchema = z.object({
 
 export const councilRoundViewSchema = z.object({
   index: count,
+  evidence: councilRoundEvidenceSchema.optional(),
   /** The question, verbatim; null once it is not kept, as after a restart with Keep local history off. */
   question: z.string().max(COUNCIL_QUESTION_MAX).nullable(),
   askedAt: z.iso.datetime(),
@@ -361,6 +363,11 @@ export type CouncilRoundView = z.infer<typeof councilRoundViewSchema>
 
 export const councilViewSchema = z.object({
   id: z.uuid(),
+  mode: z.enum(['standard', 'climb']).optional(),
+  evidence: z.array(z.union([
+    councilFrozenEvidenceSchema.extend({ removed: z.boolean() }),
+    z.object({ kind: z.enum(['legacyGit', 'legacyLive']), id: z.string().min(1).max(512), removed: z.boolean().optional() }).strict(),
+  ])).optional(),
   createdAt: z.iso.datetime(),
   origin: z.object({ thread: id, title: z.string().max(512) }).strict(),
   status: z.enum(['working', 'waiting', 'done', 'stopped', 'settled']),

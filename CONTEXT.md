@@ -695,11 +695,21 @@ Answering a question or permission request and creating a project are also part 
 
 **Council snapshot.** The worktree a **Council**'s threads work in: the folder of the thread it was asked from as it was at Ask the Council, its commit and its uncommitted changes, taken as a **check snapshot** is and checked out on no branch in Sotto's data folder (`council-worktrees`), so every thread cites the same code and nothing they run changes the user's checkout. It is removed when the Council is settled. A folder that is not a Git repository has none. Avoid: "snapshot" on its own, "sandbox".
 
+**Climb.** An optional Council mode, held behind the Council Owl switch, in which the approved origin thread is the **Builder** and main repeats build, capture and fresh judging until the approved target or a stop rule is met (ADR-0177, November 4 amendment). Its brief, evidence, criteria, roster and optional attempt/model-turn limits are approved together. Design is one preset; Git is optional. The evidence foundation is implemented first; the loop and drawer controls follow. Avoid: "debate loop", "design mode".
+
+**Builder.** The origin thread approved to change the work for a Climb. Changing pane or focus never changes the Builder. Climb sends its fix brief there and follows that exact turn; unrelated user work pauses the loop. Not a judge or a command runner.
+
+**Evidence set.** A frozen selection of regular files or supplied artifacts, with a manifest naming each file, its byte count, media type and hash. It may record Git provenance, but neither capture nor reading depends on Git. Canonical bytes are owned by Sotto, separate from the Builder and disposable judge copies. Export writes a new folder with `manifest.json` and a `files` directory. With local history off, working evidence is temporary. Avoid: "Council snapshot" for this source-neutral object.
+
+**Baseline.** The first approved evidence set in a Climb, retained as the unchanged reference in every assessment. A **candidate** is the newly captured result of one Builder attempt. The **incumbent** is the best kept candidate under the approved same-round comparison and guardrails, or the baseline before any improvement. A **reference** is an optional separately selected evidence set with its own identity. These words describe private roles; judges see exhibits under letters.
+
+**Assessment.** One Climb evaluation by fresh independent judge threads and a fresh adjudicating chair, using the approved brief and frozen exhibits. Each required seat and criterion must return a valid result; absence is never a passing score. Targets and earlier scores are withheld. The setup chair is separate and is never reused as an adjudicator.
+
 **Crux check.** The one extra step a **Council** may take, at most once: when the **chair** finds a split that turns on something observable, such as what a file does, what a command prints or what a source says, it writes the test or the lookup and what each result would mean, and a **panelist** on neither side runs it (or each side tries to establish the other's claim). Everyone gets the same output. Never a second round of debate, and never on a matter of taste.
 
 **Fairness check.** The **Council**'s last step: each **panelist** reads the **verdict** and answers Fair, or Unfair, quoting its own claim and the passage that misstates it; the **chair** amends the passage or says why it stands. The verdict can be sent to its thread once every panelist has answered or two minutes have passed since the check was sent, and the chair has answered every objection. It checks representation, not correctness.
 
-**Chair.** The thread that writes a **Council**'s **verdict** from every answer and review, never one of its **panelists**. Avoid: "judge", "chairman".
+**Chair.** The thread that writes a **Council**'s **verdict** from every answer and review, never one of its **panelists**. In Climb, the setup chair proposes the specification and a separate fresh adjudicating chair reads one assessment. Avoid: "chairman".
 
 **Verdict.** What a **Council**'s **chair** writes: a recommendation, where the **panelists** split and why, where they agree, and what only one noticed, with Sotto's count of the reviews' rankings beside it. It keeps the disagreement rather than blending it. Not a **checkpoint verdict**. Avoid: "summary", "consensus".
 
