@@ -645,7 +645,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
         <img src={source} alt={name} decoding="async" draggable={false} onError={() => setFailed(true)} />
       </button>
       <figcaption><span className="rich-attachment__name" title={name}>{name}</span>
-        {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite">{feedback ?? details}</span>}</figcaption>
+        {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite" data-feedback={feedback ? '' : undefined}>{feedback ?? details}</span>}</figcaption>
       {menuAt ? <LinkMenu at={menuAt} label={t`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }

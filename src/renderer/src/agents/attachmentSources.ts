@@ -41,7 +41,7 @@ function requestPreview(origin: AttachmentOrigin, attachmentId: string): Promise
   const key = JSON.stringify([origin.threadId, origin.messageId, attachmentId])
   const cached = fetchedPreviews.get(key) ?? pendingPreviews.get(key)
   if (cached) return cached.source
-  const bridge = window.sotto?.agents
+  const bridge = window.sotto?.agents ?? window.sottoPopup
   const pending: Promise<string | null> = bridge?.attachmentPreview
     ? bridge.attachmentPreview({ threadId: origin.threadId, messageId: origin.messageId, attachmentId })
       .then(result => trustedPreviewSource(result?.dataUrl), () => null)

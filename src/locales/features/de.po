@@ -1375,6 +1375,10 @@ msgstr ""
 msgid "Ask"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask {threadName}"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask a follow-up"
 msgstr ""
@@ -1383,12 +1387,16 @@ msgstr ""
 msgid "Ask chair for proposal"
 msgstr ""
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Ask Sotto…"
-msgstr ""
-
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask this thread"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
@@ -1457,6 +1465,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "At least <0>{perPrompt}</0> tokens per prompt"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images, or paste or drop them"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -1801,6 +1817,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a speech model"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Choose a thread"
 msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -2589,10 +2609,6 @@ msgstr ""
 
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Enter your OpenRouter API key first."
-msgstr ""
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Esc stops it"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
@@ -4014,10 +4030,6 @@ msgstr ""
 msgid "New thread"
 msgstr ""
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "New thread (/new)"
-msgstr ""
-
 #. placeholder {0}: project.title
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread in {0}"
@@ -5427,6 +5439,10 @@ msgstr ""
 msgid "Replacement memory"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Reply to this thread…"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reporting the crux check"
 msgstr ""
@@ -5865,11 +5881,7 @@ msgid "Show in folder"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (⌘O)"
-msgstr ""
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (Ctrl+O)"
+msgid "Show in Sotto"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
@@ -6766,14 +6778,6 @@ msgstr ""
 msgid "talking"
 msgstr ""
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to the thread. Switch to Watcher"
-msgstr ""
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to Watcher. Switch to the thread"
-msgstr ""
-
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Target"
 msgstr ""
@@ -7178,6 +7182,10 @@ msgstr ""
 msgid "This memory was deleted. Your unsaved wording is still here to copy."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "This model does not read images"
+msgstr ""
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "This month"
 msgstr ""
@@ -7215,6 +7223,7 @@ msgstr ""
 #. The room switch and page links: the Threads page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Threads"
 msgstr ""
 
@@ -7717,6 +7726,7 @@ msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installe
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Waiting"
 msgstr ""
 
@@ -7751,10 +7761,6 @@ msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Waiting for the update before it."
-msgstr ""
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Waiting for your answer"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
@@ -7991,6 +7997,10 @@ msgstr ""
 msgid "Where, last 30 days"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Who to ask"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Whole range"
 msgstr ""
@@ -8039,6 +8049,7 @@ msgstr ""
 #. A thread’s status
 #: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
