@@ -711,6 +711,10 @@ msgstr "{name}’s load and what runs there"
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s Sotto is too old to check a link. Asks and desks still work. Ask {name} to update it, then check again."
+msgstr "{name}'s Sotto is too old to check a link. Asks and desks still work. Ask {name} to update it, then check again."
+
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s Watcher"
 msgstr "{name}'s Watcher"
@@ -5904,8 +5908,8 @@ msgid "Share this computer with your teammate"
 msgstr "Share this computer with your teammate"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back."
-msgstr "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back."
+msgid "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share."
+msgstr "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share."
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Shift-click opens a thread in Threads. <0>Esc</0> closes."
@@ -8358,10 +8362,6 @@ msgstr "You turned it off on this computer. Connect it to use it here."
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
 msgstr "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
-
-#: src/renderer/src/watcher/TeamsPage.tsx
-msgid "You're on the same tailnet, so there's nothing to share."
-msgstr "You're on the same tailnet, so there's nothing to share."
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "Your answer could not be saved, and nothing was sent. Try again."

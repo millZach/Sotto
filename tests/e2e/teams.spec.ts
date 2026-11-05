@@ -106,8 +106,15 @@ test.describe('Teams', () => {
         await expect.poll(() => card.locator('.teams-reach').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
         await expect(card).not.toContainText('can\'t reach')
         await captureWindow(app, resolve(evidence, `tab-linked-${appearance}-1280x800.png`))
+        // A fold closes on Escape, with focus back on its summary.
+        const another = page.locator('summary', { hasText: 'Link another teammate' })
+        await another.click()
+        await page.getByLabel('Got a code from your teammate?').focus()
+        await page.keyboard.press('Escape')
+        await expect(page.getByLabel('Got a code from your teammate?')).toHaveCount(0)
+        await expect(another).toBeFocused()
         // Pressing Make a code asks the stand-in for its address and shows a code that names it, and nothing else.
-        await page.getByText('Link another teammate').click()
+        await another.click()
         await page.getByRole('button', { name: 'Make a code' }).click()
         const code = page.locator('.teams-code__text')
         await expect(code).toContainText(/^sotto-team:laptop-russh2j5\.tail5728ca\.ts\.net:8445:[A-Z0-9]{8}$/u)

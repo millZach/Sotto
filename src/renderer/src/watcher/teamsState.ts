@@ -56,3 +56,8 @@ export function setOpenDesks(linkId: string | null): void {
 export function useOpenDesks(): string | null {
   return useSyncExternalStore(listener => { openDesksListeners.add(listener); return () => { openDesksListeners.delete(listener) } }, () => openDesks)
 }
+
+/** When each link's desk was last tried, kept while Sotto runs, so going to Watcher and back does not try a silent computer sooner (ADR-0193). */
+const deskTried = new Map<string, number>()
+export const deskTriedAt = (linkId: string): number => deskTried.get(linkId) ?? 0
+export function setDeskTriedAt(linkId: string, at: number): void { deskTried.set(linkId, at) }

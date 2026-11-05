@@ -331,6 +331,8 @@ describe('checking both ways (ADR-0193)', () => {
     const result = await zach.service.command({ type: 'check-link', linkId: zach.service.get().links[0]!.id })
     spy.mockRestore()
     expect(result).toMatchObject({ status: 'refused', message: expect.stringContaining('too old') })
+    // The card keeps it, so the check right after linking an older Sotto says so too.
+    expect(reachOf(zach, 'drake')).toMatchObject({ toThem: true, fromThem: null, tooOld: true })
   })
 
   it('reads setup from this computer\'s own Tailscale and sends nothing', async () => {

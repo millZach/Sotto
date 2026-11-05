@@ -39,6 +39,7 @@
 .teams-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: var(--tt-radius-full); background: var(--tt-success); vertical-align: 1px; }
 .teams-problem { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-warning-on-tint); }
 .teams-problem p { margin: 0; }
+.teams-page > .teams-problem { margin-bottom: 18px; }
 
 .teams-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .teams-facts dt { color: var(--tt-text-muted); }
@@ -51,7 +52,7 @@
 .teams-projects__row > :nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
 .teams-projects__row > :last-child { margin-left: auto; flex: none; }
 
-.teams-more > summary, .teams-how > summary, .teams-reads summary { width: fit-content; color: var(--tt-text-2); font-size: var(--tt-type-small); cursor: pointer; }
+.teams-more > summary, .teams-how > summary, .teams-reads summary { width: fit-content; color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .teams-more[open] > summary { margin-bottom: 8px; }
 
 /* Setup's steps, in the shape of Hosts & phones' checklist. */

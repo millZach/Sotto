@@ -20,7 +20,7 @@ const linkSchema = z.object({
   wantedAgainAt: z.iso.datetime().nullable(), theyWantedAgainAt: z.iso.datetime().nullable(),
   day: z.string().max(16), answersToday: z.number().int().nonnegative(), refusedToday: z.number().int().nonnegative(), recentAnswers: z.array(z.number()).max(TEAM_ANSWERS_PER_BURST),
   /** The last check, both ways (ADR-0193). It holds no words. */
-  reach: z.object({ at: z.iso.datetime(), toThem: z.boolean(), fromThem: z.boolean().nullable() }).strict().nullable().default(null),
+  reach: z.object({ at: z.iso.datetime(), toThem: z.boolean(), fromThem: z.boolean().nullable(), tooOld: z.literal(true).optional() }).strict().nullable().default(null),
 }).strict()
 type Link = z.infer<typeof linkSchema>
 const fileSchema = z.object({
@@ -561,8 +561,11 @@ export class TeamService {
       this.options.log?.('team-check-failed')
       if (answer.reason === 'too-many') return { status: 'refused', message: t`${name}'s computer has answered a lot of checks just now. Try again in a few minutes.` }
       if (answer.reason === 'expired') return { status: 'refused', message: t`This link has run out, so nothing was checked. Both of you can press Link again to keep it.` }
-      // A Sotto from before checks answers that this is not on its list: the link still works for asks and desks.
-      if (answer.reason === 'not-on-the-list') return { status: 'refused', message: t`${name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work.` }
+      // A Sotto from before checks answers that this is not on its list. It answered, so this way works; the card keeps that it is too old.
+      if (answer.reason === 'not-on-the-list') {
+        if (this.linkById(linkId)) { link.reach = { at, toThem: true, fromThem: null, tooOld: true }; await this.save(); this.publish() }
+        return { status: 'refused', message: t`${name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work.` }
+      }
       return { status: 'refused', message: t`${name} has removed this link. Make a new code to link again.` }
     }
     if (answer) { reach = { at, toThem: true, fromThem: answer.reachedYou ?? null }; link.lastUsedAt = at; this.options.log?.('team-checked') }

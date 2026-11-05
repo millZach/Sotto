@@ -711,6 +711,10 @@ msgstr ""
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s Sotto is too old to check a link. Asks and desks still work. Ask {name} to update it, then check again."
+msgstr ""
+
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s Watcher"
 msgstr ""
@@ -5904,7 +5908,7 @@ msgid "Share this computer with your teammate"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back."
+msgid "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -8357,10 +8361,6 @@ msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
-msgstr ""
-
-#: src/renderer/src/watcher/TeamsPage.tsx
-msgid "You're on the same tailnet, so there's nothing to share."
 msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx

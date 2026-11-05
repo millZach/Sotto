@@ -191,8 +191,8 @@ export interface TeamLinkView {
   /** The teammate's computer is on another tailnet, so each must share their computer with the other. */
   readonly otherTailnet: boolean
 }
-/** `fromThem` is null when this computer could not ask, so it does not know. */
-export interface TeamReach { readonly at: string; readonly toThem: boolean; readonly fromThem: boolean | null }
+/** `fromThem` is null when this computer could not ask, so it does not know. `tooOld`: the teammate's Sotto has no `check`. */
+export interface TeamReach { readonly at: string; readonly toThem: boolean; readonly fromThem: boolean | null; readonly tooOld?: true | undefined }
 /** What setup's steps show (ADR-0193): this computer's own Tailscale, read on the Teams tab and never sent anywhere. */
 export interface TeamsSetup {
   readonly tailscale: 'running' | 'not-running' | 'missing'
@@ -271,5 +271,6 @@ export function foldTeamDeskReads(reads: readonly TeamDeskRead[], foldMs = TEAM_
     open.set(read.linkId, lines.length)
     lines.push({ id: read.id, teammate: read.teammate, first: read.at, at: read.at, count: 1 })
   }
-  return lines.reverse()
+  // By each line's latest read, so a teammate still reading stays at the top.
+  return lines.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 }

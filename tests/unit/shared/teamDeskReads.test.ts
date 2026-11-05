@@ -11,6 +11,10 @@ describe('reads of this computer\'s desk under Latest (ADR-0193)', () => {
       { id: 'a', teammate: 'Drake', first: read('a', 'l1', 'Drake', 0).at, at: read('c', 'l1', 'Drake', 4).at, count: 3 },
     ])
   })
+  it('puts a teammate still reading above one who read once since they started', () => {
+    const lines = foldTeamDeskReads([read('a', 'l1', 'Drake', 0), read('b', 'l2', 'Rohit', 1), read('c', 'l1', 'Drake', 2)])
+    expect(lines.map(line => [line.teammate, line.count])).toEqual([['Drake', 2], ['Rohit', 1]])
+  })
   it('keeps two teammates apart, and splits at the fold\'s length', () => {
     const minutes = TEAM_DESK_READS_FOLD_MS / 60_000
     const lines = foldTeamDeskReads([read('a', 'l1', 'Drake', 0), read('b', 'l2', 'Rohit', 1), read('c', 'l1', 'Drake', minutes)])

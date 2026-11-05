@@ -12,24 +12,39 @@ const LATEST_ROWS = 8
 const desksButtonId = (linkId: string): string => `teams-open-desks-${linkId}`
 type Command = (value: TeamsCommand) => void
 
-/** Whether the last check found both ways open, and what to do when it did not (ADR-0193). */
+/**
+ * Whether the last check found both ways open, and what to do when it did not (ADR-0193). One shape for every result, so
+ * Check again keeps keyboard focus when the words round it change; it stays pressable while it checks and ignores a second press.
+ */
 function LinkReach({ link, machine, command, busy }: { readonly link: TeamLinkView; readonly machine: string; readonly command: Command; readonly busy: boolean }): ReactNode {
   const { t } = useLingui()
   const name = link.name, reach = link.reach, when = reach ? whenOf(reach.at, Date.now()) : ''
-  const check = <Button variant="secondary" disabled={busy} onClick={() => command({ type: 'check-link', linkId: link.id })}>{reach ? t`Check again` : t`Check both ways`}</Button>
-  const share = <Button variant="secondary" onClick={() => command({ type: 'open-share-page' })}>{t`Open Tailscale's Machines`}</Button>
-  if (reach === null) return <div className="teams-reach"><p className="teams-muted">{t`Not checked yet. A check reaches each computer once and carries nothing.`}</p><div className="teams-actions">{check}</div></div>
-  if (reach.toThem && reach.fromThem === true) return <div className="teams-reach" data-reach="both"><p><i className="teams-dot" aria-hidden="true" />{t`Works both ways. Checked ${when}.`}</p><div className="teams-actions">{check}</div></div>
-  if (reach.toThem && reach.fromThem === false) return <div className="teams-reach" data-reach="one-way" role="status">
-    <p><strong>{t`${name}'s computer can't reach this one.`}</strong> {t`You can read ${name}'s desk, but ${name} can't read yours or ask your Watcher.`}{' '}
+  const state = reach === null ? 'unchecked' : reach.tooOld ? 'too-old' : !reach.toThem ? 'none' : reach.fromThem === true ? 'both' : reach.fromThem === false ? 'one-way' : 'unchecked'
+  const words = state === 'both' ? <><i className="teams-dot" aria-hidden="true" />{t`Works both ways. Checked ${when}.`}</>
+    : state === 'too-old' ? t`${name}'s Sotto is too old to check a link. Asks and desks still work. Ask ${name} to update it, then check again.`
+    : state === 'one-way' ? <><strong>{t`${name}'s computer can't reach this one.`}</strong> {t`You can read ${name}'s desk, but ${name} can't read yours or ask your Watcher.`}{' '}
       {link.otherTailnet ? t`Share this computer with ${name} in Tailscale: on Machines, press ••• beside ${machine}, then Share, and send ${name} the link. Then check again.`
-        : t`Check that this computer is on and that your tailnet's access rules let ${name} reach it. Then check again.`}</p>
-    <div className="teams-actions">{link.otherTailnet ? share : null}{check}</div>
+        : t`Check that this computer is on and that your tailnet's access rules let ${name} reach it. Then check again.`}</>
+    : state === 'none' ? <><strong>{t`This computer couldn't reach ${name}'s.`}</strong> {link.otherTailnet ? t`${name}'s computer may be off, or not shared with you. ${name} shares it from Tailscale's Machines page. Then check again.` : t`${name}'s computer may be off. Check again when it is on.`}</>
+    : t`Not checked yet. A check reaches each computer once and carries nothing.`
+  return <div className="teams-reach" data-reach={state} role={state === 'one-way' || state === 'none' ? 'status' : undefined}>
+    <p className={state === 'unchecked' ? 'teams-muted' : undefined}>{words}</p>
+    <div className="teams-actions">
+      {state === 'one-way' && link.otherTailnet ? <Button key="share" variant="secondary" onClick={() => command({ type: 'open-share-page' })}>{t`Open Tailscale's Machines`}</Button> : null}
+      <Button key="check" variant="secondary" aria-busy={busy} onClick={() => { if (!busy) command({ type: 'check-link', linkId: link.id }) }}>{reach ? t`Check again` : t`Check both ways`}</Button>
+    </div>
   </div>
-  return <div className="teams-reach" data-reach="none" role="status">
-    <p><strong>{t`This computer couldn't reach ${name}'s.`}</strong> {link.otherTailnet ? t`${name}'s computer may be off, or not shared with you. ${name} shares it from Tailscale's Machines page. Then check again.` : t`${name}'s computer may be off. Check again when it is on.`}</p>
-    <div className="teams-actions">{check}</div>
-  </div>
+}
+
+/** A fold that closes on Escape, with focus back on its summary, as anything that opens does. */
+function Fold({ className, summary, onToggle, children }: { readonly className: string; readonly summary: string; readonly onToggle?: (open: boolean) => void; readonly children: ReactNode }): ReactNode {
+  const fold = useRef<HTMLDetailsElement>(null)
+  return <details ref={fold} className={className} onToggle={event => onToggle?.(event.currentTarget.open)} onKeyDown={event => {
+    if (event.key !== 'Escape' || !fold.current?.open) return
+    event.preventDefault(); event.stopPropagation()
+    fold.current.open = false
+    fold.current.querySelector<HTMLElement>(':scope > summary')?.focus()
+  }}><summary>{summary}</summary>{children}</details>
 }
 
 /** One teammate: whether the link works both ways, how long it lasts, and what it has cost today. */
@@ -136,7 +151,7 @@ function TeamSetup({ state, command, busy }: { readonly state: TeamsState; reado
   useEffect(() => { command({ type: 'read-setup' }) }, [])
   const shown = name.trim(), code = state.code, expires = code ? timeOf(code.expiresAt) : ''
   const checkAgain = <Button variant="secondary" disabled={busy} onClick={() => command({ type: 'read-setup' })}>{t`Check again`}</Button>
-  const others = setup?.others ?? [], shared = others.filter(other => other.otherTailnet), sameTailnet = others.length > 0 && shared.length === 0
+  const others = setup?.others ?? []
   const othersText = others.map(other => other.otherTailnet ? t`${other.name}, shared from another tailnet` : other.name).join('; ')
   const serveNeeds = problem === 'serve-off' || problem === 'serve-denied' || problem === 'ports-taken'
   return <ol className="teams-steps">
@@ -155,17 +170,16 @@ function TeamSetup({ state, command, busy }: { readonly state: TeamsState; reado
     </Step>
     <Step n={3} state={others.length ? 'done' : 'todo'} title={t`Your teammate's computer is on your tailnet`}>
       {others.length ? <p>{t`Tailscale sees ${othersText}.`}</p> : <p>{t`Tailscale doesn't show anyone else's computer yet. If your teammate has their own tailnet, they share their computer with you, and you accept.`}</p>}
-      <details className="teams-how"><summary>{t`How your teammate shares theirs`}</summary>
+      <Fold className="teams-how" summary={t`How your teammate shares theirs`}>
         <ol><li>{t`They open Tailscale's admin console and go to Machines.`}</li><li>{t`They press ••• beside their computer, then Share, and send you the link.`}</li><li>{t`You open the link and accept. Then check again here.`}</li></ol>
-      </details>
+      </Fold>
       {others.length ? null : <div className="teams-actions">{checkAgain}</div>}
     </Step>
-    <Step n={4} state={sameTailnet ? 'done' : 'todo'} title={t`Share this computer with your teammate`}>
-      {sameTailnet ? <p>{t`You're on the same tailnet, so there's nothing to share.`}</p> : <>
-        <p>{t`Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back.`}</p>
-        <ol><li>{t`Press Open Tailscale's Machines.`}</li><li>{t`Press ••• beside ${machine}, then Share.`}</li><li>{t`Send your teammate the link. They open it and accept.`}</li></ol>
-        <div className="teams-actions"><Button variant="secondary" onClick={() => command({ type: 'open-share-page' })}>{t`Open Tailscale's Machines`}</Button></div>
-      </>}
+    {/* Which listed computer is the teammate's is not known here, so this step is never marked done on a guess. */}
+    <Step n={4} state="todo" title={t`Share this computer with your teammate`}>
+      <p>{t`Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share.`}</p>
+      <ol><li>{t`Press Open Tailscale's Machines.`}</li><li>{t`Press ••• beside ${machine}, then Share.`}</li><li>{t`Send your teammate the link. They open it and accept.`}</li></ol>
+      <div className="teams-actions"><Button variant="secondary" onClick={() => command({ type: 'open-share-page' })}>{t`Open Tailscale's Machines`}</Button></div>
     </Step>
     <Step n={5} state={code ? 'needs' : 'todo'} title={t`Link with a code`}>
       <p>{t`One of you makes a code and sends it however you like, and the other pastes it. One code links both ways. It works once, for 30 minutes.`}</p>
@@ -249,7 +263,10 @@ export function TeamsPage({ bridge, state }: { readonly bridge: TeamsBridge; rea
   // The linked page needs this computer's tailnet name for what to share, and reading it sends nothing.
   useEffect(() => { if (linked && state?.setup === null) command({ type: 'read-setup' }) }, [linked])
   const closeDesks = (): void => { closedDesks.current = desksOf; setOpenDesks(null) }
-  if (state && desksLink) return <div className="teams-page tt-paragraph" role="tabpanel" aria-labelledby="watcher-tab-teams"><TeamDesks link={desksLink} state={state} bridge={bridge} onClose={closeDesks} /></div>
+  if (state && desksLink) return <div className="teams-page tt-paragraph" role="tabpanel" aria-labelledby="watcher-tab-teams">
+    <ListenProblem state={state} command={command} />
+    <TeamDesks link={desksLink} state={state} bridge={bridge} onClose={closeDesks} />
+  </div>
   const machine = state?.setup?.machine ?? t`this computer`
   return <div className="teams-page tt-paragraph" role="tabpanel" aria-labelledby="watcher-tab-teams">
     <div className="teams-page__column">
@@ -265,10 +282,9 @@ export function TeamsPage({ bridge, state }: { readonly bridge: TeamsBridge; rea
           <h3 id="teams-teammates" className="teams-section__title">{t`Teammates`}</h3>
           <ListenProblem state={state} command={command} />
           {state.links.map(link => <TeamLinkCard key={link.id} link={link} machine={machine} command={command} busy={busy} openDesks={() => setOpenDesks(link.id)} />)}
-          <details className="teams-more" onToggle={event => setMore(event.currentTarget.open)}>
-            <summary>{t`Link another teammate`}</summary>
+          <Fold className="teams-more" summary={t`Link another teammate`} onToggle={setMore}>
             {more ? <TeamSetup state={state} command={command} busy={busy} /> : null}
-          </details>
+          </Fold>
         </section>
         <WhatYouShare state={state} command={command} busy={busy} />
         <Latest state={state} />

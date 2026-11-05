@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
 import { teamMergeOrder, TEAM_DESK_REFRESH_MS, type TeamChecks, type TeamDesk, type TeamLinkView, type TeamMergeOrderRow, type TeamsBridge, type TeamsState } from '../../../shared/teams'
-import { whenOf } from './teamsState'
+import { deskTriedAt, setDeskTriedAt, whenOf } from './teamsState'
 
 /** How often the user's own desk catches up while it is open. It reads this computer's records and sends nothing. */
 const OWN_DESK_REFRESH_MS = 15_000
@@ -64,7 +64,7 @@ export function TeamDesks({ link, state, bridge, onClose }: { readonly link: Tea
   const [own, setOwn] = useState<TeamDesk | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), back = useRef<HTMLButtonElement>(null)
   const name = link.name, held = state.desks[link.id], when = held ? whenOf(held.at, Date.now()) : '', leftOut = state.projects.some(project => project.leftOut)
   // When the desk was last read, or last tried: a computer that does not answer is tried again in two minutes, not sooner.
-  const heldAt = useRef(held?.at), tried = useRef(0), reading = useRef(false)
+  const heldAt = useRef(held?.at), reading = useRef(false)
   heldAt.current = held?.at
   useEffect(() => { back.current?.focus() }, [])
   useEffect(() => {
@@ -76,13 +76,13 @@ export function TeamDesks({ link, state, bridge, onClose }: { readonly link: Tea
   }, [bridge])
   const get = (pressed: boolean): void => {
     if (reading.current) return
-    reading.current = true; tried.current = Date.now(); setBusy(true)
+    reading.current = true; setDeskTriedAt(link.id, Date.now()); setBusy(true)
     if (pressed) setError(null)
     void bridge.command({ type: 'read-desk', linkId: link.id }).then(result => { setError(result.status === 'refused' ? result.message : null) })
       .catch(() => setError(t`Sotto could not do that. Nothing changed. Try again.`)).finally(() => { reading.current = false; setBusy(false) })
   }
   useEffect(() => {
-    const stale = (): boolean => Date.now() - Math.max(tried.current, heldAt.current === undefined ? 0 : Date.parse(heldAt.current)) >= TEAM_DESK_REFRESH_MS
+    const stale = (): boolean => Date.now() - Math.max(deskTriedAt(link.id), heldAt.current === undefined ? 0 : Date.parse(heldAt.current)) >= TEAM_DESK_REFRESH_MS
     const shown = (): boolean => document.visibilityState === 'visible'
     if (shown() && stale()) get(false)
     const timer = setInterval(() => { if (shown() && stale()) get(false) }, TEAM_DESK_REFRESH_MS / 4)
