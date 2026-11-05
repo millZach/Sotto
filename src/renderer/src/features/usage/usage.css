@@ -194,6 +194,18 @@
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__bar { opacity: .28; }
 .usage-chart__label { flex: none; align-self: center; margin-bottom: 5px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; transition: opacity .15s; }
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__label { opacity: .28; }
+/* A sparse range folds each long run of empty days into the room of two, marked as a break in the baseline and
+   counted over it, so the days with work take the width. A day there that is being read shows as a faint band. */
+.usage-chart__columns[data-folded] > .usage-chart__column { max-width: none; align-items: center; }
+.usage-chart__columns[data-folded] .usage-chart__bar { width: min(100%, 52px); }
+.usage-chart__quiet { position: relative; display: flex; flex: 2 1 0; min-width: 0; height: 100%; }
+.usage-chart__quiet > .usage-chart__column { max-width: none; }
+.usage-chart__quiet > .usage-chart__column[data-on] { background: var(--usage-grid); }
+/* The axis-break marks: a short slant across the baseline at each end of the stretch. */
+.usage-chart__quiet::before, .usage-chart__quiet::after { content: ''; position: absolute; bottom: -6px; width: 1px; height: 11px; background: var(--tt-text-muted); transform: skewX(-24deg); }
+.usage-chart__quiet::before { left: 2px; }
+.usage-chart__quiet::after { right: 2px; }
+.usage-chart__quiet-words { position: absolute; right: 4px; bottom: 10px; left: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; text-align: center; text-wrap: balance; pointer-events: none; }
 .usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
 .usage-chart__grid span { position: absolute; right: calc(-1 * var(--usage-scale-gutter)); width: calc(var(--usage-scale-gutter) - 6px); bottom: -8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
@@ -262,7 +274,7 @@
 .usage-ring-card__rows li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; }
 .usage-ring-card__rows b { color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
 .usage-ring-card__rows b[data-low] { color: var(--usage-low); }
-.usage-ring-card__fresh { color: var(--tt-text-faint); }
+.usage-ring-card__fresh { color: var(--tt-text-muted); }
 .usage-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--usage-strong); }
 .usage-dot--inner { background: var(--usage-ink); }
 .usage-cache { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 48px; margin-top: 30px; }
@@ -274,7 +286,7 @@
 .usage-hours__cell { position: relative; aspect-ratio: 1; border-radius: var(--tt-radius-mark); background: var(--usage-track); }
 .usage-hours__cell::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--tt-accent); opacity: var(--usage-a); }
 .usage-hours__cell[data-on] { outline: 1.5px solid var(--tt-text); outline-offset: 1px; }
-.usage-hours__axis { position: relative; grid-column: 2 / -1; height: 18px; margin-top: 4px; color: var(--tt-text-faint); font-size: var(--tt-type-caption); }
+.usage-hours__axis { position: relative; grid-column: 2 / -1; height: 18px; margin-top: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .usage-hours__axis span { position: absolute; top: 0; white-space: nowrap; }
 
 /* Room-left gauges and the empty states. */
@@ -342,7 +354,7 @@
 .usage-table { margin: 26px -14px 0; }
 .usage-table__rows { margin: 0; padding: 0; list-style: none; }
 .usage-table__columns, .usage-row__main, .usage-table__total { display: grid; grid-template-columns: minmax(180px, 1.15fr) minmax(140px, 2fr) 78px 78px 70px; align-items: center; gap: 0 20px; }
-.usage-table__columns { padding: 0 14px 10px; color: var(--tt-text-faint); font-size: var(--tt-type-caption); }
+.usage-table__columns { padding: 0 14px 10px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .usage-table__columns span:nth-child(n+3), .usage-row__n { text-align: right; }
 .usage-row { border-radius: var(--tt-radius-inset); }
 .usage-row[data-open] { background: var(--usage-hover-soft); }

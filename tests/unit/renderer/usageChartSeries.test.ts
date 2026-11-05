@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  MODELS_DRAWN, PROVIDER_SLOT, SERIES_SLOTS, assignSlots, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
+  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, SERIES_SLOTS, assignSlots, chartStretches, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
   type ChartFigure, type SeriesCandidate,
 } from '../../../src/renderer/src/features/usage/usageChartSeries'
 import { activityRow, field, tokens } from '../../fixtures/renderer/usageReads'
@@ -119,5 +119,21 @@ describe('Usage chart series', () => {
     expect(remainder(sumFigures([day, measureFigure('tokens', reported)]), [measureFigure('tokens', reported)])).toMatchObject({ value: 1000, known: true, partial: true })
     // Prompts carry no records, and Other is as whole as the total.
     expect(remainder(wholeFigure(10), [wholeFigure(4)])).toEqual({ value: 6, known: true, partial: false })
+  })
+
+  it('folds a long run of empty days in a sparse range into the room of two, keeping every day in order', () => {
+    const busy = Array.from({ length: 30 }, (_, at) => [25, 26, 28, 29].includes(at))
+    const { stretches, room, start, width } = chartStretches(busy, true)
+    expect(stretches[0]).toEqual({ kind: 'quiet', from: 0, to: 24 })
+    // A gap of one day between busy days stays a day of its own.
+    expect(stretches.slice(1)).toEqual([25, 26, 27, 28, 29].map(at => ({ kind: 'day', at })))
+    expect(room).toBe(QUIET_ROOM + 5)
+    expect(start).toHaveLength(30)
+    expect(start[25]).toBeCloseTo(QUIET_ROOM / room)
+    expect(width[25]).toBeCloseTo(1 / room)
+    expect(start[29]! + width[29]!).toBeCloseTo(1)
+    // Not asked to fold, or with no run long enough, each day keeps an equal share.
+    expect(chartStretches(busy, false).room).toBe(30)
+    expect(chartStretches([true, false, false, false, false, true], true).room).toBe(6)
   })
 })

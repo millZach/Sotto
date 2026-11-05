@@ -205,3 +205,39 @@ export function seriesValues(chart: ChartPlan, dayIndex: number | null): Array<{
   return chart.series.map(item => ({ key: item.key, name: item.name, tone: item.tone, figure: dayIndex === null ? item.figure : item.figures[dayIndex] ?? wholeFigure(0),
     ...(item.title === undefined ? {} : { title: item.title }) }))
 }
+
+/** A stretch of the Per day bars: one day, or a run of days with nothing drawn in the room of a few. */
+export type ChartStretch =
+  | { readonly kind: 'day'; readonly at: number }
+  | { readonly kind: 'quiet'; readonly from: number; readonly to: number }
+
+/** A run of empty days at least this long folds into a quiet stretch. */
+export const QUIET_RUN = 5
+/** How many days' room a quiet stretch takes, however many days it holds. */
+export const QUIET_ROOM = 2
+
+/**
+ * How the bars of a sparse range are laid out. When only a few days have work, a run of five or more empty days takes
+ * the room of two and says how many days it holds, so the days with work get the width rather than a flat line. Every
+ * day is still in the chart, in order, and the keyboard and pointer still read each one. `room` is how many days' width
+ * the chart spans, and `start` and `width` place each day across it, from 0 to 1.
+ */
+export function chartStretches(busy: readonly boolean[], fold: boolean): { stretches: ChartStretch[]; room: number; start: number[]; width: number[] } {
+  const stretches: ChartStretch[] = []
+  for (let at = 0; at < busy.length;) {
+    let end = at
+    while (fold && end < busy.length && !busy[end]) end += 1
+    if (end - at >= QUIET_RUN) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
+    stretches.push({ kind: 'day', at }); at += 1
+  }
+  const room = stretches.reduce((sum, stretch) => sum + (stretch.kind === 'day' ? 1 : QUIET_ROOM), 0)
+  const start: number[] = [], width: number[] = []
+  let used = 0
+  for (const stretch of stretches) {
+    if (stretch.kind === 'day') { start.push(used / room); width.push(1 / room); used += 1; continue }
+    const days = stretch.to - stretch.from + 1
+    for (let day = 0; day < days; day += 1) { start.push((used + day * QUIET_ROOM / days) / room); width.push(QUIET_ROOM / days / room) }
+    used += QUIET_ROOM
+  }
+  return { stretches, room, start, width }
+}

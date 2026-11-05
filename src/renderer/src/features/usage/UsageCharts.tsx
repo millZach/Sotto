@@ -1,9 +1,9 @@
 import React, { type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { i18n as interfaceI18n } from '@lingui/core'
-import { msg } from '@lingui/core/macro'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
-import { seriesValues, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
+import { chartStretches, seriesValues, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
 import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
@@ -95,6 +95,9 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const dayTotal = (at: number): number => plan.series.reduce((sum, item) => sum + Math.max(0, item.values[at] ?? 0), 0)
   const busyDays = kind === 'bars' && waiting === undefined ? days.reduce((busy, _, at) => busy + (dayTotal(at) > 0 ? 1 : 0), 0) : 0
   const labelled = busyDays > 0 && busyDays <= FEW_DAYS
+  // In a sparse range a long run of empty days folds into the room of two, so the days with work get the width.
+  const layout = chartStretches(days.map((_, at) => dayTotal(at) > 0), labelled && count > 7)
+  const folded = layout.room < count
   const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, labelled ? plan.peak * 1.15 : plan.peak))
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1
   const radius = count > 60 ? 1 : count > 20 ? 3 : 5
@@ -106,25 +109,44 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const point = (event: PointerEvent<HTMLDivElement>): void => {
     const rect = event.currentTarget.getBoundingClientRect()
     if (rect.width <= 0) return
-    const at = Math.max(0, Math.min(count - 1, Math.floor((event.clientX - rect.left) / rect.width * count)))
+    const x = (event.clientX - rect.left) / rect.width
+    const at = folded ? Math.max(0, layout.start.findLastIndex(start => start <= x)) : Math.max(0, Math.min(count - 1, Math.floor(x * count)))
     onHover(days[at] ?? null)
   }
   const height = (value: number): string => (Math.max(0, value) / top).toFixed(4)
-  const marks = count <= 7 ? days.map((_, at) => at) : [0, Math.round((count - 1) / 2), count - 1]
+  // A folded chart marks where it starts, the first day after each quiet stretch and where it ends, leaving out a mark
+  // that would crowd the one before it.
+  const foldedMarks = (): number[] => {
+    const wanted = [0, ...layout.stretches.flatMap((stretch, place) => stretch.kind === 'quiet' && layout.stretches[place + 1]?.kind === 'day' ? [stretch.to + 1] : []), count - 1]
+    const centre = (at: number): number => layout.start[at]! + layout.width[at]! / 2
+    return wanted.filter((at, place) => place === 0 || at === count - 1 ? true : centre(at) - centre(wanted[place - 1]!) > 0.14 && centre(count - 1) - centre(at) > 0.14)
+      .filter((at, place, kept) => kept.indexOf(at) === place)
+  }
+  const marks = count <= 7 ? days.map((_, at) => at) : folded ? foldedMarks() : [0, Math.round((count - 1) / 2), count - 1]
   let drawing: ReactNode = null
   if (waiting === undefined && kind === 'bars') {
-    drawing = <div className="usage-chart__columns" data-split={(plan.series.length > 1 && plan.stacked) || undefined}>
-      {days.map((day, at) => {
-        const parts = plan.series.filter(item => (item.values[at] ?? 0) > 0)
-        // A day with nothing keeps a one-pixel mark on the baseline, as the chart always had.
-        const shown = parts.length > 0 ? parts : plan.series.slice(0, 1)
-        const total = labelled ? dayTotal(at) : 0
-        return <span key={day} className="usage-chart__column" data-on={day === selected || undefined} style={{ '--usage-i': at } as Style}>
-          {shown.map((item, place) => <i key={item.key} className="usage-chart__bar" data-tone={item.tone} data-top={place === shown.length - 1 || undefined}
-            style={{ '--usage-h': height(item.values[at] ?? 0) } as Style} />)}
-          {total > 0 ? <b className="usage-chart__label" aria-hidden="true">{scale(total)}</b> : null}
+    const column = (day: string, at: number, quiet = false): ReactNode => {
+      const parts = plan.series.filter(item => (item.values[at] ?? 0) > 0)
+      // A day with nothing keeps a one-pixel mark on the baseline, as the chart always had; a quiet stretch draws none.
+      const shown = parts.length > 0 ? parts : quiet ? [] : plan.series.slice(0, 1)
+      const total = labelled ? dayTotal(at) : 0
+      return <span key={day} className="usage-chart__column" data-on={day === selected || undefined} style={{ '--usage-i': at } as Style}>
+        {shown.map((item, place) => <i key={item.key} className="usage-chart__bar" data-tone={item.tone} data-top={place === shown.length - 1 || undefined}
+          style={{ '--usage-h': height(item.values[at] ?? 0) } as Style} />)}
+        {total > 0 ? <b className="usage-chart__label" aria-hidden="true">{scale(total)}</b> : null}
+      </span>
+    }
+    drawing = <div className="usage-chart__columns" data-split={(plan.series.length > 1 && plan.stacked) || undefined} data-folded={folded || undefined}>
+      {folded ? layout.stretches.map(stretch => {
+        if (stretch.kind === 'day') return column(days[stretch.at]!, stretch.at)
+        const length = stretch.to - stretch.from + 1
+        return <span key={`quiet-${days[stretch.from]!}`} className="usage-chart__quiet">
+          {days.slice(stretch.from, stretch.to + 1).map((day, offset) => column(day, stretch.from + offset, true))}
+          <span className="usage-chart__quiet-words" aria-hidden="true">{metric === 'prompts'
+            ? plural(length, { one: 'No prompts for # day', other: 'No prompts for # days' })
+            : plural(length, { one: 'No tokens for # day', other: 'No tokens for # days' })}</span>
         </span>
-      })}
+      }) : days.map((day, at) => column(day, at))}
     </div>
   } else if (waiting === undefined) {
     const y = (value: number): string => (100 - Math.max(0, value) / top * 100).toFixed(3)
@@ -154,7 +176,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
       const day = days[at]!
       const text = day === today ? t`Today` : count <= 7 ? `${WEEKDAYS_SHORT[weekdayOf(day)]} ${Number(day.slice(8, 10))}` : shortDay(day)
       const edge = count > 7 && (place === 0 || place === marks.length - 1)
-      const left = edge ? (place === 0 ? 0 : 100) : (at + 0.5) / count * 100
+      const left = edge ? (place === 0 ? 0 : 100) : folded ? (layout.start[at]! + layout.width[at]! / 2) * 100 : (at + 0.5) / count * 100
       return <span key={day} className={count > 7 && place === 0 ? 'usage-chart__tick--start' : count > 7 && place === marks.length - 1 ? 'usage-chart__tick--end' : undefined} style={{ left: `${left.toFixed(2)}%` }}>{text}</span>
     })}</div>
   </div>
