@@ -51,7 +51,7 @@ async function nativeViews(launched: LaunchedSotto): Promise<{ url: string; boun
 
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined)))
+    await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined)))
   })
 }
 
