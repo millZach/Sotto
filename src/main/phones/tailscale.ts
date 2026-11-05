@@ -59,18 +59,35 @@ export const runTailscale: TailscaleRun = (executable, args, options) => new Pro
 export type TailscaleStatus =
   | { readonly state: 'missing' }
   | { readonly state: 'not-running' }
-  | { readonly state: 'running'; readonly dnsName: string; readonly hostName: string }
+  | { readonly state: 'running'; readonly dnsName: string; readonly hostName: string; readonly others?: readonly TailscalePeer[] }
+/** Another person's computer this node can see: its own name and its MagicDNS name, which says which tailnet it is on. */
+export interface TailscalePeer { readonly name: string; readonly dnsName: string }
+const PEERS_MAX = 50
 
 /** Reads `tailscale status --json`: running only when the backend says so and the node has a MagicDNS name. */
 export function parseTailscaleStatus(output: string): TailscaleStatus {
   let value: unknown
   try { value = JSON.parse(output) } catch { return { state: 'not-running' } }
   if (typeof value !== 'object' || value === null) return { state: 'not-running' }
-  const status = value as { BackendState?: unknown; Self?: { DNSName?: unknown; HostName?: unknown } }
+  const status = value as { BackendState?: unknown; Self?: { DNSName?: unknown; HostName?: unknown; UserID?: unknown }; Peer?: unknown }
   const dnsName = typeof status.Self?.DNSName === 'string' ? status.Self.DNSName.replace(/\.$/u, '') : ''
   const hostName = typeof status.Self?.HostName === 'string' ? status.Self.HostName : ''
   if (status.BackendState !== 'Running' || !/^[A-Za-z0-9.-]{1,253}$/u.test(dnsName)) return { state: 'not-running' }
-  return { state: 'running', dnsName, hostName: hostName.trim() || dnsName.split('.')[0]! }
+  return { state: 'running', dnsName, hostName: hostName.trim() || dnsName.split('.')[0]!, others: otherPeoplesPeers(status.Peer, status.Self?.UserID) }
+}
+/** The peers another user owns: a teammate's computer, on this tailnet or shared in from theirs. This node's owner's own are left out. */
+function otherPeoplesPeers(peers: unknown, self: unknown): TailscalePeer[] {
+  if (typeof peers !== 'object' || peers === null) return []
+  const others: TailscalePeer[] = []
+  for (const peer of Object.values(peers) as { UserID?: unknown; HostName?: unknown; DNSName?: unknown }[]) {
+    if (others.length >= PEERS_MAX) break
+    if (typeof peer !== 'object' || peer === null || peer.UserID === self || typeof peer.DNSName !== 'string') continue
+    const dnsName = peer.DNSName.replace(/\.$/u, '')
+    if (!/^[A-Za-z0-9.-]{1,253}$/u.test(dnsName)) continue
+    const name = typeof peer.HostName === 'string' && peer.HostName.trim() ? peer.HostName.trim().slice(0, 80) : dnsName.split('.')[0]!
+    others.push({ name, dnsName })
+  }
+  return others
 }
 
 /** The parts of `tailscale serve status --json` phone access reads. Anything else in it is left alone. */

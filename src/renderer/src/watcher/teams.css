@@ -4,38 +4,70 @@
 .watcher-head__tab:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-head__tab[aria-selected='true'] { background: var(--tt-hover-strong); color: var(--tt-text); }
 
-/* Above the owls' canvas, which lies over the room's words, and on a ground of its own so its words clear the scene. */
-.teams-page { position: relative; z-index: 5; flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 8px 16px 24px; scrollbar-gutter: stable both-edges; }
-.teams-page__column { display: grid; gap: 12px; width: min(720px, 100%); margin: 0 auto; padding: 8px 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
-.teams-page__art { margin: 4px 0 0; color: var(--tt-accent-text); font: var(--tt-type-small)/1.3 var(--tt-font-mono); text-align: center; white-space: pre; overflow: hidden; }
-.teams-page__title { margin: 0; color: var(--tt-text); font-size: var(--tt-type-figure); font-weight: 650; text-align: center; }
-.teams-page__sub, .teams-page__fine { margin: 0; text-align: center; }
+/*
+ * The Teams tab lies on the room in Watcher's column, with no ground of its own, as Watcher's conversation does (Zach's pick
+ * B, November 5, 2026). It sits above the owls' canvas, which lies over the room's words. Only a teammate's card keeps a surface.
+ */
+.teams-page { position: relative; z-index: 5; flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 8px max(24px, calc((100% - 760px) / 2)) 28px; }
+/* The scene does not know these words, so a soft glow of the canvas under the column keeps its ink from them, with no edge. */
+.teams-page__column, .teams-desks { border-radius: var(--tt-radius-lg); background: color-mix(in srgb, var(--tt-canvas) 70%, transparent); box-shadow: 0 0 32px 24px color-mix(in srgb, var(--tt-canvas) 70%, transparent); }
+.teams-page__column { display: grid; gap: 26px; min-width: 0; }
+.teams-page__intro { display: grid; gap: 4px; }
+.teams-page__title { margin: 6px 0 0; color: var(--tt-text); font-size: var(--tt-type-heading); font-weight: 650; }
+.teams-page__sub { margin: 0; color: var(--tt-text-2); }
+.teams-page__fine { margin: 0; }
 .teams-page__error { margin: 0; }
 .teams-muted { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.teams-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.teams-card { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
+.teams-section { display: grid; gap: 10px; min-width: 0; }
+.teams-section p { margin: 0; }
+.teams-section__title { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; }
+
+.teams-card { display: grid; gap: 12px; min-width: 0; padding: 14px 16px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .teams-card p { margin: 0; }
-.teams-card__head { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.teams-card__avatar { display: grid; flex: none; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--tt-hover-strong); color: var(--tt-text); font-weight: 600; }
-.teams-card__who { display: grid; flex: 1 1 0; min-width: 0; color: var(--tt-text); overflow-wrap: anywhere; }
-.teams-card__title { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.teams-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; min-width: 0; }
+.teams-card__avatar { display: grid; flex: none; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-full); background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-weight: 600; }
+.teams-card__who { display: grid; flex: 1 1 160px; min-width: 0; color: var(--tt-text); overflow-wrap: anywhere; }
 .teams-card__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .teams-card__confirm > p { flex: 1 1 100%; }
+
+/* Whether a link works both ways (ADR-0193). A one-way link is the only thing on the tab with a colour of its own. */
+.teams-reach { display: grid; gap: 8px; color: var(--tt-text-2); }
+.teams-reach[data-reach='one-way'], .teams-reach[data-reach='none'] { padding: 10px 12px; border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-warning-on-tint); }
+.teams-reach strong { font-weight: 600; }
+.teams-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: var(--tt-radius-full); background: var(--tt-success); vertical-align: 1px; }
+.teams-problem { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-warning-on-tint); }
+.teams-problem p { margin: 0; }
 
 .teams-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .teams-facts dt { color: var(--tt-text-muted); }
 .teams-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .teams-facts__row { display: contents; }
+.teams-facts--latest { gap: 10px 14px; }
 
 .teams-projects { display: grid; gap: 2px; max-height: 220px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.teams-projects__row { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--tt-text); font-size: var(--tt-type-small); }
+.teams-projects__row { display: flex; align-items: center; gap: 10px; min-height: 30px; color: var(--tt-text); font-size: var(--tt-type-small); }
 .teams-projects__row > :nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
 .teams-projects__row > :last-child { margin-left: auto; flex: none; }
 
+.teams-more > summary, .teams-how > summary, .teams-reads summary { width: fit-content; color: var(--tt-text-2); font-size: var(--tt-type-small); cursor: pointer; }
+.teams-more[open] > summary { margin-bottom: 8px; }
+
+/* Setup's steps, in the shape of Hosts & phones' checklist. */
+.teams-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }
+.teams-step { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 4px 12px; min-width: 0; }
+.teams-step__mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--tt-radius-full); background: var(--tt-hover-strong); color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 700; }
+.teams-step[data-state='done'] .teams-step__mark { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.teams-step[data-state='needs'] .teams-step__mark { background: var(--tt-warning-surface); color: var(--tt-warning-on-tint); }
+.teams-step__title { align-self: center; margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.teams-step__body { display: grid; grid-column: 2; gap: 8px; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.teams-step__body p { margin: 0; overflow-wrap: anywhere; }
+.teams-step__body ol { display: grid; gap: 2px; margin: 0; padding-left: 18px; }
+.teams-how[open] > summary { margin-bottom: 6px; }
 .teams-field { color: var(--tt-text-2); font-size: var(--tt-type-small); }
-.teams-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .teams-code { display: grid; gap: 8px; }
-.teams-code__text { padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); color: var(--tt-text); font: 600 var(--tt-type-small)/1.4 var(--tt-font-mono); overflow-wrap: anywhere; user-select: text; }
+.teams-code__text { padding: 10px 12px; border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); color: var(--tt-text); font: 600 var(--tt-type-small)/1.4 var(--tt-font-mono); overflow-wrap: anywhere; user-select: text; }
 
 .teammate-message { display: grid; gap: 4px; margin: 8px 0 12px; padding: 10px 14px; border-left: 2px solid var(--tt-accent); border-radius: 0 var(--tt-radius-lg) var(--tt-radius-lg) 0; background: var(--tt-surface); }
 .teammate-message[data-state='asking'], .teammate-message[data-state='failed'], .teammate-message[data-state='refused'] { border-left-color: var(--tt-hairline); }
@@ -46,32 +78,38 @@
 .teammate-message__said { color: var(--tt-text-muted); }
 .teammate-message__fine { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
-/* Two desks (ADR-0189): wider than the page's column, on the same ground, so their words clear the scene. */
-.teams-desks { display: grid; gap: 12px; width: min(1140px, 100%); margin: 0 auto; padding: 8px 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
+/* Two desks (ADR-0189), in Watcher's column on the room, with no ground and no lines (Zach's pick, November 5, 2026). */
+.teams-desks { display: grid; gap: 18px; min-width: 0; }
 .teams-desks p { margin: 0; }
-.teams-desks__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.teams-desks__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .teams-desks__title { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 650; }
 .teams-desks__grow { flex: 1 1 0; }
-.teams-desks__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
-@media (max-width: 700px) { .teams-desks__columns { grid-template-columns: minmax(0, 1fr); } }
+.teams-desks__when { min-width: 0; }
+.teams-desks__fine { text-align: center; }
+.teams-desks__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+@media (max-width: 760px) { .teams-desks__columns { grid-template-columns: minmax(0, 1fr); } }
 
-.teams-order { display: grid; gap: 8px; min-width: 0; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
-.teams-order__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--tt-text); font-size: var(--tt-type-small); }
-.teams-order__list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.teams-order__list li { min-width: 0; padding: 4px 9px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); color: var(--tt-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.teams-order { display: grid; gap: 8px; min-width: 0; }
+.teams-order__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.teams-order__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.teams-order__list li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; padding: 5px 8px; border-radius: var(--tt-radius-row); color: var(--tt-text); font-size: var(--tt-type-small); }
+.teams-order__list li:nth-child(odd) { background: var(--tt-table-stripe); }
 .teams-order__list b { color: var(--tt-accent-text); }
+.teams-order__what { min-width: 0; overflow-wrap: anywhere; }
+.teams-order__checks { color: var(--tt-text-muted); white-space: nowrap; }
+.teams-order__list li[data-checks='passed'] .teams-order__checks { color: var(--tt-accent-text); }
+.teams-order__list li[data-checks='failed'] .teams-order__checks { color: var(--tt-error-text); }
 
-.teams-desk { display: grid; gap: 4px; min-width: 0; padding: 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
+.teams-desk { display: grid; gap: 2px; min-width: 0; }
 .teams-desk__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 4px; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
-.teams-desk__project { margin: 8px 0 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; overflow-wrap: anywhere; }
-.teams-desk__thread { display: grid; gap: 1px; min-width: 0; padding: 7px 0; border-top: 1px solid var(--tt-hairline); }
+.teams-desk__project { margin: 10px 0 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; overflow-wrap: anywhere; }
+.teams-desk__thread { display: grid; gap: 1px; min-width: 0; padding: 6px 0; }
 .teams-desk__title { color: var(--tt-text); font-size: var(--tt-type-body); overflow-wrap: anywhere; user-select: text; }
-.teams-desk__stands i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--tt-text-muted); vertical-align: 1px; }
+.teams-desk__stands i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: var(--tt-radius-full); background: var(--tt-text-muted); vertical-align: 1px; }
 .teams-desk__stands[data-stands='working'] i { background: var(--tt-accent); }
 .teams-desk__stands[data-stands='waiting-on-its-owner'] i { background: var(--tt-warning); }
 .teams-desk__stands[data-stands='failed'] i { background: var(--tt-error); }
-.teams-desk__pull { color: var(--tt-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; user-select: text; }
-.teams-desk__empty { padding: 16px 6px; text-align: center; }
+.teams-desk__pull { color: var(--tt-text-2); font-size: var(--tt-type-small); overflow-wrap: anywhere; user-select: text; }
+.teams-desk__empty { padding: 12px 0; }
 .teams-desk__error { margin: 0; }
-.teams-reads summary { width: fit-content; }
 .teams-reads__list { display: grid; gap: 2px; max-height: 200px; margin: 6px 0 0; padding: 0; overflow-y: auto; list-style: none; }

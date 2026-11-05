@@ -29,6 +29,15 @@ export const TEAM_DESK_TEXT_MAX = 160
 export const TEAM_DESK_BYTES_MAX = 32 * 1024
 export const TEAM_DESK_READS_PER_BURST = 10
 export const TEAM_DESK_READS_KEPT = 100
+/** While the two desks are on screen, a teammate's desk is read again this often, and on opening when the last read is older (ADR-0193). */
+export const TEAM_DESK_REFRESH_MS = 2 * MINUTE
+/** Reads of this computer's desk by one teammate closer together than this show as one line under Latest (ADR-0193). */
+export const TEAM_DESK_READS_FOLD_MS = 5 * MINUTE
+/** A link's check (ADR-0193): how many one link may ask in a burst, and how long the answering computer tries to reach back. */
+export const TEAM_CHECKS_PER_BURST = 10
+export const TEAM_CHECK_BACK_MS = 8_000
+/** Tailscale's page for sharing a computer, opened in the browser only on a press. */
+export const TEAM_SHARE_URL = 'https://login.tailscale.com/admin/machines'
 
 export const TEAM_ASKS = ['merge-priority', 'working-on'] as const
 export const teamAskSchema = z.enum(TEAM_ASKS)
@@ -64,7 +73,7 @@ export function parseTeamCode(text: string): TeamCode | undefined {
 }
 
 /**
- * The closed list (ADR-0186, decision 5; ADR-0189). A strict union of four commands: anything else on the wire fails here, with
+ * The closed list (ADR-0186, decision 5; ADR-0189; ADR-0193). A strict union of five commands: anything else on the wire fails here, with
  * the sender's token or without it, before anything reads it further.
  */
 export const teamWireSchema = z.discriminatedUnion('command', [
@@ -72,9 +81,11 @@ export const teamWireSchema = z.discriminatedUnion('command', [
   z.object({ command: z.literal('ask'), ask: teamAskSchema, words: z.string().max(TEAM_ASK_CHARACTERS_MAX) }).strict(),
   z.object({ command: z.literal('link-again') }).strict(),
   z.object({ command: z.literal('read-desk') }).strict(),
+  /** Whether the two computers reach each other. With `back`, the answering computer tries to reach the asker before it answers. */
+  z.object({ command: z.literal('check'), back: z.boolean() }).strict(),
 ])
 export type TeamWire = z.infer<typeof teamWireSchema>
-export const TEAM_WIRE_COMMANDS: readonly TeamWire['command'][] = ['redeem-code', 'ask', 'link-again', 'read-desk']
+export const TEAM_WIRE_COMMANDS: readonly TeamWire['command'][] = ['redeem-code', 'ask', 'link-again', 'read-desk', 'check']
 
 export const teamRefusalSchema = z.enum(['not-on-the-list', 'not-linked', 'expired', 'code-rejected', 'daily-cap', 'too-many', 'busy'])
 export type TeamRefusal = z.infer<typeof teamRefusalSchema>
@@ -83,6 +94,8 @@ export const teamRedeemAnswerSchema = z.union([z.object({ status: z.literal('lin
 export const teamAskAnswerSchema = z.union([z.object({ status: z.literal('answered'), words: z.string().min(1).max(TEAM_ANSWER_CHARACTERS_MAX), plain: z.literal(true).optional() }).strict(), refused])
 export const teamAgainAnswerSchema = z.union([z.object({ status: z.literal('waiting') }).strict(), z.object({ status: z.literal('renewed'), expiresAt: z.iso.datetime() }).strict(), refused])
 export type TeamAnswer = z.infer<typeof teamAskAnswerSchema>
+/** A check's answer holds nothing but whether the answering computer reached the asker's, when it was asked to try. */
+export const teamCheckAnswerSchema = z.union([z.object({ status: z.literal('checked'), reachedYou: z.boolean().optional() }).strict(), refused])
 
 export const TEAM_THREAD_STANDS = ['working', 'waiting-on-its-owner', 'failed', 'idle'] as const
 const teamChecksSchema = z.enum(['passed', 'pending', 'failed', 'unknown'])
@@ -173,6 +186,20 @@ export interface TeamLinkView {
   readonly refusedToday: number
   readonly wantedAgain: boolean
   readonly theyWantAgain: boolean
+  /** The last check (ADR-0193), or null before the first. */
+  readonly reach: TeamReach | null
+  /** The teammate's computer is on another tailnet, so each must share their computer with the other. */
+  readonly otherTailnet: boolean
+}
+/** `fromThem` is null when this computer could not ask, so it does not know. */
+export interface TeamReach { readonly at: string; readonly toThem: boolean; readonly fromThem: boolean | null }
+/** What setup's steps show (ADR-0193): this computer's own Tailscale, read on the Teams tab and never sent anywhere. */
+export interface TeamsSetup {
+  readonly tailscale: 'running' | 'not-running' | 'missing'
+  /** This computer's name on the tailnet. */
+  readonly machine: string | null
+  /** Other people's computers this computer's Tailscale can see, by name, and whether each is shared in from another tailnet. */
+  readonly others: readonly { readonly name: string; readonly otherTailnet: boolean }[]
 }
 export type TeamsProblem = 'tailscale-off' | 'serve-off' | 'serve-denied' | 'serve-failed' | 'ports-taken' | 'credentials-locked'
 export interface TeamsState {
@@ -189,6 +216,8 @@ export interface TeamsState {
   readonly desks: Readonly<Record<string, { readonly desk: TeamDesk; readonly at: string }>>
   /** Each read of this computer's desk that it answered, oldest first (ADR-0189, decision 5). */
   readonly deskReads: readonly TeamDeskRead[]
+  /** Read when the Teams tab asks, so setup's steps can say how each stands; null until then. */
+  readonly setup: TeamsSetup | null
 }
 /** A teammate read this computer's desk. It holds no words. */
 export const teamDeskReadSchema = z.object({ id: z.string().min(1).max(64), linkId: z.string().min(1).max(64), teammate: z.string().max(TEAM_NAME_MAX * 2), at: z.iso.datetime() }).strict()
@@ -203,6 +232,9 @@ export const teamsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('leave-out'), project: z.string().min(1).max(200), leftOut: z.boolean() }).strict(),
   z.object({ type: z.literal('open-serve-setting') }).strict(),
   z.object({ type: z.literal('read-desk'), linkId: z.string().min(1).max(64) }).strict(),
+  z.object({ type: z.literal('check-link'), linkId: z.string().min(1).max(64) }).strict(),
+  z.object({ type: z.literal('read-setup') }).strict(),
+  z.object({ type: z.literal('open-share-page') }).strict(),
 ])
 export type TeamsCommand = z.infer<typeof teamsCommandSchema>
 export type TeamsCommandResult = { readonly status: 'ok' } | { readonly status: 'refused'; readonly message: string }
@@ -228,3 +260,16 @@ const toolRefusal = z.object({ status: z.literal('refused'), code: z.string(), m
 export const teamAskToolOutputSchema = z.union([z.object({ status: z.literal('ok'), askId: z.string(), teammate: z.string(), message: z.string() }).strict(), toolRefusal])
 export const teamReadToolOutputSchema = z.union([z.object({ status: z.literal('ok'), notice: z.string(), messages: z.array(z.object({ teammate: z.string(), direction: z.enum(['we-asked', 'they-asked']), ask: teamAskSchema,
   askWords: z.string(), state: z.enum(['answered', 'refused', 'failed']), words: z.string().optional(), at: z.string() }).strict()), waiting: z.number().int().nonnegative() }).strict(), toolRefusal])
+
+/** Reads of this computer's desk as Latest shows them: one teammate's reads closer together than `foldMs` are one line, newest first (ADR-0193). */
+export interface TeamDeskReadsLine { readonly id: string; readonly teammate: string; readonly first: string; readonly at: string; readonly count: number }
+export function foldTeamDeskReads(reads: readonly TeamDeskRead[], foldMs = TEAM_DESK_READS_FOLD_MS): readonly TeamDeskReadsLine[] {
+  const lines: TeamDeskReadsLine[] = [], open = new Map<string, number>()
+  for (const read of [...reads].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+    const index = open.get(read.linkId), held = index === undefined ? undefined : lines[index]
+    if (held && Date.parse(read.at) - Date.parse(held.at) < foldMs) { lines[index!] = { ...held, at: read.at, count: held.count + 1 }; continue }
+    open.set(read.linkId, lines.length)
+    lines.push({ id: read.id, teammate: read.teammate, first: read.at, at: read.at, count: 1 })
+  }
+  return lines.reverse()
+}

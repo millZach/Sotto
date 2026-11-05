@@ -32,10 +32,10 @@ class Tailnet {
   }
 }
 
-function tailscale(net: Tailnet, dnsName: string, up: () => boolean = () => true): TeamTailscale & { served: Map<number, number>; checks: () => number } {
+function tailscale(net: Tailnet, dnsName: string, up: () => boolean = () => true, others: readonly { name: string; dnsName: string }[] = []): TeamTailscale & { served: Map<number, number>; checks: () => number } {
   const served = new Map<number, number>()
   let checks = 0
-  return { served, checks: () => checks, status: async () => { checks++; return up() ? { state: 'running', dnsName, hostName: dnsName.split('.')[0]! } : { state: 'not-running' } }, serveStatus: async () => ({}),
+  return { served, checks: () => checks, status: async () => { checks++; return up() ? { state: 'running', dnsName, hostName: dnsName.split('.')[0]!, others } : { state: 'not-running' } }, serveStatus: async () => ({}),
     serve: async (port, loopback) => { served.set(port, loopback); net.ports.set(`${dnsName}:${port}`, loopback); return { ok: true } },
     unserve: async port => { served.delete(port); net.ports.delete(`${dnsName}:${port}`); return true } }
 }
@@ -44,12 +44,12 @@ const memoryCredentials = (): TeamCredentials => {
   return { available: () => true, get: slot => values.get(slot) ?? '', set: async (slot, value) => { if (value) values.set(slot, value); else values.delete(slot) } }
 }
 
-async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly beyondCap?: number; readonly keepHistory?: boolean; readonly fetch?: typeof fetch; readonly up?: () => boolean } = {}) {
+async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly beyondCap?: number; readonly keepHistory?: boolean; readonly fetch?: typeof fetch; readonly up?: () => boolean; readonly others?: readonly { name: string; dnsName: string }[] } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
   const write = vi.fn(overrides.write ?? (async () => `${name} says hello`))
   const threads = vi.fn((): readonly TeamThreadFact[] => overrides.threads ?? FACTS)
   const dnsName = overrides.dnsName ?? `${name}.tail1.ts.net`
-  const ts = tailscale(net, dnsName, overrides.up), events: string[] = []
+  const ts = tailscale(net, dnsName, overrides.up, overrides.others), events: string[] = []
   const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads: () => ({ threads: threads(), beyondCap: overrides.beyondCap ?? 0 }), projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: null }], write, anchor: () => 'message-1',
     keepHistory: () => overrides.keepHistory !== false, openExternal: async () => undefined, hostname: () => name, fetch: overrides.fetch ?? net.fetchFor(name), log: event => { events.push(event) }, ...overrides.now ? { now: overrides.now } : {} })
   await service.start()
@@ -60,6 +60,8 @@ type Computer = Awaited<ReturnType<typeof computer>>
 async function linked(net: Tailnet, a: Computer, b: Computer): Promise<void> {
   expect(await a.service.command({ type: 'make-code', name: a.name })).toEqual({ status: 'ok' })
   expect(await b.service.command({ type: 'link', code: a.service.get().code!.text, name: b.name })).toEqual({ status: 'ok' })
+  // The check right after linking (ADR-0193) has gone and come back before anything counts what is sent.
+  await vi.waitFor(() => { expect(b.service.get().links.find(link => link.name === a.name)?.reach).not.toBeNull() }, { timeout: 5_000 })
   net.sent.length = 0
 }
 const settled = async (service: TeamService, id: string) => vi.waitFor(() => {
@@ -229,7 +231,7 @@ describe('linking', () => {
 })
 
 describe('the closed list', () => {
-  it('holds exactly four commands', () => { expect([...TEAM_WIRE_COMMANDS].sort()).toEqual(['ask', 'link-again', 'read-desk', 'redeem-code']) })
+  it('holds exactly five commands', () => { expect([...TEAM_WIRE_COMMANDS].sort()).toEqual(['ask', 'check', 'link-again', 'read-desk', 'redeem-code']) })
 
   it('refuses every command outside it, with a good token, and reaches nothing', async () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
@@ -267,6 +269,76 @@ describe('the closed list', () => {
     expect((await raw(zach, ok)).json).toEqual({ status: 'refused', reason: 'not-linked' })
     expect((await raw(zach, ok, { token: 'y'.repeat(43) })).json).toEqual({ status: 'refused', reason: 'not-linked' })
     expect(zach.write).not.toHaveBeenCalled()
+  })
+})
+
+describe('checking both ways (ADR-0193)', () => {
+  const reachOf = (who: Computer, name: string) => who.service.get().links.find(link => link.name === name)?.reach ?? null
+
+  it('checks both ways right after linking, carrying nothing and reading nothing', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await zach.service.command({ type: 'make-code', name: 'zach' })
+    expect(await drake.service.command({ type: 'link', code: zach.service.get().code!.text, name: 'drake' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => { expect(reachOf(drake, 'zach')).toMatchObject({ toThem: true, fromThem: true }) })
+    expect(reachOf(zach, 'drake')).toMatchObject({ toThem: true, fromThem: true })
+    expect(net.sent.map(item => [item.from, JSON.parse(item.body).command, JSON.parse(item.body).back])).toEqual([['drake', 'redeem-code', undefined], ['drake', 'check', true], ['zach', 'check', false]])
+    expect(zach.threads).not.toHaveBeenCalled(); expect(drake.threads).not.toHaveBeenCalled()
+    expect(zach.write).not.toHaveBeenCalled(); expect(drake.write).not.toHaveBeenCalled()
+    expect(zach.service.get().messages).toEqual([]); expect(drake.service.get().messages).toEqual([])
+  })
+
+  it('says when the teammate\'s computer cannot reach this one, and that they are on another tailnet', async () => {
+    // Drake's computer is shared into Zach's tailnet one way only: Zach reaches Drake, and Drake reaches nothing of Zach's.
+    let shared = false
+    const net = new Tailnet()
+    const drakeFetch = net.fetchFor('drake'), oneWay = (async (input: URL, init: RequestInit) => { if (!shared) throw new Error('unreachable'); return await drakeFetch(input, init) }) as typeof fetch
+    const drake = await computer(net, 'drake', { dnsName: 'drake.tail2.ts.net', fetch: oneWay }), zach = await computer(net, 'zach')
+    await drake.service.command({ type: 'make-code', name: 'drake' })
+    expect(await zach.service.command({ type: 'link', code: drake.service.get().code!.text, name: 'zach' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => { expect(reachOf(zach, 'drake')).toMatchObject({ toThem: true, fromThem: false }) })
+    expect(reachOf(drake, 'zach')).toMatchObject({ toThem: false, fromThem: true })
+    expect(zach.service.get().links[0]).toMatchObject({ otherTailnet: true })
+    // Zach shares this computer back, and one press says so on both.
+    shared = true
+    expect(await zach.service.command({ type: 'check-link', linkId: zach.service.get().links[0]!.id })).toEqual({ status: 'ok' })
+    expect(reachOf(zach, 'drake')).toMatchObject({ toThem: true, fromThem: true })
+    expect(reachOf(drake, 'zach')).toMatchObject({ toThem: true, fromThem: true })
+  })
+
+  it('says when this computer cannot reach the teammate\'s, and keeps nothing to send', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    await drake.service.close()
+    expect(await zach.service.command({ type: 'check-link', linkId: zach.service.get().links[0]!.id })).toEqual({ status: 'ok' })
+    expect(reachOf(zach, 'drake')).toMatchObject({ toThem: false, fromThem: null })
+    expect(net.sent).toHaveLength(1)
+  })
+
+  it('turns down more than ten checks from one link in ten minutes', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    const token = await tokenFor(drake)
+    // The check right after linking was one.
+    for (let at = 1; at < 10; at++) expect((await raw(zach, { command: 'check', back: false }, { token })).json).toEqual({ status: 'checked' })
+    expect((await raw(zach, { command: 'check', back: false }, { token })).json).toEqual({ status: 'refused', reason: 'too-many' })
+    expect((await raw(zach, { command: 'check', back: false })).json).toEqual({ status: 'refused', reason: 'not-linked' })
+  })
+
+  it('says a teammate\'s older Sotto cannot check, and that asks still work', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ status: 'refused', reason: 'not-on-the-list' }), { status: 400 }))
+    const result = await zach.service.command({ type: 'check-link', linkId: zach.service.get().links[0]!.id })
+    spy.mockRestore()
+    expect(result).toMatchObject({ status: 'refused', message: expect.stringContaining('too old') })
+  })
+
+  it('reads setup from this computer\'s own Tailscale and sends nothing', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach', { others: [{ name: 'Drake\u2019s MacBook Pro', dnsName: 'drakes-macbook-pro.tail2.ts.net' }, { name: 'build-box', dnsName: 'build-box.tail1.ts.net' }] })
+    expect(zach.service.get().setup).toBeNull()
+    expect(await zach.service.command({ type: 'read-setup' })).toEqual({ status: 'ok' })
+    expect(zach.service.get().setup).toEqual({ tailscale: 'running', machine: 'zach', others: [{ name: 'Drake\u2019s MacBook Pro', otherTailnet: true }, { name: 'build-box', otherTailnet: false }] })
+    expect(net.sent).toEqual([])
   })
 })
 

@@ -60,11 +60,13 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Teammate.** Another owner the user has a **team link** with. Their computer, their accounts, their Sotto. Not the **Teammate** row of **background work**, which is Claude Code's own agent inside one thread; in code that one stays `teammate` in `BackgroundWorkType` and this one is `team`.
 
-**Team link.** What joins two owners' desktops directly over a tailnet, made from one code and lasting 30 days until both owners press **Link again** (ADR-0186). It has its own listener and records and a closed list of four commands: `redeem-code`, `ask`, `link-again` and `read-desk`. It grants nothing. Not a **host link**, which joins one owner's machines, and not **pairing**, whose token opens the host service.
+**Team link.** What joins two owners' desktops directly over a tailnet, made from one code and lasting 30 days until both owners press **Link again** (ADR-0186). It has its own listener and records and a closed list of five commands: `redeem-code`, `ask`, `link-again`, `read-desk` and `check`. It grants nothing. A **link check** says whether it works both ways (ADR-0193). Not a **host link**, which joins one owner's machines, and not **pairing**, whose token opens the host service.
 
-**Two desks.** The view a **team link**'s card opens on the **Teams** tab: your threads and open pull requests beside your teammate's, with the **merge order** across the top (ADR-0189). It has no composer, and asks still go through Watcher.
+**Two desks.** The view a **team link**'s card opens on the **Teams** tab: your threads and open pull requests beside your teammate's, with the **merge order** across the top (ADR-0189). It has no composer, and asks still go through Watcher. While it is on screen it reads the teammate's **team desk** every 2 minutes, and it stays open when the room shows Watcher and comes back (ADR-0193).
 
-**Team desk.** What one press of **Get Drake's desk** reads from a **teammate**'s computer: their **team summary**'s facts, plus how each pull request's checks stand, built with no model. It stays in memory, reaches no Watcher and is not a **team ask**. The answering owner's Teams tab lists each read.
+**Link check.** One `check` over a **team link**, after linking or on **Check again**: each computer tries to reach the other, carrying nothing, and the link's card says **Works both ways** or which way failed and what to share in Tailscale (ADR-0193). Not a heartbeat: it runs only then.
+
+**Team desk.** What one read of **two desks** brings from a **teammate**'s computer: their **team summary**'s facts, plus how each pull request's checks stand, built with no model. It stays in memory, reaches no Watcher and is not a **team ask**. The answering owner's Teams tab lists each read.
 
 **Merge order.** The **merge priority** Sotto works out on the **two desks** from both desks' pull requests: checks passed first, oldest pass first, then checks running, checks not read, checks failed and drafts. It is advice, and it merges nothing. Not the **merge queue**, which is one Watcher's own reading of its threads.
 

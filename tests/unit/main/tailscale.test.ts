@@ -8,7 +8,19 @@ const missing = Object.assign(new Error('spawn tailscale ENOENT'), { code: 'ENOE
 
 describe('tailscale status', () => {
   it('reads a running node, dropping the trailing dot of its MagicDNS name', () => {
-    expect(parseTailscaleStatus(running)).toEqual({ state: 'running', dnsName: 'laptop-russh2j5.tail5728ca.ts.net', hostName: 'Laptop-RUSSH2J5' })
+    expect(parseTailscaleStatus(running)).toEqual({ state: 'running', dnsName: 'laptop-russh2j5.tail5728ca.ts.net', hostName: 'Laptop-RUSSH2J5', others: [] })
+  })
+  it('lists other people\'s computers, on this tailnet or shared in, and none of the owner\'s own (ADR-0193)', () => {
+    const status = JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'forge.tail5728ca.ts.net.', HostName: 'forge', UserID: 1 }, Peer: {
+      a: { UserID: 1, HostName: 'LAPTOP-RUSSH2J5', DNSName: 'laptop-russh2j5.tail5728ca.ts.net.' },
+      b: { UserID: 2, HostName: 'Drake\u2019s MacBook Pro', DNSName: 'drakes-macbook-pro.tail0625f9.ts.net.' },
+      c: { UserID: 3, HostName: '', DNSName: 'build-box.tail5728ca.ts.net.' },
+      d: { UserID: 4, HostName: 'odd', DNSName: 'not a/name.' },
+    } })
+    expect(parseTailscaleStatus(status)).toMatchObject({ state: 'running', others: [
+      { name: 'Drake\u2019s MacBook Pro', dnsName: 'drakes-macbook-pro.tail0625f9.ts.net' },
+      { name: 'build-box', dnsName: 'build-box.tail5728ca.ts.net' },
+    ] })
   })
   it('counts a stopped, signed-out or unreadable node as not running', () => {
     expect(parseTailscaleStatus(JSON.stringify({ BackendState: 'NeedsLogin', Self: { DNSName: '' } }))).toEqual({ state: 'not-running' })

@@ -19,6 +19,8 @@ const fixtureSchema = z.object({
    * refused to an account that is not Tailscale's operator, as Linux refuses it.
    */
   serve: z.enum(['free', 'taken', 'both-taken', 'not-enabled', 'denied']).default('free'),
+  /** Other people's computers Tailscale can see (ADR-0193). */
+  others: z.array(z.object({ name: z.string(), dnsName: z.string() }).strict()).default([]),
 }).strict()
 
 export function e2eTailscale(profile: string): PhoneAccessTailscale {
@@ -40,7 +42,7 @@ export function e2eTailscale(profile: string): PhoneAccessTailscale {
     }
   }
   return {
-    status: async (): Promise<TailscaleStatus> => { const fixture = read(); return fixture.state === 'running' ? { state: 'running', dnsName: fixture.dnsName, hostName: fixture.hostName } : { state: fixture.state } },
+    status: async (): Promise<TailscaleStatus> => { const fixture = read(); return fixture.state === 'running' ? { state: 'running', dnsName: fixture.dnsName, hostName: fixture.hostName, others: fixture.others } : { state: fixture.state } },
     serveStatus: async () => config(),
     serve: async (port, loopbackPort): Promise<ServeResult> => {
       const serve = read().serve

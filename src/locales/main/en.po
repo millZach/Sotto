@@ -187,6 +187,10 @@ msgid "{name} has removed this link, so nothing was read. Make a new code to lin
 msgstr "{name} has removed this link, so nothing was read. Make a new code to link again."
 
 #: src/main/teams/teams.ts
+msgid "{name} has removed this link. Make a new code to link again."
+msgstr "{name} has removed this link. Make a new code to link again."
+
+#: src/main/teams/teams.ts
 msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
 msgstr "{name} has removed this link. Make a new code to link again. Nothing changed here."
 
@@ -223,12 +227,20 @@ msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again w
 msgstr "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
 
 #: src/main/teams/teams.ts
+msgid "{name}'s computer has answered a lot of checks just now. Try again in a few minutes."
+msgstr "{name}'s computer has answered a lot of checks just now. Try again in a few minutes."
+
+#: src/main/teams/teams.ts
 msgid "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 msgstr "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name}'s host did not stop, so Sotto left {from} running."
 msgstr "{name}'s host did not stop, so Sotto left {from} running."
+
+#: src/main/teams/teams.ts
+msgid "{name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work."
+msgstr "{name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work."
 
 #: src/main/hosts/hostBootStart.ts
 msgid "{name}’s systemd would not take the unit, so Sotto took it away again. Nothing was changed, and the host keeps running as before. Check systemd for {name}’s account, then try again."
@@ -2947,6 +2959,10 @@ msgstr "This is the same host as {host}, which is already saved. Nothing was sav
 #: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
 msgstr "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+
+#: src/main/teams/teams.ts
+msgid "This link has run out, so nothing was checked. Both of you can press Link again to keep it."
+msgstr "This link has run out, so nothing was checked. Both of you can press Link again to keep it."
 
 #: src/main/teams/teams.ts
 msgid "This link has run out, so nothing was read. Both of you can press Link again to keep it."

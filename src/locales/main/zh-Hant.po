@@ -187,6 +187,10 @@ msgid "{name} has removed this link, so nothing was read. Make a new code to lin
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "{name} has removed this link. Make a new code to link again."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
 msgstr ""
 
@@ -223,11 +227,19 @@ msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again w
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "{name}'s computer has answered a lot of checks just now. Try again in a few minutes."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name}'s host did not stop, so Sotto left {from} running."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "{name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work."
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
@@ -2945,6 +2957,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "This link has run out, so nothing was checked. Both of you can press Link again to keep it."
 msgstr ""
 
 #: src/main/teams/teams.ts
