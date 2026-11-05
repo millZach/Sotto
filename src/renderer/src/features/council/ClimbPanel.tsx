@@ -1,10 +1,11 @@
+import { AskedByLine } from './AskedByLine'
 import React, { useEffect, useId, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { useOptionalApp } from '../../state/AppContext'
 import type { CouncilPanel } from './CouncilSeats'
 import { t as translate } from '@lingui/core/macro'
 import type { CouncilBridge } from '../../../../shared/council'
-import { climbPlannedTurns, climbSpecSchema, supportsClimbJudging, type ClimbCriterion, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec } from '../../../../shared/councilClimb'
+import { climbPlannedTurns, climbSpecSchema, climbStartingCriterion, supportsClimbJudging, type ClimbCriterion, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec } from '../../../../shared/councilClimb'
 import type { CouncilEvidenceSource } from '../../../../shared/councilEvidence'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { councilAskable } from './councilDraft'
@@ -15,8 +16,7 @@ type FormDraft = { spec: ClimbSpec; context: string; preview?: ClimbResult['prev
 const drafts = new Map<string, FormDraft>()
 const attemptSteps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, null]
 const turnSteps = [...Array.from({ length: 20 }, (_, index) => (index + 1) * 5), null]
-const criterion = (): ClimbCriterion => ({ id: 'quality', name: translate`Quality`, rubric: translate`0: unusable; 5: useful with substantial gaps; 10: fully meets the goal with specific evidence.`,
-  kind: 'goal', direction: 'higher', min: 0, max: 10, target: 'relative', threshold: 1, tolerance: 0, meaningfulGain: 0.5 })
+const criterion = (): ClimbCriterion => climbStartingCriterion(translate`Quality`, translate`0: unusable; 5: useful with substantial gaps; 10: fully meets the goal with specific evidence.`)
 
 function Help({ label, children }: { label: string; children: ReactNode }): ReactNode {
   const id = useId(), [open, setOpen] = useState(false)
@@ -95,6 +95,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
     <OriginPicker threads={threads} projects={state?.host.projects ?? []} chosen={chosen?.id ?? ''} onChoose={setOrigin} />
     {!current || current.phase === 'approval' ? <>
       <div className="climb-heading"><h3>{current ? t`Chair’s proposal` : t`Set up a Climb`}</h3><span>{t`Before round 0`}</span></div>
+      {current?.askedBy ? <AskedByLine askedBy={{ provider: current.askedBy.provider, words: current.askedBy.words ?? null }} /> : null}
       <fieldset disabled={!editable || busy} className="climb-fields">
         <section className="climb-card"><h4>{t`Goal`} <Help label={t`About the goal`}>{t`Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged.`}</Help></h4>
           <select aria-label={t`Goal preset`} defaultValue="custom" onChange={event => { if (event.target.value === 'design') update({ goal: t`Improve the clarity, hierarchy and usability of the selected design while preserving its purpose.` }) }}><option value="custom">{t`Custom`}</option><option value="design">{t`Design`}</option></select>
@@ -149,6 +150,7 @@ function ClimbProgress({ record, busy, call }: { record: ClimbRecord; busy: bool
   const roundTurns = (index: number) => record.turns.filter(turn => turn.stage !== 'setup' && turn.round + (turn.stage === 'builder' ? 1 : 0) === index)
   const phases = { setup: t`Preparing proposal`, approval: t`Waiting for approval`, baseline: t`Capturing baseline`, builder: t`Building`, assessment: t`Judging`, paused: t`Held`, done: t`Finished`, stopped: t`Stopped`, settled: t`Settled` }
   return <article className="climb-progress"><div className="climb-heading"><h3>{phases[record.phase]}</h3><span>{t`${record.completedTurns} / ${planned ?? '∞'} turns`}</span></div>
+    {record.askedBy ? <AskedByLine askedBy={{ provider: record.askedBy.provider, words: record.askedBy.words ?? null }} /> : null}
     {record.reason ? <p role="status">{record.reason}</p> : null}
     <ol className="climb-turns">{record.turns.slice(-5).map(turn => <li key={turn.id}><span>{turn.stage === 'builder' ? t`Builder` : turn.stage === 'setup' ? t`Setup chair` : turn.stage === 'chair' ? t`Chair` : t`Judge ${(turn.seat ?? 0) + 1}`}</span><span>{outcome[turn.outcome ?? turn.delivery]}</span></li>)}</ol>
     <div className="climb-actions">{record.phase === 'paused' && record.spec ? <button type="button" disabled={busy} onClick={() => void call({ type: 'resume', climb: record.id })}>{t`Continue Climb`}</button> : null}

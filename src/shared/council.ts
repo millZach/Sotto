@@ -247,7 +247,10 @@ export const councilEstimateSchema = z.union([
   z.object({ unavailable: z.string().max(1_000) }).strict(),
 ])
 export type CouncilEstimate = z.infer<typeof councilEstimateSchema>
-export const councilChangedSchema = z.object({ councils: z.array(z.uuid()).max(COUNCIL_VIEWS_MAX) }).strict()
+/** `open`: the threads whose agent just started a Council or a Climb, whose panes open the Council's tab of their drawer on it. */
+export const councilChangedSchema = z.object({ councils: z.array(z.uuid()).max(COUNCIL_VIEWS_MAX),
+  open: z.array(z.object({ thread: id, mode: z.enum(['ask', 'climb']) }).strict()).max(COUNCIL_VIEWS_MAX).optional() }).strict()
+export type CouncilOpen = NonNullable<z.infer<typeof councilChangedSchema>['open']>[number]
 
 /** Sotto's own counts from the result blocks, never the chair's (decision 5): each with its denominator, or partial. */
 export const councilCountsSchema = z.object({
@@ -361,6 +364,12 @@ export const councilRoundViewSchema = z.object({
 }).strict()
 export type CouncilRoundView = z.infer<typeof councilRoundViewSchema>
 
+/** How much of the user's message a Council an agent asked for keeps and quotes, in characters (ADR-0177, November 5, 2026). */
+export const COUNCIL_ASKED_WORDS_MAX = 600
+/** Who asked a Council an agent started: its thread's provider, and the user's words that asked while they are kept. */
+export const councilAskedByViewSchema = z.object({ provider: providerIdSchema, words: z.string().max(COUNCIL_ASKED_WORDS_MAX).nullable() }).strict()
+export type CouncilAskedByView = z.infer<typeof councilAskedByViewSchema>
+
 export const councilViewSchema = z.object({
   id: z.uuid(),
   mode: z.enum(['standard', 'climb']).optional(),
@@ -370,6 +379,8 @@ export const councilViewSchema = z.object({
   ])).optional(),
   createdAt: z.iso.datetime(),
   origin: z.object({ thread: id, title: z.string().max(512) }).strict(),
+  /** Present when the origin thread's agent asked for it, at the user's request. */
+  askedBy: councilAskedByViewSchema.optional(),
   status: z.enum(['working', 'waiting', 'done', 'stopped', 'settled']),
   /** Why it stopped when Sotto stopped it: its words were lost to a restart with Keep local history off. */
   stoppedBecause: z.enum(['user', 'words-lost', 'snapshot']).optional(),

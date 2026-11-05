@@ -3,7 +3,7 @@ import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNCIL_VIEWS_MAX, councilChangedSchema, councilCommandResultSchema, councilCommandSchema,
-  councilEstimateRequestSchema, councilEstimateSchema, councilViewsSchema, type CouncilCommand, type CouncilCommandResult, type CouncilEstimate, type CouncilView } from '../../shared/council'
+  councilEstimateRequestSchema, councilEstimateSchema, councilViewsSchema, type CouncilCommand, type CouncilOpen, type CouncilCommandResult, type CouncilEstimate, type CouncilView } from '../../shared/council'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against schemas built once rather than on every call. */
@@ -18,7 +18,7 @@ export interface CouncilCalls {
   views(): CouncilView[]
   estimate(originThreadId: string): CouncilEstimate
   command(command: CouncilCommand): Promise<CouncilCommandResult>
-  onChanged(listener: (councils: readonly string[]) => void): () => void
+  onChanged(listener: (councils: readonly string[], open?: readonly CouncilOpen[]) => void): () => void
 }
 
 /**
@@ -69,7 +69,9 @@ export function registerCouncilIpc(ipc: IpcMainAdapter, council: CouncilCalls | 
       rounds: record.rounds.map(round => ({ ...round, judgments: round.judgments.map(judge => ({ ...judge, thread: windowId(judge.thread) })) })) }))
     return climbResultSchema.parse(result)
   })
-  const unsubscribe = council.onChanged(councils => send(COUNCIL_CHANGED, councilChangedSchema.parse({ councils: councils.slice(0, COUNCIL_VIEWS_MAX) })))
+  // A thread's agent that started one names its thread by this computer's window key, so its pane opens the Council's tab.
+  const unsubscribe = council.onChanged((councils, open) => send(COUNCIL_CHANGED, councilChangedSchema.parse({ councils: councils.slice(0, COUNCIL_VIEWS_MAX),
+    ...open?.length ? { open: open.slice(0, COUNCIL_VIEWS_MAX).map(item => ({ thread: windowId(item.thread), mode: item.mode })) } : {} })))
   return () => {
     unsubscribe()
     ipc.removeHandler(COUNCIL_CLIMB)
