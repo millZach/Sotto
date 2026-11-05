@@ -267,6 +267,10 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-reading='document'] [data-kind='add'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] [data-kind='remove'] { color: var(--tt-text-2); }
 .changes-line__text:is([data-shape='heading-1'], [data-shape='heading-2'], [data-shape='heading-3']) { color: var(--tt-text); font-weight: 600; }
+/* A heading keeps its rank: a title reads larger than a section, and a section larger than its paragraphs. */
+.changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-1'] { font-size: var(--tt-type-heading); line-height: 1.4; }
+.changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-2'] { font-size: var(--tt-type-lead); line-height: 1.45; }
+.changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-3'] { font-size: var(--tt-type-reading); line-height: 1.5; }
 .changes-line__text[data-shape='list'] { padding-left: 1.2em; text-indent: -1.2em; }
 .changes-line__text[data-shape='fence'], .changes-line__text[data-shape='table'] { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .diff-md-mark { color: var(--tt-text-muted); font-weight: 400; }
@@ -302,6 +306,9 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
   .changes-diff__rows { --changes-number-pad: 4px; }
   .changes-file__head { min-height: 32px; }
   .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-code { font-size: var(--tt-type-caption); }
+  .changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-1'] { font-size: var(--tt-type-lead); }
+  .changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-2'] { font-size: var(--tt-type-reading); }
+  .changes-diff__rows[data-reading='document'] .changes-line__text[data-shape='heading-3'] { font-size: var(--tt-type-body); }
 }
 
 /* The transcript's box around one change: its counts and Copy, then the same lines as Changes. Nothing scrolls sideways. */
