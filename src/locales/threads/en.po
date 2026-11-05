@@ -5961,8 +5961,6 @@ msgid "Only the first entries of this folder are listed. Keep typing to narrow t
 msgstr "Only the first entries of this folder are listed. Keep typing to narrow them."
 
 #. A sidebar row's menu: open the thread in the focused pane.
-#. Opens the thread.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
 msgstr "Open"
@@ -6014,10 +6012,6 @@ msgstr "Open {title} beside"
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Open {title} on {name}, the thread that continues this one"
 msgstr "Open {title} on {name}, the thread that continues this one"
-
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Open {title} to answer"
-msgstr "Open {title} to answer"
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open {title}, a turn failed in {waitingIn}"
@@ -6210,6 +6204,7 @@ msgstr "Open the thread to finish it, or discard it."
 msgid "Open this thread"
 msgstr "Open this thread"
 
+#. Opens the thread a Needs you entry is reached from, such as a wait in a thread it delegated to.
 #. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx

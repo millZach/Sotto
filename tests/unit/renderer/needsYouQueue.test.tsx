@@ -85,6 +85,28 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('names the press of a delegated wait Open thread, since it only opens the thread it is reached from', () => {
+    owl(true)
+    const state = threadsStateFixture()
+    // Footer links delegated a review, and the delegated thread waits on an approval (ADR-0135, a delegated wait).
+    const ask = state.host.threads.find(thread => thread.id === 'visual-gate')!.requests[0]!
+    state.host.threads.push({ id: 'footer-review', projectId: 'workshop', title: 'Review the footer fix', modelId: 'codex:gpt', providerId: 'codex', status: 'running',
+      delegatedBy: 'footer-links', requests: [{ ...ask, id: 'footer-review-ask' }], messages: [] })
+    const onOpen = vi.fn()
+    render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, true, NOW)}
+      command={vi.fn()} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()}
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
+    const entry = queue().querySelector<HTMLElement>('[data-entry-id="footer-links"]')!
+    expect(within(entry).getByRole('button', { name: /^Open .+, needs your approval in Review the footer fix$/u })).toBeInTheDocument()
+    expect(within(entry).queryByRole('button', { name: /to answer/u })).toBeNull()
+    const press = within(entry).getByRole('button', { name: /^Open [^,]+$/u })
+    expect(press).toHaveTextContent(/^Open thread$/)
+    expect(press).not.toHaveAttribute('aria-haspopup')
+    fireEvent.click(press)
+    expect(onOpen.mock.calls[0]?.[0]).toBe('footer-links')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('leads with what holds an agent, and rests a failed turn under it in muted words', () => {
     owl(true)
     let state = threadsStateFixture()

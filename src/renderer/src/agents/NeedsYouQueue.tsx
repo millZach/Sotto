@@ -157,8 +157,9 @@ function entryName(entry: NeedsYouEntry): string {
  * One waiting thread on one line. An approval or a question holds its agent still, so it says so with the amber ring and
  * keeps Answer in view, which pops its card open over the sidebar; a failed turn blocks nothing, so it reads "Turn failed
  * in" its thread in muted ink, with Dismiss and Show why for the pointer and the keys (Zach's pick C, November 5, 2026).
- * Which wait it is stands in the line's tooltip and the title's spoken name. A wait in a delegated thread opens the thread
- * it is reached from. The ask itself is never drawn here (October 29, 2026).
+ * Which wait it is stands in the line's tooltip and the title's spoken name. A wait in a delegated thread only opens the
+ * thread it is reached from, so its press is Open thread rather than Answer (ADR-0135). The ask itself is never drawn here
+ * (October 29, 2026).
  */
 function NeedsYouEntryView({ entry, state, command, dismissing, popped, panes, onPop, onOpen, onDismiss }: EntryProps): ReactNode {
   const { t } = useLingui()
@@ -196,8 +197,8 @@ function NeedsYouEntryView({ entry, state, command, dismissing, popped, panes, o
         {pops
           ? <Button ref={trigger} variant={press} aria-label={words.name} aria-haspopup="dialog" aria-expanded={popped} aria-controls={popped ? cardId : undefined}
             onClick={() => onPop(!popped)} onKeyDown={event => { if (popped && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>{words.label}</Button>
-          : <Button variant={press} aria-label={blocking ? t`Open ${title} to answer` : t`Open ${title}`} onClick={() => onOpen(entry, false)}>
-            {blocking ? words.label : t({ message: 'Open', comment: 'Opens the thread.' })}</Button>}
+          : <Button variant={press} aria-label={t`Open ${title}`} onClick={() => onOpen(entry, false)}>
+            {t({ message: 'Open thread', comment: 'Opens the thread a Needs you entry is reached from, such as a wait in a thread it delegated to.' })}</Button>}
       </span>
     </div>
     {popped && pops ? <NeedsYouCard id={cardId} entry={entry} state={state} command={command} anchor={() => item.current} trigger={() => trigger.current} placement="below"
