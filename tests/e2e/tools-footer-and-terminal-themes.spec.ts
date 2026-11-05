@@ -86,6 +86,8 @@ test('keeps working-folder actions accessible in the footer while an open diff h
 
     await panel.getByRole('tab', { name: 'Changes' }).click()
     const diff = panel.getByRole('group', { name: 'src/app.ts' })
+    // Files start collapsed (ADR-0027, #271).
+    await panel.getByRole('button', { name: 'Expand all files', exact: true }).click()
     await expect(diff).toContainText('return `Goodbye, ${name}.`')
     const path = panel.locator('.tools-panel__path-text')
     const copy = panel.getByRole('button', { name: 'Copy working folder path' })
