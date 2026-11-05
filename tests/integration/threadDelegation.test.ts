@@ -2,7 +2,7 @@
 // ADR-0081's proof over fake providers: an ordinary thread delegates to a thread it starts, under rules main enforces.
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { lastUserMessageIdOf } from '../../src/shared/agents'
+import { lastUserMessageIdOf, type AgentHostSnapshot } from '../../src/shared/agents'
 import { DELEGATE_MCP_SERVER, type DelegatedView, type DelegationView } from '../../src/shared/delegation'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { delegationFixture, type DelegationRefused as Refused } from '../fixtures/delegationFixture'
@@ -93,6 +93,44 @@ it('offers sotto_delegate to the first level and not to a thread a delegated thr
   expect(await f.tools.mcpServer(grandchild)).toBeUndefined()
   expect(await f.delegate(grandchild, { provider: 'codex', model: f.model('codex').id })).toMatchObject({ status: 'refused', code: 'LEVEL_LIMIT' })
   expect((await f.tools.call(grandchild, 'delegate', { work: 'research', brief: 'Synthetic brief', provider: 'codex', model: f.model('codex').id })).isError).toBe(true)
+})
+
+it('takes a prompt the provider has only reserved as the brief\'s own, and a turn it reports or a draft typed by then still pauses the brief', async () => {
+  // Grok Build reserves its prompt, which reads as a running turn, and only then asks the guard again.
+  const f = await fixture(), parent = await f.userThread('claude')
+  const control = f.control as unknown as { commandFromDelegation: (command: { type: string; threadId: string }, guard: () => void) => Promise<unknown> }
+  const service = f.service as unknown as { snapshot: () => AgentHostSnapshot }
+  const send = control.commandFromDelegation.bind(control), read = service.snapshot.bind(service)
+  const moment = { reserved: '', reported: false, typed: '' }
+  service.snapshot = () => {
+    const snapshot = read()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id !== moment.reserved ? thread
+      : { ...thread, status: 'running' as const, ...moment.reported ? { lastTurn: { id: randomUUID(), status: 'running' as const } } : {} }) }
+  }
+  control.commandFromDelegation = async (command, guard) => {
+    if (command.type !== 'manual-send') return await send(command, guard)
+    if (moment.typed) await f.control.commandShell({ type: 'save-thread-draft', threadId: command.threadId, draftId: randomUUID(), text: moment.typed, requestId: null })
+    moment.reserved = command.threadId
+    try { guard() } finally { moment.reserved = '' }
+    return await send(command, () => undefined)
+  }
+  const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  expect(first.delegation.outcome).toBe('working')
+  expect(f.native(first.delegation.thread).messages.some(message => message.role === 'user')).toBe(true)
+  await f.endTurn(first.delegation.thread, 'Synthetic first reply')
+  await vi.waitFor(async () => expect(f.ok(await f.read(parent, first.delegation.id)).delegation.outcome).toBe('answered'))
+  // The user's own message is the newest, and a turn the provider reports begins while the brief is on its way, with no message of it read yet.
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: first.delegation.thread, text: 'The user\'s own instruction' })).error).toBeNull()
+  await f.endTurn(first.delegation.thread, 'Synthetic reply to the user')
+  await f.read(parent, first.delegation.id)
+  moment.reported = true
+  const during = f.ok(await f.delegate(parent, { thread: first.delegation.thread, brief: 'Synthetic brief during a turn', wait_seconds: 0 }))
+  expect(during.delegation.outcome).toBe('paused')
+  moment.reported = false
+  moment.typed = 'The user began typing as the brief went'
+  const second = f.ok(await f.delegate(parent, { thread: first.delegation.thread, brief: 'Synthetic second brief', wait_seconds: 0 }))
+  expect(second.delegation.outcome).toBe('paused')
+  expect(f.native(first.delegation.thread).messages.some(message => /Synthetic (second brief|brief during)/u.test(message.text))).toBe(false)
 })
 
 it('pauses delegated sends while the user is typing in the delegated thread', async () => {
