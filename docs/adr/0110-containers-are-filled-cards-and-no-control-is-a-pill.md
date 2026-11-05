@@ -18,6 +18,8 @@ Amended October 30, 2026: a card says its status in words, with no coloured edge
 
 Amended November 5, 2026, by Zach's pick of variant C: below a 1000 pixel window decision 5's floor gives way to the collapsed rail, and the sidebar opens over the thread (below, "November 5, 2026 amendment: over the thread when narrow"). His pick of October 22 stays in the record above.
 
+Amended November 5, 2026, by Zach's pick of variant B: where the thread beside Changes would be under 400 pixels, Changes covers the workspace (below, "November 5, 2026 amendment: Changes over the thread when narrow").
+
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
 ## Context
@@ -90,3 +92,9 @@ Zach chose this. Decision 5's 260 pixel floor left the thread 560 of an 820 pixe
 Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/merge-plate/`, kept outside the repository, and picked B.
 
 A ready **Merge** in the Pull request surface is a light wash of the green the merge checklist's ticks are drawn in, over the surface, with a green edge and a green merge mark and the panel's own text on it, where it was the primary's plate in the text colour. It is still the one filled control in the surface, its words read at 4.5:1 or better on the wash in every theme, and hover and press deepen the wash rather than brightening a plate. This is the one exception to decision 2's "the primary keeps its plate in the text colour"; every other primary keeps it. The blocked Merge, hatched with its sentence, and a read in flight dimming a ready one are unchanged.
+
+## November 5, 2026 amendment: Changes over the thread when narrow
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/changes-820/`, kept outside the repository, and picked B. At an 820 pixel window Changes stood beside the conversation, about 360 pixels for the thread and 400 for the lines, and reviewers found both cramped: prose wrapped at forty characters, code at thirty, and the bar's labels were cut.
+
+Where the thread beside Changes would be under 400 pixels, Changes covers the whole workspace, as Expand does, and the thread under it takes no keys until Changes closes, by Close, Escape or the Tools button. Expand is hidden there, since it would change nothing. Only Changes does this, and not once the user has sized the panel, so at 1280 and 1600 every surface keeps its place, and every other surface keeps its place at 820. This is the "over the thread in a narrow window" of [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md) decision 2, reached sooner for Changes alone.

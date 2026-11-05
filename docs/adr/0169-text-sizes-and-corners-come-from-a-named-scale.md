@@ -4,6 +4,8 @@
 
 Accepted October 30, 2026, by Zach's pick A, "Snap", of the before/after prototype on the tag `prototype/type-radius-scale` (`docs/prototypes/type-radius-scale/type-radius-scale-prototype.html`), for #1833. **Number provisional until merge** (docs/agents/domain.md).
 
+Amended November 5, 2026, by Zach's pick of variant B: a thread's messages read on the lead step (below, "November 5, 2026 amendment: a thread's messages a step up").
+
 Amends [ADR-0011](0011-main-window-themes-replace-the-accent.md): stylesheets read tokens for their text sizes and corners as well as their colours. Amends [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) decision 2: its corner sizes are now named steps, and its no-pill check reads each step at the size it draws.
 
 ## Context
@@ -69,3 +71,9 @@ Full is `50%`, never a large pixel radius, so it draws a dot or a ring and never
 - **C, Fluent.** Windows' five sizes and three corners. Every 13 px label grows to 14 and every 15 px reading line shrinks to 14, which flattens the hierarchy, and cards lose their soft corner.
 - **`--tt-text-*` names, as the issue suggested.** They collide with the text colour tokens.
 - **Leaving the widget on the mapping.** Its Esc key would grow 2 px inside a capsule whose fixed width is measured to hold the longest status line.
+
+## November 5, 2026 amendment: a thread's messages a step up
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/reading-size/`, kept outside the repository, and picked B. Reviewers of the design pass had called a long thread dense and small to read over hours.
+
+A thread's messages, its replies and the messages the user sent, read on `--tt-type-lead`, 16 px, where they were on the reading step, 15 px, at the same 1.6 line height. Their headings and inline code go a step up with them: a first-level heading on the figure step, a second-level on the heading step, the rest on the lead step, and inline code on the body step. The line is 38em, about 85 characters, where it was 42em; a paragraph, list or quote has 16 px after it, where it had 14, and a list item 6 px, where it had 5. The composer, code blocks, tables, Worked for lines, names and times stay on their steps, and so do Watcher's conversation and every other rich-text surface. No step changes size: this moves what uses the steps, not the scale.
