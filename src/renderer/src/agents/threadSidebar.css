@@ -292,12 +292,13 @@
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
-/* A row is two tight lines in three columns: the ring over the provider's mark, the name over what the thread is doing, and
-   the clock at the second line's end. The name has the whole first line, so it wraps far less often, and the words share one
-   left edge, so a long list reads straight down it. The space around a row is larger than the space inside it, which is
-   what keeps a row reading as one thing. */
-.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; padding: 5px 10px 5px 8px; width: 100%; }
-.thread-nav__row--details { margin: 0; }
+/* A row is two lines in three columns: the ring over the provider's mark, the name over what the thread is doing, and the
+   clock at the second line's end. The name has the whole first line, so it wraps far less often, and the words share one
+   left edge, so a long list reads straight down it. The second line is set a step under the name rather than at caption
+   size, so the words a row is read for stay easy on the eye over a long day, and the two lines keep a little air between
+   them. The space around a row is larger than the space inside it, which is what keeps a row reading as one thing. */
+.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; padding: 6px 10px 6px 8px; width: 100%; }
+.thread-nav__row--details { margin: 0 0 1px; }
 .thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
 /* What is moving or waiting reads first; a plain Done steps back and keeps its word. */
 .thread-nav__row--details:not([data-resting]) .thread-nav__title { color: var(--tt-text); }
@@ -316,13 +317,13 @@
 :root[data-theme='light'] .thread-nav :is(.needs-you__status, .thread-nav__status[data-state='needs']) { font-weight: 600; }
 /* A title may take two lines; the ring stays on its first. */
 .thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; margin-top: calc((var(--tt-type-body) * 1.35 - 10px) / 2); }
-.thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; line-height: 16px; visibility: visible; }
+.thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; font-size: var(--tt-type-small); line-height: 18px; visibility: visible; }
 .thread-nav__metadata { display: contents; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after the words. */
 .thread-nav__provider { grid-area: 2 / 1; display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; }
 .thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
-.thread-nav__standing { grid-area: 2 / 2; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 16px; white-space: nowrap; }
-.thread-nav__standing .thread-nav__status { display: block; flex: 0 1 auto; grid-column: auto; text-overflow: ellipsis; }
+.thread-nav__standing { grid-area: 2 / 2; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 18px; white-space: nowrap; }
+.thread-nav__standing .thread-nav__status { display: block; flex: 0 1 auto; grid-column: auto; font-size: inherit; text-overflow: ellipsis; }
 .thread-nav__standing .watched-badge { flex: none; }
 .thread-nav__standing .thread-nav__model { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .thread-nav__model, .thread-nav__copy-kind { display: none; }
