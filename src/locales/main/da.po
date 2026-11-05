@@ -680,6 +680,10 @@ msgstr ""
 msgid "Continuing an agent as a thread is unavailable in this window."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
 msgstr ""

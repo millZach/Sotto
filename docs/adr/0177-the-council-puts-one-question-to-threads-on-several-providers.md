@@ -107,3 +107,152 @@ What drawing the chamber decided that decision 6 leaves open, ported from the pr
 - **Pace.** About 30 frames a second while a figure is busy or a scroll or pose is on its way, 8 while only the fire flickers and the idle glance about, and a steady 8 throughout the fairness check, even while a panelist works or its thread streams. With motion reduced, poses snap into place and words appear whole: nothing draws again until something changes. Nothing draws while the window is hidden. A finished Council's scene is still, its figures, light beams and motes included, so it costs only its fire's 8 frames a second while the page shows it, and none with motion reduced.
 - **Buttons and ink.** Each figure of a live Council has a button, in the order they sit left to right, named by its letter or Chair, its model and what it is doing, then "Open its thread". Its keyboard focus ring sits on a solid surround in the room's colour. Words keep at least 4.5:1 contrast against the room, figures 3:1, in both appearances; decorative ink keeps its faint steps. Accented words and figures use the theme's readable accent. Hover outlines the button rather than washing over the drawing. The Ask view has none, since no thread has started.
 
+
+## Climb (amendment, November 4, 2026)
+
+Approved by Drake with the controls mockup, before implementation. This amends decisions 2–5 for Climb only; ordinary Councils keep their workflow. The first pull request adds the evidence foundation and history migration; the following pull request adds the panel-only loop and drawer controls. Command judging and its policy grant remain a later slice. Historical implementation links below name the planning audit at `541d1a1f`; the first evidence slice was checked against `894240ead`. The implementation sequence is in [the Climb plan](../plans/2026-11-04-council-climb.md).
+
+### Context
+
+A Council can help a builder improve an artifact repeatedly. Climb is the optional mode in which the origin thread builds, read-only Council threads judge new evidence, and Sotto's main process owns the bounded sequence. It applies to any outcome with approved evidence and evaluation criteria. Design is a preset; Git is not required.
+
+Theo's [Agents Sucked At UI (Until Today)](https://www.youtube.com/watch?v=xq0eB8vxeqk) motivates the shape: judging, fixing and judging again, including reported score changes on unchanged references and a different fresh-thread assessment. The planning study checked the transcript, not the underlying screenshots/builds. It is an anecdote, not proof of a calibrated evaluator or measured productivity gain.
+
+The [November 1 source study:13–19][D04], [102–110][D05] reports debate drift and limits its application to code/design to inference. The primary studies by [Wynn et al.](https://arxiv.org/html/2509.05396) and [Kaesberg et al.](https://arxiv.org/html/2502.19130) concern repeated interaction on tasks whose underlying question persists. **Inference:** fresh judgments of changed work are a different intervention, so a bounded Climb experiment need not reverse Council's decision against indefinite debate. The distinction is not evidence that Climb succeeds; measure it against a simpler same-budget approach.
+
+### Decision 1 addition: Climb lives in the existing Council drawer
+
+Climb is an option in the Ask area of the Council tab, not a new page or a separate terminal tab. Current ADR-0177 places Council in the drawer under the composer, before shell tabs, with separate Council and shell heights. Setup, the round table, Stop and export extend its record area. Preserve small-window scrolling and lazy terminal loading. ([ADR-0177:21–25][D01]; [PaneTerminalDrawer.tsx:91–100,204–211][U01]; [paneTerminalStore.ts:80–97][U05])
+
+Use the existing reply handoff and From picker, retaining their open, ordinary, local, non-delegated origin eligibility. ([councilDraft.ts:53–56][U03]) The approved From thread is the Builder even if the user changes pane or focus. Current form choices survive hiding the drawer in an in-memory per-thread map; the Climb specification and progress need separate durable records. Reuse that form retention rather than rebuilding the drawer. ([CouncilPress.tsx:5–9][U04]; [councilDraft.ts:28–47][U03]; [CouncilView.tsx:64–98,122–158,174–178,208–212][U02])
+
+### Decision 3 amendment: a self-contained brief for Climb judges
+
+**Ordinary Council remains unchanged:** panelists read the origin conversation as specified by decision 3. For Climb, the setup chair may read selected origin context to propose a goal, evidence recipe, criteria, judge and target. The user approves this specification before the first assessment.
+
+Climb judges and the adjudicating chair receive only the approved self-contained judging brief, rubric, constraints and selected frozen exhibits. They receive no origin conversation, numeric target, prior scores, prior verdict or peer answers before their independent judgments. After the independent judgments are complete, the adjudicating chair also receives that round's judgments, including its scores and findings; it still receives no target or earlier-round scores. The setup chair is not reused as an adjudicator. Every assessment uses new judging threads with the same approved model/effort roster. Changing that roster requires a declared comparison cohort and reassessment.
+
+**Reason:** preserve task meaning while reducing conversation anchoring and target chasing. The present prompt path adds origin history for a new seat and previous verdicts for later rounds, so Climb must use a separate prompt path; replacing a seat alone does not implement this amendment. ([councilService.ts:669–695][C09]; [councilStages.ts:262–269][C08])
+
+The approved brief must not silently omit constraints that matter to correctness. If a requirement cannot be judged from selected evidence, the result is incomplete and the user can revise the evidence or rubric. Current quoted history names attachments without carrying them; Climb must explicitly select and freeze their actual contents rather than assume quotation supplied them. ([councilPrompts.ts:54–76][C32])
+
+### Decision 4 amendment: new work may be assessed again automatically
+
+**Ordinary Council remains unchanged:** no further deliberation round unless the user asks. Climb is an explicit advance request for a bounded sequence of fresh assessments of changed work, not permission for the same panel to debate until it agrees.
+
+Main owns the following sequence: approve specification; freeze baseline; assess baseline; send one fix brief to the origin; await the identified builder turn; freeze a candidate; obtain independent judgments and adjudication; check the target and stop rules. Each candidate round has its own evidence references and fresh thread roster. No peer-review, crux-check or fairness stage runs inside a Climb evaluation. For three judges, an evaluation nominally has four model turns, including the adjudicating chair; setup, builder, repairs and delivery overhead are additional.
+
+Main counts criterion results with explicit denominators, independently of the chair's prose. Every required seat and criterion must be valid and passing; unavailable is neither zero nor pass. One format repair is allowed. The chair preserves dissent and checks measurement integrity but cannot waive a failed criterion. The current ideas score is an integer from 1 to 5, so Climb introduces a dedicated rubric/result block rather than reinterpreting that field or confidence. ([councilBlocks.ts:227–238][C12], [272–318][C13]; [councilFlow.ts:26–58][C11])
+
+Baseline, candidate and incumbent are lettered with private mappings and counterbalanced ordering; duplicate content is shown once. Include neutral change evidence alongside complete selected artifacts. Strip avoidable identity and chronology from the envelope, without promising that content can never reveal its origin. The existing letter/order mechanism concerns seats and rotated reviews, so artifact masking is a new operation. ([councilFlow.ts:5–20][C10])
+
+Relative improvement within the same judging round is the default target family. The specification defines meaningful change, score anchors, direction, tolerances and guardrails; the user approves them. Absolute thresholds and fixed references are available. Do not compare unmatched raw scores from different rounds as proof of progress. Choose the incumbent through same-round comparisons under the approved ordering; preserve tradeoffs instead of averaging away failures.
+
+Stop on target met, an approved finite candidate-attempt or model-turn cap, two consecutive completed attempts without meaningful improvement, or Stop. Attempts and Model turns are sliders ending at No limit, defaulting to five attempts and 30 turns. Both caps are optional. With neither cap set, target met, two attempts without improvement and Stop still apply. Missing evidence, lost delivery, permissions and provider limits pause instead of becoming failed scores. User work in the origin pauses automatic sends. Restart reconciles recorded identities and confirmed results, never blindly replays an uncertain builder action.
+
+**Reason:** new evidence can warrant new judgment while bounded rounds, fresh context and fixed criteria address the drift concern. This belongs in a small Climb controller beside ordinary Council stages. `addRound` currently appends a new framing state for the same threads and does not refresh snapshots; it is not the complete loop primitive. ([councilStages.ts:339–344][C07]; [councilService.ts:335–365][C21], [400–431][C23])
+
+### Decision 5 amendment: an authorized Climb sends fix briefs
+
+**Ordinary Council remains unchanged:** Send to thread drafts the verdict into the origin and the user sends it. Climb's approved specification separately authorizes main to send bounded fix briefs to the named origin thread while the loop is active. A brief reports findings and preserved constraints; it does not grant the builder wider permissions.
+
+Climb does not approve a provider request, answer a question for the user, publish, merge, deploy, or authorize unrelated work. Pending user requests remain visible and pause dependent work. Stop records cancellation before new dispatch and reaches all owned judge/command work. It interrupts the origin only when that origin is still executing the specific builder turn Climb sent, never an unrelated user turn.
+
+**Reason:** main must own continuation for the feature to be more than a reminder to an agent. Automatic origin sends are a deliberate exception to decision 5's draft-only action, scoped to the approved Climb. Authority still comes from the user's action/policy records rather than model output, stored context or the existence of a Council record. ([ADR-0004:21–27][D07])
+
+### Extend decision 2 and the current first-build evidence rules for Climb
+
+The current ADR already permits ordinary Councils outside Git, using the live project folder with unchecked file citations; it no longer has a blanket Git requirement. That path and the Git snapshot path remain supported. Climb adds a stronger evidence contract: an immutable manifest and retained content from one of three sources. ([ADR-0177:25,81–87][D01] [D02])
+
+- **Git:** optional dirty-state capture and Git provenance, then selected materialized evidence. Commit and branch are not required fields of the common record.
+- **Folder:** bounded copies of selected regular files, with declared exclusions and no symlink/junction escape. No Git command is needed.
+- **Artifacts:** selected text, documents, images and command receipts, with no project folder read.
+
+Thread creation currently requires an available project and the inspected adapter resolves an existing working directory. **Inference from these entry points:** fully folderless origin creation is not established here, so it is outside the initial release. Artifact-only evidence works from an existing origin without reading its folder; judges receive an owned empty workspace if required by their adapter. There is no hidden dummy-repository requirement. ([control.ts:5541–5576][C17]; [claude.ts:1056–1067][C18])
+
+Today a non-Git Council has no snapshot, its judges share the project folder, and cleanup skips snapshot removal. The thread folder must match the project folder so judges use the folder Sotto checked. File citations stay unchecked; Git snapshots are checked through Git objects. Climb preserves those ordinary-Council rules while adding source-specific capture/cleanup and manifest-backed validation. Folder/artifact capture must bypass Git entirely: the existing non-Git detector still invokes Git and is not sufficient when Git is absent. Text references preserve matches/differs/missing/unchecked; images identify frozen hash/page/region. Command claims require identified run receipts. ([councilSnapshot.ts:31–50][C01], [57–71][C02]; [councilService.ts:217–250][C14], [304–322][C35], [475–489][C15], [613–646][C03])
+
+The preview discloses selected paths, exclusions, recipients, counts and limits. Proposed initial limits are 10,000 files, 100 MiB per evidence set, 20 MiB per binary and 1 GiB retained per Climb. They must be measured before release. Overflow pauses for narrowing or explicit bound revision; it never becomes a silent partial snapshot. Dependencies, caches, credentials and `.git` are excluded by default. Sensitive evidence is included only through explicit selection. Copy-on-write is an optional later optimization; writable links into another checkout are not acceptable isolation.
+
+Compute changes from successive manifests, including additions, removals and binary replacements. Complete selected artifacts accompany changes. Keep the baseline available in every assessment. Export any retained round into a new folder, or restore supplied text as a draft, without overwriting live work. Recovery covers only captured scope. Automatic in-place rollback and forked builders are separate later features. Finishing retains evidence within the disclosed budget; settling/removing it explains loss of future export first.
+
+The existing independent-worktree allocator still returns the original shared directory for non-Git projects before considering an existing worktree path. Ordinary Council intentionally asks for shared mode when there is no snapshot. Neither path isolates a copied Climb exhibit. A dedicated owned-evidence-workspace boundary remains required; copied folders must not pass through that fallback or silently return to the builder folder. `delegatedBy` remains only the origin-thread link, not a Git operation or command grant. Council needs its own ownership and Stop hooks because the existing Council link has no ordinary delegation record. ([threadWorktrees.ts:689–705][C16]; [councilService.ts:475–489][C15]; [ADR-0177:81–82][D02])
+
+Judges must have enforced read-only tools/workspaces. The current narrowest-permission fallback is not that proof; ineligible adapters are refused for Climb judging until they can enforce it. ([councilService.ts:865–869][C31])
+
+### Command judging changes the command-evidence rule
+
+The current first-build wording that Sotto never runs Council command evidence, and the no-installed-dependencies snapshot limitation, continue to describe ordinary Council. ([ADR-0177:70][D12], [87][D02]) Climb may run a user-approved measurement recipe through a separate runner. A passing command is necessary only where the approved target says so and is never sufficient without panel integrity approval.
+
+Commands run in disposable writable directories derived from frozen evidence, separate from judges, canonical evidence and the origin. The recipe fixes executable/arguments or exact shell script, machine, directory rule, environment/credential scope, dependency setup, metric parser and bounds. Its approval binds to its hash and permitted inputs. Changed commands, machine, setup, parser or authority scope require another approval.
+
+**User decision — one bounded grant per Climb:** the user chose one explicit, bounded, expiring/revocable policy grant for repeated runs of the exact recipe within that Climb. Once the recipe is approved, the automatic loop may repeat it against permitted inputs within the grant's limits without asking before each run. Revocation, exhausted limits or a changed recipe pauses execution for a new approval. The chosen grant needs a companion ADR-0004 amendment implementing that specific allow consumer; current ADR-0004 says such consumers are future work. Without that amendment, do not implement unattended repeated command execution. This recorded product decision, the draft and any goal-approval text are not themselves command grants. ([ADR-0004:21–27,37–38][D07])
+
+Windowless measurements may run locally if explicitly approved. Any app/browser/GUI launch or uncertain window behavior runs on **forge or CI, never this Mac**. Sotto's repository checks run on GitHub CI only. No-Git tasks use a hashed bundle and owned forge workspace, not a forced clone or GitHub PR. A missing remote transport or dependency is reported as unavailable; there is no local GUI fallback.
+
+The existing check-worktree cache is Git/per-project/npm-specific and its install output is intentionally discarded. It is not the general runner or receipt store. ([checkWorktree.ts:8–15][C27], [39–54][C28], [103–126][C29])
+
+A receipt binds metrics to input, recipe and environment identities with outcome, exit status and bounded outputs. Lost, malformed or truncated evidence cannot silently pass. Main evaluates the target from valid measurements only after the panel checks that inputs, requirements or evaluation scripts were not weakened. The panel sees raw values and relevant changes, not the target threshold. Noisy measurements also fix sampling, aggregation and tolerance, and compare baseline/reference measurements under the same declared environment.
+
+### Records, migration, turns and retention
+
+Version 2 of `councils.json` adds source-neutral evidence entries; per-round snapshot references and fresh thread rosters; approved specification revisions; raw round/seat/criterion/exhibit score cells; command receipts; loop state and owned-resource identities. Git metadata exists only on relevant variants. The public view changes with the stored shape. At the original audit, the file was version 1 with an **optional** singleton Git snapshot and neither stored nor public rounds had evidence references. The evidence foundation migrates that file to version 2; loop fields arrive with the following slice. ([councilRecord.ts:70–134][C04] [C05]; [shared/council.ts:336–379][C06])
+
+Validate v1 before migrating it. For a present singleton, create one `legacyGit` entry referenced by all old rounds, preserving missing/removed status. For an absent singleton, retain a `legacyLive` descriptor: unfrozen evidence, no invented manifest or verified citations, and no owned source directory to remove. The v1 record has a project ID but no historical live-folder inventory; today's folder cannot reconstruct that history. Preserve turn IDs and unknown delivery in both paths. Active ordinary Councils retain their behavior; starting Climb captures a new approved baseline. Keep a migration backup and write the fully validated result atomically. Unknown future versions fail visibly without replacing history. This precedes normal corruption recovery, whose present behavior may back up a parse failure and return the default store. ([councilRecord.ts:113–134][C05]; [councilService.ts:228–250][C14], [304–322][C35]; [atomicJsonStore.ts:105–139][C26])
+
+Keep local history applies to evidence and results as well as record prose. With it off, sensitive working evidence is temporary and cleared on close/settle or next-start cleanup; a restart cannot recover content that was not retained and must stop the loop clearly. After a history-off record is safely saved, the migration backup is removed so it cannot retain old Council text. Application logs never gain prompts, transcripts, outputs or keys. The current saved-record path strips words, and recovery stops an unfinished history-off Council whose question is gone. ([councilRecord.ts:160–173][C25]; [councilService.ts:133–153][C24])
+
+Seats are admitted one at a time in the approved roster's order. Known prices are not used for internal ordering: incomplete or incomparable prices must not change a predictable user-approved order. Provider-limit holds do not remove seats or change denominators. Show completed and planned turns per round and for the run, including setup, builder, judges, adjudication and repairs. Climb has no spend cap and no estimated-cost display. Explanations live in tooltips that also open on keyboard focus; required decisions and blockers stay visible.
+
+### Consequences and acceptance boundary
+
+The first usable slice is panel-only Climb inside the current drawer with Git/folder/artifact evidence, setup approval, fresh judging, safe origin continuation, stop rules, migration and export. Basic non-Git startup, optional snapshots, no-snapshot cleanup, drawer placement, retained form state, reply handoff and From picker are already implemented and removed from Climb's build scope. Remaining capture/workspace/migration and loop/UI work are each estimated M–L, with a combined first slice L–XL; reuse reduces scope, while enforced read-only evidence and restart safety remain new cross-layer work. ([councilService.ts:217–250][C14], [304–322][C35], [475–489][C15]; [councilRecord.ts:113–134][C05]; [CouncilView.tsx:64–98,122–158,208–212][U02]; [councilDraft.ts:28–47][U03]) Command judging follows with authority and remote-execution work. Before/after callout boards, automatic rollback, forked builders and copy-on-write are deferred. Ordinary Council's framing, debate stages, live-folder rules and draft-only send are regression boundaries.
+
+**User decision — Owl-only:** the user chose to keep Climb behind Council's current Owl gate. This amendment does not send Council or Climb to stable. The current Council feature entry has not been sent to stable. ([owlFeatures.ts:68][C33])
+
+Implementation verification runs on GitHub CI, with deterministic provider/process fixtures and no-Git cases, plus forge/CI visual evidence where needed. No Sotto app, CI gates or graphical tests run on this Mac for this work. Windowless typecheck, lint and individual unit files are allowed. A controlled same-budget comparison and independent final assessment should determine whether Climb earns wider use. No claimed success rate, calibrated score threshold or speedup is accepted by this amendment.
+
+[C01]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilSnapshot.ts#L22-L50
+[C02]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilSnapshot.ts#L57-L71
+[C03]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L613-L646
+[C04]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilRecord.ts#L70-L95
+[C05]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilRecord.ts#L113-L134
+[C06]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/council.ts#L336-L379
+[C07]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilStages.ts#L339-L344
+[C08]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilStages.ts#L262-L269
+[C09]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L669-L695
+[C10]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/councilFlow.ts#L5-L20
+[C11]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/councilFlow.ts#L26-L58
+[C12]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/councilBlocks.ts#L227-L238
+[C13]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/councilBlocks.ts#L272-L318
+[C15]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L475-L489
+[C16]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/threadWorktrees.ts#L689-L705
+[C17]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/control.ts#L5541-L5576
+[C18]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/claude.ts#L1056-L1067
+[C21]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L335-L372
+[C23]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L408-L445
+[C24]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L133-L153
+[C25]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilRecord.ts#L160-L173
+[C26]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/storage/atomicJsonStore.ts#L105-L139
+[C27]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/checkWorktree.ts#L8-L15
+[C28]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/checkWorktree.ts#L39-L54
+[C29]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/agents/checkWorktree.ts#L103-L126
+[C30]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/threadUsage.ts#L9-L18
+[C31]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L865-L869
+[C32]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilPrompts.ts#L54-L76
+[C33]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/shared/owlFeatures.ts#L68
+[D02]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md#L77-L89
+[D04]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/research/2026-11-01-council-deliberation-methods.md#L13-L19
+[D05]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/research/2026-11-01-council-deliberation-methods.md#L102-L110
+[D07]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/adr/0004-authority-in-policy-records.md#L21-L38
+[C36]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L96
+[U01]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/tools/PaneTerminalDrawer.tsx#L91-L211
+[U02]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/features/council/CouncilView.tsx#L55-L219
+[U03]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/features/council/councilDraft.ts#L28-L57
+[U04]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/agents/CouncilPress.tsx#L5-L9
+[U05]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/tools/paneTerminalStore.ts#L38-L128
+[U06]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/renderer/src/tools/PaneTerminalToggle.tsx#L42-L63
+[C14]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L217-L250
+[C35]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L294-L322
+[D01]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md#L21-L39
+[D12]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/docs/adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md#L70
