@@ -1,0 +1,23 @@
+name: iPhone picture thread profile try
+on:
+  push:
+    branches: [chore/ios-picture-profile-try]
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 100
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          cp apps/ios/Scripts/try-profile.sh apps/ios/Scripts/name-stacks.py "$RUNNER_TEMP/"
+          bash "$RUNNER_TEMP/try-profile.sh" 1c072c56be25b9d7a67c9c2567859a87b293da42
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-logs
+          path: profile-out/
+          retention-days: 7
