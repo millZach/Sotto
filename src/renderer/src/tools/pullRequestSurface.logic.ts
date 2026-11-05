@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 import { shownCount } from '../state/interfaceNumbers'
 import { elapsedLabel } from './rosterTime'
@@ -25,7 +26,13 @@ export interface ChecklistLine {
   /** Why the line stands as it does, in a short sentence. */
   readonly why: string
   readonly fix: LineFix | null
+  /** What a done line says once it has given way to the lines still open, where its label alone would hide the answer: who approved, how many passed. */
+  readonly brief?: string
+  /** A line that holds the merge back: what has to happen, to end the sentence "You can merge once ...". */
+  readonly until?: string
 }
+
+const UNTIL = 'Ends the sentence "You can merge once ...". Several are joined into one list.'
 
 const FAILED: ReadonlySet<GitPullRequestCheck['status']> = new Set(['failure', 'cancelled'])
 function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): ChecklistLine {
@@ -40,25 +47,31 @@ function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): C
     const why = first.status === 'cancelled'
       ? more > 0 ? plural(more, { other: `${name} was cancelled, and # more` }) : description ? t`${name} was cancelled: ${description}` : t`${name} was cancelled`
       : more > 0 ? plural(more, { other: `${name} failed, and # more` }) : description ? t`${name} failed: ${description}` : t`${name} failed`
-    return { ...line, tone: 'failed', why, fix: first.url ? { kind: 'open-check', name: first.name, url: first.url } : null }
+    return { ...line, tone: 'failed', why, fix: first.url ? { kind: 'open-check', name: first.name, url: first.url } : null,
+      until: failed.length === 1 ? t({ message: 'the failing check passes', comment: UNTIL }) : t({ message: 'the failing checks pass', comment: UNTIL }) }
   }
   const waiting = checks.find(check => check.status === 'action-required')
   if (waiting) {
     const name = waiting.name
-    return { ...line, tone: 'todo', why: t`${name} is waiting for approval on GitHub`, fix: waiting.url ? { kind: 'open-check', name: waiting.name, url: waiting.url } : null }
+    return { ...line, tone: 'todo', why: t`${name} is waiting for approval on GitHub`, fix: waiting.url ? { kind: 'open-check', name: waiting.name, url: waiting.url } : null, until: t({ message: 'a check is approved on GitHub', comment: UNTIL }) }
   }
   const running = checks.filter(check => check.status === 'pending')
   if (running.length > 0) {
     const name = running[0]!.name, more = running.length - 1
-    return { ...line, tone: 'running', why: more === 0 ? t`${name} is still running` : plural(more, { other: `${name} and # more are still running` }), fix: null }
+    return { ...line, tone: 'running', why: more === 0 ? t`${name} is still running` : plural(more, { other: `${name} and # more are still running` }), fix: null,
+      until: running.length === 1 ? t({ message: 'the running check finishes', comment: UNTIL }) : t({ message: 'the running checks finish', comment: UNTIL }) }
   }
   // Some checks read, some refused: what the read checks hold back is said above; with nothing held back, the line is unknown, not done.
   if (unknown) return { ...line, tone: 'unknown', why: t`GitHub did not let Sotto read every check`, fix: null }
   const passed = checks.filter(check => check.status === 'success').length
   const skipped = checks.length - passed, total = checks.length, name = checks[0]!.name
   const why = passed < checks.length ? t`${passed} passed, ${skipped} skipped` : checks.length === 1 ? t`${name} passed` : t`All ${total} passed`
-  return { ...line, tone: 'done', why, fix: null }
+  const brief = passed < checks.length ? t`Checks: ${passed} passed, ${skipped} skipped` : checks.length === 1 ? why : t`${total} checks passed`
+  return { ...line, tone: 'done', why, fix: null, brief }
 }
+
+/** Who approved stays on show once the line has given way: it is the one thing here worth reading twice. */
+const approvedLine = (line: Pick<ChecklistLine, 'id' | 'label'>, why: string): ChecklistLine => ({ ...line, tone: 'done', why, fix: null, brief: why })
 
 function reviewLine(detail: Detail): ChecklistLine {
   const line = { id: 'review', label: t`Review approved` } as const
@@ -66,12 +79,13 @@ function reviewLine(detail: Detail): ChecklistLine {
   const latest = (state: 'approved' | 'changes_requested') => [...detail.reviews].reverse().find(review => review.state === state)
   const approved = latest('approved'), changes = latest('changes_requested')
   const approver = approved?.author ?? '', author = changes?.author ?? ''
+  const someone = t({ message: 'someone approves it', comment: UNTIL })
   const askedForChanges = (): ChecklistLine => ({ ...line, tone: 'failed', why: changes ? t`${author} asked for changes` : t`Changes were asked for`,
-    fix: { kind: 'open-review', author: changes?.author ?? null, url: changes?.url ?? detail.url } })
+    fix: { kind: 'open-review', author: changes?.author ?? null, url: changes?.url ?? detail.url }, until: someone })
   switch (detail.reviewDecision) {
-    case 'approved': return { ...line, tone: 'done', why: approved ? t`Approved by ${approver}` : t({ message: 'Approved', comment: 'A pull request\'s review approved it.' }), fix: null }
+    case 'approved': return approvedLine(line, approved ? t`Approved by ${approver}` : t({ message: 'Approved', comment: 'A pull request\'s review approved it.' }))
     case 'changes_requested': return askedForChanges()
-    case 'review_required': return { ...line, tone: 'todo', fix: null,
+    case 'review_required': return { ...line, tone: 'todo', fix: null, until: someone,
       why: detail.draft ? t`Reviewers wait until it is ready` : detail.reviews.length === 0 ? t`Nobody has reviewed it yet` : t`It still needs an approving review` }
     default: {
       // The repository requires no review, so GitHub merges whatever the reviews say. A request for changes a reviewer
@@ -85,7 +99,7 @@ function reviewLine(detail: Detail): ChecklistLine {
             ? others > 0 ? plural(others, { other: `Approved by ${approver}. Requests for changes from ${author} and # more are still open` }) : t`Approved by ${approver}. ${author}'s request for changes is still open`
             : others > 0 ? plural(others, { other: `${author} and # more asked for changes. This repository does not require a review` }) : t`${author} asked for changes. This repository does not require a review` }
       }
-      return approved ? { ...line, tone: 'done', why: t`Approved by ${approver}`, fix: null }
+      return approved ? approvedLine(line, t`Approved by ${approver}`)
         : { ...line, label: t`No review required`, tone: 'done', why: t`This repository merges without one`, fix: null }
     }
   }
@@ -100,25 +114,26 @@ function upToDateLine(detail: Detail): ChecklistLine {
   // The count in the interface language, and in English as it always read: a plural's own # would group its digits.
   const behindBy = detail.behindBy, commits = shownCount(behindBy)
   const behind = plural(behindBy, { one: `${commits} commit behind ${base}`, other: `${commits} commits behind ${base}` })
-  if (detail.state !== 'open') return { ...line, tone: 'todo', why: behind, fix: null }
-  return detail.canUpdateBranch ? { ...line, tone: 'todo', why: behind, fix: { kind: 'update-branch' } }
-    : { ...line, tone: 'todo', why: plural(behindBy, { one: `${commits} commit behind ${base}. GitHub does not let this account update it`, other: `${commits} commits behind ${base}. GitHub does not let this account update it` }), fix: null }
+  const until = t({ message: `it is up to date with ${base}`, comment: 'Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.' })
+  if (detail.state !== 'open') return { ...line, tone: 'todo', why: behind, fix: null, until }
+  return detail.canUpdateBranch ? { ...line, tone: 'todo', why: behind, fix: { kind: 'update-branch' }, until }
+    : { ...line, tone: 'todo', why: plural(behindBy, { one: `${commits} commit behind ${base}. GitHub does not let this account update it`, other: `${commits} commits behind ${base}. GitHub does not let this account update it` }), fix: null, until }
 }
 
 function conflictsLine(detail: Detail): ChecklistLine {
   const base = detail.baseBranch
   const line = { id: 'conflicts', label: t`No conflicts` } as const
   if (detail.state === 'merged') return { ...line, tone: 'done', why: t`Merged without conflicts`, fix: null }
-  if (detail.mergeable === 'conflicting') return { ...line, tone: 'failed', why: t`Conflicts with ${base}. Resolve them in the branch and push`, fix: null }
+  if (detail.mergeable === 'conflicting') return { ...line, tone: 'failed', why: t`Conflicts with ${base}. Resolve them in the branch and push`, fix: null, until: t({ message: `its conflicts with ${base} are resolved`, comment: 'Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.' }) }
   if (detail.mergeable === 'mergeable') return { ...line, tone: 'done', why: t`Merges cleanly into ${base}`, fix: null }
-  return detail.state === 'open' ? { ...line, tone: 'running', why: t`GitHub is still checking. Refresh in a moment`, fix: null }
+  return detail.state === 'open' ? { ...line, tone: 'running', why: t`GitHub is still checking. Refresh in a moment`, fix: null, until: t({ message: 'GitHub finishes checking for conflicts', comment: UNTIL }) }
     : { ...line, tone: 'unknown', why: t`GitHub checks again if it is reopened`, fix: null }
 }
 
 function readyLine(detail: Detail): ChecklistLine {
   const line = { id: 'ready', label: t`Ready for review` } as const
-  if (!detail.draft) return { ...line, tone: 'done', why: t`Not a draft`, fix: null }
-  return { ...line, tone: 'todo', why: t`Still a draft`, fix: detail.state === 'open' ? { kind: 'ready' } : null }
+  if (!detail.draft) { const why = t`Not a draft`; return { ...line, tone: 'done', why, fix: null, brief: why } }
+  return { ...line, tone: 'todo', why: t`Still a draft`, fix: detail.state === 'open' ? { kind: 'ready' } : null, until: t({ message: 'it is marked ready for review', comment: UNTIL }) }
 }
 
 /**
@@ -129,6 +144,13 @@ function readyLine(detail: Detail): ChecklistLine {
 export function checklist(detail: Detail): ChecklistLine[] {
   return [checksLine(detail.checks, detail.checksUnknown), reviewLine(detail), upToDateLine(detail), conflictsLine(detail), readyLine(detail)]
 }
+const LINE_ORDER: Readonly<Record<LineTone, number>> = { failed: 0, todo: 1, running: 2, open: 3, unknown: 4, done: 5 }
+/**
+ * The lines as they are drawn: what blocks the merge leads, what someone has to act on before what only needs waiting
+ * for, and the lines that are done give way to one quiet row at the end. Lines that stand alike keep a merge's order.
+ */
+export const linesInOrder = (lines: readonly ChecklistLine[]): ChecklistLine[] => lines.map((line, index) => ({ line, index }))
+  .sort((a, b) => LINE_ORDER[a.line.tone] - LINE_ORDER[b.line.tone] || a.index - b.index).map(({ line }) => line)
 /** A line that holds the merge back. An unknown one does not: GitHub decides when the merge is pressed. */
 export const holdsBack = (line: ChecklistLine): boolean => line.tone === 'failed' || line.tone === 'running' || line.tone === 'todo'
 
@@ -154,9 +176,11 @@ export function checklistCount(lines: readonly ChecklistLine[]): string {
   const total = lines.length
   return aside > 0 ? plural(aside, { one: `${done} of ${total} done, # does not block`, other: `${done} of ${total} done, # do not block` }) : t`${done} of ${total} done`
 }
-export function linesLeft(lines: readonly ChecklistLine[]): string {
-  const left = lines.filter(holdsBack).length
-  return plural(left, { one: '# line left before this can merge.', other: '# lines left before this can merge.' })
+/** Under a blocked Merge: what has to happen before it can be pressed, in the order the lines are drawn. */
+export function mergeWaitsFor(lines: readonly ChecklistLine[]): string {
+  const clauses = linesInOrder(lines).filter(holdsBack).map(line => line.until ?? line.label)
+  const list = new Intl.ListFormat(i18n.locale || 'en', { type: 'conjunction' }).format(clauses)
+  return t({ message: `You can merge once ${list}.`, comment: '{list} is what has to happen first, as in "the failing checks pass and someone approves it".' })
 }
 
 /** T3's order for the method a merge uses: the one chosen last, when this repository allows it, then the first it allows. */
@@ -184,6 +208,19 @@ const SETTLED_CHECK: ReadonlySet<GitPullRequestCheck['status']> = new Set(['succ
 export function checksInOrder(checks: readonly GitPullRequestCheck[]): { readonly standing: readonly GitPullRequestCheck[]; readonly settled: readonly GitPullRequestCheck[] } {
   const ordered = checks.map((check, index) => ({ check, index })).sort((a, b) => CHECK_ORDER[a.check.status] - CHECK_ORDER[b.check.status] || a.index - b.index).map(({ check }) => check)
   return { standing: ordered.filter(check => !SETTLED_CHECK.has(check.status)), settled: ordered.filter(check => SETTLED_CHECK.has(check.status)) }
+}
+/** How the checks stand, for the head of their closed fold: what failed and what runs first, in the fold's own order, then what is settled. */
+export function checksSummary(checks: readonly GitPullRequestCheck[]): ReadonlyArray<{ readonly tone: 'failed' | 'waiting' | 'settled'; readonly words: string }> {
+  const count = (...statuses: readonly GitPullRequestCheck['status'][]): number => checks.filter(check => statuses.includes(check.status)).length
+  const failed = count('failure', 'cancelled'), approval = count('action-required'), running = count('pending'), passed = count('success'), skipped = count('skipped', 'neutral')
+  const failedCount = shownCount(failed), approvalCount = shownCount(approval), runningCount = shownCount(running), passedCount = shownCount(passed), skippedCount = shownCount(skipped)
+  return [
+    ...(failed ? [{ tone: 'failed' as const, words: t({ message: `${failedCount} failed`, comment: 'A count of a pull request\'s checks.' }) }] : []),
+    ...(approval ? [{ tone: 'waiting' as const, words: t({ message: `${approvalCount} need approval`, comment: 'A count of a pull request\'s checks.' }) }] : []),
+    ...(running ? [{ tone: 'waiting' as const, words: t({ message: `${runningCount} running`, comment: 'A count of a pull request\'s checks: running or queued.' }) }] : []),
+    ...(passed ? [{ tone: 'settled' as const, words: t({ message: `${passedCount} passed`, comment: 'A count of a pull request\'s checks.' }) }] : []),
+    ...(skipped ? [{ tone: 'settled' as const, words: t({ message: `${skippedCount} skipped`, comment: 'A count of a pull request\'s checks.' }) }] : []),
+  ]
 }
 /** A check's state in a word, beside its icon and colour, so neither has to be read to know it. */
 export function checkWord(check: Pick<GitPullRequestCheck, 'status' | 'startedAt'>): string {
@@ -234,6 +271,26 @@ export async function fileOnGitHub(pullRequestUrl: string, path: string): Promis
 export function listMatches(item: Pick<GitPullRequestListItem, 'number' | 'title' | 'author' | 'headBranch'>, query: string): boolean {
   const needle = query.trim().toLowerCase().replace(/^#/u, '')
   return !needle || `${item.number} ${item.title} ${item.author ?? ''} ${item.headBranch}`.toLowerCase().includes(needle)
+}
+/** The first line of a description's prose, without its Markdown, for the head of its closed fold. Empty when it has none. */
+export function descriptionPreview(body: string): string {
+  let fenced = false
+  // A description's first screen is all a preview needs, however long the rest runs.
+  for (const raw of body.slice(0, 4_000).replace(/<!--[\s\S]*?(?:-->|$)/gu, '').split('\n')) {
+    const line = raw.trim()
+    if (/^(?:```|~~~)/u.test(line)) { fenced = !fenced; continue }
+    if (fenced || /^(?:#{1,6}\s|<|\||[-=*_]{3,}$)/u.test(line)) continue
+    const text = line.replace(/^(?:>\s*)+/u, '').replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u, '').replace(/!\[[^\]]*\]\([^)]*\)/gu, '')
+      .replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1').replace(/`|\*\*|__/gu, '').trim()
+    if (text) return text
+  }
+  return ''
+}
+/** What a row of the open pull requests says of its review, where GitHub has an answer worth reading at a glance. */
+export function listReviewWord(decision: GitPullRequestListItem['reviewDecision']): string | null {
+  if (decision === 'approved') return t({ message: 'Approved', comment: 'Said of a pull request in the list of open ones: its review approved it.' })
+  if (decision === 'changes_requested') return t({ message: 'Changes requested', comment: 'Said of a pull request in the list of open ones: a reviewer asked for changes.' })
+  return null
 }
 /** What a row of the open pull requests says of its checks, for a reader who cannot see their mark. */
 export function listChecksWord(checks: GitPullRequestListItem['checks']): string {

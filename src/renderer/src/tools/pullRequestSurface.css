@@ -1,16 +1,17 @@
-/* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines
-   each done or carrying the press that fixes it; one large Merge docked under them; the description, every check, the
-   changed files and the linked and the open pull requests fold below. */
+/* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines,
+   what blocks the merge first and whole, what is done given way to one quiet row; one large Merge docked under them;
+   the description, every check, the changed files and the linked and the open pull requests fold below. */
 .pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
 .pr-surface :is(svg[data-state='open']) { color: var(--tt-success); }
 .pr-surface :is(svg[data-state='merged']) { color: var(--tt-activity); }
 .pr-surface :is(svg[data-state='closed'], svg[data-state='draft'], svg[data-state='none']) { color: var(--tt-text-muted); }
 
 .pr-surface__top { gap: 6px; }
-.pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; container: pr-lead / inline-size; }
 .pr-surface__lead > svg { flex: none; }
-/* Two lines in the top line's height, so a title is read rather than cut at its first few words. */
-.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* One line while that shows most of a title, whole in its tooltip. Two lines only where one would cut it at its first few words. */
+.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@container pr-lead (width >= 240px) { .pr-surface__name { display: block; text-overflow: ellipsis; white-space: nowrap; } }
 .pr-surface__name:focus { outline: none; }
 .pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
 .pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
@@ -26,16 +27,20 @@
 .pr-surface__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: var(--tt-type-lead); font-weight: 550; }
 .pr-surface__heading small { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 .pr-surface__heading small[data-tone='done'] { color: var(--tt-success); }
-.pr-surface__lines { margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); list-style: none; }
-.pr-surface__line { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
-.pr-surface__line:first-child { border-top: 0; }
-.pr-surface__line > svg { color: var(--tt-text-muted); }
-.pr-surface__line[data-tone='done'] > svg { color: var(--tt-success); }
+.pr-surface__lines { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+/* A line still open is whole, in the one box they share, and leads. */
+.pr-surface__line:not([data-tone='done']) { display: grid; flex: 0 0 100%; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-bottom: 0; }
+.pr-surface__line:not([data-tone='done']):first-child { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
+.pr-surface__line:not([data-tone='done']):is(:last-child, :has(+ [data-tone='done'])) { border-bottom: 1px solid var(--tt-hairline); border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
+.pr-surface__line:not([data-tone='done']):has(+ [data-tone='done']) { margin-bottom: 8px; }
+.pr-surface__line:not([data-tone='done']) > svg { color: var(--tt-text-muted); }
+/* A line that is done has done its job: a tick and its words, in a row that takes no more than it must. */
+.pr-surface__line[data-tone='done'] { display: inline-flex; align-items: center; gap: 6px; padding: 3px 16px 3px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.35; }
+.pr-surface__line[data-tone='done'] > svg { flex: none; color: var(--tt-success); }
 .pr-surface__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
 .pr-surface__line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
 .pr-surface__line-text { min-width: 0; }
 .pr-surface__line strong { display: block; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; overflow-wrap: anywhere; }
-.pr-surface__line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
 .pr-surface__why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; }
 .pr-surface__fix .tt-button { min-height: 28px; padding: 0 10px; font-size: var(--tt-type-small); }
 
@@ -60,15 +65,23 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
 .pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
 
-/* Merge stays in reach under the lines while the folds below scroll. */
+/* Merge stays in reach under the lines while the folds below scroll. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
 .pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
+.pr-surface__dock:has(.pr-surface__merge-go[data-blocked]) { position: static; }
+/* A pull request that has ended leads with that, and its checklist follows. */
+.pr-surface__dock:first-child { padding-top: 0; }
+.pr-surface__lines + .pr-surface__fold { margin-top: 14px; }
 .pr-surface__merge { position: relative; display: flex; gap: 8px; }
 .pr-surface__merge .tt-button { min-height: 44px; font-size: var(--tt-type-reading); }
 .pr-surface__merge-go { flex: 1; min-width: 0; }
-.pr-surface__merge-go[aria-disabled='true'] { border-color: var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); cursor: not-allowed; filter: none; }
-.pr-surface__merge-go[aria-disabled='true']:hover { border-color: var(--tt-field-border); color: var(--tt-text-muted); filter: none; }
+/* A read in flight holds a ready Merge for a moment: it keeps its look, so a Refresh does not flash it blocked. */
+.pr-surface__merge-go[aria-disabled='true']:not([data-blocked]) { cursor: progress; opacity: .7; }
+/* Blocked: struck through with a hatch and no plate of its own, so it cannot be taken for a dim enabled button in any
+   theme. The words on it say so too, and the line under it says why. Pressing or hovering changes nothing. */
+.pr-surface__merge .pr-surface__merge-go[data-blocked], .pr-surface__merge .pr-surface__merge-go[data-blocked]:is(:hover, :active) { border: 1px dashed var(--tt-field-border); background: repeating-linear-gradient(135deg, var(--tt-hairline) 0 1px, transparent 1px 7px); color: var(--tt-text-2); cursor: not-allowed; filter: none; }
 .pr-surface__method { position: relative; flex: none; }
 .pr-surface__method-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; width: 270px; max-width: calc(100cqw - 32px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pr-surface__method-list[data-below] { top: calc(100% + 6px); bottom: auto; }
 .pr-surface__method-item { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); text-align: left; }
 .pr-surface__method-item:hover, .pr-surface__method-item:focus-visible { background: var(--tt-hover); outline: none; }
 .pr-surface__method-item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
@@ -108,7 +121,13 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
 .pr-surface__fold-body[data-wide] { justify-items: stretch; padding-left: 0; }
-.pr-surface__fold-aside { margin-left: auto; font-weight: 400; }
+.pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: 400; }
+/* What a closed Description holds: the first line of it, which gives way before anything else in the head. */
+.pr-surface__fold-preview { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__checks-summary { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 10px; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.pr-surface__checks-summary [data-tone='failed'] { color: var(--tt-error-text); }
+.pr-surface__checks-summary [data-tone='waiting'] { color: var(--tt-warning-text); }
+.pr-surface__checks-summary [data-tone='settled'] { color: var(--tt-text-muted); }
 .pr-surface__fold-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pr-surface__fold-actions .tt-button { min-height: 30px; padding: 0 10px; font-size: var(--tt-type-small); }
 .pr-surface__from { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }

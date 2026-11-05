@@ -4,9 +4,9 @@ import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { isPullRequestListLimited, type GitPullRequestList, type GitPullRequestListItem } from '../../../shared/gitPullRequests'
 import { agoWords } from '../watcher/machineWords'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { PullRequestLineCounts } from './PullRequestDetails'
-import { limitedWords, listChecksWord, listMatches } from './pullRequestSurface.logic'
+import { limitedWords, listChecksWord, listMatches, listReviewWord, stateLabel } from './pullRequestSurface.logic'
 
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 type ListRead = { readonly status: 'idle' } | { readonly status: 'loading'; readonly list: GitPullRequestList | null } | { readonly status: 'ready'; readonly list: GitPullRequestList } | { readonly status: 'none' } | { readonly status: 'failed'; readonly words: string; readonly list: GitPullRequestList | null }
@@ -81,17 +81,19 @@ function ListRow({ item, current, onShow }: { readonly item: GitPullRequestListI
   const when = item.updatedAt ? agoWords(Date.now() - Date.parse(item.updatedAt)) : null
   const { number, title } = item
   const by = item.author
-  const added = shownCount(item.additions), removed = shownCount(item.deletions)
+  const added = shownLineCount(item.additions), removed = shownLineCount(item.deletions)
+  const review = listReviewWord(item.reviewDecision)
   const label = item.draft
     ? t({ message: `Show draft #${number}: ${title}. ${checks}. ${added} added, ${removed} removed`, comment: '{checks} says how its checks stand, as in Checks passed.' })
     : t({ message: `Show #${number}: ${title}. ${checks}. ${added} added, ${removed} removed`, comment: '{checks} says how its checks stand, as in Checks passed.' })
   return <li>
-    <button type="button" className="pr-surface__open-row tt-focusable" aria-current={current || undefined} aria-label={label} onClick={() => onShow(item.url)}>
+    <button type="button" className="pr-surface__open-row tt-focusable" aria-current={current || undefined} aria-label={review ? `${label}. ${review}` : label} onClick={() => onShow(item.url)}>
       <Icon size={15} aria-hidden="true" data-state={item.draft ? 'draft' : 'open'} />
       <span className="pr-surface__open-title"><span className="pr-surface__link-number">#{item.number}</span> {item.title}</span>
       {CheckIcon ? <CheckIcon size={14} aria-hidden="true" className="pr-surface__open-checks" data-checks={item.checks} /> : <span className="pr-surface__open-checks" />}
       <span className="pr-surface__open-meta">
         {by ? <span>{by}</span> : null}{when ? <span>{when}</span> : null}<PullRequestLineCounts additions={item.additions} deletions={item.deletions} />
+        {item.draft ? <span>{stateLabel({ state: 'open', draft: true })}</span> : review ? <span data-review={item.reviewDecision}>{review}</span> : null}
       </span>
     </button>
   </li>

@@ -141,7 +141,7 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await expect(panel.getByRole('tab', { name: 'Pull request', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(panel.getByRole('heading', { name: '#74 Greet the reviewer' })).toBeVisible({ timeout: 30_000 })
     const checklist = panel.getByRole('list', { name: 'Merge checklist' })
-    const merge = panel.getByRole('button', { name: 'Merge #74', exact: true })
+    const merge = panel.getByRole('button', { name: /^(?:Can't merge|Merge) #74/u })
     await expect(panel.getByRole('heading', { name: /^Before merging/u })).toContainText('3 of 5 done')
     await expect(checklist).toContainText('CI / Owned build passed')
     await expect(checklist).toContainText('Reviewers wait until it is ready')
@@ -174,7 +174,7 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await expect(panel.getByText('Marked ready for review.', { exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(checklist).toContainText('Nobody has reviewed it yet')
     await expect(merge).toHaveAttribute('aria-disabled', 'true')
-    await expect(panel.getByText('1 line left before this can merge.', { exact: false })).toBeVisible()
+    await expect(panel.getByText('You can merge once someone approves it.', { exact: false })).toBeVisible()
     await merge.click({ force: true })
     await expect(page.getByRole('dialog')).toHaveCount(0)
 

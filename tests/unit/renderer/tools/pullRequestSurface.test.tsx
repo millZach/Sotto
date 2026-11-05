@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, checksInOrder, checksOnGitHub, checkTime, checkWord, confirmationFor, fileOnGitHub, filesByWeight, limitedWords, linesLeft, listMatches, mergedWhen, mergeEffect, mergeReady, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -56,7 +56,9 @@ function mount(options: { detail?: GitPullRequestRead | ((request: { reference?:
 }
 const sent = (command: ReturnType<typeof mount>['command']) => command.mock.calls.map(call => call[0])
 const lines = () => within(screen.getByRole('list', { name: 'Merge checklist' })).getAllByRole('listitem')
-const mergeButton = () => screen.getByRole('button', { name: 'Merge #74' })
+const lineOf = (words: RegExp) => lines().find(line => words.test(line.textContent ?? ''))!
+/** Merge under either of its names: "Merge #74", or "Can't merge #74 yet" while something blocks it. */
+const mergeButton = () => screen.getByRole('button', { name: /^(?:Can't merge|Merge) #74/u })
 async function opened() { await screen.findByRole('heading', { name: '#74 Make the greeting friendlier' }) }
 async function menu(label: string) {
   fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
@@ -109,7 +111,7 @@ describe('the merge checklist, read from the pull request', () => {
     expect(failing[0]).toMatchObject({ tone: 'failed', why: 'Gates (Windows) failed: 3 tests failed in tests/unit/main', fix: { kind: 'open-check', name: 'Gates (Windows)', url: 'https://github.com/o/r/actions/runs/9' } })
     expect(failing[1]).toMatchObject({ tone: 'failed', why: 'mira asked for changes', fix: { kind: 'open-review', author: 'mira', url: `${URL}#pullrequestreview-mira` } })
     expect(mergeReady(detail(), failing)).toBe(false)
-    expect(linesLeft(failing)).toBe('2 lines left before this can merge.')
+    expect(mergeWaitsFor(failing)).toBe('You can merge once the failing check passes and someone approves it.')
     expect(checklistHeading(detail(), false)).toBe('Before merging')
     expect(read({ checks: [check('a', 'cancelled'), check('b', 'failure')] })[0]).toEqual(['Checks passing', 'failed', 'a was cancelled, and 1 more', null])
     expect(read({ checks: [check('deploy', 'action-required', 'https://github.com/o/r/actions/runs/3')] })[0]).toEqual(['Checks passing', 'todo', 'deploy is waiting for approval on GitHub', 'open-check'])
@@ -198,12 +200,12 @@ describe('the Pull request surface', () => {
     expect(screen.getByText('Open', { selector: '.pr-surface__tag' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Ready to merge 5 of 5 done' })).toBeInTheDocument()
     expect(lines().map(line => line.textContent)).toEqual([
-      'Done: Checks passingCI / build passed', 'Done: Review approvedApproved by mira', 'Done: Up to date with mainHas every commit on main',
-      'Done: No conflictsMerges cleanly into main', 'Done: Ready for reviewNot a draft'])
+      'Done: CI / build passed', 'Done: Approved by mira', 'Done: Up to date with main. Has every commit on main',
+      'Done: No conflicts. Merges cleanly into main', 'Done: Not a draft'])
     expect(mergeButton()).not.toHaveAttribute('aria-disabled')
     expect(screen.getByText('Every commit, plus a merge commit.')).toBeInTheDocument()
     // The description folds below, closed until asked for.
-    expect(screen.queryByText(/Says hello\./u)).toBeNull()
+    expect(screen.queryByText(/One change/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Description' }))
     expect(screen.getByRole('button', { name: 'Description' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText(/Says hello\./u)).toBeInTheDocument()
@@ -289,7 +291,8 @@ describe('the Pull request surface', () => {
     await opened()
     expect(screen.getByRole('heading', { name: 'Before merging 3 of 5 done' })).toBeInTheDocument()
     expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
-    expect(mergeButton()).toHaveAccessibleDescription('2 lines left before this can merge. Merge when ready')
+    expect(mergeButton()).toHaveAccessibleName('Can\'t merge #74 yet')
+    expect(mergeButton()).toHaveAccessibleDescription('You can merge once the failing check passes and someone approves it. Merge when ready')
     fireEvent.click(mergeButton())
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open Gates (Windows) on GitHub' }))
@@ -302,10 +305,33 @@ describe('the Pull request surface', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enable auto-merge' }))
     await waitFor(() => expect(sent(command)).toEqual([expect.objectContaining({ action: 'enable-auto-merge', method: 'merge' })]))
   })
+  it('leads with what blocks the merge, and gives the lines that are done one quiet row', async () => {
+    mount({ detail: detail({ draft: true, behindBy: 2, mergeable: 'conflicting', reviewDecision: 'approved', reviews: [review('mira', 'approved')], checks: [check('build', 'pending')] }) })
+    await opened()
+    const words = lines().map(line => line.textContent)
+    expect(words[0]).toMatch(/^Failing: No conflicts/u)
+    expect(words.slice(1, 3).map(line => line?.split(':')[0])).toEqual(['To do', 'To do'])
+    expect(words[3]).toMatch(/^Waiting: Checks passing/u)
+    expect(words[4]).toBe('Done: Approved by mira')
+    expect(mergeButton()).toHaveAccessibleName('Can\'t merge #74 yet')
+    expect(screen.getByText(/^You can merge once its conflicts with main are resolved, it is up to date with main, it is marked ready for review, and the running check finishes\./u)).toBeInTheDocument()
+  })
+  it('keeps Merge as it is while a read holds a ready pull request, so a Refresh does not flash it blocked', async () => {
+    let answer: ((read: GitPullRequestRead) => void) | undefined
+    let reads = 0
+    mount({ detail: (() => { reads++; return reads === 1 ? detail() : new Promise<GitPullRequestRead>(resolve => { answer = resolve }) }) as never })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    await waitFor(() => expect(mergeButton()).toHaveAttribute('aria-disabled', 'true'))
+    expect(mergeButton()).toHaveAccessibleName('Merge #74')
+    expect(mergeButton()).not.toHaveAttribute('data-blocked')
+    answer!(detail())
+    await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
+  })
   it('leaves Merge when ready out where the repository does not allow auto-merge', async () => {
     mount({ detail: detail({ autoMergeAllowed: false, checks: [check('build', 'pending')] }) })
     await opened()
-    expect(screen.getByText('1 line left before this can merge.')).toBeInTheDocument()
+    expect(screen.getByText('You can merge once the running check finishes.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Merge when ready' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Merge when ready (auto-merge)' })).toBeNull()
@@ -315,8 +341,8 @@ describe('the Pull request surface', () => {
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Update branch' }))
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'update-branch' }]))
-    await waitFor(() => expect(within(lines()[4]!).getByRole('button', { name: 'Ready for review' })).toBeEnabled())
-    fireEvent.click(within(lines()[4]!).getByRole('button', { name: 'Ready for review' }))
+    await waitFor(() => expect(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' })).toBeEnabled())
+    fireEvent.click(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' }))
     await waitFor(() => expect(sent(command)[1]).toEqual({ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'ready' }))
   })
   it('shows an armed auto-merge, a closed and a merged pull request in place of Merge', async () => {
@@ -334,6 +360,8 @@ describe('the Pull request surface', () => {
     cleanup()
     const merged = mount({ detail: detail({ state: 'merged', mergedAt: '2026-09-23T10:14:00Z' }) })
     await waitFor(() => expect(merged.container.querySelector('.pr-surface__finished strong')).toHaveTextContent('Merged into main'))
+    // An ended pull request says so before its checklist.
+    expect(merged.container.querySelector('.pr-surface__finished')!.compareDocumentPosition(lines()[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Merge #74' })).toBeNull()
   })
   it('holds the rest in ···: Convert to draft, Update with rebase and Close after their words, Copy link, Unlink', async () => {
@@ -368,7 +396,7 @@ describe('the Pull request surface', () => {
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Open on GitHub' }))
     expect(openExternalLink).toHaveBeenCalledWith(URL)
-    fireEvent.click(within(lines()[4]!).getByRole('button', { name: 'Ready for review' }))
+    fireEvent.click(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not mark this ready for review. GraphQL: Resource not accessible by integration')
   })
   it('says when there is nothing to merge yet, creates the pull request the way the Git action does, and links one', async () => {
@@ -454,10 +482,10 @@ describe('the Pull request surface', () => {
     host: { projects: [], threads: [], models: [] },
     topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Marked ready for review.' } }) })
     await opened()
-    const press = within(lines()[4]!).getByRole('button', { name: 'Ready for review' })
+    const press = within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' })
     press.focus()
     fireEvent.click(press)
-    await waitFor(() => expect(within(lines()[4]!).queryByRole('button')).toBeNull())
+    await waitFor(() => expect(within(lineOf(/Ready for review|Not a draft/u)).queryByRole('button')).toBeNull())
     await waitFor(() => expect(screen.getByRole('heading', { name: '#74 Make the greeting friendlier' })).toHaveFocus())
   })
   it('keeps every press off until GitHub has been read again after one, so nothing is pressed twice over the old reading', async () => {
@@ -499,9 +527,9 @@ describe('the Pull request surface', () => {
   it('reads an open request for changes with nobody approving without claiming an approval', async () => {
     mount({ detail: detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested')] }) })
     await opened()
-    expect(lines()[1]).toHaveTextContent('Does not block: Reviewola asked for changes. This repository does not require a review')
-    expect(lines()[1]).not.toHaveTextContent(/approved/iu)
-    expect(within(lines()[1]!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
+    expect(lineOf(/^Does not block/u)).toHaveTextContent('Does not block: Reviewola asked for changes. This repository does not require a review')
+    expect(lineOf(/^Does not block/u)).not.toHaveTextContent(/approved/iu)
+    expect(within(lineOf(/^Does not block/u)!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
   })
   it('shows the count in the done colour beside Ready to merge, a line that does not block included', async () => {
     mount({ detail: detail({ behindBy: null }) })
@@ -745,7 +773,7 @@ describe('the drill-in under the merge checklist', () => {
     expect(screen.queryByRole('list', { name: 'Checks' })).toBeNull()
     expect(within(lines()[0]!).getByRole('button', { name: 'Open CI / lint on GitHub' })).toBeInTheDocument()
     expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
-    const fold = screen.getByRole('button', { name: 'Checks 3' })
+    const fold = screen.getByRole('button', { name: 'Checks 1 failed 1 running 1 passed' })
     expect(fold).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(fold)
     const list = screen.getByRole('list', { name: 'Checks' })
@@ -847,6 +875,29 @@ describe('the drill-in under the merge checklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to #74' }))
     await opened()
     expect(mergeButton()).toBeInTheDocument()
+  })
+  it('says what a closed fold holds on its head, and leaves the head\'s name as what a press opens', async () => {
+    mount({ detail: detail({ body: '## What changed\n\n- Says **hello** to whoever `reviews` this.', checks: [check('a', 'success'), check('b', 'skipped')] }) })
+    await opened()
+    const description = screen.getByRole('button', { name: 'Description' })
+    expect(description).toHaveTextContent('Says hello to whoever reviews this.')
+    fireEvent.click(description)
+    expect(description.querySelector('.pr-surface__fold-preview')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Checks 1 passed 1 skipped' })).toHaveAttribute('aria-expanded', 'false')
+  })
+  it('works out what the closed folds and the open list say', () => {
+    expect(checksSummary([check('a', 'failure'), check('b', 'cancelled'), check('c', 'pending'), check('d', 'action-required'), check('e', 'success'), check('f', 'neutral')])).toEqual([
+      { tone: 'failed', words: '2 failed' }, { tone: 'waiting', words: '1 need approval' }, { tone: 'waiting', words: '1 running' }, { tone: 'settled', words: '1 passed' }, { tone: 'settled', words: '1 skipped' }])
+    expect(descriptionPreview('')).toBe('')
+    expect(descriptionPreview('<!-- a template\nits second line -->\n# Title\n---\n![shot](a.png)\n1. [The link](https://x.test) and __more__')).toBe('The link and more')
+    expect(descriptionPreview('```sh\nnpm test\n```\n> - [x] Quoted')).toBe('Quoted')
+    expect(listReviewWord('approved')).toBe('Approved')
+    expect(listReviewWord('changes_requested')).toBe('Changes requested')
+    expect(listReviewWord('review_required')).toBeNull()
+    expect(listReviewWord(null)).toBeNull()
+    const lines = checklist(detail({ behindBy: null, draft: true, checks: [check('a', 'failure')] }))
+    expect(linesInOrder(lines).map(line => line.tone)).toEqual(['failed', 'todo', 'unknown', 'done', 'done'])
+    expect(lines.map(line => line.id)).toEqual(['checks', 'review', 'up-to-date', 'conflicts', 'ready'])
   })
   it('works out the order, the addresses and the matches the folds use', () => {
     expect(checksOnGitHub('https://github.com/o/r/pull/74/?x=1')).toBe('https://github.com/o/r/pull/74/checks')

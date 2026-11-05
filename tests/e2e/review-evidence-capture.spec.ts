@@ -276,8 +276,11 @@ const PR_NOTES: Readonly<Record<PullRequestMoment, string>> = {
   'checks-running': 'Pull request surface in Tools with Gates, three test shards, Package and Desktop still running or queued; the branch toolbar shows the pull request badge.',
   'checks-failed': 'Pull request surface with Gates (Windows) and Test shard 2 failed and Desktop result still running; badge visible.',
   ready: 'Pull request surface with every check green and an approval, Merge enabled; badge visible.',
+  'blocked-many': 'A draft that conflicts with main and is three commits behind it, with no review: four lines blocked and the checks done.',
+  'auto-merge': 'Auto-merge armed while checks still run: the armed line in Merge\'s place.',
+  merged: 'A merged pull request: what happened in Merge\'s place.',
 }
-const PR_STATE: Readonly<Record<PullRequestMoment, string>> = { 'checks-running': 'pr-checks-running', 'checks-failed': 'pr-checks-failed', ready: 'pr-ready' }
+const PR_STATE: Readonly<Record<PullRequestMoment, string>> = { 'checks-running': 'pr-checks-running', 'checks-failed': 'pr-checks-failed', ready: 'pr-ready', 'blocked-many': 'pr-blocked-many', 'auto-merge': 'pr-auto-merge', merged: 'pr-merged' }
 
 /** The pull request surface opened on a moment, and read. */
 async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment): Promise<void> {
@@ -286,7 +289,8 @@ async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment
   const panel = await toolsTab(page, 'Pull request')
   await refreshBranch(page, 'Thread store on a worker')
   await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
-  await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText(moment === 'ready' ? 'Approved by mira' : /fail/iu, { timeout: 30_000 })
+  const shows: Partial<Record<PullRequestMoment, string | RegExp>> = { ready: 'Approved by mira', 'checks-failed': /fail/iu, 'blocked-many': 'Conflicts with main', 'auto-merge': /running/iu, merged: 'Approved by mira' }
+  await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText(shows[moment]!, { timeout: 30_000 })
 }
 
 async function pullRequestMoment(capture: Capture, moment: PullRequestMoment): Promise<void> {
@@ -560,6 +564,37 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(400)
     await files.click()
     await capture.shoot('pr-clay', 'The same surface with its files open in the Clay theme, to check it away from the default palette.', scripted)
+  // How the answer holds: the blocked and the ready surface at every size, in a third theme, and the states that take Merge's place.
+  { name: 'pr-states', covers: ['pr-blocked-many', 'pr-auto-merge', 'pr-merged', 'pr-failed-clay', 'pr-ready-clay', 'pr-merge-method'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Thread store on a worker')
+    const scripted = 'The pull request lives in the scripted gh: its checks, reviews and how it stands are data, read through the real status reader and surface.'
+    await pullRequestMomentRead(capture, 'checks-failed')
+    for (const size of SMALLER_SIZES) await capture.shoot('pr-checks-failed', PR_NOTES['checks-failed'], scripted, { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
+    await page.waitForTimeout(400)
+    await capture.shoot('pr-failed-clay', 'Blocked, in the Clay theme.', scripted)
+    await capture.shoot('pr-failed-clay', 'Blocked, in the Clay theme, at the smallest window.', scripted, { modes: ['light'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await pullRequestMomentRead(capture, 'ready')
+    await capture.shoot('pr-ready-clay', 'Ready, in the Clay theme.', scripted)
+    await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
+    await page.waitForTimeout(400)
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    await panel.getByRole('button', { name: /^Merge method:/u }).click()
+    await capture.shoot('pr-merge-method', 'The merge method menu over a ready pull request, whose short checklist leaves it no room above Merge.', scripted)
+    await page.keyboard.press('Escape')
+    for (const moment of ['blocked-many', 'auto-merge', 'merged'] as const) {
+      await pullRequestMomentRead(capture, moment)
+      await capture.shoot(PR_STATE[moment], PR_NOTES[moment], scripted)
+    }
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await pullRequestMomentRead(capture, 'blocked-many')
+    await capture.shoot(PR_STATE['blocked-many'], PR_NOTES['blocked-many'], scripted, { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await closeTools(page)
+  } },
     await files.click()
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
     await panel.getByRole('button', { name: 'Description' }).click()

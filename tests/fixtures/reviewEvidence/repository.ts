@@ -97,7 +97,7 @@ export async function buildEvidenceRepository(source = resolve('.')): Promise<Ev
   return { path: repository, ghState, files }
 }
 
-export type PullRequestMoment = 'checks-running' | 'checks-failed' | 'ready'
+export type PullRequestMoment = 'checks-running' | 'checks-failed' | 'ready' | 'blocked-many' | 'auto-merge' | 'merged'
 
 /** A time before the capture's held clock, as GitHub would record it. */
 const ago = (minutes: number): string => new Date(E2E_THREADS_NOW - minutes * 60_000).toISOString()
@@ -110,6 +110,10 @@ const run = (name: string, workflowName: string, status: 'IN_PROGRESS' | 'QUEUED
 
 const SUCCESS = 'SUCCESS'
 const LEADING = [run('Greptile Review', 'Greptile', 'COMPLETED', SUCCESS, 1, 94), run('Pull request checks', 'CI', 'COMPLETED', SUCCESS, 2, 41), run('Typecheck and lint', 'CI', 'COMPLETED', SUCCESS, 3, 262)]
+const PASSING = [...LEADING,
+  run('Gates (Windows)', 'CI', 'COMPLETED', SUCCESS, 4, 633), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'COMPLETED', SUCCESS, 6, 571),
+  run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7, 402), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8, 366), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'COMPLETED', SUCCESS, 10, 1_092),
+]
 const CHECKS: Readonly<Record<PullRequestMoment, readonly ReturnType<typeof run>[]>> = {
   'checks-running': [...LEADING,
     run('Gates (Windows)', 'CI', 'IN_PROGRESS', null, 4, 512), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'IN_PROGRESS', null, 6, 455),
@@ -119,10 +123,16 @@ const CHECKS: Readonly<Record<PullRequestMoment, readonly ReturnType<typeof run>
     run('Gates (Windows)', 'CI', 'COMPLETED', 'FAILURE', 4, 618), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'COMPLETED', 'FAILURE', 6, 571),
     run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7, 402), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8, 366), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'IN_PROGRESS', null, 10, 734),
   ],
-  ready: [...LEADING,
-    run('Gates (Windows)', 'CI', 'COMPLETED', SUCCESS, 4, 633), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'COMPLETED', SUCCESS, 6, 571),
-    run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7, 402), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8, 366), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'COMPLETED', SUCCESS, 10, 1_092),
-  ],
+  ready: PASSING,
+  'blocked-many': PASSING,
+  'auto-merge': [...LEADING, run('Gates (Windows)', 'CI', 'IN_PROGRESS', null, 4, 512), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'QUEUED', null, 10)],
+  merged: PASSING,
+}
+/** What else stands at a moment that is not about its checks: every line but the checks blocked, an armed auto-merge, a finished pull request. */
+const STANDING: Readonly<Partial<Record<PullRequestMoment, Readonly<Record<string, unknown>>>>> = {
+  'blocked-many': { isDraft: true, mergeable: 'CONFLICTING', behindBy: 3 },
+  'auto-merge': { autoMergeRequest: { mergeMethod: 'SQUASH' } },
+  merged: { state: 'MERGED', mergedAt: ago(5) },
 }
 
 const BODY = `## What changed
@@ -154,9 +164,10 @@ export async function writePullRequestMoment(repository: EvidenceRepository, mom
   await writeFile(repository.ghState, JSON.stringify({ calls: [], pulls: [{
     number: EVIDENCE_PULL, title: EVIDENCE_PULL_TITLE, url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}`,
     state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: EVIDENCE_BRANCH, body: BODY, checks: CHECKS[moment], author: 'zach', updatedAt: ago(2),
-    rollup: moment === 'ready' ? 'SUCCESS' : moment === 'checks-failed' ? 'FAILURE' : 'PENDING', files: repository.files,
+    rollup: moment === 'checks-failed' ? 'FAILURE' : moment === 'checks-running' || moment === 'auto-merge' ? 'PENDING' : 'SUCCESS', files: repository.files,
     additions: repository.files.reduce((sum, file) => sum + file.additions, 0), deletions: repository.files.reduce((sum, file) => sum + file.deletions, 0),
-    reviewDecision: moment === 'ready' ? 'APPROVED' : 'REVIEW_REQUIRED',
-    reviews: moment === 'ready' ? [{ state: 'APPROVED', url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}#pullrequestreview-1`, author: { login: 'mira' } }] : [],
+    reviewDecision: moment === 'ready' || moment === 'merged' ? 'APPROVED' : 'REVIEW_REQUIRED',
+    reviews: moment === 'ready' || moment === 'merged' ? [{ state: 'APPROVED', url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}#pullrequestreview-1`, author: { login: 'mira' } }] : [],
+    ...STANDING[moment],
   }, ...others] }))
 }

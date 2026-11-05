@@ -38,6 +38,7 @@
   --foot-lit: color-mix(in srgb, var(--tt-text) 12%, transparent);
   display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px; margin: auto var(--thread-nav-inset) 0; padding: 12px 2px 10px;
 }
+@media (max-height: 640px) { .thread-nav__foot { padding-block: 6px; } }
 .thread-nav__foot .thread-nav__seg { --room-tile: 30px; gap: 2px; }
 .thread-nav__foot .thread-nav__seg [role='tab'] { width: 30px; padding: 0; border-radius: var(--tt-radius-row); background: transparent; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__foot .thread-nav__seg [role='tab']:hover:not([aria-selected='true']) { background: var(--foot-hover); }
