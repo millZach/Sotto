@@ -18,6 +18,8 @@ Amended October 30, 2026: a card says its status in words, with no coloured edge
 
 Amended November 5, 2026, by Zach's pick of variant C: below a 1000 pixel window decision 5's floor gives way to the collapsed rail, and the sidebar opens over the thread (below, "November 5, 2026 amendment: over the thread when narrow"). His pick of October 22 stays in the record above.
 
+Amended November 5, 2026, by Zach's pick of variant B of a second prototype: by day a ready Merge is a clearer mint wash inside an edge of the green itself (below, "November 5, 2026 amendment: a ready Merge in the checklist's green").
+
 Amended November 5, 2026, by Zach's pick of variant B: where the thread beside Changes would be under 400 pixels, Changes covers the workspace (below, "November 5, 2026 amendment: Changes over the thread when narrow").
 
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
@@ -92,6 +94,8 @@ Zach chose this. Decision 5's 260 pixel floor left the thread 560 of an 820 pixe
 Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/merge-plate/`, kept outside the repository, and picked B.
 
 A ready **Merge** in the Pull request surface is a light wash of the green the merge checklist's ticks are drawn in, over the surface, with a green edge and a green merge mark and the panel's own text on it, where it was the primary's plate in the text colour. It is still the one filled control in the surface, its words read at 4.5:1 or better on the wash in every theme, and hover and press deepen the wash rather than brightening a plate. This is the one exception to decision 2's "the primary keeps its plate in the text colour"; every other primary keeps it. The blocked Merge, hatched with its sentence, and a read in flight dimming a ready one are unchanged.
+
+**By day.** Zach chose this: later on November 5 he tried two answers for the light look in the design pass's prototype `sotto-council/prototypes/merge-day/`, kept outside the repository, and picked B. A was his earlier pick above, merge-plate B as it stood, whose 18% of the dark green over a near-white surface read as a grey sage, a control at rest. In B a ready Merge by day is a more colourful mint wash, the status green raised to a light tint, inside an edge of the green itself, about twice as strong as the edge it replaces (6.3:1 against the panel), with hover and press tints that deepen it the same way. Its words are the panel's text at weight 600, in both modes. The dark look's wash, edge and tints are unchanged. The values are tokens in `tokens.css` (`--tt-success-wash`, `-hover`, `-press` and `--tt-success-edge`).
 
 ## November 5, 2026 amendment: Changes over the thread when narrow
 
