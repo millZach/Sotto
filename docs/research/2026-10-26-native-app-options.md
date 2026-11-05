@@ -1,5 +1,7 @@
 # Native app options for Sotto
 
+**Update, November 5, 2026.** [Moving Sotto's backend to Rust and leaving Electron](2026-11-05-rust-backend-and-leaving-electron.md) checks this note against today's code and replaces option C's row below with a real estimate. It lists what here no longer holds, including where the speech model runs.
+
 Researched October 26, 2026. Two read-only passes did the outside and inside work. One read primary sources for each candidate: official docs, release notes and issue trackers. The other read Sotto's code for line counts, Electron API use and the hard requirements. The baseline numbers were measured by hand on the Windows laptop, once, and the method is in the baseline section. Nothing was built, no spike was run and no product code changed. Sources are linked inline. Claims marked **unverified** were not confirmed from a primary page. Where a claim rests on a secondary source, the text says so.
 
 ## Summary
