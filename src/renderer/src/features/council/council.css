@@ -150,11 +150,11 @@
 .climb-panel label { font-size: var(--tt-type-caption); }
 .climb-panel input:not([type="checkbox"]), .climb-panel textarea, .climb-panel select { min-width: 0; max-width: 100%; box-sizing: border-box; width: 100%; color: var(--tt-text); background: var(--tt-canvas); border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); padding: 7px; font: inherit; }
 .climb-panel textarea { min-height: 72px; resize: vertical; }
-.climb-panel button { font: inherit; color: var(--tt-text); background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); padding: 6px 10px; cursor: pointer; }
+.climb-panel button { font: inherit; color: var(--tt-text); background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); padding: 6px 10px; }
 .climb-panel button:disabled { cursor: default; opacity: 0.5; }
 .climb-panel :focus-visible, .climb-mode button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 .climb-panel details { min-width: 0; }
-.climb-panel summary { padding: 6px 0; cursor: pointer; }
+.climb-panel summary { padding: 6px 0; }
 .climb-pair, .climb-seat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .climb-limit { grid-template-columns: 1fr auto; align-items: center; }
 .climb-limit input { grid-column: 1 / -1; accent-color: var(--tt-accent); }
