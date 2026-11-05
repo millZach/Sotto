@@ -2322,6 +2322,27 @@ private struct StepLine: View {
 
 // MARK: - Unconfirmed and failed replies
 
+extension View {
+    /// Words on their way: a small spinner in the gutter to the left of their faint bubble, on its line and taking no room,
+    /// so the row is exactly as tall as the message it becomes and nothing on the page moves when the words land. A line
+    /// saying so under the bubble went when they landed and dropped everything above it by its height, 20.5 points
+    /// (Zach, November 4, 2026: "jumps up then back down after the send"; his pick A). VoiceOver reads the words, then
+    /// that they are sending.
+    @ViewBuilder func sendingBeside(_ words: String?) -> some View {
+        if let words {
+            overlay(alignment: .leading) {
+                ProgressView().controlSize(.mini)
+                    .alignmentGuide(.leading) { $0[.trailing] + Space.s2 }
+                    .accessibilityHidden(true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(Text(words))
+        } else {
+            self
+        }
+    }
+}
+
 /// A reply, answer or stop on its way to the thread's computer, or one it hasn't confirmed. While the computer
 /// hasn't answered, or says it is still carrying it out, it reads as sending and asks nothing of the user.
 /// Only one it couldn't confirm is marked, with what to do. It is never sent again on its own.
@@ -2344,19 +2365,24 @@ private struct UnconfirmedRow: View {
             ForEach(files) { file in
                 FilePill(name: file.name, sizeBytes: file.sizeBytes).opacity(0.6).padding(.leading, 48)
             }
-            if let text, !text.isEmpty {
+            let hasWords = !(text ?? "").isEmpty
+            if let text, hasWords {
                 Text(verbatim: text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                     .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .sendingBeside(sending ? words.sending : nil)
                     .padding(.leading, 48)
             }
             if sending {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
-                    Text(words.sending)
+                // With no words to sit beside, the spinner keeps its own line.
+                if !hasWords {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text(words.sending)
+                    }
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .accessibilityElement(children: .combine)
                 }
-                .font(.sotto(.caption)).foregroundStyle(Palette.muted)
-                .accessibilityElement(children: .combine)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)

@@ -922,10 +922,13 @@ private struct SendingBubble: View {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                     .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .sendingBeside(String(localized: "Sending to Watcher…"))
+            } else {
+                // With no words to sit beside, the spinner keeps its own line.
+                HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .accessibilityElement(children: .combine)
             }
-            HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
-                .font(.sotto(.caption)).foregroundStyle(Palette.muted)
-                .accessibilityElement(children: .combine)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
