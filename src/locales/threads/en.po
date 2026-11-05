@@ -697,6 +697,10 @@ msgid "{modelName} oversees and chooses a model for each piece. Turned off, it w
 msgstr "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
+msgstr "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 msgstr "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 
@@ -2513,6 +2517,10 @@ msgstr "Choose branch"
 msgid "Choose model"
 msgstr "Choose model"
 
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Choose model. {modelName} oversees new threads"
+msgstr "Choose model. {modelName} oversees new threads"
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Choose model. {modelNameNow} oversees this thread"
 msgstr "Choose model. {modelNameNow} oversees this thread"
@@ -3285,6 +3293,10 @@ msgstr "Could not make the marked copy. Nothing was added, and your marks are st
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not open {failedHost}."
 msgstr "Could not open {failedHost}."
+
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "Could not open {name}. It is still attached. Try opening it again."
+msgstr "Could not open {name}. It is still attached. Try opening it again."
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
@@ -5966,6 +5978,11 @@ msgstr "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull r
 msgid "one of its agents"
 msgstr "one of its agents"
 
+#. {provider} is a provider's name.
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+msgstr "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr "Only if the server was started with one"
@@ -5997,7 +6014,9 @@ msgid "Open {file} in the side panel"
 msgstr "Open {file} in the side panel"
 
 #. {name} is an attached image's file name.
+#. {name} is an attached image's file name.
 #: src/renderer/src/agents/MessageContent.tsx
+#: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
 
@@ -6349,6 +6368,7 @@ msgstr "Other: {text}"
 msgid "Outcome unknown"
 msgstr "Outcome unknown"
 
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "oversees"
@@ -8300,6 +8320,10 @@ msgstr "Start from origin"
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Start here"
 msgstr "Start here"
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Start new threads as Dynamic?"
+msgstr "Start new threads as Dynamic?"
 
 #. A body its host sent cut shows only this part.
 #: src/renderer/src/agents/ActivityBody.tsx

@@ -138,6 +138,20 @@ export async function stageAttachedFile(threadId: string | null, file: { readonl
   }
 }
 
+/** Reads the full staged image on demand without adding it to the thumbnail cache. */
+export async function fullImageSource(threadId: string | null, handle: Pick<AgentAttachmentHandle, 'digest'>): Promise<string | null> {
+  try {
+    const content = await agents()?.attachmentContent?.({ threadId, digest: handle.digest })
+    if (!content) return null
+    return await new Promise<string | null>(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(new Blob([new Uint8Array(content.bytes)], { type: content.mimeType }))
+    })
+  } catch { return null }
+}
+
 /** The chip's thumbnail: drawn when the image was staged here, or from the bytes its host still keeps. */
 export function thumbnailFor(threadId: string | null, handle: Pick<AgentAttachmentHandle, 'digest'>): Promise<string | null> {
   const thumbnail = cached(handle.digest)
