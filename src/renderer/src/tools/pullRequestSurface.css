@@ -170,7 +170,9 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__open-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) 14px; grid-template-areas: 'icon title checks' '. meta meta'; column-gap: 8px; row-gap: 2px; align-items: start; width: 100%; padding: 8px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
 .pr-surface__open-row:hover { background: var(--tt-hover); }
 .pr-surface__open-row:active { background: var(--tt-hover-strong); }
-.pr-surface__open-row[aria-current] { background: var(--tt-hover-strong); }
+/* The one shown above: a quiet lift of the text's own ink, so it says where you are without outshining the checks marks,
+   the counts or the pull request it stands for. Pointing at another row lights it in the accent, as anywhere else. */
+.pr-surface__open-row[aria-current] { background: color-mix(in oklab, var(--tt-text) 8%, transparent); }
 .pr-surface__open-row > svg:first-child { grid-area: icon; margin-top: 2px; }
 .pr-surface__open-title { grid-area: title; display: -webkit-box; overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .pr-surface__open-checks { grid-area: checks; margin-top: 2px; color: var(--tt-text-muted); }
