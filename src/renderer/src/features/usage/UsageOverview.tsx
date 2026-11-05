@@ -58,15 +58,6 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
 
   // A range with no token counts says so once, on Tokens: Where and From cache would only repeat it.
   const noTokenCounts = USAGE_TOKEN_FIELDS.every(name => totals.tokens[name].value === undefined)
-  const measures: readonly Focus[] = noTokenCounts ? FOCUS.filter(value => value !== 'where' && value !== 'cache') : FOCUS
-  const shownFocus: Focus = measures.includes(focus) ? focus : 'tokens'
-  const choose = (value: Focus): void => { setFocus(value); setHover(null); setPin(null); setCell(null) }
-  const onIndexKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    const target = roomKeyTarget(event.key, index, measures.length)
-    if (target === null) return
-    event.preventDefault(); choose(measures[target]!)
-    list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus()
-  }
 
   // Index values.
   const readable = limits.filter(item => item.primary.tightest !== undefined)
@@ -85,7 +76,9 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     room: {
       value: lowest === undefined ? '—' : `${lowest.primary.tightest!.left}%`, text: lowest === undefined ? '—' : `${lowest.primary.tightest!.left}%`,
       note: lowest === undefined ? t`No limits read` : t`Lowest: ${lowestName}, ${lowestWindow}`,
-      viz: limits.length === 0 ? undefined : <span className="usage-mini-rings">{limits.map(item => <Ring key={item.providerId} size={14} parts={[{ left: item.primary.tightest?.left, width: 2.5, inset: 0 }]} stale={item.primary.stale} />)}</span>,
+      // A ring for each subscription with a reading, beside the lowest: a provider with none would add only a dotted ring that
+      // says nothing, and a lone ring repeats the figure and reads as something still loading.
+      viz: readable.length < 2 ? undefined : <span className="usage-mini-rings">{readable.map(item => <Ring key={item.providerId} size={14} parts={[{ left: item.primary.tightest?.left, width: 2.5, inset: 0 }]} stale={item.primary.stale} />)}</span>,
       low: lowest !== undefined && lowest.primary.tightest!.left! <= LOW_LEFT,
     },
     // A line over a range with work on only a few days is flat with a hook at one end and says nothing the figure does not;
@@ -94,7 +87,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       viz: series === null || series.filter(row => row.prompts > 0).length <= FEW_DAYS ? undefined : <Spark values={series.map(row => row.prompts)} /> },
     tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: totals.tokens.total.value === undefined ? t`No tokens in this range` : t`input + output` },
     where: tokenTotal > 0
-      ? { value: <>{sottoShare}<span className="usage-index__unit"><Trans>in Sotto</Trans></span></>, text: t`${sottoShare} in Sotto`,
+      ? { value: <><span className="usage-index__figure">{sottoShare}</span><span className="usage-index__unit"><Trans>in Sotto</Trans></span></>, text: t`${sottoShare} in Sotto`,
         note: t`of tokens · ${sottoPromptShare} of prompts`,
         viz: <span className="usage-mini-split" aria-hidden="true"><i className="usage-where--sotto" style={{ flexGrow: summary.sottoTokens }} /><i className="usage-where--outside" style={{ flexGrow: Math.max(0, tokenTotal - summary.sottoTokens) }} /></span> }
       : { value: '—', text: '—', note: t`No tokens in this range` },
@@ -104,6 +97,18 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       note: summary.modelsTruncated ? t`Ranking is incomplete` : topModel !== undefined ? t`${topShare} of prompts` : prompts > 0 ? t`Not matched for these prompts` : t`No prompts yet`,
     },
     rhythm: { value: busiest === undefined ? '—' : `${WEEKDAYS_SHORT[busiest.weekday]} ${hourLabel(busiest.hour)}`, text: busiest === undefined ? '—' : `${WEEKDAYS_SHORT[busiest.weekday]} ${hourLabel(busiest.hour)}`, note: t`when you send the most`, words: true },
+  }
+
+  // What has a figure leads; a measure with nothing to show follows the rest as a line, so the index opens on what is known.
+  const kept = noTokenCounts ? FOCUS.filter(value => value !== 'where' && value !== 'cache') : FOCUS
+  const measures: readonly Focus[] = [...kept.filter(value => items[value].text !== '—'), ...kept.filter(value => items[value].text === '—')]
+  const shownFocus: Focus = measures.includes(focus) ? focus : 'tokens'
+  const choose = (value: Focus): void => { setFocus(value); setHover(null); setPin(null); setCell(null) }
+  const onIndexKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const target = roomKeyTarget(event.key, index, measures.length)
+    if (target === null) return
+    event.preventDefault(); choose(measures[target]!)
+    list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus()
   }
 
   const selected = hover ?? pin
@@ -123,7 +128,17 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       stage = <>
         {head(t`Room left`, <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('subscriptions')}><Trans>Subscriptions</Trans></button>)}
         <p className="usage-when tt-paragraph"><Trans>Account-wide, as each provider reports it.</Trans></p>
-        {limits.length === 0 ? <p className="usage-none tt-paragraph"><Trans>No subscription readings on the selected computers.</Trans></p> : <div className="usage-rings">{limits.map(item => <RingCard key={item.providerId} limits={item} page={page} />)}</div>}
+        {limits.length === 0 ? <p className="usage-none tt-paragraph"><Trans>No subscription readings on the selected computers.</Trans></p> : (() => {
+          // Each reading gets its ring; a provider with none is a line under them, so an empty ring never stands beside a full one.
+          const withWindows = limits.filter(hasWindows), without = limits.filter(item => !hasWindows(item))
+          return <>
+            {withWindows.length > 0 ? <div className="usage-rings">{withWindows.map(item => <RingCard key={item.providerId} limits={item} page={page} />)}</div> : null}
+            {without.length > 0 ? <ul className="usage-unread" data-alone={withWindows.length === 0 || undefined}>{without.map(item => <li key={item.providerId}>
+              <span className="usage-unread__name"><ProviderMark provider={item.providerId} name={PROVIDER_NAMES[item.providerId]} size={14} />{PROVIDER_NAMES[item.providerId]}</span>
+              <span><NoReading limits={item} page={page} /></span>
+            </li>)}</ul> : null}
+          </>
+        })()}
       </>
       break
     case 'tokens': {
@@ -315,7 +330,9 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           </li>
         })}</ol></div> : null}
         {prompts > 0 ? <div className="usage-split-block"><p className="usage-split-caption"><Trans>Sent from</Trans></p>
-          {clients.length > 0 ? <div className="usage-split usage-split--small">{clients.map(row => <div key={row.clientId} className="usage-split__item"><span>{clientName(row.clientId)}</span><b>{fmtInt(row.prompts)}</b></div>)}</div> : null}
+          {/* One app sent them all: its name is the news, and its count would only repeat the figure above. */}
+          {clients.length === 1 ? <p className="usage-split-only tt-paragraph">{clientName(clients[0]!.clientId)}</p>
+            : clients.length > 0 ? <div className="usage-split usage-split--small">{clients.map(row => <div key={row.clientId} className="usage-split__item"><span>{clientName(row.clientId)}</span><b>{fmtInt(row.prompts)}</b></div>)}</div> : null}
           {placesNote}
         </div> : null}
         <p className="usage-origin tt-paragraph">{wakeUpsNamed ? <Trans>You sent <b>{sent}</b>, Watcher <b>{watcher}</b> and wake-ups <b>{wakeUps}</b>.</Trans>
@@ -360,6 +377,16 @@ export function daySeries(page: UsagePage): DayValue[] | null {
   })
 }
 
+/** A subscription with a current window to draw as a ring. */
+const hasWindows = (limits: UsageProviderLimits): boolean => limits.primary.windows.length > 0 && limits.primary.longest !== undefined
+
+/** Why a subscription has no ring: Sotto can't read it, or no computer has read it yet. */
+function NoReading({ limits, page }: { readonly limits: UsageProviderLimits; readonly page: UsagePage }): ReactNode {
+  const { t } = useLingui()
+  const from = midSentence(page.hostName(limits.primary.hostId))
+  return limits.providerId === 'devin' || limits.primary.quota.reason === 'unsupported' ? t`Sotto can't read these limits yet` : t`No reading from ${from}`
+}
+
 function RingCard({ limits, page }: { readonly limits: UsageProviderLimits; readonly page: UsagePage }): ReactNode {
   const { t } = useLingui()
   const { primary, providerId } = limits
@@ -370,7 +397,6 @@ function RingCard({ limits, page }: { readonly limits: UsageProviderLimits; read
     : [{ left: undefined, width: 6, inset: 0 }]
   const tightest = primary.tightest
   const rows = windows.length > 0 && longest !== undefined ? [longest, ...(windows.length > 1 && shortest !== undefined ? [shortest] : [])] : []
-  const from = midSentence(page.hostName(primary.hostId))
   return <div className="usage-ring-card">
     <div className="usage-ring-figure"><Ring size={116} parts={parts} stale={primary.stale} />
       <span>{tightest !== undefined ? <><b data-low={tightest.left! <= LOW_LEFT || undefined}>{tightest.left}%</b><small><Trans comment="What is left of a subscription's limit, under its percentage">left</Trans></small></> : <b className="usage-dash" aria-hidden="true">—</b>}</span>
@@ -378,7 +404,7 @@ function RingCard({ limits, page }: { readonly limits: UsageProviderLimits; read
     <div className="usage-ring-card__name"><ProviderMark provider={providerId} name={PROVIDER_NAMES[providerId]} size={15} />{PROVIDER_NAMES[providerId]}</div>
     <ul className="usage-ring-card__rows">
       {rows.length > 0 ? rows.map((window, index) => <li key={window.id}><i className={`usage-dot${index > 0 ? ' usage-dot--inner' : ''}`} />{window.label} {window.left === undefined ? <Dash /> : <b data-low={window.left <= LOW_LEFT || undefined}>{window.left}%</b>}{window.resetsAt === undefined ? null : ` · ${resetShort(window.resetsAt, page.now, page.timeZone)}`}</li>)
-        : <li>{providerId === 'devin' || primary.quota.reason === 'unsupported' ? t`Sotto can't read these limits yet` : t`No reading from ${from}`}</li>}
+        : <li><NoReading limits={limits} page={page} /></li>}
       {rows.length > 0 ? <li className="usage-ring-card__fresh">{tightest !== undefined ? readAge(primary.observedAt, page.now) : t`Use not reported`}</li> : null}
     </ul>
   </div>

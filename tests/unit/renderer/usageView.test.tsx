@@ -82,16 +82,16 @@ describe('Usage page', () => {
     await user.click(measure(/^From cache /u))
     expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent("Input tokens weren't reported in this range, so the share from cache can't be worked out.")
   })
-  it('says once that a range has no tokens, on Tokens, and leaves Where and From cache out until it has some', async () => {
+  it('says once that a range has no tokens, on Tokens, last in the index, and leaves Where and From cache out until it has some', async () => {
     const host = localHost()
     host.activity = { ...host.activity!, totals: activityRow(190, 10, 0, tokens()) }
     const { user } = await open(dashboard(host))
-    expect(within(measures()).getAllByRole('tab').map(tab => tab.querySelector('.usage-index__label')?.textContent)).toEqual(['Room left', 'Prompts', 'Tokens', 'Most used model', 'Busiest hour'])
+    // What has a figure leads; a measure with nothing to show follows as a line, in the same order for the arrow keys.
+    expect(within(measures()).getAllByRole('tab').map(tab => tab.querySelector('.usage-index__label')?.textContent)).toEqual(['Room left', 'Prompts', 'Most used model', 'Busiest hour', 'Tokens'])
     expect(within(measures()).getAllByText('No tokens in this range')).toHaveLength(1)
-    measure(/^Tokens /u).focus()
+    measure(/^Busiest hour /u).focus()
     await user.keyboard('{ArrowDown}')
-    expect(measure(/^Most used model /u)).toHaveFocus()
-    await user.keyboard('{ArrowUp}')
+    expect(measure(/^Tokens /u)).toHaveFocus()
     const stage = screen.getByRole('tabpanel', { name: /Tokens/u })
     expect(stage).toHaveTextContent('No tokens in this range.')
     expect(within(stage).queryByRole('group', { name: /^Tokens per day/u })).toBeNull()
@@ -140,6 +140,10 @@ describe('Usage page', () => {
     measure(/^Busiest hour /u).focus(); await user.keyboard('{Home}')
     expect(screen.getByRole('heading', { name: 'Room left' })).toBeVisible()
     expect(screen.getByText("Sotto can't read these limits yet")).toBeVisible()
+    // A subscription with no reading is a line under the rings, never an empty ring beside a full one.
+    expect(screen.getByText("Sotto can't read these limits yet").closest('.usage-unread')).not.toBeNull()
+    expect(document.querySelectorAll('.usage-ring-card').length).toBeGreaterThan(0)
+    for (const card of document.querySelectorAll('.usage-ring-card')) expect(card.querySelector('.usage-ring-card__fresh')).not.toBeNull()
   })
 
   it('splits the work by place: Sotto threads, their subagents, then each app outside Sotto', async () => {

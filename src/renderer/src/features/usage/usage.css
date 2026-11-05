@@ -136,6 +136,11 @@
 .usage-index__value[data-words] { padding-top: 4px; font-size: clamp(17px, .6cqi + 12px, 20px); font-weight: 500; letter-spacing: -.3px; }
 .usage-index__value[data-low] { color: var(--usage-low); }
 .usage-index__unit { margin-left: 7px; color: var(--tt-text-2); font-size: var(--tt-type-reading); font-weight: 450; letter-spacing: -.2px; }
+/* A figure with a unit, such as "under 1% in Sotto": the unit goes under the figure when the card is too narrow for both,
+   rather than cutting the figure short. */
+.usage-index__value:has(> .usage-index__unit) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 7px; white-space: normal; }
+.usage-index__value > .usage-index__figure, .usage-index__value:has(> .usage-index__figure) > .usage-index__unit { white-space: nowrap; }
+.usage-index__value:has(> .usage-index__figure) > .usage-index__unit { margin-left: 0; }
 .usage-index__viz { align-self: center; color: var(--tt-accent-text); }
 .usage-index__note { grid-column: 1 / -1; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; text-overflow: ellipsis; }
 /* A measure with nothing to show: its name and what is missing, and no large dash standing in for a figure. */
@@ -239,6 +244,7 @@
 .usage-split__item b { font-size: var(--tt-type-figure); font-weight: 450; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
 .usage-split--small { gap: 12px 30px; }
 .usage-split--small .usage-split__item b { font-size: var(--tt-type-heading); letter-spacing: -.3px; }
+.usage-split-only { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; }
 .usage-split-block .usage-note { margin-top: 10px; }
 .usage-origin { margin: 30px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 
@@ -277,6 +283,11 @@
 .usage-ring-card__fresh { color: var(--tt-text-muted); }
 .usage-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--usage-strong); }
 .usage-dot--inner { background: var(--usage-ink); }
+/* Subscriptions with no reading: a line each under the rings, the provider's name and why. */
+.usage-unread { display: grid; gap: 10px; margin: 32px 0 0; padding: 18px 0 0; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); list-style: none; }
+.usage-unread[data-alone] { margin-top: 22px; padding-top: 0; border-top: 0; }
+.usage-unread li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.usage-unread__name { display: inline-flex; align-items: center; gap: 8px; min-width: 128px; color: var(--tt-text-2); font-weight: 500; }
 .usage-cache { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 48px; margin-top: 30px; }
 .usage-lead { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); }
 
