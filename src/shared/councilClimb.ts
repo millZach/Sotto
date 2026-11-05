@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { councilEvidenceSourceSchema, councilFrozenEvidenceSchema } from './councilEvidence'
+import { councilAskedBySchema } from './councilTools'
 
 export const COUNCIL_CLIMB = 'sotto:council:climb'
 /** Codex's isolated Windows home cannot provision its restricted-read sandbox yet. */
@@ -15,6 +16,9 @@ export const climbCriterionSchema = z.object({
   kind: z.enum(['goal', 'guardrail']), direction: z.enum(['higher', 'lower']), min: number, max: number,
   target: z.enum(['relative', 'absolute', 'reference']), threshold: number, tolerance: number.nonnegative(), meaningfulGain: number.positive(),
 }).strict().refine(value => value.min < value.max, 'The score range must increase.').refine(value => value.target !== 'absolute' || value.threshold >= value.min && value.threshold <= value.max, 'An absolute target must fit the score range.')
+/** The criterion a Climb starts with until its setup chair proposes the rubric, in the drawer's words or main's. */
+export const climbStartingCriterion = (name: string, rubric: string): ClimbCriterion => ({ id: 'quality', name, rubric,
+  kind: 'goal', direction: 'higher', min: 0, max: 10, target: 'relative', threshold: 1, tolerance: 0, meaningfulGain: 0.5 })
 export const climbSpecSchema = z.object({
   goal: words, constraints: z.string().max(20_000), source: councilEvidenceSourceSchema,
   reference: councilEvidenceSourceSchema.optional(), criteria: z.array(climbCriterionSchema).min(1).max(12),
@@ -58,6 +62,8 @@ export const climbRecordSchema = z.object({
   evidence: z.array(councilFrozenEvidenceSchema), rounds: z.array(climbRoundSchema), turns: z.array(climbTurnSchema),
   baseline: z.uuid().optional(), incumbent: z.uuid().optional(), reference: z.uuid().optional(), noImprovement: z.number().int().nonnegative(),
   completedTurns: z.number().int().nonnegative(), originLastUser: id.nullable(), retained: z.boolean(),
+  /** Present when the builder's own agent started it, at the user's request (ADR-0177, November 5, 2026). */
+  askedBy: councilAskedBySchema.optional(),
 }).strict()
 export type ClimbRecord = z.infer<typeof climbRecordSchema>
 export const climbRequestSchema = z.discriminatedUnion('type', [

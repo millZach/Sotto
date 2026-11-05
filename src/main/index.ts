@@ -19,6 +19,7 @@ import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
+import { councilUserMessage, CouncilToolServer } from './agents/councilTools'
 import { tellWatcherTools } from './agents/tellWatcherTools'
 import { DesktopTellWatcherRelay } from './agents/tellWatcherRelay'
 import { PullRequestToolServer } from './agents/pullRequestTools'
@@ -1317,6 +1318,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // exist, so one data folder keeps one staging folder for them. Stable and a desktop without its local host build none.
   const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({ directory: userDataPath, control: agentControl, host: agentHost,
     historyEnabled: () => agentHistoryEnabled, stageDeadline: () => workingCopySettings.councilStageDeadline,
+    panel: () => ({ panelists: workingCopySettings.councilPanelists, chair: workingCopySettings.councilChair }),
     bundles: ('branchBundles' in localRuntime ? localRuntime.branchBundles : undefined)
       ?? new BranchBundles({ stagingDirectory: join(userDataPath, 'council-staging'), recordsPath: join(userDataPath, 'council-staging', 'records.json') }) }) : undefined
   if (councilService) { await councilService.recover(); quitHandles.council = councilService }
@@ -1330,7 +1332,27 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
   }) : undefined
   if (tellTools) quitHandles.tellWatcherTools = tellTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
+  // Lets an ordinary thread's agent ask the Council, or start a Climb's setup, when the user's own message there asks for one
+  // (ADR-0177, November 5, 2026): only where the Council itself is built, so stable offers no server.
+  const councilTools = councilService ? new CouncilToolServer({
+    admits: threadId => {
+      if (!agentHost.admitsTellWatcher(threadId)) return false
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread !== undefined && thread.delegatedBy === undefined && thread.councilJudge !== true && thread.remoteHost !== true
+        && (thread.hostId === undefined || thread.hostId === agentControl.hostId())
+    },
+    userMessage: async threadId => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread ? councilUserMessage(thread, { message: messageId => agentHost.threadMessage(threadId, messageId), newest: () => agentHost.threadMessages(threadId) },
+        messageId => agentControl.delegationMessage(messageId) || localWatcher?.sentToThread(threadId, messageId) === true) : undefined
+    },
+    ask: (threadId, input, user) => councilService.askFromThread(threadId, input.question, user),
+    climb: (threadId, input, user) => councilService.climbFromThread(threadId, input, user),
+    read: (threadId, council) => councilService.readForThread(threadId, council),
+  }) : undefined
+  if (councilTools) quitHandles.councilTools = councilTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
+    ...(councilTools ? [councilTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
