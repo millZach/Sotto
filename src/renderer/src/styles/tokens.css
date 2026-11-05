@@ -415,11 +415,11 @@
   /* Type sizes (ADR-0169). Every font-size in a renderer stylesheet names one of these steps, and
      scaleTokens.test.ts holds it there. `--tt-text-*` already names text colours, so sizes are `--tt-type-*`. */
   --tt-type-micro: 11px; /* Keys, badges and tiny marks */
-  --tt-type-caption: 12px; /* Times, counts, statuses, metadata */
-  --tt-type-small: 13px; /* Descriptions, controls, most interface text */
+  --tt-type-caption: 12px; /* Times, counts, statuses, metadata (a sidebar row's take small) */
+  --tt-type-small: 13px; /* Descriptions, controls, most interface text, a sidebar row's status and time */
   --tt-type-body: 14px; /* Sidebar rows, fields, menu items */
-  --tt-type-reading: 15px; /* Transcript, composer, journal entries, settings labels */
-  --tt-type-lead: 16px; /* Dialog titles, section intros, request prompts */
+  --tt-type-reading: 15px; /* Composer, Watcher's conversation, journal entries, settings labels */
+  --tt-type-lead: 16px; /* A thread's messages, dialog titles, section intros, request prompts */
   --tt-type-heading: 18px; /* Sidebar brand, empty-room headings */
   --tt-type-figure: 22px; /* Figures in a narrow room, sub-titles */
   --tt-type-title: 28px; /* Room titles and large figures */
