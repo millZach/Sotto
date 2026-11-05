@@ -1,4 +1,5 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
+import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { isDynamicThread, overseerInstructions, overseerNoteFor, whyNotDynamic } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
@@ -5688,7 +5689,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.requireCreation(model.providerId)
       if (command.councilJudge) {
         if (!this.councilEnabled) throw new Error('Climb is unavailable on this release. Its records were kept.')
-        if (model.providerId !== 'claude' || !command.workingDirectory) throw new Error('This provider has no enforced Climb judge mode.')
+        if (!supportsClimbJudging(model.providerId, process.platform) || !command.workingDirectory) throw new Error('This provider has no enforced Climb judge mode on this computer.')
         await assertCouncilJudgeDirectory(this.directory, command.workingDirectory)
       }
       const speed = command.speed !== undefined ? command.speed : command.fastMode ? 'fast' : null

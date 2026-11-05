@@ -614,8 +614,8 @@ msgid "Choose an open local project thread as the builder."
 msgstr "Choose an open local project thread as the builder."
 
 #: src/main/council/climbService.ts
-msgid "Choose connected Claude models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
-msgstr "Choose connected Claude models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
+msgid "Choose connected Claude or Codex models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
+msgstr "Choose connected Claude or Codex models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Choose each computer once before clearing usage."
@@ -636,6 +636,10 @@ msgstr "Client access could not be revoked. Check the host connection and try Fo
 #: src/main/hosts/hostFailureWords.ts
 msgid "Client access could not be revoked. Nothing was saved. Check the host connection and try Forget again."
 msgstr "Client access could not be revoked. Nothing was saved. Check the host connection and try Forget again."
+
+#: src/main/council/climbService.ts
+msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
+msgstr "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."

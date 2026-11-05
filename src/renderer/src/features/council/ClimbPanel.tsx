@@ -4,7 +4,7 @@ import { useOptionalApp } from '../../state/AppContext'
 import type { CouncilPanel } from './CouncilSeats'
 import { t as translate } from '@lingui/core/macro'
 import type { CouncilBridge } from '../../../../shared/council'
-import { climbPlannedTurns, climbSpecSchema, type ClimbCriterion, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec } from '../../../../shared/councilClimb'
+import { climbPlannedTurns, climbSpecSchema, supportsClimbJudging, type ClimbCriterion, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec } from '../../../../shared/councilClimb'
 import type { CouncilEvidenceSource } from '../../../../shared/councilEvidence'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { councilAskable } from './councilDraft'
@@ -60,7 +60,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
   const cached = drafts.get(thread ?? '')
   const [preview, setPreview] = useState<ClimbResult['preview']>(cached?.preview), [referencePreview, setReferencePreview] = useState<ClimbResult['preview']>(cached?.referencePreview), [notice, setNotice] = useState(''), [context, setContext] = useState(cached?.context ?? '')
   const chosen = threads.find(item => item.id === origin) ?? threads[0]
-  const models = (state?.host.models ?? []).filter(model => model.providerId === 'claude' && model.ready && !model.legacy)
+  const models = (state?.host.models ?? []).filter(model => supportsClimbJudging(model.providerId, app?.platform ?? 'win32') && model.ready && !model.legacy)
   const initialEffort = models[0]?.defaultReasoningEffort
   const defaultSeat = { modelId: models[0]?.id ?? '', reasoningEffort: initialEffort === ULTRACODE ? withoutUltracode(models[0]?.reasoningEfforts ?? [])[0] ?? null : initialEffort ?? null }
   const [spec, setSpec] = useState<ClimbSpec>(() => cached?.spec ?? { goal: '', constraints: '', source: { kind: 'folder', root: chosen?.workingDirectory ?? state?.host.projects.find(project => project.id === chosen?.projectId)?.path ?? '', paths: [], exclude: [] },
@@ -105,15 +105,15 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
           <Source value={spec.source} frozen={!!current} onChange={source => update({ source })} />
           <button type="button" className="tt-focusable" disabled={!!current} onClick={() => void call({ type: 'preview', source: spec.source })}>{t`Preview capture`}</button>
           {preview ? <p>{t`${preview.files} files · ${preview.bytes} bytes`}</p> : null}
-          <details><summary>{t`Exclusions and limits`}</summary><p>{t`10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb.`}</p><p>{t`Claude receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated.`}</p>
+          <details><summary>{t`Exclusions and limits`}</summary><p>{t`10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb.`}</p><p>{t`Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated.`}</p>
             <ul>{preview?.excluded.map(item => <li key={item.path}>{item.path} · {item.reason}</li>)}</ul></details>
           <details><summary>{t`Fixed reference (optional)`}</summary><label><input type="checkbox" checked={!!spec.reference} onChange={event => update({ reference: event.target.checked ? { kind: 'artifacts', items: [] } : undefined })} />{t`Compare with fixed evidence`}</label>
             {spec.reference ? <><Source value={spec.reference} onChange={reference => update({ reference })} /><button type="button" onClick={() => {
               void bridge.climb?.({ type: 'preview', source: spec.reference! }).then(result => { if (result.preview) setReferencePreview(result.preview); if (!result.ok) setError(result.error ?? t`The reference could not be previewed.`) }, () => setError(t`The reference could not be previewed.`))
             }}>{t`Preview reference`}</button>{referencePreview ? <p>{t`${referencePreview.files} reference files · ${referencePreview.bytes} bytes`}</p> : null}</> : null}</details>
         </section>
-        <section className="climb-card"><h4>{t`Judge`} <Help label={t`About judges`}>{t`Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Only Claude currently enforces this tool-free mode.`}</Help></h4>
-          {[...spec.judges, spec.chair].map((seat, index) => <div className="climb-seat" key={index}><label>{index === 3 ? t`Chair` : t`Judge ${index + 1}`}<select value={seat.modelId} onChange={event => { const next = { ...seat, modelId: event.target.value }; update(index === 3 ? { chair: next } : { judges: spec.judges.map((value, at) => at === index ? next : value) }) }}><option value="">{t`Choose a model`}</option>{models.map(model => <option value={model.id} key={model.id}>{model.name}</option>)}</select></label>
+        <section className="climb-card"><h4>{t`Judge`} <Help label={t`About judges`}>{t`Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge.`}</Help></h4>
+          {[...spec.judges, spec.chair].map((seat, index) => <div className="climb-seat" key={index}><label>{index === 3 ? t`Chair` : t`Judge ${index + 1}`}<select value={seat.modelId} onChange={event => { const model = models.find(model => model.id === event.target.value); const effort = model?.defaultReasoningEffort; const next = { modelId: event.target.value, reasoningEffort: effort === ULTRACODE ? withoutUltracode(model?.reasoningEfforts ?? [])[0] ?? null : effort ?? null }; update(index === 3 ? { chair: next } : { judges: spec.judges.map((value, at) => at === index ? next : value) }) }}><option value="">{t`Choose a model`}</option>{models.map(model => <option value={model.id} key={model.id}>{model.provider} · {model.name}</option>)}</select></label>
             <label>{t`Effort`}<select value={seat.reasoningEffort ?? ''} onChange={event => { const next = { ...seat, reasoningEffort: event.target.value || null }; update(index === 3 ? { chair: next } : { judges: spec.judges.map((value, at) => at === index ? next : value) }) }}><option value="">{t`Default`}</option>{withoutUltracode(models.find(model => model.id === seat.modelId)?.reasoningEfforts ?? []).map(effort => <option key={effort}>{effort}</option>)}</select></label></div>)}
         </section>
         <section className="climb-card"><h4>{t`Target`} <Help label={t`About targets`}>{t`Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent.`}</Help></h4>

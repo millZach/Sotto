@@ -1879,7 +1879,7 @@ msgid "Claude Code subscription"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Claude receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated."
+msgid "Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated."
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
@@ -7314,7 +7314,7 @@ msgid "Three changes to your Omarchy settings. Remove any of them later in Setti
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Only Claude currently enforces this tool-free mode."
+msgid "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx

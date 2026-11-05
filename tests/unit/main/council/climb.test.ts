@@ -8,7 +8,7 @@ import { ClimbService } from '../../../../src/main/council/climbService'
 import { CouncilEvidenceStore, createCouncilJudgeWorkspace } from '../../../../src/main/council/councilEvidence'
 import { assessClimb, readClimbJudgment } from '../../../../src/main/council/climbAssessment'
 import { assertCouncilJudgeDirectory, COUNCIL_JUDGE_CLAUDE_ARGS } from '../../../../src/main/council/councilJudge'
-import { climbRecordSchema, type ClimbRecord, type ClimbRound, type ClimbSpec, type ClimbTurn } from '../../../../src/shared/councilClimb'
+import { climbRecordSchema, supportsClimbJudging, type ClimbRecord, type ClimbRound, type ClimbSpec, type ClimbTurn } from '../../../../src/shared/councilClimb'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import type { AgentHostCommand } from '../../../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../../../src/main/agents/threads'
@@ -30,7 +30,7 @@ async function fixture(keep = true) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-climb-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const origin: AgentThread = { id: 'origin', projectId: 'project', title: 'Explanation', modelId: seat.modelId, providerId: 'claude', status: 'idle', messages: [message('human', 'user', 'Private origin conversation')], requests: [] }
-  const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [{ id: seat.modelId, name: 'Judge', provider: 'Claude', ready: true, providerId: 'claude' }], projects: [{ id: 'project', title: 'Project', path: directory }], threads: [origin] }
+  const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [{ id: seat.modelId, name: 'Judge', provider: 'Claude', ready: true, providerId: 'claude' }, { id: 'codex-judge', name: 'Codex judge', provider: 'Codex', ready: true, providerId: 'codex' }], projects: [{ id: 'project', title: 'Project', path: directory }], threads: [origin] }
   const sent: AgentHostCommand[] = [], interrupts: string[] = []
   let userDraft = false, uncertain = false, saveCount = 0
   const thread = (id: string) => snapshot.threads.find(thread => thread.id === id)!
@@ -57,7 +57,7 @@ async function fixture(keep = true) {
     host: {
       execute: async command => {
         sent.push(command)
-        if (command.type === 'create-thread') snapshot.threads.push({ id: command.threadId, projectId: 'project', title: command.title, modelId: command.modelId, providerId: 'claude', councilJudge: true, workingDirectory: command.workingDirectory, status: 'idle', messages: [], requests: [] })
+        if (command.type === 'create-thread') snapshot.threads.push({ id: command.threadId, projectId: 'project', title: command.title, modelId: command.modelId, providerId: snapshot.models.find(model => model.id === command.modelId)!.providerId, councilJudge: true, workingDirectory: command.workingDirectory, status: 'idle', messages: [], requests: [] })
         if (command.type === 'send') {
           const owner = service.records.find(record => record.turns.some(turn => turn.messageId === command.messageId))!
           expect(owner.turns.find(turn => turn.messageId === command.messageId)?.delivery).toBe('dispatching')
@@ -109,10 +109,20 @@ async function fixture(keep = true) {
     draft: () => { userDraft = true; service.observe(snapshot) }, uncertain: () => { uncertain = true }, saves: () => saveCount }
 }
 
-it('runs setup, baseline and a fresh matched assessment without Git, retaining and exporting the winning text', async () => {
+it('runs a mixed Claude and Codex panel without Git, retaining and exporting the winning text', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  cleanup.push(async () => { Object.defineProperty(process, 'platform', platform) })
   const f = await fixture()
+  const mixed = { ...spec, judges: [seat, { modelId: 'codex-judge', reasoningEffort: null }, seat], chair: { modelId: 'codex-judge', reasoningEffort: null } }
+  Object.defineProperty(process, 'platform', { value: 'win32' })
+  expect(supportsClimbJudging('codex', 'win32')).toBe(false)
+  expect(await f.service.command({ type: 'start', origin: 'origin', spec: mixed, preview: 'unused', context: '' })).toMatchObject({ ok: false, error: expect.stringContaining('Windows') })
+  expect(f.sent).toHaveLength(0)
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  expect(supportsClimbJudging('codex', 'linux')).toBe(true)
+  expect(supportsClimbJudging('grok', 'linux')).toBe(false)
   expect(await f.service.command({ type: 'start', origin: 'origin', spec: { ...spec, judges: [{ ...seat, reasoningEffort: 'ultracode' }, seat, seat] }, preview: 'unused', context: '' })).toMatchObject({ ok: false })
-  await f.start()
+  await f.start(mixed)
   const setup = f.sent.find(command => command.type === 'send')!
   expect(setup).toMatchObject({ text: expect.stringContaining('Selected context only') })
   expect(setup).not.toMatchObject({ text: expect.stringContaining('Private origin conversation') })
@@ -124,6 +134,7 @@ it('runs setup, baseline and a fresh matched assessment without Git, retaining a
   expect(f.record()).toMatchObject({ completedTurns: 10, noImprovement: 0 })
   expect(f.record().rounds[1]).toMatchObject({ targetMet: true, improved: true })
   const creates = f.sent.filter(command => command.type === 'create-thread')
+  expect(creates.filter(command => command.modelId === 'codex-judge')).toHaveLength(5)
   expect(creates).toHaveLength(9); expect(new Set(creates.map(command => command.threadId)).size).toBe(9)
   expect(creates.every(command => command.councilJudge && command.workingDirectory?.includes('council-evidence'))).toBe(true)
   for (const turn of f.record().turns.filter(turn => turn.stage === 'judge')) {

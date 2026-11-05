@@ -2,6 +2,10 @@ import { z } from 'zod'
 import { councilEvidenceSourceSchema, councilFrozenEvidenceSchema } from './councilEvidence'
 
 export const COUNCIL_CLIMB = 'sotto:council:climb'
+/** Codex's isolated Windows home cannot provision its restricted-read sandbox yet. */
+export function supportsClimbJudging(providerId: string | undefined, platform: string): boolean {
+  return providerId === 'claude' || providerId === 'codex' && (platform === 'darwin' || platform === 'linux')
+}
 const id = z.string().min(1).max(512)
 const words = z.string().trim().min(1).max(20_000)
 const number = z.number().finite()

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { t } from '@lingui/core/macro'
 import { bytesHaveRasterSignature, lastUserMessageIdOf, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import { climbChairSchema, climbSetupSchema, climbSpecSchema, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec, type ClimbTurn } from '../../shared/councilClimb'
+import { climbChairSchema, climbSetupSchema, climbSpecSchema, supportsClimbJudging, type ClimbRecord, type ClimbRequest, type ClimbResult, type ClimbSpec, type ClimbTurn } from '../../shared/councilClimb'
 import { type CouncilEvidenceSource, type CouncilFrozenEvidence } from '../../shared/councilEvidence'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -84,7 +84,8 @@ export class ClimbService {
   private validateSeats(spec: ClimbSpec): void {
     for (const seat of [...spec.judges, spec.chair]) {
       const model = resolveModel(this.options.control.watcherSnapshot().models, seat.modelId)
-      if (!model?.ready || model.providerId !== 'claude') throw new Error(t`Choose connected Claude models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary.`)
+      if (model?.providerId === 'codex' && process.platform === 'win32') throw new Error(t`Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer.`)
+      if (!model?.ready || !supportsClimbJudging(model.providerId, process.platform)) throw new Error(t`Choose connected Claude or Codex models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary.`)
       if ((seat.reasoningEffort ?? model.defaultReasoningEffort) === ULTRACODE) throw new Error(t`Choose a standard effort for Climb judges. Ultracode starts extra agents.`)
     }
   }

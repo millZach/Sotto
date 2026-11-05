@@ -46,11 +46,11 @@ Merged as [#2195](https://github.com/millZach/Sotto/pull/2195), merge commit `3f
 
 ## Pull request 2: panel-only Climb (slice 1b)
 
-Built from updated main after #2195 and the independent CI repair #2197. The implementation admits only Claude’s enforced tool-free profile for judges; the Builder may use any existing local provider. The setup chair proposes criteria and constraints, with the remaining fields supplied by the user before approving the complete specification. Unsupported media and limits hold for a narrower new Climb; in-place specification revision remains later work. The artifact input uses explicit paths and supplied text.
+Built from updated main after #2195 and the independent CI repair #2197. The implementation admits verified isolated read-only Claude and Codex profiles, including mixed panels; the Builder may use any existing local provider. The setup chair proposes criteria and constraints, with the remaining fields supplied by the user before approving the complete specification. Unsupported media and limits hold for a narrower new Climb; in-place specification revision remains later work. The artifact input uses explicit paths and supplied text.
 
 - Source selection and preview, approved setup, frozen baseline, fresh independent judging, Builder continuation, candidate capture, all-required targets, no-improvement rule, optional limits and Stop.
 - Main-owned durable loop state and exact delivery identities. Separate ephemeral form retention from the run record. Reconcile after restart; show held, uncertain and unavailable states truthfully.
-- Enforced owned read-only judge profiles, never a fallback to the origin folder. Refuse unsupported adapters without silently swapping the model. Providers' ordinary permission requests still reach the user.
+- Enforced owned read-only judge profiles, never a fallback to the origin folder. Refuse unsupported adapters without silently swapping the model. Providers' ordinary permission requests still reach the user; a judge request for wider access is refused and stops that assessment.
 - Round evidence references, raw seat/criterion/exhibit results, same-round incumbent selection, kept rounds and export.
 - Apply history-off cleanup at close/settle. No new prompt, transcript, result or key logging.
 - Preserve drawer hide/show state, existing From/reply handoff, scrolling at minimum size, and lazy terminal loading. Opening Council starts no shell.
@@ -67,3 +67,7 @@ No local CI gates, Sotto launch, Playwright/e2e or design captures on this Mac. 
 PR 1 checks capture without Git on PATH, exclusions and bounds, frozen citations and tamper refusal, binary changes, safe export and all migration variants. PR 2 adds provider fixtures for the complete loop, fresh contexts, hidden targets, exact builder delivery, Stop, user intervention, invalid scores, restart and history-off behavior, and no-Git drawer journeys.
 
 After each push, end the turn. Watcher resumes the thread on CI failure or when the required checks permit merge. Merge with a merge commit once Gates (Windows), Package result and Desktop result are green and the branch has no merge conflict. Build the second PR from current main after the first merges. The request remains unfinished until both PRs are merged.
+
+## Codex judge follow-up
+
+Drake chose verified Codex judging on Mac and Linux now, with Windows Codex judging held until an isolated home can receive its own sandbox setup. Claude and Codex can sit together; other providers remain outside this slice. The read-only rule and no-fallback requirement are unchanged.

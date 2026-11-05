@@ -52,10 +52,102 @@ judges. The spec review checked the approved mockup's domain-general setup,
 optional caps, no cost controls, fresh judges, all-required targets, no-improvement
 rule and export to a new folder.
 
-Only Claude judges are available because its tool-free launch mode is enforced;
-other providers remain available for the Builder. The setup chair proposes the
+Claude and Codex judges are available together on Mac/Linux when their isolated
+read-only launch can be confirmed; Windows currently admits Claude only; other providers remain available for the Builder. The setup chair proposes the
 rubric and constraints; the user supplies and approves the remaining fields.
 Selected artifacts use explicit paths and supplied text. Unsupported media or
 oversized evidence requires a narrower new Climb. These first-slice limits are
 recorded in ADR-0177 and the plan. Commands and recipe grants, forks, rollback,
 remote origins and the rest of slice 1c remain out of scope.
+
+## Codex judge boundary
+
+The follow-up admits Claude and Codex in the same panel. Codex uses a separate
+app-server and private home for each ephemeral judge, with only its file-backed
+login copied in. Its named permissions profile grants reads only below the
+frozen judge directory, denies writes and network access, and never requests
+approval escalation. Sotto sends frozen text and image bytes inline; it installs
+no dynamic tools or MCP servers, and disables inherited instructions, hooks,
+skills, plugins, apps, web, shell, memory and delegation tools.
+
+Before startup and every send, Sotto verifies effective configuration, empty
+hook and enabled-skill inventories, and empty MCP inventory. The started thread
+must confirm the exact directory, named profile, read-only sandbox without
+network, `never` approval policy and no instruction sources. Missing confirmation
+is a refusal. A changed profile or any tool/approval request stops the judge.
+Its private home is removed only after its process closes.
+
+Published sources checked on November 4, 2026:
+
+- [Codex app-server documentation](https://developers.openai.com/codex/app-server)
+  and [configuration reference](https://developers.openai.com/codex/config-reference).
+- [Codex 0.166.0 thread protocol](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs):
+  named `permissions`, `activePermissionProfile`, `instructionSources` and
+  approval policy. Installed CLI-generated experimental schemas were also read.
+- [Permissions compilation](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/config/permissions.rs):
+  an explicit profile starts with restricted filesystem access. The ordinary
+  `read-only` profile grants wider reads and is not used here.
+- [Windows sandbox implementation](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/windows-sandbox-rs/src/lib.rs)
+  and [readiness](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server/src/request_processors/windows_sandbox_processor.rs):
+  restricted reads require the elevated backend. Readiness is scoped to the
+  Codex home, so an ordinary home's setup does not establish the isolated home's
+  readiness. A fresh isolated home is unready, so Windows Codex judging cannot
+  start in this implementation. It never reuses the ordinary home, substitutes
+  the weaker restricted-token mode or approves setup. Drake chose to ship verified
+  Mac/Linux judges and defer Windows support; the picker and main both exclude
+  Windows Codex judges.
+
+A windowless probe of installed `codex-cli 0.166.0` initialized an app-server in
+an empty private home and started an ephemeral thread without sending a model
+turn. It confirmed the exact custom read profile, read-only/no-network sandbox,
+`never` approval policy, empty instruction sources, hooks, skills and MCP list.
+The probe exposed CLI key quoting and nullable profile metadata; the final
+serializer uses TOML inline objects and the verifier tolerates only unset null
+metadata. No Sotto process or desktop window was launched. This checks startup
+reporting on macOS, not model quality or Windows sandbox provisioning.
+
+Focused follow-up checks:
+
+- `tests/unit/main/council/codexJudge.test.ts`: 15 passed. Covers private login-only home and scrubbed
+  environment, exact configuration serialization, missing/widened startup
+  settings, wrong workspace, inherited instructions, extra read roots, writes,
+  hooks, skills, MCP, unready Windows sandbox, native approval refusal, process
+  cleanup and no resume after stop.
+- `tests/unit/main/council/climb.test.ts`: 9 passed. The successful complete loop now seats
+  Claude and Codex judges together, including a Codex chair, baseline and fresh
+  candidate assessment, then exports the kept round. Windows refuses a Codex
+  roster before dispatch; the shared eligibility rule also excludes other providers.
+- `tests/unit/renderer/pointerCursor.test.ts`: 3 passed after removing the two conflicting cursor rules.
+- `tests/unit/shared/interfaceCatalogs.test.ts`: 4 passed after extraction.
+- `tests/unit/main/codexConfirmation.test.ts`: 8 passed; existing permission
+  confirmations still require an explicit answer.
+- The setup shows both providers and resets effort when switching models.
+  Ordinary Councils and the Council Owl gate are unchanged.
+
+Grok's Sotto adapter was checked for its existing session and permission-mode
+confirmation. It has no equivalent Climb launch profile proving frozen-only
+reads, empty tools and no inherited instructions. Grok and the remaining
+providers stay outside the change; they need provider enforcement plus the
+same startup/readback and refusal tests before admission. No claim is made that
+all other providers' current upstream clients were audited.
+
+## Failed-run receipt for 27ff139
+
+[Run 41954875966, attempt 1](https://github.com/millZach/Sotto/actions/runs/41954875966)
+ran head `27ff139ee8eb1c32683cdfabfdf5766e9ca9f71f` through PR merge
+`c326ff7df4df7b17d5c5946ce3de25a3c498a487`, with base
+`db07bf42b55fe2f00a29904835fdf1cf2719e768`. Both underlying failures are
+**own-diff**, not confirmed flakes, pre-existing failures or unknowns.
+
+| Job | Assertion | Classification and evidence | Repair |
+| --- | --- | --- | --- |
+| [Tests (Windows, 1/6), 127007454414](https://github.com/millZach/Sotto/actions/runs/41954875966/job/127007454414) | `pointerCursor.test.ts`: “is the hand in one rule only, for links, in global.css” | Own-diff. The assertion's received array adds `.climb-panel button` and `.climb-panel summary` from this PR's `council.css`. | Remove those two `cursor: pointer` declarations; keep the global pointer rule and assertion. |
+| [Checks and desktop (Windows), 127007454270](https://github.com/millZach/Sotto/actions/runs/41954875966/job/127007454270) | `council-climb.spec.ts:29`: click Council | Own-diff. The log times out after 30,000 ms waiting for `getByRole('button', { name: 'Council', exact: true })`. This new test did not enable `council=1`; source builds are stable, so the Owl gate correctly omitted the button. | Enable the Council Owl override only for this test's launch, then restore the environment. Do not weaken the production gate. |
+
+Gates (Windows) and Desktop result are downstream failure summaries, not extra
+failing assertions. Package result passed. The desktop artifact's error context
+was read; this failure precedes opening Climb, so it supplies no Climb screenshots.
+The base already used by this run contains neither repair; fetching main found
+no newer fix to merge. No failed job was rerun. Both repairs travel with the
+Codex judge change, and CI must run the desktop journey and provide the pending
+screenshots before a Watcher-directed merge.
