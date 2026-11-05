@@ -74,12 +74,6 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__merge { position: relative; display: flex; gap: 8px; }
 .pr-surface__merge .tt-button { min-height: 44px; font-size: var(--tt-type-reading); }
 .pr-surface__merge-go { flex: 1; min-width: 0; }
-/* Ready: the green the ticks above are drawn in, washed under the panel's own words rather than a solid plate, so it is
-   the one thing to press here without outshining the thread beside it. Its edge and mark carry it in every theme. */
-.pr-surface__merge .pr-surface__merge-go:not([data-blocked]) { border-color: color-mix(in oklab, var(--tt-success) 55%, var(--tt-field-border)); background: color-mix(in oklab, var(--tt-success) 18%, var(--tt-surface)); color: var(--tt-text); }
-.pr-surface__merge .pr-surface__merge-go:not([data-blocked]) > svg { color: var(--tt-success); }
-.pr-surface__merge .pr-surface__merge-go:not([data-blocked]):hover:not(:disabled) { border-color: var(--tt-success); background: color-mix(in oklab, var(--tt-success) 25%, var(--tt-surface)); color: var(--tt-text); filter: none; }
-.pr-surface__merge .pr-surface__merge-go:not([data-blocked]):active:not(:disabled) { background: color-mix(in oklab, var(--tt-success) 31%, var(--tt-surface)); filter: none; }
 /* A read in flight holds a ready Merge for a moment: it keeps its look, so a Refresh does not flash it blocked. */
 .pr-surface__merge-go[aria-disabled='true']:not([data-blocked]) { cursor: progress; opacity: .7; }
 /* Blocked: struck through with a hatch and no plate of its own, so it cannot be taken for a dim enabled button in any
