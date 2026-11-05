@@ -62,10 +62,17 @@ private final class FrameBox {
 /// shows it, and a press opens the thread (ADR-0151, amended October 30, 2026). The unfolded Duo keeps its columns of
 /// cards, answerable in place. The heading, the computer menu and search scroll with the list as one sheet. Focus reads
 /// only host list summaries; opening a thread subscribes to its detail.
-struct ThreadsView: View {
-    @EnvironmentObject var model: AppModel
+struct ThreadsView: View, Equatable {
+    /// The model, watched through `revision` rather than `@EnvironmentObject`, so the page stops watching while it is
+    /// held and nothing in it runs for an update nobody sees (#2120). It catches up as it lets go.
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    @State private var revision = 0
     /// Opens a thread over the page, from the list or once New thread has made it.
     var open: (ThreadRef) -> Void = { _ in }
+    /// The page has no other input, and its caller's `open` always pushes onto the same path, so the tabs drawing again
+    /// never draws it again.
+    static func == (lhs: ThreadsView, rhs: ThreadsView) -> Bool { true }
     @State private var creating = false
     @State private var query = ""
     @State private var settledExpanded = false
@@ -89,6 +96,7 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
+        let _ = revision
         let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
         let groups = shown.groups
         let unsearched = shown.unsearched
@@ -135,6 +143,8 @@ struct ThreadsView: View {
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { held = nil; openForShare(model.shareOpened) }
         .onDisappear { hold() }
+        .onReceive(model.objectWillChange) { _ in if held == nil { revision &+= 1 } }
+        .background { ThreadPageWarmUp() }
         .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
