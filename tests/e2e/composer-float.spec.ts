@@ -69,7 +69,7 @@ async function history(page: Page, threadId: string): Promise<void> {
 
 const paneOf = (page: Page, threadId: string): Locator => page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
 
-interface Float { hit?: string | null; masked: boolean; fullInk: boolean; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean; clipped: boolean; scrollbarClear: boolean }
+interface Float { hit?: string | null; endsInCard: boolean; masked: boolean; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean; scrollbarClear: boolean }
 
 /** How far the composer sits over the transcript, read after the transcript is scrolled to its end. */
 async function float(pane: Locator): Promise<Float> {
@@ -91,10 +91,17 @@ async function float(pane: Locator): Promise<Float> {
       overlap: logBox.bottom - composeBox.top, logPadding: parseFloat(getComputedStyle(log).paddingBottom),
       underStrip: strip !== null && log.contains(strip), hit: strip ? `${strip.tagName}.${strip.className}` : null,
       lastClear: (last ?? content).bottom <= composeBox.top + 1,
-      clipped: getComputedStyle(log.parentElement!).clipPath !== 'none',
+      // Where the clip ends the words, measured up from the transcript's foot: inside the card, below its top.
+      endsInCard: (() => {
+        const view = log.parentElement!, rule = document.createElement('i')
+        rule.style.cssText = 'position: absolute; height: var(--thread-foot-end)'
+        view.append(rule)
+        const end = view.getBoundingClientRect().bottom - rule.getBoundingClientRect().height
+        rule.remove()
+        return getComputedStyle(view).clipPath !== 'none' && end > card.top + 1 && end <= card.bottom + 1
+      })(),
+      // A mask would part-fade the words and put the composer in a layer of its own, losing its text's smoothing.
       masked: getComputedStyle(log.parentElement!).maskImage !== 'none',
-      // No step of the mask is part-way: the words keep their full ink up to where they end (ADR-0125).
-      fullInk: !/rgba\([^)]*,\s*0?\.\d+\)/u.test(getComputedStyle(log.parentElement!).maskImage),
       scrollbarClear: scrollbar !== null && log.contains(scrollbar),
     }
   })
@@ -107,11 +114,10 @@ function expectFloating(layout: Float): void {
   expect(layout.overlap, context).toBeGreaterThanOrEqual(layout.composeHeight - 1)
   expect(layout.logPadding, context).toBeGreaterThanOrEqual(layout.composeHeight)
   expect(layout.underStrip, context).toBe(true)
-  // Nothing cuts the words off at the composer's top: they scroll on under it (#1391).
-  expect(layout.clipped, context).toBe(false)
-  // They pass under the card's top at full ink and end inside the card, so nothing shows in the space under its foot.
-  expect(layout.masked, context).toBe(true)
-  expect(layout.fullInk, context).toBe(true)
+  // Nothing cuts the words off at the composer's top: they scroll on under it at full ink (#1391, ADR-0125), and a clip
+  // ends them inside the card, so nothing shows in the space under its foot.
+  expect(layout.endsInCard, context).toBe(true)
+  expect(layout.masked, context).toBe(false)
   expect(layout.scrollbarClear, context).toBe(true)
   expect(layout.lastClear, context).toBe(true)
 }
