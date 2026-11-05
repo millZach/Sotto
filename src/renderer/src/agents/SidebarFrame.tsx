@@ -263,7 +263,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     <SidebarTop platform={platform ?? app?.platform}>
       {heading === null ? null : <h1 className="tt-visually-hidden">{heading}</h1>}
       <Button variant="ghost" iconOnly aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
-      <Button variant="ghost" iconOnly data-tour="sidebar-new" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} /></Button>
+      <Button variant="ghost" className="thread-nav__new" data-tour="sidebar-new" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} aria-hidden="true" /><span aria-hidden="true">{newLabel}</span></Button>
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={t`Collapse sidebar`} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />

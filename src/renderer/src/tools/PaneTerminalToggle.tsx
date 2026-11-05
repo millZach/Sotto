@@ -35,7 +35,7 @@ export function PaneTerminalToggle({ threadId, store = paneTerminalChromeStore }
   return <button type="button" className="pane-action tt-focusable" data-pane-terminal-toggle aria-pressed={shown}
     aria-label={t`Terminal drawer`} aria-keyshortcuts={shortcut?.keys} title={does}
     onClick={() => store.toggle(threadId, 'terminal', council)}>
-    <PanelBottom size={16} aria-hidden="true" />
+    <PanelBottom size={16} aria-hidden="true" /><span className="pane-action__word" aria-hidden="true">{t({ message: 'Terminal', comment: 'The pane header button that shows the terminal drawer under the thread.' })}</span>
   </button>
 }
 
@@ -55,7 +55,7 @@ function CouncilToggle({ threadId, store = paneTerminalChromeStore }: { readonly
   return <button type="button" className="pane-action tt-focusable" data-pane-council-toggle aria-pressed={shown}
     aria-label={t({ message: 'Council', comment: 'The pane header button that shows the Council in the drawer under the thread (ADR-0177).' })}
     title={shown ? t`Hide Council` : t`Show Council`} onClick={() => store.toggle(threadId, 'council', true)}>
-    <Landmark size={16} aria-hidden="true" />
+    <Landmark size={16} aria-hidden="true" /><span className="pane-action__word" aria-hidden="true">{t({ message: 'Council', comment: 'The pane header button that shows the Council in the drawer under the thread (ADR-0177).' })}</span>
   </button>
 }
 
@@ -70,6 +70,6 @@ export function PaneTerminalOnHost({ host }: { readonly host: string | undefined
     : t({ message: `This thread’s terminal is on ${host}. Open it there.`, comment: '{host} is the name of a paired host, as in forge.' })
   return <button type="button" className="pane-action tt-focusable" data-pane-terminal-toggle aria-disabled="true"
     aria-label={t`Terminal drawer`} aria-description={where} title={where}>
-    <PanelBottom size={16} aria-hidden="true" />
+    <PanelBottom size={16} aria-hidden="true" /><span className="pane-action__word" aria-hidden="true">{t({ message: 'Terminal', comment: 'The pane header button that shows the terminal drawer under the thread.' })}</span>
   </button>
 }

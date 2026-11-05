@@ -58,7 +58,7 @@ export function ToolsToggle({ threadId, focused, store = toolsPanelStore, state 
   const live = [delegatedWaiting ? t`A delegated thread needs you` : null, workingAgents ? t`Agents are working` : null, browserWaiting ? t`A browser request is waiting for your answer` : null].filter(Boolean).join('. ') || undefined
   const pinnedWords = pinnedTitle === null ? null : t({ message: `Showing ${pinnedTitle}, pinned`, comment: '{pinnedTitle} is a thread\'s title.' })
   const name = pinnedTitle === null ? tools : t({ message: `Tools are pinned to ${pinnedTitle}`, comment: '{pinnedTitle} is a thread\'s title.' })
-  // Icon only in the header; the word stays for a screen reader, and as the title when nothing else explains it.
+  // The word is drawn only where the pane has room to spare (threads.css); it stays for a screen reader, and as the title when nothing else explains it.
   return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open && (focused || pinned === threadId)} aria-controls={TOOLS_PANEL_ID}
     data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedWords, live].filter(Boolean).join('. ') || undefined} title={live ? `${name}. ${live}` : name}
     onPointerDown={() => { pressedUnfocused.current = !focused }} onKeyDown={() => { pressedUnfocused.current = false }}
@@ -68,7 +68,7 @@ export function ToolsToggle({ threadId, focused, store = toolsPanelStore, state 
       if (opensOnly) store.setOpen(true)
       else store.toggle()
     }}>
-    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">{tools}</span>
+    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="pane-action__word">{tools}</span>
     {workingAgents || browserWaiting || delegatedWaiting ? <span className="tools-dot" data-needs={delegatedWaiting || undefined} aria-hidden="true" /> : null}
   </button>
 }

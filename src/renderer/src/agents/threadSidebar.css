@@ -31,6 +31,9 @@
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: var(--tt-radius-control); -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
+/* The one action this row is for says its name; Add project and Collapse keep their symbols. */
+.thread-nav__top .tt-button.thread-nav__new { width: auto; gap: 6px; padding: 0 8px 0 6px; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; white-space: nowrap; }
+.thread-nav__top .tt-button.thread-nav__new:hover { color: var(--tt-text); }
 
 /* The room switch in the foot, and Watcher's floating switch, which draws the same one. */
 .thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
