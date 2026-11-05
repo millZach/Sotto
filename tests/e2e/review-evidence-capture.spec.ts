@@ -681,6 +681,28 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await head.locator('.working-copy__trigger').focus()
     await capture.shoot('header-focus', 'The working copy holding keyboard focus at the edge of the box beside the name.', '', { modes: ['dark'] })
   } },
+  // Asked for by name only: the sidebar, Needs you and the header together, at every size, in both modes and on another theme.
+  { name: 'shell-surface', covers: [], run: async capture => {
+    const { page } = capture
+    const everySize = async (state: string, shows: string): Promise<void> => {
+      for (const size of [[1600, 1000], ...SMALLER_SIZES] as const) await capture.shoot(state, shows, '', { size })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    }
+    await openThread(page, 'Split AgentControl')
+    await everySize('shell-thread', 'A finished thread with a full sidebar and Needs you standing.')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    // Focus holds a row's shortcuts open through the shoot, which a pointer's hover does not survive.
+    await page.keyboard.press('Tab')
+    await sidebar.getByRole('button', { name: 'Plan the split', exact: true }).first().focus()
+    await capture.shoot('shell-row-focus', 'The keyboard on a working row, with its shortcuts showing.', '', { modes: ['dark', 'light'] })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click({ force: true })
+    await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
+    await everySize('shell-split', 'Two threads side by side, with the sidebar full.')
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
+    await everySize('shell-split-clay', 'The same on the Clay theme.')
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
   { name: 'shell-check', covers: [], run: async capture => {
     const { page } = capture
@@ -704,7 +726,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press']
+const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {
