@@ -4,7 +4,7 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
-Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). His picks of October 24 and 26 stay in the record below.
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). Amended November 5, 2026, by his pick of B, "as long as that reply closes out the last step": a closing reply written after the turn's steps stands under the line (see "the closing reply under the line" at the end). His picks of October 24 and 26 stay in the record below.
 
 ## Context
 
@@ -114,3 +114,13 @@ Zach chose this: on November 5 he tried three answers for how a running turn rea
 **What it costs.** A turn with a plan takes as many rows as the plan has, above the line, at every width.
 
 The considered option **The words with the step running now under them** was turned down on October 24 because it made the line two lines tall and moved every few seconds, and B brought that second line back. The checklist is Zach's answer to that: the plan is in view, the line stays one line, and the checklist moves only when the plan does. The earlier record stands. This replaces "from the plan's current item" in the amendment above for a turn with a plan in view; the iPhone keeps its line (ADR-0051's October 24 amendment) until Zach asks for this there.
+
+## November 5, 2026 amendment: the closing reply under the line
+
+Zach chose this: on November 5 he compared two answers for where the reply being written sits while a turn with steps runs, in the design pass's prototype `sotto-council/prototypes/reply-order/`, kept outside the repository, and picked B, "as long as that reply closes out the last step." A was this decision as written: the working line, and the plan's checklist above it, at the end of the transcript, under the reply being written. B was the reply under the line.
+
+**Where the reply stands.** While the running turn writes its closing reply, the one after its last step, that reply stands under the working line, where the **Worked for** line will stand above it once the turn ends. The screen reads in the order the work happened: the message, the plan, the line with the steps folded under it, then the reply. The line keeps its place as the words arrive rather than being pushed down by them, and does not move or remount when the turn ends; only the reply is drawn in its new place.
+
+**When it goes back.** Zach's condition holds it to the closing reply. Once a step, a permission request or a question follows the reply, it is no longer the turn's last word, and it goes back above the line in the order the work happened, with the line and the request's card at the end. A turn with no steps keeps its line at the end, since nothing will fold above its reply, and a reply written before the turn began is not the one being written.
+
+**What stays.** "The working line at the end of the transcript" in the Decision now means the end of the running turn's work. The line's words, light, timing, checklist and press are unchanged.
