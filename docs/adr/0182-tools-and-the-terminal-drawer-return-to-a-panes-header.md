@@ -12,7 +12,7 @@ Amended by [ADR-0177](0177-the-council-puts-one-question-to-threads-on-several-p
 
 Amended November 4, 2026, by Zach's pick of variant B: decision 5 now serves the name first (see the amendment at the end). His words of November 2 stay in the record below.
 
-Note, November 5, 2026: Changes opens over the thread sooner than decision 2's narrow window, wherever the thread beside it would be under 400 pixels ([ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md), "November 5, 2026 amendment: Changes over the thread when narrow").
+Note, November 5, 2026: Changes opens over the thread sooner than decision 2's narrow window, wherever the thread beside it would be under 400 pixels ([ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md), "November 5, 2026 amendment: Changes over the thread when narrow"). Later that day Zach chose the same for the Pull request surface, his pick B of the design pass's prototype `sotto-council/prototypes/pr-820/`, kept outside the repository: it covers the workspace by the same rule, closes by Close, Escape or the Tools button, and hides Expand there, and 1280 and 1600 are unchanged.
 
 Amends [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md): this replaces its decision 3 and the Tools and Terminal drawer rows of its decision 2, and adds both buttons to its decision 1. It also amends [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md), since a thread on a paired host now shows the drawer's button.
 

@@ -214,16 +214,31 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await theme(page, 'dark')
     await capture(page, 'ready-1600-dark')
 
-    // The minimum window before the merge: the method menu opens inside the panel.
+    // The minimum window before the merge: the method menu opens inside the panel, whose sheet stands over the thread.
     await resize(launched, 820, 560)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await panel.getByRole('button', { name: 'Merge method: Squash and merge', exact: true }).click()
-    const menuBox = await methods.boundingBox(), panelBox = await panel.boundingBox()
+    const menuBox = await methods.boundingBox(), panelBox = await panel.locator('.tools-panel__sheet').boundingBox()
     expect(menuBox && panelBox && menuBox.x >= panelBox.x && menuBox.x + menuBox.width <= panelBox.x + panelBox.width && menuBox.y >= 0).toBe(true)
     await capture(page, 'method-820-dark')
     await page.keyboard.press('Escape')
     await expect(methods).toHaveCount(0)
+    // Too narrow to read beside the thread, the surface covers the workspace as Changes does (Zach's pick B of November 5,
+    // ADR-0110): the thread under it takes no keys, Expand is gone, and Escape, which put the menu away, left it open.
+    await expect(panel).toHaveAttribute('data-mode', 'overlay')
+    await expect(panel.getByRole('button', { name: 'Expand tools panel', exact: true })).toHaveCount(0)
+    await expect.poll(() => panel.evaluate(element => {
+      // The workspace the panel covers, as ToolsPanel finds it: its column, or the column's parent when it stands alone there.
+      const column = element.parentElement!, players = ['browser-player', 'browser-player-pill', 'phone-player']
+      const area = [...column.children].filter(child => !players.some(name => child.classList.contains(name))).length === 1 && column.parentElement ? column.parentElement : column
+      const under = [...area.children].filter(child => child instanceof HTMLElement && !child.contains(element)) as HTMLElement[]
+      const box = element.querySelector('.tools-panel__sheet')!.getBoundingClientRect(), room = area.getBoundingClientRect()
+      return under.length > 0 && under.every(child => child.inert) && Math.abs(box.width - room.width) <= 1
+    })).toBe(true)
     await resize(launched, 1280, 800)
+    // At 1280 it stands beside the thread again, with Expand back at the rail's foot.
+    await expect(panel).toHaveAttribute('data-mode', 'docked')
+    await expect(panel.getByRole('button', { name: 'Expand tools panel', exact: true })).toBeVisible()
 
     await merge.click()
     await confirm.getByRole('button', { name: 'Squash and merge', exact: true }).click()
@@ -250,6 +265,11 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await capture(page, 'merged-820-dark')
     await theme(page, 'light')
     await capture(page, 'merged-820-light')
+    // Escape closes the surface that covers the thread, and the thread takes its keys again.
+    await panel.getByRole('heading', { name: '#74 Greet the reviewer' }).click()
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll('.thread-pane[inert], .thread-pane :is([inert])').length + [...document.querySelectorAll<HTMLElement>('*')].filter(element => element.inert && element.querySelector('.thread-pane')).length)).toBe(0)
     expect(errors).toEqual([])
   } finally {
     if (launched) await closeSotto(launched)
