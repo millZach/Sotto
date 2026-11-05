@@ -53,6 +53,7 @@ import SottoCore
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
+            BenchProbe.count("pictures.decoded")
             self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
             return image
         }
@@ -507,25 +508,45 @@ struct AgentPictures: View {
         steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
     }
     var body: some View {
+        let _ = BenchProbe.body("AgentPictures")
         let items = self.items
         let gifs = self.gifs
         let videos = self.videos
         // A step still making an image shows the owl at the easel in its picture's place.
         let making = steps.filter(\.makingImage)
         if !items.isEmpty || !videos.isEmpty || !making.isEmpty {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    AgentPictureCell(item: item, gif: gifs.contains(item.id), number: index + 1, count: items.count) {
-                        open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index))
+            TwoAcross(tiles: items.count + videos.count + making.count) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        AgentPictureCell(item: item, gif: gifs.contains(item.id), number: index + 1, count: items.count) {
+                            open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index))
+                        }
                     }
+                    ForEach(Array(videos.enumerated()), id: \.element.id) { index, item in
+                        AgentVideoTile(ref: ref, step: item.step, video: item.video, number: index + 1, count: videos.count)
+                    }
+                    ForEach(making) { step in OwlEaselTile(startedAt: step.startedAt) }
                 }
-                ForEach(Array(videos.enumerated()), id: \.element.id) { index, item in
-                    AgentVideoTile(ref: ref, step: item.step, video: item.video, number: index + 1, count: videos.count)
-                }
-                ForEach(making) { step in OwlEaselTile(startedAt: step.startedAt) }
             }
             .padding(.vertical, Space.s2)
         }
+    }
+}
+
+/// Gives a run's grid the height its tiles come to: two across, each half the width less the gap and two-thirds as tall as
+/// it is wide, the shape every tile in `AgentPictures` keeps. A `LazyVGrid` makes only the rows near the screen and guesses
+/// the height of the rest, and laid out again it can guess anew by thousands of points with nothing in it changed. Every
+/// working update lays each run's grid out again, so a reader among the pictures saw the page jump under them, and a
+/// finger on it lost its place. With the height known, the page's height changes only when a tile is added.
+private struct TwoAcross: Layout {
+    let tiles: Int
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let width = proposal.width, width.isFinite else { return subviews.first?.sizeThatFits(proposal) ?? .zero }
+        let rows = CGFloat((tiles + 1) / 2)
+        return CGSize(width: width, height: max(0, rows * (width - Space.s2) / 2 / 1.5 + max(0, rows - 1) * Space.s2))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: nil))
     }
 }
 
@@ -701,6 +722,7 @@ private struct AgentPictureTile: View {
     @State private var frames: GIFFrames?
     @State private var began = Date()
     var body: some View {
+        let _ = BenchProbe.body("AgentPictureTile")
         Rectangle().fill(Palette.raised)
             .aspectRatio(1.5, contentMode: .fit)
             .overlay {
