@@ -44,7 +44,7 @@ journey() { # label, kind, device
     [ "$kind" = traced ] && extra=(--bench-sample "$out/journeys/$label.samples.json")
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device" com.millzach.sotto.ios \
         --ui-fixture --reset-ui-preferences --ui-pictures --bench-threads 30 --bench-turns 4 --bench-chunks 1 \
-        --bench-journey pictures --bench-pictures full "${extra[@]}" -AppleLanguages '(en)' -AppleLocale en_US > "$out/launch.txt" 2>&1
+        --bench-journey pictures --bench-pictures full ${extra[@]+"${extra[@]}"} -AppleLanguages '(en)' -AppleLocale en_US > "$out/launch.txt" 2>&1
     pid=$(sed -n 's/^com.millzach.sotto.ios: \([0-9][0-9]*\)$/\1/p' "$out/launch.txt")
     [ -n "$pid" ] || { sleep 1; pid=$(pgrep -n -f '/Sotto.app/Sotto' || true); }
     echo "$label pid=$pid" >> "$out/pids.txt"
