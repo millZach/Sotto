@@ -511,14 +511,54 @@
    than in palettes.ts because the iPhone's palette is generated from that file and keeps its own values. The room rises only
    as far as leaves the composer's card its step above it. --tt-canvas stays the palette's at the root and across Watcher's
    room: its night scene, its Stars and its words' glow read the root and the shell, and they keep their colours exactly.
-   The inks are read only by the reading surface below; the composer and the chrome keep theirs. */
+   The inks are read only by the reading surface below; the composer and the chrome keep theirs.
+   By night the room is a soft warm ink with the sidebar and Tools a step below it, as Zach picked (C, November 5, 2026).
+   The palette writes its roles inline on the root, so the surfaces it moves are set here as the tokens they paint through.
+   The composer's card, the raised surface, keeps its value, and so does every token the composer reads. */
 :root[data-theme='dark'][data-theme-id='t3-code'] {
-  --tt-reading-text: color-mix(in oklab, var(--tt-text) 92%, var(--theme-canvas));
-  --tt-reading-text-2: color-mix(in oklab, var(--tt-text-2) 97%, var(--theme-canvas));
-  --tt-reading-bubble-text: color-mix(in oklab, var(--tt-bubble-text) 92%, var(--theme-message-surface));
-  --tt-reading-code-text: color-mix(in oklab, var(--tt-code-text) 90%, var(--theme-code-background));
+  /* Your messages and code sit a step above the warm room, never below it. */
+  --tt-bubble: oklch(0.215 0.006 75);
+  --tt-bubble-text: color-mix(in oklab, color-mix(in oklab, var(--theme-message-foreground) var(--theme-contrast-base), var(--tt-bubble)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-code-bg: oklch(0.18 0.004 75);
+  --tt-code-text: color-mix(in oklab, color-mix(in oklab, var(--theme-code-foreground) var(--theme-contrast-base), var(--tt-code-bg)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* The sidebar and Tools sit below the room, so the thread is the lightest wide surface in the window. */
+  --tt-sidebar: oklch(0.14 0.004 75);
+  --tt-sidebar-text: color-mix(in oklab, color-mix(in oklab, oklch(0.9 0.005 85) var(--theme-contrast-base), var(--tt-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, oklch(0.68 0.008 85) 76%, oklch(0.9 0.005 85)) var(--theme-contrast-base), var(--tt-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-sidebar-control: oklch(0.185 0.004 75);
+  --tt-sidebar-row-hover: oklch(0.18 0.004 75);
+  --tt-sidebar-row-active: oklch(0.235 0.025 190);
+  --tt-sidebar-row-selected: oklch(0.265 0.035 188);
+  --tt-selected: var(--tt-sidebar-row-selected);
+  --tt-sidebar-border: color-mix(in srgb, color-mix(in srgb, oklch(0.245 0.006 75) var(--theme-contrast-base), transparent), oklch(0.9 0.005 85) var(--theme-contrast-border-boost));
+  /* Sotto Owl's night stays Sotto's night blue on the darker sidebar, rather than taking its warm hue. */
+  --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) 265);
+  --tt-owl-night-field: oklch(from var(--tt-sidebar) calc(l - .05) min(calc(c + .023), .045) 265);
+  --tt-reading-text: color-mix(in oklab, var(--tt-text) 88%, var(--theme-canvas));
+  --tt-reading-text-2: color-mix(in oklab, var(--tt-text-2) 91%, var(--theme-canvas));
+  --tt-reading-bubble-text: color-mix(in oklab, var(--tt-bubble-text) 85%, var(--tt-bubble));
+  --tt-reading-code-text: color-mix(in oklab, var(--tt-code-text) 82%, var(--tt-code-bg));
+  --tt-reading-muted: color-mix(in oklab, var(--tt-text-muted) 93%, var(--theme-canvas));
+  --tt-transcript-muted: color-mix(in oklab, var(--tt-text-muted) 91%, var(--theme-canvas));
 }
-:root[data-theme='dark'][data-theme-id='t3-code'] .app-shell:not(:has(.watcher-room)) { --tt-canvas: oklch(0.13 0.003 75); }
+:root[data-theme='dark'][data-theme-id='t3-code'] .app-shell:not(:has(.watcher-room)) { --tt-canvas: oklch(0.16 0.004 75); }
+/* Watcher's room keeps the palette's colours exactly: its messages, code and times read as they did before the pick. */
+:root[data-theme='dark'][data-theme-id='t3-code'] .app-shell:has(.watcher-room) {
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: color-mix(in oklab, color-mix(in oklab, var(--theme-message-foreground) var(--theme-contrast-base), var(--theme-message-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-text: color-mix(in oklab, color-mix(in oklab, var(--theme-code-foreground) var(--theme-contrast-base), var(--theme-code-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-transcript-muted: color-mix(in oklab, var(--tt-text-quiet) 80%, var(--tt-text));
+}
+/* The pane header and Tools read the same softer inks as the transcript. The composer keeps the root's. */
+:root[data-theme='dark'][data-theme-id='t3-code'] :is(.thread-workspace__head, .tools-panel, .tools-rail) {
+  --tt-text: var(--tt-reading-text);
+  --tt-text-2: var(--tt-reading-text-2);
+  --tt-text-muted: var(--tt-reading-muted);
+  --tt-code-text: var(--tt-reading-code-text);
+  color: var(--tt-text);
+}
 /* By day the rules a reader's eye follows go a step darker. */
 :root[data-theme='light'][data-theme-id='t3-code'] {
   --tt-reading-hairline: color-mix(in srgb, var(--tt-border-faint) 88%, var(--theme-text));
