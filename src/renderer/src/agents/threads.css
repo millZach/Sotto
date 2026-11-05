@@ -73,6 +73,9 @@
 /* A new thread's greeting names its project, so the header does not. */
 .thread-pane[data-greeting] .thread-workspace__crumb > span:first-of-type, .thread-pane[data-greeting] .thread-workspace__crumb::before { display: none; }
 @container pane-where (width < 420px) { .thread-workspace__branches .branch-toolbar__menu:not(:has([aria-expanded='true'])) { display: none; } }
+/* Where the branch's name would be cut with the project beside it, the project leaves first, whatever the box's width
+   (headerWhereFit.ts measures it), so "feat/thread-store-worker" reads whole where it read "feat/thread-store-w...". */
+.thread-workspace__where[data-crowded] .thread-workspace__crumb > span:first-of-type, .thread-workspace__where[data-crowded] .thread-workspace__crumb::before { display: none; }
 @container pane-where (width < 300px) {
   .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb > span:first-of-type, .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb::before { display: none; }
 }

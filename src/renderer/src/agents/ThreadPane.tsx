@@ -16,6 +16,7 @@ import { quickAction } from './gitActionButton.logic'
 import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
 import { useOptionalApp } from '../state/AppContext'
 import { ProviderMark } from './ProviderMark'
+import { useWhereFit } from './headerWhereFit'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { messageLinks } from './requests/messageLinks'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
@@ -280,6 +281,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Where the Git action draws its notice: above the composer, in the pane's own flow. */
   const [gitNoticeSlot, setGitNoticeSlot] = useState<HTMLElement | null>(null)
   const [branchSlot, setBranchSlot] = useState<HTMLSpanElement | null>(null)
+  // The project leaves the header before the branch's name is cut (ADR-0182).
+  const whereFit = useWhereFit()
   /** Where a new thread's greeting stands, directly above the composer. */
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
@@ -482,7 +485,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2 title={thread.title}>{thread.title}</h2>}
         {/* What is left of the row after the name: the project and the working copy, then the branch controls, each giving way whole as this box narrows. */}
-        <span className="thread-workspace__where">
+        <span className="thread-workspace__where" ref={whereFit}>
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
