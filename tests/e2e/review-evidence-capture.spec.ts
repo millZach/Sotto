@@ -16,6 +16,8 @@ import { openThreads, toggleTools, type LaunchedSotto } from './support/sottoLau
 import { resizeContentWindow } from './support/sottoWindow'
 import { holdOwlSky } from './support/sottoOwl'
 import { seedWatcherRoom } from './support/watcherRoom'
+import { fillPrompt, promptField } from './support/prompt'
+import { seedUsageHistory, usageAssistantFrame, usageDashboardHarness, usageResultFrame, usageWait, waitForNativePrompt } from './support/usageDashboard'
 
 /**
  * The real running app in real, busy states, for side-by-side review and as "before" images for later changes. Every
@@ -1106,6 +1108,81 @@ const COMMON_DIFFERENCES = [
   'Sidebar threads beyond the named ones are the design fixture\'s and short finished ones. Project "sotto" is a real repository in the temporary folder holding only part of the tree.',
 ]
 
+/**
+ * Usage as it reads for someone whose Claude Code and Codex are on this computer: two weeks of their records outside Sotto,
+ * one thread in Sotto and Claude's limits. The `usage` state's fake provider host keeps no records and reads no limits, so
+ * its page shows only the prompts that run sent. Everything here is data: Claude Code's transcripts and a Codex CLI
+ * rollout in the harness's own home, read by the real importer, and the scripted Claude client's answers.
+ */
+async function captureConnectedUsage(out: string): Promise<void> {
+  const harness = await usageDashboardHarness()
+  const shows = 'The Usage page for someone using Claude Code and Codex: fourteen days of their own records, seven models, one thread in Sotto, and Claude\'s limits.'
+  const differs = 'Production main over an isolated home on the real clock, not the fixture era. The records are the usage-dashboard spec\'s invented history, read by the real importer; Claude Code is the scripted client, which answers get_usage with 18% of five hours and 46% of the week used. No other provider is connected, so only Claude has limits.'
+  try {
+    const seeded = await seedUsageHistory(harness.home)
+    const resetsAt = Date.now() + 3 * 3_600_000
+    await writeFile(join(harness.client, 'usage-script.json'), JSON.stringify({ rate_limits: {
+      five_hour: { utilization: 18, resets_at: new Date(resetsAt).toISOString() },
+      seven_day: { utilization: 46, resets_at: new Date(resetsAt + 2 * 86_400_000).toISOString() } } }))
+    const page = await harness.launch()
+    await harness.connect()
+    await page.evaluate(async path => {
+      const agents = window.sotto!.agents!
+      const created = await agents.command({ type: 'create-project', provider: 'claude', title: 'sotto', path, useExisting: true })
+      if (created.error) throw new Error(created.error)
+      const state = await agents.get()
+      const project = state.host.projects.find(value => value.title === 'sotto')!
+      const model = state.host.models.find(value => value.providerId === 'claude' && value.ready)!
+      const result = await agents.command({ type: 'create-thread', projectId: project.id, title: 'Measure the store worker', titleSource: 'user', modelId: model.id,
+        workingCopy: 'shared', runtimeMode: 'approval-required' })
+      if (result.error) throw new Error(result.error)
+      await agents.command({ type: 'select-thread', threadId: result.activeThreadId! })
+    }, harness.project)
+    await openThreads(page)
+    await expect(promptField(page)).toBeEditable()
+    await fillPrompt(promptField(page), 'Measure how long the store worker takes to answer a read.')
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    const nativeId = await waitForNativePrompt(harness, 1)
+    await harness.action(nativeId, { type: 'raw', persist: true, frame: usageAssistantFrame(nativeId, 'evidence-store-worker', 1_400) })
+    await harness.action(nativeId, { type: 'raw', frame: usageResultFrame(nativeId) })
+    await expect.poll(async () => (await harness.activity()).totals.prompts.total, usageWait).toBe(seeded + 1)
+    await harness.open()
+    const measures = page.getByRole('tablist', { name: 'Usage measures', exact: true })
+    await expect(measures.getByRole('tab', { name: /^Room left \d+% /u })).toBeVisible(usageWait)
+    /** The image first, then the harness's own checks (nothing overflows or clips, text at 4.5:1), whose failure is reported. */
+    const shoot = async (file: string, width: number, height: number, mode: Mode, what = shows): Promise<void> => {
+      await harness.appearance(mode); await harness.resize(width, height)
+      await writeFile(join(out, file), await page.screenshot({ animations: 'disabled' }))
+      manifest.set(file, { file, state: 'usage-connected', shows: what, differs, bounds: [] })
+      try { await harness.capture(out, file, width, height, mode) } catch (error) { failures.push(`usage-connected ${file}: ${error instanceof Error ? error.message : String(error)}`) }
+    }
+    for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, ['dark']], [820, 560, ['dark']]] as const) {
+      for (const mode of modes) await shoot(`usage-connected-${mode}-${width}.png`, width, height, mode)
+    }
+    // The other views a press on the index opens, at the largest size.
+    for (const [measure, name] of [[/^Room left /u, 'room'], [/^Tokens /u, 'tokens'], [/^Where /u, 'where']] as const) {
+      await harness.resize(1600, 1000)
+      await measures.getByRole('tab', { name: measure }).click()
+      await shoot(`usage-connected-${name}-dark-1600.png`, 1600, 1000, 'dark', `${shows} Its ${name === 'room' ? 'Room left' : name === 'tokens' ? 'Tokens' : 'Where'} view, pressed in the index.`)
+    }
+    // The Room left view on a theme other than the default.
+    await measures.getByRole('tab', { name: /^Room left /u }).click()
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ darkTheme: 'clay' }) })
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'clay')
+    await shoot('usage-connected-room-clay-dark-1600.png', 1600, 1000, 'dark', `${shows} Its Room left view on the Clay theme.`)
+    await page.evaluate(async theme => { await window.sotto!.updateSettings({ darkTheme: theme }) }, DEFAULT_THEME_ID)
+    await measures.getByRole('tab', { name: /^Prompts /u }).click()
+    // At the minimum the stage sits under the index: the same page scrolled to it.
+    await page.locator('.usage-stage').evaluate(element => {
+      const scroll = element.closest<HTMLElement>('.usage-scroll')!
+      scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16
+    })
+    await shoot('usage-connected-stage-dark-820.png', 820, 560, 'dark', `${shows} Scrolled to the Prompts view under the index.`)
+  } finally {
+    await harness.cleanup()
+  }
+}
+
 async function writeManifest(out: string): Promise<void> {
   const path = join(out, 'manifest.json')
   const kept = await readFile(path, 'utf8').then(text => JSON.parse(text) as ManifestRow[]).catch(() => [] as ManifestRow[])
@@ -1177,6 +1254,8 @@ test.describe('review evidence', () => {
         }))
       }
     })
+    // Its own launch: production main over an isolated home, so it reads the provider clients' records the way it would on a computer that has them.
+    if (!ONLY || ONLY.includes('usage-connected')) await runState('usage-connected', () => captureConnectedUsage(out))
     await writeManifest(out)
     await rm(evidenceRoot(), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
     expect(failures).toEqual([])
