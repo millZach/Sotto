@@ -397,9 +397,9 @@ function runningWords(record: AgentActivity): string {
 
 /** What the working line says while a step runs or a reply arrives (ADR-0134, November 4 amendment). */
 export interface WorkingNow {
-  /** The line's own words, which the light crosses: what the work is for when the provider said, else the step itself. */
+  /** The line's own words, which the light crosses: the step itself, the reply being written, or what the turn waits for. */
   readonly words: string
-  /** Smaller beside them, what is running for it: the step, or the command a step the provider described runs. Empty when the words say it all. */
+  /** Smaller beside them, still: empty on today's line, where the step names itself; kept for a line that leads with what the work is for. */
   readonly detail: string
   /** The detail is a command, set in the code face. */
   readonly code: boolean
@@ -440,13 +440,12 @@ function reasoningNow(steps: readonly AgentActivity[]): string {
 }
 
 /**
- * What the working line says the turn is doing now, from its steps alone: the newest step running, else the reply being
- * written, with what it is for when the provider said so. Null when neither is known, which is what thinking and a gap
- * between steps are, since a provider reports its tool calls and not the thinking between them; the Spaceballs words carry
- * that wait (ADR-0134, November 4 amendment). A plan's record stays running for the whole turn, so it never counts as the
- * step; its step in progress says what the step is for. What the work is for comes first from the plan's step in progress,
- * then from a command's own description, then from the reasoning summary that led to it. While a request waits on the
- * user, a permission outranking a question as everywhere else, the line says that instead. Reads without copying.
+ * What the working line says the turn is doing now, from its steps alone: the newest step running, named in place of the
+ * words, else the reply being written (ADR-0134, Zach's pick B of November 4). Null when neither is known, which is what
+ * thinking and a gap between steps are, since a provider reports its tool calls and not the thinking between them; the
+ * Spaceballs words carry that wait. A plan's record stays running for the whole turn, so it never counts as the step. While
+ * a request waits on the user, a permission outranking a question as everywhere else, the line says that instead. What the
+ * work is for (`workingPurpose`) is not on the line. Reads without copying.
  */
 export function workingNow(steps: readonly AgentActivity[], replyId?: string, waitingOn?: AgentRequest['kind']): WorkingNow | null {
   // A turn held on the user's answer is neither running a step nor writing: the line says what it waits for.
@@ -460,17 +459,18 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
   if (running === undefined && !replying) return null
   const doing = running ? runningWords(running) : t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
-  const described = running ? stepDescription(running) : ''
-  const planned = planNow(steps)
-  const purpose = planned || described || (running ? reasoningNow(steps) : '')
-  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing }
-  if (purpose === described && !planned) {
-    // A described command leads with its description, and the command itself sits beside it.
-    const command = running?.command ? isolated(innerCommand(running.command)) : ''
-    return { words: described, detail: command || doing, code: command !== '', spoken: [described, doing].join(', ') }
-  }
-  const detail = described || doing
-  return { words: purpose, detail, code: false, spoken: [purpose, detail, described ? doing : ''].filter(Boolean).join(', ') }
+  return { words: doing, detail: '', code: false, spoken: doing }
+}
+
+/**
+ * What the work running now is for, when the provider said so: the plan's step in progress (Claude's activeForm, or as
+ * written), else the running command's own description, else the heading of the reasoning summary that led to it. The
+ * working line does not show it (ADR-0134: the step names itself); it is kept, with the records that carry it, for a line
+ * that leads with it should Zach choose one. Empty when the provider said nothing of it.
+ */
+export function workingPurpose(steps: readonly AgentActivity[]): string {
+  const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
+  return planNow(steps) || (running ? stepDescription(running) || reasoningNow(steps) : '')
 }
 
 /** The plan as it stands: the newest plan record of a turn that has steps. */
