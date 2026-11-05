@@ -9,13 +9,6 @@
 /* The chevron half is the pane's usual icon button, narrower, on the row's hairline. */
 .git-action .pane-menu.git-action__more { height: 100%; border-left: 1px solid var(--tt-hairline); }
 .git-action .git-action__more > .pane-action { width: 22px; height: 100%; border-radius: 0 var(--tt-radius-control) var(--tt-radius-control) 0; }
-/* The Git action speaks once a turn has finished: it is the press a finished thread most often wants (ADR-0163), and the
-   window's one outlined control then. Before a new thread's first send and while a turn runs it keeps its place, its words
-   and its press, but rests without its edge in the muted ink, as a pane without the focus does. The pointer over the
-   header or the focus inside it gives it back at once, and so does the turn ending. */
-.git-action { transition: border-color 120ms ease; }
-:is(.thread-pane[data-greeting] > .thread-workspace__head, .thread-workspace__head[data-turn-running]):not(:hover, :focus-within) :is(.git-action, .git-action__more) { border-color: transparent; }
-:is(.thread-pane[data-greeting] > .thread-workspace__head, .thread-workspace__head[data-turn-running]):not(:hover, :focus-within) .git-action__quick:not([aria-disabled='true']) { color: var(--tt-text-muted); }
 /* Narrow pane: the label leaves and the icon says which action stands (the name stays in the accessible name and title). */
 @container thread-pane (max-width: 720px) {
   .git-action__quick { padding: 0 7px; }

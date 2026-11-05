@@ -466,9 +466,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     focusAnswerComposer()
   }
   return <ReplyAttachContext.Provider value={markUpOn ? replySlot : null}>
-    {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts), and
-        whether a turn runs, so the Git action can rest until the turn has finished. */}
-    {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined} data-turn-running={isThreadTurnRunning(thread) || undefined}>
+    {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
+    {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
           A press on a control inside it, such as the working copy, stays that control's. The name is served first and
           what stands beside it takes what is left (ADR-0182, November 4 amendment). */}
