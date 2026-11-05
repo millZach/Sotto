@@ -830,6 +830,52 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await everySize('shell-split-clay', 'The same on the Clay theme.')
     await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
   } },
+  // Below a 1000 pixel window the rail stands and Expand opens the whole sidebar over the thread (ADR-0110, November 5,
+  // 2026); and a waiting thread's row reads In Needs you, lighting its entry under the pointer (ADR-0135, the same day).
+  { name: 'sidebar-narrow', covers: ['sidebar-rail-narrow', 'sidebar-over', 'sidebar-over-clay', 'needs-you-peer', 'needs-you-peer-entry'], run: async capture => {
+    const { page } = capture
+    // A waiting thread on screen, so the list centres on its folder, where another waiting thread's row stands.
+    await openThread(page, 'Visual gate flake')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    // Pointing at a waiting thread's row in its folder lights its entry in Needs you, and the other way round.
+    const queued = sidebar.locator('.thread-nav__row[data-in-queue]').filter({ hasText: 'Streaming WAV stall' })
+    await expect(queued).toContainText('In Needs you')
+    // The shoot brings the open thread's row to the list's middle after this runs, so the list is put there first and the
+    // pointer stays on the row it points at.
+    const pointAt = (target: Locator) => async (): Promise<void> => {
+      await page.evaluate(() => {
+        const list = document.querySelector('.thread-nav__scroll'), open = list?.querySelector('[aria-current="page"]')
+        if (list && open) list.scrollTop += open.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - open.clientHeight) / 2
+      })
+      await target.hover({ position: { x: 40, y: 12 } })
+    }
+    await capture.shoot('needs-you-peer', 'The pointer on a waiting thread\'s row, which reads In Needs you, and its entry in Needs you lit.', '', { before: pointAt(queued) })
+    const id = await queued.getAttribute('data-in-queue')
+    await capture.shoot('needs-you-peer-entry', 'The pointer on an entry in Needs you, and its thread\'s row lit in its folder.', '', { modes: ['dark'], before: pointAt(sidebar.locator(`.needs-you__entry[data-entry-id="${id}"]`)) })
+    await page.mouse.move(0, 0)
+    await openThread(page, 'Split AgentControl')
+    for (const [width, height] of [[1000, 700], [999, 700], [820, 560]] as const) {
+      await resizeContentWindowFor(capture.launched, width, height)
+      await capture.shoot('sidebar-rail-narrow', width < 1000 ? 'Below a 1000 pixel window the sidebar stands as the rail and the thread takes the rest.' : 'At 1000 the sidebar stands beside the thread, as at every wider window.', '', { modes: ['dark'], size: [width, height] })
+    }
+    // Expand opens the whole sidebar over the thread, which has not moved.
+    const open = async (): Promise<void> => {
+      if (await page.locator('aside.thread-nav[data-over]').count()) return
+      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    }
+    await open()
+    await capture.shoot('sidebar-over', 'Expand pressed at the minimum window: the whole sidebar over the thread, the thread dimmed and unmoved behind it.', '', { size: [820, 560], before: open })
+    await resizeContentWindowFor(capture.launched, 999, 700)
+    await capture.shoot('sidebar-over', 'The same just under the 1000 pixel line.', '', { modes: ['dark'], size: [999, 700], before: open })
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await capture.shoot('sidebar-over-clay', 'The sidebar over the thread on the Clay theme.', '', { size: [820, 560], before: open })
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('aside.thread-nav[data-over]')).toHaveCount(0)
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
   { name: 'shell-check', covers: [], run: async capture => {
     const { page } = capture
