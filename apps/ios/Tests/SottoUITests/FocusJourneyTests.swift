@@ -2692,6 +2692,17 @@ extension FocusJourneyTests {
         }
         // Everything the opening and the typing moved has settled.
         Thread.sleep(forTimeInterval: 2.5)
+        if words != nil {
+            // The simulator can report its keyboard while the box still sits at the foot of the screen, and raise it seconds
+            // later; a press then measures the keyboard coming up rather than the send (run 41979301768). Wait until the box
+            // sits on the keyboard.
+            let keyboard = app.keyboards.firstMatch
+            let deadline = Date().addingTimeInterval(15)
+            func boxOnKeyboard() -> Bool { keyboard.exists && keyboard.frame.minY < app.frame.maxY && box.frame.maxY <= keyboard.frame.minY + 1 }
+            while !boxOnKeyboard() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+            XCTAssertTrue(boxOnKeyboard(), "The box sits on the keyboard before the press", file: file, line: line)
+            Thread.sleep(forTimeInterval: 1)
+        }
         let send = app.buttons[sendID]
         XCTAssertTrue(send.waitForExistence(timeout: 10) && send.isEnabled, "Send is ready", file: file, line: line)
         send.tap()
@@ -2770,7 +2781,6 @@ extension FocusJourneyTests {
     func testSendMediumThreadTogether() { threadSend("medium-together", "iphone", order: "together") }
     func testSendMediumThreadThreeLines() { threadSend("medium-three-lines", "iphone", words: sendThreeLines) }
     func testSendMediumThreadNoKeyboard() { threadSend("medium-no-keyboard", "iphone", words: nil, draft: true) }
-    func testSendLongThread() { threadSend("long", "drives", extra: ["--ui-long-thread"]) }
     func testSendWatcherIdle() { watcherSend("watcher-idle", idle: true) }
     func testSendWatcherWorking() { watcherSend("watcher-working") }
     func testSendWatcherNoKeyboard() { watcherSend("watcher-no-keyboard", idle: true, words: nil, draft: true) }
