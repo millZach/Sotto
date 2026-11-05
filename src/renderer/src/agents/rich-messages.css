@@ -144,8 +144,28 @@
   overflow-wrap: normal;
   tab-size: 2;
   scrollbar-width: thin;
+  scrollbar-color: var(--tt-scrollbar) transparent;
 }
 .rich-code__scroll:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
+/* A line that runs past the block's edge fades into the block's fill at that edge, so the cut reads as more to come
+   rather than as the end of the line. The block scrolls sideways by its bar, a sideways wheel or Shift and the wheel,
+   and by the arrow keys once it has focus. The fade stops short of the scroll bar, and leaves the focus ring whole. */
+.rich-code__body { position: relative; }
+.rich-code__body::before, .rich-code__body::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 14px;
+  width: 48px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.rich-code__body::before { left: 3px; background: linear-gradient(to left, transparent, var(--rich-block)); }
+.rich-code__body::after { right: 3px; background: linear-gradient(to right, transparent, var(--rich-block) 85%); }
+.rich-code__body[data-more~='start']::before, .rich-code__body[data-more~='end']::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .rich-code__body::before, .rich-code__body::after { transition: none; } }
+:root[data-reduced-motion='on'] .rich-code__body::before, :root[data-reduced-motion='on'] .rich-code__body::after { transition: none; }
 .rich-code__scroll code { font: inherit; }
 
 .rich-code .hljs-keyword, .rich-code .hljs-selector-tag, .rich-code .hljs-built_in, .rich-code .hljs-literal, .rich-code .hljs-doctag { color: var(--rich-code-keyword); }
