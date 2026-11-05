@@ -299,14 +299,21 @@
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; padding: 5px 10px 5px 8px; width: 100%; }
 .thread-nav__row--details { margin: 0; }
 .thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
-/* What is moving or waiting reads first; a plain Done steps back and keeps its word. Its provider's mark keeps its shape and
-   drops its colour, so down a long list of finished threads the colour left is what is working or waiting; hovering, or
-   the row on screen, gives the colour back. */
+/* What is moving or waiting reads first; a plain Done steps back and keeps its word. */
 .thread-nav__row--details:not([data-resting]) .thread-nav__title { color: var(--tt-text); }
 .thread-nav__row--details[data-resting]:not([data-current]) .thread-nav__title { font-weight: 400; }
-.thread-nav__row--details[data-resting]:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
+/* Down the list, colour says only what a thread is doing: the ring and its word. Every row's provider mark keeps its shape
+   in the muted ink, so a working Claude thread is teal and not teal beside orange; hovering, or the row on screen, gives the
+   provider its colour back. The words under the name and the clock take a little more weight than a caption, so they read
+   at a glance without taking more ink. */
+.thread-nav__row--details:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
+.thread-nav__row--details :is(.thread-nav__standing, .thread-nav__time) { font-weight: 450; }
 /* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take a step more ink. */
 :root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: color-mix(in oklab, var(--tt-text-muted) 45%, var(--tt-text-2)); }
+/* By day the amber that says a thread waits on you is a step deeper and a step heavier in the sidebar, in the rows and in
+   Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
+:root[data-theme='light'] .thread-nav { --threads-warning-text: color-mix(in oklab, var(--tt-warning-text, var(--tt-warning)) 84%, var(--tt-text)); }
+:root[data-theme='light'] .thread-nav :is(.needs-you__status, .thread-nav__status[data-state='needs']) { font-weight: 600; }
 /* A title may take two lines; the ring stays on its first. */
 .thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; margin-top: calc((var(--tt-type-body) * 1.35 - 10px) / 2); }
 .thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; line-height: 16px; visibility: visible; }
