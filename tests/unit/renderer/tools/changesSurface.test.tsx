@@ -390,10 +390,12 @@ describe('Changes as T3’s diff', () => {
     expect(file.querySelector('.changes-split__row')).toBeNull()
 
     const files = panel().querySelector('.changes-files')!
-    expect(files).toHaveAttribute('data-wrap')
-    await pressView(user, 'Wrap long lines')
+    // Code starts unwrapped, one row a line; Wrap long lines wraps it.
     expect(files).not.toHaveAttribute('data-wrap')
     expect(await viewOn(user, 'Wrap long lines')).toBe(false)
+    await pressView(user, 'Wrap long lines')
+    expect(files).toHaveAttribute('data-wrap')
+    expect(await viewOn(user, 'Wrap long lines')).toBe(true)
 
     await pressView(user, 'Hide whitespace changes')
     await waitFor(() => expect(git.bridge.review).toHaveBeenLastCalledWith(expect.objectContaining({ ignoreWhitespace: true })))

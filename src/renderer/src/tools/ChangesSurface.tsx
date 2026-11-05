@@ -9,7 +9,7 @@ import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
-import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
+import { decorateDiff, fileLines, isCommentLine, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
 import { EarlierWording, EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
@@ -782,7 +782,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
     </div>
   }
   const segments = row.old && row.next && row.old !== row.next ? decoration?.inline.get(row.old) : undefined

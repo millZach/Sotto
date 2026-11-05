@@ -29,13 +29,14 @@ export type ChangesScope =
  */
 export interface ChangesView {
   readonly layout: 'stacked' | 'split'
+  /** Wraps long lines of code at the panel's edge. Off, a line of code runs on and its file scrolls sideways; a document always wraps. */
   readonly wrap: boolean
   readonly ignoreWhitespace: boolean
   readonly fileTree: boolean
   /** Draws one file of the comparison at a time, for a comparison too long to read through. */
   readonly oneFile: boolean
 }
-export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: true, ignoreWhitespace: false, fileTree: false, oneFile: false }
+export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: false, ignoreWhitespace: false, fileTree: false, oneFile: false }
 
 /** Where the Diff layout, Hide whitespace changes and Default diff file state settings say Changes starts. */
 export interface ChangesStartingView {

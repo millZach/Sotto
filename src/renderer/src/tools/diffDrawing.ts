@@ -169,6 +169,27 @@ export function wholeSide(lines: readonly DiffLine[]): 'add' | 'remove' | undefi
   return side
 }
 
+/** How a line of a C-family, CSS or HTML comment starts, for a comment a hunk opens partway through, which the highlighter reads as code. */
+const COMMENT_START = /^\s*(?:\/\/|\/\*|\*(?:\s|\/|$)|<!--)/u
+
+/**
+ * Whether a line of code is only a comment: prose, which can wrap where the code around it runs on in one row. Its own
+ * shape says so, or its colours do when every letter of it is in a comment.
+ */
+export function isCommentLine(text: string, paint: Pick<LinePaint, 'tokens'> | undefined): boolean {
+  if (!/\S/u.test(text)) return false
+  if (COMMENT_START.test(text)) return true
+  const tokens = paint?.tokens
+  if (!tokens?.length) return false
+  let at = 0
+  for (const token of tokens) {
+    if (/\S/u.test(text.slice(at, token.start))) return false
+    if (!token.className.includes('hljs-comment') && /\S/u.test(text.slice(token.start, token.end))) return false
+    at = Math.max(at, token.end)
+  }
+  return !/\S/u.test(text.slice(at))
+}
+
 /** Git keeps this many bytes of the line it names a hunk by, and cuts the rest without a mark (xdiff's `func_line`). */
 const GIT_SECTION_BYTES = 80
 const utf8 = new TextEncoder()

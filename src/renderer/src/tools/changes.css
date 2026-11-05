@@ -167,24 +167,35 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { color: var(--tt-error-text); }
 .changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--tt-warning); }
 
-/* The lines. They wrap wherever nothing says otherwise; unwrapped, each file scrolls sideways on its own. */
+/* The lines. Code runs one row a line, as an editor shows it, so its indents and line starts scan down the file; a
+   line longer than the panel runs on past its edge and its file scrolls sideways, on its own. Wrap long lines in View
+   wraps it instead. About four lines of code in five on a real branch fit at 1600 (84 columns), where a wrapped one
+   took two or three rows and broke the indents the eye reads code by. Code takes the caption step, as T3 Code and
+   Codex draw a diff, so more of each line fits. A document always wraps, since a paragraph is one line of its source,
+   and so does the transcript's box, where nothing scrolls sideways. */
 .changes-diff__body { container-type: inline-size; overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.7; }
-.changes-files:not([data-wrap]) .changes-diff__rows { width: max-content; min-width: 100%; }
+.changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); line-height: 1.7; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] { width: max-content; min-width: 100%; }
 /* Every line has one number, the line's place now or, for a removed line, where it was, as wide as the file's
    longest (numberWidth in DiffBlock.tsx): the sign says which, and the width goes to the code. A line's parts sit on
    its first baseline, so a number stands level with its line whatever their sizes. */
 .changes-diff__rows { --changes-number-pad: 8px; --changes-number: calc(var(--changes-digits, 4ch) + var(--changes-number-pad)); }
 .changes-line { display: grid; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); align-items: baseline; column-gap: 5px; padding-right: 16px; color: var(--tt-code-text); }
 .changes-diff__rows[data-numbers='none'] .changes-line { grid-template-columns: 1ch minmax(0, 1fr); padding-left: 8px; }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-line { grid-template-columns: var(--changes-number) 1ch max-content; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line { grid-template-columns: var(--changes-number) 1ch max-content; }
 .changes-line__number { color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
 .changes-line__number:first-child { padding-left: var(--changes-number-pad); box-sizing: content-box; }
 .changes-line__sign { color: var(--tt-text-muted); font-family: var(--tt-font-mono); user-select: none; }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 /* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
 .changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-line__text { white-space: pre; overflow-wrap: normal; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line__text { white-space: pre; overflow-wrap: normal; }
+/* A line that is only a comment is prose (isCommentLine in diffDrawing.ts): unwrapped, it still wraps, inside the part
+   of its file in view, so its words never run out past the edge while the code around it keeps one row a line. It
+   takes that width outright: sized to its words, the hanging indent would count against them and break even "/**". */
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line > .changes-line__text[data-comment] {
+  box-sizing: border-box; width: calc(100cqw - var(--changes-number) - 1ch - 26px); white-space: pre-wrap; overflow-wrap: anywhere;
+}
 /* A short run of code a browser would break at a hyphen or a slash stays whole (codeBreaks in DiffBlock.tsx): a wrapped
    line breaks at a space, and a long run after its dots and commas, before it breaks anywhere at all. */
 .changes-kept { white-space: nowrap; }
@@ -232,7 +243,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .changes-line[data-kind='hunk'] .changes-line__text { display: flex; gap: 10px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); }
 .changes-hunk__line { flex: none; font-variant-numeric: tabular-nums; }
 .changes-hunk__section { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
@@ -266,7 +277,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    words are only made bold) keeps its marks, faint, so no change is hidden. One line height runs through the whole diff. */
 .changes-diff__rows[data-reading='document'] { font-family: var(--tt-font-ui); font-size: var(--tt-type-body); line-height: calc(var(--tt-type-body) * 1.55); }
 .changes-diff__rows[data-reading='document'] .changes-line { row-gap: 0; padding-top: 1px; padding-bottom: 1px; }
-.changes-files[data-wrap] .changes-diff__rows[data-reading='document'] .changes-line__text, .changes-block .changes-line__text { max-width: 74ch; }
+.changes-diff__rows[data-reading='document'] .changes-line__text, .changes-block .changes-line__text { max-width: 74ch; }
 .changes-diff__rows[data-reading='document'] [data-kind='context'] { color: var(--tt-text-muted); }
 .changes-diff__rows[data-reading='document'] [data-kind='add'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] [data-kind='remove'] { color: var(--tt-text-2); }
@@ -381,12 +392,16 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-split__head { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .changes-split__head > span { min-width: 0; overflow: hidden; padding: 4px 12px; text-overflow: ellipsis; white-space: nowrap; }
 .changes-diff__rows[data-layout='split'] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.changes-files:not([data-wrap]) .changes-diff__rows[data-layout='split'] { grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'][data-layout='split'] { grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr); }
+/* A whole file added or removed has nothing on one side: unwrapped, that side keeps only its gutter's room, or its
+   lines would start a whole long line's width to the right, out of view. */
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'][data-layout='split'][data-whole='add'] { grid-template-columns: max-content minmax(max-content, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'][data-layout='split'][data-whole='remove'] { grid-template-columns: minmax(max-content, 1fr) max-content; }
 .changes-diff__rows[data-layout='split'] > .changes-line { grid-column: 1 / -1; }
 /* A split row is a real box on the file's grid, so it can take focus and a selection while its cells stay aligned. */
 .changes-split__row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
 .changes-split__cell { display: grid; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); align-items: baseline; column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-split__cell { grid-template-columns: var(--changes-number) 1ch max-content; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-split__cell { grid-template-columns: var(--changes-number) 1ch max-content; }
 .changes-split__row > .changes-split__cell:first-child { border-right: 1px solid var(--tt-hairline); }
 @container tools-body (max-width: 479px) {
   .changes-split__cell { column-gap: 3px; }

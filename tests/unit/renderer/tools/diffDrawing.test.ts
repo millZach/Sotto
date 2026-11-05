@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isCommentLine, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -247,5 +247,25 @@ describe('decorateDiff', () => {
     expect(decoration.paint.has(rows.at(-1)!)).toBe(false)
     // A generous bound that only a whole-file comparison or colouring of every line could miss.
     expect(performance.now() - started).toBeLessThan(2_000)
+  })
+})
+
+describe('isCommentLine', () => {
+  const painted = (lines: readonly DiffLine[]) => decorateDiff(lines, { reading: 'code', language: 'typescript', highlighter })
+  it('knows a line that is only a comment, by its shape or its colours', () => {
+    const rows = [line('context', '/**'), line('context', ' * How long main looks for a gone worker.'), line('context', ' */'), line('context', '// A note'), line('context', 'const a = 1 // and a note')]
+    const decoration = painted(rows)
+    expect(rows.map(row => isCommentLine(row.text, decoration.paint.get(row)))).toEqual([true, true, true, true, false])
+  })
+  it('knows a comment a hunk opens partway through, which the highlighter reads as code', () => {
+    const row = line('context', "   * The projection's shape. A change here means the `messages` table is rebuilt")
+    expect(isCommentLine(row.text, painted([row]).paint.get(row))).toBe(true)
+  })
+  it('reads a comment by its colours in a language with other marks', () => {
+    const row = line('context', '# Version 2 adds the checkpoint acknowledgement')
+    const decoration = decorateDiff([row], { reading: 'code', language: 'python', highlighter })
+    expect(isCommentLine(row.text, decoration.paint.get(row))).toBe(true)
+    expect(isCommentLine('x = 2 * y', undefined)).toBe(false)
+    expect(isCommentLine('   ', undefined)).toBe(false)
   })
 })
