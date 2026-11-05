@@ -45,7 +45,8 @@
 }
 .changes-bar__fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .changes-bar__view { display: flex; flex: none; align-items: center; gap: 4px; margin-left: auto; }
-/* A control of the bar says its word. Only Collapse all drops to its icon, and only in a panel too narrow to hold every word. */
+/* A control of the bar says its word. Only Collapse all drops to its icon, and only in a panel too narrow to hold every word
+   and the branch. */
 .changes-bar__word {
   display: inline-flex; flex: none; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border: 0; border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
@@ -56,6 +57,9 @@
 .changes-bar__word:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .changes-bar__word:disabled { color: var(--tt-text-muted); opacity: .6; }
 @container tools-body (max-width: 559px) { .changes-bar__word-text { display: none; } }
+/* Where the tree is shut, All files joins the bar, and below 720px Collapse all gives up its word for it so the branch
+   stays whole beside the base. */
+@container tools-body (max-width: 719px) { .changes-bar__view:has(.changes-jump__all) .changes-bar__word-text { display: none; } }
 
 /* Branch changes: the branch, an arrow, and the base as the button that opens the list. */
 .changes-base { display: flex; flex: 1 1 150px; align-items: center; gap: 4px; min-width: 0; }
