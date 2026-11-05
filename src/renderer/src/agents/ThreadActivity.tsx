@@ -429,18 +429,19 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const open = pressedOpen && expandable
   const count = children.length
   const steps = count ? plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` }) : ''
-  const base = activityLabel(record)
+  // The plan in view is a step that happened, not its contents again: its checklist and progress stand above the line.
+  const base = planInView ? { lead: '', subject: t({ message: 'Updated the plan', comment: 'A running turn\'s plan among its opened steps; the plan itself stands above the working line.' }), mono: false, preview: '' } : activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
-  const status = statusText(record, connected)
+  const status = planInView ? '' : statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
-  const running = record.status === 'running'
+  const running = record.status === 'running' && !planInView
   const lines = activityLineCounts(record)
   // Where the time came from qualifies the time, so an open row says it beside it, once, rather than at the foot of its body.
   const timing = open ? timingNote(record, provider) : ''
   const timingId = useId()
   const quiet = quietUnknown && record.status === 'unknown'
-  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
+  const spoken = planInView ? label.subject : [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = label.subject
   const body = <>

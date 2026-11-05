@@ -81,7 +81,9 @@ describe('a plan a provider reported', () => {
     expect(within(transcript).getAllByRole('list', { name: 'Plan, 1 of 3 done' })).toHaveLength(1)
     expect(above).toHaveClass('thread-activity-live__plan')
     expect(within(transcript).queryByRole('button', { name: /^Plan, 1 of 3 done/u })).toBeNull()
-    const row = within(transcript).getByRole('group', { name: /^Plan, 1 of 3 done/u })
+    const row = within(transcript).getByRole('group', { name: 'Updated the plan' })
+    // It says what happened, once: no second count of its progress and no Running beside a plan that is not a command.
+    expect(row).not.toHaveTextContent(/of 3 done|Running/u)
     expect(row.querySelector('.thread-activity__chevron')).toBeNull()
   })
 
@@ -100,7 +102,7 @@ describe('a plan a provider reported', () => {
     expect(within(transcript).getByRole('button', { name: /step 8/u })).toBeVisible()
     fireEvent.click(within(transcript).getByRole('button', { name: 'Show 4 earlier' }))
     // Among the steps the plan is one row, with nothing to open: its checklist stands above the line.
-    expect(within(transcript).getByRole('group', { name: /^Plan, /u })).toBeVisible()
+    expect(within(transcript).getByRole('group', { name: 'Updated the plan' })).toBeVisible()
   })
 
   it('keeps the plan in the order it was reported while it is among the newest six', () => {
@@ -112,7 +114,7 @@ describe('a plan a provider reported', () => {
     ] }))
     fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 3 steps so far' }))
     const rows = within(transcript).getByTestId('thread-activity-live').querySelector('.thread-activity__rows')!
-    expect([...rows.children].map(row => /Plan/u.test(row.textContent ?? ''))).toEqual([false, true, false])
+    expect([...rows.children].map(row => /Updated the plan/u.test(row.textContent ?? ''))).toEqual([false, true, false])
     expect(within(transcript).queryByRole('button', { name: /earlier/u })).toBeNull()
   })
 })
