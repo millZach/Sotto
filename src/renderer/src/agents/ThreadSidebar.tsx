@@ -127,12 +127,6 @@ export interface PaneActions {
 /** One tile on Owl's rail: what waits on you and what rests are told apart by position and by look. */
 type RailItem = { readonly row: ThreadRow; readonly status: ReturnType<typeof rowStatus>; readonly waiting: boolean; readonly resting: boolean }
 
-/** A rail tile's two letters: the first letters of the title's first two words, or a one-word title's first two. */
-export function railMark(title: string): string {
-  const [first = '', second] = title.trim().split(/\s+/)
-  return first.slice(0, 1).toUpperCase() + (second === undefined ? first.slice(1, 2) : second.slice(0, 1)).toLowerCase()
-}
-
 /**
  * The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d).
  * A row whose thread stands in Needs you rests its ring: the card says the need (ADR-0135, November 5, 2026).
@@ -768,17 +762,20 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   }, [railCard, railEntry])
   // Each tile opens its thread's row menu (ADR-0164), through the same Settle as the list's rows.
   const railTileFacts = (row: ThreadRow) => ({ row, panes, open: openThreadIds.includes(row.thread.id), busy: isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id), command, settle, onOpen })
+  // A tile is its thread's provider mark and status ring (Zach's pick C, ADR-0146, November 5, 2026); its title, project and
+  // status are its tooltip, and the title its name.
   const railTile = ({ row, status, waiting, resting }: RailItem, watched: boolean): ReactNode => {
     const pops = railPops?.get(row.thread.id)
     const id = row.thread.id
     return <RailTile key={id} {...railTileFacts(row)} watched={watched} pressOpens={pops === undefined} data-rail-thread={id} {...{ [ROVING_KEY]: `rail:${id}` }}
-    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={pops ? popWords(pops).name : row.thread.title}
-    title={[row.thread.title, status.text, watched ? t`Watched by Watcher` : ''].filter(Boolean).join(' · ')}
+    className="thread-nav__rail-thread tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={pops ? popWords(pops).name : row.thread.title}
+    title={[row.thread.title, row.project?.title ?? '', status.text, watched ? t`Watched by Watcher` : ''].filter(Boolean).join(' · ')}
     aria-haspopup={pops ? 'dialog' : undefined} aria-expanded={pops ? railCard === id : undefined} aria-controls={pops && railCard === id ? railCardId : undefined}
     aria-current={listed === id ? 'page' : undefined} onClick={() => { if (pops) setRailCard(current => current === id ? null : id); else onOpen(id) }}
     onKeyDown={event => { if (pops && railCard === id && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRailCard(null) } }}>
     {watched ? <span className="thread-nav__rail-watched-mark" aria-hidden="true"><WatcherOwl size={10} /></span> : null}
-    <span aria-hidden="true">{railMark(row.thread.title)}</span><StatusRing row={row} {...status} />
+    <span className="thread-nav__mark thread-nav__rail-provider" data-provider={row.providerId} aria-hidden="true"><ProviderMark provider={row.providerId} name={row.provider} size={resting ? 13 : 16} /></span>
+    <StatusRing row={row} {...status} />
   </RailTile>
   }
   const threads = state.host.threads
@@ -793,10 +790,11 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const snoozedShown = snoozedOpen || searching
   let owlRail: ReactNode = null
   if (railOn) {
-    // Owl's rail (ADR-0146): the threads Watcher watches right under its tile, each with the owl at its corner, then the
-    // rest. Each part runs what waits on you (the Needs you queue's order, settled threads included, edged in the
-    // attention colour), then what is moving, then the resting ones smaller; the rest's resting ones are a part of their
-    // own. A watched thread shows here even once settled.
+    // Owl's rail (ADR-0146, Zach's pick C of November 5, 2026): the threads that wait on you or are moving, in a tray for
+    // each project with its name at the head, then the resting ones together in one tray at the foot, smaller. The
+    // projects come in the order of their first tile, and inside each what waits on you comes first, in the Needs you
+    // queue's order with settled threads included and edged in the attention colour, then what is moving. A thread Watcher
+    // watches wears the owl at its corner, and shows here even once settled.
     const queued = organization.needsYou.entries.map(entry => entry.row)
     const waitingIds = new Set(queued.map(row => row.thread.id))
     const pool = [...new Map([...queued, ...railRows, ...settled.flatMap(folder => folder.rows).filter(row => watchedIds.has(row.thread.id))].map(row => [row.thread.id, row])).values()]
@@ -806,22 +804,24 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       const moving = row.state === 'working' || status.finished || status.prototype || status.background || status.restart
       return { row, status, waiting, resting: !waiting && !moving }
     })
-    const ordered = (watched: boolean): RailItem[] => {
-      const part = items.filter(item => watchedIds.has(item.row.thread.id) === watched)
-      return [...part.filter(item => item.waiting), ...part.filter(item => !item.waiting && !item.resting), ...part.filter(item => item.resting)]
+    const awake = [...items.filter(item => item.waiting), ...items.filter(item => !item.waiting && !item.resting)]
+    const projects = new Map<string, RailItem[]>()
+    for (const item of awake) {
+      const key = item.row.thread.projectId ?? ''
+      projects.set(key, [...projects.get(key) ?? [], item])
     }
-    const watched = ordered(true), rest = ordered(false)
-    const restAwake = rest.filter(item => !item.resting), restResting = rest.filter(item => item.resting)
-    // A part of two or more tiles sits in a tray of its own colour, the trays taking the theme's group colours in turn;
-    // a lone tile stands bare.
-    let trays = 0
-    const part = (items: RailItem[], watchedPart: boolean): ReactNode => {
-      if (!items.length) return null
-      const tray = items.length > 1 ? ++trays : undefined
-      return <div className={`thread-nav__rail-group${watchedPart ? ' thread-nav__rail-watched' : ''}${tray ? ' thread-nav__rail-tray' : ''}`} data-hue={tray}
-        role={watchedPart ? 'group' : undefined} aria-label={watchedPart ? t`Watched by Watcher` : undefined}>{items.map(item => railTile(item, watchedPart))}</div>
-    }
-    owlRail = <>{part(watched, true)}{part(restAwake, false)}{part(restResting, false)}
+    const resting = items.filter(item => item.resting)
+    const tile = (item: RailItem): ReactNode => railTile(item, watchedIds.has(item.row.thread.id))
+    // The project's name tells its tray from the next one's: the app keeps no colour for a project, so every project's
+    // tray takes the same theme role, and the resting tray a quieter one.
+    owlRail = <>
+      {[...projects].map(([key, part]) => {
+        const project = part[0]!.row.project?.title ?? t`Project`
+        return <div key={`project:${key}`} className="thread-nav__rail-group thread-nav__rail-tray thread-nav__rail-project" role="group" aria-label={project}>
+          <span className="thread-nav__rail-label" aria-hidden="true">{project}</span>{part.map(tile)}
+        </div>
+      })}
+      {resting.length ? <div className="thread-nav__rail-group thread-nav__rail-tray thread-nav__rail-resting">{resting.map(tile)}</div> : null}
       {railEntry ? <NeedsYouCard id={railCardId} entry={railEntry} state={state} command={command} anchor={() => railTileOf(railCard)} trigger={() => railTileOf(railCard)} placement="beside"
         dismissing={railDismissing} onClose={focusTile => { setRailCard(null); if (focusTile) railTileOf(railCard)?.focus() }}
         onOpen={() => { setRailCard(null); onOpen(railEntry.row.thread.id) }}

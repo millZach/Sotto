@@ -364,13 +364,15 @@
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
-/* The rail is 52px, so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar.
+/* The rail is 52px (64px on Owl), so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar.
    A short band of the sidebar stands at each edge, with no line: the rail has no hairlines (ADR-0146, October 28), so a
    tile going under the band fades out whole, and that is what says there is more. */
 .thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; }
 .thread-nav__rail-list::before, .thread-nav__rail-list::after { content: ''; position: sticky; z-index: 2; display: block; height: 4px; background: var(--threads-sidebar); pointer-events: none; }
 .thread-nav__rail-list::before { top: 0; }
 .thread-nav__rail-list::after { bottom: 0; }
+/* Under the sidebar standing over the thread the bands stay under it too, rather than striking through Needs you. */
+.thread-nav[data-over] .thread-nav__rail-list::before, .thread-nav[data-over] .thread-nav__rail-list::after { z-index: 0; }
 /* A tile the band would cut through its letters fades out whole, as a row of the list does, unless the keys are on it. */
 @supports (animation-timeline: view()) {
   .thread-nav__rail-list .thread-nav__rail-thread:not(:focus-visible) { animation: thread-nav-edge linear both; animation-timeline: view(block 5px); animation-range: cover; }
@@ -386,27 +388,33 @@
    title over what it is doing, a pane header's symbol under it, and the sidebar foot's icons over the foot. */
 .focus-name { position: fixed; z-index: 80; display: grid; gap: 1px; max-width: 280px; padding: 6px 10px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; pointer-events: none; transform: translateY(-50%); }
 .focus-name[data-side='below'] { padding-block: 5px 6px; transform: translateX(-50%); }
+.focus-name[data-side='above'] { padding-block: 5px 6px; transform: translateY(-100%); }
 .focus-name > strong { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .focus-name { animation: focus-name-arrive 100ms ease-out; } }
 @keyframes focus-name-arrive { from { opacity: 0; } }
-/* Owl's rail (ADR-0146): Watcher's tile under Expand, the threads it watches under it, smaller tiles for resting threads. */
-.thread-nav__rail-mark { font-size: var(--tt-type-caption); font-weight: 600; }
+/* Owl's rail (ADR-0146): Watcher's tile under Expand, then a tray for each project's waiting and moving threads, each tile
+   its provider's mark and status ring, and the resting threads' smaller tiles in one tray at the foot (Zach's pick C,
+   November 5, 2026). That rail is 64px wide, where the rail without it is 52px. */
 .thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
 .thread-nav__rail-group { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.thread-nav__rail-group + .thread-nav__rail-group { margin-top: 4px; }
-/* A part of two or more tiles sits in a tray: a faint wash and an edge in its own group colour (Drake's pick r3,
-   October 28, 2026). Sized to the tiles, centred on the rail. */
+/* A part sits in a tray: a faint wash and an edge (Drake's pick r3, October 28, 2026). The app keeps no colour for a
+   project, so every project's tray takes the same theme role and its name at the head tells it from the next; the
+   resting tray takes the muted ink. Sized to the tiles, centred on the rail. */
 .thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: var(--tt-radius-card); background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
-.thread-nav__rail-tray[data-hue='1'] { --rail-group: var(--tt-rail-group-1); }
-.thread-nav__rail-tray[data-hue='2'] { --rail-group: var(--tt-rail-group-2); }
-.thread-nav__rail-tray[data-hue='3'] { --rail-group: var(--tt-rail-group-3); }
-.thread-nav__rail-tray[data-hue='4'] { --rail-group: var(--tt-rail-group-4); }
+.thread-nav__rail-project { --rail-group: var(--tt-rail-group-1); width: 58px; padding: 4px 0 8px; gap: 7px; }
+.thread-nav__rail-resting { --rail-group: var(--tt-text-muted); }
+.thread-nav__rail-label { display: block; box-sizing: border-box; width: 100%; padding: 0 3px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-micro); font-weight: 500; line-height: 14px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__rail-list .thread-nav__rail-thread { display: grid; place-items: center; }
+.thread-nav__rail-provider { width: 16px; height: 16px; }
+.thread-nav__rail-thread[data-resting] .thread-nav__rail-provider { width: 13px; height: 13px; opacity: .8; }
 /* The owl on a watched tile, in the muted text colour the owl on a watched row takes (Drake's pick D, October 27, 2026). */
-.focus-name[data-side='above'] { padding-block: 5px 6px; transform: translateY(-100%); }
 .thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: var(--tt-radius-tag); background: var(--threads-sidebar); color: var(--tt-text-muted); }
 /* Amber means only that it waits on you: the whole edge, so it keeps 3:1 by day. */
 .thread-nav__rail-thread[data-waiting]:not([aria-current]) { border-color: var(--tt-attention); }
-.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: var(--tt-radius-control); font-size: var(--tt-type-micro); font-weight: 500; color: var(--tt-text-muted); }
+.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: var(--tt-radius-control); color: var(--tt-text-muted); }
+/* At 64px the foot's icons would stand two abreast; they keep the one column the narrower rail gives them. */
+.thread-nav__rail[data-owl] .thread-nav__foot { flex-direction: column; flex-wrap: nowrap; }
+.thread-nav__rail[data-owl] .thread-nav__foot-rule { flex: none; align-self: stretch; }
 /* The rail hides the switch, so the foot's hairline lies flat as its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
 .thread-nav__rail .thread-nav__foot-rule { flex: 1 0 100%; width: auto; height: 1px; margin: 0 0 6px; }

@@ -362,8 +362,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const railOn = useOwlFeature('sidebar-rail')
   const watcherOn = useWatcherEnabled()
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
+  // Owl's rail is 64px, room for a project's name over its tray (Zach's pick C, ADR-0146, November 5, 2026).
   return <aside ref={aside} className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? (mac ? 80 : railOn ? 64 : 52) : size.width }}>
     {/* A press beside the sidebar over the thread puts it away, and the thread under it has not moved. */}
     {over ? <div className="thread-nav__scrim" aria-hidden="true" onMouseDown={event => event.preventDefault()} onClick={closeOver} /> : null}
     <div ref={panel} className="thread-nav__expanded" hidden={!open} onKeyDown={overKeys}
@@ -391,7 +392,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {open ? foot ?? <SidebarFoot /> : null}
     </div>
     {/* Under the sidebar over the thread the rail keeps its place, out of reach, so nothing beside it moves. */}
-    {size.collapsed ? <div className="thread-nav__rail" inert={over}>
+    {size.collapsed ? <div className="thread-nav__rail" data-owl={railOn || undefined} inert={over}>
       {mac ? null : <SottoMark className="thread-nav__glyph" />}
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={chordTitle(t`Expand sidebar`)}
         aria-keyshortcuts={chord?.label.keys} aria-haspopup={size.narrow ? 'dialog' : undefined} aria-expanded={size.narrow ? over : undefined} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
