@@ -19,7 +19,6 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
-import { TO_DOS_CHANGED, TO_DOS_READ, TO_DOS_REQUEST, TO_DOS_RENDERER_ARGUMENT, toDosViewSchema, toDoWindowRequestSchema, type ToDosBridge } from '../shared/toDos'
 import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
   delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
 import {
@@ -436,8 +435,6 @@ export function createSottoBridge(
   /** The popup's shortcut row and its Open in Sotto (ADR-0181): only while the `popup` Owl feature is on. */
   popupEnabled = false,
   dictationTiming = false,
-  /** Every computer's to-do list (ADR-0188): only while the `to-do-list` Owl feature is on. */
-  toDosEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -483,12 +480,6 @@ export function createSottoBridge(
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
       refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
       clear: query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultsSchema, usageClearQuerySchema.parse(query)),
-    }) } : {}),
-    // Every computer's to-do list (ADR-0188): only where the Owl list turns it on, so stable's window has no such bridge.
-    ...(toDosEnabled ? { toDos: Object.freeze<ToDosBridge>({
-      read: () => invokeParsed(renderer, TO_DOS_READ, toDosViewSchema),
-      request: async request => { await renderer.invoke(TO_DOS_REQUEST, toDoWindowRequestSchema.parse(request)) },
-      onChanged: listener => subscribe(renderer, TO_DOS_CHANGED, toDosViewSchema, listener),
     }) } : {}),
     // Every machine's check queue (#1312): only where the machines line is, so stable's window has no such bridge.
     ...(watcherMachinesEnabled ? { checks: Object.freeze<CheckQueuesBridge>({
@@ -909,7 +900,7 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT), arguments_.includes(TO_DOS_RENDERER_ARGUMENT)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {
