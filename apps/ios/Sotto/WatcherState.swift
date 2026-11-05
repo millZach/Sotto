@@ -529,8 +529,10 @@ enum WatcherPermissions {
         default: return mode
         }
     }
-    /// What Watcher does under a mode, in one line. Under Allow actions the provider decides, so the line names it.
-    static func line(_ mode: String, provider: String, computer: String) -> String {
+    /// What Watcher does under a mode, in one line. Under Allow actions the provider decides, so the line names it. A
+    /// Codex Watcher takes a Codex thread's lines (#2161): the general ones misstate Allow edits and Allow actions there.
+    static func line(_ mode: String, provider: String, providerID: String? = nil, computer: String) -> String {
+        if providerID == "codex", let codex = ThreadSettingWords.codexPermissionLine(mode, computer: computer) { return codex }
         switch mode {
         case "auto-accept-edits": return String(localized: "Edits files without asking. Asks before a command that changes something.")
         case "auto": return String(localized: "\(provider) decides what to ask you about.", comment: "%@ is the provider's name, such as Claude Code, or “The provider”")

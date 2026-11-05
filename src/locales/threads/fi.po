@@ -41,6 +41,11 @@ msgstr ""
 msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
 msgstr ""
 
+#. placeholder {0}: overseen.length
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{0, plural, one {# worker} other {# workers}}"
+msgstr ""
+
 #. placeholder {0}: blocked.ahead
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
@@ -684,6 +689,22 @@ msgstr ""
 msgid "{modelCount} · Free with OpenCode Zen"
 msgstr ""
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. It does no work itself."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
+msgstr ""
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{more, plural, one {and {files} more file} other {and {files} more files}}"
 msgstr ""
@@ -1069,6 +1090,11 @@ msgstr ""
 msgid "{provider} uses its own permission profiles; a new thread starts on its first."
 msgstr ""
 
+#. Under a masked answer field. {provider} is the coding agent’s name, such as Codex.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} will see this and keep it in its own session file. Sotto does not save it."
+msgstr ""
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{providerName} model sources"
@@ -1077,6 +1103,10 @@ msgstr ""
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{providerName} models"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{providers, plural, one {on # provider} other {on # providers}}"
 msgstr ""
 
 #. {published} is a version number.
@@ -1652,6 +1682,10 @@ msgstr ""
 msgid "Actions for {projectTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Actions for {threadTitle}"
+msgstr ""
+
 #: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Actions for {title}"
@@ -1948,6 +1982,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Arrow"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -2484,8 +2522,16 @@ msgstr ""
 msgid "Choose model"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. {modelNameNow} oversees this thread"
+msgstr ""
+
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Choose or create a thread to review this draft."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Choose providers"
 msgstr ""
 
 #. {computerName} is the name of a saved host.
@@ -2663,9 +2709,34 @@ msgstr ""
 msgid "Code from the {sourceName} page"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex asks before every command, even one that only reads, and before every edit."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+msgstr ""
+
 #. A tip under a working Codex thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
+msgstr ""
+
+#. {computer} is the name of the computer the thread runs on, such as forge.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex’s reviewer still answers what would come to you until it confirms."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Collapse permission request"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -3644,6 +3715,11 @@ msgstr ""
 msgid "Deleting…"
 msgstr ""
 
+#. An action the user denied, beside its row.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Denied"
+msgstr ""
+
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
@@ -3881,6 +3957,10 @@ msgstr ""
 #. Shown over the message box while files are dragged over it.
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Drop to attach"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Dynamic"
 msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts
@@ -4454,6 +4534,11 @@ msgstr ""
 msgid "hidden"
 msgstr ""
 
+#. Stands for the words of a saved answer the agent asked for masked, which Sotto never saves or shows.
+#: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+msgid "Hidden answer"
+msgstr ""
+
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
@@ -4635,6 +4720,10 @@ msgstr ""
 msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
 msgstr ""
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "It can change once this turn finishes."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It had answered at {time}, when Sotto last read it."
 msgstr ""
@@ -4657,6 +4746,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It had stopped when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It isn't working now."
 msgstr ""
 
 #. Before a quote of the first line of a check's reply, in the check's own words.
@@ -4691,6 +4784,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "It stays readable there. <0>Open it</0>"
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It took over from {replacedTitle}."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It took over from an earlier worker."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -4743,6 +4844,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Its delivery is still unknown. Sotto has not sent it again."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Its effort was held to the most you allow in Settings."
 msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
@@ -4880,6 +4985,10 @@ msgstr ""
 #. Keeps a saved answer instead of discarding it.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Keep"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Keep current settings"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -6103,6 +6212,10 @@ msgstr ""
 msgid "Open the thread to finish it, or discard it."
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Open this thread"
+msgstr ""
+
 #. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -6161,6 +6274,11 @@ msgstr ""
 #. {ten} is the number 10. {host} is the server’s address and port, such as spark-head:8888; keep it as it is.
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
+msgstr ""
+
+#. Who an OpenCode thread's work goes to, in a list of companies such as Anthropic and OpenAI.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "OpenCode's model sources"
 msgstr ""
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
@@ -6236,6 +6354,11 @@ msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Outcome unknown"
+msgstr ""
+
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "oversees"
 msgstr ""
 
 #. The form a GitHub repository name takes.
@@ -6376,9 +6499,19 @@ msgstr ""
 msgid "Picking one starts a new thread there with a handover of this one. This thread stays as it is."
 msgstr ""
 
+#. {number} is the place of an agent's picture among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Picture {number}"
+msgstr ""
+
 #. {name} is the file name of a picture.
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Picture to mark up: {name}"
+msgstr ""
+
+#. The step that holds the pictures and videos an agent wrote in its folder during a turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Pictures and videos it wrote"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -7646,6 +7779,10 @@ msgid "Show page"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Show permission request"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Show question"
 msgstr ""
 
@@ -8370,6 +8507,10 @@ msgstr ""
 msgid "Stop GIF {number}"
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Stop this worker"
+msgstr ""
+
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
@@ -8501,6 +8642,10 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -9232,6 +9377,11 @@ msgstr ""
 msgid "This turn"
 msgstr ""
 
+#. {now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This turn runs on {now}. The next turn starts on {next}."
+msgstr ""
+
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
 msgstr ""
@@ -9440,6 +9590,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Turn off idle compaction in Settings"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on Dynamic for this thread?"
 msgstr ""
 
 #. A tip under a working thread. {sigil} is the character that opens the skills list.
@@ -10135,6 +10293,11 @@ msgstr ""
 msgid "Which threads are waiting on me?"
 msgstr ""
 
+#. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Why:"
+msgstr ""
+
 #. A turn that finished, when its time was not recorded.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Worked"
@@ -10314,6 +10477,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "You only see this once. The list stays in Settings, under Threads."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts

@@ -296,7 +296,7 @@ const optionalMode: StructuredQuestion = { id: 'mode', header: 'Mode', question:
   options: [{ id: 'quick', label: 'Quick check' }, { id: 'full', label: 'Full check' }] }
 const optionalNote: StructuredQuestion = { id: 'note', question: 'Anything else?', multiSelect: false, allowFreeText: true, options: [], required: false }
 const requiredName: StructuredQuestion = { id: 'name', question: 'Project name', multiSelect: false, allowFreeText: true, options: [], required: true }
-const nativeOnly = 'This field needs the native Codex client; Sotto cannot submit this field type or its validation rules.'
+const nativeOnly = 'Sotto can’t show this kind of field. Decline it, or answer it in Codex if your Codex app can.'
 const optionalCount: StructuredQuestion = { id: 'count', question: 'How many workers?', multiSelect: false, allowFreeText: false, options: [], required: false, unavailableReason: nativeOnly }
 const requiredCode: StructuredQuestion = { id: 'code', header: 'Code', question: 'Uppercase code', multiSelect: false, allowFreeText: false, options: [], unavailableReason: nativeOnly }
 
@@ -828,5 +828,48 @@ describe('skipping a question', () => {
   it('shows one Skip when the send button already skips optional questions', () => {
     setup({ ...structured([{ ...single, required: false }]), skippable: true })
     expect(screen.getAllByRole('button', { name: 'Skip question' })).toHaveLength(1)
+  })
+})
+
+// Issue #2149: a confirmation (CONTEXT.md) pops up from the top of the composer, the way a question does (Zach's pick,
+// November 4, 2026), and is answered with Allow once or Deny.
+describe('a confirmation', () => {
+  const confirmation = (): AgentRequest => pendingRequest(7, 'mcpServer/elicitation/request', { threadId: 'native-thread', serverName: 'node_repl', mode: 'form',
+    message: 'Allow Computer Use to use "Sotto"?', requestedSchema: { type: 'object', properties: {} } }, 'thread')!.request
+
+  it('docks above the composer, headed by what Codex is about to use, with Codex’s words as words rather than a command', () => {
+    render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={confirmation()} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} providerId="codex" />)
+    const card = screen.getByRole('region', { name: 'Codex is asking before it uses Computer Use.' })
+    expect(card).toHaveAttribute('data-placement', 'composer')
+    expect(card).toHaveAttribute('data-kind', 'permission')
+    expect(within(card).getByText('Allow Computer Use to use "Sotto"?').tagName).toBe('P')
+    expect(card.querySelector('pre, code')).toBeNull()
+    expect(within(card).queryByRole('button', { name: 'Write an answer' })).toBeNull()
+  })
+
+  it('reaches Allow once first by keyboard, sends the choice with its approval, and folds away on Escape like a docked question', async () => {
+    const onSubmit = vi.fn(async () => ({ error: null }))
+    render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={confirmation()} blocked={null}
+      onSubmit={onSubmit} store={new RequestAnswerStore()} />)
+    const user = userEvent.setup()
+    const choices = screen.getAllByRole('button').filter(button => button.hasAttribute('data-choice-kind'))
+    expect(choices.map(button => button.textContent)).toEqual(['Allow once', 'Deny'])
+    await user.tab(); await user.tab()
+    expect(screen.getByRole('button', { name: 'Allow once' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Show permission request' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Allow once' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Show permission request' }))
+    await user.click(screen.getByRole('button', { name: 'Deny' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ approved: false, permissionChoice: 'decline' }))
+  })
+
+  it('leaves a command’s permission in place even when asked to dock', () => {
+    const command: AgentRequest = { id: 'perm-cmd', kind: 'permission', text: 'npm test', options: [], context: { command: 'npm test' },
+      permissionChoices: [{ id: 'accept', label: 'Allow once', kind: 'allow-once' }, { id: 'decline', label: 'Deny', kind: 'deny' }] }
+    render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={command} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
+    expect(document.querySelector('.agent-request')).not.toHaveAttribute('data-placement')
   })
 })

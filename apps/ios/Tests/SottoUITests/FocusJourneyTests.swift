@@ -1665,7 +1665,7 @@ import UIKit
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
-        XCTAssertTrue(asking.label.contains("Asks you before it edits a file or runs a command that changes something."),
+        XCTAssertTrue(asking.label.contains("Codex asks before every command, even one that only reads, and before every edit."),
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)

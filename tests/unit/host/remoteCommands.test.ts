@@ -9,7 +9,7 @@ import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 // Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
-const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
+const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
@@ -193,10 +193,7 @@ describe('remote command allow-list', () => {
       'product-events-answer',
       // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
       // same thread records `shell` carries, with the same trust.
-      'settled-threads',
-      // A press on this host's to-do list, on a listener that offers to-dos (ADR-0188): pairing admits it, as it admits
-      // watching. A check-off tells the thread that waits on it and approves nothing, and none of it grants anything.
-      'to-do-request']
+      'settled-threads']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

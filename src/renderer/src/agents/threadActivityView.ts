@@ -1,7 +1,7 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
-import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { changeFailed, isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
@@ -761,6 +761,8 @@ export function statusText(record: AgentActivity, connected: boolean): string {
   switch (record.status) {
     case 'running': return connected ? t({ message: 'Running', comment: 'An action that is running, beside its row.' }) : t`Last seen running`
     case 'failed': {
+      // The word matches the Deny the user pressed and the answer Sotto recorded (#2159).
+      if (record.denied) return t({ message: 'Denied', comment: 'An action the user denied, beside its row.' })
       const code = record.exitCode
       return code !== undefined && code !== 0 ? t({ message: `Exit ${code}`, comment: 'A command that ended with this exit code.' }) : t({ message: 'Failed', comment: 'An action or turn that failed.' })
     }
@@ -787,10 +789,13 @@ const AGENT_STATUS: Record<string, MessageDescriptor> = {
 }
 export const agentStatusLabel = (status: string): string => Object.hasOwn(AGENT_STATUS, status) ? i18n._(AGENT_STATUS[status]!) : status
 
-/** "Ran 3 commands, changed 2 files": counts of what the provider reported, nothing estimated. */
+/**
+ * "Ran 3 commands, changed 2 files": counts of what the provider reported, nothing estimated. A file change the user
+ * denied or that failed is a step, not a changed file (#2159); one cut short or never seen to end may be on disk, so it counts.
+ */
 export function groupSummary(records: readonly AgentActivity[]): string {
   const count = (kind: AgentActivity['kind']): AgentActivity[] => records.filter(record => record.kind === kind)
-  const files = new Set(count('file-change').flatMap(record => record.changes?.length ? record.changes.map(change => change.path) : [record.id]))
+  const files = new Set(count('file-change').filter(record => !changeFailed(record)).flatMap(record => record.changes?.length ? record.changes.map(change => change.path) : [record.id]))
   // Thinking a provider streamed and Codex's reasoning summaries share a row, but not a name.
   const thoughts = count('reasoning').filter(record => record.title === THINKING_TITLE).length
   const summaries = count('reasoning').length - thoughts
@@ -936,14 +941,17 @@ export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
   return record.cut.text !== undefined && record.changes?.[index]?.diff === undefined
 }
 
-/** Every file a turn changed, first touched first, so a finished turn can say what it left behind. */
+/**
+ * Every file a turn changed, first touched first, so a finished turn can say what it left behind. A change the user
+ * denied or that failed stays among the turn's steps and is not one of them (#2159).
+ */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
   const files = new Map<string, { path: string; verb: string; kind: string; diffs: string[]; lines?: LineCounts; sources?: (TurnDiffSource | undefined)[] }>()
   const unsure = new Set<string>()
   const seenByPath = new Map<string, Set<string>>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
-    if (record.kind !== 'file-change') continue
+    if (record.kind !== 'file-change' || changeFailed(record)) continue
     for (const [index, change] of activityChanges(record).entries()) {
       const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), kind: change.kind, diffs: [] }
       if (!change.diff || changeDiffIsCut(record, index)) unsure.add(change.path)

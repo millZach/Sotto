@@ -4,8 +4,8 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
-  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
+  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
+  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
@@ -498,5 +498,51 @@ describe('the action a thread is waiting on', () => {
     expect(heldLabel({ command: '  npm test\n  --watch  ', title: 'Bash' })).toBe('npm test --watch')
     expect(heldLabel({ command: undefined, title: 'WebFetch' })).toBe('WebFetch')
     expect(heldLabel({ command: '   ', title: '  ' })).toBe('Running')
+  })
+})
+
+// #2159: a file change the user denied, or one that failed, never happened, so the turn did not change that file.
+describe('file changes that did not go through', () => {
+  const messages = [message('u1', 'user'), message('a1')]
+  const change = (id: string, path: string, kind: string, patch: Partial<AgentActivity> = {}): AgentActivity =>
+    record({ id, kind: 'file-change', title: 'File changes', afterMessageId: 'u1', changes: [{ path, kind, diff: '+line' }], ...patch })
+  const denied = (): AgentActivity => change('denied', 'tests/new.test.ts', 'add', { status: 'failed', denied: true })
+  const failed = (): AgentActivity => change('failed', 'src/broken.ts', 'update', { status: 'failed' })
+  const done = (): AgentActivity => change('done', 'src/ok.ts', 'update')
+  const groupsOf = (records: AgentActivity[]) => [...placeActivities(messages, messages, [turn({ afterMessageId: 'u1' }), ...records]).after.values()].flat()
+  const ids = (groups: ReturnType<typeof groupsOf>): string[] => groups.flatMap(group => group.records.map(item => item.id))
+  const summary = (groups: ReturnType<typeof groupsOf>): string => groupSummary(groups.flatMap(group => [...group.records]))
+
+  it('counts no file for a turn whose only change was denied, and keeps the denied row among its steps', () => {
+    const groups = groupsOf([denied()])
+    expect(ids(groups)).toContain('denied')
+    expect(turnChanges(groups)).toEqual([])
+    expect(summary(groups)).not.toMatch(/changed/u)
+    expect(statusText(denied(), true)).toBe('Denied')
+    // The lead verb stays the change's own; the status word says it did not happen.
+    expect(activityLabel(denied())).toMatchObject({ lead: 'Created', subject: 'tests/new.test.ts' })
+  })
+
+  it('counts only the completed change beside a denied one', () => {
+    const groups = groupsOf([denied(), done()])
+    expect(ids(groups)).toEqual(expect.arrayContaining(['denied', 'done']))
+    expect(turnChanges(groups).map(item => item.path)).toEqual(['src/ok.ts'])
+    expect(summary(groups)).toBe('Changed 1 file')
+  })
+
+  it('counts no failed change either, and calls it Failed rather than Denied', () => {
+    expect(turnChanges(groupsOf([failed()]))).toEqual([])
+    const groups = groupsOf([failed(), done()])
+    expect(turnChanges(groups).map(item => item.path)).toEqual(['src/ok.ts'])
+    expect(summary(groups)).toBe('Changed 1 file')
+    expect(statusText(failed(), true)).toBe('Failed')
+  })
+
+  it('keeps counting a change a stopped turn cut short or whose end was never seen, since it may be on disk', () => {
+    const stopped = change('stopped', 'src/stopped.ts', 'update', { status: 'interrupted' })
+    const unseen = change('unseen', 'src/unseen.ts', 'update', { status: 'unknown' })
+    const groups = groupsOf([denied(), stopped, unseen])
+    expect(turnChanges(groups).map(item => item.path)).toEqual(['src/stopped.ts', 'src/unseen.ts'])
+    expect(summary(groups)).toBe('Changed 2 files')
   })
 })

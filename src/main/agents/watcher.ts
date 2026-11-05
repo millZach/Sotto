@@ -6,7 +6,7 @@ import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, 
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
-import { capRuntimeMode, fitSpeed, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
@@ -28,8 +28,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherPromptTurn, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
-  type WatcherToDo, type WatcherWaitingOnUser } from '../../shared/watcher'
-import { TO_DOS_HOST_NOT_KNOWN, toDoThreadId, type MachineToDos } from '../../shared/toDos'
+  type WatcherWaitingOnUser } from '../../shared/watcher'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -60,11 +59,12 @@ import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, wat
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
-import { isToldRequest, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
+import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
+import { userWordsOf } from './continueThread'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
@@ -419,7 +419,7 @@ function onceEach(waiting: readonly WatcherWaitingOnUser[]): WatcherWaitingOnUse
   })
 }
 interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined
-  readonly waiting: WatcherWaitingOnUser | undefined; readonly toDo: WatcherToDo | undefined }
+  readonly waiting: WatcherWaitingOnUser | undefined }
 
 /**
  * A participation Watcher stopped: Watcher's own Stop of the thread, or a stopped request on a thread Watcher started.
@@ -483,15 +483,7 @@ function definitelyFailedStart(result: unknown): boolean {
   return (result as { receipt?: { deliveryState?: unknown } }).receipt?.deliveryState === 'failed'
 }
 
-/** Every computer's to-do list, as the window joins them (`machineToDos`). */
-export interface WatcherToDoLists {
-  machines(): readonly MachineToDos[]
-  subscribe(listener: () => void): () => void
-}
-
 export class WatcherService implements WatcherControlHooks {
-  private toDoLists: WatcherToDoLists | undefined
-  private stopToDos: (() => void) | undefined
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
   private opening: Promise<WatcherRoomResult> | undefined
@@ -1405,11 +1397,6 @@ export class WatcherService implements WatcherControlHooks {
     // An open pull request Sotto knows of, its own or a delegated thread's, holds the settle (October 29, 2026). Sotto
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
     // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
-    // A thread waiting on an open to-do of its own, or one it delegated to, is not finished (ADR-0188, decision 9).
-    for (const owner of [thread, ...delegated]) {
-      const waits = this.toDoWaitedOn(owner)
-      if (waits !== undefined) refuse('THREAD_BUSY', `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id}) waits on the user's to-do ${JSON.stringify(waits)}. It is not finished until they check it off. Nothing was settled.`)
-    }
     for (const owner of [thread, ...delegated]) for (const url of this.openPullRequests(owner)) {
       const identity = `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id})`
       if (!this.options.pullRequestState) refuse('THREAD_BUSY', `${identity} has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
@@ -1419,35 +1406,6 @@ export class WatcherService implements WatcherControlHooks {
       if (read?.state === 'open' && Date.now() - read.observedAt < 60_000) refuse('THREAD_BUSY', `${identity} has a confirmed-open pull request, ${url}: GitHub just confirmed it is open. Wait for it to merge or close before settling. Nothing was settled.`)
       refuse('THREAD_BUSY', `${identity} has a stale-open pull request, ${url}: Sotto’s record says open, without a fresh GitHub read. Read it again before settling. Nothing was settled.`, true)
     }
-  }
-  /** The words of an open to-do this thread waits on, if it has one. Read for a settle, never on an update. */
-  private toDoWaitedOn(thread: AgentThread): string | undefined {
-    const hostId = thread.hostId ?? this.hostId()
-    for (const machine of this.toDoLists?.machines() ?? []) {
-      if (machine.hostId !== hostId) continue
-      for (const item of machine.items) if (item.waits && item.threadId !== undefined && toDoThreadId(item.threadId) === thread.id) return item.title
-    }
-    return undefined
-  }
-  /**
-   * Hands Watcher every computer's to-do list (ADR-0188): for read_state, for what holds a settle, and for news of what
-   * changed. Set only while the to-do list is on, so stable reads and tells nothing of it. A list's change is news as it
-   * comes; nothing of this runs on an update.
-   */
-  useToDos(lists: WatcherToDoLists, ready: Promise<unknown> = Promise.resolve()): void {
-    this.toDoLists = lists
-    // A list still being read from disk would look like everything on it was just added.
-    void ready.catch(() => undefined).then(() => {
-      if (this.toDoLists !== lists) return
-      this.wakes.toDosChanged(lists.machines())
-      this.stopToDos = lists.subscribe(() => { this.wakes.toDosChanged(lists.machines()) })
-    })
-  }
-  /** Every computer's open to-dos as read_state lists them. */
-  private openToDos(): WatcherToDo[] {
-    // A prototype's is on waitingOnUser already, as it was before there was a list.
-    return (this.toDoLists?.machines() ?? []).flatMap(machine => machine.items.filter(item => item.by !== 'prototype').map(item => ({ hostId: machine.hostId, title: item.title, by: item.by, waits: item.waits,
-      ...item.threadId === undefined || machine.hostId === TO_DOS_HOST_NOT_KNOWN ? {} : { target: { hostId: machine.hostId, threadId: toDoThreadId(item.threadId) } } })))
   }
   /** The first live field holding a delegated writer, shared by preflight and the writer's check. */
   private settleBlockingField(thread: AgentThread): string | undefined {
@@ -2775,6 +2733,30 @@ export class WatcherService implements WatcherControlHooks {
    * by the host's own record of what it sent, or a brief delegation sent. Neither is ever the user's turn or a takeover.
    * Watcher's own sends are known by their operations.
    */
+  /**
+   * The user's own words in a request, from Sotto's record, so no agent can write them (#1202): the message that started it
+   * less any handover ahead of it, which is another Watcher's, and the newest they have sent it since. For a told request,
+   * the message in that thread, which only a thread on this computer's record holds. A standing watch's request has none.
+   */
+  private requestWords(request: WatcherRequest): readonly string[] {
+    const told = toldRequestMessage(request.rootUserMessageId)
+    if (told) {
+      const thread = this.localThread(told.threadId), message = this.options.host.threadMessage(told.threadId, told.messageId)
+      const words = thread && message?.role === 'user' ? userWordsOf(thread, message) : undefined
+      return words === undefined ? [] : [words]
+    }
+    const master = request.watcher.threadId
+    const root = this.options.host.threadMessage(master, request.rootUserMessageId)
+    const newest = (request.userFollowups ?? []).findLast(item => item.messageId !== undefined)?.messageId
+    const followup = newest ? this.options.host.threadMessage(master, newest) : undefined
+    return [...root?.role === 'user' ? [root.text.slice(request.handover?.prefixLength ?? 0)] : [], ...followup?.role === 'user' ? [followup.text] : []]
+  }
+  /** Whether Watcher sent this message to a thread on this computer, so that it is Watcher's words and not the user's (#1202). */
+  sentToThread(threadId: string, messageId: string): boolean {
+    const target = { hostId: this.hostId(), threadId }
+    return this.view().operations.some(operation => sameTarget(operation.target, target) && operation.messageId === messageId)
+      || this.options.control.archivedWatcherWork()?.sentMessage(target, messageId) === true
+  }
   private sottoMessage(thread: AgentThread, messageId: string): boolean {
     return thread.wakeUpMessageIds?.includes(messageId) === true || thread.messages.some(message => message.id === messageId && message.wakeUp === true)
       || this.options.control.delegationMessage(messageId)
@@ -4229,9 +4211,8 @@ export class WatcherService implements WatcherControlHooks {
         // on from what the first one found.
         const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
         const { threads, waiting, watching, mergeQueue: queue } = live
-        const toDos = first ? this.openToDos() : []
-        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length, toDos.length) },
-          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at], toDo: toDos[at] }))
+        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length) },
+          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
         const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
         // Only the final page completes recovery: a partial read or an expired cursor leaves the reminder. Look first,
@@ -4241,8 +4222,7 @@ export class WatcherService implements WatcherControlHooks {
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settleWithoutAsking: this.settlesWithoutAsking(),
           waitingOnUser: shown.flatMap(row => row.waiting ?? []), kept, staleNotes,
-          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt(),
-          ...this.toDoLists ? { toDos: shown.flatMap(row => row.toDo ?? []) } : {} }
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt() }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
@@ -4477,19 +4457,25 @@ export class WatcherService implements WatcherControlHooks {
         const limits = this.permissionLimits(request, owner)
         // A start by worker role reads the user's Settings here, once, and only when a start is asked (#1041). What the
         // request named wins; a retry of a recorded start returned above and never resolves the role again.
-        const byRole = !imported && create.role && this.options.roles ? startFromRole(create.role, this.options.roles(), snapshot.models, { modelId: create.modelId,
-          reasoningEffort: create.reasoningEffort, speed: create.speed, runtimeMode: create.permission?.kind === 'runtime' ? create.permission.mode : undefined }) : undefined
+        const choices = !imported && create.role && this.options.roles ? this.options.roles() : undefined
+        // The role holds against a model the start names unless the user's own message in this request names it (#1202).
+        const roleHeld = choices && create.role && create.modelId ? roleHold(create.role, choices, snapshot.models, { id: create.modelId }, named => this.requestWords(request!).some(words => messageNamesModel(words, named))) : undefined
+        const namedEffort = roleHeld ? undefined : create.reasoningEffort, namedSpeed = roleHeld ? undefined : create.speed
+        // A permission the start named stays where the role's model offers it, still held to the ceiling.
+        const namedPermission = roleHeld && (create.permission?.kind !== 'runtime' || !roleHeld.model.runtimeModes?.includes(create.permission.mode)) ? undefined : create.permission
+        const byRole = choices && create.role ? startFromRole(create.role, choices, snapshot.models, { modelId: roleHeld ? undefined : create.modelId,
+          reasoningEffort: namedEffort, speed: namedSpeed, runtimeMode: namedPermission?.kind === 'runtime' ? namedPermission.mode : undefined }) : undefined
         const modelId = byRole ? byRole.modelId : create.modelId
         if (!modelId) refuse(byRole ? 'PROVIDER_UNAVAILABLE' : 'INVALID_INPUT', byRole
           ? 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.'
           : 'Name the worker model for this start. Nothing was started.')
         const model = resolveModel(snapshot.models, modelId)
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
-        if (create.speed && fitSpeed(create.speed, model) !== create.speed) refuse('INVALID_INPUT', 'Choose a speed this worker model offers.')
-        if (create.reasoningEffort && !workerEfforts(model).includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
+        if (namedSpeed && fitSpeed(namedSpeed, model) !== namedSpeed) refuse('INVALID_INPUT', 'Choose a speed this worker model offers.')
+        if (namedEffort && !workerEfforts(model).includes(namedEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && workerEfforts(model).includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
         // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
-        let explicit = create.permission, held: HeldPermission | undefined
+        let explicit = namedPermission, held: HeldPermission | undefined
         if (byRole?.runtimeMode && !explicit) {
           const ceiling = this.ceiling(model, limits)
           if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
@@ -4503,17 +4489,17 @@ export class WatcherService implements WatcherControlHooks {
         if (!imported) {
           const configuration = this.options.control.configuration()
           const reference = resolveModel(this.options.control.watcherSnapshot().models, configuration.newThreadModelId)?.reasoningEfforts ?? model.reasoningEfforts ?? []
-          const effort = create.reasoningEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
+          const effort = namedEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
             ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, workerEfforts(model)) : undefined)
           // A single start keeps its original packet; a swarm also carries the role for its lead’s angle plan.
-          const { role: _role, speed: _speed, ...concrete } = create; void _role; void _speed
+          const { role: _role, speed: _speed, reasoningEffort: _effort, ...concrete } = create; void _role; void _speed; void _effort
           if ((create.count ?? 1) > 1) Object.assign(concrete, { role: create.role })
-          const speed = byRole ? byRole.speed : create.speed
+          const speed = byRole ? byRole.speed : namedSpeed
           input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(speed ? { speed } : {}), ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
         }
         if (byRole) {
-          const named = create.permission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
-          roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: roleStartNote({ ...byRole, named }, snapshot.models, held) }
+          const named = namedPermission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
+          roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: `${roleHeld ? `${roleHeld.note} ` : ''}${roleStartNote({ ...byRole, named }, snapshot.models, held)}` }
         }
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)
         this.prunePages()
@@ -6230,8 +6216,6 @@ ${operation.draftId}`)
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
   close(): void {
-    this.toDoLists = undefined
-    this.stopToDos?.()
     // Checks still waiting will never start, and a restart keeps none of them, so each lets go of the branch it would have
     // started from now, rather than leave its incoming ref behind (#1312). The queue goes with this run, so none starts.
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])

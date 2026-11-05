@@ -118,6 +118,12 @@ export const agentActivitySchema = z.object({
   taskUpdatesExcluded: z.boolean().optional(),
   /** An interrupted turn a steer ended: the provider cut the step it was on so the steer could run next (ADR-0075). */
   steered: z.boolean().optional(),
+  /**
+   * A failed step the provider says was refused rather than tried (#2159): Codex's `declined`, which is what the user's
+   * Deny becomes. Beside `status: 'failed'` rather than a status of its own, so host protocol version 1 and older phones
+   * read it as they always have.
+   */
+  denied: z.literal(true).optional(),
   /** A turn record's own server (ADR-0124): set only on a turn whose model is one of the user's own model servers. */
   ownServer: ownServerTurnSchema.optional(),
   /** Pictures the step made or looked at (ADR-0170): handles only, behind the `inline-media` Owl feature. */
@@ -199,6 +205,16 @@ export function thinkingText(text: string): Pick<AgentActivity, 'text' | 'trunca
 
 export function isTerminalActivity(status: AgentActivity['status']): boolean {
   return status !== 'running' && status !== 'unknown'
+}
+
+/**
+ * A file change known not to have gone through: the provider reported it failed, which is also what one the user denied
+ * becomes. A turn's count of changed files leaves these out and nothing else (#2159): a change still running, one a
+ * stopped turn cut short or one whose end Sotto never saw may be on disk, so the count keeps it. Watcher's own-change
+ * line keeps its own stricter rule, which counts only what finished.
+ */
+export function changeFailed(record: AgentActivity): boolean {
+  return record.kind === 'file-change' && record.status === 'failed'
 }
 
 const terminalAgent = (status: string): boolean => ['completed', 'failed', 'errored', 'interrupted', 'shutdown', 'notFound'].includes(status)

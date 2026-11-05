@@ -19,12 +19,12 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isAnyRestartNews, isToDoNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isAnyRestartNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
@@ -45,19 +45,23 @@ import { noteThreadsReplaced } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, ThreadMap, verifyingThreadChanges, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
-import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
-import { compareMuseVersions } from './museClientInstall'
-import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
+import { ClientUpdates } from './clientUpdates'
+import { ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { NextTurnChoices, pressedOnto, stillToChange, type NextTurnChoice, type NextTurnOptions } from './nextTurnChoices'
+import { compactionPending } from '../../shared/compaction'
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
 import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates, withAppendsWhole } from '../../shared/agentThreadDetail'
+import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
+import { AGENT_STATE_BROADCAST_INTERVAL_MS, realPublishScheduler, type PublishScheduler } from './statePublishers'
+// Tests still import these from here; the follow-up that moves them removes this line.
+export { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes, type CoalescedAgentStatePublisher, type CoalescedThreadDetailPublisher, type PublishScheduler } from './statePublishers'
 import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
@@ -74,7 +78,6 @@ import { RequestWaits } from './requestWaits'
 import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
-import type { PrototypeReady as PrototypeReadyMark } from '../../shared/agents'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -493,40 +496,6 @@ function connectionRefusal(snapshot: AgentHostSnapshot, provider: ProviderId | u
   if (!snapshot.connected) return snapshot.error || fallback
   return undefined
 }
-/** Where a client's last update left it, carried over a new reading: its state and what that run said. */
-function outcomeOf(before: ProviderClientUpdate): Partial<ProviderClientUpdate> {
-  const kept: Partial<ProviderClientUpdate> = { state: before.state }
-  for (const key of ['error', 'ranAt', 'step', 'failure', 'printed'] as const) if (before[key] !== undefined) Object.assign(kept, { [key]: before[key] })
-  return kept
-}
-/**
- * Whether a client's last update still describes a new reading of it: the same version installed, measured against the
- * same release. A newer release makes the client behind again, and "is now 2.1.287" would hide 2.1.288. A registry that
- * could not be read moves nothing.
- */
-const outcomeHolds = (before: ProviderClientUpdate, reading: ProviderClientUpdate): boolean =>
-  before.installed === reading.installed && (reading.published === undefined || reading.published === before.published)
-/**
- * Whether `release` is newer than the one the user put away with Not now, so the card comes back. A client that was not
- * behind then has no release put away, and any release it is behind now is new.
- */
-function newerThanDismissed(provider: ProviderId, release: string, dismissed: string | undefined): boolean {
-  if (dismissed === undefined) return true
-  if (provider === 'muse') return (compareMuseVersions(dismissed, release) ?? (release === dismissed ? 0 : -1)) < 0
-  return isComparableVersion(release) && isComparableVersion(dismissed) ? compareClientVersions(release, dismissed) > 0 : release !== dismissed
-}
-/** Whether two lists of client readings say the same thing, whenever each was checked. */
-function sameClientReadings(left: readonly ProviderClientUpdate[] | undefined, right: readonly ProviderClientUpdate[] | undefined): boolean {
-  if (left === right) return true
-  if (!left || !right || left.length !== right.length) return false
-  const said = (reading: ProviderClientUpdate): string =>
-    JSON.stringify(Object.entries(reading).filter(([key]) => key !== 'checkedAt').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
-  return left.every((reading, index) => said(reading) === said(right[index]!))
-}
-/** A new reading with a client's last update on it. A registry not read this time leaves the release that update was measured against. */
-const withOutcome = (reading: ProviderClientUpdate, before: ProviderClientUpdate): ProviderClientUpdate => ({
-  ...reading, ...reading.published === undefined && before.published !== undefined ? { published: before.published } : {}, ...outcomeOf(before),
-})
 
 /** Owns manual commands and durable dispatch intent across all host adapters. */
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
@@ -619,6 +588,10 @@ export class AgentControl {
   private readonly delegationOrigins = new WeakSet<object>()
   /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly idleCompactions = new WeakSet<object>()
+  /** Each thread's choice kept for its next turn (ADR-0192), present only while `next-turn-choice` is on. */
+  private readonly nextTurns = new NextTurnChoices()
+  /** The commands that send a kept choice, among the machine commands above: Sotto's, never the user's or Watcher's. */
+  private readonly nextTurnSends = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -1151,24 +1124,7 @@ export class AgentControl {
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private readonly clients: ProviderClients
-  private updatingClient: ProviderId | null = null
-  /** The client updates waiting behind `updatingClient`, one at a time on this machine (#480). */
-  private readonly clientLine: ProviderId[] = []
-  /** Whoever waits for a client's update to end: an `update-client` command, which answers when it has run. */
-  private readonly clientWaiters = new Map<ProviderId, { resolve: () => void; reject: (error: unknown) => void }[]>()
-  private clientLineRunning = false
-  /** Where each waiting client stood before it joined the line, so Cancel update puts it back. */
-  private readonly clientLineBefore = new Map<ProviderId, ProviderClientUpdate>()
-  /** How many checks of the installed clients are waiting on the registry and the disk right now. */
-  private clientChecks = 0
-  /** How many times the update line has changed each client's record, so a check that ran meanwhile knows its reading is older. */
-  private readonly clientLineMoves = new Map<ProviderId, number>()
-  /** The release each behind client was at when the user pressed Not now: only a newer one brings the card back. */
-  /** A check afresh asked for while the update line ran, which runs once the line is empty. */
-  private clientCheckOwed = false
-  private dismissedReleases = new Map<ProviderId, string>()
-  /** The check every machine runs every five minutes while Sotto is open (ADR-0042). */
-  private clientCheckTimer: ReturnType<typeof setInterval> | null = null
+  private readonly clientUpdates: ClientUpdates
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -1333,8 +1289,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
-    /** The to-do list's Owl answer (ADR-0188): where it is off, a saved to-do wake-up stays whole and unsent. */
-    toDoListEnabled?: boolean
+    /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
+    dynamicThreadsEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -1378,6 +1334,11 @@ export class AgentControl {
     attachAnyFile?: boolean
     /** The Owl answer for images on question answers (ADR-0176), read once at start: an answer may carry images. */
     answerImages?: boolean
+    /**
+     * The Owl answer for a choice for the next turn (ADR-0192), read once at start: a chip pressed while a thread works is
+     * kept for its next turn instead of refused.
+     */
+    nextTurnChoice?: boolean
     /** The pictures this host's agents made or looked at (ADR-0170), present only while `inline-media` is on. */
     threadMedia?: ThreadMediaStore
     /**
@@ -1427,6 +1388,11 @@ export class AgentControl {
       this.commandSummaries.onChanged = () => { if (!this.disposed) this.acceptSnapshot(this.state.host) }
     }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
+    this.clientUpdates = new ClientUpdates({
+      state: () => this.state, disposed: () => this.disposed, publish: () => this.publish(), say: text => this.say(text),
+      acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), clients: this.clients, dependencies,
+      logHandoffFailure: provider => this.dependencies.logFailure?.('client-update-handoff-failed', provider),
+    })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -1584,8 +1550,7 @@ export class AgentControl {
     }, 30_000)
     // A client published while Sotto stays open is noticed within five minutes, on this computer and on every host,
     // each running its own (ADR-0042). It never holds Sotto open.
-    this.clientCheckTimer = setInterval(() => { void this.backgroundClientCheck() }, CLIENT_CHECK_INTERVAL_MS)
-    this.clientCheckTimer.unref?.()
+    this.clientUpdates.startChecking()
     this.titleRefreshTimer = setInterval(() => this.refreshTitles(), TITLE_REFRESH_SWEEP_MS)
     this.titleRefreshTimer.unref?.()
     this.updateCredentials()
@@ -1674,7 +1639,7 @@ export class AgentControl {
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
     const requests = this.watcherRequestsShown()
-    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, requests), watcherMessageRequests(requests)))
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, requests), watcherMessageRequests(requests)), this.dependencies.dynamicThreadsEnabled === true)
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
     if (this.dependencies.threadStartsEnabled === true) {
       const incoming = this.incoming
@@ -1687,16 +1652,6 @@ export class AgentControl {
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
-  /**
-   * Hears each thread's Prototype ready mark come, go or change, for the to-do list (ADR-0188, decision 10). Only where the
-   * to-do list is on, so stable keeps no list of them. `changed` runs on the update path and must only note the change.
-   */
-  onPrototypeMarksChanged(changed: () => void): void {
-    this.prototypeReady.onMarksChanged = changed
-    // What was marked before anyone listened, as a restart's first snapshot may be.
-    for (const thread of this.state.host.threads) if (thread.prototypeReady) this.prototypeReady.noteMark(thread.id, thread.prototypeReady)
-  }
-  prototypeMarks(): ReadonlyMap<string, PrototypeReadyMark> { return this.prototypeReady.currentMarks() }
   /**
    * One of a question's or reply's pages was opened, from this computer or through the page route (ADR-0108). The
    * prototype it belongs to is reviewed: its mark clears on every client, and the record is saved so a restart keeps it.
@@ -2015,6 +1970,85 @@ export class AgentControl {
   /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
   resumeWatcherQueue(): void { this.pumpFollowups() }
   /**
+   * Whether a thread rests as sending a kept choice needs (ADR-0192): no turn, no request, no compaction, a connected
+   * provider and nothing of its own on its way. What only waits in its queue does not count; the queue waits for the choice.
+   */
+  private restsForNextTurn(thread: AgentThread): boolean {
+    return thread.status !== 'running' && thread.requests.length === 0 && !compactionPending(thread.compaction) && this.threadSettingsCanGo(thread.id)
+  }
+  /**
+   * A chip pressed while its thread works, kept for the thread's next turn (ADR-0192) and sent nowhere now. A press names
+   * one setting, so it joins the choice that waits; what the thread already runs on goes from it, so pressing the value in
+   * force puts the choice away. While a choice is on its way, a press follows it whole. The choice is checked as a change
+   * would be, and a wider permission against the pressing client's grant, now and again when it is sent (ADR-0004). False
+   * when the change may go now: a thread at rest with nothing kept, Watcher's own, a closed one or one whose provider is gone.
+   */
+  private keepForNextTurn(command: Extract<AgentCommand, { type: 'configure-thread' }>, client: ClientIdentity): boolean {
+    const thread = this.thread(command.threadId)
+    if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || isThreadClosed(thread) || !isThreadProviderConnected(this.state.host, thread)) return false
+    const waiting = this.nextTurns.waiting(thread.id), sending = this.nextTurns.sent(thread.id)
+    if (waiting === undefined && sending === undefined && this.restsForNextTurn(thread)) return false
+    if (thread.nativeSessionStarted !== false && command.modelId && thread.providerId && resolveModel(this.state.host.models, command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
+    const press: NextTurnOptions = { ...command.modelId !== undefined ? { modelId: command.modelId } : {}, ...command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {},
+      ...command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}, ...command.providerMode !== undefined ? { providerMode: command.providerMode } : {},
+      ...command.speed !== undefined ? { speed: command.speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {} }
+    const merged = pressedOnto(waiting?.options ?? sending ?? {}, press, thread, this.state.host.models)
+    const options = sending !== undefined ? merged : stillToChange(merged, thread, this.state.host.models)
+    if (options === null) { this.nextTurns.drop(thread.id); return true }
+    validateThreadOptions(this.state.host, options, thread.modelId)
+    const permission = press.runtimeMode !== undefined || press.providerMode !== undefined
+    if (permission) this.guardThreadPermission(client, press, resolveModel(this.state.host.models, options.modelId ?? thread.modelId))
+    this.nextTurns.keep(thread.id, { options, client: permission ? client : waiting?.client ?? client })
+    this.sendNextTurns()
+    return true
+  }
+  /**
+   * Sends each kept choice whose thread rests, as the configure-thread a press at rest makes, on the thread's own lane and
+   * before its queue. What the thread runs on by then goes from it, and a choice that has nothing left, or whose thread is
+   * gone, is put away. Asked on every pump, and costs nothing while no choice is kept.
+   */
+  private sendNextTurns(): void {
+    if (this.dependencies.nextTurnChoice !== true) return
+    let changed = false
+    for (const threadId of this.nextTurns.threadIds()) {
+      if (this.nextTurns.sent(threadId)) continue
+      const choice = this.nextTurns.waiting(threadId)!
+      const thread = this.threadById(threadId)
+      if (!thread || isThreadClosed(thread)) { this.nextTurns.drop(threadId); changed = true; continue }
+      if (choice.unconfirmed) {
+        if (!this.settingsUnconfirmed(threadId)) { this.nextTurns.drop(threadId); changed = true }
+        continue
+      }
+      if (!this.restsForNextTurn(thread)) continue
+      const options = stillToChange(choice.options, thread, this.state.host.models)
+      if (options === null) { this.nextTurns.drop(threadId); changed = true; continue }
+      this.sendNextTurn(thread, choice, options)
+    }
+    if (changed) this.publish()
+  }
+  /**
+   * One kept choice on its way. It goes with the client that chose its permission, so a wider one is asked of that grant
+   * again, and as Sotto's own command, so it neither sets nor clears the window's error itself. Refused, the choice goes,
+   * the chips show what the thread runs on, and the window says so; a turn that starts meanwhile runs on what the thread
+   * had. With no result, main keeps the change as it keeps any such change (#1192), and the choice stays shown, not sent
+   * again, until main lets that change go.
+   */
+  private sendNextTurn(thread: AgentThread, choice: NextTurnChoice, options: NextTurnOptions): void {
+    const { id: threadId, title } = thread
+    this.nextTurns.startSending(threadId, options)
+    const parsed = agentCommandSchema.parse({ type: 'configure-thread', threadId, ...options })
+    this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } }); this.nextTurnSends.add(parsed)
+    void this.admitCommandShell(parsed, choice.client)
+      .then(result => result.error, (error: unknown) => error instanceof Error ? error.message : 'Sotto could not complete this action.')
+      .then(error => {
+        const unknown = Boolean(error) && this.settingsUnconfirmed(threadId)
+        if (unknown && this.nextTurns.waiting(threadId) === choice) this.nextTurns.keep(threadId, { ...choice, unconfirmed: true })
+        else this.nextTurns.drop(threadId, choice)
+        if (error && !unknown) this.state.error = `Sotto could not change ${title}’s settings for its next turn. ${error} Its chips show what it runs on now. If that is not your choice, choose again.`
+      })
+      .finally(() => { this.nextTurns.endSending(threadId); this.publish(); this.pumpFollowups() })
+  }
+  /**
    * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
    * ask this several times per listing and every couple of seconds per watched workspace; answering from
    * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
@@ -2067,6 +2101,7 @@ export class AgentControl {
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
+    if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
     this.attachmentPreviews.decorate(state.host)
     this.hideWatcher(state)
     return state
@@ -2131,7 +2166,7 @@ export class AgentControl {
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
-    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
+    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings'] as const) {
       const records = state[key]
       if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
@@ -2208,6 +2243,8 @@ export class AgentControl {
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
+    // Shared, never copied: the list is frozen and made again only when a choice changes (nextTurnChoices.ts).
+    if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
     this.hideWatcher(state)
     return state
   }
@@ -3186,6 +3223,10 @@ export class AgentControl {
   private say(text: string): void {
     this.state.notice = text
   }
+  /** Main calls this when Sotto finds a new version of itself (ADR-0077). */
+  checkClientsAfresh(): Promise<void> { return this.clientUpdates.checkAfresh() }
+  /** Tests wait on this; it goes when they move to the module. */
+  get clientChecks(): number { return this.clientUpdates.checksWaiting }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
     this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available() }
@@ -3202,270 +3243,6 @@ export class AgentControl {
     })()
     this.accountChecks.set(provider, check)
     try { await check } finally { this.accountChecks.delete(provider) }
-  }
-  /**
-   * What every connected client publishes, against what it is running. A provider that is not
-   * connected has no known installed version, so nothing is claimed about it. Findings from an
-   * update already run are kept, so "is now 2.1.278" survives the next check, until a newer
-   * release is published: then the client is behind again and the old finding would hide it.
-   *
-   * `fresh` is the user's own Check, and a host's `check-client-updates`: it shows the card again and asks the registry
-   * afresh. `afresh` alone asks afresh and leaves the card as it was. Neither sets aside a finding that still describes
-   * the client, which an Update all press may be reading (ADR-0077); only a newer release or another installed version
-   * does.
-   */
-  private async checkClientUpdates(fresh = false, afresh = fresh): Promise<void> {
-    if (!this.state.configuration.checkClientUpdates) { delete this.state.clientUpdates; return }
-    this.clientChecks += 1
-    try { await this.readClientUpdates(fresh, afresh) } finally { this.clientChecks -= 1 }
-  }
-  private async readClientUpdates(fresh: boolean, afresh: boolean): Promise<void> {
-    const previous = this.state.clientUpdates ?? []
-    const moves = new Map(this.clientLineMoves)
-    const readings: ProviderClientUpdate[] = []
-    for (const provider of this.state.host.providers ?? []) {
-      if (provider.connection !== 'connected') continue
-      const installed = clientVersionOf(provider.version)
-      if (!installed) continue
-      const executable = await this.clientPath(provider.id)
-      const before = previous.find(item => item.id === provider.id)
-      let reading = await this.clients.check(provider.id, installed, executable, process.env, { afresh })
-      // A registry that did not answer says nothing new: the release last read for the same install still stands, so a
-      // check that failed and one that came back with the same release do not read as a new release.
-      if (reading.published === undefined && before?.published !== undefined && before.installed === reading.installed) {
-        reading = { ...reading, published: before.published, behind: before.behind, canInstall: before.canInstall }
-      }
-      // A client in the update line keeps where it stands there, even through a fresh check.
-      const lined = this.inClientLine(provider.id)
-      readings.push(before && (lined || (before.state !== 'idle' && outcomeHolds(before, reading))) ? withOutcome(reading, before) : reading)
-    }
-    if (this.disposed) return
-    // The update line runs while this check waits on the registry and the disk: whatever it said about a client
-    // meanwhile (its step, how it ended) is newer than what the check started from, and wins. How it ended gives way to
-    // a newer release the check found, while waiting or running never does. A client the line installed meanwhile was
-    // read again after the install, so its record stands whole: this check's reading of it predates the install.
-    const latest = this.state.clientUpdates ?? []
-    for (const [index, reading] of readings.entries()) {
-      const now = latest.find(item => item.id === reading.id)
-      if (!now) continue
-      const moved = (this.clientLineMoves.get(reading.id) ?? 0) !== (moves.get(reading.id) ?? 0)
-      if (moved && now.installed !== reading.installed) { readings[index] = now; continue }
-      if (now !== previous.find(item => item.id === reading.id)
-        && (now.state === 'queued' || now.state === 'updating' || reading.published === undefined || reading.published === now.published)) readings[index] = withOutcome(reading, now)
-    }
-    // A client that updated, failed or did not change still has something to say after its provider
-    // drops: losing the record here would take the sentence about it off the card with it.
-    for (const before of latest) {
-      if (before.state !== 'idle' && !readings.some(item => item.id === before.id)) readings.push(before)
-    }
-    if (readings.length) this.state.clientUpdates = readings
-    else delete this.state.clientUpdates
-    if (fresh || this.state.clientUpdatesDismissedAt && readings.some(item => item.behind && item.published !== undefined
-      && newerThanDismissed(item.id, item.published, this.dismissedReleases.get(item.id)))) {
-      delete this.state.clientUpdatesDismissedAt
-      this.dismissedReleases.clear()
-    }
-  }
-  /**
-   * The check every machine runs every five minutes (ADR-0042). It installs nothing, and the user's setting turning
-   * checks off stops it. A tick is let go while an update runs, which reads the new version itself, and while the last
-   * check is still waiting on the registry: the next tick asks again.
-   */
-  private async backgroundClientCheck(): Promise<void> {
-    if (this.clientChecks > 0) return
-    await this.readClientsAfresh()
-  }
-  /**
-   * Asks the registry afresh what every connected client publishes, keeping what an update already run said, and
-   * publishes only when a reading moved. A newer release brings the card back by itself, as it always has. Main calls
-   * this when Sotto finds a new version of itself, so the clients' updates are listed beside it (ADR-0077). Asked while
-   * the update line runs, it is remembered and runs once, when the line is empty.
-   */
-  async checkClientsAfresh(): Promise<void> {
-    if (this.updatingClient || this.clientLineRunning) { if (!this.disposed) this.clientCheckOwed = true; return }
-    await this.readClientsAfresh()
-  }
-  private async readClientsAfresh(): Promise<void> {
-    if (this.disposed || !this.state.configuration.checkClientUpdates || this.updatingClient || this.clientLineRunning) return
-    const before = this.state.clientUpdates, dismissed = this.state.clientUpdatesDismissedAt
-    try { await this.checkClientUpdates(false, true) } catch { return }
-    // When it was checked is all that moved most times; the next publish carries that.
-    if (!this.disposed && (dismissed !== this.state.clientUpdatesDismissedAt || !sameClientReadings(before, this.state.clientUpdates))) this.publish()
-  }
-  private clientPath(provider: ProviderId): Promise<string | undefined> {
-    return (this.dependencies.locateClient ?? locateClientOnDisk)(provider)
-  }
-  /** Changes one client's reading. What the last run said (its step, failure and output) goes unless `patch` says it again. */
-  private setClientUpdate(provider: ProviderId, patch: Partial<ProviderClientUpdate>, keepOutcome = true): void {
-    // Only the update line changes a record in place.
-    this.clientLineMoves.set(provider, (this.clientLineMoves.get(provider) ?? 0) + 1)
-    this.state.clientUpdates = (this.state.clientUpdates ?? []).map(item => {
-      if (item.id !== provider) return item
-      const next = { ...item, ...patch }
-      if (!keepOutcome) for (const key of ['error', 'step', 'failure', 'printed'] as const) if (!(key in patch)) delete next[key]
-      return next
-    })
-  }
-  private inClientLine(provider: ProviderId): boolean { return this.updatingClient === provider || this.clientLine.includes(provider) }
-  /** Why a client cannot join the update line, or undefined when it can. */
-  private clientUpdateRefusal(provider: ProviderId): string | undefined {
-    const label = PROVIDER_LABELS[provider]
-    if (this.inClientLine(provider)) return `${label} is already updating. Wait for it to finish.`
-    const record = this.state.clientUpdates?.find(item => item.id === provider)
-    if (!record) return `Sotto has not checked ${label} yet. Check again, then update it.`
-    if (record.canInstall) return undefined
-    return record.channel === 'devin-app' ? 'Devin updates with the Devin app.'
-      : !record.behind ? `${label} is already at the published version.`
-      : record.channel === 'mise' && record.command ? `Sotto could not find mise, so it did not update ${label}. Run ${record.command} yourself.`
-      : record.command ? `Sotto did not install ${label}, so it will not replace it. Run ${record.command} yourself.`
-      : `Sotto does not know how ${label} was installed, so it will not replace it.`
-  }
-  /**
-   * Puts clients in this machine's update line, one at a time behind whatever is running, and answers at once. A client
-   * that cannot join is left out; when none can, the first reason is the refusal. Each reading says how its update went,
-   * and a failure does not stop the ones after it: Update all carries on with the rest (#480).
-   */
-  private queueClientUpdates(providers: readonly ProviderId[]): void {
-    const refusals: string[] = []
-    let added = 0
-    for (const provider of new Set(providers)) {
-      const refusal = this.clientUpdateRefusal(provider)
-      if (refusal) { refusals.push(refusal); continue }
-      this.clientLine.push(provider)
-      const record = this.state.clientUpdates?.find(item => item.id === provider)
-      if (record) this.clientLineBefore.set(provider, record)
-      this.setClientUpdate(provider, { state: 'queued' }, false)
-      added += 1
-    }
-    if (!added) throw new Error(refusals[0] ?? 'Nothing to update.')
-    const run = this.state.clientUpdateRun
-    this.setClientRun(Math.min(64, (run?.total ?? 0) + added), run?.done ?? 0)
-    this.publish()
-    if (!this.clientLineRunning) { this.clientLineRunning = true; void this.runClientLine() }
-  }
-  /** Takes clients still waiting out of the update line, as they were before. One already running is left to finish. */
-  private cancelClientUpdates(providers: readonly ProviderId[]): void {
-    let removed = 0
-    for (const provider of new Set(providers)) {
-      const at = this.clientLine.indexOf(provider)
-      if (at < 0) continue
-      this.clientLine.splice(at, 1)
-      // Back as it was before it joined the line: behind, or with the failure it had, unless a newer release came out meanwhile.
-      const before = this.clientLineBefore.get(provider)
-      const record = this.state.clientUpdates?.find(item => item.id === provider)
-      this.setClientUpdate(provider, before && record && outcomeHolds(before, record) ? outcomeOf(before) : { state: 'idle' }, false)
-      this.clientLineBefore.delete(provider)
-      const waiting = this.clientWaiters.get(provider) ?? []
-      this.clientWaiters.delete(provider)
-      for (const waiter of waiting) waiter.reject(new Error(`The ${PROVIDER_LABELS[provider]} update was cancelled before it started. Nothing was changed.`))
-      removed += 1
-    }
-    if (!removed) {
-      const running = providers.find(provider => provider === this.updatingClient)
-      throw new Error(running ? `${PROVIDER_LABELS[running]} is already updating, so it cannot be cancelled. Your threads keep working.` : 'That update is not waiting any more. Nothing was changed.')
-    }
-    const run = this.state.clientUpdateRun
-    if (run) this.setClientRun(Math.max(run.done + 1, run.total - removed), run.done)
-  }
-  /** The line's count, and the order its waiting clients will run in, which a waiting tile names. */
-  private setClientRun(total: number, done: number): void {
-    this.state.clientUpdateRun = { total, done: Math.min(total, done), ...(this.clientLine.length ? { line: [...this.clientLine] } : {}) }
-  }
-  /** The update line, one client at a time, until it is empty. Each ends by telling whoever waits for it. */
-  private async runClientLine(): Promise<void> {
-    while (!this.disposed) {
-      const provider = this.clientLine.shift()
-      if (!provider) break
-      this.clientLineBefore.delete(provider)
-      const started = this.state.clientUpdateRun
-      if (started) this.setClientRun(started.total, started.done)
-      let failure: unknown
-      try { await this.updateOneClient(provider) } catch (error) { failure = error }
-      const run = this.state.clientUpdateRun
-      if (run) this.setClientRun(run.total, run.done + 1)
-      const waiting = this.clientWaiters.get(provider) ?? []
-      this.clientWaiters.delete(provider)
-      for (const waiter of waiting) { if (failure === undefined) waiter.resolve(); else waiter.reject(failure) }
-      if (!this.disposed) this.publish()
-    }
-    // Cleared in the same turn as the last look at the line, so a client queued from now on starts a new run.
-    this.clientLineRunning = false
-    delete this.state.clientUpdateRun
-    if (!this.disposed) this.publish()
-    // A check afresh asked for while the line ran asks now, once.
-    if (this.clientCheckOwed && !this.disposed) { this.clientCheckOwed = false; void this.readClientsAfresh().catch(() => undefined) }
-  }
-  /** Update one client and wait for it, in the same line as every other update on this machine. */
-  private async updateClient(provider: ProviderId): Promise<void> {
-    const done = new Promise<void>((resolve, reject) => { this.clientWaiters.set(provider, [...this.clientWaiters.get(provider) ?? [], { resolve, reject }]) })
-    try { this.queueClientUpdates([provider]) } catch (error) {
-      const waiting = this.clientWaiters.get(provider)?.slice(0, -1) ?? []
-      if (waiting.length) this.clientWaiters.set(provider, waiting); else this.clientWaiters.delete(provider)
-      void done.catch(() => undefined)
-      throw error
-    }
-    await done
-  }
-  /**
-   * Replace one client while everything keeps running, the way T3 Code does (ADR-0042). The installer puts the
-   * new client beside the one in use: Windows lets a running executable's folder be renamed, and every channel
-   * Sotto drives does that or replaces the file for itself. Nothing disconnects and no turn is stopped. After a
-   * good install each host is told, and moves each thread to the new client as it goes idle; a failed install
-   * changes nothing, so there is nothing to put back.
-   */
-  private async updateOneClient(provider: ProviderId): Promise<void> {
-    const label = PROVIDER_LABELS[provider]
-    const record = this.state.clientUpdates?.find(item => item.id === provider)
-    if (!record) throw new Error(`Sotto has not checked ${label} yet. Check again, then update it.`)
-    this.updatingClient = provider
-    this.setClientUpdate(provider, { state: 'updating', ...(record.steps && record.steps > 1 ? { step: 1 } : {}) }, false)
-    this.publish()
-    try {
-      const result = await this.clients.install(provider, await this.clientPath(provider), process.env, step => {
-        if (step > 1 && !this.disposed) { this.setClientUpdate(provider, { step }); this.publish() }
-      }, record.behind ? record.published : undefined)
-      if (!result.ok) {
-        this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}),
-          ...(result.step && record.steps && record.steps > 1 ? { step: result.step } : {}), ...(result.failure ? { failure: result.failure } : {}),
-          ...(result.printed ? { printed: result.printed } : {}) }, false)
-        throw new Error(result.failure === 'install-step'
-          ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
-          : result.failure === 'not-listed'
-            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto could not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
-          : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
-      }
-      // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
-      // has, and keeps its threads running; its sentence is the one the update reports.
-      const told = await Promise.allSettled([this.dependencies.host.clientUpdated?.(provider)])
-      const refused = told.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
-      if (refused) this.dependencies.logFailure?.('client-update-handoff-failed', provider)
-      const handoff = refused ? refused.reason instanceof Error && refused.reason.message ? refused.reason.message
-        : `${label} was updated, but Sotto could not move to the new version. Threads that are working carry on and nothing was lost. Connect ${label} again to try the new version.` : undefined
-      // The version the host now reads from disk, taken in before the check compares it.
-      const snapshot = await this.dependencies.host.snapshot(provider).catch(() => undefined)
-      if (snapshot && !this.disposed) this.acceptSnapshot(snapshot)
-      const connected = this.state.host.providers?.some(item => item.id === provider && item.connection === 'connected') ?? false
-      if (!connected) {
-        // Nothing of this provider is running to read the version from; the next connection reads it.
-        this.setClientUpdate(provider, { state: 'idle', ranAt: new Date().toISOString() }, false)
-        this.say(`The installer finished. Connect ${label} to see the version it runs now.`)
-        return
-      }
-      await this.checkClientUpdates()
-      // The installer can finish and the client on disk still answer with the version it did before: a second
-      // copy found first, or an install script npm did not run. Saying "updated" then would be a lie the user can
-      // check, so the reading says what the client actually reports.
-      const running = this.state.clientUpdates?.find(item => item.id === provider)?.installed
-      const moved = running !== undefined && running !== record.installed
-      this.setClientUpdate(provider, { state: moved ? 'updated' : 'unchanged', ranAt: new Date().toISOString(), ...(handoff ? { error: handoff } : {}) }, false)
-      if (handoff) throw new Error(handoff)
-      if (!moved) {
-        throw new Error(`The installer finished, but ${label} still reports ${record.installed}. Nothing was lost and your threads kept working. ${record.command ? `Run ${record.command} in a terminal to see what the installer says.` : `Check how ${label} was installed, then try again.`}`)
-      }
-      // Threads still working finish on the client they have and move over when idle; that is true without
-      // being said, so the notice says only what changed (the user's pick, ADR-0042).
-      this.say(`${label} updated.`)
-    } finally { this.updatingClient = null }
   }
   /**
    * Tell the host which threads keep a live provider session (CONTEXT.md, live-session set), then which it observes. A
@@ -3533,11 +3310,6 @@ export class AgentControl {
    * that is gone, settled or archived takes nothing, and the rejection leaves the news untold. A resume note is read
    * for first, and a thread that read finds working again takes nothing either (ADR-0076).
    */
-  /** Whether a thread is here, open and not settled, so it can take a wake-up at all. */
-  takesWakeUps(threadId: string): boolean {
-    const thread = this.state.host.threads.find(item => item.id === threadId)
-    return thread !== undefined && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
-  }
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
     if (this.dependencies.babysittingRetired === true && isPullRequestNews(news)) throw new Error(BABYSITTING_RETIRED)
@@ -3560,9 +3332,7 @@ export class AgentControl {
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
     // While delegation is off, a delegation's waiting news is kept apart, so it holds back none of this (ADR-0081).
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed,
-      // A to-do's news always waits apart: it may hold the user's words, which go nowhere near the disk with Keep local history off (ADR-0188).
-      held => isToDoNews(held) ? 'to-do' : !this.delegationHooks && isDelegationNews(held) ? 'delegation' : 'other')
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, this.delegationHooks ? undefined : isDelegationNews)
     if (this.syncFollowups()) this.publish()
     this.pumpFollowups()
   }
@@ -4052,6 +3822,8 @@ export class AgentControl {
   /** The thread with its scheduled restart while one stands (ADR-0144); as it is while the feature is off. */
   private restartMark<T extends AgentThread>(thread: T): T { return this.limitRestart ? this.limitRestart.publish(thread) : thread }
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
+  /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
+  cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {
       this.thread(command.threadId)
@@ -4075,8 +3847,7 @@ export class AgentControl {
         // A limit restart's note goes only while the feature and its setting are on (ADR-0144).
         : isLimitRestartNews(news) ? this.limitRestart?.due() !== true
         // A delegation's news is never outdated: while delegation is off the pump holds it, unsent and whole (ADR-0081).
-        // Nor is a checked-off to-do's: the user did the work, whenever the thread comes to hear of it (ADR-0188).
-        : isDelegationNews(news) || isToDoNews(news) ? false
+        : isDelegationNews(news) ? false
           : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
   /**
@@ -4099,11 +3870,11 @@ export class AgentControl {
         // A delegation's news asks nothing: it is never outdated, so it adds no ask to the batch (ADR-0081).
         due: news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true
           : isLimitRestartNews(news) ? this.limitRestart?.due() === true
-          : isDelegationNews(news) || isToDoNews(news) ? true : !guard || guard.due(threadId, news),
+          : isDelegationNews(news) ? true : !guard || guard.due(threadId, news),
         word: kept => queuedWakeUpText(kept, { tool: guard?.tool(threadId) ?? false }),
         transform: news => {
           // A resume note and a delegation's news are no pull request's: babysitting has nothing to say of them (ADR-0076, ADR-0081).
-          if (isAnyRestartNews(news) || isDelegationNews(news) || isToDoNews(news)) return news
+          if (isAnyRestartNews(news) || isDelegationNews(news)) return news
           if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
           const events = news.events.filter(due)
           return events.length ? { ...news, events } : undefined
@@ -4133,6 +3904,13 @@ export class AgentControl {
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Babysitting could not be changed. Nothing was started.') }
     this.publish()
     return this.reply()
+  }
+  /** In the thread's own lane, so a change waits behind a send on its way and a send behind a change (ADR-0191). */
+  private async setThreadDynamic(command: Extract<AgentCommand, { type: 'set-thread-dynamic' }>): Promise<void> {
+    if (this.dependencies.dynamicThreadsEnabled !== true) throw new Error('Dynamic threads are available in Sotto Owl. Nothing changed.')
+    this.thread(command.threadId)
+    if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
+    this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
   }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
@@ -4613,7 +4391,7 @@ export class AgentControl {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
       else this.state.globalLaneBusy = true
       // Sotto's own idle compaction leaves the window's error as it found it.
-      if (!privateDraftReply && !this.idleCompactions.has(command)) this.state.error = null
+      if (!privateDraftReply && !this.idleCompactions.has(command) && !this.nextTurnSends.has(command)) this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
         ? this.beginTurn({
@@ -4819,6 +4597,8 @@ export class AgentControl {
   }
   private pumpFollowups(): void {
     if (this.disposed) return
+    // A choice kept for a thread's next turn goes once the thread rests, ahead of its queue (ADR-0192).
+    if (this.nextTurns.size) this.sendNextTurns()
     // Read, not copied: this runs for every host snapshot. `first` below may be held across the dispatch
     // awaits, which is safe because the store replaces its state rather than editing it.
     const items = this.followupStore.peek().items
@@ -4833,6 +4613,8 @@ export class AgentControl {
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       // Watcher's model, effort or speed kept for its next turn goes before anything queued for it (watcher.ts).
       if (this.watcherHooks?.holdsQueue?.(threadId)) continue
+      // So does a choice kept for any thread's next turn while it is on its way (ADR-0192).
+      if (this.nextTurns.sent(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
       // holds nothing back: news folded with it is set apart from it first, and the queue goes on past it (ADR-0081).
@@ -4842,8 +4624,6 @@ export class AgentControl {
       const recovering = recoveringThreads.has(threadId)
       const held = (item: Readonly<QueuedFollowup>): boolean => recovering && isWaitingWakeUp(item) && !isDelegationOnlyWakeUp(item)
         || !this.delegationHooks && (item.news ?? []).some(isDelegationNews)
-        // A checked-off to-do's news stays whole and unsent where the feature is off, as on a stable run after an Owl one (ADR-0072).
-        || this.dependencies.toDoListEnabled !== true && (item.news ?? []).some(isToDoNews)
       if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
         && item.news?.some(isDelegationNews) && item.news.some(news => !isDelegationNews(news)))) {
         this.pumping.add(threadId)
@@ -5023,8 +4803,7 @@ export class AgentControl {
           // News freshness and stopped participation both reach the native writer without changing origin.
           // A delegation's hidden news asks again at the native writer too, after the thread's preparation: a settle or an
           // archive that landed meanwhile sends it nowhere (ADR-0081, October 19, 2026).
-          // So does a checked-off to-do's, which a settled thread does not take (ADR-0188).
-          const writeGuard = item.news?.some(isWatcherNews) || item.news?.some(isToDoNews) || hiddenNews ? () => { validate(); queueGuard?.() } : queueGuard
+          const writeGuard = item.news?.some(isWatcherNews) || hiddenNews ? () => { validate(); queueGuard?.() } : queueGuard
           const phoneOrigin: WatcherCommandOrigin | undefined = item.phoneOrigin && phoneGuard
             ? { phoneOrigin: item.phoneOrigin, guard: () => { phoneGuard(); queueGuard?.() } } : undefined
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
@@ -5243,6 +5022,7 @@ export class AgentControl {
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
+    if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     const heldChoice = heldProviderChosenBy(command, this.held)
@@ -5367,7 +5147,7 @@ export class AgentControl {
           if (command.notice !== false && !this.automaticConnects.has(command)) this.say(providerConnectionNotice(this.state, command.provider))
           // Asking the registry must not hold up the connection the user is waiting on, and a check
           // during an install would race the reading the install is about to take.
-          if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)
+          if (!this.clientUpdates.updating) void this.clientUpdates.check().then(() => this.publish()).catch(() => undefined)
         } catch (error) {
           if (!this.state.host.providers) this.disconnect()
           // Intermediate publishes keep `connecting` until this attempt finishes. A failure has to release it.
@@ -5400,15 +5180,12 @@ export class AgentControl {
         }
         this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider)); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
-      case 'check-client-updates': await this.checkClientUpdates(true); return
+      case 'check-client-updates': await this.clientUpdates.check(true); return
       // `force` is still accepted and means nothing: an update no longer stops a working thread (ADR-0042).
-      case 'update-client': await this.updateClient(command.provider); return
-      case 'queue-client-updates': this.queueClientUpdates(command.providers); return
-      case 'cancel-client-updates': this.cancelClientUpdates(command.providers); return
-      case 'dismiss-client-updates':
-        this.state.clientUpdatesDismissedAt = new Date().toISOString()
-        this.dismissedReleases = new Map((this.state.clientUpdates ?? []).flatMap(item => item.behind && item.published !== undefined ? [[item.id, item.published] as const] : []))
-        return
+      case 'update-client': await this.clientUpdates.update(command.provider); return
+      case 'queue-client-updates': this.clientUpdates.queue(command.providers); return
+      case 'cancel-client-updates': this.clientUpdates.cancel(command.providers); return
+      case 'dismiss-client-updates': this.clientUpdates.dismiss(); return
       case 'compose': {
         const requestId = this.state.composing ? this.state.draftRequestId : this.draftRequestId(this.state.activeThreadId)
         if (requestId) this.guardClientGrant(client)
@@ -5636,6 +5413,9 @@ export class AgentControl {
           validateThreadOptions(this.state.host, { modelId: wanted.modelId, ...wanted.reasoningEffort ? { reasoningEffort: wanted.reasoningEffort } : {},
             ...wanted.speed !== undefined ? { speed: wanted.speed } : {} }, thread.modelId)
         })) return
+        // Any other thread's chip pressed while it works is kept for its next turn instead of refused (ADR-0192). Sotto's
+        // own send of that choice has an origin and goes on as any change.
+        if (!origin && this.dependencies.nextTurnChoice === true && this.keepForNextTurn(command, client)) return
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.
@@ -6950,19 +6730,12 @@ export class AgentControl {
     this.broadcastOpen = false
     this.broadcastPending = false
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
-    if (this.clientCheckTimer) clearInterval(this.clientCheckTimer)
-    this.clientCheckTimer = null
+    this.clientUpdates.stopChecking()
     if (this.titleRefreshTimer) clearInterval(this.titleRefreshTimer)
     this.titleRefreshTimer = null
     this.unsubscribe?.()
     this.unsubscribeSottoRequests?.()
-    // Updates still waiting in the line never start; whoever waits for one is told rather than left waiting.
-    this.clientLine.length = 0
-    for (const [provider, waiting] of this.clientWaiters) {
-      const said = provider === this.updatingClient ? 'Sotto stopped while the update ran. Check the client\'s version when Sotto is back.' : 'Sotto is stopping. The update did not start.'
-      for (const waiter of waiting) waiter.reject(new Error(said))
-    }
-    this.clientWaiters.clear()
+    this.clientUpdates.letGoOfLine()
     this.disconnect()
     this.listeners.clear()
     this.detailListeners.clear()
@@ -6974,192 +6747,5 @@ export class AgentControl {
   }
 }
 
-/**
- * One broadcast per animation frame. Below what a person can see, so no state looks late, and
- * far fewer full copies of every thread's history than a streaming provider would otherwise force.
- */
-export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
-
 /** A message's shown length in a history that leaves out wake-ups of delegation news alone, as `withoutHiddenWakeUps` does. */
 const hiddenWakeUpShownLength = (message: AgentMessage): number => message.hiddenWakeUp === true ? -1 : message.text.length
-
-/**
- * A provider frame publishes the whole agent state, and Claude emits dozens of frames a
- * second, so the renderer and the widget each revalidate every thread's history that often.
- * 50ms caps that at 20 sends a second, plus one just ahead of each detail that brings a message's first
- * words (`beforeOpening` on the detail coalescer): still faster than the ~100ms a person reads as instant, and
- * the first state of a burst is never held back at all.
- */
-export const AGENT_STATE_PUBLISH_INTERVAL_MS = 50
-/** Schedules a deferred run and returns its cancel; injectable so tests own the clock. */
-export type PublishScheduler = (run: () => void, ms: number) => () => void
-export interface CoalescedAgentStatePublisher<State extends object = AgentState> {
-  publish(state: State): void
-  /** Deliver a held state now, for a caller that must not wait out the interval. */
-  flush(): void
-  dispose(): void
-}
-const realPublishScheduler: PublishScheduler = (run, ms) => {
-  const timer = setTimeout(run, ms)
-  return () => clearTimeout(timer)
-}
-/**
- * Coalesces agent-state sends at the IPC boundary rather than inside AgentControl, so
- * in-process listeners (the checkpoint observer) still see every intermediate state and
- * command responses still carry the exact state their command produced.
- */
-export function coalesceAgentStatePublishes<State extends object = AgentState>(send: (state: State) => void,
-  options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedAgentStatePublisher<State> {
-  const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
-  const schedule = options.schedule ?? realPublishScheduler
-  let cancel: (() => void) | null = null
-  let pending: State | null = null
-  let disposed = false
-  const sendNow = (state: State): void => {
-    cancel?.()
-    pending = null
-    send(state)
-    // Keep the window open after every send: a burst that continues must coalesce, and the
-    // last state of one always reaches the renderer on this trailing run.
-    cancel = schedule(() => { cancel = null; if (pending) sendNow(pending) }, intervalMs)
-  }
-  return {
-    publish: state => {
-      if (disposed) return
-      // Only the newest state survives an open window, so no stale state follows a newer one.
-      if (cancel) pending = state
-      else sendNow(state)
-    },
-    flush: () => { if (!disposed && pending) sendNow(pending) },
-    dispose: () => { disposed = true; cancel?.(); cancel = null; pending = null },
-  }
-}
-
-export interface CoalescedThreadDetailPublisher {
-  publish(update: AgentThreadDetailUpdate): void
-  dispose(): void
-}
-/**
- * The same coalescing at the IPC boundary as the shell, but per thread: two threads streaming at once
- * must not hold each other's history back, and only the newest revision of each one reaches the window.
- *
- * A delta cannot simply be dropped the way a whole detail can — the window applies it to the revision it
- * holds — so a lane folds what is waiting into one update where it can (two appends to one message become
- * one) and keeps them in order where it cannot. Whole details still supersede everything before them.
- * A lane that goes quiet is dropped; the next update opens a fresh one.
- *
- * An opening change, an update that brings a message or an activity record this thread's lanes have not sent
- * yet, is not held either: it goes at once, with whatever was waiting ahead of it, and starts a fresh window. The
- * echo of a prompt often starts a window just before the reply's first words, and those words are what the person
- * is waiting to see. Later chunks of a message already sent coalesce as before. As in the workspace and the
- * adapters ahead of it, only one opening change may cut a lane's window short, and the window after a trailing
- * send that carried one held back lets none through, so a steady run of new messages costs one send a window.
- * What a thread's lanes have sent outlives a lane that went quiet, so a record from an earlier turn that changes
- * after a pause is not taken for a new one.
- * `beforeOpening` runs just before a send that carries an opening change: the desktop delivers the shell held in
- * its own window there, so the window receives the two together and paints them in one commit rather than two.
- */
-export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDetailUpdate) => void,
-  options: { intervalMs?: number; schedule?: PublishScheduler; beforeOpening?: () => void } = {}): CoalescedThreadDetailPublisher {
-  const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
-  const schedule = options.schedule ?? realPublishScheduler
-  // `sending` holds back an update published while the lane is sending, such as the change a whole read
-  // made inside `send` flushes first: sent at once it would reach later listeners ahead of the one being sent.
-  // `closed` is a window no opening change may cut short; `held` says an opening change waits for its end.
-  type Lane = { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean; opening?: boolean
-    closed?: boolean; held?: boolean; sent: SentDetail }
-  // What each thread's lanes have sent, kept for the threads most recently sent to.
-  const sentByThread = new Map<string, SentDetail>()
-  const sentFor = (threadId: string): SentDetail => {
-    const sent = sentByThread.get(threadId) ?? new SentDetail()
-    sentByThread.delete(threadId); sentByThread.set(threadId, sent)
-    if (sentByThread.size > SENT_DETAIL_THREADS) sentByThread.delete(sentByThread.keys().next().value!)
-    return sent
-  }
-  const freshLane = (threadId: string): Lane => ({ cancel: null, pending: [], sent: sentFor(threadId) })
-  const lanes = new Map<string, Lane>()
-  let disposed = false
-  const flushLane = (threadId: string, closed: boolean): void => {
-    const lane = lanes.get(threadId) ?? freshLane(threadId)
-    lanes.set(threadId, lane)
-    lane.cancel?.()
-    lane.closed = closed
-    lane.held = false
-    lane.sending = true
-    try {
-      // An opening change that arrives while this lane is sending goes out in the same flush, after what was ahead of it.
-      do {
-        if (lane.opening) options.beforeOpening?.()
-        lane.opening = false
-        const queued = lane.pending
-        lane.pending = []
-        for (const update of queued) { lane.sent.note(update); send(update) }
-      } while (lane.opening && !disposed)
-    } finally { lane.sending = false }
-    if (disposed) return
-    lane.cancel = schedule(() => {
-      lane.cancel = null
-      if (lane.pending.length === 0) { lanes.delete(threadId); return }
-      // An opening change held to the end still brings the shell ahead of it, and makes the next window a flood's.
-      const held = lane.held === true
-      lane.opening = held
-      flushLane(threadId, held)
-    }, intervalMs)
-  }
-  return {
-    publish: update => {
-      if (disposed) return
-      const lane = lanes.get(update.threadId)
-      if (lane?.cancel || lane?.sending) {
-        const held = lane.pending.at(-1)
-        const merged = held === undefined ? null : mergeAgentThreadDetailUpdates(held, update)
-        if (merged === null) lane.pending.push(update)
-        else lane.pending[lane.pending.length - 1] = merged
-        if (lane.sent.opens(update)) {
-          if (lane.sending) lane.opening = true
-          else if (lane.closed) lane.held = true
-          else { lane.opening = true; flushLane(update.threadId, true) }
-        }
-        return
-      }
-      const open = lane ?? freshLane(update.threadId)
-      lanes.set(update.threadId, open)
-      open.pending.push(update)
-      open.opening = open.sent.opens(update)
-      flushLane(update.threadId, false)
-    },
-    dispose: () => { disposed = true; for (const lane of lanes.values()) lane.cancel?.(); lanes.clear(); sentByThread.clear() },
-  }
-}
-/** How many threads a detail coalescer remembers what it sent for. One past it may take a changed record for a new one. */
-const SENT_DETAIL_THREADS = 64
-/** The messages and activity records a thread's detail lanes have sent, by ID, which is what makes a later one new. */
-class SentDetail {
-  private readonly messages = new Set<string>()
-  private readonly records = new Set<string>()
-  /**
-   * Whether an update is an opening change: a delta with a message or record this thread's lanes have not sent.
-   * A whole detail never is. It supersedes what waits ahead of it and rides the window like any other, which
-   * leaves the first record of a thread whose detail had no activity yet to wait for the window's end.
-   */
-  opens(update: AgentThreadDetailUpdate): boolean {
-    if (!isAgentThreadDetailDelta(update)) return false
-    return update.messageDeltas.some(item => 'message' in item && !this.messages.has(item.message.id))
-      || update.activityDeltas.some(item => 'record' in item && !this.records.has(item.record.id))
-  }
-  note(update: AgentThreadDetailUpdate): void {
-    if (isAgentThreadDetailDelta(update)) {
-      for (const item of update.messageDeltas) this.messages.add('message' in item ? item.message.id : item.id)
-      // A record removed and later brought back under its ID is new to the window again.
-      for (const item of update.activityDeltas) {
-        if ('removed' in item) this.records.delete(item.id)
-        else this.records.add('record' in item ? item.record.id : item.id)
-      }
-      return
-    }
-    // A whole detail is everything the window now holds.
-    this.messages.clear(); this.records.clear()
-    for (const message of update.messages) this.messages.add(message.id)
-    for (const record of update.activities ?? []) this.records.add(record.id)
-  }
-}

@@ -1,3 +1,4 @@
+import { DYNAMIC_WHY_MAX } from './dynamicThreads'
 import { z } from 'zod'
 import { agentRuntimeModeSchema, agentSpeedSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema } from './watcher'
@@ -54,6 +55,8 @@ export const delegateInputSchema = z.object({
   os: workerSystemSchema.optional().describe('For a new thread: the system it needs, windows, macos or linux. Never falls back to another system.'),
   from_my_branch: z.boolean().optional().describe('For a new thread: start it in a worktree of its own on this thread\'s branch, with this thread\'s commits. Uncommitted work here refuses it; commit first, or set test_run.'),
   test_run: z.boolean().optional().describe('For a new thread that is there to run tests, which the user calls a check. One check runs at a time on a machine; a later one waits its turn, working. With from_my_branch, this thread\'s uncommitted work goes too, as a snapshot taken now, and nothing in this thread changes. Sotto never guesses it from commands.'),
+  why: z.string().trim().min(1).max(DYNAMIC_WHY_MAX).optional().describe('On a Dynamic thread, required for a new thread: one short plain line on why this model for this piece, which the user reads on its row.'),
+  replaces: z.uuid().optional().describe('On a Dynamic thread: the delegation this new thread takes over, after a limit stopped it. Sotto links the two and lets the old one go, so it does not restart at the reset.'),
   title: z.string().trim().min(1).max(DELEGATION_TITLE_MAX).optional().describe('For a new thread: its name in the sidebar, which Sotto keeps. Left out, Sotto names the thread from the brief, as it names any thread.'),
   wait_seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional()
     .describe(`How long to wait in this call for the outcome, up to ${DELEGATION_WAIT_MAX_SECONDS}. Left out, ${DELEGATION_WAIT_MAX_SECONDS}. When the wait ends first the call returns working, and Sotto sends a wake-up when the outcome changes.`),
@@ -71,6 +74,8 @@ export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTE
   'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING',
   // The delegated thread's own queue holds its next prompt until the user resumes, clears or checks it there (October 19, 2026).
   'QUEUE_HELD',
+  // A provider off the list Dynamic threads may use, in Settings under Threads (ADR-0191): only a press there changes it.
+  'PROVIDER_NOT_ALLOWED',
   // The machine or system a new thread named could not take it (#1032): not connected, no copy of the project, none of
   // that system, or a machine other than This computer, where delegated threads start for now.
   'MACHINE_UNAVAILABLE',
@@ -90,7 +95,7 @@ export interface DelegationRefusal { readonly status: 'refused'; readonly code: 
  */
 export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD',
-  'MACHINE_UNAVAILABLE', 'BRANCH_UNAVAILABLE'])
+  'MACHINE_UNAVAILABLE', 'BRANCH_UNAVAILABLE', 'PROVIDER_NOT_ALLOWED'])
 
 /**
  * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main
@@ -117,6 +122,10 @@ export interface DelegationRead {
   readonly replyUnavailable?: string
   /** The user has sent their own message in the delegated thread since this thread's last brief to it. */
   readonly userSentSince?: boolean
+  /** What Highest effort did to this start's effort, in the words its first result used (ADR-0191). */
+  readonly effortHeld?: string
+  /** The delegated thread's turn stopped at this provider's usage limit, so another model could take the piece (ADR-0191). */
+  readonly limitStop?: { readonly provider: string; readonly resetsAt?: string }
   /**
    * A check still waiting for its machine's checks ahead of it (#1312): how many are ahead, the running one included, and
    * the words saying so. Its outcome stays `working` meanwhile; nothing is started until its turn.
@@ -187,6 +196,9 @@ export const checkReplyExcerptSchema = z.union([
 ])
 export type CheckReplyExcerpt = z.infer<typeof checkReplyExcerptSchema>
 /** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
+/** What a Dynamic thread's overseer chose for a worker (ADR-0191), as the worker started. The worker's own later changes leave it as it was. */
+export const delegationChoiceSchema = z.object({ model: id, effort: z.string().min(1).max(100).optional(), speed: z.string().min(1).max(100).optional() }).strict()
+export type DelegationChoice = z.infer<typeof delegationChoiceSchema>
 export const delegatedViewSchema = z.object({
   id: z.uuid(),
   /** The delegated thread, by the window's own ID for it. */
@@ -225,6 +237,15 @@ export const delegatedViewSchema = z.object({
    * where Work across machines is on, and only in this computer's own read; a host's read keeps its shape.
    */
   check: z.literal(true).optional(),
+  /**
+   * A Dynamic thread's worker (ADR-0191): what the overseer chose; why, in its words, which goes with Keep local history;
+   * that Highest effort held its effort; the delegation it took over, and that delegation's thread while Sotto still holds it.
+   */
+  chosen: delegationChoiceSchema.optional(),
+  why: z.string().max(DYNAMIC_WHY_MAX).optional(),
+  effortHeld: z.literal(true).optional(),
+  replaces: z.uuid().optional(),
+  replacedThread: id.optional(),
   /** An answered check's reply excerpt, or that its reply is no longer held. Nothing for any other delegation. */
   checkReply: checkReplyExcerptSchema.optional(),
 }).strict()

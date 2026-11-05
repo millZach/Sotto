@@ -69,6 +69,10 @@
 .agent-request__preview { margin: 6px 0 0; max-height: 200px; overflow: auto; padding: 8px 10px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); line-height: 1.5; white-space: pre-wrap; }
 .agent-request__input { width: 100%; min-height: 36px; margin-top: 4px; padding: 7px 10px; resize: vertical; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); font: inherit; font-size: var(--tt-type-reading); line-height: 1.45; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .agent-request__input:focus-visible { outline: none; border-color: var(--tt-field-border-focus); box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+/* A secret answer (#2153) is one masked line: never the choice row's 16px input, nor the docked card's tall text box. */
+.agent-request input.agent-request__input[type='password'] { width: 100%; height: auto; min-height: 36px; max-height: none; margin: 4px 0 0; resize: none; }
+.agent-request input.agent-request__input[type='password']:focus-visible { outline: none; }
+.agent-request__secret-note { display: block; margin-top: 4px; }
 .agent-request__footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
 .agent-request__count { margin-right: auto; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 
@@ -107,6 +111,8 @@
 .agent-request[data-placement='composer'] { position: relative; margin-top: 0; padding: 16px 18px; border: 0; border-radius: 0; background: var(--tt-card); animation: question-arrive 180ms ease-out; }
 .agent-request[data-placement='composer'] .agent-request__form { gap: 12px; }
 .agent-request[data-placement='composer'] .agent-request__question legend:not(.tt-visually-hidden) { padding-right: 28px; }
+/* A docked confirmation's heading clears the collapse button the way a question's legend does (issue #2149). */
+.agent-request[data-placement='composer'][data-kind='permission'] .agent-request__head { padding-right: 28px; }
 .agent-request[data-placement='composer'] .agent-request__prompt { font-size: var(--tt-type-lead); font-weight: 600; }
 .agent-request[data-placement='composer'] .agent-request__option { padding-block: 10px; border: 1px solid transparent; }
 .agent-request[data-placement='composer'] .agent-request__option[data-checked] { border-color: var(--tt-selected-border); }

@@ -2,13 +2,27 @@ import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary, unconfirmedSettingText } from '../../../../src/renderer/src/agents/ThreadOptions'
+import { modeChoices, permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary, unconfirmedSettingText } from '../../../../src/renderer/src/agents/ThreadOptions'
 import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentCommand, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from '../../../fixtures/renderer/threadOptionsHarness'
 
 setupThreadOptionsTests()
 
 describe('composer option chips', () => {
+  it('stays standing when a started thread\'s provider gains what it can configure', () => {
+    const started = fixture()
+    const thread = { ...started.host.threads[0]!, nativeSessionStarted: true, providerId: 'claude' as const }
+    const able = { ...started, host: { ...started.host, threads: [thread], capabilities: { ...started.host.capabilities, configureThread: true },
+      providers: started.host.providers!.map(item => ({ ...item, capabilities: { ...item.capabilities, configureThread: true } })) } }
+    const unable = { ...able, host: { ...able.host, capabilities: { ...able.host.capabilities, configureThread: false },
+      providers: able.host.providers!.map(item => ({ ...item, capabilities: { ...item.capabilities, configureThread: false } })) } }
+    const offer = { models: [], unavailable: [], refusal: null, onContinue: vi.fn() }
+    const command = vi.fn(() => deferred<AgentState>().promise)
+    const { rerender } = render(<ThreadOptions thread={thread} state={unable} command={command} continueOffer={offer} />)
+    rerender(<ThreadOptions thread={thread} state={able} command={command} continueOffer={offer} />)
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled()
+  })
+
   it('shows the model with its provider mark, the effort and the permissions as three chips', () => {
     mount()
     const model = screen.getByRole('combobox', { name: 'Thread model' })
@@ -375,5 +389,49 @@ describe('a pending setting', () => {
       .toBe('Codex did not switch to Full access. Wait for the thread and resolve pending requests before changing settings.')
     expect(unconfirmedSettingText('Codex', 'Full access', PROVIDER_RESULT_UNCONFIRMED))
       .toBe('Codex has not confirmed Full access. The thread starts on Full access the next time it is used, and Sotto checks it then.')
+  })
+})
+
+// #2161: Codex's menu named its four modes and said nothing about any of them, while Cursor's and DeepSeek Harness's
+// carry a line each. The lines say what Codex 0.166.0 does under the mapping in `codex.ts` (ADR-0005, November 4, 2026).
+describe('Codex’s permission menu', () => {
+  const CODEX_LINES = {
+    'approval-required': 'Codex asks before every command, even one that only reads, and before every edit.',
+    'auto-accept-edits': 'Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.',
+    auto: 'As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.',
+    'full-access': 'Codex runs any command and edits any file without asking, anywhere on this computer and online.',
+  } as const
+
+  it('says under each of the four modes what Codex does without asking, read as part of the option’s name', () => {
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model', runtimeMode: 'auto-accept-edits' })
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={vi.fn(async () => state)} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    const options = within(screen.getByRole('listbox', { name: 'Thread permissions' })).getAllByRole('option')
+    expect(options.map(option => [option.querySelector('span')?.firstChild?.textContent, option.querySelector('small')?.textContent])).toEqual([
+      ['Ask for approval', CODEX_LINES['approval-required']], ['Allow edits', CODEX_LINES['auto-accept-edits']],
+      ['Auto', CODEX_LINES.auto], ['Full access', CODEX_LINES['full-access']]])
+    // The line is part of the option a screen reader names, and the selected one takes focus as the list opens.
+    expect(options[1]).toHaveAccessibleName(expect.stringContaining(CODEX_LINES['auto-accept-edits']))
+    expect(options[1]).toHaveFocus()
+  })
+
+  it('says while Auto is still in force that Codex’s reviewer answers, not that Codex decides what to ask', () => {
+    expect(permissionInForceCaption('Codex', { runtimeMode: 'auto' }, 'codex')).toBe('Codex’s reviewer still answers what would come to you until it confirms.')
+    expect(permissionInForceCaption('Codex', { runtimeMode: 'auto-accept-edits' }, 'codex')).toBe('Codex still makes edits without asking until it confirms.')
+    expect(permissionInForceCaption('Grok Build', { runtimeMode: 'auto' }, 'grok')).toBe('Grok Build still decides what to ask you about until it confirms.')
+  })
+
+  it('names a paired host under Full access, since this computer is the one Sotto runs on', () => {
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
+    const model = state.host.models.find(entry => entry.id === 'codex:model')
+    expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'full-access')?.description)
+      .toBe('Codex runs any command and edits any file without asking, anywhere on forge and online.')
+    expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'auto')?.description).toBe(CODEX_LINES.auto)
+  })
+
+  it('gives another provider’s modes none of Codex’s lines', () => {
+    mount()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    expect(within(screen.getByRole('listbox', { name: 'Thread permissions' })).queryByText(/Codex/u)).toBeNull()
   })
 })

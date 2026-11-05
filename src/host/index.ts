@@ -42,7 +42,6 @@ import { DelegationToolServer } from '../main/agents/delegationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
-import { ToDoToolServer } from '../main/agents/toDoTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
@@ -199,9 +198,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
-      toDoListEnabled: owlFeatures['to-do-list'],
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -249,8 +247,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
       ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }))] : []),
     ]
-    // A thread here puts what only the user's hands can do on this computer's to-do list (ADR-0188).
-    if (runtime.toDos) threadTools.push(new ToDoToolServer(runtime.toDos, { admits: threadId => agentHost.admitsTellWatcher(threadId) }))
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),

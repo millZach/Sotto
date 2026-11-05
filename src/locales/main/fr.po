@@ -680,6 +680,10 @@ msgstr ""
 msgid "Continuing an agent as a thread is unavailable in this window."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
 msgstr ""
@@ -993,10 +997,6 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
-msgstr ""
-
-#: src/main/agents/toDoIpc.ts
-msgid "Open your to-do list in the main Sotto window."
 msgstr ""
 
 #: src/main/files/ipc.ts
@@ -1536,11 +1536,6 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
-msgstr ""
-
-#: src/main/agents/toDoIpc.ts
-#: src/main/hosts/desktopHostRouter.ts
-msgid "That computer is not connected. Your to-do is still on its list."
 msgstr ""
 
 #: src/main/council/councilService.ts

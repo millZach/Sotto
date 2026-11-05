@@ -71,6 +71,8 @@ export function cacheableShell(state: AgentState): AgentState {
     host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], ...NO_LIVE_THREAD_STATE })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
+    // A choice kept for a thread's next turn lives in main's memory alone (ADR-0192), and a restart drops it.
+    nextTurnSettings: undefined,
     notice: '',
     stale: true,
   }
@@ -86,7 +88,7 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
     if ('speech' in state || 'voice' in state) return null
     return {
       // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
-      ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, error: null, connection: 'disconnected',
+      ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, nextTurnSettings: undefined, error: null, connection: 'disconnected',
       host: { ...state.host, connected: false,
         threads: state.host.threads.map(thread => ({ ...thread, ...NO_LIVE_THREAD_STATE })),
         providers: state.host.providers?.map(provider => ({ ...provider, connection: 'disconnected' as const })) },

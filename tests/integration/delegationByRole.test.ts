@@ -16,7 +16,7 @@ const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits',
 type Result = { status: 'ok'; delegation: { id: string; thread: string; outcome: string }; role?: { work: string; named: string[]; note: string } }
   | { status: 'refused'; code: string; message: string }
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; grokModes?: AgentRuntimeMode[] } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; grokModes?: AgentRuntimeMode[]; watcherSent?: (threadId: string, messageId: string) => boolean } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Every provider offers every mode, so only the ceiling narrows a permission.
@@ -29,6 +29,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: false } })
   let choices: WorkerRoleChoices = {}, reads = 0
   const service = new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => true,
+    ...(options.watcherSent ? { watcherSent: options.watcherSent } : {}),
     ...(options.roles === false ? {} : { roles: () => { reads++; return choices } }) })
   cleanups.push(async () => { service.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()
@@ -37,11 +38,11 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   await service.recover()
   const model = (provider: ProviderId) => f.control.shell().host.models.find(item => item.providerId === provider)!
   /** A thread the user opened on Claude Code with this permission and sent a message, as the user's own. */
-  const userThread = async (runtimeMode: AgentRuntimeMode) => {
+  const userThread = async (runtimeMode: AgentRuntimeMode, text = 'Synthetic user request') => {
     const project = f.control.shell().host.projects.find(item => item.providerId === 'claude')!
     const threadId = randomUUID()
     expect((await f.control.commandShell({ type: 'create-thread', threadId, projectId: project.id, title: 'Synthetic delegating thread', modelId: model('claude').id, runtimeMode })).error).toBeNull()
-    expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })).error).toBeNull()
+    expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text })).error).toBeNull()
     // The fake provider keeps only the model, so the thread's own permission is set where the provider reports it.
     const binding = workspace.registry.byThread(threadId)!
     workspace.adapters.claude.state.threads.find(item => item.id === binding.sessionId)!.runtimeMode = runtimeMode
@@ -99,14 +100,15 @@ it('says the model does not offer the limit\'s mode when that, not the limit its
   expect(result.role!.note).not.toContain('held to the user\'s new-thread default, Ask for approval')
 })
 
-it('lets a named provider and model override the role, with effort and permission still from the role', async () => {
-  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+it('lets a named provider and model override the role when the user\'s own message names it, with effort and permission still from the role', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access', 'Have Codex research this')
   f.setChoices({ research: { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
   const result = f.ok(await f.delegate(parent, { work: 'research', provider: 'codex', model: f.model('codex').id }))
   expect(f.created(result.delegation.thread)).toEqual({ provider: 'codex', reasoningEffort: 'high', speed: null, runtimeMode: 'auto' })
   expect(result.role).toMatchObject({ work: 'research', named: ['model'] })
   expect(result.role!.note).toContain('which overrides Research for this start only.')
   expect(result.role!.note).toContain('Its effort, speed and permission came from the role.')
+  expect(result).not.toHaveProperty('heldToRole')
   // A retry with the same key returns the delegation without the role block, and starts nothing new.
   const key = randomUUID(), first = f.ok(await f.delegate(parent, { work: 'research', retry_key: key }))
   expect(first.role).toBeDefined()
@@ -114,6 +116,89 @@ it('lets a named provider and model override the role, with effort and permissio
   expect(retry.delegation.id).toBe(first.delegation.id)
   expect(retry).not.toHaveProperty('role')
   expect(f.delegated(parent)).toHaveLength(2)
+})
+
+it('holds the role against a model the call names when the user\'s own message does not name it (#1202)', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, effort: 'low', speed: 'fast' }))
+  // What the call named for its own model goes with it, and the role fills in all of it.
+  expect(f.created(result.delegation.thread)).toEqual({ provider: 'grok', reasoningEffort: 'high', speed: null, runtimeMode: 'auto' })
+  expect(result.role).toMatchObject({ named: [] })
+  const heldToRole = (result as unknown as { heldToRole: string }).heldToRole
+  expect(heldToRole).toContain(`This call named ${f.model('codex').name}, but the user's Code review role starts on ${f.model('grok').name}`)
+  expect(heldToRole).toContain('The user chooses this in Settings, or by naming a model in a message.')
+  // A permission the call named stays, within the ceiling, where the role's model offers it.
+  const narrower = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, permission: 'approval-required' }))
+  expect(f.created(narrower.delegation.thread)).toMatchObject({ provider: 'grok', runtimeMode: 'approval-required' })
+})
+
+it('lets a call name the role\'s own model without holding anything', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const result = f.ok(await f.delegate(parent, { provider: 'grok', model: f.model('grok').id }))
+  expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'grok', reasoningEffort: 'high' })
+  expect(result).not.toHaveProperty('heldToRole')
+})
+
+it('holds the role against a model unready or unknown, and returns the first delegation for a retry of the held call', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const key = randomUUID(), input = { provider: 'codex', model: 'not-a-model', retry_key: key }
+  const first = f.ok(await f.delegate(parent, input))
+  expect(f.created(first.delegation.thread)).toMatchObject({ provider: 'grok' })
+  const retry = f.ok(await f.delegate(parent, input))
+  expect(retry.delegation.id).toBe(first.delegation.id)
+  expect(f.delegated(parent)).toHaveLength(1)
+})
+
+it('reads a delegated thread\'s brief as the delegating thread\'s words: only the user\'s own message lets a model through', async () => {
+  const f = await fixture({ newThread: 'full-access' })
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  // The brief names Codex, and the user never did.
+  const quiet = await f.userThread('full-access')
+  const worker = f.ok(await f.delegate(quiet, { work: 'building', brief: 'Build this, then have Codex review it' })).delegation.thread
+  const held = f.ok(await f.delegate(worker, { provider: 'codex', model: f.model('codex').id }))
+  expect(f.created(held.delegation.thread)).toMatchObject({ provider: 'grok' })
+  expect(held).toHaveProperty('heldToRole')
+  // The user's own message names Codex, a level up.
+  const asked = await f.userThread('full-access', 'Build this and have Codex review it')
+  const builder = f.ok(await f.delegate(asked, { work: 'building', brief: 'Build this' })).delegation.thread
+  const named = f.ok(await f.delegate(builder, { provider: 'codex', model: f.model('codex').id }))
+  expect(f.created(named.delegation.thread)).toMatchObject({ provider: 'codex' })
+  expect(named).not.toHaveProperty('heldToRole')
+})
+
+it('reads a message Watcher sent as Watcher\'s words, so naming a model there lets nothing through', async () => {
+  const f = await fixture({ newThread: 'full-access', watcherSent: () => true }), parent = await f.userThread('full-access', 'Have Codex review this')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id }))
+  expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'grok' })
+  expect(result).toHaveProperty('heldToRole')
+})
+
+it('says nothing new of the role on a retry, which reads the first call\'s start on whatever the role was then', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const input = { provider: 'codex', model: f.model('codex').id, retry_key: randomUUID() }
+  const first = f.ok(await f.delegate(parent, input))
+  expect(first).toHaveProperty('heldToRole')
+  f.setChoices({ 'code-review': { modelId: f.model('claude').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const retry = f.ok(await f.delegate(parent, input))
+  expect(retry.delegation.id).toBe(first.delegation.id)
+  expect(retry).not.toHaveProperty('heldToRole')
+})
+
+it('turns away a brief for another kind of work than the thread started for, when the role says another model, and keeps its own kind', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ building: { modelId: f.model('claude').id, reasoningEffort: 'high', runtimeMode: 'auto' }, 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const builder = f.ok(await f.delegate(parent, { work: 'building', brief: 'Build this' })).delegation.thread
+  const refused = await f.delegate(parent, { work: 'code-review', brief: 'Now review it', thread: builder })
+  expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect((refused as { message: string }).message).toContain('role starts on')
+  // Another brief of its own kind goes, even once the role has moved on.
+  f.setChoices({ building: { modelId: f.model('codex').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  expect(await f.delegate(parent, { work: 'building', brief: 'And this', thread: builder })).not.toMatchObject({ code: 'INVALID_INPUT' })
 })
 
 it('still refuses a named permission wider than the ceiling, and a provider or model named alone', async () => {

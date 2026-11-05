@@ -674,6 +674,10 @@ msgstr "{updated, plural, one {Updated # client on {host}.} other {Updated # cli
 msgid "{updates, plural, one {# update} other {# updates}} · {failed, plural, one {# failed} other {# failed}}"
 msgstr "{updates, plural, one {# update} other {# updates}} · {failed, plural, one {# failed} other {# failed}}"
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "{used}% of {window} used"
+msgstr "{used}% of {window} used"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "{uses, plural, one {{selectedName} · # use} other {{selectedName} · # uses}}"
 msgstr "{uses, plural, one {{selectedName} · # use} other {{selectedName} · # uses}}"
@@ -788,6 +792,10 @@ msgstr "A dictation shortcut already uses {keys}. Pick other keys."
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "A different theme when dark"
 msgstr "A different theme when dark"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
+msgstr "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
@@ -2272,6 +2280,11 @@ msgstr "Dunes, tall cactus and a big moon."
 msgid "Duplicate {name}"
 msgstr "Duplicate {name}"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Dynamic threads"
+msgstr "Dynamic threads"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "e.g. Aurora"
 msgstr "e.g. Aurora"
@@ -2533,6 +2546,10 @@ msgstr "For a machine that already has the host. Sotto connects now and says wha
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 msgstr "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "For any worker. Ultracode is only ever yours to choose, on your own thread."
+msgstr "For any worker. Ultracode is only ever yours to choose, on your own thread."
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr "For settled threads on this computer. A cleared thread can’t be brought back."
@@ -2644,6 +2661,10 @@ msgstr "Hide where {name} is used"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Hide whitespace changes"
 msgstr "Hide whitespace changes"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Highest effort"
+msgstr "Highest effort"
 
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -3494,6 +3515,10 @@ msgstr "No model"
 msgid "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
 msgstr "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "No provider is connected yet."
+msgstr "No provider is connected yet."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost."
 msgstr "No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost."
@@ -3599,6 +3624,10 @@ msgstr "Not now leaves it waiting, and Show setup in Settings > Hosts & phones h
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Not on {host} yet."
 msgstr "Not on {host} yet."
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Not read yet"
+msgstr "Not read yet"
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Not read yet. The switch shows once Sotto reaches {name} over SSH."
@@ -4494,6 +4523,10 @@ msgstr "Replace key"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Replies in threads"
 msgstr "Replies in threads"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Reports no limits, so it would be chosen blind"
+msgstr "Reports no limits, so it would be chosen blind"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Repository conventions"
@@ -6014,6 +6047,10 @@ msgstr "The name could not be saved. Try again."
 msgid "The one on {host} is too old."
 msgstr "The one on {host} is too old."
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "The overseer starts the next as one returns. Your ceiling for this computer still applies."
+msgstr "The overseer starts the next as one returns. Your ceiling for this computer still applies."
+
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
@@ -6983,6 +7020,10 @@ msgstr "What agents can do without asking"
 msgid "What changes on {name}"
 msgstr "What changes on {name}"
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "What it may use"
+msgstr "What it may use"
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto found on {name}"
 msgstr "What Sotto found on {name}"
@@ -7099,6 +7140,10 @@ msgstr "Workers are threads Watcher starts. Name a machine in your message to st
 msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
 msgstr "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Workers at once"
+msgstr "Workers at once"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count."
 msgstr "Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count."
@@ -7189,6 +7234,10 @@ msgstr "Your choice, {name}, stays. That model is not available, so until it is,
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Your choice, not available"
 msgstr "Your choice, not available"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it."
+msgstr "Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again."

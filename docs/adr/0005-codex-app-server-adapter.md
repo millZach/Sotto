@@ -2,6 +2,10 @@
 
 October 8, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) ends supervision's automatic acceptance of URL elicitations and app-tool confirmations. Native decoding and the user's Continue/Decline answers remain; historical supervision attribution remains readable.
 
+November 4, 2026 amendment (issue #2149): an MCP elicitation in a form mode whose requested schema has no fields, or one of OpenAI's two form spellings that sends no schema, is a **confirmation**. Codex sends its own MCP tool approvals and Computer Use's app access this way (Codex 0.166.0 `build_mcp_tool_approval_elicitation_request`), and its own client answers them with Allow or Deny. Sotto makes it a permission with **Allow once**, which sends `{ action: 'accept', content: {} }`, and **Deny**, which sends `{ action: 'decline', content: null }`, answered only by the user's explicit choice: words and `{}` are refused with "Choose Allow once or Deny." Its first line says what Codex is about to use where the server name says it (`node_repl` is Computer Use, `codex_apps` an app, any other server by its name), and Codex's own question follows. It pops up from the top of the composer the way a question does, and keeps Allow once and Deny: Zach's pick, November 4, 2026. A sign-in Codex takes through its own browser broker (`_meta.codex_approval_kind: 'browser_auth'`) is not a confirmation, since Allow from Sotto would send it no credentials: it stays a question answered in Codex, or skipped to decline. Codex sends no `request` body with an elicitation; the tool an approval is about is read from `_meta.tool_name` and `_meta.tool_params` when the asker names it, which Codex's own tool-call approvals do not, so a confirmation about Sotto's browser names the browser alone then.
+
+Second November 4, 2026 amendment (issue #2154): a Codex form's fields are no longer limited to text. Sotto reads each field against the primitives Codex 0.166.0 forwards in a `form` (`McpElicitationPrimitiveSchema`, each closed to other keys, so a form with any other field is cancelled by Codex before it reaches Sotto): text, with its `minLength`, `maxLength` and `format`; a choice from `enum`, `enum` with `enumNames`, or titled `oneOf`; a `number` or `integer` with its `minimum` and `maximum`; a `boolean`; and an `array` of several choices from `items.enum` or titled `items.anyOf` (or `oneOf`) with its `minItems` and `maxItems`. OpenAI's two spellings go through the same reading. A boolean is asked as **Yes** and **No** and answered `true` or `false`; a number is typed in the ordinary text box, its range said under the question, and answered as a JSON number, refused in words such as "Answer with a whole number from 1 to 5."; several choices are answered as a JSON array. A default is said under the question ("Default: Yes.") and never chosen for the user, so an unanswered optional field is left out and the server applies its own. These are Zach's picks, November 4, 2026. A field outside these, such as an image picker, a `pattern` or an object, says "Sotto can't show this kind of field. Decline it, or answer it in Codex if your Codex app can.": Codex's own terminal client cannot answer numbers or several choices either. Codex does not check `content` against the schema, so Sotto's checks are the only ones before the server.
+
 Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
 
 ## Status
@@ -28,7 +32,7 @@ This adds an indirection to [ADR-0002](0002-sotto-owned-thread-identity.md): the
 
 **Route requests into the attention queue and require explicit decisions.** Command and file approvals expose Allow/Deny and respond with `decision: 'accept'` only from an answer command with `approved: true`. Decline, skip, interruption and disconnect never approve; interruption and disconnect send decline/empty-answer responses to pending requests. Additional permission profiles are visible but can only be declined in this version; approving them produces guidance to answer in Codex. For `item/permissions/requestApproval`, the schema has no explicit decline form: an empty grant is the only refusal. The adapter sends `{ permissions: {}, scope: 'turn' }`. We never synthesize a broad permission grant or a persistent provider session grant.
 
-User-input questions retain the JSON-RPC ID while pending. Before writing an answer, the adapter removes it from pending state and remembers the in-flight ID. Repeated answers are rejected, and interruption/disconnect cannot decline an answer already in flight, even after its write deadline. Reset clears in-flight IDs. Single answers become `{ answers: { questionId: { answers: [text] } } }`. An answer given on Sotto's question card sends each chosen option's label, then any typed words as `user_note: <text>`, the marker Codex's own clients use, so typed words never read as the option they spell; a question without choices takes typed words whatever its `isOther` says (November 4, 2026, #2155 and #2157). Multiple questions display numbered text and options, and accept numbered answer lines or a JSON object keyed by question ID. MCP form elicitations support validated string fields and their offered options; explicit form answers use `action: 'accept'` and structured `content`. This is delivery of the user's answer, not a permission grant. URL elicitations expose Continue and Decline in Sotto. They remain questions, including app-tool confirmations: supervision on a managed thread may answer and accept them. This is the intended behaviour as of September 30, 2026, and is a specific exception to ADR-0004’s rule that supervision follow-ups approve nothing. The owner accepted that these confirmations may be accepted without the user seeing them first. Device-verification, unsupported structured fields and extension forms require an answer in Codex; disconnect sends `action: 'decline'`. `serverRequest/resolved` removes requests answered directly in the provider.
+User-input questions retain the JSON-RPC ID while pending. Before writing an answer, the adapter removes it from pending state and remembers the in-flight ID. Repeated answers are rejected, and interruption/disconnect cannot decline an answer already in flight, even after its write deadline. Reset clears in-flight IDs. Single answers become `{ answers: { questionId: { answers: [text] } } }`. An answer given on Sotto's question card sends each chosen option's label, then any typed words as `user_note: <text>`, the marker Codex's own clients use, so typed words never read as the option they spell; a question without choices takes typed words whatever its `isOther` says (November 4, 2026, #2155 and #2157). Multiple questions display numbered text and options, and accept numbered answer lines or a JSON object keyed by question ID. MCP form elicitations support every field Codex forwards, each answered in its own JSON type, and a form with no fields is a confirmation (November 4, 2026 amendments); explicit form answers use `action: 'accept'` and structured `content`. This is delivery of the user's answer, not a permission grant. URL elicitations expose Continue and Decline in Sotto. They remain questions, including app-tool confirmations: supervision on a managed thread may answer and accept them. This is the intended behaviour as of September 30, 2026, and is a specific exception to ADR-0004’s rule that supervision follow-ups approve nothing. The owner accepted that these confirmations may be accepted without the user seeing them first. Device-verification, unsupported structured fields and extension forms require an answer in Codex; disconnect sends `action: 'decline'`. `serverRequest/resolved` removes requests answered directly in the provider.
 
 **Timeouts preserve uncertainty.** Every client request has a deadline (15 seconds by default); mutation timeouts return `{ accepted: false, uncertain: true }`. The response callback remains registered until its response or child exit so late creation aliases and message confirmations are still applied. The adapter does not retry mutations. A snapshot after uncertain prompt delivery reads the existing provider session with `thread/read`; a confirmed message carries the outbox message ID. A repeated pending creation or message dispatch is not sent again. Late `turn/start` responses cannot change a completed turn back to running. Response validation or pipe failure also retains uncertainty instead of asserting that the provider rejected a mutation.
 
@@ -212,3 +216,85 @@ Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart conne
 1,221 ms, read no rollout bytes against 92 to 184 MB, and spent 9 to 11 ms of main's CPU against 0.65 to 1.5 s.
 Opening a thread was unchanged at about 50 ms, and one with work done outside Sotto read only that
 (`docs/perf/2026-10-30-codex-rollout-positions.md`).
+
+## Amendment: what each permission mode says (November 4, 2026, #2161)
+
+A Codex thread's permission menu named its four modes and said nothing about them, while Cursor's (ADR-0128) and
+DeepSeek Harness's (ADR-0138) say what each lets the provider do. Codex's modes differ in more than their names suggest,
+and Auto hands the user's permission requests to a model, so the menu now says it. The adapter maps them in `runtimePolicy`, sent
+on `thread/start` and `thread/settings/update` and, for approval and reviewer, on every `turn/start`:
+
+| Mode | `approvalPolicy` | `approvalsReviewer` | `sandbox` |
+|---|---|---|---|
+| Ask for approval | `untrusted` | `user` | `read-only` |
+| Allow edits (the default when none is chosen) | `on-request` | `user` | `workspace-write` |
+| Auto | `on-request` | `auto_review` | `workspace-write` |
+| Full access | `never` | `user` | `danger-full-access` |
+
+Read in Codex 0.166.0's source: under `untrusted` every shell command asks, even one that only reads, and so does every
+patch. Under `on-request` with `workspace-write`, a command or patch inside the project runs without asking, and the
+network, other folders and the project's `.git` need an escalation, which asks; so a commit asks. `auto_review` sends
+those escalations to Codex's own reviewer, a model on the thread's provider (OpenAI, which Sotto sets), which can allow
+as well as deny and falls back to asking the user when a review fails. `never` with no sandbox asks nothing.
+
+Zach's pick, November 4, 2026: one line per mode, OpenAI named as Auto's reviewer, and Allow edits saying it asks
+before a commit:
+
+- **Ask for approval**: "Codex asks before every command, even one that only reads, and before every edit."
+- **Allow edits**: "Codex edits files and runs commands in the project without asking. It asks before going online,
+  outside the project or committing."
+- **Auto**: "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+- **Full access**: "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+
+The lines are `codexModeLine` in `ThreadOptions.tsx`, in the interface language, with a comment pinning them to Codex
+0.166.0 and the mapping above; read them again when either changes. While Auto is still in force after a press, the
+caption beside the chips says "Codex’s reviewer still answers what would come to you until it confirms." rather than
+that Codex decides what to ask. A Watcher on Codex gives the same four lines in place of Watcher's general ones, which
+said Allow edits asks before commands and Auto lets Codex decide. The iPhone gives them too, for a Codex thread and a
+Codex Watcher, with one change: its Full access line names the computer the thread runs on, since "this computer" on a
+phone would be wrong. On the desktop, a thread on a paired host names that host the same way. No line says when a change applies; the chip already cannot change while a turn runs.
+
+No Windows line. With Codex's Windows sandbox off, `workspace-write` could fall back to read-only, so a check ran the
+same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Codex wrote in the project without asking
+and printed no sandbox warning, and under `read-only` the write was denied. That PC sets `[windows] sandbox =
+"elevated"` in Codex's own config; a PC without it was not checked, and the menu claims nothing about one.
+
+## Amendment: a secret answer is masked and never saved (November 4, 2026, #2153)
+
+Codex marks a `request_user_input` question `isSecret` when it wants the answer masked: its own client shows `*` while
+it is typed and dots in its history. Sotto dropped the mark, so the answer was typed in a plain box, saved with every
+keystroke to `request-drafts.json` like any answer draft, and shown and copied by the Saved answer card. Zach's pick,
+November 4, 2026, variant A: mask it, never save it, the phone can answer too.
+
+**The mark travels as `secret: true`.** The adapter reads `isSecret` and marks the normalized question; the shared
+question schema keeps the mark, so it reaches the window, Needs you, Watcher's room, the popup, a paired desktop and the
+iPhone. Host protocol v1 carries it as an optional field (`docs/host-protocol.md`). A desktop or phone from before it
+drops the field and shows a plain box. The host does not hold the question back from them: telling them apart needs a
+new feature in hello's `accepts` and the question changed for each such client in every shell, detail and delta, which
+is a change of its own.
+
+**The card masks it.** A secret question's own-answer box, alone or as **Write my own answer**, is one password field
+with autocomplete and spelling off and no button to show it. Its accessible name is the question's. A line under it says
+that the provider will see the words and keep them in its own session file, and that Sotto does not save them. On the
+iPhone it is a `SecureField` with the same line.
+
+**Its words are never saved.** The window sends the form's draft without a secret answer's words, and main blanks them
+again before it writes, by its own request's marks as well as the draft's, so `request-drafts.json` holds only its
+choices. The words live in the window only while the user may still send them: they are forgotten once the answer is
+sent or held unconfirmed, and when the last card for the request closes, so leaving the thread, a restart or a reload
+starts the box empty. A question about a prototype with a secret answer is never sent back for its page
+([ADR-0108](0108-a-prototype-waiting-for-review-needs-you.md)), since an answer to Sotto's copy becomes the user's message. Binding a held answer to its delivery compares the answer the user sent with the saved form without the
+secret words, rather than not binding secret answers at all, so a delivered answer is still retired by exact proof and an
+unconfirmed one still waits for Check. A delayed older answer with different secret words and the same choices could bind
+the newer held form; the held form never carries the words, so nothing is resent either way. Turning off **Keep local
+history** is unrelated: it never touched unsent thread answers, and there is now nothing secret in them to remove.
+
+**A saved form says Hidden answer.** The Saved answer and Unconfirmed answer cards show **Hidden answer** for a secret
+question, after any choice made on it, and **Copy answer** leaves the question out. A form whose only content was a
+secret answer is not offered back at all. A secret question never carries an answer's images
+([ADR-0176](0176-images-dropped-on-a-question-card-go-with-the-answer.md)).
+
+Codex itself still sees the words and records them in its rollout as the tool output the model reads, and the model can
+repeat them in a reply, which Sotto then shows. Sotto's own logs never held answer text, and a test now says so for the
+thread's messages, its files and its log lines. Dictation into the field is not turned off: dictation is a system-wide
+paste, and with **Keep local history** on the Journal keeps the transcript of what was dictated.

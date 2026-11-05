@@ -70,7 +70,10 @@ describe.skipIf(!enabled)('a shell over SSH against a real OpenSSH server (requi
     })
     await mkdir(join(root, 'desktop-data'), { recursive: true })
     const printed = (): string => output.join('')
-    const until = (text: string): Promise<void> => vi.waitFor(() => { if (!printed().includes(text)) throw new Error(`waiting for ${text}, have: ${printed().slice(-400)}\nsshd: ${sshdLog.slice(-400)}`) }, { timeout: 30_000, interval: 100 })
+    const until = (text: string | RegExp): Promise<void> => vi.waitFor(() => {
+      const seen = printed()
+      if (typeof text === 'string' ? !seen.includes(text) : !text.test(seen)) throw new Error(`waiting for ${text}, have: ${seen.slice(-400)}\nsshd: ${sshdLog.slice(-400)}`)
+    }, { timeout: 30_000, interval: 100 })
     try {
       const { workspace } = unwrap(await service.list({ threadId: THREAD, place: 'drawer' }))
       const { session } = unwrap(await service.create({ threadId: THREAD, workspaceId: workspace.workspaceId, place: 'drawer', cols: 100, rows: 30 }))
@@ -80,6 +83,8 @@ describe.skipIf(!enabled)('a shell over SSH against a real OpenSSH server (requi
       unwrap(await service.write({ ...request, data: 'yes\r' }))
       await until('Enter passphrase')
       unwrap(await service.write({ ...request, data: `${PASSPHRASE}\r` }))
+      // SSH can discard typing while it sets up the remote terminal after authentication. Wait for the shell's prompt.
+      await until(/[$#%>] $/)
       // The marker is printed in two parts, so the echo of the command itself never matches.
       unwrap(await service.write({ ...request, data: 'printf "%s:%s\\n" "MARK""ER" "$PWD"; stty size\r' }))
       await until(`MARKER:${folder}`)
@@ -96,6 +101,7 @@ describe.skipIf(!enabled)('a shell over SSH against a real OpenSSH server (requi
       output.length = 0
       await until('Enter passphrase')
       unwrap(await service.write({ ...request, sessionId: second.id, data: `${PASSPHRASE}\r` }))
+      await until(/[$#%>] $/)
       unwrap(await service.write({ ...request, sessionId: second.id, data: 'printf "%s\\n" "UP""AGAIN"\r' }))
       await until('UPAGAIN')
       // Killing the shell's own sshd drops this connection without a goodbye.

@@ -39,10 +39,6 @@ import { WatcherToolServer, type WatcherTeamTools } from './watcherTools'
 import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
-import { ToDoStore } from './toDos'
-import { PrototypeToDos } from './prototypeToDos'
-import { ToDoAdder } from './toDoTools'
-import { TO_DOS_HOST_NOT_KNOWN } from '../../shared/toDos'
 import { WorkerAdmission } from './workerAdmission'
 import { workerMachineCeiling } from '../../shared/workerMachine'
 import { THIS_COMPUTER } from '../../shared/workingThreads'
@@ -99,6 +95,8 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
+  /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
+  dynamicThreadsEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
   /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -177,6 +175,8 @@ export interface AgentRuntimeOptions {
   attachAnyFile?: boolean
   /** Images dropped on a question card go with the answer (ADR-0176): the `answer-images` Owl answer, read once at start. */
   answerImages?: boolean
+  /** A chip pressed while a thread works is kept for its next turn (ADR-0192): the `next-turn-choice` Owl answer, read once at start. */
+  nextTurnChoice?: boolean
   /**
    * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
    * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
@@ -210,8 +210,6 @@ export interface AgentRuntimeOptions {
   /** What the short-writing switches read (ADR-0026). No key is needed: each thread's own provider writes. */
   writingSettings: () => Promise<AppSettings>
   historyEnabled: () => boolean
-  /** The to-do list's Owl answer (ADR-0188). */
-  toDoListEnabled?: boolean
   observeActiveThread?: boolean
   openExternal: (url: string) => Promise<unknown>
   openThreadFolder?: ControlDependencies['openThreadFolder']
@@ -422,7 +420,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, toDoListEnabled: options.toDoListEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -439,6 +437,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
     ...(options.answerImages === true ? { answerImages: true } : {}),
+    ...(options.nextTurnChoice === true ? { nextTurnChoice: true } : {}),
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
@@ -471,6 +470,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // and offered again when Settings change. A headless host's threads start concretely, as their workers do.
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
+  if (options.dynamicThreadsEnabled === true) agentHost.allowDynamicThreads()
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
@@ -544,7 +544,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await delegationRelay.load()
     }
     const relaying = delegationRelay, remote = delegationRemote
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
+      ...options.dynamicThreadsEnabled === true ? { dynamicThreads: () => options.settings().dynamicThreads, providerLimits: async (provider: ProviderId) => agentHost.readProviderQuota?.(provider, true, true) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)
@@ -571,7 +572,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)
@@ -629,24 +630,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const moveKeeps = threadMoves ?? heldMoves
   // A deleted thread keeps no worktree, so its move lets go of it (ADR-0140 decision 4).
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
-  // Each computer keeps its own to-dos, and tells a thread that waits on one through its wake-up (ADR-0188).
-  const prototypeToDos = options.toDoListEnabled === true
-    ? new PrototypeToDos(() => agentControl.prototypeMarks(), token => { agentControl.questionPageOpened(token) }, () => { toDos?.madeItemsChanged() }) : undefined
-  if (prototypeToDos) agentControl.onPrototypeMarksChanged(() => { prototypeToDos.markChanged() })
-  const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
-    ...prototypeToDos ? { madeItems: () => prototypeToDos.view(), madeItemChecked: (id: string) => prototypeToDos.checked(id), madeItemsSeen: () => prototypeToDos.allSeen(), madeSeenIds: () => prototypeToDos.seenIds(), restoreMadeSeen: (ids: readonly string[]) => { prototypeToDos.restoreSeen(ids) } } : {},
-    told: async (threadId, title, didNotWork) => {
-      // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
-      if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
-    } }) : undefined
-  // A headless host settles its own threads when a desktop's Watcher asks, so its own list holds that too. It keeps no
-  // Watcher of its own to tell.
-  if (watcher && toDos && options.runsAs === 'headless-host') {
-    watcher.useToDos({ machines: () => toDos.notRead ? [] : [{ hostId: agentControl.hostId() ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: [...toDos.view()] }], subscribe: listener => toDos.subscribe(listener) }, toDos.drain())
-  }
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, markdownLinks: options.markdownSidePanel === true, ...threadMoves ? { moves: threadMoves } : {}, ...toDos ? { toDos: new ToDoAdder(toDos) } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, markdownLinks: options.markdownSidePanel === true, ...threadMoves ? { moves: threadMoves } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -845,7 +831,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ ...toDos ? { toDos } : {}, control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
       nextPromptListeners.add(listener)
@@ -902,5 +888,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { toDos, agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

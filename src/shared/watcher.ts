@@ -3,7 +3,6 @@ import { agentModelSpeedSchema, agentRuntimeModeSchema, agentSpeedSchema, handov
 import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
-import { TO_DO_TITLE_MAX, toDoSchema } from './toDos'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
@@ -273,10 +272,6 @@ export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
-/** One open to-do as read_state lists it (ADR-0188): whose words it is in, and on which computer. Its thread only where a thread added it. */
-export const watcherToDoSchema = z.object({ hostId: z.string().min(1).max(128), target: watcherThreadTargetSchema.optional(), title: z.string().max(TO_DO_TITLE_MAX),
-  by: toDoSchema.shape.by, waits: z.boolean() }).strict()
-export type WatcherToDo = z.infer<typeof watcherToDoSchema>
 /** What waits on the user, a hundred to a page with the watched threads. */
 export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
@@ -445,8 +440,6 @@ export const watcherToolSchemas = {
       evidence: z.array(watcherEvidenceSchema).max(100).optional() })),
   },
 } as const
-/** read_state while the to-do list is on (ADR-0188): every computer's open to-dos too, a hundred to a page. Stable's tools are not offered this. */
-export const watcherReadStateToDosOutput = z.union([watcherToolSchemas.read_state.output.options[0].extend({ toDos: z.array(watcherToDoSchema).max(100).optional() }).strict(), watcherRefusalSchema])
 export type WatcherToolName = keyof typeof watcherToolSchemas
 export type WatcherToolInput<N extends WatcherToolName> = z.infer<(typeof watcherToolSchemas)[N]['input']>
 export type WatcherToolOutput<N extends WatcherToolName> = z.infer<(typeof watcherToolSchemas)[N]['output']>

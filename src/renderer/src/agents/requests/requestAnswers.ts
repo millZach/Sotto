@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
 import type { AgentAttachmentHandle, AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, withoutSecretWords, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -34,6 +34,11 @@ export function requestMode(request: AgentRequest): 'structured' | 'permission' 
   if (request.kind === 'permission') return 'permission'
   if (request.questions && request.questions.length > 0) return 'structured'
   return request.options.length > 0 ? 'legacy-options' : 'legacy-text'
+}
+
+/** A question, or a **confirmation**: what pops up from the top of the composer rather than standing in the transcript (issue #2149). */
+export function docksAtComposer(request: AgentRequest): boolean {
+  return request.kind === 'question' || request.confirmation === true
 }
 
 /** Questions that only take text have no Other choice to pick: their text is the answer. */
@@ -129,16 +134,18 @@ export function legacyPermissionAnswer(approved: boolean): RequestAnswer {
 }
 
 /** Title and body for a permission: the native tool context when present, otherwise the request text. */
-export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly summary?: string; readonly summaryAsk?: 'waiting' | 'answered' | 'failed'; readonly target?: string; readonly cwd?: string; readonly details?: string } {
+export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly said?: string; readonly summary?: string; readonly summaryAsk?: 'waiting' | 'answered' | 'failed'; readonly target?: string; readonly cwd?: string; readonly details?: string } {
   const [first = '', ...rest] = request.text.split('\n')
   const context = request.context
   const restText = rest.join('\n').trim()
   const toolName = context?.toolName
   const worded = context?.command ? t({ message: 'Run a command', comment: 'The heading of a card that asks to run a command.' }) : context?.action
   const title = worded ?? (first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`))
-  const command = context?.command ?? (restText && !context?.details && !context?.action ? restText : undefined)
+  // A confirmation's words after its first line are the provider's question, read as words rather than run (issue #2149).
+  const said = request.confirmation && restText ? restText : undefined
+  const command = context?.command ?? (restText && !said && !context?.details && !context?.action ? restText : undefined)
   const details = context?.details && context.details.trim() !== command?.trim() ? context.details : undefined
-  return { title, ...(command ? { command } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.summaryAsk ? { summaryAsk: context.summaryAsk } : {}), ...(context?.target ? { target: context.target } : {}),
+  return { title, ...(command ? { command } : {}), ...(said ? { said } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.summaryAsk ? { summaryAsk: context.summaryAsk } : {}), ...(context?.target ? { target: context.target } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
 }
 
@@ -194,6 +201,8 @@ export class RequestAnswerStore {
   private readonly entries = new Map<string, RequestEntry>()
   private readonly listeners = new Set<() => void>()
   private readonly bindings = new Map<string, DraftBinding>()
+  /** How many open cards show each request's secret questions, and which questions those are (#2153). */
+  private readonly secretHolds = new Map<string, { count: number; readonly questionIds: readonly string[] }>()
   constructor(private readonly bridge: () => RequestDraftBridge | undefined = () => window.sotto?.requestDrafts) {}
 
   static key(ownerId: string, requestId: string): string { return `${ownerId}\0${requestId}` }
@@ -346,6 +355,25 @@ export class RequestAnswerStore {
       phase: 'sent', error: null, choice: null, save: 'saved', saveError: null })
   }
 
+  /**
+   * A card that shows secret questions holds their words here only while the user may still send them (#2153). They are
+   * never saved, so they are forgotten once the answer is sent or held unconfirmed, and once the last card showing the
+   * request closes; the field is empty when it opens again.
+   */
+  holdSecrets(ownerId: string, requestId: string, questionIds: readonly string[]): () => void {
+    const key = RequestAnswerStore.key(ownerId, requestId)
+    const held = this.secretHolds.get(key)
+    if (held) held.count++
+    else this.secretHolds.set(key, { count: 1, questionIds })
+    return () => {
+      const current = this.secretHolds.get(key)
+      if (current && --current.count > 0) return
+      this.secretHolds.delete(key)
+      const entry = this.entries.get(key)
+      if (entry) this.set(ownerId, requestId, entry, questionIds)
+    }
+  }
+
   select(ownerId: string, requestId: string, questionId: string, selection: QuestionSelection): void {
     const entry = this.get(ownerId, requestId)
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
@@ -365,8 +393,9 @@ export class RequestAnswerStore {
     }
     if (this.isAccepted(ownerId, requestId, binding)) return true
     const entry = this.get(ownerId, requestId)
+    // A secret answer's words stay in this window and go only with the answer (#2153).
     const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),
-      selections: Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }])),
+      selections: withoutSecretWords(binding.target.questions, Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }]))),
       held: entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed' })
     if (!parsed.success) {
       this.set(ownerId, requestId, { ...entry, save: 'unsaved', saveError: t`This answer could not be saved. Use the offered choices and at most 24,000 characters per answer.` })
@@ -500,7 +529,8 @@ export class RequestAnswerStore {
     }
     // Checking delivery is not proof that newer local content was saved. A failed preflight can leave
     // only an older revision (or nothing) in main; retain the local edit and persist it after release.
-    const needsSave = !draft || draft.revision < current.revision || JSON.stringify(draft.selections) !== JSON.stringify(current.selections)
+    const needsSave = !draft || draft.revision < current.revision
+      || JSON.stringify(draft.selections) !== JSON.stringify(withoutSecretWords(draft.target.questions, current.selections))
     this.set(ownerId, requestId, { ...current, phase, error, choice: null,
       revision: needsSave ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft.revision,
       save: needsSave ? 'saving' : 'saved', saveError: null })
@@ -544,8 +574,19 @@ export class RequestAnswerStore {
     }
   }
 
-  private set(ownerId: string, requestId: string, entry: RequestEntry): void {
-    this.entries.set(RequestAnswerStore.key(ownerId, requestId), entry)
+  /** `forget` names secret questions whose words go now; a sent or unconfirmed answer forgets its held ones too (#2153). */
+  private set(ownerId: string, requestId: string, entry: RequestEntry, forget?: readonly string[]): void {
+    const key = RequestAnswerStore.key(ownerId, requestId)
+    const ids = forget ?? (entry.phase === 'sent' || entry.phase === 'unconfirmed' ? this.secretHolds.get(key)?.questionIds : undefined)
+    let kept = entry
+    if (ids?.some(id => entry.selections[id]?.text)) {
+      const selections = { ...entry.selections }
+      for (const id of ids) if (selections[id]?.text) selections[id] = { ...selections[id], text: '' }
+      // The saved revision already had no words for these questions, so forgetting them changes nothing that was saved.
+      kept = { ...entry, selections }
+    }
+    if (forget && kept === entry) return
+    this.entries.set(key, kept)
     this.emit()
   }
 

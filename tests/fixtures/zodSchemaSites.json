@@ -17,12 +17,6 @@
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
-  "src/main/agents/codexRequests.ts": {
-    "answerRequest": {
-      "count": 3,
-      "reason": "Builds a string schema from the form field's own minLength and maxLength, once per field of an answer the user sends."
-    }
-  },
   "src/main/agents/credentials.ts": {
     "AgentCredentials.constructor": {
       "count": 1,

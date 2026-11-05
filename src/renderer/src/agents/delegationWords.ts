@@ -154,6 +154,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'PENDING_USER_REQUEST': return t`That thread was waiting for your answer. ${nothing}`
     case 'UNKNOWN_THREAD': return t`That thread is gone or archived, or this thread did not delegate to it. ${nothing}`
     case 'QUEUE_HELD': return t`That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. ${nothing}`
+    case 'PROVIDER_NOT_ALLOWED': return t`That provider is off the list Dynamic threads may use, in Settings under Threads. ${nothing}`
     case 'MACHINE_UNAVAILABLE': return t`The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. ${nothing}`
     case 'BRANCH_UNAVAILABLE': return t`It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. ${nothing} Commit first, then ask again.`
     default: return t`Sotto turned it down. ${nothing}`
@@ -350,7 +351,7 @@ export function delegatedLine(view: DelegationView, state: DelegatedState, now: 
  * started nothing, so it counts only as refused. With `checks`, where Work across machines shows them, a check counts as
  * a check (#1312). Empty when there is none.
  */
-export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined, checks = false): string {
+export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined, checks = false, dynamic = false): string {
   const kinds: Record<DelegatedKind, number> = { work: 0, check: 0, review: 0, 'muse-review': 0 }
   let asking = 0, failed = 0, unknown = 0, refused = 0
   for (const view of views) {
@@ -362,11 +363,15 @@ export function delegatedSummary(views: readonly DelegationView[], threadOf: (vi
     if (view.outcome === 'unknown') unknown++
   }
   const work = kinds.work, checked = kinds.check, reviews = kinds.review, museReviews = kinds['muse-review']
+  // A Dynamic thread's workers are told by how many and on how many providers, since which it chose is the point (ADR-0191). Stable keeps its usual words.
+  const overseen = dynamic ? views.filter(view => view.outcome !== 'refused' && view.chosen !== undefined) : []
+  const providers = new Set(overseen.flatMap(view => { const provider = threadOf(view)?.providerId; return provider ? [provider] : [] })).size
   return [
-    work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
-    checked && plural(checked, { one: '# check', other: '# checks' }),
-    reviews && plural(reviews, { one: '# review', other: '# reviews' }),
-    museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' }),
+    ...overseen.length ? [plural(overseen.length, { one: '# worker', other: '# workers' }) + ' ' + plural(providers, { one: 'on # provider', other: 'on # providers' })]
+      : [work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
+        checked && plural(checked, { one: '# check', other: '# checks' }),
+        reviews && plural(reviews, { one: '# review', other: '# reviews' }),
+        museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' })],
     asking && plural(asking, { one: '# needs you', other: '# need you' }),
     failed && t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many delegated threads failed.' }),
     unknown && t({ message: `${{ unknownCount: shownCount(unknown) }} unknown`, comment: 'How many delegated threads have an unknown outcome.' }),

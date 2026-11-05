@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro'
 import { watcherMachinesReadSchema, type WatcherBridge, type WatcherRoomListChange, type WatcherRoomPatch, type WatcherRoomState, type WatcherRoomUpdate } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { samePlainData } from './agentStateBroadcast'
-import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
+import { coalesceAgentStatePublishes, type PublishScheduler } from './statePublishers'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'state' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
   | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew'> & Partial<Pick<WatcherService, 'machines'>>

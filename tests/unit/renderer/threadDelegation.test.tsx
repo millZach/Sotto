@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
+import type { AgentMessage, AgentModel, AgentState, AgentThread } from '../../../src/shared/agents'
 import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
+import { chosenWords, DelegatedWorkRow, DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import { threadOrnamentAllowed } from '../../../src/shared/threadActivity'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
@@ -25,9 +25,9 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 /** Delegation between threads (#1029, design A) as the window shows it, only where the Owl list turns it on. */
-function owl(on: boolean, quiet = false): void {
+function owl(on: boolean, quiet = false, dynamic = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({ update: { currentVersion: '0.1.37-owl.20261012.1', phase: { phase: 'up-to-date' }, checkedAt: null,
-    owlFeatures: { watcher: false, 'thread-delegation': on, 'quiet-composer': quiet } } } as unknown as AppContextValue)
+    owlFeatures: { watcher: false, 'thread-delegation': on, 'quiet-composer': quiet, 'dynamic-threads': dynamic } } } as unknown as AppContextValue)
 }
 
 const NOW = E2E_THREADS_NOW
@@ -370,6 +370,62 @@ describe('delegated work in the delegating thread', () => {
     expect(link).toHaveAccessibleDescription(/Codex.*This computer.*Returned.*Answered in 1 min/u)
     fireEvent.click(link)
     expect(open).toHaveBeenCalledWith(CHILD)
+  })
+
+  describe('a Dynamic thread\'s worker', () => {
+    const OLD = 'worker-before'
+    const worker = { chosen: { model: 'native:codex:model:gpt-6.1-sol', effort: 'high', speed: 'fast' }, why: 'Another maker\'s read.', effortHeld: true, replaces: crypto.randomUUID(), replacedThread: OLD } as const
+    const row = (shown: DelegatedView): void => {
+      const threads = [thread(CHILD, 'Review the gate fix', { modelId: 'edited-since', reasoningEffort: 'low' }), thread(OLD, 'First review')]
+      render(<DelegationWorldProvider world={{ ...world(vi.fn(), threads), chosenWords: chosen => `${chosen.model}, ${chosen.effort}` }}><ul><DelegatedWorkRow view={shown} /></ul></DelegationWorldProvider>)
+    }
+
+    it('says what the overseer chose as the worker started, why, and which row it took over from', () => {
+      owl(true, false, true)
+      row(view(worker))
+      const shown = screen.getByRole('listitem')
+      // Not the model and effort the thread has since been changed to.
+      expect(shown.querySelector('.delegated-work__meta')).toHaveTextContent('native:codex:model:gpt-6.1-sol, high')
+      expect(shown).toHaveTextContent('Why: Another maker\'s read.')
+      expect(shown).toHaveTextContent('Its effort was held to the most you allow in Settings.')
+      expect(shown).toHaveTextContent('It took over from First review.')
+      expect(within(shown).getByRole('button', { name: 'Actions for Review the gate fix' })).toBeInTheDocument()
+    })
+
+    it('keeps its model, effort and menu when its reason has gone with Keep local history', () => {
+      owl(true, false, true)
+      const { why: _why, ...withoutReason } = worker; void _why
+      row(view(withoutReason))
+      const shown = screen.getByRole('listitem')
+      expect(shown.querySelector('.delegated-work__meta')).toHaveTextContent('native:codex:model:gpt-6.1-sol, high')
+      expect(shown).not.toHaveTextContent('Why:')
+      expect(within(shown).getByRole('button', { name: 'Actions for Review the gate fix' })).toBeInTheDocument()
+    })
+
+    it('draws as any other row where the Owl feature is off, with the record left whole', () => {
+      owl(true, false, false)
+      row(view(worker))
+      const shown = screen.getByRole('listitem')
+      expect(shown.querySelector('.delegated-work__meta')).toHaveTextContent('Codex')
+      expect(shown).not.toHaveTextContent('Why:')
+      expect(shown).not.toHaveTextContent('took over')
+      expect(within(shown).queryByRole('button', { name: /^Actions for / })).toBeNull()
+    })
+
+    it('names any speed it was started at', () => {
+      const model = { id: 'sol', name: 'GPT-6.1 Sol', speeds: [{ id: 'fast', name: 'Fast' }] } as unknown as AgentModel
+      expect(chosenWords({ model: 'sol', effort: 'high' }, [model])).toBe('GPT-6.1 Sol, High')
+      expect(chosenWords({ model: 'sol', effort: 'high', speed: 'fast' }, [model])).toBe('GPT-6.1 Sol, High, Fast')
+      expect(chosenWords({ model: 'gone' }, [model])).toBe('gone')
+    })
+
+    it('counts workers by provider on the Worked for line only where the Owl feature is on', () => {
+      const threads: Record<string, Pick<AgentThread, 'providerId' | 'requests'>> = { a: { providerId: 'codex', requests: [] }, b: { providerId: 'claude', requests: [] } }
+      const of = (shown: DelegatedView | RefusedView) => shown.thread === undefined ? undefined : threads[shown.thread]
+      const views = [view({ thread: 'a', chosen: worker.chosen }), view({ thread: 'b', chosen: worker.chosen })]
+      expect(delegatedSummary(views, of, false, true)).toBe('2 workers on 2 providers')
+      expect(delegatedSummary(views, of)).toBe('2 reviews')
+    })
   })
 
   it('shows a refused delegation in the turn it was asked in: what was refused and why, with no link, since nothing started', () => {

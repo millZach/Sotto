@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { providerIdSchema } from '../../shared/providerIds'
+import { councilEvidenceSchema, councilLegacySnapshotSchema, councilRoundEvidenceSchema } from '../../shared/councilEvidence'
 import { COUNCIL_KINDS, COUNCIL_STAGES, COUNCIL_TURN_STAGES, councilCitationSchema, type CouncilCitation, type CouncilStage, type CouncilTurnStage } from '../../shared/council'
 import { cruxSchema, framingSchema, type CouncilAmend, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilFairness, type CouncilFraming,
   type CouncilReview } from '../../shared/councilBlocks'
@@ -67,7 +68,7 @@ export const councilObjectionSchema = z.object({
   turn: z.uuid().optional(),
 }).strict()
 
-export const councilRoundSchema = z.object({
+const legacyRoundSchema = z.object({
   index: z.number().int().nonnegative(),
   askedAt: at,
   stage: z.enum(COUNCIL_STAGES),
@@ -110,28 +111,53 @@ export const councilSeatSchema = z.object({
   context: z.boolean(),
 }).strict()
 
-export const councilRecordSchema = z.object({
+const legacyRecordSchema = z.object({
   id: z.uuid(),
   createdAt: at,
   originThread: id,
   originTitle: z.string().max(512),
   projectId: id,
   /** Absent when the thread's folder is not a Git repository: the Council works in that folder itself. */
-  snapshot: z.object({ path: z.string().max(4_096), repositoryRoot: z.string().max(4_096), commit: z.string().max(64), branch: z.string().max(512),
-    untracked: z.number().int().nonnegative(), dirty: z.boolean().optional(), removedAt: at.optional() }).strict().optional(),
+  snapshot: councilLegacySnapshotSchema.optional(),
   /** What each thread read of the origin conversation: inline, from a file in the snapshot, or its newest part. */
   history: z.object({ messages: z.number().int().nonnegative(), words: z.number().int().nonnegative(), tools: z.number().int().nonnegative(),
     /** How many prompts the conversation takes: 1 when it goes in the first stage prompt, more when it goes in parts before it. */
     parts: z.number().int().positive(), lastMessageId: id.optional() }).strict(),
   seats: z.array(councilSeatSchema).min(3).max(6),
-  rounds: z.array(councilRoundSchema).min(1).max(50),
+  rounds: z.array(legacyRoundSchema).min(1).max(50),
   turns: z.array(councilTurnSchema).max(2_000),
   deadlineMinutes: z.number().int().positive(),
   stoppedAt: at.optional(),
   stoppedBecause: z.enum(['user', 'words-lost', 'snapshot']).optional(),
   settledAt: at.optional(),
 }).strict()
-export const councilFileSchema = z.object({ version: z.literal(1), councils: z.array(councilRecordSchema).max(200) }).strict()
+export const legacyCouncilFileSchema = z.object({ version: z.literal(1), councils: z.array(legacyRecordSchema).max(200) }).strict()
+export const councilRoundSchema = legacyRoundSchema.extend({ evidence: councilRoundEvidenceSchema.optional() })
+export const councilRecordSchema = legacyRecordSchema.extend({
+  mode: z.enum(['standard', 'climb']),
+  evidence: z.array(councilEvidenceSchema),
+  rounds: z.array(councilRoundSchema).min(1),
+}).superRefine((record, ctx) => {
+  const ids = new Set(record.evidence.map(item => item.id))
+  if (ids.size !== record.evidence.length) ctx.addIssue({ code: 'custom', message: 'Evidence identities must be unique.' })
+  for (const round of record.rounds) {
+    if (!round.evidence || !Object.values(round.evidence).some(Boolean) || Object.values(round.evidence).some(id => id !== undefined && !ids.has(id))) {
+      ctx.addIssue({ code: 'custom', message: 'Every round must name its recorded evidence.' })
+    }
+  }
+})
+export const councilFileSchema = z.object({ version: z.literal(2), councils: z.array(councilRecordSchema).max(200) }).strict()
+
+/** A legacy singleton proves only a shared source, never a fresh capture for every past round. */
+export function migrateCouncilFile(input: z.infer<typeof legacyCouncilFileSchema>): CouncilFile {
+  return { version: 2, councils: input.councils.map(record => {
+    const source = `${record.id}:legacy`
+    return { ...record, mode: 'standard',
+      evidence: [record.snapshot ? { kind: 'legacyGit', id: source, snapshot: record.snapshot } : { kind: 'legacyLive', id: source }],
+      rounds: record.rounds.map(round => ({ ...round, evidence: { source } })),
+    }
+  }) }
+}
 
 export type CouncilTurn = z.infer<typeof councilTurnSchema>
 export type CouncilRound = z.infer<typeof councilRoundSchema>
