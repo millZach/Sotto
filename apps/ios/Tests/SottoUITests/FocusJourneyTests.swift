@@ -580,7 +580,7 @@ import UIKit
         let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("picture-page-\(UUID().uuidString).json")
         app.launchEnvironment["SOTTO_BENCH_FILE"] = report.path
         launch(Self.fixture + ["--ui-pictures", "--bench-threads", "30", "--bench-turns", "4", "--bench-chunks", "1",
-                               "--bench-journey", "pictures", "--bench-pictures", "full"], opensOnThreads: false)
+                               "--bench-journey", "pictures", "--bench-pictures", "full", "--bench-row-frames"], opensOnThreads: false)
         let window = app.windows.firstMatch
         let size = window.frame.size
         let read = { () -> [String: Any]? in
@@ -628,6 +628,23 @@ import UIKit
         let fingerPage = phases["finger"]?["page"] as? [String: Any]
         let drags = fingerPage?["drags"] as? [[String: Double]] ?? []
         for big in fingerPage?["swings"] as? [[String: Double]] ?? [] { print("[picture page] finger swing \(big)") }
+        // Each drag frame by frame (`PageWatch.dragFrames`): how far the row under the finger slid against the finger while
+        // it dragged, and how far rows above it changing height moved it in the page.
+        for (index, frames) in (fingerPage?["dragFrames"] as? [[[Double]]] ?? []).enumerated() {
+            var slid = 0.0, worst = 0.0, above = 0.0, offsetOff = 0.0
+            for (a, b) in zip(frames, frames.dropFirst()) where a[5] >= 0 && b[5] >= 0 {
+                above += b[5] - a[5]
+                guard a[1] == 1, b[1] == 1 else { continue }
+                let finger = b[4] - a[4], offset = b[2] - a[2]
+                let slide = (b[5] - a[5]) - offset - finger
+                slid += slide; worst = max(worst, abs(slide)); offsetOff += -offset - finger
+            }
+            print("[picture page] drag \(index + 1) frames: slid \(Int(slid.rounded())) against the finger (worst frame \(Int(worst.rounded()))), "
+                  + "row moved \(Int(above.rounded())) in the page, offset off the finger \(Int(offsetOff.rounded()))")
+            for frame in frames {
+                print("[picture page] drag \(index + 1) frame " + frame.map { String(format: "%.1f", $0) }.joined(separator: " "))
+            }
+        }
         XCTAssertEqual(drags.count, towardEnd.count, "Every drag must move the page; it followed \(drags.count) of \(towardEnd.count)")
         for (drag, down) in zip(drags, towardEnd) {
             let moved = (drag["moved"] ?? 0) * (down ? 1 : -1)

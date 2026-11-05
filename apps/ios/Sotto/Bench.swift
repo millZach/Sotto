@@ -286,7 +286,15 @@ import UIKit
         /// Each finger the page followed, from its landing to its lift: when it lifted, and how far the page went, up the
         /// page negative. Read here on the frame it happened, so a busy main thread can't make a reading late.
         var drags: [[String: Double]] = []
+        /// With `--bench-row-frames`, each drag frame by frame, from the finger's first frame to half a second after it
+        /// lifted: `[seconds, state, offset, height, finger y in the window, top of the row under the finger in the page]`,
+        /// the state 1 while the finger drags, 2 while the page coasts after it and 0 once it rests. A row's top moves in
+        /// the page only when something above it changes height, and the row stays under the finger while its top less
+        /// the offset moves as the finger does.
+        var dragFrames: [[[Double]]] = []
         private var dragFrom: CGFloat?
+        private var anchor: String?
+        private var liftedAt: Double?
         private let started = CACurrentMediaTime()
         init(view: UIScrollView) {
             self.view = view
@@ -305,10 +313,22 @@ import UIKit
                 swings.append(["at": now, "offset": Double(offset), "from": Double(lastHeight), "to": Double(height)])
             }
             if view.isDragging {
-                if dragFrom == nil { dragFrom = lastOffset }
+                if dragFrom == nil {
+                    dragFrom = lastOffset
+                    if RowFrames.watched { anchor = Self.row(under: view.panGestureRecognizer.location(in: view).y); dragFrames.append([]) }
+                }
+                liftedAt = nil
             } else if let from = dragFrom {
                 drags.append(["at": now, "moved": Double(offset - from)])
                 dragFrom = nil
+                liftedAt = now
+            }
+            if let anchor, !dragFrames.isEmpty {
+                let state: Double = view.isDragging ? 1 : view.isDecelerating ? 2 : 0
+                dragFrames[dragFrames.count - 1].append([now, state, Double(offset), Double(height),
+                                                         Double(view.panGestureRecognizer.location(in: nil).y),
+                                                         Double(RowFrames.now[anchor]?.minY ?? -1)])
+                if let liftedAt, now - liftedAt > 0.5 { self.anchor = nil }
             }
             furthest = max(furthest, abs(offset - firstOffset))
             minHeight = min(minHeight, height); maxHeight = max(maxHeight, height)
@@ -318,8 +338,13 @@ import UIKit
             ["firstOffset": Double(firstOffset), "lastOffset": Double(lastOffset), "firstHeight": Double(firstHeight), "lastHeight": Double(lastHeight),
              "minHeight": Double(minHeight), "maxHeight": Double(maxHeight), "heightChanges": Double(heightChanges), "offsetSteps": Double(offsetSteps),
              "biggestHeightStep": Double(biggestHeightStep), "biggestOffsetStep": Double(biggestOffsetStep), "furthest": Double(furthest),
-             "swings": swings, "drags": drags]
+             "swings": swings, "drags": drags, "dragFrames": dragFrames]
         }
+        /// The row whose part lies under a point of the page, or the nearest one to it.
+        private static func row(under y: CGFloat) -> String? {
+            RowFrames.now.min { a, b in distance(a.value, y) < distance(b.value, y) }?.key
+        }
+        private static func distance(_ frame: CGRect, _ y: CGFloat) -> CGFloat { y < frame.minY ? frame.minY - y : max(0, y - frame.maxY) }
     }
     private var watch: PageWatch?
 
@@ -877,5 +902,33 @@ private struct PageWindowProbe: UIViewRepresentable {
             BenchDriver.pageWindow(window != nil)
         }
     }
+}
+#endif
+
+extension View {
+    /// Keeps, for the picture-thread journey's drags (`--bench-row-frames`), where this part of a conversation row sits
+    /// in the page, so `PageWatch` can tell a page that moves under the reader's finger from one whose offset only takes
+    /// up a row measured above them. It changes nothing laid out or drawn, and only that journey turns it on; in a build
+    /// without `DEBUG` it is not there.
+    @ViewBuilder func benchRowFrame(_ part: StaticString, _ row: String, in space: NamedCoordinateSpace) -> some View {
+        #if DEBUG && os(iOS)
+        if RowFrames.watched {
+            let key = "\(part) \(row)"
+            onGeometryChange(for: CGRect.self, of: { $0.frame(in: space) }) { RowFrames.now[key] = $0 }
+                .onDisappear { RowFrames.now[key] = nil }
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+/// Where the conversation's rows sit in the page, by row, as they were last laid out (`benchRowFrame`).
+enum RowFrames {
+    static let watched = ProcessInfo.processInfo.arguments.contains("--bench-row-frames")
+    static var now: [String: CGRect] = [:]
 }
 #endif
