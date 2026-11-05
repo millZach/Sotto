@@ -22,6 +22,8 @@ The running app was not launched. Evidence here is the real renderer bundle (`np
 - **A switch no longer resizes the window.** The heights the card asked main for on one switch, from a tall Watcher to the thread: before, 640, then 95, then 363. After, 493 and 493. A unit test holds that no height asked for during a switch is below the one before it, and that a switch reads no history.
 - **Words typed survive a switch.** Unit test, by press and by Command+1 and Command+2.
 - **Photos.** A file through the picker reached `stageAttachment` with its name and type in the stubbed bridge, and its chip drew. The send carries the handle on `manual-send`; a refusal puts the words and the photo back with the reason. Main admits the popup on the three attachment channels and still parses each request (`popupAgentIpc.test.ts`).
+- **A late refusal loses nothing.** A refusal that lands after the user wrote and attached something new puts the refused words and image back ahead of the new ones. Unit test.
+- **Copy image.** In the real bundle, Copy image on a sent picture reached the stubbed `copyImage` with a PNG data URL; main admits the popup on `OUTPUT_COPY_IMAGE` and checks the PNG signature as it does for the main window.
 - **Contrast on the card.** Dark: reply 12.41, prompt 17.84, placeholder and time 6.36, unpressed target and icons 8.65. Light: 9.75, 14.69, 4.77 and 6.27. Light was measured on the built-in light theme.
 - **Reduced motion.** The transcript's fade is `none` under the media query; the owl and the working dot follow the same rules.
 - **Width.** A very long thread title cuts off with an ellipsis and the tools row does not overflow.

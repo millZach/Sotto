@@ -179,7 +179,8 @@ body.popup-page #root {
   height: 120px;
 }
 
-.popup-entry--user .rich-attachment--image figcaption {
+/* Until Copy image has something to say. */
+.popup-entry--user .rich-attachment--image figcaption:not(:has([data-feedback])) {
   display: none;
 }
 

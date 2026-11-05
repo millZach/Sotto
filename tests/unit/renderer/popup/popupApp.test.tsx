@@ -42,7 +42,7 @@ function mount(patch: Partial<AgentThread> = {}, watcher?: WatcherRoomResult) {
     onThread: listener => { update = listener; return () => undefined }, onThreadDetail: () => () => undefined,
     openExternalLink: vi.fn(async () => ({ ok: true })), hide: vi.fn(async () => undefined),
     stageAttachment: vi.fn(async request => ({ id: crypto.randomUUID(), digest: 'a'.repeat(64), name: request.name, mimeType: request.mimeType, sizeBytes: request.bytes.length })),
-    attachmentContent: vi.fn(async () => null), attachmentPreview: vi.fn(async () => null),
+    attachmentContent: vi.fn(async () => null), attachmentPreview: vi.fn(async () => null), copyImage: vi.fn(async () => ({ ok: true as const })),
     fit: vi.fn(async () => undefined), open: vi.fn(async () => undefined),
     onShown: listener => { shown = listener; return () => undefined },
     ...(watcher ? { watcher: vi.fn(async () => watcher) } : {}),
@@ -222,7 +222,7 @@ async function setup({ thread = agentThread(), target = 'thread' }: { thread?: A
       ...state.host, models: { revision: 1, omitted: true }, clientHosts: [],
     } })),
     openExternalLink: async () => ({ ok: true }),
-    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null,
+    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null, copyImage: async () => ({ ok: true as const }),
     hide: vi.fn(async () => undefined),
     fit: async () => undefined,
     open: async () => undefined,
@@ -303,7 +303,7 @@ function bridgeFixture(patch: Partial<PopupBridge> = {}): PopupBridge {
     shell: async () => state, threadDetail: async () => ({ threadId: 'thread', revision: 0, messages: [] }),
     onThreadDetail: () => () => undefined, onThread: () => () => undefined,
     command: async () => ({ ...state, host: { ...state.host, models: { revision: 0, omitted: true }, clientHosts: [] } }), openExternalLink: async () => ({ ok: true }),
-    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null,
+    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null, copyImage: async () => ({ ok: true as const }),
     hide: async () => undefined, fit: async () => undefined, open: async () => undefined, onShown: () => () => undefined,
     ...patch,
   }
@@ -498,6 +498,29 @@ describe('photos in the popup', () => {
     fireEvent.keyDown(prompt, { key: 'Enter' })
     await waitFor(() => expect(f.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send', text: 'Same crash?', attachments: [expect.objectContaining({ name: 'crash.png' })] })))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove crash.png' })).toBeNull())
+  })
+
+  it('keeps what was written and attached since when a refusal lands late', async () => {
+    const f = mount()
+    await screen.findByRole('textbox', { name: `Message ${f.thread.title}` })
+    await attach(f.view)
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    const accepted = await f.command({ type: 'observe-threads', threadIds: [] })
+    let refuse!: () => void
+    f.command.mockImplementation(request => request.type === 'manual-send'
+      ? new Promise(resolve => { refuse = () => resolve({ ...accepted, error: 'This model does not support screenshots.' }) })
+      : Promise.resolve(accepted))
+    const prompt = screen.getByRole('textbox')
+    fireEvent.change(prompt, { target: { value: 'First' } })
+    fireEvent.keyDown(prompt, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove crash.png' })).toBeNull())
+    fireEvent.change(prompt, { target: { value: 'Second' } })
+    await attach(f.view)
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    await act(async () => { refuse() })
+    expect(await screen.findByRole('alert')).toHaveTextContent('This model does not support screenshots.')
+    expect(screen.getAllByRole('button', { name: 'Remove crash.png' })).toHaveLength(2)
+    expect(screen.getByRole('textbox')).toHaveValue('First\n\nSecond')
   })
 
   it('sends a photo with no words, and puts the photo back when main refuses it', async () => {

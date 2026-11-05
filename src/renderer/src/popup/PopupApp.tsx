@@ -327,7 +327,13 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     setPhotos([])
     setEcho({ text, after: userMessages, photos: sending })
     pinned.current = true
-    const failed = (words: LaterWords): void => { setNotice(words); setInput(text); setPhotos(sending); setEcho(null) }
+    // A refusal can land after the user wrote or attached something new: what was refused goes back ahead of it, and nothing is lost.
+    const failed = (words: LaterWords): void => {
+      setNotice(words)
+      setInput(now => now === '' ? text : `${text}\n\n${now}`)
+      setPhotos(now => [...sending, ...now])
+      setEcho(null)
+    }
     try {
       let id = threadId
       let queue = running || waiting

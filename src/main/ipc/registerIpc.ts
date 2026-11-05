@@ -911,7 +911,7 @@ export function registerIpc(
       } catch {
         return UNAVAILABLE
       }
-    })
+    }, ['main', 'popup'])
   } catch (registrationError) {
     try {
       cleanup()

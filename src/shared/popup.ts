@@ -4,6 +4,7 @@ import { sameChord, chordHasKey, chordTokens } from './dictationShortcuts'
 import type { AgentAttachmentContent, AgentAttachmentContentRequest, AgentAttachmentHandle, AgentAttachmentPreviewRequest, AgentAttachmentPreviewResult, AgentAttachmentStageRequest, AgentCommand, AgentCommandReceipt, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from './agents'
 import type { InterfaceLanguageBridge } from './interfaceLanguageBridge'
 import type { SottoPlatform } from './platform'
+import type { CommandResult, OutputImageRequest } from './contracts'
 import type { AppSettings } from './settings'
 import type { WatcherRoomResult } from './watcherRoom'
 
@@ -111,6 +112,8 @@ export interface PopupBridge {
   stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
   attachmentContent(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null>
   attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  /** Copy image on a sent picture, through main, which owns the clipboard. */
+  copyImage(request: OutputImageRequest): Promise<CommandResult>
   hide(): Promise<void>
   fit(height: number): Promise<void>
   open(request: PopupOpen): Promise<void>
