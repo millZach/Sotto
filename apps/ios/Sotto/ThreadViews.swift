@@ -824,7 +824,7 @@ private struct Conversation: View {
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
                 .equatable()
             // The run's pictures stay in view whether it is open or folded (ADR-0170).
-            if model.showsAgentPictures(ref.hostID) { AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 } }
+            if model.showsAgentPictures(ref.hostID) { AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 }.equatable() }
         }
     }
 

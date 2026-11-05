@@ -476,7 +476,16 @@ struct CameraPicker: UIViewControllerRepresentable {
 /// The pictures a run of steps made or looked at (ADR-0170), as tiles two across under the run, whether it is open or
 /// folded: a press opens them full screen. Each tile reads its picture from the computer when it first shows, and the
 /// thumbnail is made here, as a sent photo's is.
-struct AgentPictures: View {
+struct AgentPictures: View, Equatable {
+    /// Whether anything its grid draws has changed. A `LazyVGrid` handed its contents again lays out its unmade rows afresh,
+    /// which can change its height by many rows with nothing new in it, under a reader who sees the page jump; a working
+    /// thread's update would otherwise hand every run's grid its steps. `open` only sets the page's state, so a kept
+    /// grid's copy still works.
+    static func == (a: AgentPictures, b: AgentPictures) -> Bool {
+        a.ref == b.ref && a.by == b.by && a.steps.first?.id == b.steps.first?.id && a.drawn == b.drawn
+    }
+    /// The steps the grid draws something for.
+    private var drawn: [Activity] { steps.filter { $0.makingImage || $0.media?.isEmpty == false } }
     let ref: ThreadRef
     let steps: [Activity]
     /// Who wrote the steps, the thread's provider: the viewer names a picture's callouts as theirs.
