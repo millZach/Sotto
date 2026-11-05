@@ -6,7 +6,7 @@
 /* Rendered once per page, not once per pane, and outside the panes' stacking so a split never covers it. */
 .threads-view__winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; height: 44px; padding-right: 6px; -webkit-app-region: no-drag; }
 /* A short upright hairline, the sidebar foot's, between what acts on the pane and what acts on the window. */
-.threads-view__winctl:has(.app-controls, .to-do)::before { content: ''; flex: none; width: 1px; height: 18px; margin-right: 6px; background: var(--tt-hairline); }
+.threads-view__winctl:has(.app-controls)::before { content: ''; flex: none; width: 1px; height: 18px; margin-right: 6px; background: var(--tt-hairline); }
 /* The strip's controls are as tall as the strip; here they are three keys inside a 44px row. */
 .threads-view__winctl .app-controls { align-self: center; }
 .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 34px; min-height: 30px; height: 30px; border-radius: var(--tt-radius-control); }
@@ -15,9 +15,8 @@
 .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(116px + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
 /* In a smaller window the keys are a little narrower, and the room they give goes to the thread's name. */
 @media (max-width: 1320px) {
-  .threads-view.threads-view[data-to-do] { --to-do-room: 30px; }
   .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(100px + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
-  .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize, .threads-view__winctl .to-do__icon { width: 30px; }
+  .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 30px; }
 }
 /* With the tools panel open it, not the last pane, meets the window's corner: the rail's top stays empty under
    the controls, and each surface's line of chrome keeps the rest of their room plus a 20px gap, so the surface's
