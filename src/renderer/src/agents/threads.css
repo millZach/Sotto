@@ -211,6 +211,13 @@
 .thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-bubble-text); }
 .thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-bubble-text); --rich-strong: var(--tt-bubble-text); }
+/* The bubble's last row says who sent it and when, at its right, level with the copy control's corner at its left, so the
+   room the control keeps under the words is the message's own line rather than an empty band. The words come first. A
+   wake-up or a brief keeps its header on top, where it says whose words these are before they are read. */
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) { display: flex; flex-direction: column; padding-bottom: 6px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > header { order: 1; justify-content: flex-end; min-height: 28px; margin: 4px 0 0; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__delivery { order: 2; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { padding-bottom: 6px; }
 /* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */
 .watcher-pane .thread-message header { margin-bottom: 8px; }
 .watcher-pane .thread-message:has(> .thread-message__copy) { margin-bottom: 28px; }
