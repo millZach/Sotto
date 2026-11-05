@@ -233,6 +233,16 @@ msgstr "{name} was cancelled: {description}"
 msgid "{name}, {state}"
 msgstr "{name}, {state}"
 
+#. {name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{name}, {state}, {additions} added, {deletions} removed"
+msgstr "{name}, {state}, {additions} added, {deletions} removed"
+
+#. {name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts; {folder} its folder.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{name}, {state}, {additions} added, {deletions} removed, in {folder}"
+msgstr "{name}, {state}, {additions} added, {deletions} removed, in {folder}"
+
 #. {name} is a file name; {state} its Git status, as in Modified; {folder} its folder.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{name}, {state}, in {folder}"
