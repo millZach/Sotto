@@ -304,7 +304,11 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                if BenchArm.equatable {
+                    ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).equatable().threadDestination()
+                } else {
+                    ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                }
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)

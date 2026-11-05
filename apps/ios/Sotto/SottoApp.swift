@@ -16,7 +16,7 @@ import SottoCore
     }
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(model).environmentObject(model.draftStore).environmentObject(model.detailStore)
+            RootView().environment(\.unobservedModel, model).environmentObject(model).environmentObject(model.draftStore).environmentObject(model.detailStore)
                 .environmentObject(model.watcherStore)
                 .environmentObject(previews)
                 .environmentObject(files)

@@ -3609,3 +3609,37 @@ struct SheetBackdrop: View {
         .ignoresSafeArea()
     }
 }
+
+/// Scratch: a short made-up thread laid out once, hidden, after launch, so the first thread opened doesn't pay for the
+/// page's first use: its view types, its text views, its date reader and its decoder.
+@MainActor enum ThreadPageWarmUp {
+    private static var detail: ThreadDetail?
+    static func prepare() async {
+        let data = await Task.detached(priority: .utility) { BenchWire.longDetailFrame(turns: 3, now: Date()) }.value
+        guard case .detail(_, let value)? = try? await Wire.readFrame(data) else { return }
+        detail = value
+    }
+    static var view: some View { WarmRows(detail: detail) }
+}
+
+private struct WarmRows: View {
+    let detail: ThreadDetail?
+    var body: some View {
+        if let detail {
+            let ref = ThreadRef(hostID: "warm-up", threadID: detail.threadId)
+            let rows = ConversationRow.make(ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? []), date: Stamp.date)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                    switch row.item {
+                    case .message(let message):
+                        MessageView(message: message, provider: "Codex", showsWho: row.showsWho, ref: ref, opensFiles: false) { _ in }.equatable()
+                    case .steps(let steps):
+                        FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: false, open: false, last: false) {}
+                            .equatable()
+                    }
+                }
+            }
+            .hidden()
+        }
+    }
+}

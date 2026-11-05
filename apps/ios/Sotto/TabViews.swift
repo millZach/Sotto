@@ -62,8 +62,22 @@ private final class FrameBox {
 /// shows it, and a press opens the thread (ADR-0151, amended October 30, 2026). The unfolded Duo keeps its columns of
 /// cards, answerable in place. The heading, the computer menu and search scroll with the list as one sheet. Focus reads
 /// only host list summaries; opening a thread subscribes to its detail.
-struct ThreadsView: View {
-    @EnvironmentObject var model: AppModel
+/// Scratch only: the model, read without watching it.
+private struct UnobservedModelKey: EnvironmentKey { static let defaultValue: AppModel? = nil }
+extension EnvironmentValues {
+    var unobservedModel: AppModel? {
+        get { self[UnobservedModelKey.self] }
+        set { self[UnobservedModelKey.self] = newValue }
+    }
+}
+
+struct ThreadsView: View, Equatable {
+    /// Scratch: read without watching; `revision` stands for the watch, and the quiet arm stops it while the list is held.
+    @Environment(\.unobservedModel) private var unobservedModel
+    private var model: AppModel { unobservedModel! }
+    @State private var revision = 0
+    /// Its only input is `open`, which always pushes onto the same path.
+    static func == (lhs: ThreadsView, rhs: ThreadsView) -> Bool { true }
     /// Opens a thread over the page, from the list or once New thread has made it.
     var open: (ThreadRef) -> Void = { _ in }
     @State private var creating = false
@@ -77,6 +91,7 @@ struct ThreadsView: View {
     /// lets go as it starts to come back, at the start of a swipe back or a press on Back and before that first frame,
     /// so it never shows an old row.
     @State private var held: HeldList?
+    @State private var warming = false
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -89,6 +104,7 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
+        let _ = revision
         let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
         let groups = shown.groups
         let unsearched = shown.unsearched
@@ -135,6 +151,18 @@ struct ThreadsView: View {
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { held = nil; openForShare(model.shareOpened) }
         .onDisappear { hold() }
+        .onReceive(model.objectWillChange) { _ in
+            if !(BenchArm.quiet && held != nil) { revision &+= 1 }
+        }
+        .background { if warming { ThreadPageWarmUp.view.allowsHitTesting(false).accessibilityHidden(true) } }
+        .task {
+            guard BenchArm.warm else { return }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await ThreadPageWarmUp.prepare()
+            warming = true
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            warming = false
+        }
         .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }

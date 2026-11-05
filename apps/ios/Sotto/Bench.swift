@@ -1,5 +1,12 @@
 import SwiftUI
 import SottoCore
+
+/// Scratch only: which of the open's candidate changes this launch measures.
+enum BenchArm {
+    static let equatable = ProcessInfo.processInfo.arguments.contains("--bench-eq")
+    static let quiet = ProcessInfo.processInfo.arguments.contains("--bench-quiet")
+    static let warm = ProcessInfo.processInfo.arguments.contains("--bench-warm")
+}
 #if DEBUG && os(iOS)
 import Darwin
 import UIKit
@@ -29,7 +36,10 @@ import UIKit
     /// The laptop's whole list has been applied: the next Threads body draws it.
     static func listApplied() { running?.waiting.insert("first-list") }
     /// The long thread's detail has been applied: the next conversation body draws it.
-    static func detailApplied() { running?.waiting.insert("open-rendered") }
+    static func detailApplied() {
+        running?.waiting.insert("open-rendered")
+        if let phase = running?.phase { running?.waiting.insert("rendered-" + phase) }
+    }
 
     private weak var model: AppModel?
     private let report: URL
@@ -76,6 +86,7 @@ import UIKit
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
         if kind == "look" { return await look() }
+        if kind == "open" { return await openJourney() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -122,6 +133,32 @@ import UIKit
         guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
         guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
         await quiet()
+        finish(nil)
+    }
+
+    /// Scratch only: the long thread opened cold, a short reply streamed into it, then back and opened again twice.
+    private func openJourney() async {
+        next("open")
+        mark("open-begin")
+        model?.alertOpened = long
+        guard await until({ self.marks["rendered-open"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        next("stream")
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            model?.benchStream(chunks: 60) { done.resume() }
+        }
+        await quiet()
+        for round in 1...2 {
+            next("back-\(round)")
+            guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+            guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+            await quiet()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            next("reopen-\(round)")
+            model?.alertOpened = long
+            guard await until({ self.marks["rendered-reopen-\(round)"] != nil }) else { return finish("no-reopen") }
+            await quiet()
+        }
         finish(nil)
     }
 
@@ -316,7 +353,11 @@ import UIKit
         let drawn: String?
         switch name {
         case "ThreadsView": drawn = waiting.contains("first-list") ? "first-list" : nil
-        case "Conversation": drawn = waiting.contains("open-rendered") ? "open-rendered" : nil
+        case "Conversation":
+            let rendered = waiting.filter { $0.hasPrefix("rendered-") }
+            waiting.subtract(rendered)
+            drawing.formUnion(rendered)
+            drawn = waiting.contains("open-rendered") ? "open-rendered" : nil
         default: drawn = nil
         }
         guard let drawn else { return }
