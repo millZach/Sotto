@@ -24,7 +24,12 @@
 
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
-.pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent;
+  /* Its foot fades: where more of the surface is below, what reaches the foot fades into the panel, so a fold there reads
+     as one that scrolls on rather than one drawn cut. At the end the foot holds only the body's last space, so nothing
+     fades. A mask and not a painted band, so it shows the panel under it in every theme, Glass's translucent one too. What
+     the keyboard reaches scrolls in above the fade. */
+  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent); scroll-padding-bottom: 24px; }
 .pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 
 /* The checklist. */
@@ -71,8 +76,8 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
 .pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
 
-/* Merge stays in reach under the lines while the folds below scroll. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
-.pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
+/* Merge stays in reach under the lines while the folds below scroll, above the body's fading foot. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
+.pr-surface__dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
 .pr-surface__dock:has(.pr-surface__merge-go[data-blocked]) { position: static; }
 /* A pull request that has ended leads with that, and its checklist follows. */
 .pr-surface__title + .pr-surface__dock { padding-top: 0; }
@@ -244,10 +249,15 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
   .pr-surface__check-time { grid-area: time; }
   .pr-surface__check-go { grid-area: go; }
 }
+/* The narrowest panel, beside the thread in the smallest window: the same surface in a closer rhythm, so a ready pull
+   request's checklist, Merge and every fold's head fit in its height. */
 @container tools-body (max-width: 439px) {
-  .pr-surface__title { margin-bottom: 14px; }
-  .pr-surface__body { padding-inline: 12px; }
-  .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
+  .pr-surface__title { margin-bottom: 12px; }
+  .pr-surface__body { padding: 12px 12px 24px; }
+  .pr-surface__heading { margin-bottom: 8px; }
+  .pr-surface__dock { margin-inline: -12px; padding: 12px 12px 10px; }
+  .pr-surface__hint { margin-top: 6px; }
+  .pr-surface__fold-head { min-height: 36px; padding-block: 8px; }
 }
 /* Open <title> after a checkout refused because another thread holds the folder (#1823): a word in the line, underlined as a link is. */
 .pull-request-dialog__open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: start; text-decoration: underline; text-underline-offset: 2px; white-space: normal; overflow-wrap: anywhere; }
