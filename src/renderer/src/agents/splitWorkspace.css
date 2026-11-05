@@ -36,6 +36,12 @@
    focus inside it, gives the row its full ink, and a thread Watcher watches stays lit. */
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action, .git-action__more) { border-color: transparent; }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action__quick, .watch-toggle:not([aria-pressed='true'])) { color: var(--tt-text-muted); }
+/* The rest of that header steps back with them: its name takes the muted ink, and the provider's mark and the pull
+   request's state colour rest in it too, so the only colour across the top of the window is the focused pane's. The
+   layout's symbols, already muted, are drawn a step toward the room, keeping 3:1 and more against it (4.5:1 by day). Each
+   keeps its place and its press, and the pointer or the focus on the header gives the row its own ink back. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(h2, .thread-workspace__title > .provider-mark, .branch-toolbar__pr > svg) { color: var(--tt-text-muted); }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > :is(.pane-action, .pane-menu > .pane-action):not([aria-pressed='true'], [aria-expanded='true']) { color: color-mix(in oklab, var(--tt-text-muted) 78%, var(--tt-canvas)); }
 
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
