@@ -45,6 +45,7 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump, allT
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => { if (open) panel.current?.querySelector<HTMLButtonElement>('button')?.focus() }, [open])
+  useEffect(() => { if (open && document.activeElement === document.body) trigger.current?.focus() }, [open, entries])
   useEffect(() => {
     if (!open || allThreadsOpen) return
     const outside = (event: Event): void => {
@@ -54,6 +55,7 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump, allT
     document.addEventListener('focusin', outside)
     return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('focusin', outside) }
   }, [open, allThreadsOpen])
+  if (open && entries.length === 0) setOpen(false)
   if (entries.length === 0) return null
   const named = entries.slice(0, NAMES)
   const more = entries.length - named.length

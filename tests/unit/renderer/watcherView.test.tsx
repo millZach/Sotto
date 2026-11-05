@@ -15,8 +15,11 @@ import { SidebarChromeProvider, SidebarFoot } from '../../../src/renderer/src/ag
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { withoutRoomWatcher } from '../../../src/renderer/src/agents/watcherVisibility'
+import { describeThread } from '../../../src/renderer/src/agents/threadFacts'
+import { watcherOverview } from '../../../src/shared/watcherOverview'
 import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
+import { WatcherGlance } from '../../../src/renderer/src/watcher/WatcherGlance'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import type { UpdateControlProps } from '../../../src/renderer/src/features/updates/UpdateControl'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -581,6 +584,32 @@ describe("Watcher's room", () => {
     fireEvent.click(trigger)
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+  })
+
+  it('keeps returning requests collapsed after the list empties and returns focus when a row disappears', () => {
+    const state = stateWithWatcher()
+    const entries = watcherOverview(state, NOW).filter(row => row.group === 'Needs you')
+      .map(overview => ({ overview, facts: describeThread(state, overview.thread, NOW) }))
+    const onOpen = vi.fn(), onShowAll = vi.fn()
+    const tree = (waiting: typeof entries) => <WatcherGlance entries={waiting} onOpen={onOpen} onShowAll={onShowAll} allThreadsOpen={false} />
+    const view = render(tree(entries))
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
+    expect(screen.getByRole('dialog', { name: 'Threads that need you' })).toBeInTheDocument()
+    // A provider update clears the requests without a pointer or focus event.
+    view.rerender(tree([]))
+    view.rerender(tree(entries.slice(0, 1)))
+    expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+    const count = screen.getByRole('button', { name: 'Show 1 thread that needs you' })
+    expect(count).toHaveAttribute('aria-expanded', 'false')
+
+    view.rerender(tree(entries))
+    fireEvent.click(count)
+    const row = within(screen.getByRole('dialog', { name: 'Threads that need you' })).getAllByRole('button')[0]!
+    expect(row).toHaveFocus()
+    view.rerender(tree(entries.slice(1)))
+    expect(row).not.toBeInTheDocument()
+    expect(count).toHaveFocus()
+    expect(count).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('names a thread whose prototype waits for review in the needs-you line, and the Overview opens its first page (ADR-0108)', async () => {
