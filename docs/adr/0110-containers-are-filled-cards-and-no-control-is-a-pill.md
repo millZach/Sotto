@@ -84,3 +84,9 @@ Zach chose this. Decision 5's 260 pixel floor left the thread 560 of an 820 pixe
 **Why.** Every thread stays one press or one key away while the thread keeps the window. B gave the thread the same room but Expand still pushed it over; C never takes it.
 
 **What it costs.** A second way the sidebar can stand, and while it is open the thread is behind it. Below 1000 pixels a dragged width is not shown until the window widens again; it is kept, not forgotten. Settings keeps its column at the width the sidebar would have, so below 1000 pixels the left column changes between Threads and Settings, where it otherwise stays the same box.
+
+## November 5, 2026 amendment: a ready Merge in the checklist's green
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/merge-plate/`, kept outside the repository, and picked B.
+
+A ready **Merge** in the Pull request surface is a light wash of the green the merge checklist's ticks are drawn in, over the surface, with a green edge and a green merge mark and the panel's own text on it, where it was the primary's plate in the text colour. It is still the one filled control in the surface, its words read at 4.5:1 or better on the wash in every theme, and hover and press deepen the wash rather than brightening a plate. This is the one exception to decision 2's "the primary keeps its plate in the text colour"; every other primary keeps it. The blocked Merge, hatched with its sentence, and a read in flight dimming a ready one are unchanged.
