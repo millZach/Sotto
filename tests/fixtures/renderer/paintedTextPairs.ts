@@ -56,12 +56,14 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),
   ...lines.map(line => pair('text', [...line, picked], 'picked line number')),
-  // The words that changed take their role's ink on their stronger wash, in code and in documents, and the body ink on a picked line (changes.css).
+  // The words that changed keep a neutral ink on their stronger wash, in code and in documents, and the body ink on a picked line (changes.css).
   ...each('--changes-word-ink-added', [wordAdded, [...wordAdded, hover]], 'added words'),
   ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
   // A document's edited line read once, and a reworked paragraph above what it became, have no wash of their own: its words' washes sit on the code background, and its sign takes the warning ink.
+  // What such a line keeps reads in the secondary ink, as do the words that went from it, and so does a picked document line's context.
   ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
-  ...each('--changes-word-ink-removed', [[...context, '--changes-word-removed'], [...context, hover, '--changes-word-removed']], 'removed words in an edited line'),
+  ...each('text-2', [[...context, '--changes-word-removed'], [...context, hover, '--changes-word-removed']], 'removed words in an edited line'),
+  ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited or reworked line keeps'),
   ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
   ...each('warning', [context, [...context, hover]], 'edited line sign'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
