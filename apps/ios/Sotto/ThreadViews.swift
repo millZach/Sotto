@@ -3609,3 +3609,58 @@ struct SheetBackdrop: View {
         .ignoresSafeArea()
     }
 }
+
+/// The thread page's first use, paid once a second after launch rather than by the first thread opened: a short made-up
+/// thread, read from wire bytes, laid out hidden for a moment and let go. The page's view types, its text views, its date
+/// reader and its decoder are then ready. Opening a long thread took about a fifth less time with it, for about 0.6 s of
+/// work after launch (#1702). It waits while a finger drags or a list glides, so a scroll already under way keeps its
+/// frames; one that starts in the frame its rows are laid out can still meet them.
+struct ThreadPageWarmUp: View {
+    @MainActor private static var done = false
+    @State private var detail: ThreadDetail?
+    var body: some View {
+        Color.clear.overlay(alignment: .topLeading) { if let detail { WarmRows(detail: detail) } }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task {
+                guard !Self.done else { return }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                let data = await Task.detached(priority: .utility) { BenchWire.longDetailFrame(turns: 3, now: Date()) }.value
+                guard case .detail(_, let value)? = try? await Wire.readFrame(data), !Task.isCancelled else { return }
+                // The rows go in during a turn of the main run loop in its default mode, which it leaves while a finger
+                // drags or a list glides, so they aren't set while a scroll is under way.
+                await withCheckedContinuation { (laid: CheckedContinuation<Void, Never>) in
+                    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
+                        MainActor.assumeIsolated { detail = value }
+                        laid.resume()
+                    }
+                    CFRunLoopWakeUp(CFRunLoopGetMain())
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                // Cancelled while it waited, the page went out of sight and the rows may never have been laid out.
+                if !Task.isCancelled { Self.done = true }
+                detail = nil
+            }
+    }
+}
+
+private struct WarmRows: View {
+    let detail: ThreadDetail
+    var body: some View {
+        let ref = ThreadRef(hostID: "warm-up", threadID: detail.threadId)
+        let rows = ConversationRow.make(ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? []), date: Stamp.date)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows) { row in
+                switch row.item {
+                case .message(let message):
+                    MessageView(message: message, provider: "Codex", showsWho: row.showsWho, ref: ref, opensFiles: false) { _ in }.equatable()
+                case .steps(let steps):
+                    FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: false, open: false, last: false) {}
+                        .equatable()
+                }
+            }
+        }
+        .hidden()
+    }
+}

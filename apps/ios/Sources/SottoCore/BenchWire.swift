@@ -1,9 +1,10 @@
 import Foundation
 
 /// The frames a computer would send in the iPhone benchmarks, built as wire bytes so the phone reads them the way it
-/// reads a socket's (`docs/perf/2026-10-31-iphone-benchmarks.md`). Used only by the benchmark fixture and the core
-/// benchmarks' tests; nothing in the app's own paths calls it. The same inputs give the same bytes, so the benchmark
-/// on `main` and on a branch read the same data.
+/// reads a socket's (`docs/perf/2026-10-31-iphone-benchmarks.md`). Used by the benchmark fixture and the core
+/// benchmarks' tests, and once in the app's own paths: the thread page's warm-up after launch reads a short
+/// `longDetailFrame`, laid out hidden and never shown or sent. The same inputs give the same bytes, so the benchmark on
+/// `main` and on a branch read the same data.
 public enum BenchWire {
     /// The open thread every scenario uses: the newest thread on the list, still working.
     public static let longThreadID = "bench-long"
