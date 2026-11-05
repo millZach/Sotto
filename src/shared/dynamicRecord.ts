@@ -9,8 +9,6 @@ import { providerIdSchema } from './agents'
 
 export const DYNAMIC_RECORD_READ = 'sotto:dynamic-record:read'
 export const DYNAMIC_RECORD_CLEAR = 'sotto:dynamic-record:clear'
-/** Main adds it to the main window's arguments only while the `dynamic-threads` Owl feature is on here. */
-export const DYNAMIC_RECORD_RENDERER_ARGUMENT = '--sotto-dynamic-record'
 /** The most models one record names: far more than any computer has had. */
 export const DYNAMIC_RECORD_MODELS_MAX = 200
 

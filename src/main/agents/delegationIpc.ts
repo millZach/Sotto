@@ -1,14 +1,17 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
+import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATION_GIVE, delegationGiveRequestSchema, delegationGiveResultSchema, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
   delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationBrief, type DelegationsRead, type DelegationView } from '../../shared/delegation'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
+import { PROVIDER_LABELS } from '../../shared/agents'
+import type { DelegationGiveAnswer } from './delegation'
 
 /** Each call's arguments, checked against schemas built once rather than on every call. */
 const delegationsArguments = z.tuple([delegationsRequestSchema])
 const delegationBriefArguments = z.tuple([delegationBriefRequestSchema])
 const delegationCheckReplyArguments = z.tuple([delegationCheckReplyRequestSchema])
+const delegationGiveArguments = z.tuple([delegationGiveRequestSchema])
 
 /** What the window's read asks of delegation in main: its own record, never a snapshot (#1029). */
 export interface DelegationViews {
@@ -17,6 +20,8 @@ export interface DelegationViews {
   brief(threadId: string): string | undefined
   /** An answered check's reply that `threadId` delegated, cut as `read_delegation` cuts it, while it is held (#1312). */
   checkReply?(threadId: string, delegationId: string): { readonly text: string; readonly truncated: boolean } | undefined
+  /** Give it to another model… (ADR-0191): a Dynamic thread's worker moved to the model the user chose on its row. */
+  giveTo?(delegatingThreadId: string, delegationId: string, modelId: string): Promise<DelegationGiveAnswer>
   onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void
 }
 
@@ -30,6 +35,23 @@ export interface RemoteDelegationViews {
   subscribeDelegationViews(listener: (threadKeys: readonly string[]) => void): () => void
 }
 
+/** Why Give it to another model… started nothing, in the interface's own words (ADR-0123), each saying what to do next. */
+function giveRefusalWords(answer: Exclude<DelegationGiveAnswer, { status: 'ok' }>): string {
+  const model = answer.model ?? t`another model`
+  const provider = answer.provider ? PROVIDER_LABELS[answer.provider] : model
+  switch (answer.reason) {
+    case 'not-overseen': return t`That worker isn't one an overseer chose a model for, so it can't be given to another. Nothing was started.`
+    case 'not-dynamic': return t`That thread isn't Dynamic now, so its workers aren't moved from here. Turn Dynamic on at the foot of its model menu to move them. Nothing was started.`
+    case 'not-ready': return t`That model isn't ready now. Choose another, or check its provider in Settings, under Providers. Nothing was started.`
+    case 'not-allowed': return t`${provider} is off the list Dynamic threads may use. Tick it in Settings, under Threads, to give it work. Nothing was started.`
+    case 'same-model': return t`That worker is already on ${model}. Nothing was started.`
+    case 'already-moved': return t`This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started.`
+    case 'no-brief': return t`Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to ${model}. Nothing was started.`
+    case 'too-long': return t`This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to ${model}. Nothing was started.`
+    case 'not-started': return t`Sotto couldn't start a worker on ${model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece.`
+  }
+}
+
 /**
  * The main window's read of a thread's delegations, and main's word that some changed (#1029, ADR-0081). The Owl
  * list's startup answer decides whether the handler exists: stable registers nothing, and no renderer can turn it on.
@@ -40,7 +62,7 @@ export interface RemoteDelegationViews {
  * check's reply when the user presses Read its reply (#1312); a check on a host is not read there, so it has none.
  */
 export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: DelegationViews | undefined, senders: () => readonly TrustedIpcSender[],
-  localHostId: () => string | undefined, send: (channel: string, payload: unknown) => void, remote?: RemoteDelegationViews, checkReplies = false): () => void {
+  localHostId: () => string | undefined, send: (channel: string, payload: unknown) => void, remote?: RemoteDelegationViews, checkReplies = false, give = false): () => void {
   if (!delegation && !remote) return () => undefined
   const windowId = (id: string): string => hostEntityKey(localHostId(), id)
   // Synchronous for this computer's threads, so a refusal throws as the window asks; a remote read answers when its host does.
@@ -76,10 +98,23 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
       return delegationCheckReplySchema.parse(reply === undefined ? null : { delegation: request.delegation, text: reply.text, truncated: reply.truncated })
     })
   }
+  // Give it to another model… (ADR-0191), only while the `dynamic-threads` Owl feature is on, for a thread on this computer.
+  const giveTo = give ? delegation?.giveTo?.bind(delegation) : undefined
+  if (giveTo) {
+    ipc.handle(DELEGATION_GIVE, async (event, ...args) => {
+      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
+      const [request] = delegationGiveArguments.parse(args)
+      const key = parseHostEntityKey(request.threadId)
+      if (key && key.hostId !== localHostId()) return delegationGiveResultSchema.parse({ status: 'refused', message: t`A Dynamic thread runs on this computer only, so nothing was started.` })
+      const answer = await giveTo(key?.id ?? request.threadId, request.delegation, request.model)
+      return delegationGiveResultSchema.parse(answer.status === 'ok' ? answer : { status: 'refused', message: giveRefusalWords(answer) })
+    })
+  }
   const stop = delegation?.onViewsChanged(threadIds => { send(DELEGATIONS_CHANGED, delegationsChangedSchema.parse({ threadIds: threadIds.map(windowId) })) })
   const stopRemote = remote?.subscribeDelegationViews(threadKeys => { send(DELEGATIONS_CHANGED, delegationsChangedSchema.parse({ threadIds: threadKeys })) })
   return () => {
     stop?.(); stopRemote?.(); ipc.removeHandler(DELEGATIONS_READ); ipc.removeHandler(DELEGATION_BRIEF_READ)
     if (replies) ipc.removeHandler(DELEGATION_CHECK_REPLY_READ)
+    if (giveTo) ipc.removeHandler(DELEGATION_GIVE)
   }
 }
