@@ -239,12 +239,16 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
 .changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 8px 16px 14px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 
-/* Syntax colour: the reply code blocks' inks, on the same keys, held at 4.5:1 on a changed line's wash too. */
+/* Syntax colour supports the change and never speaks over it. Green, red and amber mean added, removed and modified
+   here, so no syntax ink is drawn from them: a string is not amber and a number not red. What colour syntax has is
+   the theme's own hue at under half strength, on keywords and numbers and a little on types, and a string reads a step
+   quieter than the code around it. The wash and edge of a change are then the only strong colour on a line. Every ink
+   holds 4.5:1 on a changed line's wash too. */
 .changes-diff__rows {
-  --changes-code-keyword: color-mix(in oklab, var(--tt-primary) 52%, var(--tt-text));
-  --changes-code-string: color-mix(in oklab, var(--tt-warning) 82%, var(--tt-text));
-  --changes-code-number: color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text));
-  --changes-code-type: color-mix(in oklab, var(--tt-primary-hover) 82%, var(--tt-text));
+  --changes-code-keyword: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-code-text));
+  --changes-code-string: color-mix(in oklab, var(--tt-code-text) 50%, var(--tt-text-muted));
+  --changes-code-number: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-code-text));
+  --changes-code-type: color-mix(in oklab, var(--tt-primary) 22%, var(--tt-code-text));
 }
 .changes-diff__rows .hljs-keyword, .changes-diff__rows .hljs-selector-tag, .changes-diff__rows .hljs-built_in, .changes-diff__rows .hljs-literal, .changes-diff__rows .hljs-doctag { color: var(--changes-code-keyword); }
 .changes-diff__rows .hljs-string, .changes-diff__rows .hljs-regexp, .changes-diff__rows .hljs-template-tag, .changes-diff__rows .hljs-attr-value { color: var(--changes-code-string); }
