@@ -4,7 +4,7 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
-Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). His picks of October 24 and 26 stay in the record below.
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). His picks of October 24 and 26 stay in the record below.
 
 ## Context
 
@@ -100,3 +100,17 @@ While a step runs, or the reply arrives, and the provider sent what the work is 
 Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
 While a permission request or a question waits on the user, the line says so: "Waiting for your permission", or "Waiting for your answer" when only a question waits, a permission outranking a question as it does in the sidebar and the composer. Before, a turn whose last reply came before the request read "Writing a reply" above the request's card, which was not true. It takes the place of the step and of what the step is for, and it holds the line for 1.5 seconds like anything else on it. The light, the chevron, the steps under the line and the button's name are unchanged.
+
+## November 5, 2026 amendment: the plan stays in view
+
+Zach chose this: on November 5 he tried three answers for how a running turn reads while its steps are folded, in the design pass's prototype `sotto-council/prototypes/working-view/`, kept outside the repository, and picked C. At the start of that work he had said he likes how Claude shows a little dropdown of the steps it is going through. A was the line as the amendment above leaves it, one line with what the step is for leading. B was two lines: what the work is for with how far the plan had got ("3 of 7 done") beside it, and the step running now under it.
+
+**The checklist.** When the agent has sent a plan (Claude's TodoWrite, Codex's plan updates, or any plan another adapter reports), its items stand above the working line while the turn runs, as a small checklist: the opened plan's own list a size smaller, one line an item, with its tick for done, the accent dot for the item in progress and the ring for what is to come. It is the newest plan the turn sent, and its items are as written, not in the words for running. An item that moves on fades into its new mark; under reduced motion it changes without fading. A long item is cut at its end, and the opened plan reads it whole. At the minimum window the checklist is the same list. Assistive tech reads it as a list named for its progress, "Plan, 3 of 7 done", and is not told when it changes.
+
+**The line under it.** The line no longer leads with the plan's item, since the checklist shows it. It says what the running step is for when the provider sent that, Claude's description of a command or the heading of the Codex reasoning summary that led to it, with the command beside it, and otherwise names the step, as the November 4 amendment says. Commands stay folded under the line, one press away, and the plan is still one of the steps there. When no plan was sent, the line is as the amendment above says.
+
+**What stays.** The light with no accent halo, the words' timing, no clock, no count on the line and no sign of a failed step. A request waiting on the user still takes the line, with the checklist above it. At the minimum window the line keeps only what the work is for. Once the turn ends, the checklist goes with the working line: the **Worked for** line says how far the plan got ("plan 7 of 7 done") and opens to the plan, as it does for every finished turn.
+
+**What it costs.** A turn with a plan takes as many rows as the plan has, above the line, at every width.
+
+The considered option **The words with the step running now under them** was turned down on October 24 because it made the line two lines tall and moved every few seconds, and B brought that second line back. The checklist is Zach's answer to that: the plan is in view, the line stays one line, and the checklist moves only when the plan does. The earlier record stands. This replaces "from the plan's current item" in the amendment above for a turn with a plan in view; the iPhone keeps its line (ADR-0051's October 24 amendment) until Zach asks for this there.
