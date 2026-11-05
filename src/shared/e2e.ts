@@ -62,6 +62,8 @@ export const e2eScenarioSchema = z.enum([
   'ultracode',
   /** The test Claude model also offers Fast, so the composer draws its speed's bolt (ADR-0168). */
   'composer-speed',
+  /** Climb's scripted provider reports exact turn identities through setup, judging and builder replies. */
+  'council-climb',
 ])
 
 export const e2eSnapshotSchema = z.object({

@@ -51,6 +51,12 @@ msgstr ""
 msgid "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
 msgstr ""
 
+#. placeholder {0}: record.completedTurns
+#. placeholder {1}: planned ?? '∞'
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} / {1} turns"
+msgstr ""
+
 #. placeholder {0}: item.letter
 #. placeholder {1}: item.first
 #. placeholder {2}: item.of
@@ -73,6 +79,12 @@ msgstr ""
 msgid "{0} doesn’t have {1}"
 msgstr ""
 
+#. placeholder {0}: preview.files
+#. placeholder {1}: preview.bytes
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} files · {1} bytes"
+msgstr ""
+
 #. placeholder {0}: item.finding
 #. placeholder {0}: item.letter
 #. placeholder {1}: item.count
@@ -90,6 +102,12 @@ msgstr ""
 #. placeholder {0}: planned.model.name
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "{0} on {machine}"
+msgstr ""
+
+#. placeholder {0}: referencePreview.files
+#. placeholder {1}: referencePreview.bytes
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} reference files · {1} bytes"
 msgstr ""
 
 #. placeholder {0}: objection.seat
@@ -984,6 +1002,14 @@ msgstr ""
 msgid "<0>Ready.</0> {size} on this computer."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "0: unusable; 5: useful with substantial gaps; 10: fully meets the goal with specific evidence."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb."
+msgstr ""
+
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A check"
 msgstr ""
@@ -1080,8 +1106,36 @@ msgstr ""
 msgid "About <0>{perPrompt}</0> tokens per prompt"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About evidence"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About judges"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About kept evidence"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About stop rules"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About targets"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About the goal"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "About these numbers"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Absolute score"
 msgstr ""
 
 #. The macOS Privacy & Security pane, as System Settings names it
@@ -1123,6 +1177,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/ProjectStep.tsx
 msgid "Add another folder"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Add criterion"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -1175,6 +1233,10 @@ msgstr ""
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "All time"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Allow fix briefs to this builder within these limits."
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -1285,6 +1347,10 @@ msgstr ""
 msgid "Appearance"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Approve & start round 0"
+msgstr ""
+
 #: src/renderer/src/platformCopy.ts
 msgid "Approve access in macOS"
 msgstr ""
@@ -1293,12 +1359,24 @@ msgstr ""
 msgid "Approve access in Windows"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Artifact files (one absolute path per line)"
+msgstr ""
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "As of {when}"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Ask"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask a follow-up"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Ask chair for proposal"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
@@ -1371,6 +1449,10 @@ msgstr ""
 msgid "Attach to a thread"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Attempts"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
 msgstr ""
@@ -1410,6 +1492,18 @@ msgstr ""
 msgid "Bars"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Baseline"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Before round 0"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Better scores"
+msgstr ""
+
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "blocked"
 msgstr ""
@@ -1420,6 +1514,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Branch sent"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Builder"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Building"
 msgstr ""
 
 #. The kind of work a delegated thread or check was asked for.
@@ -1508,16 +1610,29 @@ msgstr ""
 msgid "Cancelled."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Candidate"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Capturing baseline"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Carried {carried}."
 msgstr ""
 
 #. The Council's chair, as a seat's label
 #. The Council's chair, on its plate in the chamber
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Chair’s proposal"
 msgstr ""
 
 #. Opens the list of threads a Council question can come from
@@ -1658,6 +1773,10 @@ msgstr ""
 msgid "Choose a folder"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Choose a model"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a project folder"
 msgstr ""
@@ -1718,6 +1837,10 @@ msgstr ""
 msgid "Claude Code subscription"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated."
+msgstr ""
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Cleanup model"
 msgstr ""
@@ -1752,6 +1875,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Clear usage…"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Climb"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged."
 msgstr ""
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
@@ -1843,6 +1974,18 @@ msgstr ""
 msgid "Compacting."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Compare with fixed evidence"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Completed"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Completed / planned"
+msgstr ""
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Completed dictation text"
 msgstr ""
@@ -1929,9 +2072,17 @@ msgstr ""
 msgid "Connecting..."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Constraints"
+msgstr ""
+
 #. Follows a token count: how much of the model’s context Watcher uses
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "context"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Context for the setup chair (optional)"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -1941,6 +2092,10 @@ msgstr ""
 #: src/renderer/src/features/memory/Questionnaire.tsx
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Continue"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Continue Climb"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -2070,6 +2225,10 @@ msgstr ""
 msgid "Could not stop"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Council mode"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Counted, so the next start sees it"
 msgstr ""
@@ -2080,6 +2239,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Criteria, one to five, one on each line"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Criterion"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -2094,6 +2257,10 @@ msgstr ""
 #. placeholder {0}: round.crux.test
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check: {0}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Custom"
 msgstr ""
 
 #. Colour scheme
@@ -2124,6 +2291,7 @@ msgstr ""
 #. The cleanup model or mode Sotto chooses itself
 #. The cleanup model or mode Sotto chooses itself
 #: src/renderer/src/components/CleanupModelFields.tsx
+#: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Default"
 msgstr ""
 
@@ -2175,6 +2343,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "Deleting or making irreversible changes"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Design"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -2388,6 +2560,10 @@ msgstr ""
 msgid "Edits files without asking. Asks before a command that changes something."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Effort"
+msgstr ""
+
 #. First-run setup: the group of steps about other computers and the iPhone
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Elsewhere"
@@ -2403,6 +2579,10 @@ msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Esc stops it"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
 msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
@@ -2421,8 +2601,21 @@ msgstr ""
 msgid "Everywhere"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Evidence"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exclude paths or globs"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exclusions and limits"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exhibit"
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -2431,6 +2624,14 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Expires"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Export round"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Export to a new folder"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
@@ -2493,6 +2694,10 @@ msgstr ""
 msgid "Finish setup"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Finished"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "First question"
 msgstr ""
@@ -2501,12 +2706,24 @@ msgstr ""
 msgid "First turn ended"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Fixed reference (optional)"
+msgstr ""
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Fold"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Fold updates into a button"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Folder"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Folder path"
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -2587,6 +2804,22 @@ msgstr ""
 msgid "from the question"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Frozen copies go only to the selected judges. Git is optional. Links, caches, environment files and private keys are excluded by default. Over a limit, nothing is partially captured."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Gain over baseline"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Gain over reference"
+msgstr ""
+
 #: src/renderer/src/languages.ts
 msgid "German"
 msgstr ""
@@ -2613,6 +2846,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Getting…"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Git working folder"
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -2643,6 +2880,14 @@ msgstr ""
 msgid "Go to the question from {title} in this conversation"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Goal"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Goal preset"
+msgstr ""
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Got a code from your teammate?"
 msgstr ""
@@ -2654,6 +2899,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Grok subscription"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Guardrail"
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -2676,6 +2925,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Handover of the last Watcher"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Held"
 msgstr ""
 
 #. The page link: the Help page
@@ -2708,6 +2961,10 @@ msgstr ""
 msgid "Hide what it said, {title}"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Higher"
+msgstr ""
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "History could not be cleared. Your saved transcripts are unchanged."
 msgstr ""
@@ -2718,6 +2975,10 @@ msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "History is off. New dictations keep their numbers only."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "History is off. Temporary evidence is written to disk while this Climb runs, then removed at Settle, quit or the next start. Its text and results are not retained."
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -2815,6 +3076,10 @@ msgstr ""
 msgid "Importing past conversations, retention, export, and deletion. This answer does not enable imports or change your settings."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Improve the clarity, hierarchy and usability of the selected design while preserving its purpose."
+msgstr ""
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "in progress"
 msgstr ""
@@ -2843,6 +3108,10 @@ msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Incumbent"
 msgstr ""
 
 #. After a token figure
@@ -3039,6 +3308,20 @@ msgstr ""
 msgid "Japanese"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judge"
+msgstr ""
+
+#. placeholder {0}: (turn.seat ?? 0) + 1
+#. placeholder {0}: index + 1
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judge {0}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judging"
+msgstr ""
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Keep history"
 msgstr ""
@@ -3088,6 +3371,10 @@ msgstr ""
 msgid "Kept on {from}"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Kept rounds"
+msgstr ""
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Key saved"
 msgstr ""
@@ -3100,6 +3387,7 @@ msgstr ""
 msgid "Keyboard"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Kind"
 msgstr ""
@@ -3231,6 +3519,10 @@ msgstr ""
 msgid "Light"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Limits"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Limits come from each provider and count all use of the account, in Sotto or anywhere else. The thin mark on each bar shows how much of that window's time is left."
 msgstr ""
@@ -3298,6 +3590,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Looking for speech models on this computer…"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Lower"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -3373,8 +3669,16 @@ msgstr ""
 msgid "Maximize Sotto"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Maximum score"
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "may slow down"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Meaningful gain"
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
@@ -3498,6 +3802,10 @@ msgstr ""
 msgid "Minimize Sotto"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Minimum score"
+msgstr ""
+
 #. How OpenRouter picks a host for cleanup
 #. How OpenRouter picks a host for cleanup
 #. The room switch between Dictate, Watcher and Threads
@@ -3508,6 +3816,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Model"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Model turns"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -3630,6 +3942,10 @@ msgstr ""
 msgid "Muse subscription"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Name"
+msgstr ""
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Name a model and the work it suits, or say you have no preference."
 msgstr ""
@@ -3665,6 +3981,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Neither of you has an open pull request here."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "New criterion"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "New folder path"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -3735,6 +4059,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "No input tokens in this range, so none came from cache."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "No limit"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -4546,6 +4874,10 @@ msgstr ""
 msgid "Preferences stay on this computer. Sotto does not send them to any provider."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preparing proposal"
+msgstr ""
+
 #: src/renderer/src/App.tsx
 msgid "Preparing Sotto..."
 msgstr ""
@@ -4600,6 +4932,14 @@ msgstr ""
 
 #: src/renderer/src/platformCopy.ts
 msgid "Presses Ctrl+V in the app you were using. Some apps block it."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preview capture"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preview reference"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -4706,6 +5046,10 @@ msgstr ""
 msgid "Pull request open"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Quality"
+msgstr ""
+
 #. The kind of request a card in Watcher’s conversation holds
 #. Why a thread needs the user, after its name
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -4730,6 +5074,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Question in a thread it delegated to"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Queued"
 msgstr ""
 
 #. A group of threads in Watcher’s room, and a thread’s status: nothing has happened for a while
@@ -4989,6 +5337,10 @@ msgstr ""
 msgid "Recovered transcript"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Reference"
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Refresh memory"
 msgstr ""
@@ -5015,6 +5367,10 @@ msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Remove all"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Remove criterion"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
@@ -5169,9 +5525,30 @@ msgstr ""
 msgid "Room left on each subscription"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round"
+msgstr ""
+
+#. placeholder {0}: item.index
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round {0}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round 0 · Baseline"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round exported to a new folder."
+msgstr ""
+
 #. A Council chamber layout: seen from a little above, the chair at the far side.
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Round table"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Rubric and scoring anchors"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -5246,6 +5623,10 @@ msgstr ""
 msgid "Scope"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Score"
+msgstr ""
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Search models or paste @preset/…"
 msgstr ""
@@ -5263,6 +5644,18 @@ msgstr ""
 msgid "See every event"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected artifacts"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected paths (one per line; blank selects the folder)"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected text"
+msgstr ""
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
 msgstr ""
@@ -5277,6 +5670,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Send to {title}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Sending"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -5315,6 +5712,10 @@ msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort} and {secondShort}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Set up a Climb"
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -5356,12 +5757,14 @@ msgstr ""
 msgid "Settings are unavailable."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Settle"
 msgstr ""
 
 #. Before a thread’s name on a receipt card
 #. The fold of finished threads at the end of Idle
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
@@ -5380,6 +5783,14 @@ msgstr ""
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Settling"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Setup"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Setup chair"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -5713,6 +6124,10 @@ msgstr ""
 msgid "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Sotto could not read the Climbs. Open the Council again."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
 msgstr ""
@@ -5923,6 +6338,7 @@ msgstr ""
 msgid "Sotto's subagents"
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Source"
 msgstr ""
@@ -6148,6 +6564,7 @@ msgid "Still reading {scanningList} history. The figures fill in as it reads."
 msgstr ""
 
 #. Stops the dictation that is recording
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Stop"
@@ -6246,6 +6663,7 @@ msgid "stopped"
 msgstr ""
 
 #. Before a thread’s name on a receipt card
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Stopped"
@@ -6270,6 +6688,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stopping…"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap."
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
@@ -6332,6 +6754,18 @@ msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Talking to Watcher. Switch to the thread"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target met"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target type"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
@@ -6412,6 +6846,14 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The chair’s framing could not be read, so the panel answers the question alone, as {kinds}."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The Climb could not continue."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The Climb's reply was lost. Read its status before trying again."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -6566,6 +7008,10 @@ msgstr ""
 
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The recording could not be completed."
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The reference could not be previewed."
 msgstr ""
 
 #: src/renderer/src/features/dictation/dictationController.ts
@@ -6762,6 +7208,10 @@ msgstr ""
 msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Through"
 msgstr ""
@@ -6829,6 +7279,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Tokens per prompt"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Tolerance"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
@@ -6979,6 +7433,10 @@ msgstr ""
 msgid "Turning speech into text."
 msgstr ""
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Turns"
+msgstr ""
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Two desks with {name}"
 msgstr ""
@@ -7000,6 +7458,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "unchecked"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Unconfirmed"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -7028,6 +7490,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Unknown"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Unmeasurable"
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -7247,6 +7713,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Waiting for {waitsOn}"
+msgstr ""
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Waiting for approval"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -7545,6 +8015,7 @@ msgstr ""
 
 #. A group of threads in Watcher’s room, and a thread’s status
 #. A thread’s status
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx

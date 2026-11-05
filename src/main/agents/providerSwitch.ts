@@ -806,6 +806,10 @@ export class ConfiguredProviderHost implements AgentHost {
     const owner = provider ?? this.providerForThread(threadId)
     if (owner) await this.options.hosts[owner].threadInstructionsChanged?.(threadId)
   }
+  async closeCouncilJudge(threadId: string): Promise<void> {
+    const owner = this.providerForThread(threadId)
+    if (owner) await this.options.hosts[owner].closeCouncilJudge?.(threadId)
+  }
   async clientUpdated(provider: ProviderId): Promise<void> {
     await this.options.hosts[provider].clientUpdated?.(provider)
   }

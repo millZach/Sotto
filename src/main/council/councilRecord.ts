@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { climbRecordSchema } from '../../shared/councilClimb'
 import { providerIdSchema } from '../../shared/providerIds'
 import { councilEvidenceSchema, councilLegacySnapshotSchema, councilRoundEvidenceSchema } from '../../shared/councilEvidence'
 import { COUNCIL_KINDS, COUNCIL_STAGES, COUNCIL_TURN_STAGES, councilCitationSchema, type CouncilCitation, type CouncilStage, type CouncilTurnStage } from '../../shared/council'
@@ -146,10 +147,12 @@ export const councilRecordSchema = legacyRecordSchema.extend({
     }
   }
 })
-export const councilFileSchema = z.object({ version: z.literal(2), councils: z.array(councilRecordSchema).max(200) }).strict()
+// Ordinary Council owns its 200-record retention policy. Climb records must not spend those slots.
+export const councilFileSchema = z.object({ version: z.literal(2), councils: z.array(z.union([councilRecordSchema, climbRecordSchema]))
+  .refine(records => records.filter(record => !('phase' in record)).length <= 200, 'Too many ordinary Councils.') }).strict()
 
 /** A legacy singleton proves only a shared source, never a fresh capture for every past round. */
-export function migrateCouncilFile(input: z.infer<typeof legacyCouncilFileSchema>): CouncilFile {
+export function migrateCouncilFile(input: z.infer<typeof legacyCouncilFileSchema>): { version: 2; councils: CouncilRecord[] } {
   return { version: 2, councils: input.councils.map(record => {
     const source = `${record.id}:legacy`
     return { ...record, mode: 'standard',

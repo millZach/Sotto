@@ -60,6 +60,7 @@ import { MARKDOWN_LINK_INSTRUCTIONS, questionInstructions } from './questionInst
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { AGENT_FORK_ARCHIVED, AGENT_FORK_GONE, FORK_SOURCE_MISSING, FORKED_THREAD_SOURCE_MISSING } from '../../shared/threadStarts'
 import type { ThreadForkRequest } from './host'
+import { CodexJudge, CODEX_JUDGE_INSTRUCTIONS } from '../council/codexJudge'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -97,6 +98,7 @@ async function threadConfig(tools: BrowserAgentTools | undefined, threadId: stri
 const codexQuestions = questionInstructions('request_user_input', true)
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
+  councilJudge: z.literal(true).optional(),
   compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
   historyMode: z.enum(['legacy', 'paginated']).optional(), historyEpoch: z.string().optional(),
   rewoundMessageIds: z.array(z.string()).default([]), rewoundTurnIds: z.array(z.string()).default([]),
@@ -297,6 +299,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly markdownLinks: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
+  private readonly councilJudges = new Map<string, CodexJudge>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id)
@@ -337,6 +340,7 @@ export class CodexAppServerHost implements AgentHost {
     return model?.speeds?.length || model?.fastMode ? { serviceTier: 'default' } : {}
   }
   private async threadConfiguration(id: string, effort?: string) {
+    if (this.councilJudges.has(id)) return { config: effort ? { model_reasoning_effort: effort } : {} }
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
     if (generation !== this.generation) throw new Error('Codex connection changed.')
@@ -390,7 +394,7 @@ export class CodexAppServerHost implements AgentHost {
    */
   private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
-    if (!this.workerRoles || this.watcherProfiles.has(id)) return { instructions: undefined, widest: undefined }
+    if (!this.workerRoles || this.watcherProfiles.has(id) || this.councilJudges.has(id)) return { instructions: undefined, widest: undefined }
     const overseer = this.workerRoles.overseer?.(id)
     if (overseer) return { instructions: overseer, widest: undefined }
     const table = this.workerRoles.table()
@@ -635,6 +639,19 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** Refresh only the app-server about to receive a prompt. No prompt or UI action is retried. */
   private async refreshRuntimeConfig(id: string): Promise<void> {
+    const judge = this.councilJudges.get(id)
+    if (judge) {
+      const server = this.runtimes.get(id)?.server
+      if (!server?.alive) throw new Error('The Climb judge stopped. Start a fresh assessment.')
+      try {
+        await judge.verifyConfiguration((method, params, apply) => this.rpc(method, params, apply, undefined, server))
+        await judge.verifyTools((method, params, apply) => this.rpc(method, params, apply, undefined, server))
+      } catch (error) {
+        this.stopUnverifiedProfile(id, 'Codex could not confirm the Climb judge settings. Start a fresh assessment.')
+        throw error
+      }
+      return
+    }
     const generation = this.generation
     await this.checkLaunchProfile(id)
     if (generation !== this.generation) throw new Error('Codex connection changed.')
@@ -664,10 +681,11 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
-  private spawnServer(executable: string): CodexProcess {
+  private spawnServer(executable: string, judge?: CodexJudge): CodexProcess {
     const generation = this.generation
-    const server = new CodexProcess({ executable, args: this.options.args ?? ['app-server', '--stdio', ...configArguments], cwd: this.options.userDataPath,
-      env: withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable), requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
+    const environment = withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable)
+    const server = new CodexProcess({ executable, args: this.options.args ? [...this.options.args, ...(judge?.arguments().slice(2) ?? [])] : judge?.arguments() ?? ['app-server', '--stdio', ...configArguments], cwd: judge?.cwd ?? this.options.userDataPath,
+      env: judge ? judge.environment(environment) : environment, requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
       onLost: lost => this.lost(lost),
@@ -774,18 +792,21 @@ export class CodexAppServerHost implements AgentHost {
     const launch = (async () => {
       if (!this.executable || !this.state.connected) throw new Error('Connect to Codex before sending a command.')
       const clientRevision = this.clientRevision
-      const configStamp = await this.configStamp()
+      const judge = this.councilJudges.get(id)
+      const configStamp = judge ? undefined : await this.configStamp()
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
-      const server = this.spawnServer(this.executable)
+      const server = this.spawnServer(this.executable, judge)
       try {
         await this.rpc('initialize', clientInfo, undefined, undefined, server)
         server.write({ method: 'initialized' })
+        if (judge) await judge.verifyConfiguration((method, params, apply) => this.rpc(method, params, apply, undefined, server))
       } catch (error) {
         this.endServer(server)
+        if (judge) { await server.closed; throw error }
         if (error instanceof WatcherProfileRefusal) { if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error.message; this.emit(); throw error }
         throw new SessionUnavailable(error)
       }
-      if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
+      if (generation !== this.generation || !this.state.connected) { this.endServer(server); if (judge) await server.closed; throw new Error('Codex connection changed while starting this thread.') }
       this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true, watcher: !!profile })
       // Launched from a client an update replaced meanwhile: it moves too, once its thread is idle.
       if (clientRevision !== this.clientRevision) { this.outdated.add(id); this.scheduleOutdatedStop() }
@@ -1070,6 +1091,11 @@ export class CodexAppServerHost implements AgentHost {
    * input type for a file, so a PDF goes by path too. `userItemText` leaves that item out when the message is read back.
    */
   async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = [], attachments: readonly PromptImage[] = []) {
+    if (this.aliases[threadId]?.councilJudge) {
+      if (skills.length || files.length || attachments.some(image => !image.mimeType.startsWith('image/'))) throw new Error('Climb judges accept only frozen text and images.')
+      return [{ type: 'text' as const, text }, ...await Promise.all(attachments.map(async image => ({ type: 'image' as const,
+        url: `data:${image.mimeType};base64,${Buffer.from(await image.read()).toString('base64')}` })))]
+    }
     verifyFileMentions(text, files)
     const input = skills.length ? codexSkillInput(text, skills, await this.listThreadSkills(threadId, true)) : [{ type: 'text' as const, text }]
     const delivered = await deliverAttachments(this.aliases[threadId]?.cwd, attachments)
@@ -1082,6 +1108,7 @@ export class CodexAppServerHost implements AgentHost {
     const alias = this.aliases[id]!
     const speed = speedAfterChange(alias)
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
+      ...(alias.councilJudge ? { councilJudge: true as const } : {}),
       runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
       status: 'idle', messages: [], requests: [] })
     const thread = this.threads.get(id)!
@@ -1095,6 +1122,17 @@ export class CodexAppServerHost implements AgentHost {
   private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
   /** The threads whose native session this connection is holding, each on its own app-server. */
   resumedThreads(): readonly string[] { return [...this.live] }
+  async closeCouncilJudge(id: string): Promise<void> {
+    const judge = this.councilJudges.get(id)
+    if (!judge && !this.aliases[id]?.councilJudge) return
+    const server = this.runtimes.get(id)?.server
+    this.stopSession(id)
+    await server?.closed
+    // A refused profile has already detached its runtime; its process still has to exit.
+    await this.stopping
+    await judge?.close()
+    this.councilJudges.delete(id)
+  }
   /** The public snapshot: a copy of everything, held threads' messages included. A caller that keeps history
    * from this adapter's events is handed every thread with its summary and no messages, as an activity
    * subscriber that asks for it is (#368). */
@@ -1125,6 +1163,7 @@ export class CodexAppServerHost implements AgentHost {
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
   private async projectInstructions(cwd: string, id?: string): Promise<string> {
+    if (id && this.councilJudges.has(id)) return CODEX_JUDGE_INSTRUCTIONS
     // A thread's developerInstructions replaces Codex's configured value. Resolve
     // its own trusted config layers first, and retain only the field we append to.
     try {
@@ -1191,6 +1230,7 @@ export class CodexAppServerHost implements AgentHost {
    * arguments in front of `exec`, the way they stand in for the app-server's.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (this.aliases[id]?.councilJudge) return null
     const generation = this.generation
     if (await this.checkLaunchProfile(id) && !watcherMayWrite(prompt.purpose)) return null
     if (generation !== this.generation) throw new Error('Codex connection changed.')
@@ -1231,7 +1271,7 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
       await this.resume(id)
       const alias = this.aliases[id]!
-      await this.watcher?.pollThread(alias.codexThreadId)
+      if (!alias.councilJudge) await this.watcher?.pollThread(alias.codexThreadId)
       // Read an uncertain settings save without replaying its overrides.
       if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: true,
         ...(this.watcherProfiles.has(id) ? { cwd: alias.cwd,
@@ -1260,7 +1300,7 @@ export class CodexAppServerHost implements AgentHost {
         } finally { current = false }
       }
       if (!applied) throw new Error('The Codex thread changed while reading it. Review its current state before replying.')
-      await this.watcher?.pollThread(alias.codexThreadId)
+      if (!alias.councilJudge) await this.watcher?.pollThread(alias.codexThreadId)
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
     })
     this.threadReads.set(id, work)
@@ -1344,7 +1384,7 @@ export class CodexAppServerHost implements AgentHost {
     this.log.observe([...this.observed])
     // A thread coming into view reads its rollout to the end at once, from where it was left, even when its session is
     // still running and opening it reads nothing more (#992).
-    if (this.state.connected) for (const id of this.observed) if (this.aliases[id] && !before.has(id)) void this.watcher?.pollThread(this.aliases[id]!.codexThreadId).catch(() => undefined)
+    if (this.state.connected) for (const id of this.observed) if (this.aliases[id] && !this.aliases[id]!.councilJudge && !before.has(id)) void this.watcher?.pollThread(this.aliases[id]!.codexThreadId).catch(() => undefined)
     if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => {
       if (generation !== this.generation) return
       this.ensureThread(id).status = 'error'; this.emit()
@@ -1391,11 +1431,12 @@ export class CodexAppServerHost implements AgentHost {
     if (!this.aliases[id]) return Promise.resolve()
     this.worked(id)
     if (this.live.has(id)) return Promise.resolve()
+    if (this.aliases[id]?.councilJudge) throw new Error('A stopped Climb judge cannot resume. Start a fresh assessment.')
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
     const operation = (async () => {
-      await this.watcher?.pollThread(alias.codexThreadId)
+      if (!alias.councilJudge) await this.watcher?.pollThread(alias.codexThreadId)
       await this.runtimeServer(id)
       const configuration = await this.threadConfiguration(id, alias.pendingSettings ? undefined : alias.reasoningEffort)
       // An unconfirmed settings change may land either way, so its role files are held to the narrower of the two.
@@ -1704,7 +1745,7 @@ export class CodexAppServerHost implements AgentHost {
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
     const alias = this.aliases[id]
-    if (!alias || alias.kind === 'personal') return { supported: false, reason: 'This thread has no native Codex conversation yet.' }
+    if (!alias || alias.councilJudge || alias.kind === 'personal') return { supported: false, reason: 'This thread has no native Codex conversation yet.' }
     if (alias.historyMode === 'paginated') return { supported: false, reason: 'This Codex history format cannot be fully read by the installed integration; rewind is unavailable.' }
     return { supported: true }
   }
@@ -1760,7 +1801,7 @@ export class CodexAppServerHost implements AgentHost {
     if (this.aliases[request.threadId]) return { accepted: true }
     if (this.creating.has(request.threadId)) return { accepted: false, uncertain: true }
     const sourceId = request.source.threadId, source = this.aliases[sourceId]
-    if (!source || source.kind === 'personal' || await this.checkLaunchProfile(sourceId)) throw new Error('That Codex thread is unavailable.')
+    if (!source || source.councilJudge || source.kind === 'personal' || await this.checkLaunchProfile(sourceId)) throw new Error('That Codex thread is unavailable.')
     if (!this.state.models.some(model => model.id === request.modelId && model.ready)) throw new Error('Choose an available Codex model.')
     validateThreadOptions(this.state, request)
     // Its own history names a thread's agents and holds its turns, so it is read first when this connection has not.
@@ -1866,6 +1907,7 @@ export class CodexAppServerHost implements AgentHost {
     }
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
+    if ('threadId' in command && this.aliases[command.threadId]?.councilJudge && !['send', 'interrupt', 'create-thread'].includes(command.type)) throw new Error('Climb judge settings cannot be changed.')
     if (!this.state.connected) throw new Error('Connect to Codex before sending a command.')
     if (command.type === 'create-project') {
       if (!isAbsolute(command.path)) throw new Error('Choose an absolute project path.')
@@ -1882,6 +1924,8 @@ export class CodexAppServerHost implements AgentHost {
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
         validateThreadOptions(this.state, command, undefined, /* keptSpeed */ true)
         const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
+        if (command.councilJudge) this.councilJudges.set(command.threadId, await CodexJudge.prepare(this.options.userDataPath, cwd, this.codexHome()))
+        const judge = this.councilJudges.get(command.threadId)
         this.creating.add(command.threadId)
         let developerInstructions: string
         try { developerInstructions = await this.projectInstructions(cwd, command.threadId) }
@@ -1894,25 +1938,34 @@ export class CodexAppServerHost implements AgentHost {
         const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
         const speed = speedAfterChange(command)
         const tier = this.serviceTier(command.modelId, speed)
+        let judgeStartRefusal: unknown
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'),
-          ...runtimePolicy(command.runtimeMode), ...configuration, ...tier, ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...runtimePolicy(command.runtimeMode), ...configuration, ...tier, ephemeral: false, historyMode: 'legacy',
+          ...(judge ? { ...judge.startOptions(), sandbox: undefined, historyMode: undefined } : {}) }, async value => {
+          if (judge) {
+            try { judge.verifyStarted(value) } catch (error) { judgeStartRefusal = error; return }
+          }
           const response = settingsResponse.parse(value)
-          const policy = runtimePolicy(command.runtimeMode)
+          const policy = judge ? { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'read-only' } : runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
             || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort
             || !tierAgrees(response.serviceTier, tier.serviceTier)) throw new Error('Codex did not confirm the requested thread options.')
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd,
+            ...(judge ? { councilJudge: true as const } : {}),
             title: command.title, modelId: command.modelId,
-            runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
+            runtimeMode: judge ? 'approval-required' : command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
             ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId); this.recordLoadedRoles(command.threadId, roles.widest)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
           this.worked(command.threadId)
-          this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
+          if (!judge) this.watcher?.observe(response.thread.id)
+          this.applyThread(command.threadId, response.thread); this.emit()
         }, () => { this.creating.delete(command.threadId); this.stopSession(command.threadId) }, server, watcherGuard)
+        if (judgeStartRefusal) throw judgeStartRefusal
+        if (judge) await judge.verifyTools((method, params, apply) => this.rpc(method, params, apply, undefined, server))
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
@@ -2030,7 +2083,7 @@ export class CodexAppServerHost implements AgentHost {
             ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           try {
-            try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
+            try { await this.persist(); if (!alias.councilJudge) await this.watcher?.pollThread(alias.codexThreadId); validate() }
             catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
             this.watcher?.sent(alias.codexThreadId, command.messageId, command.text, carriesAttachedFiles(command.attachments))
             const save = this.saveBehindResponse()
@@ -2095,7 +2148,7 @@ export class CodexAppServerHost implements AgentHost {
             await this.persist()
             // Runtime requests arrive on the subscribed native stream. Re-read authored
             // input after persistence, before registering this prompt as our own input.
-            await this.watcher?.pollThread(alias.codexThreadId)
+            if (!alias.councilJudge) await this.watcher?.pollThread(alias.codexThreadId)
             watcherGuard?.()
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
             if (command.skills?.length && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before sending. Refresh skills and review the selection.')
@@ -2106,14 +2159,15 @@ export class CodexAppServerHost implements AgentHost {
             alias.origins = alias.origins.filter(candidate => candidate !== origin); this.dispatching.delete(id)
             await this.persist(); throw error
           }
-          this.watcher?.sent(alias.codexThreadId, command.messageId, command.text, carriesAttachedFiles(command.attachments))
+          if (!alias.councilJudge) this.watcher?.sent(alias.codexThreadId, command.messageId, command.text, carriesAttachedFiles(command.attachments))
           const save = this.saveBehindResponse()
           try {
             markSendStage(command.commandId, 'written')
             try {
               await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-                input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
-                approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
+                input, approvalPolicy: alias.councilJudge ? 'never' : runtimePolicy(alias.runtimeMode).approvalPolicy,
+                approvalsReviewer: alias.councilJudge ? 'user' : runtimePolicy(alias.runtimeMode).approvalsReviewer,
+                ...(alias.councilJudge ? { permissions: 'sotto_climb_judge' } : {}),
                 ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}),
                 // Watcher's request note, or a wake-up's news, is the application's context for this turn, beside the input rather than in it.
                 ...((command.watcherRequestNote || command.watcherNews) && this.watcherProfiles.has(id)
@@ -2144,7 +2198,10 @@ export class CodexAppServerHost implements AgentHost {
         }
       }
       return { accepted: true }
-    } catch (error) { if (error instanceof Uncertain) return { accepted: false, uncertain: true }; throw error }
+    } catch (error) {
+      if (command.type === 'create-thread' && command.councilJudge) { this.creating.delete(command.threadId); await this.closeCouncilJudge(command.threadId) }
+      if (error instanceof Uncertain) return { accepted: false, uncertain: true }; throw error
+    }
     finally { this.scheduleOutdatedStop() }
   }
   /** A notification or request from `server`; its responses to Sotto's own requests were settled by the process. */
@@ -2159,6 +2216,14 @@ export class CodexAppServerHost implements AgentHost {
       this.skillsRevision++; this.loadedSkillCwds.clear(); return
     }
     if (frame.method === 'thread/settings/updated') {
+      const notification = frame.params as { threadId?: string; threadSettings?: unknown } | undefined
+      const owner = notification?.threadId ? this.sessionId(notification.threadId) : undefined
+      const judge = owner ? this.councilJudges.get(owner) : undefined
+      if (judge) {
+        try { judge.verifySettings(notification?.threadSettings) }
+        catch { this.stopUnverifiedProfile(owner!, 'Codex changed the Climb judge settings. Start a fresh assessment.') }
+        return
+      }
       const parsed = settingsNotification.safeParse(frame.params)
       if (!parsed.success) return
       const id = this.sessionId(parsed.data.threadId)
@@ -2182,6 +2247,11 @@ export class CodexAppServerHost implements AgentHost {
       const current = (): boolean => generation === this.generation && server.alive
         && (owner ? this.runtimes.get(owner)?.server === server : this.provider === server)
       if (!current()) return
+      if (owner && this.councilJudges.has(owner)) {
+        server.write({ id: frame.id, error: { code: -32601, message: 'Climb judges cannot request tools or approvals.' } })
+        this.stopUnverifiedProfile(owner, 'The Climb judge requested access outside its assessment. Start a fresh assessment.')
+        return
+      }
       if (owner && this.runtimes.get(owner)?.watcher) {
         try { await this.checkLaunchProfile(owner) } catch { return }
         if (!current()) return
@@ -2356,5 +2426,10 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** Shutdown barrier for callers removing user data or replacing a host. */
   /** Waits for the CLI, its frames and the newest store write, and drains the usage ledger even when that write failed. */
-  async closed(): Promise<void> { await this.stopping; await this.frames; try { await this.writing } finally { await this.usage.flushed() } }
+  async closed(): Promise<void> {
+    await this.stopping; await this.frames
+    for (const judge of this.councilJudges.values()) await judge.close()
+    this.councilJudges.clear()
+    try { await this.writing } finally { await this.usage.flushed() }
+  }
 }

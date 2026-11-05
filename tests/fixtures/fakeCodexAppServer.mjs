@@ -264,6 +264,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
     return
   }
+  if (method === 'windowsSandbox/readiness' && script.windowsReadiness) { reply({ status: script.windowsReadiness }); return }
   if (method === 'command/exec') {
     served(method)
     if (!process.argv.includes('windows.sandbox="unelevated"') || params.sandboxPolicy?.type !== 'readOnly' || script.watcherSandbox === 'setup-failed') {
@@ -279,6 +280,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     return
   }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
+  if (method === 'hooks/list' && script.judgeHooks !== undefined) { reply({ data: params.cwds.map(cwd => ({ cwd, hooks: script.judgeHooks, errors: [], warnings: [] })) }); return }
   const effective = script.effectiveConfig ?? {}
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }

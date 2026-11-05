@@ -80,6 +80,10 @@ gate, even if the test happens to run.
 
 The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-progress`), has a 40-minute safety timeout, and requests only `contents: read`.
 
+## Climb drawer evidence
+
+The selected desktop smoke journey includes `tests/e2e/council-climb.spec.ts`. It uses the fake provider, a plain folder and Owl's Council gate to check source preview, focus/Escape tooltips, both No limit slider endpoints, drawer form retention, setup approval and Stop. It records setup and limit screenshots at 1600×1000, 1280×800 and 820×560 in light/dark themes with reduced motion. Files are named `setup-<width>-<theme>.png` and `limits-<width>-<theme>.png` under `council-climb/` in the desktop run artifacts uploaded by CI. The journey also records the approval proposal and `geometry.json`. A separate node fixture covers the complete build/assess loop and the Claude read-only launch contract. These screenshots are CI evidence, not committed design baselines. On the owner's Mac this work runs no app or desktop gate; inspect the uploaded evidence before declaring visual verification complete.
+
 ## What CI deliberately does not run
 
 - **The full Playwright suite** (`npm run test:e2e`) and the widget design captures. Only the selected desktop smoke journeys run in the Checks and desktop (Windows) job; the complete suite and its design captures remain local. Every spec is still loaded by `npm run e2e:list` in the Windows checks job. A spec that runs main's code in Playwright's own process gets main's Lingui macros and its catalogs through two Babel plugins named in `playwright.config.ts`: Lingui's macro plugin, and `tests/e2e/support/viteGlobPlugin.cjs`, which stands in for Vite's `import.meta.glob` by compiling `.po` catalogs as Lingui's Vite plugin does. `tests/unit/e2e/viteGlob.test.ts` holds every catalog it compiles to the Vite plugin's.
