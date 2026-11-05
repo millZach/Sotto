@@ -2519,7 +2519,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return result.canceled || !result.filePath ? null : result.filePath
         },
       }, () => windows.getTrustedRenderers())
-      const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
+      // Memory is hidden for the beta (ADR-0013). Without the setting at start, the IPC serves an empty snapshot and refuses commands, while the policy store stays open for permissions (ADR-0004).
+      const cleanupMemory = registerMemoryIpc(ipcMain, startupSettings.memoryEnabled ? memoryProfile : undefined, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       // An end-to-end run reads a stand-in SSH folder and a recorded Tailscale status inside its own profile,
       // never the machine's ~/.ssh or Tailscale, and opens no browser.
       const hostTailscale = new HostTailscale({
