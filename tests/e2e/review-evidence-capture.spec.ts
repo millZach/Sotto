@@ -868,7 +868,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
-  { name: 'pages', covers: ['dictate', 'settings', 'usage', 'help'], run: async capture => {
+  { name: 'pages', covers: ['dictate', 'settings', 'usage-no-records', 'help'], run: async capture => {
     const { page } = capture
     await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
     await expect(page.locator('.dictate')).toBeVisible()
@@ -876,7 +876,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await openThreads(page)
     await page.getByRole('link', { name: 'Usage', exact: true }).click()
     await page.waitForTimeout(1_500)
-    await capture.shoot('usage', 'The Usage page.', 'Its prompt counts are the prompts this run sent. No provider wrote tokens or limits, so those tiles are empty, and its model name is the fixture model\'s ID.')
+    // The page as it reads before any provider has written a record on this computer; `usage` itself is the page with records (captureConnectedUsage).
+    await capture.shoot('usage-no-records', 'The Usage page with no provider\'s records on this computer.', 'Its prompt counts are the prompts this run sent. No provider wrote tokens or limits, so those tiles are empty, and its model name is the fixture model\'s ID.')
     await openThreads(page)
     await page.getByRole('link', { name: 'Help', exact: true }).click()
     await page.waitForTimeout(500)
@@ -1067,10 +1068,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await expect(card.locator('.needs-you__entry')).toHaveCount(2)
     }
   } },
-  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
+  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default. Usage
+  // at the smaller sizes is captureConnectedUsage's.
   { name: 'shell-check', covers: [], run: async capture => {
     const { page } = capture
-    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
+    const pages = [['Help', 'help'], ['Settings', 'settings']] as const
     for (const [link, state] of pages) {
       await openThreads(page)
       await page.getByRole('link', { name: link, exact: true }).click()
@@ -1110,9 +1112,10 @@ const COMMON_DIFFERENCES = [
 
 /**
  * Usage as it reads for someone whose Claude Code and Codex are on this computer: two weeks of their records outside Sotto,
- * one thread in Sotto and Claude's limits. The `usage` state's fake provider host keeps no records and reads no limits, so
- * its page shows only the prompts that run sent. Everything here is data: Claude Code's transcripts and a Codex CLI
- * rollout in the harness's own home, read by the real importer, and the scripted Claude client's answers.
+ * one thread in Sotto and Claude's limits. These are the `usage` and `usage-sizes` states: the main launch's fake provider
+ * host keeps no records and reads no limits, so its page, `usage-no-records`, shows only the prompts that run sent.
+ * Everything here is data: Claude Code's transcripts and a Codex CLI rollout in the harness's own home, read by the real
+ * importer, and the scripted Claude client's answers.
  */
 async function captureConnectedUsage(out: string): Promise<void> {
   const harness = await usageDashboardHarness()
@@ -1153,23 +1156,24 @@ async function captureConnectedUsage(out: string): Promise<void> {
     const shoot = async (file: string, width: number, height: number, mode: Mode, what = shows): Promise<void> => {
       await harness.appearance(mode); await harness.resize(width, height)
       await writeFile(join(out, file), await page.screenshot({ animations: 'disabled' }))
-      manifest.set(file, { file, state: 'usage-connected', shows: what, differs, bounds: [] })
-      try { await harness.capture(out, file, width, height, mode) } catch (error) { failures.push(`usage-connected ${file}: ${error instanceof Error ? error.message : String(error)}`) }
+      const state = file.startsWith('usage-sizes-') ? 'usage-sizes' : 'usage'
+      manifest.set(file, { file, state, shows: what, differs, bounds: [] })
+      try { await harness.capture(out, file, width, height, mode) } catch (error) { failures.push(`${state} ${file}: ${error instanceof Error ? error.message : String(error)}`) }
     }
     for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, ['dark']], [820, 560, ['dark']]] as const) {
-      for (const mode of modes) await shoot(`usage-connected-${mode}-${width}.png`, width, height, mode)
+      for (const mode of modes) await shoot(`${width === 1600 ? 'usage' : 'usage-sizes'}-${mode}-${width}.png`, width, height, mode)
     }
     // The other views a press on the index opens, at the largest size.
     for (const [measure, name] of [[/^Room left /u, 'room'], [/^Tokens /u, 'tokens'], [/^Where /u, 'where']] as const) {
       await harness.resize(1600, 1000)
       await measures.getByRole('tab', { name: measure }).click()
-      await shoot(`usage-connected-${name}-dark-1600.png`, 1600, 1000, 'dark', `${shows} Its ${name === 'room' ? 'Room left' : name === 'tokens' ? 'Tokens' : 'Where'} view, pressed in the index.`)
+      await shoot(`usage-${name}-dark-1600.png`, 1600, 1000, 'dark', `${shows} Its ${name === 'room' ? 'Room left' : name === 'tokens' ? 'Tokens' : 'Where'} view, pressed in the index.`)
     }
     // The Room left view on a theme other than the default.
     await measures.getByRole('tab', { name: /^Room left /u }).click()
     await page.evaluate(async () => { await window.sotto!.updateSettings({ darkTheme: 'clay' }) })
     await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'clay')
-    await shoot('usage-connected-room-clay-dark-1600.png', 1600, 1000, 'dark', `${shows} Its Room left view on the Clay theme.`)
+    await shoot('usage-room-clay-dark-1600.png', 1600, 1000, 'dark', `${shows} Its Room left view on the Clay theme.`)
     await page.evaluate(async theme => { await window.sotto!.updateSettings({ darkTheme: theme }) }, DEFAULT_THEME_ID)
     await measures.getByRole('tab', { name: /^Prompts /u }).click()
     // At the minimum the stage sits under the index: the same page scrolled to it.
@@ -1177,7 +1181,7 @@ async function captureConnectedUsage(out: string): Promise<void> {
       const scroll = element.closest<HTMLElement>('.usage-scroll')!
       scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16
     })
-    await shoot('usage-connected-stage-dark-820.png', 820, 560, 'dark', `${shows} Scrolled to the Prompts view under the index.`)
+    await shoot('usage-sizes-stage-dark-820.png', 820, 560, 'dark', `${shows} Scrolled to the Prompts view under the index.`)
   } finally {
     await harness.cleanup()
   }
@@ -1255,7 +1259,7 @@ test.describe('review evidence', () => {
       }
     })
     // Its own launch: production main over an isolated home, so it reads the provider clients' records the way it would on a computer that has them.
-    if (!ONLY || ONLY.includes('usage-connected')) await runState('usage-connected', () => captureConnectedUsage(out))
+    if (!ONLY || ['usage', 'usage-sizes'].some(name => ONLY.includes(name))) await runState('usage', () => captureConnectedUsage(out))
     await writeManifest(out)
     await rm(evidenceRoot(), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
     expect(failures).toEqual([])
