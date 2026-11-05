@@ -297,28 +297,42 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    still a page. The lines around a change are quiet, what went is a step quieter than what is there now, and what is
    there now reads in the body's ink. The words that came are underlined in the added role's colour; the words that
    went from a line read once are struck through in the removed role's, and in a line drawn as it was they are
-   underlined in it. Hue lives only in those thin lines and the edges. */
+   underlined in it. Hue lives only in those thin lines and the edges. The lines are a hairline, so a paragraph that
+   changed nearly all through reads as text with its changes under it, not as ruled paper. */
 .changes-diff__rows[data-reading='document'] {
   --changes-added: transparent; --changes-removed: transparent;
-  --changes-under-added: color-mix(in srgb, var(--tt-success) 70%, transparent); --changes-under-removed: color-mix(in srgb, var(--tt-error-text) 70%, transparent);
+  --changes-under-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-under-removed: color-mix(in srgb, var(--tt-error-text) 70%, transparent);
 }
 .changes-diff__rows[data-reading='document'] .changes-word {
   border-radius: 0; background: none; color: var(--tt-text);
-  text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1.5px; text-underline-offset: .28em; text-decoration-skip-ink: none;
+  text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1px; text-underline-offset: .28em; text-decoration-skip-ink: none;
 }
 .changes-diff__rows[data-reading='document'] :is([data-kind='remove'] .changes-word, del.changes-word--edit) { text-decoration-color: var(--changes-under-removed); }
 .changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--tt-text-2); text-decoration-line: line-through; }
+/* A paragraph taken out is struck through, as an editor strikes a passage on a page and as the words that went from a
+   line read once are: a hairline in the removed role's colour at half strength, so the paragraph still reads, and a
+   removal is as plain at a glance as an addition without a wash. The words a removed line changed are struck in the
+   role's full colour. A whole file taken out has only its edge, since every line of it went. */
+.changes-diff__rows[data-reading='document'] { --changes-strike-removed: color-mix(in srgb, var(--tt-error-text) 50%, transparent); }
+.changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] > .changes-line__text {
+  text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); text-decoration-thickness: 1px; text-decoration-skip-ink: none;
+}
+.changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] .changes-word { text-decoration-line: line-through; }
+/* A code chip paints its own box over the line's stroke, so it carries the stroke itself. */
+.changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] .diff-md-code {
+  text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); text-decoration-thickness: 1px; text-decoration-skip-ink: none;
+}
 .changes-diff__rows[data-reading='document'] :is(.changes-line, .changes-split__row)[aria-selected='true'] .changes-word { background: none; }
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'] del.changes-word--edit { color: var(--tt-text-2); }
 /* A picked line's accent wash would sink the muted ink below 4.5:1, so what a picked line keeps reads in the secondary ink. */
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'][data-kind='context'] { color: var(--tt-text-2); }
 /* A paragraph reworked all through reads as it is now: what it keeps a step quieter, the words that came underlined,
-   and a thin upright mark where words went with nothing in their place. Under it, Show earlier wording opens what it
+   and where words went with nothing in their place, a short stroke in the removed role's colour on the underlines'
+   line. It takes no room and stands under the join, never between letters, so it reads as a mark on the text and not
+   as a character in it, as an upright bar did ("(|ADR-0016"). Under the paragraph, Show earlier wording opens what it
    said before, smaller and quieter, the words that went underlined in the removed role's colour. */
-.changes-gone {
-  display: inline-block; width: 2px; height: .9em; margin: 0 .2em; border-radius: var(--tt-radius-mark);
-  background: var(--tt-error-text); text-decoration: none; vertical-align: -.1em;
-}
+.changes-gone { position: relative; display: inline-block; width: 0; height: 0; text-decoration: none; vertical-align: baseline; }
+.changes-gone::after { content: ''; position: absolute; top: .3em; left: -.32em; width: .64em; height: 2px; border-radius: var(--tt-radius-mark); background: var(--tt-error-text); }
 .changes-earlier { display: block; }
 .changes-earlier__toggle {
   display: inline-flex; align-items: center; gap: 3px; height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px; border: 0; border-radius: var(--tt-radius-control);

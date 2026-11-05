@@ -10,6 +10,7 @@ import { EVIDENCE_THREADS, PERMISSION_REQUEST, STREAM_MESSAGE_ID, STREAM_MOMENTS
 import { buildEvidenceRepository, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
 import { DEFAULT_THEME_ID } from '../../src/shared/themes/library'
 import { pageBoundProblems, setAppearance } from './support/designCapture'
+import { paintedContrastSweep } from './support/paintedContrastSweep'
 import { onReleaseTrack } from './support/releaseTrack'
 import { openThreads, toggleTools, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -25,6 +26,8 @@ import { seedWatcherRoom } from './support/watcherRoom'
 const OUT = process.env.SOTTO_REVIEW_EVIDENCE_OUT
 const ONLY = process.env.SOTTO_REVIEW_EVIDENCE_STATES?.split(',').map(name => name.trim()).filter(Boolean)
 const BOXES_FROM = process.env.SOTTO_REVIEW_EVIDENCE_BOXES
+/** Set to 1 to write each image's text contrast as painted beside it, in contrast/, lowest first. */
+const CONTRAST = process.env.SOTTO_REVIEW_EVIDENCE_CONTRAST === '1'
 
 type Mode = 'dark' | 'light'
 type Box = { readonly left: number; readonly top: number; readonly width: number; readonly height: number }
@@ -123,6 +126,10 @@ function captureFor(launched: LaunchedSotto, repository: EvidenceRepository, out
         const file = `${state}-${mode}-${width}.png`
         const image = await page.screenshot({ caret: 'hide' })
         await writeFile(join(out, file), image)
+        if (CONTRAST) {
+          await mkdir(join(out, 'contrast'), { recursive: true })
+          await writeFile(join(out, 'contrast', file.replace(/\.png$/u, '.json')), `${JSON.stringify(await paintedContrastSweep(page, image), null, 1)}\n`)
+        }
         const composer = page.locator('.thread-pane[data-focused] form.thread-prompt, .watcher-room form.thread-prompt').first()
         if (await composer.isVisible().catch(() => false)) {
           const box = composerBox(file, (await composer.boundingBox())!)
