@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { EarlierWording, EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
@@ -790,11 +790,16 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     // A document's line and what it became, read once: one number, the edited sign, and both lines' words in order.
     const before = row.old!, after = row.next!
     const number = after.newLine ?? before.oldLine
-    const paintAfter = decoration?.paint.get(after)
-    return <div className="changes-line" role="row" data-kind="edited" data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
+    const paintBefore = decoration?.paint.get(before), paintAfter = decoration?.paint.get(after)
+    // A line reworked all through reads as it is now, with what it said before under it, shut until asked for.
+    const reworked = decoration?.reworked.has(before) ?? false
+    return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration?.paint.get(before)} paintAfter={paintAfter} /></span>
+      <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
+        <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={reworked ? 'now' : undefined} />
+        {reworked ? <EarlierWording before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} focusable={current} /> : null}
+      </span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {

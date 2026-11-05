@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -215,16 +215,21 @@ describe('decorateDiff', () => {
     expect(decoration.paint.get(lines[4]!)?.source).toBe(true)
   })
 
-  it('stands a reworked paragraph above what it became rather than read it once', () => {
+  it('reads a reworked paragraph once, as it is now, and says it was reworked', () => {
     const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
     const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
     const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
-    expect(wordSegments(before, after)).toBeNull()
+    const segments = wordSegments(before, after)!
+    expect(isReworked(before, after, segments)).toBe(true)
     const decoration = decorateDiff(lines, { reading: 'document' })
-    expect(decoration.inline.size).toBe(0)
-    expect(decoration.paint.get(lines[1]!)?.paired).toBe(true)
-    expect(decoration.paint.get(lines[2]!)?.paired).toBe(true)
-    expect(decoration.paint.get(lines[2]!)?.marks?.length).toBeGreaterThan(0)
+    expect(decoration.inline.get(lines[1]!)).toEqual(segments)
+    expect(decoration.reworked.has(lines[1]!)).toBe(true)
+    expect(decoration.paint.get(lines[1]!)?.paired).toBeUndefined()
+  })
+
+  it('leaves a line edited in a place or two read once with what went struck through', () => {
+    const before = 'Status: an idea. Nothing is scheduled.', after = 'Status: an idea. Five pull requests are scheduled.'
+    expect(isReworked(before, after, wordSegments(before, after)!)).toBe(false)
   })
 
   it("reads a document's edited line once with what it became, and leaves code as two lines", () => {

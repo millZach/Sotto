@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { I18nProvider } from '@lingui/react'
 import { i18n } from '@lingui/core'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -38,6 +38,26 @@ describe('DiffBlock', () => {
     expect(edited.querySelector('del')!.textContent).toBe('Removed: Nothing is')
     expect(edited.querySelector('ins')!.textContent).toBe('Added: Five pull requests are')
     expect(edited.querySelector('.changes-line__number')!.textContent).toBe('4')
+  })
+
+  it('reads a reworked paragraph as it is now, with its earlier wording one press away', () => {
+    const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
+    const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
+    const container = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md')
+    const row = container.querySelector('.changes-line[data-kind="edited"]')!
+    expect(row.getAttribute('data-reworked')).toBe('true')
+    // The words that came show; the words that went wait under the toggle, and nothing is struck through the paragraph.
+    expect(row.querySelector('ins')!.textContent).toBe('Added: store worker runs them between its writes')
+    expect(row.querySelector('del.changes-word--edit')).toBeNull()
+    const toggle = row.querySelector<HTMLButtonElement>('.changes-earlier__toggle')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toBe('Show earlier wording')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toBe('Hide earlier wording')
+    const earlier = row.querySelector('.changes-earlier__text')!
+    expect(earlier.textContent!.replace(/Removed: /gu, '')).toBe(before)
+    expect(earlier.querySelector('del')!.textContent).toBe('Removed: worker thread runs them on a connection of its own')
   })
 
   it('leaves code as the line that went above the line that came', () => {

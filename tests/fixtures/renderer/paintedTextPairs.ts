@@ -59,12 +59,14 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // The words that changed keep a neutral ink on their stronger wash, in code and in documents, and the body ink on a picked line (changes.css).
   ...each('--changes-word-ink-added', [wordAdded, [...wordAdded, hover]], 'added words'),
   ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
-  // A document's edited line read once, and a reworked paragraph above what it became, have no wash of their own: its words' washes sit on the code background, and its sign takes the warning ink.
+  // A document's edited line read once has no wash of its own: in code its words' washes sit on the code background, and its sign takes the warning ink.
   // What such a line keeps reads in the secondary ink, as do the words that went from it, and so does a picked document line's context.
+  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and its earlier wording in the muted ink, or the secondary ink on a picked line.
   ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
   ...each('text-2', [[...context, '--changes-word-removed'], [...context, hover, '--changes-word-removed']], 'removed words in an edited line'),
   ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited or reworked line keeps'),
   ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
+  ...each('text', [context, [...context, hover], [...context, picked]], 'words that came in a document'),
   ...each('warning', [context, [...context, hover]], 'edited line sign'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),

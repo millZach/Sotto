@@ -641,7 +641,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   // The rest of reading a long comparison, and a diff away from the default palette. Controls are found by what they are,
   // since a new control's words only reach a build once the catalogs are extracted.
-  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-no-wrap', 'changes-one-file', 'changes-clay', 'doc-edit-clay'], run: async capture => {
+  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-no-wrap', 'changes-one-file', 'changes-earlier', 'changes-clay', 'doc-edit-clay'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const panel = await toolsTab(page, 'Changes')
@@ -682,6 +682,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(500)
     await capture.shoot('changes-one-file', 'One file at a time, after a press on Next file, with the tree off.')
     await viewChoice(panel, 'one-file', false)
+    // A paragraph reworked all through reads as it is now; its earlier wording opens under it.
+    await wheelToFile(page, panel, 'CONTEXT.md')
+    const earlier = panel.locator('.changes-earlier__toggle').first()
+    await earlier.click()
+    await expect(earlier).toHaveAttribute('aria-expanded', 'true')
+    await page.waitForTimeout(300)
+    await capture.shoot('changes-earlier', 'CONTEXT.md in Changes with the earlier wording of its reworked paragraph, line 338, opened under it.')
+    await earlier.click()
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
     await viewChoice(panel, 'tree', true)
     await wheelToFile(page, panel, 'CONTEXT.md')
