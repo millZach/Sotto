@@ -371,7 +371,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     // Focus holds the control open through the shoot's resize, which a pointer's hover does not survive.
     await page.keyboard.press('Tab')
     await user.locator('.thread-message__copy').focus()
-    await capture.shoot('reading-copy', 'The keyboard on the copy control of a message the user sent, in the bubble\'s bottom-left corner.')
+    const copyShows = 'The keyboard on the copy control of a message the user sent, just under the bubble\'s bottom-left corner.'
+    await capture.shoot('reading-copy', copyShows)
+    for (const size of SMALLER_SIZES) {
+      await resizeContentWindowFor(capture.launched, size[0], size[1])
+      await user.locator('.thread-message__copy').evaluate(element => element.scrollIntoView({ block: 'center' }))
+      await capture.shoot('reading-copy', copyShows, '', { modes: ['dark'], size })
+    }
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
@@ -399,10 +406,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await tell(long.messages)
     await openThread(page, 'Repository review')
     await scrollTranscript(page, 'top-of-turn')
+    // The keyboard on the sent message's copy control, so each theme shows it under the bubble's corner too.
+    await page.keyboard.press('Tab')
+    await transcript(page).locator('.thread-message[data-role="user"]').filter({ hasText: 'What do you think of this repository?' }).first().locator('.thread-message__copy').focus()
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
-    await capture.shoot('reading-clay', 'A finished reply in the Clay theme, to check the reading surface away from the default palette.')
+    await capture.shoot('reading-clay', 'A finished reply in the Clay theme, to check the reading surface away from the default palette, with the keyboard on the copy control of the message the user sent.')
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'glass', lightTheme: 'glass' }))
-    await capture.shoot('reading-glass', 'The same reply on Glass, whose room is painted once and whose cards are translucent, to check the foot of the transcript.')
+    await capture.shoot('reading-glass', 'The same reply on Glass, whose room is painted once and whose cards are translucent, to check the foot of the transcript, with the keyboard on the copy control of the message the user sent.')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
   } },
   { name: 'streaming', covers: ['streaming-1', 'streaming-2', 'streaming-3'], run: async capture => {

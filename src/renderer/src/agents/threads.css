@@ -211,13 +211,16 @@
 .thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-bubble-text); }
 .thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-bubble-text); --rich-strong: var(--tt-bubble-text); }
-/* The bubble's last row says who sent it and when, at its right, level with the copy control's corner at its left, so the
-   room the control keeps under the words is the message's own line rather than an empty band. The words come first. A
-   wake-up or a brief keeps its header on top, where it says whose words these are before they are read. */
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) { display: flex; flex-direction: column; padding-bottom: 6px; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > header { order: 1; justify-content: flex-end; min-height: 28px; margin: 4px 0 0; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__delivery { order: 2; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { padding-bottom: 6px; }
+/* A message the user sent ends at its words, and its copy control shows just under the bubble's bottom-left corner, in
+   the gap the next row already leaves (Zach's pick B, November 5 2026). The gap is the control's and no more, so nothing
+   moves when it shows. The bubble's hover reaches down over the gap, so the pointer can travel to the control. A long
+   thread's rows paint inside their own box, so this one's paint reaches the gap and the control's focus ring. A wake-up
+   or a brief keeps its control inside the corner, and Watcher's conversation keeps its own look. The rows that tuck up
+   under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them. */
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 30px; padding-bottom: 12px; overflow-clip-margin: 36px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 30px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + * { margin-top: 0; }
 /* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */
 .watcher-pane .thread-message header { margin-bottom: 8px; }
 .watcher-pane .thread-message:has(> .thread-message__copy) { margin-bottom: 28px; }
