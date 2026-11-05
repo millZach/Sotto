@@ -819,11 +819,20 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.evaluate(async ({ id, request }) => {
       await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: id, text: request.text, request, status: 'running' })
     }, { id: evidenceThread('permission').id, request: PERMISSION_REQUEST })
-    await openThread(page, 'Measure the store worker')
-    await expect(focusedPane(page).getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
-    await capture.shoot('permission-card', 'A thread waiting on a permission request to run a benchmark, with its Allow, Allow for this session and Deny choices.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.')
-    await capture.shoot('permission-card', 'The same at the minimum window.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.', { modes: ['dark'], size: [820, 560] })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    // The request goes again however the state ends, so the states after it see the waits they always have.
+    try {
+      await openThread(page, 'Measure the store worker')
+      await expect(focusedPane(page).getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
+      await capture.shoot('permission-card', 'A thread waiting on a permission request to run a benchmark, with its Allow, Allow for this session and Deny choices.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.')
+      await capture.shoot('permission-card', 'The same at the minimum window.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.', { modes: ['dark'], size: [820, 560] })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    } finally {
+      const thread = evidenceThread('permission')
+      await page.evaluate(async thread => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread.id, text: '', status: thread.status, messages: thread.messages, ...(thread.activities ? { activities: thread.activities } : {}) })
+      }, { id: thread.id, status: thread.status, messages: [...thread.messages], ...(thread.activities ? { activities: [...thread.activities] } : {}) })
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).locator('.needs-you__entry[data-entry-id="' + thread.id + '"]')).toHaveCount(0)
+    }
   } },
   { name: 'split-panes', covers: [], run: async capture => {
     const { page } = capture
