@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -16,6 +16,12 @@ import { WorkspaceHost } from '../../../../src/main/agents/workspace'
 import { ThreadWorktrees } from '../../../../src/main/agents/threadWorktrees'
 import { FakeProviderHost } from '../../../fixtures/fakeProviderHost'
 import { claudeFixture } from '../../../fixtures/claudeFixture'
+import { createAgentRuntime } from '../../../../src/main/agents/runtime'
+import { desktopWindowClient } from '../../../../src/main/agents/hostService'
+import { E2EAgentHost, e2eAgentReasoner } from '../../../../src/main/e2e/agentEffects'
+import { CouncilService } from '../../../../src/main/council/councilService'
+import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
+import { testCredentials } from '../../../fixtures/testCredentials'
 
 const cleanup: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -25,6 +31,69 @@ const rubric: ClimbSpec['criteria'] = [{ id: 'clarity', name: 'Clarity', rubric:
 const source = { kind: 'artifacts' as const, items: [{ path: 'draft.txt', artifactId: 'draft', content: { kind: 'text' as const, text: 'First draft' } }] }
 const spec: ClimbSpec = { goal: 'Make this explanation clearer', constraints: 'Keep its meaning', source, judges: [seat, seat, seat], chair: seat, criteria: rubric, attempts: 5, modelTurns: 30 }
 const message = (id: string, role: 'user' | 'assistant', text: string): AgentMessage => ({ id, role, text, createdAt: new Date().toISOString() })
+
+it('drives the desktop fixture through proposal, approval, baseline, builder and Stop in the real coordinator', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-climb-desktop-'))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const provider = new E2EAgentHost('council-climb')
+  await provider.initializeWorkingFolders(directory)
+  const runtime = await createAgentRuntime({ directory, host: provider, reasoner: e2eAgentReasoner, councilEnabled: true, watcherEnabled: true,
+    credentials: await testCredentials(directory, { mode: 'unavailable' }), settings: () => DEFAULT_SETTINGS,
+    writingSettings: async () => DEFAULT_SETTINGS, historyEnabled: () => true, openExternal: async () => undefined })
+  cleanup.push(() => runtime.close())
+  const council = new CouncilService({ directory, control: runtime.agentControl, host: runtime.agentHost, historyEnabled: () => true,
+    stageDeadline: () => 10, bundles: { snapshotOf: async () => { throw new Error('This Climb has no Git repository') } } })
+  cleanup.push(() => council.close())
+  await council.recover()
+  await runtime.hostService.command({ type: 'configure', patch: { enabled: true } }, desktopWindowClient())
+  await runtime.hostService.command({ type: 'connect' }, desktopWindowClient())
+  const snapshot = runtime.agentControl.watcherSnapshot(), origin = snapshot.threads.find(thread => thread.id === 'workshop')!
+  const folder = snapshot.projects.find(project => project.id === origin.projectId)!.path
+  await writeFile(join(folder, 'draft.txt'), 'First draft')
+  const choice = { modelId: 'claude:test', reasoningEffort: null }
+  const config: ClimbSpec = { ...spec, source: { kind: 'folder', root: folder, paths: [], exclude: [] }, judges: [choice, choice, choice], chair: choice, attempts: null, modelTurns: null }
+  const preview = await council.climb.command({ type: 'preview', source: config.source })
+  expect(preview.ok, preview.error).toBe(true)
+  expect(await council.climb.command({ type: 'start', origin: origin.id, spec: config, preview: preview.preview!.fingerprint, context: '' })).toMatchObject({ ok: true })
+  const record = () => council.climb.records[0]!
+  const next = () => vi.waitFor(() => {
+    const turn = record().turns.find(turn => !turn.outcome)
+    expect(turn?.delivery, record().reason).toBe('accepted')
+    return turn!
+  })
+  const answer = async (text: string) => {
+    const turn = await next()
+    provider.event({ type: 'ready', threadId: turn.thread, text })
+    await vi.waitFor(() => expect(turn.outcome, record().reason).toBe('answered'))
+    return turn
+  }
+  await answer(block({ constraints: config.constraints, criteria: config.criteria }))
+  await vi.waitFor(() => expect(record().phase).toBe('approval'))
+  expect(record().evidence).toEqual([])
+  expect(record().turns).toHaveLength(1)
+  expect(await council.climb.command({ type: 'approve', climb: record().id, spec: record().spec! })).toMatchObject({ ok: true })
+  for (let index = 0; index < 3; index++) {
+    expect((await next()).stage).toBe('judge')
+    await answer(block({ scores: [{ criterion: 'clarity', exhibit: 'A', score: 2, reason: 'Unclear', citations: [{ path: 'draft.txt', start: 1, end: 1, quote: 'First draft' }] }] }))
+  }
+  expect((await next()).stage).toBe('chair')
+  await answer(block({ summary: 'Clarify the explanation.' }))
+  const builder = await next()
+  expect(builder).toMatchObject({ stage: 'builder', thread: origin.id })
+  await writeFile(join(folder, 'draft.txt'), 'Clearer draft')
+  await answer('Improved the explanation.')
+  const judge = await next()
+  expect(judge.stage).toBe('judge')
+  const judges = record().turns.filter(turn => turn.stage !== 'builder')
+  expect(new Set(judges.map(turn => turn.thread)).size).toBe(judges.length)
+  expect(record().rounds).toHaveLength(2)
+  expect(await council.climb.command({ type: 'stop', climb: record().id })).toMatchObject({ ok: true })
+  expect(record().phase).toBe('stopped')
+  expect((await provider.snapshot()).threads.find(thread => thread.id === judge.thread)?.status).toBe('idle')
+  const destination = join(directory, 'export')
+  expect(await council.climb.command({ type: 'export', climb: record().id, round: 1, destination })).toMatchObject({ ok: true })
+  expect(await readFile(join(destination, 'files', 'draft.txt'), 'utf8')).toBe('Clearer draft')
+})
 
 async function fixture(keep = true) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-climb-'))

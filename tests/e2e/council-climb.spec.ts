@@ -11,7 +11,7 @@ test('Climb keeps its setup in the Council drawer, previews a non-Git folder and
   test.setTimeout(120_000)
   const previous = process.env.SOTTO_OWL_FEATURES
   process.env.SOTTO_OWL_FEATURES = 'council=1'
-  const launched = await launchSotto('composer-speed').finally(() => {
+  const launched = await launchSotto('council-climb').finally(() => {
     if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous
   })
   const { page } = launched

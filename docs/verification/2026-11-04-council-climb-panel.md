@@ -189,3 +189,56 @@ Only the fixture and this evidence note change in this repair. No desktop app,
 Playwright test or full suite was run locally. The existing desktop journey is
 the regression check on GitHub; no production behavior or allowance is changed.
 `npm run typecheck` and `npm run lint` passed on the repaired tree.
+
+## Failed-run receipt for 42a747f
+
+[Run 42043995372, attempt 1](https://github.com/millZach/Sotto/actions/runs/42043995372/attempts/1)
+completed with two underlying failures at head
+`42a747f6746c32476e3bdff1927d7e5465aefc23`, testing merge
+`f66bb5874c6a17aed583817420d659288b082fc1` with base
+`45c799471f460bc1da1f7a609783aaf33cafdd35`. Both failed jobs' checkout logs name
+that merge commit.
+
+| Job | Failing assertion or diagnostic | Classification and evidence | Action |
+| --- | --- | --- | --- |
+| [Checks and desktop (Windows), 127302201826](https://github.com/millZach/Sotto/actions/runs/42043995372/job/127302201826) | `council-climb.spec.ts:86`, “Climb keeps its setup in the Council drawer, previews a non-Git folder and requires approval”: `Chair’s proposal` must be visible. It times out after 5000 ms with no matching heading. | **Own-diff.** The new journey uses the `composer-speed` provider fixture. It accepts the prompt and appends an assistant reply, but reports neither a turn identity nor reply correlation. The real coordinator therefore cannot attribute the reply to the setup turn, and correctly remains in `Preparing proposal`. A windowless regression using that fixture and the real coordinator reproduced the unanswered turn. | Give Climb a dedicated provider fixture that reports the accepted message identity, correlated reply and completed/interrupted turn. Preserve the coordinator guard and every desktop assertion. |
+| [Tests (Windows, 5/6), 127302202250](https://github.com/millZach/Sotto/actions/runs/42043995372/job/127302202250) | `threadWorktreeSubmodules.test.ts`, “independent working-copy allocation > requires acknowledgement of retained submodule history (deinitialized-branch)”: `Git took too long.` at `threadWorktrees.ts:113:32`, serialized `{ code: 1, timedOut: true }`; test duration 31175 ms. | **Unknown.** This is the child Git command's 30-second timeout, not the test deadline. The test, Git implementation, fixture dependencies, package lockfile, runner workflow and shard configuration are unchanged by this PR. The log does not identify which Git command timed out. No matching main failure or qualifying later pass establishes a base failure or flake. | Keep the Git timeout and assertions unchanged; no rerun. Codex in #2198 owns further diagnosis if the next corrective-push run repeats it. |
+
+[Desktop result, 127308366915](https://github.com/millZach/Sotto/actions/runs/42043995372/job/127308366915)
+and [Gates (Windows), 127309082362](https://github.com/millZach/Sotto/actions/runs/42043995372/job/127309082362)
+are downstream summaries of these failures, with no additional failing test.
+The other five Windows shards and Package result passed.
+
+The exact submodule test has a named pass in the earlier completed
+[Windows 5/6 job 127293668807](https://github.com/millZach/Sotto/actions/runs/42041544734/job/127293668807)
+at `f203eec` (4794 ms). That is not qualifying flake evidence: it predates the
+failure, and the Windows image changed from `20261030.294.1` to
+`20261103.298.1`. Both use Node 24.22.1 and the same two-worker shard command.
+Current main is still `45c7994`; it has no repair to merge. Its completed run
+fails a different `threadMoves` assertion, which does not establish that this
+submodule timeout is pre-existing. No failure is classified as a confirmed
+flake or a proven base-branch failure, and no failed job was rerun.
+
+The repair was checked beyond the first stopped assertion. A single headless
+unit test uses the desktop provider fixture and the real main-process
+coordinator to drive the proposal, explicit approval, all three baseline
+judges, the chair, the origin Builder, a new candidate and fresh judge, Stop,
+and export to a new folder. It checks that no evidence or assessment begins
+before approval and that judge thread identities are not reused. The desktop
+journey's remaining approval, judging, Stop and empty-terminal assertions were
+also checked against the renderer and fixture; none were removed or relaxed.
+
+`tests/unit/main/council/climb.test.ts` passed all 10 tests using Node 24.22.1,
+including the new real-coordinator regression and the existing mixed-provider
+and refusal coverage. Windowless `npm run typecheck` and `npm run lint` passed.
+No Sotto app, Playwright journey or full test suite was run locally. The fixture
+change applies only to the dedicated Climb scenario; existing scenarios retain
+their behavior.
+
+All twelve setup and limits images in
+[artifact 13423933537](https://github.com/millZach/Sotto/actions/runs/42043995372/artifacts/13423933537)
+were inspected at 1600×1000, 1280×800 and 820×560 in both themes. The controls
+fit their scroll area and the limits show No limit without costs. This run
+passed focus/Escape, form retention and geometry assertions before stopping
+at the proposal. The approval image and final `geometry.json` remain pending
+in the next CI run; visual verification is not complete yet.
