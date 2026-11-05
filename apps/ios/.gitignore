@@ -8,3 +8,4 @@ xcuserdata/
 ExportOptions.local.plist
 .build-ui/
 .build-bench/
+__pycache__/
