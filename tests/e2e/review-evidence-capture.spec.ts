@@ -292,7 +292,7 @@ async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment
   await refreshBranch(page, 'Thread store on a worker')
   await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
   const shows: Partial<Record<PullRequestMoment, string | RegExp>> = { ready: 'Approved by mira', 'checks-failed': /fail/iu, 'blocked-many': 'Conflicts with main', 'auto-merge': /running/iu, merged: 'Approved by mira',
-    'checks-running': /running/iu, 'changes-requested': 'ola asked for changes', 'no-review-needed': 'No review required', closed: '2 commits behind main' }
+    'checks-running': /running/iu, 'changes-requested': 'ola asked for changes', 'no-review-needed': 'No review required', closed: 'Behind main' }
   await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText(shows[moment]!, { timeout: 30_000 })
 }
 

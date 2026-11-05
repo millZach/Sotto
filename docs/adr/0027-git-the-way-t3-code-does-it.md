@@ -239,3 +239,9 @@ Zach has not been asked about this yet. It came from the design pass of November
 - **Changes has one View menu.** Its layout, Wrap long lines, Hide whitespace changes, One file at a time and File tree are in a menu named View beside **Collapse all**, each ticked while it holds, where they were seven unnamed toggles.
 
 The lines above that say the checklist and Merge do not change are about what the Checks and Changed files folds cost, and they still hold for those folds. What changed in the checklist and Merge is this note's.
+
+## Amendment, November 5, 2026: each checklist line names how it stands
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/checklist-labels/`, kept outside the repository, and picked B.
+
+Each line of the merge checklist now names its state rather than its requirement: "2 checks failed", "1 check running", "Checks passed"; "Needs a review", "Changes requested", "No review required", "Review approved"; "Behind main", "Up to date with main"; "Conflicts with main", "No conflicts"; "Still a draft", "Ready for review". The checks line still names the first failing check in its reason and carries **Open check**, a cancelled check counts among the failed as the Checks fold counts it, and the draft line's press still says **Ready for review**. This replaces the November 4 amendment's line that **Checks passing** still names the first failing check; the rest of that amendment stands.
