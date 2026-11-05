@@ -4,8 +4,8 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
-  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS,
+  activityLabel, activityLineCounts, changesLineCounts, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
+  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
