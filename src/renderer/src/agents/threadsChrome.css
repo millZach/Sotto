@@ -13,6 +13,13 @@
 /* How much of the pane header's right end the controls take. The header reads this to pad itself, so the
    thread title never runs under them; macOS paints its own controls beside the sidebar and needs no inset. */
 .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(116px + var(--main-freeze-room, 0px)); }
+/* In a smaller window the keys are a little narrower, and the room they give goes to the thread's name. Up to 1100px a lone
+   pane is narrow enough that a long name is still short of its cap (ADR-0182), so it takes that room; in a wider window the
+   capped name would leave it empty beside the buttons. */
+@media (max-width: 1100px) {
+  .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(100px + var(--main-freeze-room, 0px)); }
+  .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 30px; }
+}
 /* With the tools panel open it, not the last pane, meets the window's corner: the rail's top stays empty under
    the controls, and each surface's line of chrome keeps the rest of their room plus a 20px gap, so the surface's
    own last action never reads as one of the window's buttons. The pane it displaced takes its own back. An
