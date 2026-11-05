@@ -71,14 +71,17 @@
   .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
 }
 /* Below this the branch's name would be a letter or two, so it leaves whole and stays in the button's tooltip. */
-@container pane-where (width < 150px) { .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) > span { display: none; } }
+@container pane-where (width < 200px) { .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) > span { display: none; } }
 @container pane-where (width < 120px) {
   .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .thread-workspace__branches .branch-toolbar__picker:not(:has([aria-expanded='true'])) { display: none; }
 }
-@container pane-where (width < 56px) {
-  .thread-workspace__branches .branch-toolbar__pr, .thread-workspace__crumb:not(:has(.thread-workspace__tag)) { display: none; }
+/* The number is the last to leave, so it gives up its padding before it goes. Under this width it would be cut, so it goes whole. */
+@container pane-where (width < 90px) {
+  .thread-workspace__branches .branch-toolbar__pr { gap: 3px; padding-inline: 2px; }
+  .thread-workspace__crumb:not(:has(.thread-workspace__tag)) { display: none; }
 }
+@container pane-where (width < 50px) { .thread-workspace__branches .branch-toolbar__pr { display: none; } }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
@@ -100,6 +103,15 @@
 @container thread-pane (min-width: 1100px) {
   .pane-action:has(> .pane-action__word) { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 0 9px 0 7px; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); }
   .pane-action__word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}
+/* In a narrow pane every pixel beside the buttons is the name's and then the pull request number's, so the row tightens and
+   the name takes the sidebar row's size. The buttons stay in their order and stay 26 by 30 to press. */
+@container thread-pane (width < 720px) {
+  .thread-workspace__head { gap: 2px; }
+  .thread-workspace__actions > .pane-action, .thread-workspace__actions > .pane-menu > .pane-action { width: 26px; }
+  .thread-workspace__actions .git-action .git-action__more > .pane-action { width: 20px; }
+  .thread-workspace__title { gap: 6px; }
+  .thread-workspace__head h2 { font-size: var(--tt-type-body); letter-spacing: -.1px; }
 }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */

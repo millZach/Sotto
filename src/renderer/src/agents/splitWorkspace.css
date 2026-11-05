@@ -19,6 +19,8 @@
 .threads-view .thread-pane { --threads-pane-inset: 0px; }
 .threads-view .thread-pane[data-under-controls] { --threads-pane-inset: var(--threads-winctl-inset, 0px); }
 .threads-view .thread-pane[data-under-controls] .thread-workspace__head { padding-right: calc(24px + var(--threads-pane-inset, 0px)); }
+/* The gap gives way in a narrow pane, where the rule in the window's corner still tells the two groups of buttons apart. */
+@container thread-pane (width < 720px) { .threads-view .thread-pane[data-under-controls] .thread-workspace__head { padding-right: calc(12px + var(--threads-pane-inset, 0px)); } }
 
 /* In a split every control is the header's own, close last (ADR-0163), so a pane away from the window's corner keeps the
    gap from the divider that its close always had. */
