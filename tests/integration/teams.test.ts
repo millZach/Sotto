@@ -305,6 +305,20 @@ describe('checking both ways (ADR-0193)', () => {
     expect(reachOf(drake, 'zach')).toMatchObject({ toThem: true, fromThem: true })
   })
 
+  it('shares one check between a press and the check after linking, so an older answer cannot land over a newer one', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await zach.service.command({ type: 'make-code', name: 'zach' })
+    expect(await drake.service.command({ type: 'link', code: zach.service.get().code!.text, name: 'drake' })).toEqual({ status: 'ok' })
+    // Check again pressed while the check right after linking is still on its way.
+    const linkId = drake.service.get().links[0]!.id
+    expect(await Promise.all([drake.service.command({ type: 'check-link', linkId }), drake.service.command({ type: 'check-link', linkId })])).toEqual([{ status: 'ok' }, { status: 'ok' }])
+    expect(reachOf(drake, 'zach')).toMatchObject({ toThem: true, fromThem: true })
+    expect(net.sent.filter(item => item.from === 'drake' && JSON.parse(item.body).command === 'check')).toHaveLength(1)
+    // Once it has come back, a press checks again.
+    await drake.service.command({ type: 'check-link', linkId })
+    expect(net.sent.filter(item => item.from === 'drake' && JSON.parse(item.body).command === 'check')).toHaveLength(2)
+  })
+
   it('says when this computer cannot reach the teammate\'s, and keeps nothing to send', async () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
     await linked(net, zach, drake)

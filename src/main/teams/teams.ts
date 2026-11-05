@@ -112,6 +112,8 @@ export class TeamService {
   private readonly recentDeskReads = new Map<string, readonly number[]>()
   /** When each link last checked this computer, for the cap (ADR-0193). */
   private readonly recentChecks = new Map<string, readonly number[]>()
+  /** The check each link has on its way, which a second press shares, so an older answer never lands over a newer one. */
+  private readonly checking = new Map<string, Promise<TeamsCommandResult>>()
   /** This computer's own Tailscale as setup's steps last read it. */
   private setup: TeamsSetup | null = null
   /** This computer's tailnet name, the last time Tailscale gave it, to tell a teammate on another tailnet. */
@@ -546,8 +548,18 @@ export class TeamService {
     catch { return false }
   }
 
-  /** **Check again**, and the check right after linking: one press, one check each way. */
-  private async checkLink(linkId: string): Promise<TeamsCommandResult> {
+  /**
+   * **Check again**, and the check right after linking: one press, one check each way. A press while a check of the same
+   * link is on its way shares that check rather than racing it to write what was found.
+   */
+  private checkLink(linkId: string): Promise<TeamsCommandResult> {
+    const held = this.checking.get(linkId)
+    if (held) return held
+    const check = this.checkLinkNow(linkId).finally(() => { this.checking.delete(linkId) })
+    this.checking.set(linkId, check)
+    return check
+  }
+  private async checkLinkNow(linkId: string): Promise<TeamsCommandResult> {
     const link = this.linkById(linkId)
     if (!link) return { status: 'refused', message: t`That link is gone.` }
     const name = link.name
