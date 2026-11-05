@@ -330,7 +330,9 @@ describe('Changes as T3’s diff', () => {
     expect(review).not.toHaveAttribute('data-tree-over')
     expect(allFiles).toHaveFocus()
     await user.click(allFiles)
-    await user.click(within(panel()).getByRole('option', { name: 'app.ts, Modified, in src/' }))
+    // Each file in the tree says how much it changed, the side that did alone.
+    expect(within(panel()).getByRole('option', { name: 'new.md, Untracked, 1 added, 0 removed, in docs/' }).querySelector('.changes-tree__counts')).toHaveTextContent(/^\+1$/u)
+    await user.click(within(panel()).getByRole('option', { name: 'app.ts, Modified, 1 added, 1 removed, in src/' }))
     expect(review).not.toHaveAttribute('data-tree-over')
     await user.click(allFiles)
     within(panel()).getByRole('button', { name: 'Refresh diff' }).focus()
@@ -399,7 +401,7 @@ describe('Changes as T3’s diff', () => {
 
     await pressView(user, 'File tree')
     const tree = within(panel()).getByRole('listbox', { name: 'Files in this comparison' })
-    expect(within(tree).getByRole('option', { name: 'app.ts, Renamed, in src/' })).toBeInTheDocument()
+    expect(within(tree).getByRole('option', { name: 'app.ts, Renamed, 4 added, 3 removed, in src/' })).toHaveTextContent('+4 −3')
   })
 
   it('compares the branch against the automatic base or one picked from Branch and Remote', async () => {
