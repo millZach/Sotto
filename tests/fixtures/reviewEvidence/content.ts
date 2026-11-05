@@ -309,15 +309,34 @@ const streamBase = (): Turn => new Turn('stream-1', 'stream-u1', 'running', unde
   .command('stream-c2', 'sed -n 1190,1240p src/main/agents/claude.ts', "      const request: AgentRequest = {\n        id: requestId,\n        kind: 'permission', text, options: [],\n…", 45).described('Read the permission request builder')
 
 /**
+ * Claude's todo list for the trace, as its TodoWrite sends it once the first files are read: the items as written, the one
+ * in progress with its activeForm. `writing` is the second TodoWrite, sent before the reply, with the reading done.
+ */
+const streamPlan = (writing: boolean): NonNullable<Activity['steps']> => [
+  { text: 'Find where the Claude adapter builds a permission request', status: 'completed' },
+  { text: 'Read the request policy that decides whether to ask', status: 'completed' },
+  writing
+    ? { text: 'Follow the request through AgentControl\'s snapshot handler', status: 'completed' }
+    : { text: 'Follow the request through AgentControl\'s snapshot handler', status: 'running', active: 'Following the request through AgentControl\'s snapshot handler' },
+  writing
+    ? { text: 'Write up the path and which parts could leave AgentControl', status: 'running', active: 'Writing up the path and which parts could leave AgentControl' }
+    : { text: 'Write up the path and which parts could leave AgentControl', status: 'pending' },
+]
+
+/**
  * The turn's steps at each moment: it reads, then writes. A provider ends a step before the words after it, so every step
- * comes before the reply being written, as Claude Code sends them; a step after the reply would mean it was done.
+ * comes before the reply being written, as Claude Code sends them; a step after the reply would mean it was done. Before the
+ * first word there is no plan yet, so streaming-1 shows the line on its own; once the first files are read Claude writes its
+ * todo list, and updates it before it writes the reply, so the reply streams under the plan's checklist.
  */
 export function streamActivities(moment: keyof typeof STREAM_MOMENTS): readonly Activity[] {
   const turn = streamBase()
   if (moment === 'first') return turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n…', 0, 'running').described('Read the request policy, which decides whether to ask').records
   return turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n  answer(thread: AgentThread, request: AgentRequest, answer: RequestAnswer): AgentHostResult {\n…', 55).described('Read the request policy, which decides whether to ask')
+    .plan('stream-p1', 'Plan', streamPlan(false), 'completed')
     .command('stream-c4', 'rg -n "onHostSnapshot" src/main/agents/control.ts', '2210:  private onHostSnapshot(snapshot: AgentHostSnapshot): void {', 50).described('Find where AgentControl takes a host snapshot')
-    .command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n    for (const thread of snapshot.threads) {\n…', 48).described('Read the snapshot handler').records
+    .command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n    for (const thread of snapshot.threads) {\n…', 48).described('Read the snapshot handler')
+    .plan('stream-p2', 'Plan', streamPlan(true), 'completed').records
 }
 
 const STREAM: EvidenceThread = {

@@ -512,10 +512,10 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
     await capture.shoot('streaming-1', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'second')
-    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
+    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list, under the plan Claude sent, three of four done; the transcript follows the end.', differs)
     await capture.shoot('streaming-2', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'third')
-    await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
+    await capture.shoot('streaming-3', 'The same turn further on, under its plan, its reply cut off inside the code block as it arrives.', differs)
     await capture.shoot('streaming-3', 'The same at the minimum window.', differs, { size: [820, 560] })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
@@ -986,53 +986,56 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }, { bump: bump.id, rows: rows.id, translate: translate.id, bumpAt: asked(26), rowsAt: asked(4) })
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     const card = sidebar.locator('.needs-you')
-    await expect(card.locator('.needs-you__entry')).toHaveCount(5)
-    await expect(card).toContainText('longest wait 26 min')
-    await openThread(page, 'Repository review')
-    await capture.shoot('needs-you-five', 'Five threads wait: two approvals and a question lead, each with Answer, and two failed turns rest under them in muted words.')
-    await capture.shoot('needs-you-five', 'The same at a narrower window.', '', { modes: ['dark'], size: [1280, 800] })
-    // The pointer on a failed turn brings its Dismiss and Show why, and on the heading Dismiss 2 failed.
-    const failed = card.locator('.needs-you__entry[data-rest]').first()
-    await capture.shoot('needs-you-five-hover', 'The pointer on a failed turn in Needs you, with its Dismiss and Show why.', '', { modes: ['dark', 'light'], before: async () => { await failed.hover({ position: { x: 40, y: 10 } }) } })
-    const keys = async (): Promise<void> => {
-      await page.keyboard.press('Tab')
-      await card.getByRole('button', { name: /^Dismiss Needs attention on 2 threads$/u }).focus()
+    // The waits go again however the state ends, so a state that stops part-way still leaves the next one the sidebar it always has.
+    try {
+      await expect(card.locator('.needs-you__entry')).toHaveCount(5)
+      await expect(card).toContainText('longest wait 26 min')
+      await openThread(page, 'Repository review')
+      await capture.shoot('needs-you-five', 'Five threads wait: two approvals and a question lead, each with Answer, and two failed turns rest under them in muted words.')
+      await capture.shoot('needs-you-five', 'The same at a narrower window.', '', { modes: ['dark'], size: [1280, 800] })
+      // The pointer on a failed turn brings its Dismiss and Show why, and on the heading Dismiss 2 failed.
+      const failed = card.locator('.needs-you__entry[data-rest]').first()
+      await capture.shoot('needs-you-five-hover', 'The pointer on a failed turn in Needs you, with its Dismiss and Show why.', '', { modes: ['dark', 'light'], before: async () => { await failed.hover({ position: { x: 40, y: 10 } }) } })
+      const keys = async (): Promise<void> => {
+        await page.keyboard.press('Tab')
+        await card.getByRole('button', { name: /^Dismiss Needs attention on 2 threads$/u }).focus()
+      }
+      await capture.shoot('needs-you-five-keys', 'The keyboard on Dismiss 2 failed, which takes the longest wait\'s place in the heading.', '', { modes: ['dark'], before: keys })
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+      await setAppearance(page, { appearance: 'dark', lightTheme: 'glass', darkTheme: 'glass' }, 'dark')
+      await capture.shoot('needs-you-five-glass', 'The five waiting threads on Glass.', '', { modes: ['dark', 'light'] })
+      await setAppearance(page, { appearance: 'dark', lightTheme: 'citrine', darkTheme: 'citrine' }, 'dark')
+      await capture.shoot('needs-you-five-citrine', 'The five waiting threads on Citrine.', '', { modes: ['dark', 'light'] })
+      await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+      // The rail at the minimum window: a tray for each project's waiting and moving threads, and the resting ones at the foot.
+      await openThread(page, 'Split AgentControl')
+      await capture.shoot('sidebar-rail-five', 'The collapsed rail at the minimum window with five threads waiting: provider marks, a tray for each project under its name.', '', { modes: ['dark', 'light'], size: [820, 560] })
+      for (const [theme, state] of [['glass', 'sidebar-rail-five-glass'], ['graphite', 'sidebar-rail-five-graphite']] as const) {
+        await setAppearance(page, { appearance: 'dark', lightTheme: theme, darkTheme: theme }, 'dark')
+        await capture.shoot(state, `The same rail on ${theme === 'glass' ? 'Glass' : 'Graphite'}.`, '', { modes: ['dark', 'light'], size: [820, 560] })
+      }
+      await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+      const railFocus = async (): Promise<void> => {
+        await page.keyboard.press('Tab')
+        await sidebar.locator('.thread-nav__rail-project').nth(1).locator('.thread-nav__rail-thread').first().focus()
+        await expect(page.locator('.focus-name')).toBeVisible()
+      }
+      await capture.shoot('sidebar-rail-five-focus', 'The keyboard on a tile in the second project\'s tray, its thread, project and status named beside the rail.', '', { modes: ['dark', 'light'], size: [820, 560], before: railFocus })
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+      const over = async (): Promise<void> => {
+        if (await page.locator('aside.thread-nav[data-over]').count()) return
+        await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+        await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+      }
+      await capture.shoot('needs-you-five-over', 'The whole sidebar over the thread at the minimum window, with the five waiting threads in Needs you.', '', { size: [820, 560], before: over })
+      await page.keyboard.press('Escape')
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    } finally {
+      await page.evaluate(async threads => {
+        for (const thread of threads) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread.id, text: '', status: 'idle', messages: thread.messages })
+      }, [bump, rows, translate].map(thread => ({ id: thread.id, messages: [...thread.messages] })))
+      await expect(card.locator('.needs-you__entry')).toHaveCount(2)
     }
-    await capture.shoot('needs-you-five-keys', 'The keyboard on Dismiss 2 failed, which takes the longest wait\'s place in the heading.', '', { modes: ['dark'], before: keys })
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-    await setAppearance(page, { appearance: 'dark', lightTheme: 'glass', darkTheme: 'glass' }, 'dark')
-    await capture.shoot('needs-you-five-glass', 'The five waiting threads on Glass.', '', { modes: ['dark', 'light'] })
-    await setAppearance(page, { appearance: 'dark', lightTheme: 'citrine', darkTheme: 'citrine' }, 'dark')
-    await capture.shoot('needs-you-five-citrine', 'The five waiting threads on Citrine.', '', { modes: ['dark', 'light'] })
-    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
-    // The rail at the minimum window: a tray for each project's waiting and moving threads, and the resting ones at the foot.
-    await openThread(page, 'Split AgentControl')
-    await capture.shoot('sidebar-rail-five', 'The collapsed rail at the minimum window with five threads waiting: provider marks, a tray for each project under its name.', '', { modes: ['dark', 'light'], size: [820, 560] })
-    for (const [theme, state] of [['glass', 'sidebar-rail-five-glass'], ['graphite', 'sidebar-rail-five-graphite']] as const) {
-      await setAppearance(page, { appearance: 'dark', lightTheme: theme, darkTheme: theme }, 'dark')
-      await capture.shoot(state, `The same rail on ${theme === 'glass' ? 'Glass' : 'Graphite'}.`, '', { modes: ['dark', 'light'], size: [820, 560] })
-    }
-    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
-    const railFocus = async (): Promise<void> => {
-      await page.keyboard.press('Tab')
-      await sidebar.locator('.thread-nav__rail-project').nth(1).locator('.thread-nav__rail-thread').first().focus()
-      await expect(page.locator('.focus-name')).toBeVisible()
-    }
-    await capture.shoot('sidebar-rail-five-focus', 'The keyboard on a tile in the second project\'s tray, its thread, project and status named beside the rail.', '', { modes: ['dark', 'light'], size: [820, 560], before: railFocus })
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-    const over = async (): Promise<void> => {
-      if (await page.locator('aside.thread-nav[data-over]').count()) return
-      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
-      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
-    }
-    await capture.shoot('needs-you-five-over', 'The whole sidebar over the thread at the minimum window, with the five waiting threads in Needs you.', '', { size: [820, 560], before: over })
-    await page.keyboard.press('Escape')
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    // The three waits are taken away again, so the states after this one see the sidebar they always have.
-    await page.evaluate(async threads => {
-      for (const thread of threads) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread.id, text: '', status: 'idle', messages: thread.messages })
-    }, [bump, rows, translate].map(thread => ({ id: thread.id, messages: [...thread.messages] })))
-    await expect(card.locator('.needs-you__entry')).toHaveCount(2)
   } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
   { name: 'shell-check', covers: [], run: async capture => {
