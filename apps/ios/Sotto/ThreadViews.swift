@@ -3613,8 +3613,8 @@ struct SheetBackdrop: View {
 /// The thread page's first use, paid once a second after launch rather than by the first thread opened: a short made-up
 /// thread, read from wire bytes, laid out hidden for a moment and let go. The page's view types, its text views, its date
 /// reader and its decoder are then ready. Opening a long thread took about a fifth less time with it, for about 0.6 s of
-/// work after launch (#1702). It lays out in a turn of the run loop that isn't following a finger or a glide, so a scroll
-/// already under way keeps its frames.
+/// work after launch (#1702). It waits while a finger drags or a list glides, so a scroll already under way keeps its
+/// frames; one that starts in the frame its rows are laid out can still meet them.
 struct ThreadPageWarmUp: View {
     @MainActor private static var done = false
     @State private var detail: ThreadDetail?
@@ -3629,7 +3629,7 @@ struct ThreadPageWarmUp: View {
                 let data = await Task.detached(priority: .utility) { BenchWire.longDetailFrame(turns: 3, now: Date()) }.value
                 guard case .detail(_, let value)? = try? await Wire.readFrame(data), !Task.isCancelled else { return }
                 // The rows go in during a turn of the main run loop in its default mode, which it leaves while a finger
-                // drags or a list glides, so they are laid out in that turn rather than in a scroll's.
+                // drags or a list glides, so they aren't set while a scroll is under way.
                 await withCheckedContinuation { (laid: CheckedContinuation<Void, Never>) in
                     CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
                         MainActor.assumeIsolated { detail = value }

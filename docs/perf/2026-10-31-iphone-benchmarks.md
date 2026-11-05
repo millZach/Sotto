@@ -319,8 +319,8 @@ each round's journey set against the reference's in the same round:
 | Launch's longest frame, median | 1,313 | 1,315 | 1,194 | 1,265 | ms |
 
 In the first run the warm-up alone opened the thread in 2,188 ms against the reference's 2,557, faster in 9 of 12
-rounds, for 596 ms more launch CPU. Neither the launch's longest frame nor the time to the first list rose in either
-run. In the second run no journey with the new watch drew the held list in the stream, against 8 of the other
+rounds, for 596 ms more launch CPU. The launch's longest frame and the time to the first list stayed within a few
+milliseconds of the reference or below it in both runs. In the second run no journey with the new watch drew the held list in the stream, against 8 of the other
 candidates' 36. The list still draws in about one open in four, in every build: `ThreadsView` runs about four times
 while the thread pushes over it, which is the navigation, not the model. `stream.worst_per_chunk.body.ThreadsView` has a
 budget of zero. The app's own body still runs on every update; that is #2120's next lead.
