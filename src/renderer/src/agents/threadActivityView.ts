@@ -403,6 +403,10 @@ export interface WorkingNow {
   readonly detail: string
   /** The detail is a command, set in the code face. */
   readonly code: boolean
+  /** The detail is the provider's own sentence, cut only between words. */
+  readonly prose: boolean
+  /** What kind of step the detail names, so it carries the same mark as its row in the opened steps; a reply being written is `reply`. */
+  readonly step?: AgentActivity['kind'] | 'reply'
   /** All of it as one sentence for assistive tech, with the command even when the line leaves it to the opened steps. */
   readonly spoken: string
 }
@@ -454,7 +458,7 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
     const waiting = waitingOn === 'permission'
       ? t({ message: 'Waiting for your permission', comment: 'The working line while a permission request waits on the user, above its card.' })
       : t({ message: 'Waiting for your answer', comment: 'The working line while a question waits on the user, above its card.' })
-    return { words: waiting, detail: '', code: false, spoken: waiting }
+    return { words: waiting, detail: '', code: false, prose: false, spoken: waiting }
   }
   const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
   const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
@@ -463,14 +467,16 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   const described = running ? stepDescription(running) : ''
   const planned = planNow(steps)
   const purpose = planned || described || (running ? reasoningNow(steps) : '')
-  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing }
+  if (!purpose) return { words: doing, detail: '', code: false, prose: false, spoken: doing }
+  const step = running?.kind ?? 'reply'
+  // A command sits beside the words as itself, in the code face: its mark already says it runs.
+  const command = running?.kind === 'command' && running.command ? isolated(innerCommand(running.command)) : ''
   if (purpose === described && !planned) {
     // A described command leads with its description, and the command itself sits beside it.
-    const command = running?.command ? isolated(innerCommand(running.command)) : ''
-    return { words: described, detail: command || doing, code: command !== '', spoken: [described, doing].join(', ') }
+    return { words: described, detail: command || doing, code: command !== '', prose: false, step, spoken: [described, doing].join(', ') }
   }
-  const detail = described || doing
-  return { words: purpose, detail, code: false, spoken: [purpose, detail, described ? doing : ''].filter(Boolean).join(', ') }
+  const detail = described || command || doing
+  return { words: purpose, detail, code: !described && command !== '', prose: described !== '', step, spoken: [purpose, described, doing].filter(Boolean).join(', ') }
 }
 
 /** The plan as it stands: the newest plan record of a turn that has steps. */

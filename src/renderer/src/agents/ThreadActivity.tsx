@@ -1,6 +1,6 @@
 import React, { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MousePointerClick,
+  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MessageSquareText, MousePointerClick,
   MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
@@ -205,10 +205,14 @@ function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | nu
   if (detail) {
     detail.textContent = now?.detail ?? ''
     detail.toggleAttribute('data-code', now?.code === true)
+    detail.toggleAttribute('data-prose', now?.prose === true)
   }
   const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
-  if (!still) for (const part of [node, detail]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+  if (!still) for (const part of [node, detail?.parentElement]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
 }
+
+/** The step beside the words carries its row's mark from the opened steps, so it reads as the step and not as more of the sentence. */
+const stepMark = (step: WorkingNow['step']): LucideIcon => step === undefined || step === 'reply' ? MessageSquareText : ICONS[step]
 
 const nextWord = (current: number): number => (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
 
@@ -225,7 +229,9 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null)
   const detailRef = useRef<HTMLSpanElement>(null)
   // The first words only: from here the effects write them, so a redraw of the line never undoes it.
-  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true }))
+  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true, prose: now?.prose === true }))
+  // The step's mark is the one part React draws, and only when the step on the line changes.
+  const [step, setStep] = useState(now?.step)
   const key = workingKey(now)
   const line = useRef({ step: key, at: 0, word: 0 })
   const latest = useRef(now)
@@ -249,7 +255,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
       const shown = latest.current
       state.step = workingKey(shown)
       state.at = Date.now()
-      if (shown !== null) { writeWorking(node, shown.words, detailRef.current, shown); return }
+      if (shown !== null) { setStep(shown.step); writeWorking(node, shown.words, detailRef.current, shown); return }
       state.word = nextWord(state.word)
       writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
     }
@@ -259,10 +265,14 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
     const timer = window.setTimeout(show, wait)
     return () => window.clearTimeout(timer)
   }, [key])
+  const Mark = stepMark(step)
   // The words are decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <span className="thread-activity-live__now">
     <span ref={ref} className="thread-activity-live__word" data-word={first.words} aria-hidden="true">{first.words}</span>
-    <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined} aria-hidden="true">{first.detail}</span>
+    <span className="thread-activity-live__step" aria-hidden="true">
+      <Mark className="thread-activity-live__mark" size={13} strokeWidth={1.8} aria-hidden="true" />
+      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined} data-prose={first.prose || undefined}>{first.detail}</span>
+    </span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </span>
 }

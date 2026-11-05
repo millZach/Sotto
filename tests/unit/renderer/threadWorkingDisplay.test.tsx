@@ -217,7 +217,7 @@ describe('what the working line says the work is for', () => {
     expect(words).toBe('Read the request policy')
     expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
     expect(detail).toHaveAttribute('data-code')
-    expect(detail).toHaveAttribute('aria-hidden', 'true')
+    expect(detail.closest('[aria-hidden="true"]')).not.toBeNull()
     expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
   })
 
@@ -228,19 +228,24 @@ describe('what the working line says the work is for', () => {
     expect(words).toBe('Tracing the request')
     expect(detail.textContent).toBe('Read the request policy')
     expect(detail).not.toHaveAttribute('data-code')
+    // Claude's own sentence is cut only between words.
+    expect(detail).toHaveAttribute('data-prose')
     expect(line).toHaveAccessibleDescription(/^Tracing the request, Read the request policy, Running .*cat src\/policy\.ts/u)
     cleanup()
-    // A plan step with no words of its own for running reads as written, beside the step itself.
+    // A plan step with no words of its own for running reads as written, beside the command itself in the code face.
     const codex = shown(plan([{ text: 'Trace the request', status: 'running' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
     expect(codex.words).toBe('Trace the request')
-    expect(unmarked(codex.detail.textContent)).toBe('Running rg -n policy src')
+    expect(unmarked(codex.detail.textContent)).toBe('rg -n policy src')
+    expect(codex.detail).toHaveAttribute('data-code')
+    expect(codex.detail).not.toHaveAttribute('data-prose')
+    expect(codex.line).toHaveAccessibleDescription(/^Trace the request, Running .*rg -n policy src/u)
   })
 
   it('takes a reasoning summary’s heading for the work it led to, and never for work after something finished', () => {
     const summary = activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Inspecting the request policy**\n\nIt decides whether to ask.' })
     const led = shown(summary, activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
     expect(led.words).toBe('Inspecting the request policy')
-    expect(unmarked(led.detail.textContent)).toBe('Running rg -n policy src')
+    expect(unmarked(led.detail.textContent)).toBe('rg -n policy src')
     cleanup()
     const later = shown(summary, activity({ id: 'ls', command: 'ls' }), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
     expect(later.words).toBe('Running rg -n policy src')
