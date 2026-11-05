@@ -46,8 +46,9 @@ const ANIMATION_HOLD_MS = 900
 /** The content size a capture names, with the shipped minimum left as it is. */
 const resizeContentWindowFor = (launched: LaunchedSotto, width: number, height: number): Promise<void> => resizeContentWindow(launched, width, height, [820, 560])
 
-async function settle(page: Page): Promise<void> {
-  await page.mouse.move(0, 0)
+/** Holds the frame still. The pointer goes to the corner first unless the image is of what it points at. */
+async function settle(page: Page, pointerAway = true): Promise<void> {
+  if (pointerAway) await page.mouse.move(0, 0)
   await page.evaluate(async hold => {
     await document.fonts.ready
     const endOf = (animation: Animation): number | undefined => animation.effect?.getComputedTiming().endTime as number | undefined
@@ -84,8 +85,11 @@ interface Capture {
   readonly launched: LaunchedSotto
   readonly page: Page
   readonly repository: EvidenceRepository
-  /** One image per mode at the current size, with the composer's crop from the same frame. */
-  shoot(state: string, shows: string, differs?: string, options?: { readonly modes?: readonly Mode[]; readonly size?: readonly [number, number] }): Promise<void>
+  /**
+   * One image per mode at the current size, with the composer's crop from the same frame. `before` runs once the size and
+   * the mode are set, for what neither survives, such as the pointer's hover, and the pointer then stays where it left it.
+   */
+  shoot(state: string, shows: string, differs?: string, options?: { readonly modes?: readonly Mode[]; readonly size?: readonly [number, number]; readonly before?: () => Promise<void> }): Promise<void>
 }
 
 function captureFor(launched: LaunchedSotto, repository: EvidenceRepository, out: string): Capture {
@@ -97,7 +101,8 @@ function captureFor(launched: LaunchedSotto, repository: EvidenceRepository, out
       await resizeContentWindowFor(launched, width, height)
       for (const mode of options.modes ?? MODES) {
         await setAppearance(page, { appearance: mode }, mode)
-        await settle(page)
+        await options.before?.()
+        await settle(page, options.before === undefined)
         const file = `${state}-${mode}-${width}.png`
         const image = await page.screenshot({ caret: 'hide' })
         await writeFile(join(out, file), image)
@@ -363,7 +368,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
-  { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
+  { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     await scrollTranscript(page, 'middle')
@@ -388,10 +393,41 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
-      const box = (await lane.boundingBox())!
-      await page.mouse.move(box.x + box.width / 2 - 2, box.y + box.height / 2 - 2)
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-      await capture.shoot('reading-scrubber', 'The pointer on the message scrubber, with the ticks risen and a card showing.')
+      // At rest only the ticks around the messages on screen show; the pointer anywhere in the lane shows them all
+      // (ADR-0109, Zach's pick C on November 5, 2026). The pointer rests over the column's words, as a reader's does.
+      const rest = async (): Promise<void> => {
+        const view = (await transcript(page).boundingBox())!
+        await page.mouse.move(view.x + view.width * 0.7, view.y + view.height * 0.4)
+      }
+      // The pointer comes in from the column's words and stops at the middle of the lane, beside the tick it reaches.
+      const wake = async (): Promise<void> => {
+        const box = (await lane.boundingBox())!
+        await page.mouse.move(box.x + box.width + 40, box.y + box.height / 2 - 6)
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        await expect(pane.locator('.message-scrubber__card')).toBeVisible()
+      }
+      // Neither a resize nor a switch of look keeps the pointer's card, so the pointer comes in after both.
+      const shootWoken = (state: string, shows: string, modes: readonly Mode[] = MODES, size: readonly [number, number] = [1600, 1000]): Promise<void> =>
+        capture.shoot(state, shows, '', { modes, size, before: wake })
+      const restShows = 'The message scrubber at rest beside a long thread read part-way up: only the ticks around the messages on screen show, fading out above and below them.'
+      const wokenShows = 'The pointer in the message scrubber\'s lane: every tick shows, the ones near the pointer risen, with the card for the tick it reached.'
+      await rest()
+      await capture.shoot('reading-scrubber', restShows)
+      await shootWoken('reading-scrubber-woken', wokenShows)
+      for (const size of SMALLER_SIZES) {
+        await resizeContentWindowFor(capture.launched, size[0], size[1])
+        await rest()
+        await capture.shoot('reading-scrubber', restShows, '', { modes: ['dark'], size })
+        await shootWoken('reading-scrubber-woken', wokenShows, ['dark'], size)
+      }
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+      for (const theme of ['glass', 'clay'] as const) {
+        await page.evaluate(async theme => window.sotto!.updateSettings({ darkTheme: theme, lightTheme: theme }), theme)
+        await rest()
+        await capture.shoot(`reading-scrubber-${theme}`, `${restShows} In the ${theme === 'glass' ? 'Glass' : 'Clay'} theme.`)
+        await shootWoken(`reading-scrubber-${theme}-woken`, `${wokenShows} In the ${theme === 'glass' ? 'Glass' : 'Clay'} theme.`)
+      }
+      await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
       await page.mouse.move(800, 300)
     }
     // Tab first, so the focus ring is the keyboard's: a modifier alone does not count as the keyboard.

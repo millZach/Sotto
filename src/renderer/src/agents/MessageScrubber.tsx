@@ -4,7 +4,7 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
-import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark, type ScrubberMessage } from './messageScrubberMarks'
+import { nearestTick, plainOpening, restingFade, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark, type ScrubberMessage } from './messageScrubberMarks'
 import { shownCount } from '../state/interfaceNumbers'
 import './messageScrubber.css'
 
@@ -31,7 +31,8 @@ type Via = 'pointer' | 'keys' | 'touch'
 
 /**
  * The message scrubber (ADR-0109; Owl only): one tick for each message the user sent, in the transcript's left margin.
- * It shows once the conversation is more than two screens tall. The pointer anywhere in the lane reaches the nearest
+ * It shows once the conversation is more than two screens tall. At rest only the ticks around the messages on screen show,
+ * fading out above and below them; once the pointer or the keyboard reaches the lane, every tick shows. The pointer anywhere in the lane reaches the nearest
  * tick, which shows a card with the message and what came back; a press goes there, drawing an earlier page of the
  * conversation first when the message is not drawn. The ticks are one Tab stop: Up and Down move between them and show
  * each card, Home and End go to the ends, Enter or Space goes there and puts focus on the message, and Escape closes the
@@ -252,8 +253,11 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const tickMarks = drawnMarks.current
   const tabbable = focusIndex ?? lastIndexOf(marks, inView) ?? count - 1
   const hotTick = hot?.index ?? -1
+  // At rest only the ticks around the messages on screen show (Zach's pick C, November 5, 2026). It changes only on a
+  // scroll, so a streamed word leaves every tick as it was.
+  const resting = useMemo(() => restingFade(places, tickMarks.flatMap((mark, index) => inView.has(mark.messageId) ? [index] : [])), [places, tickMarks, inView])
   const tickList = useMemo(() => tickMarks.map((mark, index) => <ScrubberTick key={mark.messageId} index={index} message={mark.message} attachments={mark.attachments} top={places[index] ?? 0}
-    tabbable={index === tabbable} hot={index === hotTick} inView={inView.has(mark.messageId)} cardId={cardId} register={register} />), [tickMarks, places, tabbable, hotTick, inView, cardId, register])
+    near={resting[index] ?? 0} tabbable={index === tabbable} hot={index === hotTick} inView={inView.has(mark.messageId)} cardId={cardId} register={register} />), [tickMarks, places, resting, tabbable, hotTick, inView, cardId, register])
 
   if (!shown) return null
   const style = {
@@ -305,8 +309,10 @@ const opening = (message: ScrubberMessage, attached: number, most: number): stri
  * One tick. It draws again only when its own message, place or state does: a thread of thousands of messages sent keeps
  * its ticks still while a reply streams into the newest turn.
  */
-const ScrubberTick = React.memo(function ScrubberTick({ index, message, attachments, top, tabbable, hot, inView, cardId, register }: {
+const ScrubberTick = React.memo(function ScrubberTick({ index, message, attachments, top, near, tabbable, hot, inView, cardId, register }: {
   readonly index: number; readonly message: ScrubberMessage; readonly attachments: number; readonly top: number
+  /** How much of the tick shows at rest, from 1 beside the messages on screen to 0 away from them. */
+  readonly near: number
   readonly tabbable: boolean; readonly hot: boolean; readonly inView: boolean; readonly cardId: string
   readonly register: (index: number, element: HTMLButtonElement | null) => void
 }): ReactNode {
@@ -317,7 +323,7 @@ const ScrubberTick = React.memo(function ScrubberTick({ index, message, attachme
     return t({ message: `Go to your message at ${time}: ${said}`, comment: '{said} is the start of the message the user sent.' })
   }, [message, attachments, t])
   return <button ref={ref} type="button" className="message-scrubber__tick" data-index={index} aria-describedby={hot ? cardId : undefined} aria-label={label}
-    style={{ top: `${top}px` }} tabIndex={tabbable ? 0 : -1} data-hot={hot || undefined} data-in-view={inView || undefined} />
+    style={{ top: `${top}px`, '--near': near } as CSSProperties} tabIndex={tabbable ? 0 : -1} data-hot={hot || undefined} data-in-view={inView || undefined} />
 })
 
 /** Whether two lists of marks draw the same ticks: the same messages, in the same places, whatever their replies say. */

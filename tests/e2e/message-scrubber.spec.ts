@@ -118,10 +118,18 @@ for (const appearance of ['dark', 'light'] as const) {
         // The lane paints nothing of its own: its ticks float over the transcript (the user's ask on October 24, 2026).
         expect(await laneBackgrounds(page, 'section.thread-pane'), `what the lane paints at ${width}x${height}`).toEqual([])
         await capture(launched, `rest-${appearance}-${width}x${height}`)
+        // At rest only the ticks around the messages on screen show, and the ones further up the column do not
+        // (Zach's pick C, November 5, 2026).
+        const resting = await ticks.evaluateAll(items => items.map(item => ({ inView: item.hasAttribute('data-in-view'), shown: Number(getComputedStyle(item, '::before').opacity) })))
+        expect(resting.some(tick => tick.inView), `a tick on screen at ${width}x${height}`).toBe(true)
+        expect(resting.filter(tick => tick.inView).every(tick => tick.shown >= 0.6), `the ticks on screen at ${width}x${height}`).toBe(true)
+        expect(resting[0]!.shown, `the first tick at rest at ${width}x${height}`).toBe(0)
         await pointAt(page, ticks.nth(5))
-        // Reached by the pointer, every tick keeps 3:1 against what lies beside it, the far ones too.
+        // Reached by the pointer, every tick shows and keeps 3:1 against what lies beside it, the far ones too.
         await expect(nav).toHaveCSS('opacity', '1')
         await page.waitForTimeout(300)
+        const woken = await ticks.evaluateAll(items => items.map(item => Number(getComputedStyle(item, '::before').opacity)))
+        expect(Math.min(...woken), `the ticks pointed at, at ${width}x${height}`).toBeGreaterThanOrEqual(0.8)
         const reached = await tickContrast(page, 'section.thread-pane', await page.screenshot(), async png => { const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, width: info.width, height: info.height, channels: info.channels } })
         expect(reached.worst, `the ticks pointed at, at ${width}x${height}`).toBeGreaterThanOrEqual(3)
         await expect(card(page)).toBeVisible()
