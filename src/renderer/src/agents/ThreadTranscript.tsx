@@ -414,12 +414,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply, namedSent = true }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
   /** The one reply in the list that is headed by the provider's name and time; undefined heads every reply. */
   readonly namedReply?: string | undefined
-  /** Whether You and the time head the message the user sent to open this turn (`sentNamed`). */
-  readonly namedSent?: boolean | undefined
   /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
   readonly running: boolean
   readonly writing: string | undefined
@@ -449,10 +447,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
       delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
-      // A wake-up and a brief are not the user's, so they always say whose they are; a message with no words has no Copy to sit beside.
-      named={isWakeUpMessage(message) || (message.role === 'user'
-        ? namedSent || briefs?.ids.has(message.id) === true || message.text.length === 0
-        : namedReply === undefined || message.role !== 'assistant' || message.id === namedReply)}
+      named={namedReply === undefined || message.role !== 'assistant' || isWakeUpMessage(message) || message.id === namedReply}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {message.id === writing && writingBelow ? createPortal(article(message), writingBelow, message.id) : article(message)}
@@ -583,24 +578,6 @@ function ModelMovedLine({ moved, provider }: { readonly moved: ThreadModelMoved;
   </p>
 }
 
-/** A pause this long since the turn before makes the time of the next message the user sent worth reading again. */
-const SENT_PAUSE_MS = 15 * 60_000
-
-/**
- * Whether You and the time head the message that opens `turns[index]`. The first message drawn says who and when; a later
- * one only when the user came back after a pause, where its time tells the reader something. The rest keep them beside
- * Copy, for hover, focus and assistive tech. `firstSent` is the index of the first turn the user opened.
- */
-function sentNamed(turns: readonly TranscriptTurn[], index: number, firstSent: number): boolean {
-  if (index <= firstSent) return true
-  const before = turns[index - 1]
-  const previous = before?.replies.at(-1) ?? before?.user
-  const sent = turns[index]?.user
-  if (!previous || !sent) return true
-  // An unreadable time reads as a pause, so the header stays rather than hiding a time no one can place.
-  return !(Date.parse(sent.createdAt) - Date.parse(previous.createdAt) < SENT_PAUSE_MS)
-}
-
 /** The index of the last turn begun at or before `at`, or -1 when every turn began after it. */
 function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
   const moment = Date.parse(at)
@@ -659,9 +636,6 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // The search stops at the first reply, which is near the start of what is drawn.
   const namedReply = useMemo(() => speaker === 'watcher' ? undefined
     : messages.find(message => message.role === 'assistant' && drawn(message) && !isVisualMessage(message) && !isWakeUpMessage(message))?.id, [messages, speaker])
-  // The same holds for the user's own messages, except where a pause makes the time news again. Watcher's keeps its own.
-  // The search stops at the first turn the user opened.
-  const firstSent = speaker === 'watcher' ? Number.POSITIVE_INFINITY : turns.findIndex(turn => turn.user !== undefined)
   const movedAfter = modelMoved ? turnBefore(turns, modelMoved.at) : undefined
   const movedLine = modelMoved ? <ModelMovedLine moved={modelMoved} provider={provider} /> : null
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
@@ -670,8 +644,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} namedReply={namedReply}
-      namedSent={sentNamed(turns, index, firstSent)} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} namedReply={namedReply} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />

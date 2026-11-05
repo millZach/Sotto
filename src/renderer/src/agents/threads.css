@@ -249,9 +249,6 @@
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 24px; }
 /* Inside the turn the Worked for line is a caption: its press is a row a little taller than its words, not a full control row. */
 .thread-pane:not(.watcher-pane) .thread-work > :is(.thread-work__summary, .thread-changes > .thread-changes__summary) { min-height: 26px; }
-/* You and the time head the first message the user sent and one sent after a pause. On the rest they wait in the same gap,
-   beside Copy as a later reply's do, and show with it. */
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user'][data-named='no']:not([data-from]) > header { top: calc(100% + 1px); bottom: auto; left: 48px; }
 /* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + :is(.thread-work, .thread-activity, .thread-activity-live, .thread-browser-lines, .thread-delivery, .thread-lifted, .continue-now, .delegated-work, .delegated-work-still) { margin-top: 0; }
 /* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */

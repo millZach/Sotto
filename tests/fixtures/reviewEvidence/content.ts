@@ -363,10 +363,7 @@ const LONG_CUTS = [
 
 function longThread(): EvidenceThread {
   const messages: Message[] = [], activities: Activity[] = []
-  // The owner reads each pass before asking for the next, so a pause of 45 minutes opens each pass after the first.
-  // The thread still ends where it did, so its place in the sidebar holds.
-  const pause = 45
-  let minutes = 330 + pause * Math.floor((52 - 1) / LONG_CUTS.length)
+  let minutes = 330
   const step = (by: number): number => { minutes -= by; return minutes }
   messages.push(user('long-u0', step(0), 'Start on the AgentControl split. Follow docs/plans/agent-control-split.md, one cut at a time, and tell me after each one before moving on.'))
   messages.push(assistant('long-a0', step(1), 'Starting with the permission ledger, since it has the fewest readers. I will move code without changing it, run its tests and stop for you after each cut.'))
@@ -381,7 +378,7 @@ function longThread(): EvidenceThread {
         : pass === 2
           ? `Does \`${cut.name}\` still need its own test file, or can the coordinator's tests cover it?`
           : `Last look at \`${cut.name}\`. Anything to tidy before the pull request?`
-    messages.push(user(uid, step(round > 0 && round % LONG_CUTS.length === 0 ? 2 + pause : 2), asks))
+    messages.push(user(uid, step(2), asks))
     const turn = new Turn(`long-turn-${round}`, uid, 'completed', 40_000 + (round * 7_919) % 180_000, minutes)
     turn.command(`long-${round}-c1`, `rg -n "${cut.method}" src/main/agents/control.ts`, `${1200 + round * 37}:  private ${cut.method}(threadId: string): AgentHostResult {`, 60)
     turn.command(`long-${round}-c2`, `sed -n ${1200 + round * 37},${1260 + round * 37}p src/main/agents/control.ts`, `  private ${cut.method}(threadId: string): AgentHostResult {\n    const thread = this.requireThread(threadId)\n…`, 45)
