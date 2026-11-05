@@ -1263,7 +1263,7 @@ A thread on another computer you added as a host can delegate too, when that com
 
 ## Dynamic threads
 
-In Sotto Owl, a Claude Code or Codex thread on this computer can be **Dynamic**: the model you picked oversees and chooses a model for each piece of work, rather than each kind of work starting on its role. Turn it on with the switch at the foot of the thread's model menu, and the composer reads "Opus 5.5 oversees".
+In Sotto Owl, a Claude Code or Codex thread on this computer can be **Dynamic**: the model you picked oversees and chooses a model for each piece of work, rather than each kind of work starting on its role. Turn it on with the switch at the foot of the thread's model menu, and the composer reads "Opus 5.5 oversees". To start every new thread this way, use the same switch at the foot of the model menu in **Settings → Threads → New threads start with**. Threads you open on a model that cannot oversee, or on another machine, start as usual.
 
 The overseer plans, briefs its workers, reads what they return and answers you. It does no work itself. If it changes files anyway, its reply says so, with the files and its reason. It carries no authority: the permission in the composer is the most a worker may do, and you answer every worker's questions and permissions as you do any thread's.
 

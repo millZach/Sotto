@@ -1481,6 +1481,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */
+    dynamic: z.literal(true).optional(),
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
     /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */
