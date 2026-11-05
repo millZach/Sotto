@@ -35,49 +35,39 @@ export interface ChecklistLine {
 const UNTIL = 'Ends the sentence "You can merge once ...". Several are joined into one list.'
 
 const FAILED: ReadonlySet<GitPullRequestCheck['status']> = new Set(['failure', 'cancelled'])
-/**
- * Each line's label says how it stands, never what it hopes for: "2 checks failed" over failed checks, "Needs a review"
- * where nobody has approved, so a heading never says the opposite of the reason under it.
- */
 function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): ChecklistLine {
-  const line = { id: 'checks' } as const
+  const line = { id: 'checks', label: t`Checks passing` } as const
   // Refused checks are not no checks: the line says they could not be read, and is not counted as done.
-  if (unknown && checks.length === 0) return { ...line, label: t`Checks could not be read`, tone: 'unknown', why: t`GitHub did not let Sotto read the checks`, fix: null }
+  if (unknown && checks.length === 0) return { ...line, tone: 'unknown', why: t`GitHub did not let Sotto read the checks`, fix: null }
   if (checks.length === 0) return { ...line, label: t`No checks`, tone: 'done', why: t`GitHub reports none for this pull request`, fix: null }
   const failed = checks.filter(check => FAILED.has(check.status))
   const first = failed[0]
   if (first) {
-    // Counted as the Checks fold counts them, a cancelled check among the failed; a line of only cancelled checks says cancelled, as its reason does.
-    const failures = failed.length, cancelled = failed.every(check => check.status === 'cancelled')
-    const failureCount = shownCount(failures)
-    const label = !cancelled ? plural(failures, { one: `${failureCount} check failed`, other: `${failureCount} checks failed` })
-      : plural(failures, { one: `${failureCount} check cancelled`, other: `${failureCount} checks cancelled` })
     const name = first.name, more = failed.length - 1, description = first.description
     const why = first.status === 'cancelled'
       ? more > 0 ? plural(more, { other: `${name} was cancelled, and # more` }) : description ? t`${name} was cancelled: ${description}` : t`${name} was cancelled`
       : more > 0 ? plural(more, { other: `${name} failed, and # more` }) : description ? t`${name} failed: ${description}` : t`${name} failed`
-    return { ...line, label, tone: 'failed', why, fix: first.url ? { kind: 'open-check', name: first.name, url: first.url } : null,
+    return { ...line, tone: 'failed', why, fix: first.url ? { kind: 'open-check', name: first.name, url: first.url } : null,
       until: failed.length === 1 ? t({ message: 'the failing check passes', comment: UNTIL }) : t({ message: 'the failing checks pass', comment: UNTIL }) }
   }
   const waiting = checks.find(check => check.status === 'action-required')
   if (waiting) {
-    const name = waiting.name, approvals = checks.filter(check => check.status === 'action-required').length, approvalCount = shownCount(approvals)
-    return { ...line, label: plural(approvals, { one: `${approvalCount} check needs approval`, other: `${approvalCount} checks need approval` }), tone: 'todo', why: t`${name} is waiting for approval on GitHub`, fix: waiting.url ? { kind: 'open-check', name: waiting.name, url: waiting.url } : null, until: t({ message: 'a check is approved on GitHub', comment: UNTIL }) }
+    const name = waiting.name
+    return { ...line, tone: 'todo', why: t`${name} is waiting for approval on GitHub`, fix: waiting.url ? { kind: 'open-check', name: waiting.name, url: waiting.url } : null, until: t({ message: 'a check is approved on GitHub', comment: UNTIL }) }
   }
   const running = checks.filter(check => check.status === 'pending')
   if (running.length > 0) {
-    const name = running[0]!.name, more = running.length - 1, runs = running.length, runningCount = shownCount(runs)
-    return { ...line, label: plural(runs, { one: `${runningCount} check running`, other: `${runningCount} checks running` }), tone: 'running', why: more === 0 ? t`${name} is still running` : plural(more, { other: `${name} and # more are still running` }), fix: null,
+    const name = running[0]!.name, more = running.length - 1
+    return { ...line, tone: 'running', why: more === 0 ? t`${name} is still running` : plural(more, { other: `${name} and # more are still running` }), fix: null,
       until: running.length === 1 ? t({ message: 'the running check finishes', comment: UNTIL }) : t({ message: 'the running checks finish', comment: UNTIL }) }
   }
   // Some checks read, some refused: what the read checks hold back is said above; with nothing held back, the line is unknown, not done.
-  if (unknown) return { ...line, label: t`Some checks could not be read`, tone: 'unknown', why: t`GitHub did not let Sotto read every check`, fix: null }
+  if (unknown) return { ...line, tone: 'unknown', why: t`GitHub did not let Sotto read every check`, fix: null }
   const passed = checks.filter(check => check.status === 'success').length
   const skipped = checks.length - passed, total = checks.length, name = checks[0]!.name
   const why = passed < checks.length ? t`${passed} passed, ${skipped} skipped` : checks.length === 1 ? t`${name} passed` : t`All ${total} passed`
   const brief = passed < checks.length ? t`Checks: ${passed} passed, ${skipped} skipped` : checks.length === 1 ? why : t`${total} checks passed`
-  // Checks that were all skipped did not pass: the label says what they did.
-  return { ...line, label: passed > 0 ? t`Checks passed` : t`Checks skipped`, tone: 'done', why, fix: null, brief }
+  return { ...line, tone: 'done', why, fix: null, brief }
 }
 
 /** Who approved stays on show once the line has given way: it is the one thing here worth reading twice. */
@@ -85,19 +75,17 @@ const approvedLine = (line: Pick<ChecklistLine, 'id' | 'label'>, why: string): C
 
 function reviewLine(detail: Detail): ChecklistLine {
   const line = { id: 'review', label: t`Review approved` } as const
-  const changesLabel = t({ message: 'Changes requested', comment: 'A line of the merge checklist: a reviewer asked for changes.' })
   // GitHub lists the reviews oldest first (the connection's own order), so the later of two is the one that stands.
   const latest = (state: 'approved' | 'changes_requested') => [...detail.reviews].reverse().find(review => review.state === state)
   const approved = latest('approved'), changes = latest('changes_requested')
   const approver = approved?.author ?? '', author = changes?.author ?? ''
   const someone = t({ message: 'someone approves it', comment: UNTIL })
-  const askedForChanges = (): ChecklistLine => ({ ...line, label: changesLabel, tone: 'failed', why: changes ? t`${author} asked for changes` : t`Changes were asked for`,
+  const askedForChanges = (): ChecklistLine => ({ ...line, tone: 'failed', why: changes ? t`${author} asked for changes` : t`Changes were asked for`,
     fix: { kind: 'open-review', author: changes?.author ?? null, url: changes?.url ?? detail.url }, until: someone })
   switch (detail.reviewDecision) {
     case 'approved': return approvedLine(line, approved ? t`Approved by ${approver}` : t({ message: 'Approved', comment: 'A pull request\'s review approved it.' }))
     case 'changes_requested': return askedForChanges()
-    // Required and missing, which is not the same as not needed: an ended pull request was never approved, an open one still needs it.
-    case 'review_required': return { ...line, label: detail.state === 'open' ? t`Needs a review` : t`Not approved`, tone: 'todo', fix: null, until: someone,
+    case 'review_required': return { ...line, tone: 'todo', fix: null, until: someone,
       why: detail.draft ? t`Reviewers wait until it is ready` : detail.reviews.length === 0 ? t`Nobody has reviewed it yet` : t`It still needs an approving review` }
     default: {
       // The repository requires no review, so GitHub merges whatever the reviews say. A request for changes a reviewer
@@ -105,8 +93,8 @@ function reviewLine(detail: Detail): ChecklistLine {
       // the merge back, since GitHub does not.
       if (changes) {
         const others = detail.reviews.filter(review => review.state === 'changes_requested').length - 1
-        // With nobody approving, the label claims no approval: it is read before the reason, as "Does not block: Changes requested".
-        return { ...line, label: approved ? line.label : changesLabel, tone: 'open', fix: { kind: 'open-review', author: changes.author, url: changes.url ?? detail.url },
+        // With nobody approving, the label claims no approval: it is read before the reason, as "Does not block: Review".
+        return { ...line, label: approved ? line.label : t({ message: 'Review', comment: 'A line of the merge checklist: the pull request\'s review.' }), tone: 'open', fix: { kind: 'open-review', author: changes.author, url: changes.url ?? detail.url },
           why: approved
             ? others > 0 ? plural(others, { other: `Approved by ${approver}. Requests for changes from ${author} and # more are still open` }) : t`Approved by ${approver}. ${author}'s request for changes is still open`
             : others > 0 ? plural(others, { other: `${author} and # more asked for changes. This repository does not require a review` }) : t`${author} asked for changes. This repository does not require a review` }
@@ -121,33 +109,31 @@ function upToDateLine(detail: Detail): ChecklistLine {
   const base = detail.baseBranch
   const line = { id: 'up-to-date', label: t({ message: `Up to date with ${base}`, comment: '{base} is a Git branch name, as in main.' }) } as const
   if (detail.state === 'merged') return { ...line, tone: 'done', why: t`Merged into ${base}`, fix: null }
-  if (detail.behindBy === null) return { ...line, label: t({ message: `Not compared with ${base}`, comment: '{base} is a Git branch name, as in main.' }), tone: 'unknown', why: t`GitHub could not compare it with ${base}`, fix: null }
+  if (detail.behindBy === null) return { ...line, tone: 'unknown', why: t`GitHub could not compare it with ${base}`, fix: null }
   if (detail.behindBy === 0) return { ...line, tone: 'done', why: t`Has every commit on ${base}`, fix: null }
   // The count in the interface language, and in English as it always read: a plural's own # would group its digits.
   const behindBy = detail.behindBy, commits = shownCount(behindBy)
   const behind = plural(behindBy, { one: `${commits} commit behind ${base}`, other: `${commits} commits behind ${base}` })
   const until = t({ message: `it is up to date with ${base}`, comment: 'Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.' })
-  const behindLine = { ...line, label: t({ message: `Behind ${base}`, comment: '{base} is a Git branch name, as in main.' }), tone: 'todo' } as const
-  if (detail.state !== 'open') return { ...behindLine, why: behind, fix: null, until }
-  return detail.canUpdateBranch ? { ...behindLine, why: behind, fix: { kind: 'update-branch' }, until }
-    : { ...behindLine, why: plural(behindBy, { one: `${commits} commit behind ${base}. GitHub does not let this account update it`, other: `${commits} commits behind ${base}. GitHub does not let this account update it` }), fix: null, until }
+  if (detail.state !== 'open') return { ...line, tone: 'todo', why: behind, fix: null, until }
+  return detail.canUpdateBranch ? { ...line, tone: 'todo', why: behind, fix: { kind: 'update-branch' }, until }
+    : { ...line, tone: 'todo', why: plural(behindBy, { one: `${commits} commit behind ${base}. GitHub does not let this account update it`, other: `${commits} commits behind ${base}. GitHub does not let this account update it` }), fix: null, until }
 }
 
 function conflictsLine(detail: Detail): ChecklistLine {
   const base = detail.baseBranch
   const line = { id: 'conflicts', label: t`No conflicts` } as const
   if (detail.state === 'merged') return { ...line, tone: 'done', why: t`Merged without conflicts`, fix: null }
-  if (detail.mergeable === 'conflicting') return { ...line, label: t({ message: `Conflicts with ${base}`, comment: '{base} is a Git branch name, as in main.' }), tone: 'failed', why: t`Resolve them in the branch and push`, fix: null, until: t({ message: `its conflicts with ${base} are resolved`, comment: 'Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.' }) }
+  if (detail.mergeable === 'conflicting') return { ...line, tone: 'failed', why: t`Conflicts with ${base}. Resolve them in the branch and push`, fix: null, until: t({ message: `its conflicts with ${base} are resolved`, comment: 'Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.' }) }
   if (detail.mergeable === 'mergeable') return { ...line, tone: 'done', why: t`Merges cleanly into ${base}`, fix: null }
-  return detail.state === 'open' ? { ...line, label: t`Checking for conflicts`, tone: 'running', why: t`GitHub is still checking. Refresh in a moment`, fix: null, until: t({ message: 'GitHub finishes checking for conflicts', comment: UNTIL }) }
-    : { ...line, label: t`Conflicts not checked`, tone: 'unknown', why: t`GitHub checks again if it is reopened`, fix: null }
+  return detail.state === 'open' ? { ...line, tone: 'running', why: t`GitHub is still checking. Refresh in a moment`, fix: null, until: t({ message: 'GitHub finishes checking for conflicts', comment: UNTIL }) }
+    : { ...line, tone: 'unknown', why: t`GitHub checks again if it is reopened`, fix: null }
 }
 
 function readyLine(detail: Detail): ChecklistLine {
   const line = { id: 'ready', label: t`Ready for review` } as const
   if (!detail.draft) { const why = t`Not a draft`; return { ...line, tone: 'done', why, fix: null, brief: why } }
-  return { ...line, label: t`Still a draft`, tone: 'todo', why: detail.state === 'open' ? t`Mark it ready for review when the work is done` : t`It was never marked ready for review`,
-    fix: detail.state === 'open' ? { kind: 'ready' } : null, until: t({ message: 'it is marked ready for review', comment: UNTIL }) }
+  return { ...line, tone: 'todo', why: t`Still a draft`, fix: detail.state === 'open' ? { kind: 'ready' } : null, until: t({ message: 'it is marked ready for review', comment: UNTIL }) }
 }
 
 /**
