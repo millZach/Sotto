@@ -313,7 +313,12 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
             {editing ? <input type="checkbox" className="tt-focusable" checked={!out} aria-label={t({ message: `Include ${ph({ path: leftToRight(path) })}`, comment: '{path} is a changed file\'s path.' })} onChange={() => toggle(file)} /> : null}
             <span className="commit-dialog__badge" data-status={file.status} role="img" aria-label={label} title={label}>{letter}</span>
             <span className="commit-dialog__path" dir="auto">{file.path}</span>
-            {counts ? <span className="commit-dialog__counts" aria-label={t({ message: `${{ added: shownLineCount(added ?? 0) }} added, ${{ removed: shownLineCount(removed ?? 0) }} removed`, comment: 'Lines added to and removed from a changed file.' })}>{counts}</span> : null}
+            {/* As the pull request's files: added and removed in their colours, a side with no lines saying nothing. */}
+            {counts ? <span className="commit-dialog__counts">
+              <span className="tt-visually-hidden">{t({ message: `${{ added: shownLineCount(added ?? 0) }} added, ${{ removed: shownLineCount(removed ?? 0) }} removed`, comment: 'Lines added to and removed from a changed file.' })}</span>
+              <span data-side="added" aria-hidden="true">{(added ?? 0) > 0 || (removed ?? 0) === 0 ? `+${shownLineCount(added ?? 0)}` : ''}</span>
+              <span data-side="removed" aria-hidden="true">{(removed ?? 0) > 0 ? `−${shownLineCount(removed ?? 0)}` : ''}</span>
+            </span> : null}
           </li>
         })}</ul> : null}
       </div>

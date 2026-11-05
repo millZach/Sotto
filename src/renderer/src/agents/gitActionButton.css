@@ -38,7 +38,8 @@
 .commit-dialog__branch { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .commit-dialog__branch > svg { color: var(--tt-text-muted); }
 .commit-dialog__tag { padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-.commit-dialog__files { display: grid; gap: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); padding: 8px 10px; }
+/* The files sit in the dialog's inset, filled with no outline (ADR-0110), as a field on a card does. */
+.commit-dialog__files { display: grid; gap: 6px; border-radius: var(--tt-radius-sm); padding: 8px 10px; background: var(--tt-card-inset); }
 .commit-dialog__files-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .commit-dialog__edit { padding: 2px 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .commit-dialog__edit:hover { background: var(--tt-hover); color: var(--tt-text); }
@@ -48,8 +49,14 @@
 .commit-dialog__list > li { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 4px; border-radius: var(--tt-radius-control); font-size: var(--tt-type-small); }
 .commit-dialog__list > li[data-excluded] { color: var(--tt-text-muted); text-decoration: line-through; }
 .commit-dialog__badge { flex: none; width: 16px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-align: center; }
+/* What Git did to a file, in the colours Changes gives the same letters. */
+.commit-dialog__badge:is([data-status='added'], [data-status='untracked']) { color: var(--tt-success); }
+.commit-dialog__badge:is([data-status='deleted'], [data-status='conflicted']) { color: var(--tt-error-text); }
 .commit-dialog__path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
-.commit-dialog__counts { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.commit-dialog__counts { flex: none; display: inline-grid; grid-template-columns: repeat(2, minmax(4ch, max-content)); column-gap: 6px; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.commit-dialog__counts [data-side='added'] { color: var(--tt-success); }
+.commit-dialog__counts [data-side='removed'] { color: var(--tt-error-text); }
+.commit-dialog__list > li[data-excluded] .commit-dialog__counts > span { color: var(--tt-text-muted); }
 .commit-dialog__message { color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .commit-dialog textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm); padding: 8px 10px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); resize: vertical; }
 .commit-dialog .tt-dialog__status { margin: 0; }

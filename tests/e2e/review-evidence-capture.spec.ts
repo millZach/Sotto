@@ -767,6 +767,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await quick.click()
     const dialog = page.getByRole('dialog', { name: 'Commit changes' })
     await expect(dialog.getByRole('list', { name: 'Changed files' })).toContainText('storeWorkerProtocol.ts', { timeout: 30_000 })
+    await capture.shoot('git-dialog', 'The commit dialog at the smallest window: the paths give way before the counts and the presses.', '', { modes: ['dark'], size: [820, 560] })
     await capture.shoot('git-dialog', 'The Git action\'s commit dialog over the thread, with its changed-files list: four edits and one new file on the pull request\'s branch.')
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
