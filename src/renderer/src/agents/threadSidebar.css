@@ -378,6 +378,14 @@
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
+/* A waiting thread's row in its folder while it stands in Needs you (Zach's pick B, ADR-0135, November 5, 2026): the card
+   says what it needs, so the row rests its ring, drops the amber and points up to the card. */
+.thread-nav__ring[data-queued] { border-color: var(--tt-text-muted); }
+.thread-nav__status[data-in-queue] { color: var(--tt-text-2); }
+.thread-nav__status[data-in-queue] > svg { display: inline-block; flex: none; margin-right: 4px; vertical-align: -2px; }
+/* Pointing at the entry or the row, or the keyboard's focus on either, lights the other. */
+.thread-nav__row:is([data-peer], [data-peer-focus]) { background: var(--threads-hover); }
+.needs-you__entry:is([data-peer], [data-peer-focus]) { margin-inline: -7px; padding-inline: 7px; background: var(--threads-hover); box-shadow: inset 2px 0 0 var(--tt-text-muted); }
 @container thread-sidebar (max-width: 285px) { .thread-nav__wordmark { display: none; } }
 @container thread-sidebar (max-width: 339px) {
   .thread-folder__toggle .host-badge { padding-inline: 5px; }

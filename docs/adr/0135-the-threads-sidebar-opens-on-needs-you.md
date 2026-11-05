@@ -10,6 +10,8 @@ Amended October 27, 2026: every question its provider lets the user decline now 
 
 Amended October 29, 2026: an entry no longer draws its ask or answers in place. It says only what its thread needs, and one press pops the thread's card open over the sidebar (below, "October 29, 2026 amendment: the entry says what it needs").
 
+Amended November 5, 2026, by Zach's pick of variant B: Needs you stays as it is, and a waiting thread's row in its folder drops the amber and reads **In Needs you** (below, "November 5, 2026 amendment: said once, in the card").
+
 ## Context
 
 A collapsed project folder said "● 4". The 4 was the folder's thread total; how many of them needed the user, and for what, was a bare 6px dot, with the count only in its tooltip and screen-reader text (`Indicators` in `ThreadSidebar.tsx`). Sighted users were told less than screen-reader users. The dot also lumped three different waits together: a permission, which holds the agent still; a question; and a failed turn nobody had seen, which blocks nothing and can be dismissed. A second count competed with it: the Dismiss all line, which counts unseen failures alone (ADR-0092). To learn anything, the user expanded folders one by one.
@@ -47,7 +49,7 @@ What the mock-up could not show decided the rest. A request is answered in its t
 ## Consequences
 
 - The desktop gains a second place where a request can be answered. The store is what keeps that honest: one send, one hold, one draft per request, whichever surface the user pressed. Any future answer surface must go through it too.
-- A thread now appears twice — in the queue and in its folder — as it already does on the iPhone. Its folder row keeps every action it has today; the queue entry opens it (beside, with the same chord rows answer to) and answers or dismisses only what is set out above.
+- A thread now appears twice — in the queue and in its folder — as it already does on the iPhone, but its need is said once, in the queue (November 5, 2026 amendment). Its folder row keeps its place and every action it has today, rests its ring and reads **In Needs you**, and pointing at either one, or the keyboard's focus on it, lights the other. The queue entry opens it (beside, with the same chord rows answer to) and answers or dismisses only what is set out above.
 - Settled is quieter than it was, and less quiet than its name promises: a settled thread's permission now stands at the top of the sidebar, tagged. That is the iPhone's rule arriving on the desktop, and the alternative — an agent held still where nobody looks — is what the tag costs.
 - Waits understate after a host restart, and older hosts show none. Ordering inside a kind is therefore approximate across mixed hosts until hosts update; blocking still leads, which is the part that costs an agent its time.
 - The design captures change wherever the sidebar head shows with the feature on, and are regenerated on purpose. CONTEXT.md's **Needs you** stops being an iPhone-only entry, and the guide's sidebar words follow.
@@ -63,3 +65,18 @@ Zach's call, from a screenshot of an entry carrying a thirty-line command: the s
 - **The rail.** On Owl's rail (ADR-0146), while this feature is on, a waiting tile whose entry would pop a card pops the same card beside the rail, named as the entry's press is; every other tile opens its thread. The rail draws no text and no tray, so nothing else changes there.
 - **Focus.** When an entry answered in its card leaves, the focus goes on as when any entry leaves, because the card is drawn inside its entry. When a tile's card closes because its thread stopped waiting, a focus the card held goes back to the tile.
 
+## November 5, 2026 amendment: said once, in the card
+
+Zach chose this. Reviewers of the design pass read a waiting thread drawn twice, amber in the card and amber again in its folder, as repetition that made the sidebar busy. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/needs-you-twice/index.html`, kept outside the repository: A, both as they stood; B, the card as it is with the folder row pointing up to it; and C, the need said only in the folder, the card cut to its heading. He picked B. The prototype's stylesheets are Sotto's own at commit `f723761a3`.
+
+**What changed.** The card does not change. While it stands, the row in its folder of a thread standing in it:
+
+- keeps its place, its press, its menu and its actions;
+- rests its status ring, an outline in the muted ink, and drops the amber from its words;
+- reads **In Needs you** after a small arrow up, where it said what it needs. What it needs stays in the row's tooltip and in what a screen reader hears.
+
+Pointing at an entry lights its row, and pointing at the row lights its entry: the same quiet fill a row takes under the pointer, with a thin muted line down the entry's edge. The keyboard's focus on either does the same. A row in Settled whose thread stands in the card reads the same way. A row whose thread waits but is not in the card, such as a settled thread's failure, keeps its amber. The collapsed rail does not change. While the card is off, rows say what they need as before.
+
+**Why.** Amber says that something waits on the user, and it now says so once for each thread, where the card has the room to say what for.
+
+**What it costs.** The folder row no longer says what its thread waits for; the card does. A thread past the card's three still reads **In Needs you** while its entry is folded under **Show all**, so pointing at it lights nothing until the card is unfolded.

@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, u
 import { createPortal } from 'react-dom'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AlarmClock, AlarmClockOff, AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, SquarePen } from 'lucide-react'
+import { AlarmClock, AlarmClockOff, AppWindow, Archive, ArchiveRestore, ArrowUp, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
@@ -132,8 +132,12 @@ export function railMark(title: string): string {
   return first.slice(0, 1).toUpperCase() + (second === undefined ? first.slice(1, 2) : second.slice(0, 1)).toLowerCase()
 }
 
-/** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
-function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
+/**
+ * The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d).
+ * A row whose thread stands in Needs you rests its ring: the card says the need (ADR-0135, November 5, 2026).
+ */
+function StatusRing({ row, finished, background, queued = false }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean; readonly queued?: boolean }): ReactNode {
+  if (queued) return <span className="thread-nav__ring" data-queued aria-hidden="true" />
   return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
     data-background={background || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true">
     {background ? <Hourglass size={10} strokeWidth={2.5} /> : null}
@@ -145,8 +149,13 @@ function StatusRing({ row, finished, background }: { readonly row: ThreadRow; re
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
-const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil }: {
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil, queued }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
+  /**
+   * The thread stands in Needs you (ADR-0135, Zach's pick B, November 5, 2026): the card says what it needs, so the row
+   * drops the amber, reads In Needs you, and lights its entry when pointed at or focused.
+   */
+  readonly queued: boolean
   /** This thread's own lane is running a command. Another thread's work leaves this row's actions live. */
   readonly busy: boolean
   readonly liveClock: boolean
@@ -222,7 +231,9 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   </li>{swarm}</>
   // A plain Done or Settled at rest steps back, so what is moving or waiting stands out down a long list. It keeps its word.
   const resting = row.state === 'done' && !finished && !prototype && !background && !restart
+  const inQueue = queued && row.state === 'needs'
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
+    data-in-queue={inQueue ? id : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}
@@ -230,7 +241,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onKeyDown={event => threadKeyDown(event, offers, panes, { openBeside, openMenu: () => setMenu('beside'), rename: () => setRenaming(true) })}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
-      <StatusRing row={row} finished={finished} background={background} />
+      <StatusRing row={row} finished={finished} background={background} queued={inQueue} />
       {/* A double-click on the name renames, as F2 and the menu's Rename do. */}
       <span className="thread-nav__title" onDoubleClick={canRename ? () => setRenaming(true) : undefined}>{title}</span>
       {snoozedUntil !== undefined
@@ -245,7 +256,10 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         </span>
         {/* What the thread is doing starts where its name starts, so a list of rows reads down one edge. */}
         <span className="thread-nav__standing">
-          <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-restart={restart || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnected}</span>
+          {inQueue
+            // What it needs stays in the tooltip and for a screen reader; the words point up to the card that says it.
+            ? <span id={statusId} className="thread-nav__status" data-in-queue title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, {status}{disconnected}, </span><ArrowUp size={12} aria-hidden="true" />{t({ message: 'In Needs you', comment: 'A sidebar row\'s state: the thread waits on the user and stands in the Needs you card above, which says what for.' })}</span>
+            : <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-restart={restart || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnected}</span>}
           {watched ? <WatchedBadge size={14} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
@@ -324,7 +338,7 @@ const PEEK_DELAY_MS = 350
 const PEEK_GRACE_MS = 300
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout, swarmAngles, gaps, snoozes }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout, swarmAngles, gaps, snoozes, queuedIds }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** Each swarm lead's angles (Owl `worker-swarms`); absent while the feature is off. */
   readonly swarmAngles?: ReadonlyMap<string, readonly AgentThread[]> | undefined
@@ -349,6 +363,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   readonly peekEnabled: boolean
   /** Needs you stands at the sidebar's head (ADR-0135): the folder dots give their telling to it. */
   readonly indicatorsHidden: boolean
+  /** The threads standing in Needs you, whose rows point up to it; absent while the card is off. */
+  readonly queuedIds?: ReadonlySet<string> | undefined
 }): ReactNode {
   const { t } = useLingui()
   const listId = `thread-folder-${section}-${folder.id}`
@@ -420,7 +436,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     const gap = gaps?.get(row.thread.id)
     if (gap !== undefined) return <li key={row.thread.id} className="thread-nav__gap" aria-hidden="true" data-closing={gap.closing || undefined} style={{ height: gap.height }} />
     return <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-      liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} snoozedUntil={snoozes?.get(row.thread.id)} />
+      liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} snoozedUntil={snoozes?.get(row.thread.id)}
+      queued={queuedIds?.has(row.thread.id) === true} />
   })
   return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined} {...{ [ROVING_GROUP]: '' }}
     onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
@@ -598,6 +615,44 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     if (!settled && holding) drop(thread.id)
     return settled
   }, [settle, hold, drop])
+  // The threads standing in Needs you (ADR-0135): their rows in the folders point up to the card rather than saying the need twice.
+  const queueEntries = organization.needsYou.entries
+  const queuedIds = useMemo(() => queueOn ? new Set(queueEntries.map(entry => entry.row.thread.id)) : undefined, [queueOn, queueEntries])
+  // Pointing at a waiting thread's entry in Needs you or its row in a folder lights the other, and the keyboard's focus
+  // does the same (Zach's pick B, November 5, 2026). Only the two elements' look changes, so no row draws again for it.
+  useEffect(() => {
+    if (!queueOn) return undefined
+    const root = threadList.current?.closest<HTMLElement>('.thread-nav')
+    if (!root) return undefined
+    const light = (attribute: string, target: Element | null): void => {
+      for (const lit of root.querySelectorAll(`[${attribute}]`)) lit.removeAttribute(attribute)
+      const id = target?.closest<HTMLElement>('.needs-you__entry')?.dataset.entryId ?? target?.closest<HTMLElement>('.thread-nav__row[data-in-queue]')?.dataset.inQueue
+      if (!id || target === null) return
+      const entry = [...root.querySelectorAll<HTMLElement>('.needs-you__entry')].find(item => item.dataset.entryId === id)
+      const row = [...root.querySelectorAll<HTMLElement>('.thread-nav__row[data-in-queue]')].find(item => item.dataset.inQueue === id)
+      for (const peer of [entry, row]) if (peer !== undefined && !peer.contains(target)) peer.setAttribute(attribute, '')
+    }
+    const keyboard = (target: EventTarget | null): Element | null => {
+      if (!(target instanceof Element)) return null
+      try { return target.matches(':focus-visible') ? target : null } catch { return null }
+    }
+    const pointed = (event: PointerEvent): void => light('data-peer', event.target instanceof Element ? event.target : null)
+    const left = (): void => light('data-peer', null)
+    const focused = (event: FocusEvent): void => light('data-peer-focus', keyboard(event.target))
+    const blurred = (event: FocusEvent): void => { if (!(event.relatedTarget instanceof Node && root.contains(event.relatedTarget))) light('data-peer-focus', null) }
+    root.addEventListener('pointerover', pointed)
+    root.addEventListener('pointerleave', left)
+    root.addEventListener('focusin', focused)
+    root.addEventListener('focusout', blurred)
+    return () => {
+      root.removeEventListener('pointerover', pointed)
+      root.removeEventListener('pointerleave', left)
+      root.removeEventListener('focusin', focused)
+      root.removeEventListener('focusout', blurred)
+      light('data-peer', null)
+      light('data-peer-focus', null)
+    }
+  }, [queueOn])
   const heldIds = useMemo(() => new Set(gaps.keys()), [gaps])
   const held = useMemo(() => holdSettledRows(organization.open, organization.settled, heldIds), [organization.open, organization.settled, heldIds])
   const gapsByFolder = useMemo(() => {
@@ -682,7 +737,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
       mainCheckout={section === 'open' && mainCheckout.size ? mainCheckout.get(projectWorkingCopyDefaultKey(state, folder.id)) : undefined}
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settleFromList} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn}
-      swarmAngles={swarmAngles} gaps={section === 'open' ? gapsByFolder.get(folder.id) : undefined} snoozes={section === 'snoozed' ? snoozes : undefined} />
+      swarmAngles={swarmAngles} gaps={section === 'open' ? gapsByFolder.get(folder.id) : undefined} snoozes={section === 'snoozed' ? snoozes : undefined} queuedIds={queuedIds} />
   }
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.
