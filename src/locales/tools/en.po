@@ -4315,10 +4315,10 @@ msgstr "What the agent did on the test iPhone"
 msgid "When Sotto last read it"
 msgstr "When Sotto last read it"
 
-#. Beside a comparison's line counts, while Hide whitespace changes is on.
+#. Beside a comparison's line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "whitespace hidden"
-msgstr "whitespace hidden"
+msgid "without whitespace"
+msgstr "without whitespace"
 
 #: src/renderer/src/tools/browserSteps.ts
 msgid "worked in the page"

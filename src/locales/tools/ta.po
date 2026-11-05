@@ -4315,9 +4315,9 @@ msgstr ""
 msgid "When Sotto last read it"
 msgstr ""
 
-#. Beside a comparison's line counts, while Hide whitespace changes is on.
+#. Beside a comparison's line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "whitespace hidden"
+msgid "without whitespace"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
