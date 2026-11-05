@@ -33,3 +33,9 @@ The thread composer floats over the transcript's foot, so the thread runs on und
 - `CONTEXT.md` names the **slim composer**. The design captures do not change: they show composers at the end of their transcripts.
 - Watcher's night scene lays itself out by the full card's place while the composer is slim, so the scene does not move as it changes ([ADR-0126](0126-watchers-conversation-runs-over-a-still-night-scene.md)).
 - Sending the feature to stable flips its entry's `sentToStable`.
+
+## Note, November 4, 2026: nothing shows under the composer's foot
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+A thread's words still run on under the composer at full ink, and nothing cuts them off at its top. They now end inside the card, so they no longer show in the space under its foot or past its rounded corners. It is a mask on the transcript, not a fill, so it holds on Glass and draws nothing where there are no words. Watcher, a new thread's greeting and a waiting question keep what they had.

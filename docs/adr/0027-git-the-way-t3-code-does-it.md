@@ -227,3 +227,15 @@ Zach has not been asked about this yet. It came from the design pass of the same
 **Changed files** folds below Merge, after **Checks**, closed until pressed. Its heading carries how many files and how many lines were added and removed. It lists the files the read already holds (ADR-0102's `files`), the most changed first, with the folder receding, the name read and added and removed lines in two columns. A press on a row opens that file on GitHub. When GitHub lists fewer than the pull request changes, a line says how many of how many show. **Review in Changes** opens Changes on the branch against its base, and is offered only for the thread's own pull request. **Open files on GitHub** stands at its foot.
 
 The fold adds no read of GitHub and contacts no new host. The checklist and Merge do not change.
+
+## Note, November 4, 2026: the checklist, Merge and Changes as the design pass left them
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+- **A ready pull request's checklist is one row.** When nothing blocks the merge, the five lines are one quiet row of ticks and short words ("10 checks passed", "Approved by mira", "Up to date with main", "No conflicts", "Not a draft"), each with its fuller reason in its tooltip and for a screen reader. While something blocks, the open lines come first in one box, failed before to do, running, does not block and unknown, and the done lines fall to the quiet row under it.
+- **A blocked Merge says so.** It reads "Can't merge #1612 yet" with a no-entry mark, hatched with a dashed edge, still focusable and still doing nothing when pressed. The line under it says what has to happen, "You can merge once the failing checks pass and someone approves it.", where it said how many lines were left.
+- **The fold heads carry their state.** **Checks** says how many failed, are running and passed at the right of its head, and **Description** shows the description's first line, muted, until it opens. Both stay closed until pressed.
+- **Review in Changes stands above the file list** in **Changed files**, with **Open files on GitHub** still at its foot.
+- **Changes has one View menu.** Its layout, Wrap long lines, Hide whitespace changes, One file at a time and File tree are in a menu named View beside **Collapse all**, each ticked while it holds, where they were seven unnamed toggles.
+
+The lines above that say the checklist and Merge do not change are about what the Checks and Changed files folds cost, and they still hold for those folds. What changed in the checklist and Merge is this note's.

@@ -82,3 +82,9 @@ Zach chose this. On October 24 he picked the quieter line, and on October 26 he 
 **What it costs.** The line moves more than the quiet one he chose. The wording is only as good as what each provider reports.
 
 This replaces "shows only the working words" in the Decision and takes back the October 26 amendment's "the Spaceballs words alone" for a step that is known; the considered option **The words with the step running now under them** stays declined, since the step takes the words' place rather than a second line. The iPhone keeps its line (ADR-0051's October 24 amendment) until Zach asks for this there.
+
+## Note, November 4, 2026: no group line in a one-group fold
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+When a finished turn's fold holds one group of work and no replies, its rows stand straight under the Worked for line, with no group line and no fold of their own, since that line would only say again what the Worked for line says. A fold that holds more than one group, or replies between them, keeps each group's line. The Worked for line still counts the steps it holds.
