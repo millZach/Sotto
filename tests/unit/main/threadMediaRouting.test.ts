@@ -6,14 +6,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ipcRegistry, trustedIpcSender } from '../../fixtures/ipcHarness'
 import { receiptEncoders } from '../../fixtures/receiptEncoders'
-import { AGENT_THREAD_MEDIA, type AgentState, type AgentThreadMediaRequest } from '../../../src/shared/agents'
+import { AGENT_THREAD_MEDIA, mediaTileScale, type AgentState, type AgentThreadMediaRequest } from '../../../src/shared/agents'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import { KeptThumbnails, MEDIA_TILE_KEEP_BYTES } from '../../../src/main/agents/mediaThumbnail'
+import { KeptThumbnails, MEDIA_TILE_KEEP_BYTES, mediaThumbnailMaker } from '../../../src/main/agents/mediaThumbnail'
 
 const REMOTE = '22222222-2222-4222-8222-222222222222'
 const WHOLE = 'data:image/png;base64,AAAA'
@@ -42,7 +42,7 @@ describe('reading an agent\'s picture from the window', () => {
     const tile = { threadId, activityId: 'claude-tool-shot', mediaId: 'm0', size: 'tile' as const }
     await expect(router.threadMedia(tile)).resolves.toEqual({ dataUrl: TILE })
     expect(host.media).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'claude-tool-shot', mediaId: 'm0' })
-    expect(thumbnail).toHaveBeenCalledWith(WHOLE)
+    expect(thumbnail).toHaveBeenCalledWith(WHOLE, 2)
     // Scrolled back into view, the tile is not read again.
     await expect(router.threadMedia(tile)).resolves.toEqual({ dataUrl: TILE })
     expect(host.media).toHaveBeenCalledTimes(1)
@@ -63,6 +63,29 @@ describe('reading an agent\'s picture from the window', () => {
     for (const trip of [tiles, [...tiles].reverse(), tiles]) for (const tile of trip) await router.threadMedia(tile)
     expect(host.media).toHaveBeenCalledTimes(361)
     expect(thumbnail).toHaveBeenCalledTimes(361)
+  })
+
+  it('makes a thumbnail at the scale the window asks for, and keeps each scale apart', async () => {
+    const host = remoteHost()
+    const thumbnail = vi.fn((whole: string, scale: number) => { void whole; return `data:image/jpeg;base64,${scale * 4}` })
+    const router = new DesktopHostRouter(emptyDesktopState, { mediaThumbnail: thumbnail })
+    router.add(host.connection)
+    const tile = { threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'a', mediaId: 'm0', size: 'tile' as const }
+    await expect(router.threadMedia({ ...tile, scale: 1 })).resolves.toEqual({ dataUrl: 'data:image/jpeg;base64,4' })
+    await expect(router.threadMedia({ ...tile, scale: 1.5 })).resolves.toEqual({ dataUrl: 'data:image/jpeg;base64,6' })
+    await expect(router.threadMedia({ ...tile, scale: 1 })).resolves.toEqual({ dataUrl: 'data:image/jpeg;base64,4' })
+    expect(thumbnail.mock.calls.map(call => call[1])).toEqual([1, 1.5])
+  })
+
+  it('makes thumbnails no larger than the tile at the window\'s scale', () => {
+    const resized: { width: number; height: number }[] = []
+    const picture = (size: { width: number; height: number }) => ({ isEmpty: () => false, getSize: () => size,
+      resize: (to: { width: number; height: number }) => { resized.push({ width: to.width, height: to.height }); return { toJPEG: () => Buffer.from('jpeg') } } })
+    const make = mediaThumbnailMaker(() => picture({ width: 1600, height: 1000 }) as never)
+    for (const scale of [1, 1.25, 1.5, 2, undefined]) make('data:image/png;base64,AAAA', scale)
+    // 1600x1000 fits the 208x140 tile by its width, at each scale; a window that names none gets twice the tile.
+    expect(resized).toEqual([{ width: 208, height: 130 }, { width: 260, height: 163 }, { width: 312, height: 195 }, { width: 416, height: 260 }, { width: 416, height: 260 }])
+    expect([0.8, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.25, 4].map(mediaTileScale)).toEqual([1, 1, 1.25, 1.25, 1.5, 1.75, 2, 2.25, 3])
   })
 
   it('holds thumbnails to a budget in bytes, letting the one read longest ago go first', () => {
@@ -107,7 +130,7 @@ describe('reading an agent\'s picture from the window', () => {
     await expect(registry.invoke(AGENT_THREAD_MEDIA, [request], registry.event(registry.widget))).rejects.toThrow('AGENT_SENDER_REJECTED')
     const stranger = trustedIpcSender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
     await expect(registry.invoke(AGENT_THREAD_MEDIA, [request], registry.event(stranger))).rejects.toThrow('AGENT_SENDER_REJECTED')
-    for (const payload of [{ ...request, mediaId: 'm8' }, { ...request, size: 'huge' }, { ...request, digest: 'a'.repeat(64) }]) {
+    for (const payload of [{ ...request, mediaId: 'm8' }, { ...request, size: 'huge' }, { ...request, digest: 'a'.repeat(64) }, { ...request, scale: 1.3 }, { ...request, scale: 8 }]) {
       await expect(registry.invoke(AGENT_THREAD_MEDIA, [payload], registry.event(registry.main))).rejects.toThrow()
     }
     expect(threadMedia).toHaveBeenCalledTimes(1)
