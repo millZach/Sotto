@@ -61,6 +61,19 @@
 .tools-rail__icon { flex: none; }
 /* Words keep the app's 12px floor, a touch above the mock-up's 10.5px, and still fit the 50px tile. */
 .tools-rail__word { max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Below a 1400px window every pixel of the panel is the surface's, so the rail keeps its symbols and gives up their words:
+   a 44px strip of 36px tiles, each named in its tooltip and for a screen reader, where it was a 58px strip of worded tiles.
+   The open surface still says its own name on its line of chrome, and the tiles keep their order and dots. It follows the
+   window, never the panel's own width, so dragging the panel's edge moves no tile. */
+@media (max-width: 1399px) {
+  .tools-panel { --tools-rail-width: 44px; }
+  .tools-rail { gap: 6px; padding-top: calc(var(--tools-chrome-height) + 4px); }
+  .tools-rail__tab { width: 36px; height: 36px; }
+  .tools-rail__tab[aria-selected='true']::before { top: 9px; bottom: 9px; }
+  .tools-rail__word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .tools-rail__live { top: 4px; right: 4px; }
+  .tools-rail__foot { width: 36px; }
+}
 /* Something live on a surface that is not open: its words are the surface's description in the rail. */
 .tools-rail__live { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tools-bg); pointer-events: none; }
 .tools-rail__tab:hover .tools-rail__live { box-shadow: 0 0 0 2px var(--tools-hover); }
