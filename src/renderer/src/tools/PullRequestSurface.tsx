@@ -14,7 +14,7 @@ import { menuEntries } from '../agents/gitActionButton.logic'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
-import { babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
+import { babysitClock, babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
 import { useBabysitEndingsDismissed } from './babysitEndingsDismissed'
 import { useRestartStopped } from '../agents/RestartStopped'
 import { shownCount } from '../state/interfaceNumbers'
@@ -22,7 +22,7 @@ import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullReq
 import { OpenPullRequests } from './OpenPullRequests'
 import { PullRequestChecks, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
   mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -285,7 +285,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   }
   const baseBranch = detail.baseBranch, number = detail.number
   const autoMethod = detail.autoMerge?.method ? mergeLabel(detail.autoMerge.method).toLowerCase() : null
-  const when = mergedWhen(detail.mergedAt)
+  // When it merged, written as the thread's own times are: "2:02 pm" today, "Oct 7, 2:02 pm" before.
+  const when = detail.mergedAt ? babysitClock(detail.mergedAt) || null : null
   const backTo = ownUrl ? pullRequestAddress(ownUrl)?.number ?? null : null
   const back = backTo === null ? t`Back to this thread's pull request` : t({ message: `Back to #${backTo}`, comment: '{backTo} is the number of the thread\'s own pull request.' })
   /** Merge, or what took its place. */
