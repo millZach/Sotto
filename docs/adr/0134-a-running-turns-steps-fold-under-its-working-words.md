@@ -4,7 +4,7 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
-Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known (see the amendment at the end). His picks of October 24 and 26 stay in the record below.
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). His picks of October 24 and 26 stay in the record below.
 
 ## Context
 
@@ -89,8 +89,14 @@ Zach has not been asked about this yet. It came from the design pass of November
 
 When a finished turn's fold holds one group of work and no replies, its rows stand straight under the Worked for line, with no group line and no fold of their own, since that line would only say again what the Worked for line says. A fold that holds more than one group, or replies between them, keeps each group's line. The Worked for line still counts the steps it holds.
 
+## November 5, 2026 amendment: what a step is for leads the line
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/working-purpose/`, kept outside the repository, and picked B.
+
+While a step runs, or the reply arrives, and the provider sent what the work is for, the line leads with that and names the step beside it, a size smaller in the muted ink, with the light crossing only the leading words: "Ordering the cuts so each pull request is safe to merge alone" beside "Read how the workspace control tests build a coordinator", or "Read the request policy" beside `cat src/main/agents/requestPolicy.ts`. What the work is for comes from the plan's current item, in the words the provider gives a running step (Claude's `activeForm`) or as written; else from Claude's description of the command, which Claude Code sends with every shell command; else from the heading of the Codex reasoning summary that led to the step, and only while nothing has finished since that summary. When nothing was sent, the step names itself as the November 4 amendment says. At the minimum window only what the work is for shows, since the opened steps name the step. Thinking and a gap between steps still belong to his words, even when the plan has a step in progress, so the line is still one line with no count, no clock and no Thinking. The button keeps its name, and its description reads all of it, the command included.
+
 ## Note, November 5, 2026: a request waiting on the user takes the line
 
 Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
-While a permission request or a question waits on the user, the line says so: "Waiting for your permission", or "Waiting for your answer" when only a question waits, a permission outranking a question as it does in the sidebar and the composer. Before, a turn whose last reply came before the request read "Writing a reply" above the request's card, which was not true. It takes the place of the step, and it holds the line for 1.5 seconds like anything else on it. The light, the chevron, the steps under the line and the button's name are unchanged.
+While a permission request or a question waits on the user, the line says so: "Waiting for your permission", or "Waiting for your answer" when only a question waits, a permission outranking a question as it does in the sidebar and the composer. Before, a turn whose last reply came before the request read "Writing a reply" above the request's card, which was not true. It takes the place of the step and of what the step is for, and it holds the line for 1.5 seconds like anything else on it. The light, the chevron, the steps under the line and the button's name are unchanged.

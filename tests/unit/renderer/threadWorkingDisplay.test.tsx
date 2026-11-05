@@ -7,7 +7,6 @@ import type { AgentState, AgentThread } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { workingPurpose } from '../../../src/renderer/src/agents/threadActivityView'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -197,37 +196,61 @@ describe('what the working line names', () => {
   })
 })
 
-describe('what the work is for, which the line leaves to the step', () => {
+describe('what the working line says the work is for', () => {
   const waiting = (): AgentActivity[] => [lifecycle({ status: 'running', startedAt: iso(-12_000), timingSource: 'observed' })]
   const unmarked = (text: string | null | undefined): string => (text ?? '').replace(/[⁨⁩]/gu, '')
   const shown = (...steps: readonly AgentActivity[]) => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [...waiting(), ...steps] }))
     const row = within(transcript).getByTestId('thread-activity-live')
-    return { words: unmarked(word(row).textContent), detail: row.querySelector('.thread-activity-live__detail')!, line: within(row).getByRole('button', { name: /^Working, / }) }
+    const result = {
+      words: unmarked(word(row).textContent), detail: row.querySelector('.thread-activity-live__detail')!,
+      line: within(row).getByRole('button', { name: /^Working, / }),
+    }
+    return result
   }
-  const described = (): AgentActivity => activity({ id: 'cat', status: 'running', command: 'cat src/policy.ts',
-    text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }) })
+  const described = (patch: Partial<AgentActivity> = {}): AgentActivity => activity({ id: 'cat', status: 'running', command: 'cat src/policy.ts',
+    text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }), ...patch })
   const plan = (steps: NonNullable<AgentActivity['steps']>): AgentActivity => activity({ id: 'plan', kind: 'plan', status: 'running', title: 'Plan', steps })
-  const summary = (): AgentActivity => activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Inspecting the request policy**\n\nIt decides whether to ask.' })
 
-  // ADR-0134, Zach's pick B: the running step names itself in place of the words, whatever the provider said it is for.
-  it.each([
-    ['a command Claude described', [described()], 'Running cat src/policy.ts'],
-    ['the plan’s step in progress, in Claude’s words for it', [plan([{ text: 'Trace the request', status: 'running', active: 'Tracing the request' }]), described()], 'Running cat src/policy.ts'],
-    ['a reasoning summary’s heading', [summary(), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' })], 'Running rg -n policy src'],
-  ])('names the step, not %s', (_, steps, words) => {
-    const result = shown(...steps)
-    expect(result.words).toBe(words)
-    expect(result.detail.textContent).toBe('')
-    expect(unmarked(result.line.getAttribute('aria-description'))).toBe(words)
+  it('leads with what Claude said a command is for, with the command beside it in the code face', () => {
+    const { words, detail, line } = shown(described())
+    expect(words).toBe('Read the request policy')
+    expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
+    expect(detail).toHaveAttribute('data-code')
+    expect(detail).toHaveAttribute('aria-hidden', 'true')
+    expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
   })
 
-  it('still reads what the work is for from the records, for a line that would lead with it', () => {
-    expect(workingPurpose([...waiting(), described()])).toBe('Read the request policy')
-    expect(workingPurpose([...waiting(), plan([{ text: 'Trace the request', status: 'running', active: 'Tracing the request' }]), described()])).toBe('Tracing the request')
-    expect(workingPurpose([...waiting(), summary(), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' })])).toBe('Inspecting the request policy')
-    // A heading from earlier in the turn never speaks for work after something finished.
-    expect(workingPurpose([...waiting(), summary(), activity({ id: 'ls', command: 'ls' }), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' })])).toBe('')
+  it('leads with the plan’s step in progress, in the words Claude gives it while it runs, and keeps the command for the description', () => {
+    const { words, detail, line } = shown(plan([
+      { text: 'Read the code', status: 'completed' }, { text: 'Trace the request', status: 'running', active: 'Tracing the request' }, { text: 'Write it up', status: 'pending' },
+    ]), described())
+    expect(words).toBe('Tracing the request')
+    expect(detail.textContent).toBe('Read the request policy')
+    expect(detail).not.toHaveAttribute('data-code')
+    expect(line).toHaveAccessibleDescription(/^Tracing the request, Read the request policy, Running .*cat src\/policy\.ts/u)
+    cleanup()
+    // A plan step with no words of its own for running reads as written, beside the step itself.
+    const codex = shown(plan([{ text: 'Trace the request', status: 'running' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(codex.words).toBe('Trace the request')
+    expect(unmarked(codex.detail.textContent)).toBe('Running rg -n policy src')
+  })
+
+  it('takes a reasoning summary’s heading for the work it led to, and never for work after something finished', () => {
+    const summary = activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Inspecting the request policy**\n\nIt decides whether to ask.' })
+    const led = shown(summary, activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(led.words).toBe('Inspecting the request policy')
+    expect(unmarked(led.detail.textContent)).toBe('Running rg -n policy src')
+    cleanup()
+    const later = shown(summary, activity({ id: 'ls', command: 'ls' }), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(later.words).toBe('Running rg -n policy src')
+    expect(later.detail.textContent).toBe('')
+  })
+
+  it('says only the step when the provider said nothing of what it is for', () => {
+    const { words, detail } = shown(plan([{ text: 'Done already', status: 'completed' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(words).toBe('Running rg -n policy src')
+    expect(detail.textContent).toBe('')
   })
 })
 
