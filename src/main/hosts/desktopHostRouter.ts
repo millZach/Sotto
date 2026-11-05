@@ -1,4 +1,4 @@
-import { KeptThumbnails } from '../agents/mediaThumbnail'
+import { KeptThumbnails, MEDIA_TILE_DEFAULT_SCALE } from '../agents/mediaThumbnail'
 import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
@@ -13,7 +13,7 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { mediaTileScale, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
@@ -416,7 +416,7 @@ export class DesktopHostRouter {
      * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
-    mediaThumbnail?: (dataUrl: string) => string | null
+    mediaThumbnail?: (dataUrl: string, scale: number) => string | null
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -1274,7 +1274,9 @@ export class DesktopHostRouter {
   async threadMedia(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult> {
     const thumbnail = this.options.mediaThumbnail
     if (!thumbnail) return null
-    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId])
+    // Each scale is its own thumbnail, so a window moved to another screen is not handed one made for the last.
+    const scale = request.scale === undefined ? MEDIA_TILE_DEFAULT_SCALE : mediaTileScale(request.scale)
+    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId, scale])
     if (request.size === 'tile') {
       const kept = this.mediaTiles.get(key)
       if (kept !== undefined) return { dataUrl: kept }
@@ -1282,7 +1284,7 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
     if (!whole || request.size === 'full') return whole
-    const tile = thumbnail(whole.dataUrl)
+    const tile = thumbnail(whole.dataUrl, scale)
     if (tile === null) return null
     this.mediaTiles.set(key, tile)
     return { dataUrl: tile }

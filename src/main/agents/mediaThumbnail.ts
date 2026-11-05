@@ -1,18 +1,22 @@
 import type { NativeImage } from 'electron'
 
-/** A tile is 208x140; its thumbnail is made at twice that, for a high-density screen (ADR-0170). */
-export const MEDIA_TILE_PIXELS = { width: 416, height: 280 } as const
+/** A tile is 208x140 in the window's own units (ADR-0170). */
+export const MEDIA_TILE_SIZE = { width: 208, height: 140 } as const
+/** The scale a thumbnail is made at when the window names none: twice the tile, for a high-density screen. */
+export const MEDIA_TILE_DEFAULT_SCALE = 2
 
 /**
- * Makes a picture's tile thumbnail on the desktop (ADR-0170): the whole picture in, scaled down to fit the tile at twice its
- * size, as a JPEG data URL. A picture already that small is handed back as it is. Null when Electron cannot read it.
+ * Makes a picture's tile thumbnail on the desktop (ADR-0170): the whole picture in, scaled down to fit the tile at the
+ * window's scale, as a JPEG data URL. A 1x screen gets 208x140 at most and a 2x screen 416x280: a pixel more than the
+ * screen shows is memory the window holds for nothing. A picture already that small is handed back as it is. Null when
+ * Electron cannot read it.
  */
-export function mediaThumbnailMaker(fromDataUrl: (dataUrl: string) => NativeImage): (dataUrl: string) => string | null {
-  return dataUrl => {
+export function mediaThumbnailMaker(fromDataUrl: (dataUrl: string) => NativeImage): (dataUrl: string, scale?: number) => string | null {
+  return (dataUrl, tileScale = MEDIA_TILE_DEFAULT_SCALE) => {
     const image = fromDataUrl(dataUrl)
     if (image.isEmpty()) return null
     const { width, height } = image.getSize()
-    const scale = Math.min(1, MEDIA_TILE_PIXELS.width / width, MEDIA_TILE_PIXELS.height / height)
+    const scale = Math.min(1, Math.ceil(MEDIA_TILE_SIZE.width * tileScale) / width, Math.ceil(MEDIA_TILE_SIZE.height * tileScale) / height)
     if (scale >= 1) return dataUrl
     const tile = image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), quality: 'good' })
     return `data:image/jpeg;base64,${tile.toJPEG(85).toString('base64')}`

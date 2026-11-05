@@ -33,12 +33,22 @@ describe('an agent\'s pictures in a turn (ADR-0170)', () => {
   afterEach(() => { cleanup(); owl.on = true; threadMedia.mockClear() })
   afterAll(() => { globalThis.IntersectionObserver = real; delete (window as unknown as { sotto?: unknown }).sotto })
 
+  it('asks for each tile at the scale of the window\'s screen', async () => {
+    const ratio = window.devicePixelRatio
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.5 })
+    try {
+      render(<ThreadMediaTiles groups={groups} threadId="scaled-thread" />)
+      await waitFor(() => expect(threadMedia).toHaveBeenCalledTimes(2))
+      expect(threadMedia.mock.calls.map(call => (call[0] as { scale?: number }).scale)).toEqual([1.5, 1.5])
+    } finally { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: ratio }) }
+  })
+
   it('shows a tile for each picture with its type and size, read at tile size by its handle', async () => {
     render(<ThreadMediaTiles groups={groups} threadId="thread" />)
     expect(screen.getByRole('list', { name: '2 pictures' })).toBeTruthy()
     expect(screen.getAllByText('PNG · 1280×800')).toHaveLength(2)
     await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(2))
-    expect(threadMedia).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'claude-tool-shot', mediaId: 'm0', size: 'tile' })
+    expect(threadMedia).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'claude-tool-shot', mediaId: 'm0', size: 'tile', scale: 1 })
   })
 
   it('opens the viewer on the picture pressed, reading it whole', async () => {
