@@ -13,6 +13,13 @@ export type ThreadShortcutSettings = Pick<AppSettings, 'threadShortcuts' | 'hotk
  */
 export const SETTLE_UNDO_CHORD = 'mod+z'
 
+/**
+ * Show or hide the sidebar: Ctrl+Shift+B, or Cmd+Shift+B on a Mac. In a narrow window it opens the sidebar over the
+ * thread and closes it again (ADR-0110, November 5, 2026). A fixed key, clear of dictation's defaults, the popup's and
+ * every thread shortcut's, listed under Settings › Keyboard's Fixed & elsewhere and refused to every thread shortcut.
+ */
+export const SIDEBAR_TOGGLE_CHORD = 'mod+shift+b'
+
 /** The chord a shortcut is set to (ADR-0133): the user's choice, its default, or null where the user removed it. No settings yet reads as defaults. */
 export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'> | null | undefined, id: ThreadShortcutId): string | null {
   return resolveThreadShortcut(settings?.threadShortcuts ?? {}, id)

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useLayoutEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
@@ -6,6 +6,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
+import { THREAD_SHORTCUT_IDS } from '../../../shared/threadShortcuts'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
 import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
@@ -24,6 +25,9 @@ import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
+import { chordMatches } from './branchToolbar.logic'
+import { claimedThreadChord, fixedKeyFree, sameThreadKeys, SIDEBAR_TOGGLE_CHORD, threadChordLabel, type ThreadChordLabel } from './threadShortcuts'
+import { chordBelongsElsewhere } from '../tools/changesShortcut'
 import { shownCount } from '../state/interfaceNumbers'
 
 /**
@@ -165,15 +169,44 @@ function RailWatcher(): ReactNode {
 
 type SidebarSize = ReturnType<typeof useSidebarSize>
 
-/** The collapse and expand buttons trade places; focus follows the press to whichever one is now shown. */
+/** Whether the focus has gone with what was hidden: nowhere, or inside something now hidden or out of reach. */
+function focusLost(): boolean {
+  const active = document.activeElement
+  return active === null || active === document.body || active.closest('[hidden], [inert]') !== null
+}
+
+/**
+ * The collapse and expand buttons trade places; focus follows the press to whichever one is now shown. A window crossing
+ * the narrow line trades them too, and then the focus moves only if it was in the part that went.
+ */
 export function useCollapseToggleFocus(collapsed: boolean): React.RefObject<HTMLButtonElement | null> {
   const toggle = useRef<HTMLButtonElement>(null)
   const previous = useRef(collapsed)
   useLayoutEffect(() => {
-    if (previous.current !== collapsed) toggle.current?.focus()
+    if (previous.current !== collapsed && focusLost()) toggle.current?.focus()
     previous.current = collapsed
   }, [collapsed])
   return toggle
+}
+
+/**
+ * The keys that show or hide the sidebar (`SIDEBAR_TOGGLE_CHORD`), unless one of dictation's shortcuts or a thread
+ * shortcut the user saved means the same keys; either of those wins, and the sidebar keeps its buttons.
+ */
+function useSidebarChord(): { readonly label: ThreadChordLabel; readonly platform: SottoPlatform } | undefined {
+  const app = useOptionalApp()
+  const settings = app?.settings
+  const platform: SottoPlatform = app?.platform ?? 'win32'
+  return useMemo(() => fixedKeyFree(settings, SIDEBAR_TOGGLE_CHORD, platform)
+    && !THREAD_SHORTCUT_IDS.some(id => { const chord = claimedThreadChord(settings, id, platform); return chord !== null && sameThreadKeys(chord, SIDEBAR_TOGGLE_CHORD, platform) })
+    ? { label: threadChordLabel(SIDEBAR_TOGGLE_CHORD, platform), platform } : undefined, [settings, platform])
+}
+
+/** What a Tab inside the sidebar over the thread may land on, in order, so Tab can go round inside it. */
+function tabStops(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]')]
+    .filter(item => item.tabIndex >= 0 && !(item as HTMLButtonElement).disabled && item.closest('[hidden], [inert]') === null
+      && (typeof item.checkVisibility !== 'function' || item.checkVisibility()))
 }
 
 /** The handle on a sidebar's right edge: drag it, or focus it and use the arrow keys. Double-click resets the width. */
@@ -252,19 +285,90 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const size = useSidebarSize()
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
-  const sky = useReleaseTrack() === 'owl' && !size.collapsed
+  // In a narrow window the rail stands and Expand opens the whole sidebar over the thread (ADR-0110, November 5, 2026).
+  const over = size.over
+  const open = !size.collapsed || over
+  const sky = useReleaseTrack() === 'owl' && open
+  const chord = useSidebarChord()
+  const panel = useRef<HTMLDivElement>(null)
+  const aside = useRef<HTMLElement>(null)
+  /** Where the focus was when the sidebar opened over the thread, to go back to when it closes. */
+  const returnTo = useRef<HTMLElement | null>(null)
+  const { narrow, closeOver } = size
+  // The keys reach the sidebar as it stands at the press, without a new listener for every render.
+  const toggleSidebar = useRef(size.toggle)
+  toggleSidebar.current = size.toggle
+  // The window widened past the line: the sidebar stands beside the thread again, and nothing stays open over it.
+  useEffect(() => { if (!narrow) closeOver() }, [narrow, closeOver])
+  // Opened over the thread, the sidebar takes the focus, on the thread on screen or else the search. Closed, it gives the
+  // focus back to where it was, or to Expand, unless the focus has gone on somewhere else, such as a chosen thread's pane.
+  useLayoutEffect(() => {
+    if (over) {
+      const active = document.activeElement
+      returnTo.current = active instanceof HTMLElement && active !== document.body ? active : null
+      const root = panel.current
+      ;(root?.querySelector<HTMLElement>('.thread-nav__list [aria-current="page"]') ?? root?.querySelector<HTMLElement>('.threads-search input'))?.focus()
+      return
+    }
+    const back = returnTo.current
+    returnTo.current = null
+    const active = document.activeElement
+    if (!focusLost() && !(active !== null && panel.current?.contains(active) && size.collapsed)) return
+    if (back !== null && back.isConnected && back.closest('[hidden], [inert]') === null) back.focus()
+    else if (size.collapsed) toggle.current?.focus()
+    // Only the sidebar's opening and closing moves the focus.
+  }, [over])
+  // A focus that moves out of it (F6 to the pane, a press in the window's strip) puts the sidebar over the thread away.
+  useEffect(() => {
+    if (!over) return undefined
+    const away = (event: FocusEvent): void => {
+      const target = event.target
+      if (target instanceof Node && !aside.current?.contains(target)) { returnTo.current = null; closeOver() }
+    }
+    document.addEventListener('focusin', away, true)
+    return () => document.removeEventListener('focusin', away, true)
+  }, [over, closeOver])
+  // Ctrl+Shift+B (Cmd+Shift+B) shows or hides the sidebar wherever it stands, unless the keys are typed into a terminal
+  // or another dialog holds the window.
+  useEffect(() => {
+    if (chord === undefined) return undefined
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.repeat || !chordMatches(event, SIDEBAR_TOGGLE_CHORD, chord.platform) || chordBelongsElsewhere(event.target)) return
+      if ([...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')].some(item => item !== panel.current)) return
+      event.preventDefault()
+      toggleSidebar.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [chord])
+  /** Over the thread, Escape puts the sidebar away once whatever inside it answers Escape first has, and Tab goes round inside it. */
+  const overKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (!over || event.defaultPrevented) return
+    if (event.key === 'Escape') { event.preventDefault(); closeOver(); return }
+    if (event.key !== 'Tab' || panel.current === null) return
+    const stops = tabStops(panel.current)
+    const first = stops[0], last = stops.at(-1)
+    if (first === undefined || last === undefined) return
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+  const chordTitle = (name: string): string => chord === undefined ? name : `${name} ${chord.label.suffix}`
   const railOn = useOwlFeature('sidebar-rail')
   const watcherOn = useWatcherEnabled()
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
-    <div className="thread-nav__expanded" hidden={size.collapsed}>
+  return <aside ref={aside} className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+    data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    {/* A press beside the sidebar over the thread puts it away, and the thread under it has not moved. */}
+    {over ? <div className="thread-nav__scrim" aria-hidden="true" onMouseDown={event => event.preventDefault()} onClick={closeOver} /> : null}
+    <div ref={panel} className="thread-nav__expanded" hidden={!open} onKeyDown={overKeys}
+      {...over ? { role: 'dialog', 'aria-modal': true, 'aria-label': label } : {}}>
     {sky ? <OwlSky /> : null}
     <SidebarTop platform={platform ?? app?.platform}>
       {heading === null ? null : <h1 className="tt-visually-hidden">{heading}</h1>}
       <Button variant="ghost" iconOnly aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" className="thread-nav__new" data-tour="sidebar-new" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} aria-hidden="true" /><span aria-hidden="true">{newLabel}</span></Button>
-      <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={t`Collapse sidebar`} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
+      <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={chordTitle(t`Collapse sidebar`)}
+        aria-keyshortcuts={chord?.label.keys} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
       <input className="tt-input tt-focusable" type="search" data-region-entry="2" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
@@ -277,16 +381,18 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
     <div className="thread-nav__scroll">{children}</div>
-    {size.collapsed ? null : toast}
-    {size.collapsed ? null : foot ?? <SidebarFoot />}
+    {open ? toast : null}
+    {open ? foot ?? <SidebarFoot /> : null}
     </div>
-    {size.collapsed ? <div className="thread-nav__rail">
+    {/* Under the sidebar over the thread the rail keeps its place, out of reach, so nothing beside it moves. */}
+    {size.collapsed ? <div className="thread-nav__rail" inert={over}>
       {mac ? null : <SottoMark className="thread-nav__glyph" />}
-      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={chordTitle(t`Expand sidebar`)}
+        aria-keyshortcuts={chord?.label.keys} aria-haspopup={size.narrow ? 'dialog' : undefined} aria-expanded={size.narrow ? over : undefined} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       {railOn && watcherOn ? <RailWatcher /> : null}
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
-      {toast}
-      {foot ?? <SidebarFoot />}
+      {over ? null : toast}
+      {over ? null : foot ?? <SidebarFoot />}
     </div> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }

@@ -50,6 +50,8 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
     BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
   }, [width, height] as const)
   await expect.poll(() => page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
+  // Below a 1000 pixel window the rail stands, and the sidebar these checks read opens over the thread (ADR-0110, November 5, 2026).
+  if (width < 1000) await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
 }
 async function theme(page: Page, appearance: 'dark' | 'light'): Promise<void> {
   await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
@@ -61,7 +63,8 @@ async function report(page: Page, threadId: string, status: 'running' | 'error',
     [threadId, status, history, activities] as const)
 }
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Thread sidebar' })
-const row = (page: Page, title: string): Locator => sidebar(page).getByRole('button', { name: title, exact: true })
+// The first is the row; below a 1000 pixel window the rail's tile for it stands behind the sidebar over the thread.
+const row = (page: Page, title: string): Locator => sidebar(page).getByRole('button', { name: title, exact: true }).first()
 const status = (page: Page, title: string): Locator => row(page, title).locator('.thread-nav__status')
 const line = (page: Page): Locator => sidebar(page).locator('.thread-nav__attention')
 async function open(page: Page, title: string): Promise<void> {

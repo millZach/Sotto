@@ -531,8 +531,8 @@ function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnTy
 }
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen, onNewThread,
-  currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut, shortcutsLive = false, restartThreads }: PaneActions & {
+export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen: openThread, onNewThread: newThread,
+  currentThreadId, listedThreadId, openThreadIds, onOpenBeside: openBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut, shortcutsLive = false, restartThreads }: PaneActions & {
   readonly state: AgentState
   /**
    * Every thread the host publishes, Watcher's own included, which the page's own list leaves out: the restart band
@@ -579,7 +579,14 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const hostThreads = state.host.threads
   const listedAs = organization.listedAs
   const swarmAngles = useMemo(() => swarmsOn ? swarmAnglesByLead(hostThreads, listedAs) : undefined, [swarmsOn, hostThreads, listedAs])
-  const { collapsed } = useSidebarSize()
+  const { collapsed: railStands, over, closeOver } = useSidebarSize()
+  // The rail alone: the sidebar is collapsed and not standing open over the thread.
+  const collapsed = railStands && !over
+  // A thread chosen from the sidebar over the thread puts it away (ADR-0110, November 5, 2026), and the thread under it
+  // never moved. Opening one beside and starting a new one do the same.
+  const onOpen = useCallback((threadId: string): void => { closeOver(); openThread(threadId) }, [closeOver, openThread])
+  const onOpenBeside = useCallback((threadId: string): void => { closeOver(); openBeside(threadId) }, [closeOver, openBeside])
+  const onNewThread = useCallback((projectId?: string): void => { closeOver(); newThread(projectId) }, [closeOver, newThread])
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings

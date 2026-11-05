@@ -378,6 +378,27 @@
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
+/* Below a 1000px window the rail stands, and Expand or Ctrl+Shift+B opens the whole sidebar over the thread rather than
+   beside it (Zach's pick C, ADR-0110, November 5, 2026). The rail keeps its place under it, so the thread never moves or
+   rewraps; a press beside it, Escape or a chosen thread puts it away. Its contents measure the panel, not the rail. */
+.thread-nav[data-over] { z-index: 50; overflow: visible; }
+.thread-nav[data-over] > .thread-nav__expanded { position: absolute; inset: 0 auto 0 0; z-index: 1; width: 280px; max-width: calc(100vw - 24px); container: thread-sidebar / inline-size;
+  border-right: 1px solid var(--tt-hairline); background: inherit; box-shadow: var(--tt-shadow-lg); }
+/* Glass's sidebar lets the room through; over the thread it lies on a solid surface, so the thread does not read through it. */
+:root[data-glass] .thread-nav[data-over] > .thread-nav__expanded { background: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--tt-surface-overlay); }
+/* The aside holds its contents' fixed boxes, so the scrim is drawn across the window from the aside's own corner. */
+.thread-nav__scrim { position: absolute; inset: 0 auto 0 0; z-index: 0; width: 100vw; background: var(--tt-backdrop); -webkit-app-region: no-drag; }
+@keyframes thread-nav-over { from { opacity: 0; transform: translateX(-16px); } }
+@keyframes thread-nav-scrim { from { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-nav[data-over] > .thread-nav__expanded { animation: thread-nav-over 160ms ease-out; }
+  :root:not([data-reduced-motion='on']) .thread-nav__scrim { animation: thread-nav-scrim 160ms ease-out; }
+}
+/* Where Tools has taken the sidebar's column (toolsRail.css), the keys still open the sidebar over the field. */
+.threads-view:has(> .thread-nav[data-over]) { position: relative; }
+@media (max-width: 950px) {
+  .threads-view[data-tools] > .thread-nav[data-over] { display: flex; position: absolute; inset: 0 auto 0 0; width: 0 !important; }
+}
 /* A waiting thread's row in its folder while it stands in Needs you (Zach's pick B, ADR-0135, November 5, 2026): the card
    says what it needs, so the row rests its ring, drops the amber and points up to the card. */
 .thread-nav__ring[data-queued] { border-color: var(--tt-text-muted); }

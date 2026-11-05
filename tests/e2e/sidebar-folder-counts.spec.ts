@@ -63,8 +63,14 @@ test('every folder count ends on one edge, whatever sits beside it', async () =>
     const gaps = await projects.locator('.thread-nav__indicators').evaluateAll(dots => dots.map(dots => Math.round(dots.nextElementSibling!.getBoundingClientRect().left - dots.getBoundingClientRect().right)))
     expect(Math.max(...gaps)).toBeLessThanOrEqual(8)
 
-    // The narrowest window keeps the column, as does the light theme.
+    // The narrowest window that docks the sidebar keeps the column, as does the light theme. Below 1000 pixels the rail
+    // stands and the sidebar opens over the thread (ADR-0110, November 5, 2026), which keeps it too.
     await resizeWindow(launched, 820, 560)
+    await page.keyboard.press('Control+Shift+B')
+    await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    await expectOneColumn(5)
+    await page.keyboard.press('Escape')
+    await resizeWindow(launched, 1020, 700)
     await expectOneColumn(5)
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')

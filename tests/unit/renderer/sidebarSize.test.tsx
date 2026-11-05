@@ -35,10 +35,44 @@ it('starts at 30% of the window, from 260 up to 280 pixels, and follows the wind
   atWindowWidth(1600)
   render(<Probe />)
   expect(screen.getByRole('status')).toHaveTextContent('280 expanded')
+  act(() => atWindowWidth(1000))
+  expect(screen.getByRole('status')).toHaveTextContent('280 expanded')
+  // Below 1000 the rail stands, and the default still follows the window for when it widens again.
   act(() => atWindowWidth(820))
-  expect(screen.getByRole('status')).toHaveTextContent('260 expanded')
+  expect(screen.getByRole('status')).toHaveTextContent('260 collapsed')
+  act(() => atWindowWidth(933))
   // Collapsing and expanding again writes no width down, so the default still follows the window.
   fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+  expect(localStorage.getItem('sotto.threadWorkspace.sidebar')).toBeNull()
+  act(() => atWindowWidth(1280))
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+  expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!)).toEqual({ collapsed: true })
+})
+
+function OverProbe() {
+  const size = useSidebarSize()
+  return <><output>{size.collapsed ? 'rail' : 'sidebar'}{size.over ? ' over' : ''}</output><button onClick={() => size.collapse(false)}>Expand</button><button onClick={() => size.collapse(true)}>Collapse</button><button onClick={size.toggle}>Toggle</button></>
+}
+
+it('opens the sidebar over the thread below a 1000 pixel window, saving nothing, and beside it from 1000 up (ADR-0110, November 5, 2026)', () => {
+  localStorage.clear()
+  atWindowWidth(999)
+  render(<OverProbe />)
+  expect(screen.getByRole('status')).toHaveTextContent('rail')
+  fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+  expect(screen.getByRole('status')).toHaveTextContent('rail over')
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle' }))
+  expect(screen.getByRole('status')).toHaveTextContent(/^rail$/)
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle' }))
+  expect(screen.getByRole('status')).toHaveTextContent('rail over')
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+  expect(screen.getByRole('status')).toHaveTextContent(/^rail$/)
+  expect(localStorage.getItem('sotto.threadWorkspace.sidebar')).toBeNull()
+  // At 1000 the sidebar stands beside the thread, and the keys collapse it there as its button does.
+  act(() => atWindowWidth(1000))
+  expect(screen.getByRole('status')).toHaveTextContent(/^sidebar$/)
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle' }))
+  expect(screen.getByRole('status')).toHaveTextContent(/^rail$/)
   expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!)).toEqual({ collapsed: true })
 })
 

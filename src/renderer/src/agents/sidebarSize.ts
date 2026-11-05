@@ -17,6 +17,26 @@ const OLD_DEFAULT = 320
 /** The last value this window saved for each key, and the keys whose last write storage refused. */
 const fallback = new Map<string, string>()
 const unsaved = new Set<string>()
+/**
+ * Below this window width the sidebar stands as the collapsed rail, whatever the user chose, and Expand opens the whole
+ * sidebar over the thread rather than beside it, so the thread never gives up its room (ADR-0110, November 5, 2026).
+ */
+export const NARROW_WINDOW = 1000
+/** Whether the sidebar stands open over the thread, in a narrow window. The window's own, never saved. */
+let over = false
+const overListeners = new Set<() => void>()
+function subscribeOver(listener: () => void): () => void {
+  overListeners.add(listener)
+  return () => { overListeners.delete(listener) }
+}
+const readOver = (): boolean => over
+function setOver(open: boolean): void {
+  if (over === open) return
+  over = open
+  for (const listener of [...overListeners]) listener()
+}
+/** Puts the sidebar over the thread away; one function for every caller, so a memoised row keeps its props. */
+const closeOverlay = (): void => setOver(false)
 
 function subscribe(listener: () => void): () => void {
   window.addEventListener(CHANGED, listener)
@@ -37,6 +57,8 @@ export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
   }, [key])
   const stored = useSyncExternalStore(subscribe, read, () => DEFAULT)
   const viewport = useSyncExternalStore(subscribeWindow, windowWidth, () => 1280)
+  const overOpen = useSyncExternalStore(subscribeOver, readOver, () => false)
+  const narrow = viewport < NARROW_WINDOW
   // Only a width the user dragged is kept; without one the sidebar follows the default as the window changes.
   let chosen: number | null = null, collapsed = false
   try {
@@ -55,9 +77,20 @@ export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
     window.dispatchEvent(new Event(CHANGED))
   }
   return {
-    width: Math.min(preferred, maximum), maximum, collapsed,
+    width: Math.min(preferred, maximum), maximum,
+    /** The rail stands: the user collapsed the sidebar, or the window is narrow. */
+    collapsed: collapsed || narrow,
+    /** The window is under `NARROW_WINDOW`: the rail stands and Expand opens the sidebar over the thread. */
+    narrow,
+    /** The sidebar stands open over the thread. Only a narrow window has it. */
+    over: narrow && overOpen,
     resize: (width: number): void => save(Math.round(Math.max(MINIMUM, Math.min(maximum, width))), collapsed),
-    collapse: (hidden: boolean): void => save(chosen, hidden),
+    /** Collapse or Expand: in a narrow window they close and open the sidebar over the thread, and nothing is saved. */
+    collapse: (hidden: boolean): void => { if (narrow) setOver(!hidden); else save(chosen, hidden) },
+    /** Shows or hides the sidebar, as Ctrl+Shift+B does: over the thread in a narrow window, beside it otherwise. */
+    toggle: (): void => { if (narrow) setOver(!overOpen); else save(chosen, !collapsed) },
+    /** Puts the sidebar over the thread away, as a chosen thread, Escape or a press beside it does. */
+    closeOver: closeOverlay,
     reset: (): void => save(null, false),
   }
 }
