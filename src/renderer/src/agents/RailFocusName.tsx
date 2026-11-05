@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-/** Beside the control, after its end (the rail's tiles), or under it (the pane header's symbols). */
-type Side = 'end' | 'below'
+/** Beside the control, after its end (the rail's tiles), under it (the pane header's symbols) or over it (the sidebar's foot). */
+type Side = 'end' | 'below' | 'above'
 
 interface Shown { readonly text: string; readonly left: number; readonly top: number; readonly control: HTMLElement; readonly side: Side }
 
@@ -10,7 +10,10 @@ const place = (control: HTMLElement, text: string, side: Side): Shown => {
   const box = control.getBoundingClientRect()
   return side === 'end'
     ? { text, left: box.right + 8, top: box.top + box.height / 2, control, side }
-    : { text, left: box.left + box.width / 2, top: box.bottom + 6, control, side }
+    : side === 'above'
+      // Over the foot the name starts at its control's left edge, so the first tile's stays inside the window.
+      ? { text, left: box.left, top: box.top - 6, control, side }
+      : { text, left: box.left + box.width / 2, top: box.bottom + 6, control, side }
 }
 
 export interface FocusName {
@@ -27,14 +30,14 @@ export interface FocusName {
  * reads from the keys as it does under the pointer. It is for the eye only: the control's accessible name already says it.
  * A press or the focus moving on puts it away. `accepts` says which controls in the region are named this way.
  */
-function useFocusName(accepts: (control: HTMLElement) => boolean, side: Side): FocusName {
+function useFocusName(accepts: (control: HTMLElement) => boolean, sideOf: (control: HTMLElement) => Side): FocusName {
   const [shown, setShown] = useState<Shown | null>(null)
   const onFocus = useCallback((event: FocusEvent<HTMLElement>): void => {
     const control = event.target
     const text = control.getAttribute('title')
     if (!text || !accepts(control) || !control.matches(':focus-visible')) { setShown(null); return }
-    setShown(place(control, text, side))
-  }, [accepts, side])
+    setShown(place(control, text, sideOf(control)))
+  }, [accepts, sideOf])
   const onBlur = useCallback((): void => setShown(null), [])
   // Enter or Space opens what the control opens where the name stands, and Escape puts the name away.
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLElement>): void => {
@@ -60,17 +63,38 @@ function useFocusName(accepts: (control: HTMLElement) => boolean, side: Side): F
 }
 
 const railTile = (control: HTMLElement): boolean => control.classList.contains('thread-nav__rail-thread')
+const toEnd = (): Side => 'end'
+const toBelow = (): Side => 'below'
 
 /** The collapsed rail's tiles, named beside the rail. */
 export function useRailFocusName(): FocusName {
-  return useFocusName(railTile, 'end')
+  return useFocusName(railTile, toEnd)
 }
 
-// The header's symbols: the Council, Tools, the Terminal drawer, the ··· menu and close. Watch and the Git action say
-// their words already, and an open menu says its own.
-const headerSymbol = (control: HTMLElement): boolean => control.classList.contains('pane-action') && control.getAttribute('aria-expanded') !== 'true'
+/** Whether a worded press shows its words, or only its symbol in a narrow pane. */
+const wordShown = (control: HTMLElement, words: string): boolean => {
+  const word = control.querySelector<HTMLElement>(words)
+  return word !== null && word.getBoundingClientRect().width > 1
+}
+
+// The header's symbols: the Council, Tools, the Terminal drawer, the ··· menu and close, and in a narrow pane Watch's owl
+// and the Git action's mark once their words have gone. A press showing its words needs no name, and an open menu says its own.
+const headerSymbol = (control: HTMLElement): boolean => control.getAttribute('aria-expanded') !== 'true'
+  && (control.classList.contains('pane-action')
+    || (control.classList.contains('watch-toggle') && !wordShown(control, '.watch-toggle__text'))
+    || (control.classList.contains('git-action__quick') && !wordShown(control, '.git-action__label')))
 
 /** A pane header's symbols, named under the header. */
 export function useHeaderFocusName(): FocusName {
-  return useFocusName(headerSymbol, 'below')
+  return useFocusName(headerSymbol, toBelow)
+}
+
+// The sidebar foot's icons: the room switch's tiles, the page links and the update control. On the collapsed rail the foot
+// stands upright, so they are named beside it as the rail's tiles are; in the open sidebar, over the row.
+const footControl = (control: HTMLElement): boolean => control.matches('.thread-nav__seg [role="tab"], .thread-nav__page, .update-control')
+const footSide = (control: HTMLElement): Side => control.closest('.thread-nav__rail') === null ? 'above' : 'end'
+
+/** The sidebar foot's icons, named over the foot, or beside it on the collapsed rail. */
+export function useFootFocusName(): FocusName {
+  return useFocusName(footControl, footSide)
 }

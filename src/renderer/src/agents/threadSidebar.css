@@ -367,7 +367,7 @@
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: var(--tt-radius-mark); background: var(--threads-sidebar); }
 /* A symbol the keys reach is named as the pointer's tooltip names it (RailFocusName.tsx): a rail tile beside the rail, its
-   title over what it is doing, and a pane header's symbol under it. */
+   title over what it is doing, a pane header's symbol under it, and the sidebar foot's icons over the foot. */
 .focus-name { position: fixed; z-index: 80; display: grid; gap: 1px; max-width: 280px; padding: 6px 10px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; pointer-events: none; transform: translateY(-50%); }
 .focus-name[data-side='below'] { padding-block: 5px 6px; transform: translateX(-50%); }
 .focus-name > strong { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
@@ -386,6 +386,7 @@
 .thread-nav__rail-tray[data-hue='3'] { --rail-group: var(--tt-rail-group-3); }
 .thread-nav__rail-tray[data-hue='4'] { --rail-group: var(--tt-rail-group-4); }
 /* The owl on a watched tile, in the muted text colour the owl on a watched row takes (Drake's pick D, October 27, 2026). */
+.focus-name[data-side='above'] { padding-block: 5px 6px; transform: translateY(-100%); }
 .thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: var(--tt-radius-tag); background: var(--threads-sidebar); color: var(--tt-text-muted); }
 /* Amber means only that it waits on you: the whole edge, so it keeps 3:1 by day. */
 .thread-nav__rail-thread[data-waiting]:not([aria-current]) { border-color: var(--tt-attention); }

@@ -24,6 +24,7 @@ import { useOptionalAgents } from './AgentContext'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
+import { useFootFocusName, type FocusName } from './RailFocusName'
 import { useSidebarSize } from './sidebarSize'
 import { chordMatches } from './branchToolbar.logic'
 import { claimedThreadChord, fixedKeyFree, sameThreadKeys, SIDEBAR_TOGGLE_CHORD, threadChordLabel, type ThreadChordLabel } from './threadShortcuts'
@@ -126,17 +127,20 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
  * The way off the page as one row of icons: the room switch, a hairline, the other pages as icon links, then the update
  * control. The sidebar's foot draws it, and so does Watcher's header, which has no sidebar (ADR-0152).
  */
-export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl }: {
+export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl, focusName }: {
   readonly className: string
   readonly roomsClassName: string
   readonly pagesClassName: string
   readonly updateControl: ReactNode
+  /** Names an icon the keys reach, as its tooltip names it for the pointer. */
+  readonly focusName?: FocusName | undefined
 }): ReactNode {
-  return <div className={className}>
+  return <div className={className} onFocus={focusName?.onFocus} onBlur={focusName?.onBlur} onKeyDown={focusName?.onKeyDown}>
     <RoomSwitch className={roomsClassName} iconOnly />
     <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className={pagesClassName} linkClassName="thread-nav__page" />
     {updateControl}
+    {focusName?.name}
   </div>
 }
 
@@ -146,7 +150,9 @@ export function WayOffThePage({ className, roomsClassName, pagesClassName, updat
  */
 export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
-  return <WayOffThePage className="thread-nav__foot" roomsClassName="thread-nav__seg" pagesClassName="thread-nav__pages" updateControl={updateControl} />
+  // The foot is one quiet row of icons (Drake's pick of October 25, 2026); an icon the keys reach says its name over the row.
+  const focusName = useFootFocusName()
+  return <WayOffThePage className="thread-nav__foot" roomsClassName="thread-nav__seg" pagesClassName="thread-nav__pages" updateControl={updateControl} focusName={focusName} />
 }
 
 /**
