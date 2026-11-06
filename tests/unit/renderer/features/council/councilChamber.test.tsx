@@ -1,12 +1,12 @@
 import React from 'react'
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
 import { chamberCouncil, CouncilLayoutMenu, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
-import { clearCouncilDraft, holdCouncilForm, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
+import { clearCouncilDraft, heldCouncilForm, holdCouncilForm, holdCouncilMode, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
 import * as watcherScene from '../../../../../src/renderer/src/watcher/WatcherNightScene'
@@ -17,6 +17,7 @@ import { threadsStateFixture, withThread } from '../../../../fixtures/agentState
 import { councilFixture, row } from './chamberFixtures'
 import { deferred } from '../../../../fixtures/deferred'
 import type { CouncilBridge, CouncilView as CouncilRecord } from '../../../../../src/shared/council'
+import type { ClimbRecord } from '../../../../../src/shared/councilClimb'
 
 vi.mock('../../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/state/AppContext')>(),
@@ -28,8 +29,8 @@ vi.mock('../../../../../src/renderer/src/agents/AgentContext', async importOrigi
 }))
 
 const running = { status: 'running' as const, lastTurn: { id: 'turn', status: 'running' as const } }
-function provide(threads: readonly Partial<AgentThread>[] = []) {
-  const state = threadsStateFixture({ threads })
+function provide(threads: readonly Partial<AgentThread>[] = [], models?: AgentState['host']['models']) {
+  const state = threadsStateFixture({ threads, ...(models ? { host: { models } } : {}) })
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   const navigate = vi.fn(), updateSettings = vi.fn(async () => true)
@@ -62,7 +63,7 @@ function withLayout(width = 1020, height = 380): { readonly asked: () => number;
   return { asked: () => asked, resize: () => resize(), flush: () => { const pending = [...frames.values()]; frames.clear(); for (const frame of pending) frame(performance.now()) } }
 }
 
-afterEach(() => { cleanup(); holdCouncilForm('thread-a', { question: '', panel: null, origin: null }); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+afterEach(() => { cleanup(); clearCouncilDraft(); for (const thread of ['thread-a', 'thread-b', '']) { holdCouncilForm(thread, { question: '', panel: null, origin: null }); holdCouncilMode(thread, 'ask') } vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
 
 describe('the Council tab’s reads', () => {
   it('shows the pending list read, then a safe failure instead of keeping it pending', async () => {
@@ -115,6 +116,104 @@ describe('the Council tab’s reads', () => {
     render(<CouncilView bridge={{ read: async () => [], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Agent controls are unavailable. Reopen Sotto to reconnect.')
     expect(screen.queryByText('Preparing the Council…')).toBeNull()
+  })
+})
+
+describe('the Council belongs to its origin thread', () => {
+  const models: AgentState['host']['models'] = [{ id: 'claude:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }]
+  it.each(['working', 'waiting', 'done', 'stopped', 'settled'] as const)('keeps another thread’s %s Council out of the list and chamber, including after an update', async status => {
+    withLayout()
+    provide([{ id: 'thread-a' }, { id: 'thread-b' }], models)
+    const own = councilFixture({ question: 'A’s saved question' }, { origin: { thread: 'thread-a', title: 'Thread A' }, status: 'done' })
+    const other = councilFixture({ question: 'B’s saved question' }, { id: '22222222-2222-4222-8222-222222222222', origin: { thread: 'thread-b', title: 'Thread B' }, status,
+      createdAt: '2026-11-03T10:00:00.000Z', seats: own.seats.map(seat => ({ ...seat, modelName: `Elsewhere ${seat.modelName}` })) })
+    let records = [own]
+    let changed = (): void => undefined
+    const bridge: CouncilBridge = { read: async () => records, estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: listener => { changed = () => listener({ councils: [other.id] }); return () => undefined } }
+    const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
+    expect(await screen.findByRole('heading', { name: 'A’s saved question' })).toBeInTheDocument()
+    await act(async () => { records = [other, own]; changed() })
+    expect(screen.queryByRole('heading', { name: 'B’s saved question' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Elsewhere/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Chair, Wonder Full/ })).toBeInTheDocument()
+    rerender(<CouncilView bridge={bridge} />)
+    expect(await screen.findByRole('heading', { name: 'B’s saved question' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'A’s saved question' })).toBeInTheDocument()
+  })
+
+  it('restores each thread’s unsent question, seats and From choice without copying them on a thread change', async () => {
+    withLayout()
+    provide([{ id: 'thread-a', title: 'Thread A' }, { id: 'thread-b', title: 'Thread B' }])
+    const bridge: CouncilBridge = { read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: () => () => undefined }
+    const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'A’s unsent question')
+    await userEvent.click(screen.getByRole('radio', { name: '5' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
+    const saved = heldCouncilForm('thread-a')
+    rerender(<CouncilView thread="thread-b" bridge={bridge} />)
+    expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('')
+    expect(screen.getByRole('radio', { name: '3' })).toBeChecked()
+    expect(heldCouncilForm('thread-b')).toBeUndefined()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'B’s unsent question')
+    rerender(<CouncilView thread="thread-a" bridge={bridge} />)
+    expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('A’s unsent question')
+    expect(screen.getByRole('radio', { name: '5' })).toBeChecked()
+    expect(heldCouncilForm('thread-a')).toEqual(saved)
+    expect(document.querySelector('.council-origin__title')).toHaveTextContent('Thread B')
+    expect(heldCouncilForm('thread-b')?.question).toBe('B’s unsent question')
+  })
+
+  it('can submit from a fresh thread while another thread’s Council is running or its submit is pending', async () => {
+    withLayout()
+    provide([{ id: 'thread-a' }, { id: 'thread-b' }], models)
+    const pending = deferred<Awaited<ReturnType<CouncilBridge['command']>>>()
+    const command = vi.fn<CouncilBridge['command']>().mockImplementationOnce(() => pending.promise).mockResolvedValue({ ok: true, council: 'new-b' })
+    const bridge: CouncilBridge = { read: async () => [councilFixture({}, { origin: { thread: 'thread-a', title: 'Thread A' } })], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command, onChanged: () => () => undefined }
+    const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'Ask A')
+    await userEvent.click(screen.getByRole('button', { name: 'Ask the Council' }))
+    expect(command).toHaveBeenCalledTimes(1)
+    rerender(<CouncilView thread="thread-b" bridge={bridge} />)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'Ask B')
+    expect(screen.getByRole('button', { name: 'Ask the Council' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Ask the Council' }))
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'start', originThread: 'thread-b', question: 'Ask B' }))
+    await act(async () => { pending.resolve({ ok: true, council: 'new-a' }) })
+  })
+
+  it('keeps Climb history and the chamber on the pane’s thread, saves its draft and origin, and leaves a fresh thread in Ask', async () => {
+    withLayout()
+    const { command } = provide([{ id: 'thread-a', title: 'Thread A' }, { id: 'thread-b', title: 'Thread B' }], models)
+    const other: ClimbRecord = { mode: 'climb', id: '22222222-2222-4222-8222-222222222222', createdAt: '2026-11-03T10:00:00.000Z', originThread: 'thread-b', originTitle: 'Thread B', projectId: 'project',
+      phase: 'setup', reason: 'B’s Climb is running', evidence: [], rounds: [], turns: [{ id: 'turn-b', draftId: 'draft-b', messageId: 'message-b', thread: 'b-setup', stage: 'setup', round: 0, delivery: 'accepted', repair: false }], noImprovement: 0, completedTurns: 0, originLastUser: null, retained: true }
+    const own: ClimbRecord = { ...other, id: '11111111-1111-4111-8111-111111111111', originThread: 'thread-a', originTitle: 'Thread A', phase: 'stopped', reason: 'A’s saved Climb', turns: [] }
+    const bridge: CouncilBridge = { read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: () => () => undefined, climb: vi.fn(async () => ({ ok: true, climbs: [other, own] })) }
+    const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    expect(await screen.findByText('A’s saved Climb')).toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Goal' }), 'A’s unsent goal')
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
+    expect(screen.queryByText('B’s Climb is running')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Goal' })).toHaveValue('A’s unsent goal')
+    expect(command).not.toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['b-setup'] })
+    rerender(<CouncilView thread="thread-b" bridge={bridge} />)
+    expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    expect(await screen.findByText('B’s Climb is running')).toBeInTheDocument()
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['b-setup'] }))
+    expect(screen.queryByRole('textbox', { name: 'Goal' })).toBeNull()
+    expect(screen.queryByText('A’s saved Climb')).toBeNull()
+    rerender(<CouncilView thread="thread-a" bridge={bridge} />)
+    expect(screen.getByRole('button', { name: 'Climb' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('textbox', { name: 'Goal' })).toHaveValue('A’s unsent goal')
+    expect(document.querySelector('.council-origin__title')).toHaveTextContent('Thread B')
+    expect(screen.queryByText('B’s Climb is running')).toBeNull()
+    rerender(<CouncilView bridge={bridge} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    expect(await screen.findByText('B’s Climb is running')).toBeInTheDocument()
+    expect(screen.getByText('A’s saved Climb')).toBeInTheDocument()
   })
 })
 

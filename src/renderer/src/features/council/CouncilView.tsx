@@ -49,18 +49,25 @@ export function CouncilLayoutMenu(): ReactNode {
     onChoose={value => void app.actions.updateSettings({ councilLayout: value })} />
 }
 
+type CouncilViewProps = { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }
+
 /**
  * The Council (ADR-0177), the Council tab of a thread pane's drawer: the chamber (`CouncilChamber`, decision 6), the
  * seats across the drawer's whole width under it, and beside the chamber the Ask form and each Council as a text record
  * of its stages, its threads' states and the actions their rows offer, the verdict with Sotto's counts, and Send to the
  * thread. The record is the accessible form of the deliberation. `thread` is the pane's thread, where a question starts
- * from unless the user changes it.
+ * from unless the user changes it. Records belong to their origin; drafts and mode belong to this pane’s thread.
  */
-export function CouncilView({ thread, bridge = window.sotto?.council }: { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }): ReactNode {
+export function CouncilView(props: CouncilViewProps): ReactNode {
+  return <ThreadCouncilView key={props.thread ?? ''} {...props} />
+}
+
+function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilViewProps): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const { councils, failed } = useCouncils(bridge)
+  const ownCouncils = thread === undefined ? councils : councils?.filter(council => council.origin.thread === thread) ?? null
   const [mode, setMode] = useState<'ask' | 'climb'>(() => councilMode(thread ?? ''))
   useEffect(() => { holdCouncilMode(thread ?? '', mode) }, [mode, thread])
   // A thread's agent that starts a Climb, or a Council, brings this tab to it (ADR-0177, November 5, 2026).
@@ -69,7 +76,7 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   // What the tab held when the drawer last showed a shell or hid.
-  const [held] = useState(() => thread === undefined ? undefined : heldCouncilForm(thread))
+  const [held] = useState(() => heldCouncilForm(thread ?? ''))
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
   const [climbRecord, setClimbRecord] = useState<ClimbRecord | null>(null)
@@ -91,12 +98,12 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
     take()
     return onCouncilDraft(take)
   }, [thread])
-  useEffect(() => { if (thread !== undefined) holdCouncilForm(thread, { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
+  useEffect(() => { holdCouncilForm(thread ?? '', { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(mode === 'climb' ? climbPanel : seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
   return <div className="council-view" data-layout={layout}>
-    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : chamberCouncil(ownCouncils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
     {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
     {mode === 'ask' && bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
     <div className="council-scroll"><div className="council-page">
@@ -107,7 +114,7 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
         onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
       {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
       {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
-      <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      <div className="council-list">{(ownCouncils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
       </>}
     </div></div>
   </div>
