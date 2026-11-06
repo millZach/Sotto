@@ -365,7 +365,7 @@
    at a glance without taking more ink. */
 .thread-nav__row--details:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
 .thread-nav__row--details :is(.thread-nav__standing, .thread-nav__time) { font-weight: 450; }
-.thread-nav__row--details:not([data-resting]) .thread-nav__standing { font-weight: 600; }
+.thread-nav__row--details:not([data-resting]) .thread-nav__standing { font-weight: 500; }
 .thread-nav__row--details[data-resting] :is(.thread-nav__standing, .thread-nav__time) { font-weight: 400; }
 /* A row whose need the Needs you card says keeps the middle weight: the card is where that need is said (ADR-0135). */
 .thread-nav__row--details[data-in-queue] .thread-nav__title { font-weight: 500; }
@@ -380,13 +380,18 @@
    Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
 :root[data-theme='light'] .thread-nav { --threads-warning-text: color-mix(in oklab, var(--tt-warning-text, var(--tt-warning)) 84%, var(--tt-text)); }
 :root[data-theme='light'] .thread-nav :is(.needs-you__status, .thread-nav__status[data-state='needs']) { font-weight: 600; }
-/* A title may take two lines; the ring stays on its first. */
-.thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; margin-top: calc((var(--tt-type-body) * 1.35 - 10px) / 2); }
+/* A title may take two lines; the ring stays on its first. A row's marks are one family: the ring over the provider's mark,
+   each 12px in the same column, drawn with the same 1.5px line, the words' glyphs (In Needs you, a prototype, Watcher's
+   owl) 12px too, and colour only where it says what the thread is doing. A working ring is that line with a quarter of it
+   in the activity colour, turning, rather than a soft wedge half its size. */
+.thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; width: 12px; height: 12px; margin-top: calc((var(--tt-type-body) * 1.35 - 12px) / 2); }
+.thread-nav__row--details .thread-nav__ring[data-state='working']:not([data-unseen], [data-background]) { border: 1.5px solid color-mix(in srgb, var(--tt-activity) 26%, transparent); border-top-color: var(--tt-activity); background: none; mask: none; }
+.thread-nav__row--details .thread-nav__ring[data-background] svg { width: 12px; height: 12px; }
 .thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; font-size: var(--tt-type-small); line-height: 18px; visibility: visible; }
 .thread-nav__metadata { display: contents; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after the words. */
 .thread-nav__provider { grid-area: 2 / 1; display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; }
-.thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
+.thread-nav__provider .thread-nav__mark { flex: none; width: 12px; height: 12px; }
 .thread-nav__standing { grid-area: 2 / 2; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 18px; white-space: nowrap; }
 .thread-nav__standing .thread-nav__status { display: block; flex: 0 1 auto; grid-column: auto; font-size: inherit; text-overflow: ellipsis; }
 .thread-nav__standing .watched-badge { flex: none; }

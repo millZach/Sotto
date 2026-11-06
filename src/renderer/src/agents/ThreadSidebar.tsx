@@ -78,8 +78,8 @@ function Indicators({ working, needs, id, hidden = false }: { readonly working: 
 }
 
 /**
- * A row's clock. A working row counts up once a second and writes its own text, the way the transcript's
- * clock does, so one running thread never re-renders the sidebar every second.
+ * A row's clock. A working row counts its minutes and writes its own text as each one passes, so one running thread
+ * never re-renders the sidebar.
  */
 export function RowTime({ row, live, id }: { readonly row: ThreadRow; readonly live: boolean; readonly id?: string }): ReactNode {
   const { t } = useLingui()
@@ -89,7 +89,8 @@ export function RowTime({ row, live, id }: { readonly row: ThreadRow; readonly l
     if (!Number.isFinite(since)) return
     const tick = (): void => { if (ref.current) ref.current.textContent = workingLabel(since, Date.now()) }
     tick()
-    const timer = window.setInterval(tick, 1000)
+    // It says whole minutes, so a look every ten seconds keeps it within ten seconds of the minute it names.
+    const timer = window.setInterval(tick, 10_000)
     return () => window.clearInterval(timer)
   }, [since])
   const at = Number.isFinite(row.activityAt) ? new Date(row.activityAt) : null
@@ -251,7 +252,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       <span className="thread-nav__metadata">
         {/* The mark stands for the provider's name; the status below says the name for a screen reader, and hovering says it here. */}
         <span className="thread-nav__provider" title={[row.provider, row.model?.name].filter(Boolean).join(' · ')}>
-          <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} /></span>
+          <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} size={12} /></span>
         </span>
         {/* What the thread is doing starts where its name starts, so a list of rows reads down one edge. */}
         <span className="thread-nav__standing">
@@ -259,7 +260,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
             // What it needs stays in the tooltip and for a screen reader; the words point up to the card that says it.
             ? <span id={statusId} className="thread-nav__status" data-in-queue title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, {status}{disconnected}, </span><ArrowUp size={12} aria-hidden="true" />{t({ message: 'In Needs you', comment: 'A sidebar row\'s state: the thread waits on the user and stands in the Needs you card above, which says what for.' })}</span>
             : <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-restart={restart || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnected}</span>}
-          {watched ? <WatchedBadge size={14} /> : null}
+          {watched ? <WatchedBadge size={12} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
       </span>

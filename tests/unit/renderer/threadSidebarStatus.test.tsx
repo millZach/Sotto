@@ -128,17 +128,21 @@ describe('a row that needs you says what it needs', () => {
 })
 
 describe('a working row counts up', () => {
-  it('ticks every second without re-rendering the sidebar, and leaves idle rows on the coarse clock', () => {
+  it('counts its minutes without re-rendering the sidebar, and leaves idle rows on the coarse clock', () => {
     const state = threadsStateFixture()
     const since = rowFor(state, 'footer-links').workingSince
     vi.useFakeTimers()
     vi.setSystemTime(since + 5_000)
     mount(state, undefined)
-    expect(clock('Footer links')).toHaveTextContent('5s')
+    // Under a minute the row's Working says it alone.
+    expect(clock('Footer links').textContent).toBe('')
     const renders = vi.mocked(useAgents).mock.calls.length
-    act(() => { vi.advanceTimersByTime(2_000) })
-    expect(clock('Footer links')).toHaveTextContent('7s')
+    act(() => { vi.advanceTimersByTime(20_000) })
     expect(vi.mocked(useAgents).mock.calls.length).toBe(renders)
+    act(() => { vi.advanceTimersByTime(45_000) })
+    expect(clock('Footer links')).toHaveTextContent('1 min')
+    act(() => { vi.advanceTimersByTime(120_000) })
+    expect(clock('Footer links')).toHaveTextContent('3 min')
     // Last activity stays visible beside idle titles; only running clocks tick.
     const idle = screen.getByRole('button', { name: 'Grok voice previews' })
     expect(idle.querySelector(':scope > .thread-nav__time')).toHaveAttribute('datetime')
@@ -150,9 +154,9 @@ describe('a working row counts up', () => {
     const thread = state.host.threads.find(entry => entry.id === 'footer-links')!
     expect(rowFor(state, 'footer-links').workingSince).toBe(Date.parse(thread.messages.find(message => message.role === 'user')!.createdAt))
     thread.activities = [{ id: 'turn', turnId: 'turn', kind: 'turn', sequence: 1, status: 'running', title: 'Turn', startedAt: new Date(NOW - 90_000).toISOString() }]
-    expect(rowFor(state, 'footer-links')).toMatchObject({ workingSince: NOW - 90_000, when: '1m 30s' })
-    expect(workingLabel(NOW - 45_000, NOW)).toBe('45s')
-    expect(workingLabel(NOW - 3_930_000, NOW)).toBe('1h 05m')
+    expect(rowFor(state, 'footer-links')).toMatchObject({ workingSince: NOW - 90_000, when: '1 min' })
+    expect(workingLabel(NOW - 45_000, NOW)).toBe('')
+    expect(workingLabel(NOW - 3_930_000, NOW)).toBe('1 h')
     expect(workingLabel(Number.NaN, NOW)).toBe('')
   })
 })
