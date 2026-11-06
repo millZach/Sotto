@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion } from './nativeRequests'
 import { cardUnderHeadline, commandCard, inputFields, otherRequestCard } from './requestInput'
 
 /**
@@ -182,7 +182,7 @@ export function museUserInputPending(threadId: string, input: MuseUserInput): Mu
         ...(option.description ? { description: bounded(option.description, 1_000) } : {}),
         ...(option.preview ? { preview: bounded(option.preview.content, 2_000) } : {}),
       })),
-      multiSelect: question.selection.mode === 'multiple', allowFreeText: true, prose: true as const,
+      multiSelect: question.selection.mode === 'multiple', allowFreeText: true, prose: true as const, skippable: true as const,
       required: (question.selection.minSelections ?? 1) > 0,
     })),
     skippable: true,
@@ -223,6 +223,8 @@ export function museUserInputAnswers(pending: Extract<MusePending, { kind: 'user
   questionValues(pending.request, supplied)
   return questions.map(question => {
     const given = supplied![question.id]
+    // A skipped question is answered in words, which Muse takes for any question: the skip sentence.
+    if (skippedQuestion(supplied, question.id)) return { questionId: question.id, freeText: QUESTION_SKIPPED }
     // Optional questions are deliberately omitted by the form when they have no answer.
     // MSP still needs one answer per question, with an empty selection or text for those entries.
     if (!given || (!given.optionIds.length && !given.text?.trim())) return question.selection.mode === 'multiple'

@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 
 import type { AgentRequest } from '../../../../shared/agents'
-import { EMPTY_SELECTION, requestMode, textOnly, type RequestAnswer, type RequestEntry } from './requestAnswers'
+import { EMPTY_SELECTION, isSkipped, requestMode, textOnly, type RequestAnswer, type RequestEntry } from './requestAnswers'
 
 /** The words a receipt uses for an answer written in the user's own words, which Sotto never repeats. */
 export const OWN_WORDS = 'in your own words'
@@ -31,18 +31,22 @@ export function chosenWords(request: AgentRequest, entry: Pick<RequestEntry, 'ch
   if (mode !== 'structured') return null
   if (entry.choice === 'skip') return SKIPPED
   const labels: string[] = []
-  let own = false
+  let own = false, skipped = 0
   for (const question of request.questions ?? []) {
     const selection = entry.selections[question.id]
     if (selection === undefined) continue
+    if (isSkipped(selection)) { skipped++; continue }
     for (const id of selection.optionIds) {
       const option = question.options.find(item => item.id === id)
       if (option !== undefined) labels.push(plainLabel(option.label))
     }
     if ((selection.other || textOnly(question)) && selection.text.trim() !== '') own = true
   }
-  if (labels.length === 0) return own ? OWN_WORDS : null
-  return own ? `${labels.join(', ')}, and ${OWN_WORDS}` : labels.join(', ')
+  const chosen = labels.length === 0 ? own ? OWN_WORDS : null : own ? `${labels.join(', ')}, and ${OWN_WORDS}` : labels.join(', ')
+  if (skipped === 0) return chosen
+  // Questions skipped one at a time are counted after what was chosen (Zach's pick, November 6, 2026), and never named.
+  if (chosen === null) return SKIPPED
+  return t({ message: `${chosen}, and skipped ${skipped}`, comment: 'What the user answered on a card of several questions and how many they skipped, as in “Wait for the rewrite, and skipped 2”.' })
 }
 
 /** The same words for an answer as it is sent: what the card's choice or selections were, read back from the answer itself. */
@@ -52,7 +56,7 @@ export function answerWords(request: AgentRequest, answer: RequestAnswer): strin
   if (mode === 'legacy-options') return chosenWords(request, { choice: answer.answer, selections: {} })
   if (answer.skipped) return SKIPPED
   const selections = Object.fromEntries(Object.entries(answer.questionAnswers ?? {}).map(([id, given]) =>
-    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '' }]))
+    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '', ...(given.skipped ? { skipped: true as const } : {}) }]))
   return chosenWords(request, { choice: null, selections })
 }
 

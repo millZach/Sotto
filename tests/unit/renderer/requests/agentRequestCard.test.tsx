@@ -826,6 +826,69 @@ describe('skipping a question', () => {
   })
 })
 
+// Zach's pick on November 6, 2026 (ADR-0135): a Skip on each question of several, Skip the rest once one is answered.
+describe('skipping one question of several', () => {
+  const each = (question: StructuredQuestion): StructuredQuestion => ({ ...question, skippable: true })
+  const several = (skippable = true): AgentRequest => ({ ...structured([each(single), each(multi), each(textual)]), ...(skippable ? { skippable: true } : {}) })
+
+  it('folds a skipped question to one line, sends the rest with it marked skipped, and says how many were skipped', async () => {
+    const { user, onSubmit } = setup(several())
+    await user.click(screen.getByRole('radio', { name: /Postgres/ }))
+    await user.click(screen.getByRole('button', { name: 'Skip this question: Which features?' }))
+    expect(screen.getByText('The agent will use its own judgement.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Auth' })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Answer this question: Which features?' })).toHaveFocus())
+    await user.type(screen.getByRole('textbox', { name: 'Name the service' }), 'ledger')
+    expect(screen.getByText('Ready to send · 1 skipped')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Send answers' }))
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', questionAnswers: { 'q-db': { optionIds: ['pg'] }, 'q-feat': { optionIds: [], skipped: true }, 'q-name': { optionIds: [], text: 'ledger' } } })
+    expect(await screen.findByText('Answers sent. You skipped 1 question.')).toBeInTheDocument()
+  })
+
+  it('brings a skipped question back with Answer it', async () => {
+    const { user } = setup(several())
+    await user.click(screen.getByRole('button', { name: 'Skip this question: Which features?' }))
+    await user.click(screen.getByRole('button', { name: 'Answer this question: Which features?' }))
+    expect(screen.getByRole('checkbox', { name: 'Auth' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skip this question: Which features?' })).toBeInTheDocument()
+  })
+
+  it('offers Skip the rest only once a question is answered, and it skips every question still open', async () => {
+    const { user, onSubmit } = setup(several())
+    expect(screen.queryByRole('button', { name: 'Skip the rest' })).toBeNull()
+    await user.click(screen.getByRole('radio', { name: /SQLite/ }))
+    await user.click(screen.getByRole('button', { name: 'Skip the rest' }))
+    expect(screen.getAllByText('Skipped.')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Skip the rest' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Send answers' }))
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', questionAnswers: { 'q-db': { optionIds: ['lite'] }, 'q-feat': { optionIds: [], skipped: true }, 'q-name': { optionIds: [], skipped: true } } })
+  })
+
+  it('sends the card’s own skip once every question is skipped one at a time', async () => {
+    const { user, onSubmit } = setup(several())
+    for (const name of ['Which database?', 'Which features?', 'Name the service']) await user.click(screen.getByRole('button', { name: `Skip this question: ${name}` }))
+    expect(screen.getAllByRole('button', { name: 'Skip questions' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Skip questions' }))
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', skipped: true })
+    expect(await screen.findByText('Questions skipped.')).toBeInTheDocument()
+  })
+
+  it('skips each question where the provider takes no skip of the whole card, as Grok Build does', async () => {
+    const { user, onSubmit } = setup(several(false))
+    await user.click(screen.getByRole('button', { name: 'Skip questions' }))
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', questionAnswers: { 'q-db': { optionIds: [], skipped: true }, 'q-feat': { optionIds: [], skipped: true }, 'q-name': { optionIds: [], skipped: true } } })
+  })
+
+  it('gives no question its own Skip where its adapter did not mark it, or where the card has one question', () => {
+    setup({ ...structured([single, each(multi)]), skippable: true })
+    expect(screen.queryByRole('button', { name: 'Skip this question: Which database?' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Skip this question: Which features?' })).toBeInTheDocument()
+    cleanup()
+    setup({ ...structured([each(single)]), skippable: true })
+    expect(screen.queryByRole('button', { name: /Skip this question/ })).toBeNull()
+  })
+})
+
 // Issue #2149: a confirmation (CONTEXT.md) pops up from the top of the composer, the way a question does (Zach's pick,
 // November 4, 2026), and is answered with Allow once or Deny.
 describe('a confirmation', () => {

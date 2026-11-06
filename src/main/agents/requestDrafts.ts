@@ -403,6 +403,7 @@ export class RequestDraftService {
       for (const question of previous.target.questions) {
         const selection = previous.selections[question.id]
         if (!selection) continue
+        if (selection.skipped) { submitted[question.id] = { optionIds: [], skipped: true }; continue }
         const text = question.allowFreeText && (question.options.length === 0 || selection.other) ? selection.text.trim() : ''
         if (selection.optionIds.length || text) submitted[question.id] = { optionIds: selection.optionIds, ...(text ? { text } : {}) }
       }
@@ -412,7 +413,7 @@ export class RequestDraftService {
       const canonical = (value: AgentQuestionAnswers): string => JSON.stringify(Object.entries(value)
         .filter(([id, answer]) => !secret.has(id) || answer.optionIds.length > 0)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, answer]) => [id, [...answer.optionIds].sort(), secret.has(id) ? '' : answer.text ?? '']))
+        .map(([id, answer]) => [id, [...answer.optionIds].sort(), secret.has(id) ? '' : answer.text ?? '', answer.skipped === true]))
       if (canonical(submitted) !== canonical(answers)) return
       if (previous.decisionId && previous.decisionId !== decisionId) throw new Error('This answer already belongs to another delivery attempt. Check it before retrying.')
       await this.commit(this.saved.drafts.map(draft => draft === previous ? { ...previous, decisionId } : draft))

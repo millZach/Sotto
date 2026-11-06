@@ -56,6 +56,20 @@ it('does not attach a delayed old answer to newer held text, or accept renderer-
   expect((await disk()).drafts[0]?.decisionId).toBe('actual-command')
 })
 
+it('binds a held answer with a question skipped on its own only to the answer that skipped it (ADR-0135)', async () => {
+  const skippable = questions.map(question => ({ ...question, skippable: true as const }))
+  const skipTarget = { ...target, questions: skippable }
+  const state: RequestDraftOwnerState = { connected: true, ready: true, requests: [{ ...request, questions: skippable }] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start()
+  await service.save(draft({ target: skipTarget, held: true, selections: { choice: { optionIds: ['coast'], other: true, text: 'A quiet beach' },
+    notes: { optionIds: [], other: false, text: '', skipped: true } } }))
+  await service.bindDecision(skipTarget, 'answered', { choice: submittedAnswers.choice, notes: { optionIds: [], text: 'Some words' } })
+  expect((await disk()).drafts[0]).not.toHaveProperty('decisionId')
+  await service.bindDecision(skipTarget, 'skipped', { choice: submittedAnswers.choice, notes: { optionIds: [], skipped: true } })
+  expect((await disk()).drafts[0]?.decisionId).toBe('skipped')
+})
+
 it('preserves a final queued edit to a redefined form and rejects stale discard without mutating either form', async () => {
   let state: RequestDraftOwnerState | undefined = { connected: true, ready: true, requests: [request] }
   const service = new RequestDraftService(directory, () => state, async () => {})

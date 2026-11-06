@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, skipSentenceFits } from './nativeRequests'
 import { commandCard, otherRequestCard, readableFields } from './requestInput'
 
 const objectSchema = z.record(z.string(), z.unknown())
@@ -108,11 +108,14 @@ export function devinPending(wireId: string | number, method: string, value: unk
   }
   if (method === 'elicitation/create') {
     const question = parse(questionSchema, value)
-    const questions: NonNullable<AgentRequest['questions']> = Object.entries(question.requestedSchema.properties).map(([id, field]) => ({
-      id, question: field.description ?? field.title ?? id, ...(field.title ? { header: field.title } : {}),
-      options: field.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.enum?.map((value, index) => ({ id: value, label: field.enumNames?.[index] ?? value })) ?? [],
-      multiSelect: false, allowFreeText: !field.enum && !field.oneOf, required: question.requestedSchema.required?.includes(id) ?? false,
-    }))
+    const questions: NonNullable<AgentRequest['questions']> = Object.entries(question.requestedSchema.properties).map(([id, field]) => {
+      const required = question.requestedSchema.required?.includes(id) ?? false, words = !field.enum && !field.oneOf
+      // A field may be skipped on its own when it can be left out, or when it takes words the skip sentence fits.
+      const skippable = !required || words && skipSentenceFits(field.minLength, field.maxLength)
+      return { id, question: field.description ?? field.title ?? id, ...(field.title ? { header: field.title } : {}),
+        options: field.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.enum?.map((value, index) => ({ id: value, label: field.enumNames?.[index] ?? value })) ?? [],
+        multiSelect: false, allowFreeText: words, required, ...(skippable ? { skippable: true as const } : {}) }
+    })
     return { wireId, threadId, question, request: { id, kind: 'question', text: question.message ?? 'Devin needs your input.', questions, options: questions.length === 1 ? questions[0]!.options : [], skippable: true } }
   }
   return undefined
@@ -135,7 +138,10 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
   let content: Record<string, unknown>
   if (questionAnswers) {
     const answers = questionValues(pending.request, questionAnswers)
-    content = Object.fromEntries(Object.keys(answers).map(key => [key, questionAnswers[key]!.optionIds[0] ?? questionAnswers[key]!.text]))
+    // A skipped field is left out when it may be, and otherwise carries the skip sentence as its words.
+    content = Object.fromEntries(Object.keys(answers).flatMap(key => skippedQuestion(questionAnswers, key)
+      ? form.required?.includes(key) ? [[key, QUESTION_SKIPPED]] : []
+      : [[key, questionAnswers[key]!.optionIds[0] ?? questionAnswers[key]!.text]]))
   } else {
     try { content = parse(objectSchema, JSON.parse(answer)) }
     catch {

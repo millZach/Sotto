@@ -61,6 +61,11 @@ msgstr "{0, plural, one {It also lists {names}, which is not added. To use it, r
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 
+#. placeholder {0}: questions.length || 1
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{0, plural, one {Question skipped.} other {Questions skipped.}}"
+msgstr "{0, plural, one {Question skipped.} other {Questions skipped.}}"
+
 #. placeholder {0}: models.length
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
@@ -101,6 +106,11 @@ msgstr "{AGENT_MAX_ATTACHMENTS, plural, one {Attach up to # screenshot at a time
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{agent} is working. Write a follow-up to queue it."
 msgstr "{agent} is working. Write a follow-up to queue it."
+
+#. After a skipped question. {agent} is the coding agent’s name, such as Claude Code.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{agent} will use its own judgement."
+msgstr "{agent} will use its own judgement."
 
 #: src/renderer/src/agents/threadActivityView.ts
 #: src/renderer/src/agents/ThreadMonitor.tsx
@@ -147,6 +157,11 @@ msgstr "{changed, plural, one {changed {fileCount} file} other {changed {fileCou
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{checked, plural, one {# check} other {# checks}}"
 msgstr "{checked, plural, one {# check} other {# checks}}"
+
+#. What the user answered on a card of several questions and how many they skipped, as in “Wait for the rewrite, and skipped 2”.
+#: src/renderer/src/agents/requests/answeredChoices.ts
+msgid "{chosen}, and skipped {skipped}"
+msgstr "{chosen}, and skipped {skipped}"
 
 #. {clientName} is a provider's client, such as Claude Code.
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -1206,6 +1221,10 @@ msgstr "{shown} of {whole}"
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{skippedCount, plural, one {Answers sent. You skipped # question.} other {Answers sent. You skipped # questions.}}"
+msgstr "{skippedCount, plural, one {Answers sent. You skipped # question.} other {Answers sent. You skipped # questions.}}"
+
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{snoozedThreads, plural, one {Snoozed {threads} thread} other {Snoozed {threads} threads}}"
 msgstr "{snoozedThreads, plural, one {Snoozed {threads} thread} other {Snoozed {threads} threads}}"
@@ -1897,6 +1916,11 @@ msgstr "another machine"
 msgid "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 msgstr "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 
+#. Brings back a skipped question so it can be answered.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Answer it"
+msgstr "Answer it"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
 msgstr "Answer sent."
@@ -1904,6 +1928,10 @@ msgstr "Answer sent."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Answer this question"
 msgstr "Answer this question"
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Answer this question: {prompt}"
+msgstr "Answer this question: {prompt}"
 
 #. Read before an answer to the agent's question.
 #: src/renderer/src/agents/NextList.tsx
@@ -6789,10 +6817,6 @@ msgstr "Question from {ownerTitle}"
 msgid "Question from {title}"
 msgstr "Question from {title}"
 
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Question skipped."
-msgstr "Question skipped."
-
 #. The follow-up queue's heading when it holds nothing yet.
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
@@ -6901,6 +6925,10 @@ msgstr "Ready for your next prompt."
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Ready to send"
 msgstr "Ready to send"
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Ready to send · {skipped} skipped"
+msgstr "Ready to send · {skipped} skipped"
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Ready when you are."
@@ -7924,6 +7952,25 @@ msgstr "Skills are {provider}’s own. Remove them to continue on {continueTarge
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Skills aren’t loaded yet."
 msgstr "Skills aren’t loaded yet."
+
+#. Skips one question on a card of several.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Skip"
+msgstr "Skip"
+
+#. Skips every question on the card not yet answered.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Skip the rest"
+msgstr "Skip the rest"
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Skip this question: {prompt}"
+msgstr "Skip this question: {prompt}"
+
+#. Says a question on the card was skipped.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Skipped."
+msgstr "Skipped."
 
 #. Snooze the thread until the picked date and time.
 #: src/renderer/src/agents/ThreadSidebar.tsx

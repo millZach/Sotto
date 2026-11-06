@@ -83,6 +83,16 @@
 
 /* Native form fidelity: optional fields say so, and a field Sotto cannot submit says why in place of its input. */
 .agent-request__optional { color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
+/* A question's own Skip, quiet at the end of its top line, and the one line a skipped question folds to (ADR-0135). */
+.agent-request__skip { margin-left: auto; min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-sm); background: none; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, color 120ms ease; }
+.agent-request__skip:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
+.agent-request__skip:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
+.agent-request__skip:disabled { cursor: default; opacity: .72; }
+.agent-request__question[data-skipped] .agent-request__prompt { color: var(--tt-text-muted); }
+.agent-request__skipped { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; padding: 6px 4px 6px 10px; border-radius: var(--tt-radius-md); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.5; }
+.agent-request__skipped > span { flex: 1 1 220px; }
+.agent-request__skipped strong { color: var(--tt-text); font-weight: 600; }
+.agent-request__skipped .agent-request__clear { margin: 0; }
 .agent-request__unavailable { margin: 0; padding: 2px 0 2px 10px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.5; overflow-wrap: anywhere; }
 .agent-request__unavailable[data-required] { border-left-color: var(--tt-warning); }
 .agent-request__clear { justify-self: start; min-height: 28px; margin: -2px 0 0 20px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-sm); background: none; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
