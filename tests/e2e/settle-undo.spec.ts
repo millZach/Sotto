@@ -78,6 +78,8 @@ test('a Settle pressed with the pointer holds its row\'s place, settles nothing 
     await expect(grok).toBeVisible()
     expect(await shelved(page)).toEqual([])
 
+    /** The sidebar over the thread has finished sliding in, so the rows stand where they are pointed at. */
+    const overSettled = (): Promise<void> => expect.poll(() => sidebar.locator('.thread-nav__expanded').evaluate(node => node.getAnimations().filter(motion => motion.playState === 'running').length)).toBe(0)
     /** Points at the row's Settle and presses it, where the pointer then stays; answers where it pressed. */
     const pointerSettle = async (): Promise<{ x: number; y: number }> => {
       await grok.hover()
@@ -176,18 +178,25 @@ test('a Settle pressed with the pointer holds its row\'s place, settles nothing 
     await expect.poll(() => shelved(page)).toEqual([])
 
     // At the minimum window the gap and the toast are whole, in both modes; under reduced motion the gap goes at once.
+    // Below 1000 pixels the sidebar stands as the rail and Expand opens it over the thread (ADR-0110, Zach's pick C of
+    // November 5, 2026), so the rows are reached there.
     await holdContentSize(launched, 820, 560)
+    await expect(sidebar.getByRole('button', { name: 'Collapse sidebar', exact: true })).toHaveCount(0)
+    await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await expect(grok).toBeVisible()
+    await overSettled()
     await pointerSettle()
     await expect(gap).toHaveCount(1)
-    await inside(toast, sidebar)
+    // The sidebar over the thread is the panel the rail opens; the rail keeps its own width under it.
+    await inside(toast, sidebar.locator('.thread-nav__expanded'))
     expect(await toast.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
     await capture(page, 'held-gap-820x560', async () => { await expect(gap).toHaveCount(1); await expect(undo).toBeVisible() })
     await undo.click()
     await expect(grok).toBeVisible()
 
-    // Collapsed to the rail, the shortcut's toast stands beside the rail's foot, whole and inside the window.
+    // Put away to the rail, the shortcut's toast stands beside the rail's foot, whole and inside the window.
     await sidebar.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    await expect(grok).toHaveCount(0)
     await page.locator('section.thread-pane[data-focused]').getByRole('log', { name: 'Thread transcript' }).focus()
     await page.keyboard.press('Control+Shift+E')
     await expect(shortcutUndo).toBeVisible()
@@ -201,13 +210,17 @@ test('a Settle pressed with the pointer holds its row\'s place, settles nothing 
     await expect.poll(() => shelved(page)).toEqual([])
     await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await expect(grok).toBeVisible()
+    await overSettled()
 
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await pointerSettle()
     await expect(gap).toHaveCount(1)
+    // The pointer leaves the sidebar over the thread for the thread beside it, past the sidebar's edge.
     const smallRoom = (await page.locator('section.thread-pane[data-focused]').boundingBox())!
-    await page.mouse.move(smallRoom.x + 40, smallRoom.y + 40)
+    const overEdge = (await sidebar.locator('.thread-nav__expanded').boundingBox())!
+    expect(smallRoom.x + smallRoom.width - 40).toBeGreaterThan(overEdge.x + overEdge.width)
+    await page.mouse.move(smallRoom.x + smallRoom.width - 40, smallRoom.y + 40)
     expect(await page.evaluate(() => new Promise<number>(done => requestAnimationFrame(() => done(document.querySelectorAll('.thread-nav__gap').length))))).toBe(0)
     await undo.click()
     await expect(grok).toBeVisible()
