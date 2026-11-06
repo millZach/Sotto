@@ -445,6 +445,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       // Folded again, so the states after this start as the user left a turn's steps before it.
       await fold.click()
       await expect(fold).toHaveAttribute('aria-expanded', 'false')
+      // And read from the middle again, where thread-long leaves this thread for the states that open it later.
+      await scrollTranscript(page, 'middle')
     }
   } },
   { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
