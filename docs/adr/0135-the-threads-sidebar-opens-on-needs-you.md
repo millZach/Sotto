@@ -115,7 +115,7 @@ Zach chose this. Reviewers of the design pass found the folders' rows tall and a
 
 A row whose word is news is not resting and keeps its two lines: Just finished, Prototype ready, Babysitting, Monitoring and a restart's time. So does a Done row whose provider is out of reach (Done · Disconnected). The sticky folder head, the Needs you card and the collapsed rail do not change.
 
-Note, November 5, 2026: that sentence says what pick C left alone, not that the head is fixed. Later in the same design pass the sticky folder head's edge was refined (`e13af1f59`): rows pass under the solid head, fading under a soft edge below its hairline, where a row's height of empty sidebar stood. No pick of Zach's claims that change, and he has not been asked about it yet.
+Note, November 5, 2026: that sentence says what pick C left alone, not that the head is fixed. Later in the same design pass the edge under the sticky folder head changed (`e13af1f59`, then `348d19ea0`): rows pass under the solid head, which cuts them cleanly while the list moves, and where a row's height of empty sidebar stood there is no gap and no soft edge. When a scroll ends between rows, the list goes on to the next row's edge the way it was moving, so the row under the head's hairline rests whole and a scroll shorter than a row still moves the list. No pick of Zach's claims that change, and he has not been asked about it yet.
 
 **Decided in building, after the pick.** The prototype showed neither of these, so Zach did not pick them and has not been asked about them yet:
 

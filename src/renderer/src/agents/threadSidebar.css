@@ -127,18 +127,19 @@
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; }
 /* A list at rest starts at a whole row. Scrolled, an open folder's head stays at the top while its rows pass under it, as
-   a table's rows pass under its header, and when a scroll ends the list settles on the nearest row's edge, so the row
-   under the head's hairline is whole: never half a row, never a faded one, never a gap. While the list moves, the solid
-   head cuts a row cleanly; at rest no row is cut there. Each row, the gap a Settle holds (ADR-0167), each folder and each
-   shelf is a place to rest. A row's place lies a head's depth down, so a folder's first row rests with its head over it,
-   and a closed folder's head and a shelf rest at the band. A held gap is a place as the row it holds was, so nothing moves
-   under a still pointer, and a row the keys reach lands whole under the head. The list's end is a place to rest too: its
-   end room (listEndRoom.ts) is just enough that the furthest the list can scroll is also a row's edge. At the foot the rows
-   pass under a solid band that ends in a hairline, drawn only while there is more of the list below. Each edge is solid in
-   every theme, and on Glass it lies on the room's own layers (below), so no row reads through it. */
-.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; --list-edge-fill: var(--threads-sidebar); --list-head-depth: 28px; scroll-snap-type: y mandatory; scroll-padding-block: 6px 7px; }
-.thread-nav[data-mode] .thread-nav__scroll :is(.thread-folder, .thread-nav__settled) { scroll-snap-align: start; }
-.thread-nav[data-mode] .thread-nav__scroll .thread-folder__rows > :is(.thread-nav__row, .thread-nav__gap) { scroll-snap-align: start; scroll-margin-top: var(--list-head-depth); }
+   a table's rows pass under its header, and when a scroll ends between rows the list goes on to the next row's edge the
+   way it was moving (listEndRoom.ts), so the row under the head's hairline is whole: never half a row, never a faded one,
+   never a gap. A scroll shorter than a row still moves the list a row; it never springs back, as snapping to the nearest
+   row did to a small touchpad scroll. While the list moves, the solid head cuts a row cleanly; at rest no row is cut
+   there. Each row, the gap a Settle holds (ADR-0167), each folder and each shelf is a place to rest. A row's place lies a
+   head's depth down (its scroll margin, which a row the keys reach also lands by, whole under the head), so a folder's
+   first row rests with its head over it, and a closed folder's head and a shelf rest at the band. A held gap is a place
+   as the row it holds was, so nothing moves under a still pointer. The list's end is a place to rest too: its end room
+   is just enough that the furthest the list can scroll is also a row's edge. At the foot the rows pass under a solid band
+   that ends in a hairline, drawn only while there is more of the list below. Each edge is solid in every theme, and on
+   Glass it lies on the room's own layers (below), so no row reads through it. */
+.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; --list-edge-fill: var(--threads-sidebar); --list-head-depth: 28px; scroll-padding-block: 6px 7px; }
+.thread-nav[data-mode] .thread-nav__scroll .thread-folder__rows > :is(.thread-nav__row, .thread-nav__gap) { scroll-margin-top: var(--list-head-depth); }
 /* Glass's sidebar is a tint over the room, so an edge drawn in the tint let the rows passing under it read through. An edge
    there lies on the room's own layers under the tint: the window's material is the operating system's and cannot be
    painted, so over it the room's tint lies on the solid overlay surface, and in-app glass's backdrop, which stays where it
