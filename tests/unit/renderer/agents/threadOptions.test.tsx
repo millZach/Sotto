@@ -3,7 +3,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { modeChoices, permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary, unconfirmedSettingText } from '../../../../src/renderer/src/agents/ThreadOptions'
-import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentCommand, type AgentModel, type AgentState, type AgentThread } from '../../../../src/shared/agents'
+import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentCommand, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from '../../../fixtures/renderer/threadOptionsHarness'
 
 setupThreadOptionsTests()
@@ -417,19 +417,6 @@ describe('Codex’s permission menu', () => {
     expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'full-access')?.description)
       .toBe('Codex runs any command and edits any file without asking, anywhere on forge and online.')
     expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'auto')?.description).toBe(CODEX_LINES.auto)
-  })
-
-  it('shows a mode Codex refused in its place, unchoosable, with why (#2185)', () => {
-    const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
-    const model: AgentModel = { ...state.host.models.find(entry => entry.id === 'codex:model')!, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'], refusedRuntimeModes: ['approval-required'] }
-    const refused = 'This version of Codex refuses this mode, so it is off. Choose another.'
-    expect(modeChoices(model, 'auto-accept-edits', undefined)
-      .map(choice => [choice.id, choice.disabled ?? false, choice.description])).toEqual([
-      ['approval-required', true, refused], ['auto-accept-edits', false, CODEX_LINES['auto-accept-edits']],
-      ['auto', false, CODEX_LINES.auto], ['full-access', false, CODEX_LINES['full-access']]])
-    // A thread still on it shows it once, not again as an unoffered lead.
-    expect(modeChoices(model, 'approval-required', undefined)
-      .filter(choice => choice.id === 'approval-required')).toHaveLength(1)
   })
 
   it('gives another provider’s modes none of Codex’s lines', () => {

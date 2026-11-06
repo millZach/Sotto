@@ -142,21 +142,10 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const refused = refusedModeChoice(model, mode, model?.provider ?? t`The provider`)
-    if (refused) return refused
     const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
       : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
-}
-/**
- * A mode the provider refused (#2185, ADR-0005): it stays listed in its place, unchoosable, with why in place of its line,
- * so a menu never shows another mode where it was. Undefined for a mode the provider takes.
- */
-export function refusedModeChoice(model: AgentModel | undefined, mode: AgentRuntimeMode, provider: string): ChoiceOption | undefined {
-  if (!model?.refusedRuntimeModes?.includes(mode)) return undefined
-  return { id: mode, label: RUNTIME_LABELS[mode], disabled: true, translated: true,
-    description: t({ message: `This version of ${provider} refuses this mode, so it is off. Choose another.`, comment: '{provider} is a provider\'s name, such as Codex.' }) }
 }
 /** The provider mode a thread is on, or the one it starts on when none has been chosen: the first offered. */
 export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>

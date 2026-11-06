@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, refusedModeChoice, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
 /**
@@ -39,8 +39,6 @@ function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provid
   const lines = watcherModeDescriptions(provider)
   const lead = offered.includes(chosen) ? [] : [{ id: chosen, label: RUNTIME_LABELS[chosen], disabled: true }]
   return [...lead, ...offered.map(mode => {
-    const refused = refusedModeChoice(model, mode, provider)
-    if (refused) return refused
     const own = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'codex' ? codexModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(own ? { description: own, translated: true } : { description: lines[mode] }) }
   })]

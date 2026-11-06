@@ -9388,11 +9388,6 @@ msgstr "This turn"
 msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr "This turn runs on {now}. The next turn starts on {next}."
 
-#. {provider} is a provider's name, such as Codex.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "This version of {provider} refuses this mode, so it is off. Choose another."
-msgstr "This version of {provider} refuses this mode, so it is off. Choose another."
-
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
 msgstr "This window cannot show the page."

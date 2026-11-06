@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest'
 import { nearestReasoningEffort, nearestRuntimeMode, resolveNewThreadPermission } from '../../../src/shared/newThreadDefaults'
 import type { AgentModel } from '../../../src/shared/agents'
-import { fitRuntimeMode } from '../../../src/shared/workerRoles'
 
 const grok: AgentModel = { id: 'native:grok:model:grok-4.7', provider: 'Grok', providerId: 'grok', name: 'Grok 4.7', ready: true,
   reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'auto', 'full-access'] }
@@ -39,12 +38,6 @@ describe('resolved new-thread permission', () => {
   it('is the model’s first profile for a provider with its own permission modes, whatever the default is', () => {
     expect(resolveNewThreadPermission(devin, undefined)).toEqual({ providerMode: 'ask-first', nearestFit: false })
     expect(resolveNewThreadPermission(devin, 'full-access')).toEqual({ providerMode: 'ask-first', nearestFit: false })
-  })
-  it('keeps a refused default rather than fitting it to a weaker mode, for a new thread and a worker (#2185)', () => {
-    // A Codex that refuses Ask for approval: the start is refused with a plain line, never moved to Allow edits.
-    const refusing: AgentModel = { ...claude, provider: 'Codex', providerId: 'codex', refusedRuntimeModes: ['approval-required'] }
-    expect(resolveNewThreadPermission(refusing, 'approval-required')).toEqual({ runtimeMode: 'approval-required', nearestFit: false })
-    expect(fitRuntimeMode('approval-required', refusing)).toBe('approval-required')
   })
   it('is unset for a model with no runtime modes and no provider modes', () => {
     const bare: AgentModel = { id: 'x', provider: 'X', name: 'X', ready: true }

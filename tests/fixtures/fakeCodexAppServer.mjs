@@ -294,15 +294,6 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }
-  // A Codex that refuses `untrusted` on a request as 0.165 and newer refuse it in config, in Codex 0.167.0's own words
-  // (#2185). `refuseUntrusted: 'always'` stands for a project config that sets it, refusing whatever the request carries.
-  // A held refusal waits for `release-reply` the way a held answer does.
-  if (script.refuseUntrusted && ['thread/start', 'thread/resume', 'thread/settings/update', 'turn/start'].includes(method)
-    && (script.refuseUntrusted === 'always' || params?.approvalPolicy === 'untrusted')) {
-    const refusal = { id, error: { code: -32600, message: 'failed to load configuration: approval_policy = "untrusted" is no longer supported; remove this setting' } }
-    if (holdReply) heldReplies.set(method, refusal); else emit(refusal)
-    return
-  }
   if (method === 'initialize') served(method)
   // A test that stands in for an update scripts the version the installed client answers with.
   if (method === 'initialize') reply({ userAgent: script.version ?? 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })

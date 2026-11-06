@@ -284,24 +284,13 @@ asking, and the granular policy only switches kinds of asking off.
 
 Zach's picks, November 6, 2026:
 
-- **A Codex that refuses Ask for approval turns it off.** Sotto sends no weaker policy in its place. When Codex answers
-  `thread/start`, `thread/resume`, `thread/settings/update` or `turn/start` that carried `untrusted` with its refusal,
-  the request fails with "This version of Codex refuses Ask for approval, so nothing ran. Choose another permission
-  mode." From then on, while the version of Codex that refused runs, its models keep Ask for approval in
-  `runtimeModes` and also list it under `refusedRuntimeModes`. It stays listed so nothing fits a saved choice of it to
-  a weaker mode: a new-thread default, a worker role, a delegation or a Watcher that names it keeps it, and the start is
-  refused with the same line. The desktop's permission menus, a Watcher's included, show it in its place, unchoosable,
-  with "This version of Codex refuses this mode, so it is off. Choose another.", and Sotto refuses a new thread, a
-  change to it or a send on a thread already on it with the same line before asking Codex. A thread already on it
-  stays on it until the user picks another mode; when its session has stopped, it loads again on the mode picked
-  rather than on `untrusted`, so the pick goes through. Another version of Codex offers it again, and an outdated
-  app-server's refusal, one still answering after a client update, does not turn it off for the new version. The
-  refusal is recognised by Codex 0.167.0's own answer, an invalid request whose message carries `approval_policy =
-  "untrusted" is no longer supported` (the app-server sends "failed to load configuration: …" when a request's config
-  carries the value), and only when that request carried `untrusted`; any other refusal is left as it is. A project's
-  own `.codex/config.toml` that sets the value refuses every mode the same way, which this cannot tell apart on a
-  request that carried `untrusted`. `codexUntrustedRefused.test.ts` stands the fake app-server in for such a Codex. The
-  iPhone reads only `runtimeModes`, so it still offers the mode, and choosing it gets the same refusal.
+- **A Codex that refuses Ask for approval turns it off.** If a Codex refuses `untrusted` on a request
+  (`thread/start`, `thread/resume`, `thread/settings/update` or `turn/start`), Ask for approval is turned off for that
+  Codex with a plain line saying so, and Sotto never sends a weaker policy in its place. A saved choice of it is
+  refused, never fitted to a weaker mode, and another version of Codex that takes it offers it again. This is the
+  decided behaviour to build when a Codex actually refuses it; Codex 0.167.0 takes it on every request, so nothing is
+  built yet. #2302 holds the build and the permission mistakes a first attempt in #2281 made, and the live check above
+  is its trigger.
 - **The line under Ask for approval says what Codex does.** "Codex asks before every edit, and before every command
   your Codex rules don’t already allow, even one that only reads." The same words go on the iPhone and in
   `docs/guide.md`.
