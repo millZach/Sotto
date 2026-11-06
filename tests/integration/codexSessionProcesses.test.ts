@@ -117,7 +117,7 @@ describe('Codex app-server per thread session', () => {
     const server = await f.serverOf(stuck)
 
     // The app-server takes the Stop and does nothing with it, as a hung one would.
-    await f.script({ hangOnInterrupt: true })
+    await f.script({ hangOn: 'turn/interrupt' })
     expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: stuck })).toEqual({ accepted: true })
     const stopped = await thread(stuck)
     expect(stopped.status).toBe('idle')
@@ -129,6 +129,23 @@ describe('Codex app-server per thread session', () => {
     expect(await f.serverOf(stuck)).not.toBe(server)
     await f.driver.completeTurn(stuck, 'Carried on')
     await expect.poll(() => replied(stuck, 'Carried on')).toBe(true)
+  })
+
+  it('starts a thread on a new app-server when the one it was resuming on hangs', async () => {
+    const { f, create, send, replied } = await fixture()
+    const stuck = await create('Stuck')
+    await f.script({ reply: 'First reply' })
+    await send(stuck, 'First')
+    await expect.poll(() => replied(stuck, 'First reply')).toBe(true)
+    // Its app-server goes, so the next action resumes it on a new one, and that one hangs on the resume.
+    await f.action(stuck, { type: 'exit' })
+    await expect.poll(() => f.adapter.resumedThreads().includes(stuck)).toBe(false)
+    await f.script({ hangOn: 'thread/resume' })
+    expect(await send(stuck, 'Second').then(result => result, (error: unknown) => error)).not.toEqual({ accepted: true })
+
+    await f.script({ reply: 'Third reply' })
+    expect(await send(stuck, 'Third')).toEqual({ accepted: true })
+    await expect.poll(() => replied(stuck, 'Third reply')).toBe(true)
   })
 
   it('finishes creating a thread whose app-server a client update made outdated halfway', async () => {

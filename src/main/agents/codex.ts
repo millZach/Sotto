@@ -1461,9 +1461,11 @@ export class CodexAppServerHost implements AgentHost {
         this.emit()
       })
     })().catch(error => {
-      // Codex refused the resume, so the thread's app-server holds nothing: it is let go rather than kept for a watched thread.
+      // Codex refused the resume, or did not answer it in time, so the thread's app-server holds nothing Sotto knows of:
+      // it is let go rather than kept for a watched thread, and the next action starts a new one rather than wait on a
+      // hung one again (#2268).
       const runtime = this.runtimes.get(id)
-      if (error instanceof Rejected && runtime && !this.live.has(id)) { this.runtimes.delete(id); this.endServer(runtime.server) }
+      if ((error instanceof Rejected || error instanceof Uncertain) && runtime && !this.live.has(id)) { this.runtimes.delete(id); this.endServer(runtime.server) }
       // A fork whose source rollout is gone cannot be opened again (#1028): the thread says so in place of its history.
       if (error instanceof Rejected && (error.missingThreadId === alias.codexThreadId || error.missingLineageId !== undefined)) {
         const thread = this.ensureThread(id)

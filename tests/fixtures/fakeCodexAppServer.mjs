@@ -225,6 +225,7 @@ function raise(thread, kind, text, method, overrides = {}) {
   pending.set(id, { threadId: thread.id, method })
   emit({ id, method, params: { ...params, ...overrides } })
 }
+let hung = false
 createInterface({ input: process.stdin }).on('line', line => withState(() => {
   const message = JSON.parse(line)
   if (!message.method) {
@@ -243,6 +244,13 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   const { id, method, params = {} } = message
   if (method === 'initialized') { record(message); return }
   const script = read('script.json', {})
+  // `hangOn` names a request this app-server takes and then answers nothing more, that one included, as a hung one
+  // would. It is recorded as crashed, so the app-server Sotto starts next reads a turn it was running back interrupted.
+  if (hung) { record(message); return }
+  if (script.hangOn === method) {
+    record(message); hung = true
+    state.crashed = [...state.crashed ?? [], process.pid]; save(); return
+  }
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const holdReply = script.holdReply === method
@@ -471,9 +479,6 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     notify('turn/started', { threadId: params.threadId, turn: { id: 'compact-turn', status: 'inProgress', items: [] } })
     reply({})
   } else if (method === 'turn/interrupt') {
-    // A hung app-server takes the Stop and does nothing with it: no turn ends and no answer comes. It is stopped the way
-    // a crashed one is, so the next app-server reads its turn back interrupted, as Codex does.
-    if (script.hangOnInterrupt) { state.crashed = [...state.crashed ?? [], process.pid]; save(); return }
     const thread = state.threads[params.threadId]
     const turn = thread.turns.find(turn => turn.id === params.turnId)
     if (turn) { turn.status = 'interrupted'; thread.status = { type: 'idle' }; save(); notify('turn/completed', { threadId: thread.id, turn }) }

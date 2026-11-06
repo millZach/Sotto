@@ -31,7 +31,8 @@ The same reply, fed chunk by chunk through `OversizedLine` as Node delivered it,
 ## Tests
 
 - `tests/integration/codexSessionProcesses.test.ts`, **keeps a thread's app-server, turn and question when a whole read carries more picture bytes than a line may hold**. It uses a 64 KiB line and four 32 KiB pictures. Before the fix, the read rejected with "Codex disconnected before acknowledgement." A throwaway probe on the same scene, since removed, showed the rest of the forge chain. The turn failed, the question was dropped, and the next send was refused as "Codex history could not be verified before sending the prompt". Each later read started a new app-server and killed it again: 4 app-servers and 4 whole reads. After the fix the read succeeds, the question is answered on the same app-server, and the next send is accepted.
-- `tests/unit/main/workspaceStoreWriter.test.ts`, **gives Watcher the thread's stored history, as unavailable, when its provider cannot read the thread back**. It failed with "Codex disconnected before acknowledgement." before the change to `watcherRead`.
+- `tests/unit/main/workspaceStoreWriter.test.ts`, **gives Watcher the thread's stored history, as unavailable, when its provider cannot read the thread back**. It failed with "Codex disconnected before acknowledgement." before the change to `watcherRead`. Its second half marks the thread's history as an error, as a failed opening read does, and read nothing before the second change.
+- `tests/integration/codexSessionProcesses.test.ts`, **starts a thread on a new app-server when the one it was resuming on hangs**. Before the fix, the send after the hung resume came back `{ accepted: false, uncertain: true }` on the same hung app-server.
 - `tests/integration/codexSessionProcesses.test.ts`, **stops a thread whose app-server does not answer the Stop, and starts it again for the next send**. The fake takes the Stop and does nothing, as a hung app-server would. Before the fix the Stop came back `{ accepted: false, uncertain: true }` and the hung process stayed the thread's runtime. After it, the turn is interrupted, the app-server is gone, and the next send is accepted on a new one.
 - `tests/unit/main/codexOversizedLine.test.ts`: chunk splits down to one character, escapes, data URLs, and long text kept, a long run of base64 letters followed by words included. A line still too long fails only its own request, whether Codex wrote its ID before or after the result, and the app-server keeps going.
 
@@ -42,5 +43,8 @@ The same reply, fed chunk by chunk through `OversizedLine` as Node delivered it,
 | `integration/codexSessionProcesses`, `integration/codexAdapterBoundary`, `unit/main/codexOversizedLine`, `unit/main/threadMedia`, `unit/main/threadMediaRouting`, `unit/main/threadMediaScheme`, `unit/main/workspaceStoreWriter` | 144 |
 | `unit/main/heldProviderGate`, `unit/main/museWatcherGate`, `integration/watcherPairedHosts` | 209 |
 | `integration/adapterContract`, `unit/main/codexActivity`, `integration/codexActivity`, `integration/codexUnreadableNotification` | 65 (37 skipped) |
+| After review: `integration/watcherArchive`, `integration/watcherTools`, `integration/adapterContract`, `integration/codexAdapterBoundary`, `unit/main/codexOversizedLine`, `integration/codexActivity`, `integration/codexUnreadableNotification` | 252 (37 skipped), 1 failed (#1783) |
+
+`integration/watcherArchive` failed once in six runs with THREAD_BUSY, and passed four of four both with and without the `watcherRead` change. That is the open flake #1783. `unit/release/stableHostPromotion` fails here because this shell runs Node 26.8.1 and it needs Node 24 to build the host archive.
 
 GitHub CI runs the full suites.

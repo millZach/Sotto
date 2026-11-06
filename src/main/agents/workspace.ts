@@ -579,9 +579,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.applyEvents()
     // Positions and the epoch are the store's own, so the read waits for what was posted for the thread.
     await this.settled(threadId)
-    if (this.storeUnavailable || thread.historyStatus === 'error' || thread.historyStatus === 'loading') return undefined
+    if (this.storeUnavailable || thread.historyStatus === 'loading') return undefined
     const epoch = this.threadStore.readMessageEpoch(threadId)
-    return { availability: live && refreshed && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
+    // A provider that said it could not read the history leaves Sotto's record of it, which is read as unavailable.
+    return { availability: live && refreshed && thread.historyStatus !== 'error' && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
       historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
       activities: this.threadStore.readActivities(threadId, { keep: false }).slice(-100).map(({ id, kind, status, title, startedAt, completedAt }) => ({
         id, kind, status, title: title.slice(0, 2_000), ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) })) }
