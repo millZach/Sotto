@@ -374,6 +374,11 @@
 /* A row whose need the Needs you card says keeps the middle weight: the card is where that need is said (ADR-0135). */
 .thread-nav__row--details[data-in-queue] .thread-nav__title { font-weight: 500; }
 .thread-nav__row--details[data-in-queue] .thread-nav__standing { font-weight: 450; }
+/* A working row's ring already turns in the activity colour, so its Working word says it a second time. The word stays
+   (ADR-0135) but steps back into the row's quiet words, in the muted ink and the clock's weight, so down a list of
+   running threads the names lead and one moving ring, not a column of teal words, says each is at work. */
+.thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: 450; }
+.thread-nav__row--details .thread-nav__standing > .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen]) { color: inherit; }
 /* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
    ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
    itself here was a cycle, which only reached the secondary ink by falling back to the row's colour. A folder's count
