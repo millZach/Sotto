@@ -1079,6 +1079,24 @@ describe('the room switch', () => {
     const { tabs } = foot('threads', false)
     expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Threads'])
   })
+
+  it.each(['darwin', 'win32', 'linux'] as const)('keeps the collapsed %s rail and expands back to the saved width with focus on Watcher', async platform => {
+    mockApp('watcher')
+    vi.mocked(useOptionalApp).mockReturnValue({ ...useOptionalApp()!, platform })
+    localStorage.setItem('sotto.threadWorkspace.sidebar', JSON.stringify({ width: 280, chosen: true, collapsed: true }))
+    mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState())
+    render(<WatcherRoomProvider bridge={bridge}><WatcherView now={NOW} /></WatcherRoomProvider>)
+    await paneReady()
+    const foot = document.querySelector<HTMLElement>('.watcher-foot')!
+    expect(foot).toHaveStyle({ width: platform === 'darwin' ? '80px' : '52px' })
+    expect(foot.querySelector('.thread-nav__rail .thread-nav__foot')).not.toBeNull()
+    fireEvent.click(within(foot).getByRole('button', { name: 'Expand sidebar' }))
+    expect(foot).toHaveStyle({ width: '280px' })
+    expect(foot.querySelector('.thread-nav__rail')).toBeNull()
+    expect(within(foot).getByRole('tab', { name: 'Watcher' })).toHaveFocus()
+    expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!).collapsed).toBe(false)
+  })
 })
 
 describe('a watched thread', () => {

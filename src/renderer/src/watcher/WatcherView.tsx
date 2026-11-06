@@ -11,14 +11,14 @@ import { fitSpeed } from '../../../shared/workerRoles'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
-import { claimRoomFocus } from '../components/AppShell'
+import { claimRoomFocus, handRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
 import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
-import { SidebarFoot } from '../agents/SidebarFrame'
+import { SidebarFoot, SidebarRail } from '../agents/SidebarFrame'
 import { useSidebarSize } from '../agents/sidebarSize'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
@@ -738,7 +738,7 @@ export function WatcherView({ now: fixedNow }: {
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.collapsed || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -762,9 +762,11 @@ export function WatcherView({ now: fixedNow }: {
         </div>
       </div>
     </section>
-    <div className="watcher-foot" style={{ width: sidebar.width }}><SidebarFoot /></div>
+    <div className={`watcher-foot${sidebar.collapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.collapsed ? (mac ? 80 : 52) : sidebar.width }}>
+      {sidebar.collapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.collapse(false) }} /> : <SidebarFoot />}
+    </div>
     <PageWindowControls />
-    {/* The room has no sidebar, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
+    {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked></LinkedFileRouteContext.Provider>

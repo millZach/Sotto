@@ -942,3 +942,6 @@ artifacts/watcher-bottom-navigation/*
 !artifacts/watcher-bottom-navigation/after-windows-beside-820.png
 !artifacts/watcher-bottom-navigation/after-mac-beside-1280-light.png
 !artifacts/watcher-bottom-navigation/after-mac-beside-1600-light.png
+
+!artifacts/watcher-bottom-navigation/collapsed-mac-820.png
+!artifacts/watcher-bottom-navigation/collapsed-windows-820.png

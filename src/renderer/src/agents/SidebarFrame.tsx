@@ -176,6 +176,28 @@ export function useCollapseToggleFocus(collapsed: boolean): React.RefObject<HTML
   return toggle
 }
 
+/** The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. */
+export function SidebarRail({ platform, onExpand, toggle, children, toast, foot }: {
+  readonly platform: SottoPlatform | undefined
+  readonly onExpand: () => void
+  readonly toggle?: React.RefObject<HTMLButtonElement | null>
+  readonly children?: ReactNode
+  readonly toast?: ReactNode
+  readonly foot?: ReactNode
+}): ReactNode {
+  const { t } = useLingui()
+  const railOn = useOwlFeature('sidebar-rail')
+  const watcherOn = useWatcherEnabled()
+  return <div className="thread-nav__rail">
+    {platform === 'darwin' ? null : <SottoMark className="thread-nav__glyph" />}
+    <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+    {railOn && watcherOn ? <RailWatcher /> : null}
+    <div className="thread-nav__rail-list">{children}</div>
+    {toast}
+    {foot ?? <SidebarFoot />}
+  </div>
+}
+
 /** The handle on a sidebar's right edge: drag it, or focus it and use the arrow keys. Double-click resets the width. */
 export function SidebarResize({ size, onResizing }: { readonly size: SidebarSize; readonly onResizing: (resizing: boolean) => void }): ReactNode {
   const helpId = useId()
@@ -253,8 +275,6 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
-  const railOn = useOwlFeature('sidebar-rail')
-  const watcherOn = useWatcherEnabled()
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
@@ -280,14 +300,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {size.collapsed ? null : toast}
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
-    {size.collapsed ? <div className="thread-nav__rail">
-      {mac ? null : <SottoMark className="thread-nav__glyph" />}
-      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
-      {railOn && watcherOn ? <RailWatcher /> : null}
-      <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
-      {toast}
-      {foot ?? <SidebarFoot />}
-    </div> : <SidebarResize size={size} onResizing={setResizing} />}
+    {size.collapsed ? <SidebarRail platform={platform ?? app?.platform} toggle={toggle} onExpand={() => size.collapse(false)} toast={toast} foot={foot}>
+      {collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}
+    </SidebarRail> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }
 
