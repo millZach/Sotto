@@ -6,6 +6,7 @@ import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
+import { gitPullRequestUrlSchema } from './gitPullRequests'
 import { distinctSwarmBriefs, swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
@@ -61,7 +62,7 @@ export const WATCHER_REFUSAL_CODES = [
   'WORKING_COPY_UNAVAILABLE', 'WORKING_COPY_CHANGED', 'THREAD_BUSY', 'STEER_UNAVAILABLE', 'TURN_CHANGED',
   'BACKGROUND_WORK_RUNNING', 'PATH_OUTSIDE_PROJECT', 'UNSAFE_PATH', 'SENSITIVE_FILE', 'SCAN_LIMIT', 'SEARCH_TOO_BROAD',
   'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED', 'STATE_FULL', 'SLASH_COMMAND',
-  'ASK_USER_FIRST',
+  'ASK_USER_FIRST', 'MERGE_TURN_HELD',
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
@@ -261,9 +262,16 @@ export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
 export const WATCHER_STATE_COMPUTED_MAX = 100
 const sottoSentence = z.string().min(1).max(300)
 const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
-/** A pull request in the merge queue: open, not a draft, its checks passed, oldest pass first. */
+/**
+ * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
+ * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
+ * land while its required checks run; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
+ * MERGE its thread sent, with `onHead` saying whether that is still the head.
+ */
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
-  pullRequest: watcherPullRequestSummarySchema, checksPassedAt: time }).strict()
+  pullRequest: watcherPullRequestSummarySchema, url: z.string().max(2_048).optional(), inTrainSince: time, checksPassedAt: time.optional(),
+  requiredChecks: z.enum(['passed', 'running', 'failed', 'unknown']), head: z.string().max(64).optional(),
+  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict().optional() }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
@@ -289,6 +297,20 @@ const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullab
   headroom: counter.nullable().optional() }).strict()
 /** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
 export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time, workers: watcherWorkerCountsSchema.optional() })
+
+/** How long Watcher's reason for a GO MERGE out of the train's turn may be: a sentence or two, which the user reads. */
+export const WATCHER_OVERRIDE_REASON_MAX = 500
+/**
+ * A send that is a GO MERGE (#2229): the pull request it gives its turn, and Watcher's reason when it goes while another
+ * train pull request's required checks run or the base branch is red. Sotto shows that reason on the send's receipt.
+ */
+export const watcherGoMergeSchema = z.object({ pullRequest: gitPullRequestUrlSchema,
+  overrideReason: z.string().trim().min(1).max(WATCHER_OVERRIDE_REASON_MAX).optional() }).strict()
+export type WatcherGoMerge = z.infer<typeof watcherGoMergeSchema>
+/** What a GO MERGE went past, in Sotto's words, with Watcher's reason; `note` says what Sotto could not read for it. */
+export const watcherGoMergeReceiptSchema = z.object({ held: z.array(z.string().min(1).max(400)).max(WATCHER_STATE_COMPUTED_MAX + 1),
+  overrideReason: z.string().max(WATCHER_OVERRIDE_REASON_MAX).optional(), note: z.string().min(1).max(400).optional() }).strict()
+export type WatcherGoMergeReceipt = z.infer<typeof watcherGoMergeReceiptSchema>
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -372,10 +394,13 @@ export const watcherToolSchemas = {
   send_to_thread: {
     // A send that names no `delivery` steers (ADR-0130): main picks the mode from the thread before admission, and a
     // paired host is sent the one it picked.
+    // `goMerge` is the desktop's alone (#2229): it marks the send as the GO MERGE for that pull request, which Sotto
+    // checks against the merge train and the base branch before it goes. A paired host is sent the call without it.
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
-      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional() }).strict(),
+      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(), goMerge: watcherGoMergeSchema.optional() }).strict(),
     // `note` is the desktop's alone: what a send that asked to steer did instead, when it went now or queued (ADR-0130).
-    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional() }),
+    // `goMerge`, the desktop's too: what held the merge turn that `overrideReason` went past, and what Sotto could not read.
+    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional(), goMerge: watcherGoMergeReceiptSchema.optional() }),
   },
   stop_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),

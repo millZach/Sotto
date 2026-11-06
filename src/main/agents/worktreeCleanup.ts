@@ -7,9 +7,10 @@ import { isWatcherWorkActive } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
-import { pullRequestKey } from '../../shared/gitPullRequests'
+import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import type { PullRequestObservation } from './watcherEvidence'
 import { PULL_REQUEST_HOST } from './backgroundPullRequestReads'
+import type { BaseBranchChecks } from './watcherComputedState'
 
 /**
  * The part of WorkspaceHost the sweep needs: what threads there are, a way to reclaim, a way to hear a settle,
@@ -472,4 +473,24 @@ export async function githubPullRequestState(url: string, github?: SharedGitHub)
   const known = typeof state === 'string' ? state.toLowerCase() : ''
   if ((known !== 'open' && known !== 'closed' && known !== 'merged') || typeof headRefName !== 'string') throw new Error('GitHub did not describe the pull request.')
   return { state: known, headRefName, headRefOid: typeof headRefOid === 'string' ? headRefOid : null }
+}
+
+const BASE_BRANCH_CHECKS = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){baseRefName baseRef{target{... on Commit{oid statusCheckRollup{state}}}}}}}'
+/** GitHub's rolled-up state of a commit's checks, as the merge train reads it: an error is a failure, an expected check is still to come. */
+const ROLLUP: Readonly<Record<string, BaseBranchChecks['state']>> = { SUCCESS: 'passed', FAILURE: 'failed', ERROR: 'failed', PENDING: 'pending', EXPECTED: 'pending' }
+/**
+ * The checks on the newest commit of the branch a pull request merges into, by the pull request's github.com URL (#2229),
+ * asked as `askGitHub` says, once per GO MERGE. Throws when it cannot ask; a commit with no checks reads unknown.
+ */
+export async function githubBaseBranchChecks(url: string, github?: SharedGitHub): Promise<BaseBranchChecks> {
+  const address = pullRequestAddress(url)
+  if (!address) throw new Error('Not a GitHub pull request.')
+  const stdout = await askGitHub(['api', 'graphql', '-f', `query=${BASE_BRANCH_CHECKS}`, '-f', `owner=${address.owner}`, '-f', `name=${address.name}`, '-F', `number=${address.number}`],
+    { maxBuffer: 200_000, github, host: PULL_REQUEST_HOST })
+  const answer: unknown = JSON.parse(stdout)
+  const pr = (answer as { data?: { repository?: { pullRequest?: { baseRefName?: unknown; baseRef?: { target?: { oid?: unknown; statusCheckRollup?: { state?: unknown } | null } } | null } } } })?.data?.repository?.pullRequest
+  const branch = pr?.baseRefName, head = pr?.baseRef?.target?.oid
+  if (typeof branch !== 'string' || typeof head !== 'string') throw new Error('GitHub did not describe the base branch.')
+  const state = pr?.baseRef?.target?.statusCheckRollup?.state
+  return { branch, head, state: typeof state === 'string' ? ROLLUP[state] ?? 'unknown' : 'unknown' }
 }

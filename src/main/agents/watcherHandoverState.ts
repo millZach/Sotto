@@ -55,6 +55,8 @@ function list(heading: string, rows: readonly string[], more: (rest: number) => 
 const inReadState = (rest: number) => `And ${rest} more. read_state lists them all.`
 
 /** The section, or an empty string when there is nothing to say. Each part appears only when it has something in it. */
+/** What a train row adds about its required checks: nothing once they passed, since the pull request's own summary says so. */
+const TRAIN_CHECKS: Readonly<Record<WatcherMergeQueueItem['requiredChecks'], string>> = { passed: '', running: ', its required checks running', failed: '', unknown: '' }
 export function watcherHandoverState(input: WatcherHandoverStateInput): string {
   const carried = input.carried
   const lines = [
@@ -75,7 +77,7 @@ export function watcherHandoverState(input: WatcherHandoverStateInput): string {
       rest => `And ${rest} more, by operation: ${input.pending.slice(ROWS_MAX).map(row => row.operationId).join(', ')}.`),
     ...list('The threads you watch and what each waits on:', input.watching.map(row => [`${named(row.title)}${row.host ? ` on ${one(row.host)}` : ''}: ${one(row.waitsOn)}`,
       ...row.pullRequests.length ? [`Open pull requests: ${row.pullRequests.map(pullRequest).join('; ')}.`] : []].join(' ')), inReadState),
-    ...list('The merge queue, oldest passing checks first:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}`), inReadState),
+    ...list('The merge train, in the order each joined it:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}${TRAIN_CHECKS[row.requiredChecks]}`), inReadState),
     ...list('What waits on the user now:', input.waitingOnUser.map(row => `${named(row.title)} waits for ${WAITS_FOR[row.waitsFor]}`), inReadState),
     ...list('Decisions the user left pending, as kept:', input.kept.decisions.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
     ...list('Standing rules the user gave, as kept:', input.kept.rules.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),

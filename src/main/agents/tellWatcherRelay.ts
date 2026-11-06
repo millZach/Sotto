@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { TELL_WATCHER_ANSWER_MS, tellWatcherAnswerSchema, tellWatcherAskSchema, type TellWatcherAnswer, type TellWatcherAsk } from '../../shared/tellWatcher'
+import { isReadyToMergeAsk, TELL_WATCHER_ANSWER_MS, tellWatcherAnswerSchema, watcherTellPushSchema, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk,
+  type WatcherTellPush } from '../../shared/tellWatcher'
 import type { WatcherThreadTarget } from '../../shared/watcher'
 
 /** A desktop connected to this host whose hello accepted `watcher-tell`: the socket's way to push it an ask. */
 export interface TellWatcherDesktop {
   readonly clientId: string
+  /** Whether its hello accepted `watcher-ready` too, so it takes a thread's READY TO MERGE (#2229). */
+  ready?: boolean
   /** Pushes the ask; false when the socket would not take it. */
-  push(askId: string, ask: TellWatcherAsk): boolean
+  push(askId: string, ask: WatcherTellPush): boolean
 }
 
 /**
@@ -39,9 +42,12 @@ export class HostTellWatcherRelay {
     ask.resolve(parsed.success ? parsed.data : { status: 'refused', reason: 'no-answer' })
     return true
   }
-  async tell(ask: TellWatcherAsk): Promise<TellWatcherAnswer> {
+  /** A READY TO MERGE goes only to a desktop that accepted `watcher-ready`; to the rest, it is as if none were connected. */
+  async tell(ask: WatcherTellPush): Promise<TellWatcherAnswer> {
     let last: TellWatcherAnswer = { status: 'refused', reason: 'not-connected' }
+    const ready = isReadyToMergeAsk(ask)
     for (const desktop of [...this.desktops].reverse()) {
+      if (ready && desktop.ready !== true) continue
       const answer = await this.askOne(desktop, ask)
       if (answer.status === 'told' || answer.reason === 'no-answer') return answer
       last = answer
@@ -52,7 +58,7 @@ export class HostTellWatcherRelay {
     for (const [askId, ask] of [...this.pending]) { clearTimeout(ask.timer); this.pending.delete(askId); ask.resolve({ status: 'refused', reason: 'no-answer' }) }
     this.desktops.length = 0
   }
-  private askOne(desktop: TellWatcherDesktop, ask: TellWatcherAsk): Promise<TellWatcherAnswer> {
+  private askOne(desktop: TellWatcherDesktop, ask: WatcherTellPush): Promise<TellWatcherAnswer> {
     return new Promise(resolve => {
       const askId = randomUUID()
       const timer = setTimeout(() => { this.pending.delete(askId); resolve({ status: 'refused', reason: 'no-answer' }) }, this.answerMs)
@@ -68,7 +74,7 @@ export interface TellWatcherConnection {
   readonly kind: string
   readonly hostId: string | undefined
   readonly service: {
-    subscribeWatcherTell?(listener: (askId: string, ask: TellWatcherAsk) => void): () => void
+    subscribeWatcherTell?(listener: (askId: string, ask: WatcherTellPush) => void): () => void
     answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
   }
 }
@@ -84,7 +90,8 @@ export interface TellWatcherHostSource {
 export class DesktopTellWatcherRelay {
   private readonly followed = new WeakSet<object>()
   private unfollow: (() => void) | undefined
-  constructor(private readonly tell: (target: WatcherThreadTarget, ask: TellWatcherAsk) => Promise<TellWatcherAnswer>) {}
+  constructor(private readonly tell: (target: WatcherThreadTarget, ask: TellWatcherAsk) => Promise<TellWatcherAnswer>,
+    private readonly ready?: (target: WatcherThreadTarget, ready: ReadyToMerge) => Promise<TellWatcherAnswer>) {}
   useHosts(source: TellWatcherHostSource): void {
     this.unfollow?.()
     this.unfollow = source.subscribeConnected(connection => this.follow(connection))
@@ -99,8 +106,8 @@ export class DesktopTellWatcherRelay {
       void (async () => {
         let answer: TellWatcherAnswer
         try {
-          const ask = tellWatcherAskSchema.parse(raw)
-          answer = await this.tell({ hostId, threadId: ask.threadId }, ask)
+          const ask = watcherTellPushSchema.parse(raw), target = { hostId, threadId: ask.threadId }
+          answer = !isReadyToMergeAsk(ask) ? await this.tell(target, ask) : this.ready ? await this.ready(target, ask.ready) : { status: 'refused', reason: 'no-watcher' }
         } catch { answer = { status: 'refused', reason: 'no-watcher' } }
         // A lost answer reads on the host as no answer, and the thread's model tells the user.
         await service.answerWatcherTell?.(askId, answer).catch(() => undefined)

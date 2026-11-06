@@ -5,7 +5,7 @@ import { workerPlacementReceiptSchema } from './workerMachine'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
+import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, WATCHER_OVERRIDE_REASON_MAX, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -108,6 +108,12 @@ export const watcherRoomStateSchema = z.object({
    * `placement` is, so a restart has none. Absent while Work across machines is off and from older hosts.
    */
   receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).max(1_000).optional(),
+  /**
+   * Each GO MERGE Watcher sent this run while the merge train held its turn (#2229): what held it, in Sotto's words, and
+   * Watcher's reason, which its receipt card shows. Kept in memory as the send's own `goMerge` is, so a restart has none.
+   */
+  receiptOverrides: z.array(z.object({ operationId: z.uuid(), held: z.array(z.string().min(1).max(400)).max(101),
+    reason: z.string().min(1).max(WATCHER_OVERRIDE_REASON_MAX) }).strict()).max(1_000).optional(),
   /**
    * Watcher's conversation against the point where Sotto compacts it (#1189): its context in tokens as its provider last
    * reported it, null when unreported, whether its provider can compact it, and whether a compaction is under way.

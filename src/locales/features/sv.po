@@ -3785,6 +3785,10 @@ msgstr ""
 msgid "Merge order"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Merge turn given early. {held} Watcher’s reason: {reason}"
+msgstr ""
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Message {where}"
 msgstr ""

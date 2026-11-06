@@ -330,7 +330,7 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
+import { githubBaseBranchChecks, githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
@@ -1165,7 +1165,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
-    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches, baseBranchChecks: githubBaseBranchChecks } : {}), log: code => { logOperational(code) } },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
@@ -1214,7 +1214,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
   // A thread on a paired host reaches this computer's Watcher over its connection here (ADR-0073, November 2, 2026).
   const localWatcher = localRuntime.watcher
-  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask)) : undefined
+  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask), (target, ready) => localWatcher.threadReady(target, ready)) : undefined
   watcherTells?.useHosts(hostRouter)
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
@@ -1330,6 +1330,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
     const hostId = agentControl.hostId()
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
+  }, async (threadId, ready) => {
+    const hostId = agentControl.hostId()
+    return hostId ? await localWatcher.threadReady({ hostId, threadId }, ready) : { status: 'refused', reason: 'no-watcher' }
   }) : undefined
   if (tellTools) quitHandles.tellWatcherTools = tellTools
   // Lets an ordinary thread's agent ask the Council, or start a Climb's setup, when the user's own message there asks for one

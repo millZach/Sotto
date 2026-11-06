@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, ty
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
-import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
+import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_THREAD_SENT_KINDS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
@@ -692,7 +692,7 @@ export class WatcherWakeUp {
       // Observed afresh, as after a restart, it goes again by itself, a bounded number of times. A sure failure waits for
       // news that needs Watcher, or for Watcher to come to rest.
       // A thread's own message cannot be observed afresh, and its thread was told it got through, so it goes again by itself too.
-      if ((outcome === 'unknown' || events.some(event => event.kind === 'thread-told')) && this.misses < WAKE_UP_TRIES) this.retries++
+      if ((outcome === 'unknown' || events.some(event => WATCHER_THREAD_SENT_KINDS.has(event.kind))) && this.misses < WAKE_UP_TRIES) this.retries++
     }
     if (outcome === 'unknown') { this.forget(events); this.observe(); return }
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
@@ -831,6 +831,19 @@ export class WatcherWakeUp {
       const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
       return { kind: 'thread-told', target, requestId: opened ?? one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), told, id }
+    })
+  }
+  /**
+   * A thread's READY TO MERGE (#2229): news whether or not a request watches the thread, under the request that watches
+   * it, else none. It opens no request. Undefined when Watcher's news is not running, so the thread is told it did not get through.
+   */
+  readyEvent(target: WatcherThreadTarget, id: string, ready: NonNullable<WatcherEvent['ready']>): WatcherEvent | undefined {
+    if (!this.started || this.closed) return undefined
+    return this.withPassReads((): WatcherEvent => {
+      const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+      const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      return { kind: 'thread-ready', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+        observedAt: new Date(this.now()).toISOString(), ready, id }
     })
   }
   /** Saved messages from threads go out: just made, or back from a restart that found them untold. */
@@ -1618,7 +1631,7 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return false
     // A move is news while Watcher is there, whether or not a request watched the thread; a settled one is news too (#1178).
     // So is a thread's own message: the thread was told it got through, watched or not, delegated or not.
-    if (event.kind === 'thread-moved' || event.kind === 'thread-told') return !!this.record().current
+    if (event.kind === 'thread-moved' || WATCHER_THREAD_SENT_KINDS.has(event.kind)) return !!this.record().current
     // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
     if (event.kind === 'threads-restarted') {
       if (!this.record().current) return false

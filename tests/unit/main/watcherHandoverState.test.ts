@@ -15,7 +15,7 @@ describe('the state a new Watcher’s handover carries (#1735)', () => {
     const text = watcherHandoverState({
       watching: [{ target: target('footer'), title: 'Footer links', waitsOn: 'Its turn to finish.', host: 'forge',
         pullRequests: [{ number: 1735, url: 'https://github.com/millZach/Sotto/pull/1735', state: 'open', checks: 'passed' }] }],
-      mergeQueue: [{ target: target('footer'), title: 'Footer links', pullRequest: { number: 1735, checks: 'passed' }, checksPassedAt: at }],
+      mergeQueue: [{ target: target('footer'), title: 'Footer links', pullRequest: { number: 1735, checks: 'passed' }, inTrainSince: at, checksPassedAt: at, requiredChecks: 'passed' }],
       waitingOnUser: [{ target: target('footer'), title: 'Footer links', waitsFor: 'permission' }],
       pending: [{ operationId: '4b8a3c86-1a0e-4b8e-9d3f-0d3a6b9d7e21', action: 'send', title: 'Footer links', state: 'queued' }],
       carried: { questions: ['Release from main?'], moved: 2, unconfirmed: true, cannotStop: [{ title: 'Nightly build', host: 'forge' }] },
@@ -26,7 +26,7 @@ describe('the state a new Watcher’s handover carries (#1735)', () => {
     const order = ['- Release from main?', '2 messages the user wrote', 'was never confirmed', '- “Nightly build” on forge',
       '- A send to “Footer links”, queued behind its turn (operation 4b8a3c86-1a0e-4b8e-9d3f-0d3a6b9d7e21)',
       '- “Footer links” on forge: Its turn to finish. Open pull requests: #1735, https://github.com/millZach/Sotto/pull/1735, checks passed.',
-      'The merge queue', '- “Footer links” waits for a permission', '- d1: Whether to ship Friday', '- r1: Never merge without GO MERGE', '- i1: #1735 New Watcher']
+      'The merge train', '- “Footer links” waits for a permission', '- d1: Whether to ship Friday', '- r1: Never merge without GO MERGE', '- i1: #1735 New Watcher']
     const places = order.map(part => text.indexOf(part))
     expect(places.every(place => place >= 0), JSON.stringify(places)).toBe(true)
     expect([...places].sort((left, right) => left - right)).toEqual(places)

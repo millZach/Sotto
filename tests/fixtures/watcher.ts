@@ -44,7 +44,7 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
       rules: [{ id: 'r2', text: 'Full test suites run in CI, not on the laptop.', touchedAt: centerTime }], issues: [], updatedAt: centerTime } } },
   read_state: { input: {}, output: { status: 'ok', watching: [{ target: centerTarget, title: 'Worker', waitsOn: 'Its turn to finish.',
     pullRequests: [{ number: 5, state: 'open', checks: 'passed' }] }], nextCursor: null,
-    mergeQueue: [{ target: centerTarget, title: 'Worker', pullRequest: { number: 5, state: 'open', checks: 'passed' }, checksPassedAt: centerTime }],
+    mergeQueue: [{ target: centerTarget, title: 'Worker', pullRequest: { number: 5, state: 'open', checks: 'passed' }, inTrainSince: centerTime, checksPassedAt: centerTime, requiredChecks: 'passed' }],
     settleWithoutAsking: true,
     waitingOnUser: [{ target: centerTarget, title: 'Worker', waitsFor: 'question', requestCardId: 'card' }],
     kept: { decisions: [{ id: 'd1', text: 'Merge #4 once CI is green?', touchedAt: centerTime }], rules: [], issues: [], updatedAt: null },

@@ -3785,6 +3785,10 @@ msgstr "Memory is unavailable. Restart Sotto and try again."
 msgid "Merge order"
 msgstr "Merge order"
 
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Merge turn given early. {held} Watcher’s reason: {reason}"
+msgstr "Merge turn given early. {held} Watcher’s reason: {reason}"
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Message {where}"
 msgstr "Message {where}"

@@ -512,6 +512,8 @@ The host pushes `{ v: 1, event: "watcher-tell-ask", askId, ask }`, where `ask` i
 
 The desktop answers with the request `watcher-tell-answer` `{ askId, answer }`, where `answer` is `{ status: "told", requestOpened }` or `{ status: "refused", reason: "no-watcher" | "not-connected" | "no-answer" }`. The desktop names the thread by the connection the ask came over, so a host speaks only for its own threads.
 
+A thread's READY TO MERGE (`ready_to_merge`, #2229) travels the same way under `watcher-ready`, which a desktop accepts in its hello beside `watcher-tell`. The host pushes `{ v: 1, event: "watcher-tell-ask", askId, ask }` with `ask` as `{ threadId, ready: { pullRequest, head } }`, a GitHub pull request URL and a full commit ID and no words, only to a desktop that accepted `watcher-ready`; to any other, it is as if none were connected. The answer is `watcher-tell-answer`, as above, and is never `requestOpened: true`.
+
 The host asks the desktop connected last. It asks the next only when one answers `no-watcher` or its socket would not take the push. One that does not answer may have taken it, so no other is asked. Nothing is kept on the host. Phones are never offered this.
 
 ## Remote delegation (October 27, 2026)
