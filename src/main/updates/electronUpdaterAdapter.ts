@@ -1,4 +1,7 @@
-import { autoUpdater } from 'electron-updater'
+import { rm } from 'node:fs/promises'
+import type { OutgoingHttpHeaders } from 'node:http'
+import { join } from 'node:path'
+import { autoUpdater, type AppUpdater } from 'electron-updater'
 
 import { getReleaseTrack } from '../../shared/releaseTrack'
 import { OwlGitHubProvider } from './owlGitHubProvider'
@@ -19,6 +22,8 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
  * - Stable keeps `allowPrerelease = false` and the packaged GitHub feed.
  *   Owl selects only the owl tag channel and validates its manifest.
  *
+ * - No install ID. See `keepInstallIdHome`.
+ *
  * The logger is silenced because no update failure is worth a console line the
  * user cannot act on; the service turns each one into a phase instead.
  */
@@ -27,6 +32,7 @@ export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdap
   updater.autoInstallOnAppQuit = false
   updater.allowPrerelease = false
   updater.logger = null
+  const leftoverIdRemoved = keepInstallIdHome(updater)
   if (getReleaseTrack(updater.currentVersion.version) === 'owl') {
     updater.allowPrerelease = true
     updater.channel = 'owl'
@@ -47,6 +53,7 @@ export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdap
       updater.on('error', (error) => listener({ type: 'error', message: error?.message }))
     },
     async check(): Promise<void> {
+      await leftoverIdRemoved
       await updater.checkForUpdates()
     },
     async download(): Promise<void> {
@@ -66,4 +73,47 @@ export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdap
       updater.quitAndInstall(true, true)
     },
   }
+}
+
+/** The header electron-updater adds to every check, carrying the install's ID. */
+export const STAGING_ID_HEADER = 'x-user-staging-id'
+/** The file electron-updater keeps that ID in, in Sotto's data folder. */
+export const STAGING_ID_FILE = '.updaterId'
+
+type StagingInternals = {
+  app: { userDataPath: string }
+  stagingUserIdPromise: { readonly value: Promise<string> }
+  computeFinalHeaders(headers: OutgoingHttpHeaders): OutgoingHttpHeaders
+}
+
+/**
+ * electron-updater makes a random ID for each install, keeps it in
+ * `.updaterId` and sends it to GitHub with every check as
+ * `x-user-staging-id`, for staged rollouts. Sotto publishes none, so the ID
+ * only lets GitHub tie one install's checks together. This keeps it on the
+ * computer, for stable and for Owl's provider alike:
+ *
+ * - The ID is never read or made: a fixed nil UUID stands in for it.
+ * - Every release counts as rolled out to everyone, so a `stagingPercentage`
+ *   in a manifest never reads it either.
+ * - The header is taken out of every header set the updater builds, so
+ *   nothing goes rather than a constant every install would share.
+ * - A `.updaterId` an earlier Sotto left behind is removed before the first
+ *   check, which waits for it.
+ *
+ * These are electron-updater internals. `tests/unit/main/owlUpdates.test.ts`
+ * drives the real updater and checks the headers it sends and that no file
+ * appears, so an electron-updater update that moves them goes red there.
+ */
+function keepInstallIdHome(updater: AppUpdater): Promise<void> {
+  const internals = updater as unknown as StagingInternals
+  internals.stagingUserIdPromise = { value: Promise.resolve('00000000-0000-0000-0000-000000000000') }
+  updater.isUserWithinRollout = () => true
+  const computeFinalHeaders = internals.computeFinalHeaders.bind(updater)
+  internals.computeFinalHeaders = (headers) => {
+    const merged = computeFinalHeaders(headers)
+    delete merged[STAGING_ID_HEADER]
+    return merged
+  }
+  return rm(join(internals.app.userDataPath, STAGING_ID_FILE), { force: true }).catch(() => undefined)
 }
