@@ -568,8 +568,8 @@ import UIKit
     func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
 
-    /// A reader up among a picture thread's runs stays where they are while the thread works, and their drags move the
-    /// page by what they dragged. On the phone such a thread threw its reader to another picture and would not let them
+    /// A reader up among a picture thread's runs stays where they are while the thread works, and the page holds to their
+    /// finger while they drag it. On the phone such a thread threw its reader to another picture and would not let them
     /// scroll (Zach, November 2026): each update handed every run's grid its steps again, and a grid given them laid its
     /// unmade rows out afresh, so the page above the reader grew by thousands of points in one frame while its offset
     /// stood still. No element here would show that, as an offset alone does not, so the app walks the thread itself
@@ -580,7 +580,7 @@ import UIKit
         let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("picture-page-\(UUID().uuidString).json")
         app.launchEnvironment["SOTTO_BENCH_FILE"] = report.path
         launch(Self.fixture + ["--ui-pictures", "--bench-threads", "30", "--bench-turns", "4", "--bench-chunks", "1",
-                               "--bench-journey", "pictures", "--bench-pictures", "full"], opensOnThreads: false)
+                               "--bench-journey", "pictures", "--bench-pictures", "full", "--bench-row-frames"], opensOnThreads: false)
         let window = app.windows.firstMatch
         let size = window.frame.size
         let read = { () -> [String: Any]? in
@@ -628,12 +628,42 @@ import UIKit
         let fingerPage = phases["finger"]?["page"] as? [String: Any]
         let drags = fingerPage?["drags"] as? [[String: Double]] ?? []
         for big in fingerPage?["swings"] as? [[String: Double]] ?? [] { print("[picture page] finger swing \(big)") }
+        // A drag must move the page its way, and while the finger drags, the row under it must stay under it: a row above
+        // measured late, or the page swinging, would slide it against the finger. How far the page goes is not the measure
+        // (#2211). The scroll view follows from the first touch the main thread hands it, and with the thread working, a
+        // Debug build on a runner sits 200 to 400 ms on a frame, so the page took up drags of 180 points only once the
+        // finger was as much as 57 points along, then followed it to the point. A third of the drag is the least it must follow.
         XCTAssertEqual(drags.count, towardEnd.count, "Every drag must move the page; it followed \(drags.count) of \(towardEnd.count)")
         for (drag, down) in zip(drags, towardEnd) {
             let moved = (drag["moved"] ?? 0) * (down ? 1 : -1)
             print("[picture page] drag \(down ? "down" : "up") moved \(Int(moved))")
-            XCTAssert(moved > Double(distance) * 0.7 && moved < Double(distance) * 1.3,
-                      "A drag of \(Int(distance)) points must move the page about that far; it moved \(Int(moved))")
+            XCTAssert(moved > Double(distance) / 3, "A drag of \(Int(distance)) points must move the page its way; it moved \(Int(moved))")
+        }
+        // Each drag frame by frame (`PageWatch.dragFrames`): how far the row under the finger slid against the finger while
+        // it dragged, and how far rows above it changing height moved it in the page. Eight points is the most a drag
+        // slid in thirty; a row measured late or a picture landing above moves one by 120 or more.
+        let watched = fingerPage?["dragFrames"] as? [[[Double]]] ?? []
+        XCTAssertEqual(watched.count, towardEnd.count, "Every drag must be watched frame by frame; \(watched.count) of \(towardEnd.count) were")
+        for (index, frames) in watched.enumerated() {
+            var slid = 0.0, worst = 0.0, above = 0.0, held = 0
+            for (a, b) in zip(frames, frames.dropFirst()) where a[5] >= 0 && b[5] >= 0 {
+                above += b[5] - a[5]
+                // From a frame with the finger on the glass to the next, the lift's included and a coast after it not, as
+                // no finger moves it. A lift late in a busy frame can leave the page coasting 130 points (#2211).
+                guard a[1] == 1, b[1] != 2 else { continue }
+                let slide = (b[5] - a[5]) - (b[2] - a[2]) - (b[4] - a[4])
+                slid += slide; worst = max(worst, abs(slide)); held += 1
+            }
+            print("[picture page] drag \(index + 1) frames: slid \(Int(slid.rounded())) against the finger (worst frame \(Int(worst.rounded()))), "
+                  + "row moved \(Int(above.rounded())) in the page, over \(held) frames")
+            let stayed = held > 0 && abs(slid) <= 40 && worst <= 40
+            XCTAssert(stayed, "Under a dragging finger the page must stay put; over \(held) frames the row under the finger slid "
+                      + "\(Int(slid.rounded())) points against it, \(Int(worst.rounded())) in one frame")
+            if !stayed {
+                for frame in frames {
+                    print("[picture page] drag \(index + 1) frame " + frame.map { String(format: "%.1f", $0) }.joined(separator: " "))
+                }
+            }
         }
         let swing = page("finger", "biggestHeightStep")
         print("[picture page] finger: height step \(swing) height changes \(page("finger", "heightChanges"))")
