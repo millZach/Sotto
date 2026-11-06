@@ -209,7 +209,7 @@ export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it 
  * and what each waits on from its own records. read_state gives the whole of it back.
  *
  * Each kept line has an ID, so Watcher adds, edits, closes or drops one line at a time (October 24, 2026). A list holds
- * WATCHER_KEPT_ITEMS_MAX open lines; adding past that is refused, never made room for. A closed line says how it ended
+ * WATCHER_KEPT_ITEMS_MAX open lines, and rules WATCHER_KEPT_RULES_MAX (#2236); adding past that is refused, never made room for. A closed line says how it ended
  * and stays, out of that count, until Sotto clears it WATCHER_KEPT_CLOSED_MS after it was closed.
  */
 export const WATCHER_KEPT_ITEMS_MAX = 30
