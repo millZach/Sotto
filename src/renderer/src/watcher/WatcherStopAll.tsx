@@ -60,8 +60,9 @@ export function stopSummary(results: readonly StopResult[], describe: (target: W
 }
 
 /**
- * Stop all in Watcher's header (Zach's pick on October 16, 2026), shown only while threads Watcher started are running.
- * A press asks main which threads it would stop and asks the user first, naming each with what it is doing; the stop
+ * Stop all in Watcher's header (Zach's pick on October 16, 2026). It says how many threads it would stop, and while none
+ * Watcher started is running it stays in its place, unavailable, rather than coming and going (the owner's ask on
+ * November 6, 2026). A press asks main which threads it would stop and asks the user first, naming each with what it is doing; the stop
  * then says what became of each, including one still waiting on its computer to confirm. Escape, Cancel or Close put it
  * away and focus returns to the button; a press outside puts it away and leaves focus where that press put it. Put away
  * while the stop runs, the stop goes on and what came of it is kept: the button then says so, and its next press shows it.
@@ -102,8 +103,10 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     if (phase?.kind === 'stopping') { panel.current?.querySelector<HTMLElement>('h2')?.focus(); return }
     if (phase?.kind === 'confirm' || phase?.kind === 'done' || phase?.kind === 'refused' || phase?.kind === 'unknown') panel.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus()
   }, [phase?.kind, shown])
-  if (room.stopAll === null || (running.length === 0 && phase === null)) return null
+  if (room.stopAll === null) return null
   const stopAll = room.stopAll
+  // Nothing of Watcher's is running and no stop is under way: there is nothing to stop, and the press says so.
+  const idle = running.length === 0 && phase === null
   const prepare = async (): Promise<void> => {
     setPhase({ kind: 'preparing' }); setShown(true)
     try {
@@ -185,10 +188,13 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     event.preventDefault(); event.stopPropagation()
     close()
   }}>
-    <button ref={button} type="button" className="watcher-stop-all__button tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      aria-label={waiting === null ? plural(count, { one: 'Stop all threads Watcher started, # thread', other: 'Stop all threads Watcher started, # threads' }) : waiting} title={waiting ?? t`Stop all threads Watcher started`}
-      onClick={() => { if (waiting !== null) setShown(true); else if (open) close(); else void prepare() }}>
+    <button ref={button} type="button" className="watcher-stop-all__button tt-focusable" aria-haspopup={idle ? undefined : 'dialog'} aria-expanded={idle ? undefined : open} aria-controls={open ? panelId : undefined}
+      aria-disabled={idle || undefined}
+      aria-label={idle ? t`Stop all threads Watcher started. None is running.` : waiting === null ? plural(count, { one: 'Stop all threads Watcher started, # thread', other: 'Stop all threads Watcher started, # threads' }) : waiting}
+      title={idle ? t`No thread Watcher started is running` : waiting ?? t`Stop all threads Watcher started`}
+      onClick={() => { if (idle) return; if (waiting !== null) setShown(true); else if (open) close(); else void prepare() }}>
       <Square size={13} aria-hidden="true" /><span className="watcher-stop-all__text"><Trans>Stop all</Trans></span>
+      {idle ? null : <span className="watcher-stop-all__count" aria-hidden="true">{count}</span>}
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-stop" role="dialog" aria-labelledby={titleId}
       aria-describedby={phase.kind === 'confirm' && phase.targets.length ? noteId : undefined}>{body}</div> : null}

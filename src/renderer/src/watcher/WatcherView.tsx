@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
 import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentSpeed, type AgentState } from '../../../shared/agents'
@@ -39,6 +40,7 @@ import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, Speed
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
+import { workingThreadsByMachine } from '../../../shared/workingThreads'
 import { BrowserPageRouteContext, LinkedFileRouteContext, type LinkedFileRoute } from '../tools/webLinks'
 import { linkedFileThread } from '../tools/linkedFile'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
@@ -95,6 +97,19 @@ interface HeaderParts {
   readonly tabs?: ReactNode
 }
 
+/**
+ * How many threads have a turn running on every machine, counted as the machines line counts them, for All threads to
+ * say what is going on (the owner's ask on November 6, 2026). Counted again only when the thread list changes.
+ */
+function useWorkingThreads(): number {
+  const threads = useAgents().state?.host.threads
+  return useMemo(() => {
+    let count = 0
+    for (const working of workingThreadsByMachine(threads ?? []).values()) count += working
+    return count
+  }, [threads])
+}
+
 type RoomTab = 'watcher' | 'teams'
 /**
  * The Watcher and Teams tabs (ADR-0186, decision 9): Zach's pick on November 3, 2026, over the room's otherwise having no
@@ -129,6 +144,9 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
   const started = room?.state?.current != null
   const track = useReleaseTrack()
   const mac = useOptionalApp()?.platform === 'darwin'
+  const working = useWorkingThreads()
+  const workingWords = plural(working, { 0: 'None working', other: '# working' })
+  const workingId = useId()
   return <header className="thread-workspace__head watcher-head">
     {started && room !== null ? <WatcherContextTile room={room} />
       : mac ? null
@@ -136,10 +154,12 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       {tabs}
+      {/* What is going on, rather than how many threads there are (the owner's ask on November 6, 2026): how many work now.
+          The total stays in the list it opens, in its name and its filter. */}
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
-        aria-label={t`All threads, ${count}. Show the list`} title={t`All threads`} onClick={onToggleList}>
+        aria-label={t`All threads, ${count}. Show the list`} aria-describedby={workingId} title={t`All threads`} onClick={onToggleList}>
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
-        <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
+        <span id={workingId} className="watcher-head__count" aria-hidden="true">{workingWords}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
     </div>
     <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}</div>
@@ -780,6 +800,6 @@ export function WatcherView({ now: fixedNow }: {
     <PageWindowControls />
     {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
-    {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
+    {listOpen ? <WatcherOverviewList groups={groups} total={overviewCount(groups)} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked></LinkedFileRouteContext.Provider>
 }

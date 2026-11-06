@@ -934,6 +934,14 @@ msgstr "{named}. {fixedReason}"
 msgid "{needs, plural, other {{needing} waiting on you}}"
 msgstr "{needs, plural, other {{needing} waiting on you}}"
 
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{newCount, plural, one {# new} other {# new}}"
+msgstr "{newCount, plural, one {# new} other {# new}}"
+
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{newCount, plural, one {Jump to # new message} other {Jump to # new messages}}"
+msgstr "{newCount, plural, one {Jump to # new message} other {Jump to # new messages}}"
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{notices, plural, one {{noticeCount} notice} other {{noticeCount} notices}}"
 msgstr "{notices, plural, one {{noticeCount} notice} other {{noticeCount} notices}}"

@@ -264,6 +264,10 @@ msgstr "{count, plural, one {Watcher changed {files} file itself.} other {Watche
 msgid "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{count, plural, other {# choices}}"
+msgstr "{count, plural, other {# choices}}"
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
@@ -880,12 +884,20 @@ msgid "{title} may still be running."
 msgstr "{title} may still be running."
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{title} no longer waits on you"
+msgstr "{title} no longer waits on you"
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "{title} no longer waits on you."
 msgstr "{title} no longer waits on you."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{topShare} of prompts"
 msgstr "{topShare} of prompts"
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "{total, plural, one {Filter # thread} other {Filter # threads}}"
+msgstr "{total, plural, one {Filter # thread} other {Filter # threads}}"
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
@@ -978,6 +990,10 @@ msgstr "{words, plural, one {{shown} word} other {{shown} words}}"
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "{words} · {wpm} wpm"
 msgstr "{words} · {wpm} wpm"
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "{working, plural, =0 {None working} other {# working}}"
+msgstr "{working, plural, =0 {None working} other {# working}}"
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{working, plural, one {# thread on {name} is working. It updates once they finish.} other {# threads on {name} are working. It updates once they finish.}}"
@@ -3218,6 +3234,10 @@ msgstr "in Tools on the Threads page"
 msgid "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
 msgstr "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "in your own words"
+msgstr "in your own words"
+
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Incumbent"
 msgstr "Incumbent"
@@ -4309,6 +4329,10 @@ msgstr "No thread matches “{typed}”."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "No thread matches."
 msgstr "No thread matches."
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "No thread Watcher started is running"
+msgstr "No thread Watcher started is running"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "No threads to show right now."
@@ -6755,6 +6779,10 @@ msgid "Stop all threads Watcher started"
 msgstr "Stop all threads Watcher started"
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all threads Watcher started. None is running."
+msgstr "Stop all threads Watcher started. None is running."
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop all, show its progress"
 msgstr "Stop all, show its progress"
 
@@ -8342,6 +8370,10 @@ msgid "You and {name}"
 msgstr "You and {name}"
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title}"
+msgstr "You answered {title}"
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title} in your own words."
 msgstr "You answered {title} in your own words."
 
@@ -8413,6 +8445,10 @@ msgstr "You set this policy"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "You set this."
 msgstr "You set this."
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question"
+msgstr "You skipped {title}’s question"
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You skipped {title}’s question."

@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 /** Beside the control, after its end (the rail's tiles), under it (the pane header's symbols) or over it (the sidebar's foot). */
 type Side = 'end' | 'below' | 'above'
 
-interface Shown { readonly text: string; readonly left: number; readonly top: number; readonly control: HTMLElement; readonly side: Side }
+interface Shown { readonly text: string; readonly left: number; readonly top: number; readonly control: HTMLElement; readonly side: Side; readonly by?: 'pointer' | undefined }
 
 const place = (control: HTMLElement, text: string, side: Side): Shown => {
   const box = control.getBoundingClientRect()
@@ -20,7 +20,23 @@ export interface FocusName {
   readonly onFocus: (event: FocusEvent<HTMLElement>) => void
   readonly onBlur: (event: FocusEvent<HTMLElement>) => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
+  /** Where the name shows under the pointer too: a resting pointer shows the same name, at once once one is up. */
+  readonly onPointerOver?: ((event: PointerEvent<HTMLElement>) => void) | undefined
+  readonly onPointerOut?: ((event: PointerEvent<HTMLElement>) => void) | undefined
   readonly name: ReactNode
+}
+
+/** How long the pointer rests on a control before its name shows; moving on to the next one shows its name at once. */
+const POINTER_REST_MS = 300
+/** Where a control keeps its title while its name shows under the pointer, so the system's own tooltip does not show as well. */
+const KEPT_TITLE = 'data-focus-name-title'
+const titleOf = (control: HTMLElement): string | null => control.getAttribute('title') ?? control.getAttribute(KEPT_TITLE)
+/** Gives a control back the title its name was read from, unless it has a new one already. */
+function giveBackTitle(control: HTMLElement): void {
+  const kept = control.getAttribute(KEPT_TITLE)
+  if (kept === null) return
+  control.removeAttribute(KEPT_TITLE)
+  if (!control.hasAttribute('title')) control.setAttribute('title', kept)
 }
 
 /**
@@ -30,15 +46,50 @@ export interface FocusName {
  * reads from the keys as it does under the pointer. It is for the eye only: the control's accessible name already says it.
  * A press or the focus moving on puts it away. `accepts` says which controls in the region are named this way.
  */
-function useFocusName(accepts: (control: HTMLElement) => boolean, sideOf: (control: HTMLElement) => Side): FocusName {
+function useFocusName(accepts: (control: HTMLElement) => boolean, sideOf: (control: HTMLElement) => Side, pointer = false): FocusName {
   const [shown, setShown] = useState<Shown | null>(null)
   const onFocus = useCallback((event: FocusEvent<HTMLElement>): void => {
     const control = event.target
-    const text = control.getAttribute('title')
-    if (!text || !accepts(control) || !control.matches(':focus-visible')) { setShown(null); return }
+    const text = titleOf(control)
+    if (!text || !accepts(control) || !control.matches(':focus-visible')) { setShown(current => current?.by === 'pointer' ? current : null); return }
     setShown(place(control, text, sideOf(control)))
   }, [accepts, sideOf])
-  const onBlur = useCallback((): void => setShown(null), [])
+  const onBlur = useCallback((): void => setShown(current => current?.by === 'pointer' ? current : null), [])
+  // Under the pointer (`pointer`): the control's own title, shown in the same place and words once the pointer rests, and
+  // kept from the control meanwhile so the system's tooltip does not show beside it.
+  const resting = useRef<{ readonly control: HTMLElement; readonly timer: number } | null>(null)
+  const pointed = useRef<HTMLElement | null>(null)
+  const leave = useCallback((): void => {
+    if (resting.current !== null) { window.clearTimeout(resting.current.timer); resting.current = null }
+    if (pointed.current !== null) { giveBackTitle(pointed.current); pointed.current = null }
+    setShown(current => current?.by === 'pointer' ? null : current)
+  }, [])
+  const onPointerOver = useCallback((event: PointerEvent<HTMLElement>): void => {
+    if (event.pointerType === 'touch') return
+    const control = (event.target as Element).closest<HTMLElement>('button, a')
+    if (control === null || !event.currentTarget.contains(control) || !accepts(control) || control === pointed.current || control === resting.current?.control) return
+    const text = titleOf(control)
+    if (!text) return
+    const showing = pointed.current !== null
+    leave()
+    const show = (): void => {
+      resting.current = null
+      if (!control.isConnected) return
+      const title = control.getAttribute('title')
+      if (title !== null) { control.setAttribute(KEPT_TITLE, title); control.removeAttribute('title') }
+      pointed.current = control
+      setShown({ ...place(control, titleOf(control) ?? text, sideOf(control)), by: 'pointer' })
+    }
+    if (showing) show()
+    else resting.current = { control, timer: window.setTimeout(show, POINTER_REST_MS) }
+  }, [accepts, sideOf, leave])
+  const onPointerOut = useCallback((event: PointerEvent<HTMLElement>): void => {
+    const to = event.relatedTarget instanceof Node ? event.relatedTarget : null
+    const on = pointed.current ?? resting.current?.control ?? null
+    if (on !== null && to !== null && on.contains(to)) return
+    leave()
+  }, [leave])
+  useEffect(() => leave, [leave])
   // Enter or Space opens what the control opens where the name stands, and Escape puts the name away.
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Enter' || event.key === ' ' || event.key === 'Escape' || event.key === 'F10' || event.key === 'ContextMenu') setShown(null)
@@ -46,9 +97,10 @@ function useFocusName(accepts: (control: HTMLElement) => boolean, sideOf: (contr
   const showing = shown !== null
   useEffect(() => {
     if (!showing) return
-    const hide = (): void => setShown(null)
+    const hide = (): void => { if (pointed.current !== null) { giveBackTitle(pointed.current); pointed.current = null } setShown(null) }
     // A tile the keys reach off the rail's edge scrolls into view, so the name follows its control rather than leaving.
-    const follow = (): void => setShown(current => current === null || !current.control.isConnected || document.activeElement !== current.control ? null : place(current.control, current.text, current.side))
+    const follow = (): void => setShown(current => current === null || !current.control.isConnected || (current.by !== 'pointer' && document.activeElement !== current.control) ? null
+      : { ...place(current.control, current.text, current.side), by: current.by })
     window.addEventListener('scroll', follow, true)
     window.addEventListener('resize', follow)
     window.addEventListener('pointerdown', hide, true)
@@ -59,7 +111,7 @@ function useFocusName(accepts: (control: HTMLElement) => boolean, sideOf: (contr
   const name = shown === null ? null : createPortal(<div className="focus-name" data-side={shown.side} aria-hidden="true" style={{ left: shown.left, top: shown.top }}>
     <strong>{title}</strong>{facts.length ? <span>{facts.join(' · ')}</span> : null}
   </div>, document.body)
-  return { onFocus, onBlur, onKeyDown, name }
+  return { onFocus, onBlur, onKeyDown, ...pointer ? { onPointerOver, onPointerOut } : {}, name }
 }
 
 const railTile = (control: HTMLElement): boolean => control.classList.contains('thread-nav__rail-thread')
@@ -92,9 +144,12 @@ export function useHeaderFocusName(): FocusName {
 // The sidebar foot's icons: the room switch's tiles, the page links and the update control. On the collapsed rail the foot
 // stands upright, so they are named beside it as the rail's tiles are; in the open sidebar, over the row.
 const footControl = (control: HTMLElement): boolean => control.matches('.thread-nav__seg [role="tab"], .thread-nav__page, .update-control')
-const footSide = (control: HTMLElement): Side => control.closest('.thread-nav__rail') === null ? 'above' : 'end'
+const footSide = (control: HTMLElement): Side => control.closest('.thread-nav__rail') !== null ? 'end' : control.closest('.watcher-head') !== null ? 'below' : 'above'
 
-/** The sidebar foot's icons, named over the foot, or beside it on the collapsed rail. */
+/**
+ * The way off the page's icons, named over the sidebar's foot, beside it on the collapsed rail and under Watcher's header,
+ * for the keys and for a resting pointer alike: each icon's name and its shortcut (the owner's ask on November 6, 2026).
+ */
 export function useFootFocusName(): FocusName {
-  return useFocusName(footControl, footSide)
+  return useFocusName(footControl, footSide, true)
 }

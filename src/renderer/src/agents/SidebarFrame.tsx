@@ -136,7 +136,8 @@ export function WayOffThePage({ className, roomsClassName, pagesClassName, updat
   /** Names an icon the keys reach, as its tooltip names it for the pointer. */
   readonly focusName?: FocusName | undefined
 }): ReactNode {
-  return <div className={className} onFocus={focusName?.onFocus} onBlur={focusName?.onBlur} onKeyDown={focusName?.onKeyDown}>
+  return <div className={className} onFocus={focusName?.onFocus} onBlur={focusName?.onBlur} onKeyDown={focusName?.onKeyDown}
+    onPointerOver={focusName?.onPointerOver} onPointerOut={focusName?.onPointerOut}>
     <RoomSwitch className={roomsClassName} iconOnly />
     <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className={pagesClassName} linkClassName="thread-nav__page" />

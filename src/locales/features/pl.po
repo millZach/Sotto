@@ -264,6 +264,10 @@ msgstr ""
 msgid "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{count, plural, other {# choices}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr ""
@@ -880,11 +884,19 @@ msgid "{title} may still be running."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{title} no longer waits on you"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "{title} no longer waits on you."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{topShare} of prompts"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "{total, plural, one {Filter # thread} other {Filter # threads}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
@@ -977,6 +989,10 @@ msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "{words} · {wpm} wpm"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "{working, plural, =0 {None working} other {# working}}"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -3218,6 +3234,10 @@ msgstr ""
 msgid "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "in your own words"
+msgstr ""
+
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Incumbent"
 msgstr ""
@@ -4308,6 +4328,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "No thread matches."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "No thread Watcher started is running"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
@@ -6755,6 +6779,10 @@ msgid "Stop all threads Watcher started"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all threads Watcher started. None is running."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop all, show its progress"
 msgstr ""
 
@@ -8342,6 +8370,10 @@ msgid "You and {name}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title} in your own words."
 msgstr ""
 
@@ -8412,6 +8444,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "You set this."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx

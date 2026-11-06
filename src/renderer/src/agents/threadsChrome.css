@@ -65,5 +65,11 @@
 .thread-nav__foot .thread-nav__page { border-radius: var(--tt-radius-row); }
 .thread-nav__foot .thread-nav__page:hover { background: var(--foot-hover); }
 .thread-nav__foot .thread-nav__page[aria-current='page'] { background: var(--foot-lit); }
+/* The open room and the open page also carry a short bar under their icon, in the text colour as their tint is, so which
+   one is open reads at a glance (the owner's ask on November 6, 2026). The same row in Watcher's header carries it too. */
+:is(.thread-nav__foot, .watcher-head__way) :is(.thread-nav__seg [role='tab'][aria-selected='true'], .thread-nav__page[aria-current='page']) { position: relative; }
+:is(.thread-nav__foot, .watcher-head__way) :is(.thread-nav__seg [role='tab'][aria-selected='true'], .thread-nav__page[aria-current='page'])::after {
+  position: absolute; bottom: 3px; left: 50%; width: 12px; height: 2px; border-radius: var(--tt-radius-full); background: var(--tt-text); content: ''; transform: translateX(-50%); pointer-events: none;
+}
 .thread-nav__foot .update-control { margin-left: auto; border-radius: var(--tt-radius-row); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__foot .update-control:hover:not([aria-disabled='true']) { background: var(--foot-hover); }
