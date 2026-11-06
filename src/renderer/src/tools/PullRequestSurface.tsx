@@ -380,7 +380,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
         </Fold> : null}
       </div>
-      {/* Other pull requests, the thread's and the repository's: lists that lead elsewhere, under this one's card rather than on it. */}
+      {/* Other pull requests, the thread's and the repository's: lists that lead elsewhere, on a card of their own under this one's. */}
       <div className="pr-surface__others">
         {linked}
         {openList}

@@ -135,23 +135,23 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 
 /* This pull request's own folds, together on one card (ADR-0110: filled, with no outline): the surface's account of it ends
    where the card does, so a short pull request reads as finished rather than trailing off, and an open fold grows inside it. */
-.pr-surface__folds { border-radius: var(--tt-radius-md); background: var(--tt-card); }
+/* Other pull requests, the thread's linked ones and the repository's open ones, lead away from this one, so they stand on
+   a card of their own under it (ADR-0110: a container is a card), their heads a step quieter than its own folds'. */
+.pr-surface__folds, .pr-surface__others { border-radius: var(--tt-radius-md); background: var(--tt-card); }
 .pr-surface__folds:empty, .pr-surface__others:empty { display: none; }
 .pr-surface__dock + .pr-surface__folds { margin-top: 6px; }
 /* Rows on a card are divided by the card's inset, and the last has none (ADR-0110). */
-.pr-surface__folds > .pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
 /* A fold's head is one press, its preview and peek with it, so the whole of it lights under the pointer. */
 .pr-surface__fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; min-height: 40px; padding: 10px 12px; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__fold-head:hover { background: var(--tt-hover); }
 .pr-surface__fold-head:active { background: var(--tt-hover-strong); }
 .pr-surface__fold-head:hover > svg { color: var(--tt-text); }
-.pr-surface__folds > .pr-surface__fold:first-child > .pr-surface__fold-head { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
-.pr-surface__folds > .pr-surface__fold:last-child > .pr-surface__fold-head:last-child { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
-/* Other pull requests, the thread's linked ones and the repository's open ones: lists that lead away from this one, so
-   they stand under its card on the panel itself, their heads a step quieter than its own folds' (ADR-0110: no box). */
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold:first-child > .pr-surface__fold-head { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold:last-child > .pr-surface__fold-head:last-child { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
 .pr-surface__folds + .pr-surface__others { margin-top: 14px; }
-.pr-surface__others .pr-surface__fold-head { min-height: 34px; padding-block: 7px; border-radius: var(--tt-radius-row); color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 400; }
+.pr-surface__others .pr-surface__fold-head { min-height: 34px; padding-block: 7px; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 400; }
 .pr-surface__others .pr-surface__fold-head:is(:hover, [aria-expanded='true']) { color: var(--tt-text); }
 .pr-surface__others .pr-surface__fold-body { padding-top: 4px; }
 .pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 12px 14px 35px; }
