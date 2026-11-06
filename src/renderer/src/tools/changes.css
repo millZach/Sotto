@@ -204,9 +204,9 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 /* Where an unwrapped line runs on past the edge of its file's view, it says so at that edge, so a cut line never reads
    as a whole one ("WalCh"). The line's end (RunsOn in ChangesSurface.tsx) is held at the edge while the rest of the
    line is out of sight, and only while held does it draw: the line fades out into its own colour (its wash, hover or
-   pick over the code background, so nothing but the letters under it changes) and ends in an ellipsis on a small
-   tab, the mark a cut line of text carries everywhere. A press on the tab scrolls the file to the line's end, as Right
-   does on a focused line. A line whose end is in view draws nothing, and a comment, which wraps, has none. */
+   pick over the code background, so nothing but the letters under it changes) and ends on a small tab with an arrow:
+   the line goes on that way. An ellipsis there went unseen, and the line read as cut short. A press on the tab
+   scrolls the file to the line's end, as Right does on a focused line. A line whose end is in view draws nothing, and a comment, which wraps, has none. */
 :is(.changes-line, .changes-split__cell) { --changes-fill: transparent; --changes-over: transparent; }
 .changes-line__on { display: none; }
 .changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line__text:not([data-comment]) > .changes-line__on {
@@ -214,15 +214,14 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 }
 .changes-line__on::before, .changes-line__on::after { content: ''; position: absolute; top: 0; right: 0; height: 100%; visibility: hidden; pointer-events: none; }
 .changes-line__on::before {
-  width: 7ch;
+  width: 9ch;
   background: linear-gradient(to right, transparent, var(--changes-over) 55%), linear-gradient(to right, transparent, var(--changes-fill) 55%), linear-gradient(to right, transparent, var(--tt-code-bg) 55%);
 }
 .changes-line__on::after {
-  content: '\2026'; display: grid; place-items: center; width: 2.6ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
+  content: '\2192'; display: grid; place-items: center; width: 3ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
   background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
-  color: var(--tt-text-2); font-family: var(--tt-font-ui); font-weight: 600; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--tt-border); color: var(--tt-text); font-family: var(--tt-font-ui); font-weight: 500; cursor: pointer;
 }
-.changes-line:hover .changes-line__on::after { color: var(--tt-text); }
 @container scroll-state(stuck: right) { .changes-line__on::before, .changes-line__on::after { visibility: visible; } .changes-line__on::after { pointer-events: auto; } }
 /* Scrolled sideways to read the rest of a line, the numbers and signs stay at the left, each line's edge with them,
    as tall as their line so a wrapped comment's later rows pass under them too. A comment, which wraps inside the part

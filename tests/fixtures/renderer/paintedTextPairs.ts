@@ -70,6 +70,8 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Modified is one amber in both modes (changes.css): an edited line's sign, and a file's M on its head and in the tree.
   ...each('--changes-modified', [context, [...context, hover]], 'edited line sign'),
   ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
+  // The tab where a line of code runs on past the edge, on its line's own colour, and the earlier wording's toggle, pointed at.
+  ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab and earlier wording, pointed at'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
   // A document's lines: body ink on an added line, secondary on a removed one.
