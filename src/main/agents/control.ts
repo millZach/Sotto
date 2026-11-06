@@ -4775,8 +4775,8 @@ export class AgentControl {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
       // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead.
       const notTaken = (): boolean => !this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
-        && !this.outbox.some(entry => entry.id === item.commandId) && this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!) === true
-      if (!accepted && !this.outbox.some(entry => entry.id === item.commandId) && (error instanceof Error && error.message === STEER_NOT_TAKEN || notTaken())) {
+        && this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!) === true
+      if (!accepted && (error instanceof Error && error.message === STEER_NOT_TAKEN && !this.outbox.some(entry => entry.id === item.commandId) || notTaken())) {
         this.requeueNotTaken(item.id, item.commandId!)
         return
       }
@@ -6483,22 +6483,36 @@ export class AgentControl {
    * would have sent it when the turn ended. Nothing is sent from here.
    */
   private settleSteerNotTaken(item: Saved['outbox'][number]): void {
-    this.outbox = this.outbox.filter(o => o.id !== item.id)
+    // One still dispatching is its steer's to settle, once the queue has saved what that steer last heard (`steerFollowup`).
+    // Any other goes back on the queue, and its entry goes only once that is saved.
+    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
+    if (queued) { if (queued.status !== 'dispatching') this.requeueNotTaken(queued.id, item.id); return }
+    this.settleNotTakenEntry(item.id)
+    if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
+  }
+  /** The outbox entry of a steer not taken goes, and the usage it recorded with it. */
+  private settleNotTakenEntry(commandId: string): void {
+    const item = this.outbox.find(o => o.id === commandId); if (!item) return
+    this.outbox = this.outbox.filter(o => o !== item)
     if (item.threadId && item.messageId && (item.provider === undefined || isUsageProviderId(item.provider))) {
       try { this.dependencies.usage?.discardPrompt(item.threadId, item.messageId) }
       catch { /* Only usage metadata is affected. */ }
     }
-    // One still dispatching is its steer's to settle, once the queue has saved what that steer last heard (`steerFollowup`).
-    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
-    if (queued?.status === 'uncertain') this.requeueNotTaken(queued.id, item.id)
-    if (queued) return
-    if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
   }
-  /** A queued message whose steer `commandId` was not taken goes back to the head of its queue (#1408), once. */
+  /** Steers not taken whose queued message is going back on the queue (`requeueNotTaken`), by command. */
+  private readonly requeueing = new Set<string>()
+  /**
+   * A queued message whose steer `commandId` was not taken goes back to the head of its queue (#1408), once. Its outbox
+   * entry goes only after the queue is saved: if that save fails, the entry stays, so a later snapshot or a restart
+   * finds the steer not taken again and tries once more, and nothing is sent until the message is back on the queue.
+   */
   private requeueNotTaken(id: string, commandId: string): void {
+    if (this.requeueing.has(commandId)) return
+    this.requeueing.add(commandId)
     void this.followupStore.requeueAtHead(id, commandId)
+      .then(() => { this.settleNotTakenEntry(commandId); this.persistAfterSnapshots() })
       .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
-      .finally(() => { this.syncFollowups(); this.publish(); this.pumpFollowups() })
+      .finally(() => { this.requeueing.delete(commandId); this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }
   private afterSnapshotsPersistQueued = false
   /**

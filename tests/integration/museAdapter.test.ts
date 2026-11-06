@@ -602,6 +602,23 @@ it('treats a steer whose turn ended without taking it as not sent, and never sen
   }
 })
 
+it('settles nothing while a gap’s read is pending, so a steer whose user message the gap hid is confirmed, not resent (#1408)', async () => {
+  const { f, id } = await open()
+  try {
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+    await f.script({ dropSteer: 'gap' })
+    await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'hidden', text: 'Also check the tests' }))
+      .resolves.toEqual({ accepted: true })
+    const shown = await thread(f, id)
+    expect(shown.notTakenMessageIds).toBeUndefined()
+    expect(shown.messages.map(message => message.id)).toContain('hidden')
+    await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8'))[id].origins
+      .find((origin: { messageId: string }) => origin.messageId === 'hidden')).toMatchObject({ confirmed: true })
+    expect(JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8'))[id].origins
+      .find((origin: { messageId: string }) => origin.messageId === 'hidden').notTaken).toBeUndefined()
+  } finally { await f.cleanup() }
+})
+
 it('settles a steer left unconfirmed once its turn ends without taking it, live and after a restart (#1408)', async () => {
   // A steer admitted while a long tool call runs outlives the delivery wait; its turn's end settles it later.
   for (const restart of [false, true]) {
@@ -651,6 +668,47 @@ it('settles on resume a steer saved before steers named their turn, and one sent
       expect((await thread(f, id)).messages.map(message => message.id)).not.toContain('held')
     } finally { await f.cleanup() }
   }
+})
+
+it('keeps a not-taken steer’s outbox entry until its queued message is saved back on the queue, and tries again (#1408)', async () => {
+  const f = await museFixture()
+  const stack = await agentControlFixture({ host: f.host, credentialOptions: { mode: 'unavailable' }, reasoner: {} })
+  const { control } = stack
+  const ownThread = () => control.get().host.threads.find(candidate => candidate.id === id)
+  const outbox = () => (control as unknown as { outbox: { id: string }[] }).outbox
+  const requests = async (method: string) => (await f.driver.requests()).filter(record => record.method === method)
+  let id = ''
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Muse thread' })
+    await control.start(); await control.command({ type: 'connect' })
+    expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'First' })).error).toBeNull()
+    await expect.poll(() => ownThread()?.status).toBe('running')
+    expect((await control.command({ type: 'queue-followup', threadId: id, draftId: randomUUID(), text: 'The queued steer' })).error).toBeNull()
+    await f.script({ dropSteer: 'hold' })
+    await control.command({ type: 'steer-followup', threadId: id, itemId: control.get().followups![0]!.id })
+    const queued = control.get().followups![0]!
+    expect(queued).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
+    const commandId = followupStoreOf(control).peek().items[0]!.commandId!
+    // The queue cannot be saved when the turn ends: the message stays uncertain and its entry stays for another try.
+    const store = followupStoreOf(control)
+    const requeue = vi.spyOn(store, 'requeueAtHead').mockRejectedValueOnce(new Error('disk full'))
+    await f.driver.completeTurn(id, 'Done without the steer')
+    await expect.poll(() => requeue.mock.calls.length).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => control.get().error).toBe('Could not save the follow-up queue.')
+    expect(outbox().some(entry => entry.id === commandId)).toBe(true)
+    expect(control.get().followups?.[0]).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
+    expect((await requests('turn/start')).length).toBe(1)
+    // The next snapshot finds it not taken again; saved this time, it goes as the next message, once.
+    await f.action(id, { type: 'gap' })
+    await expect.poll(async () => (await requests('turn/start')).length).toBe(2)
+    expect(JSON.stringify((await requests('turn/start'))[1]?.params)).toContain('The queued steer')
+    expect(outbox().some(entry => entry.id === commandId)).toBe(false)
+    await expect.poll(() => control.get().followups).toEqual([])
+    expect((await requests('turn/steer')).length).toBe(1)
+  } finally { await stack.dispose(); await f.cleanup() }
 })
 
 it('puts a queued steer back when its turn ends while the queue is still saving that the steer is uncertain (#1408)', async () => {

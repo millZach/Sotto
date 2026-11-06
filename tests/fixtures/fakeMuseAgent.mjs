@@ -391,9 +391,18 @@ createInterface({ input: process.stdin }).on('line', line => {
     const steer = frame.method === 'turn/steer'
     // `dropSteer` admits one steer and never delivers it, as Muse does when the turn ends first (#1408): `end-turn` ends the
     // turn just after acknowledging, `end-turn-first` just before, and `hold` leaves the turn running for a later end.
+    // `gap` takes the steer but the stream drops its user message, says so with a gap, and ends the turn before the read.
     if (steer && script.dropSteer && session.activeTurnId) {
       const { dropSteer } = script
       writeFileSync(path('script.json'), JSON.stringify({ ...script, dropSteer: undefined }))
+      if (dropSteer === 'gap') {
+        const turnId = session.activeTurnId
+        addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text: textOf(p.input), commandId: p.commandId, steered: true }, false)
+        result({ turnId, disposition: 'steered' })
+        notify('view/gap', { sessionId: session.sessionId })
+        endTurn(session)
+        return
+      }
       if (dropSteer === 'end-turn-first') endTurn(session)
       result({ turnId: session.activeTurnId ?? p.expectedTurnId, disposition: 'steered' })
       if (dropSteer === 'end-turn') setImmediate(() => endTurn(session))

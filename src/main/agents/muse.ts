@@ -258,6 +258,11 @@ function startParams(alias: Alias, tools: { config?: unknown }, watcher: boolean
 
 interface ThreadProcess {
   rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void>
+  /**
+   * Turns that ended while a gap's read was pending, whose steers wait for it (#1408): the gap may have hidden a steer's
+   * user message, so only the history read after it can say one was not taken. `gapAgain` is a gap that read coalesced.
+   */
+  gapEnded?: Set<string>; gapAgain?: boolean
   /** Whether this host granted `sessionMcp`, so its sessions may be given Sotto's tool servers. */
   sessionMcp?: boolean
   /** Started for Watcher's thread with its launch profile: its session gets Watcher's tools and instructions, never the browser. */
@@ -653,6 +658,11 @@ export class MuseMspHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /**
+   * Saves the threads as they are when the write starts, sharing one write with every call before it, and copies
+   * nothing on the way: for what changes on the update path, such as a steer settled at its turn's end (#1408).
+   */
+  private persistLatest(): Promise<void> { this.writing = this.aliasStore.writeLatest(() => this.aliases); return this.writing }
   /**
    * ADR-0140: stop the thread's own `muse serve` host if it has one, remove its alias and every per-thread record
    * this adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias
@@ -1524,7 +1534,25 @@ export class MuseMspHost implements AgentHost {
         ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
     }
     this.markTurn(id, outcome, messageId, error)
+    this.endSteerTurn(id, turnId)
+  }
+  /**
+   * A turn ended: its steers not taken are settled, unless a gap's read is pending (#1408). The gap may have hidden the
+   * user message of a steer Muse took, so they wait for the history read after it rather than being sent again.
+   */
+  private endSteerTurn(id: string, turnId: string): void {
+    const entry = this.processes.get(id)
+    if (entry?.resync) { (entry.gapEnded ??= new Set()).add(turnId); return }
     this.settleSteers(id, [turnId])
+  }
+  /**
+   * After a gap's read: the turns that ended while it was pending are settled when it served the whole history and no
+   * gap came after it, since every steer Muse took has been confirmed from it or from the stream since. Otherwise they
+   * stay unsettled, Unconfirmed and never sent again, for the next resume to settle.
+   */
+  private settleGapEnded(id: string, entry: ThreadProcess, whole: boolean): void {
+    const ended = entry.gapEnded; delete entry.gapEnded
+    if (ended && whole && !entry.gapAgain && this.processes.get(id) === entry) this.settleSteers(id, ended)
   }
   /**
    * Steers whose turn has ended without Muse taking them, which `ended` names by their turn (#1408). Muse admits a steer
@@ -1549,7 +1577,7 @@ export class MuseMspHost implements AgentHost {
     this.notTakenIds.set(id, ids)
     this.thread(id).notTakenMessageIds = ids
     this.changed(id)
-    void this.persist().catch(() => undefined)
+    void this.persistLatest().catch(() => undefined)
   }
   /** One frame from one thread's host. Its session is the only one that host holds, so the owner is its thread. */
   private async frame(frame: MuseFrame, rpc: MuseRpc): Promise<void> {
@@ -1762,11 +1790,11 @@ export class MuseMspHost implements AgentHost {
           // Replies share the transport's serial frame queue. Release this notification before awaiting
           // the resume reply, and coalesce gaps while the same host is already recovering.
           if (!entry.resync) {
-            const recovery = this.resync(owner, entry).then(() => { if (current()) this.emit() })
+            const recovery = this.resync(owner, entry).then(whole => { this.settleGapEnded(owner, entry, whole); if (current()) this.emit() })
               .catch(() => { if (current()) this.processLost(owner, entry) })
-              .finally(() => { if (entry.resync === recovery) delete entry.resync })
+              .finally(() => { if (entry.resync === recovery) { delete entry.resync; delete entry.gapEnded; delete entry.gapAgain } })
             entry.resync = recovery
-          }
+          } else entry.gapAgain = true
           return
         }
         default:
@@ -2041,7 +2069,7 @@ export class MuseMspHost implements AgentHost {
               this.changed(command.threadId)
             }
             // Its user message would have come before its turn's end, which came first: the turn did not take it.
-            else if (generation === this.generation && this.processes.get(command.threadId) === entry) this.settleSteers(command.threadId, [active!.turnId])
+            else if (generation === this.generation && this.processes.get(command.threadId) === entry) this.endSteerTurn(command.threadId, active!.turnId)
           } catch (error) {
             clearTimeout(timer); this.deliveries.delete(command.messageId)
             this.activePrompts.delete(command.threadId)
@@ -2055,7 +2083,7 @@ export class MuseMspHost implements AgentHost {
           catch (error) {
             this.activePrompts.delete(command.threadId)
             // The coordinator settles a steer not taken as soon as it hears; its saved record says so first.
-            if (error instanceof Error && error.message === STEER_NOT_TAKEN) await this.persist()
+            if (error instanceof Error && error.message === STEER_NOT_TAKEN) await this.persistLatest()
             throw error
           }
           finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
@@ -2161,16 +2189,17 @@ export class MuseMspHost implements AgentHost {
     finally { release?.() }
   }
   /** Re-read a loaded session whole: the fold recognises what it already holds and records only what is new. */
-  private async resync(id: string, expected?: ThreadProcess): Promise<void> {
+  /** Resolves true when the history it read was whole, so it settled the steers it showed were not taken (#1408). */
+  private async resync(id: string, expected?: ThreadProcess): Promise<boolean> {
     const generation = this.generation
     const entry = this.processes.get(id), alias = this.aliases[id]
-    if (!entry || (expected && entry !== expected) || !alias?.museSessionId || (!expected && !this.loaded.has(id))) return
+    if (!entry || (expected && entry !== expected) || !alias?.museSessionId || (!expected && !this.loaded.has(id))) return false
     const turnRevision = entry.turnRevision
     const beforeResume = this.modelRevisions(id)
     const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
-    if (generation !== this.generation || this.processes.get(id) !== entry) return
+    if (generation !== this.generation || this.processes.get(id) !== entry) return false
     if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
     const items = resumed.history.items ?? resumed.history.snapshot?.state.items
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
@@ -2180,16 +2209,17 @@ export class MuseMspHost implements AgentHost {
     const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
     if (this.confirmSession(id, alias, resumed.session, true) && !running) {
       await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
-      if (generation !== this.generation || this.processes.get(id) !== entry) return
+      if (generation !== this.generation || this.processes.get(id) !== entry) return false
     }
-    if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, resumed) }
+    let whole = false
+    if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); whole = this.settleResumedSteers(id, resumed) }
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)
     try {
       const revision = this.requestRevision
       const held = [...this.pending.values()].filter(pending => pending.threadId === id)
       const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
-      if (generation !== this.generation || this.processes.get(id) !== entry) return
+      if (generation !== this.generation || this.processes.get(id) !== entry) return false
       const restored = [...listed.approvals.map(approval => museApprovalPending(id, approval)),
         ...listed.userInputs.map(input => museUserInputPending(id, input))].filter(pending => this.requestUnchanged(pending, revision))
       const unchanged = held.filter(pending => this.pending.get(pending.request.id) === pending && this.requestUnchanged(pending, revision))
@@ -2200,18 +2230,28 @@ export class MuseMspHost implements AgentHost {
       }
       for (const pending of restored) this.present(pending, entry)
     } finally { releaseRead() }
+    return whole
   }
   /**
    * A resume settles the steers whose turn it shows over (#1408), read after its history, which confirmed every steer Muse
    * took. Only a whole history proves a steer absent: one served in part settles nothing. One saved without its turn
-   * settles only when no turn is running. Steers inherited from a copy are not waiting here (`moveToCopy`).
+   * settles now when no turn is running, and otherwise joins the running turn, whose end settles it. Steers inherited
+   * from a copy are not waiting here (`moveToCopy`). True when the history was whole.
    */
-  private settleResumedSteers(id: string, resumed: z.infer<typeof sessionResumeSchema>): void {
-    const pending = this.unsettledSteers.get(id); if (!pending) return
+  private settleResumedSteers(id: string, resumed: z.infer<typeof sessionResumeSchema>): boolean {
     const { history } = resumed, active = resumed.session.activeTurnId
     const items = history.items ?? history.snapshot?.state.items ?? []
-    if (history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return
-    this.settleSteers(id, [...pending.keys()].filter(turnId => turnId !== active && (turnId !== UNKNOWN_TURN || !active)))
+    if (history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return false
+    const pending = this.unsettledSteers.get(id); if (!pending) return true
+    // Saved without its turn and absent from the whole history so far: the running turn's end settles it, as one sent into
+    // that turn would be, since a steer Muse took is confirmed before its turn ends.
+    const unknown = active ? pending.get(UNKNOWN_TURN) : undefined
+    if (active && unknown) {
+      pending.delete(UNKNOWN_TURN)
+      for (const origin of unknown) { origin.steerTurnId = active; this.trackSteer(id, origin) }
+    }
+    this.settleSteers(id, [...pending.keys()].filter(turnId => turnId !== active))
+    return true
   }
   /**
    * Rebuilds `unsettledSteers` and `notTakenIds` from the saved threads; on connect only, never on the update path. An
