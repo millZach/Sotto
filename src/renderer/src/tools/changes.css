@@ -162,10 +162,15 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { color: var(--tt-error-text); }
 .changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--changes-modified); }
 /* Modified is one amber in both modes: a file's M, an edited line's edge and its sign. The warning ink is no use for it
-   by day, where it is darkened toward brick for text and reads beside the removed role's red as a second red. So by day
-   that ink is turned back to amber's hue at its own lightness, so it keeps its 4.5:1 and the contrast setting, with
-   less chroma, so the dark gold it makes is inside sRGB and not clipped back toward orange; by night it is the warning ink. */
-:is(.changes-surface, .changes-block) { --changes-modified: light-dark(oklch(from var(--tt-warning) calc(l - .01) calc(c * .7) calc(h + 28)), var(--tt-warning)); }
+   by day as it is, where the built-in themes darken it toward brick for text and it reads beside the removed role's red
+   as a second red. So by day it keeps the warning ink's lightness, a step darker, so it holds 4.5:1 and follows the
+   contrast setting, and takes its hue from the theme's own warning colour, the amber a theme draws at full strength
+   (the ink's hue is left out, `none`, and the mix fills it from there). Chroma steps down so the dark gold is inside
+   sRGB and not clipped back toward orange. A theme whose warning ink already has its amber's hue keeps that hue. By
+   night it is the warning ink. */
+:is(.changes-surface, .changes-block) {
+  --changes-modified: light-dark(color-mix(in oklch, oklch(from var(--tt-warning) calc(l - .02) calc(c * .7) none), oklch(from var(--tt-ink-amber) none none h)), var(--tt-warning));
+}
 
 /* The lines. Code runs one row a line, as an editor shows it, so its indents and line starts scan down the file; a
    line longer than the panel runs on past its edge and its file scrolls sideways, on its own. Wrap long lines in View
