@@ -420,41 +420,25 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-reading='document'] :is(.changes-line, .changes-split__row)[aria-selected='true'] .changes-word { background: none; }
 /* A picked line's accent wash would sink the muted ink below 4.5:1, so what a picked line keeps reads in the secondary ink. */
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'][data-kind='context'] { color: var(--tt-text-2); }
-/* A paragraph reworked all through reads as an edited one does, once and at body size: at each change, in its place,
-   the words that went struck before the words that came, each pair once. Under it, Show earlier wording opens the
-   whole of what it said, to read it through. A long paragraph rewritten whole has no words kept to read a change
-   against: it reads as it is now with no word marks, on both sides of the press, and its edge says it changed. */
-.changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-word { text-decoration-line: none; }
-.changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-earlier__text del.changes-word--edit { color: inherit; text-decoration-line: none; }
+/* A paragraph reworked all through reads as two paragraphs (ReworkedText), each straight through: first the old one
+   whole, in the secondary ink, a step quieter, its words that went struck through in that ink; then the new one whole
+   in the body's ink, its words that came underlined. A long paragraph rewritten whole has no words kept to read a
+   change against, so neither paragraph marks its words, and its edge says it changed. */
+.changes-reworked__was { display: block; margin: 0 0 8px; color: var(--tt-text-2); }
+.changes-diff__rows[data-reading='document'] .changes-reworked__was del.changes-word--edit { color: inherit; }
+.changes-reworked__now { display: block; color: var(--tt-text); }
+.changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] :is(del, ins).changes-word--edit { color: inherit; text-decoration-line: none; }
 /* An edited paragraph's edge lights beside each of its lines a change reaches, as an editor marks a changed line in the
    margin, and rests faint beside the lines it kept: on a long paragraph the eye finds the changed lines before it reads
    a word. Every changed word is a span of its own (EditedText) whose mark is held to the line's left edge, and so is
-   an empty one where words went with nothing in their place, so that line lights too. A picked line has the accent's edge instead. */
+   an empty one where words went with nothing in their place, so that line lights too. A reworked paragraph's edge
+   lights beside the new paragraph only. A picked line has the accent's edge instead. */
 .changes-diff__rows { --changes-edge-edited-rest: color-mix(in srgb, var(--changes-modified) 22%, transparent); }
 .changes-line[data-kind='edited'] { position: relative; box-shadow: inset 2px 0 0 var(--changes-edge-edited-rest); }
 .changes-line[data-kind='edited'] .changes-w::before {
   content: ''; position: absolute; left: 0; width: 2px; height: 1lh; background: var(--changes-modified); pointer-events: none;
 }
 .changes-line[data-kind='edited']:is([aria-selected='true'], [data-noted]) .changes-w::before { content: none; }
-.changes-earlier { display: block; }
-.changes-earlier__toggle {
-  display: flex; align-items: center; gap: 3px; width: fit-content; max-width: calc(100% + 6px); height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px;
-  border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); line-height: 1;
-  text-align: left; transition: background-color 120ms ease, color 120ms ease;
-}
-.changes-earlier__toggle > svg { flex: none; transition: transform 120ms ease; }
-.changes-earlier__toggle[aria-expanded='true'] > svg { transform: rotate(90deg); }
-.changes-earlier__toggle:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
-.changes-earlier__toggle:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
-@media (prefers-reduced-motion: reduce) { .changes-earlier__toggle, .changes-earlier__toggle > svg { transition: none; } }
-/* Opened, the paragraph as it was, indented on a hairline and a step quieter than the paragraph over it, at its size,
-   so it reads through as easily. The paragraph above already strikes what went, so here those words carry no stroke
-   to read through, only the removed ink, a little warmer than the words they sat among. */
-.changes-earlier__text {
-  display: block; margin: 2px 0 6px; padding-left: 10px; box-shadow: inset 1px 0 0 var(--tt-hairline); color: var(--tt-text-2);
-}
-.changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { text-decoration-line: none; }
-.changes-line[aria-selected='true'] :is(.changes-earlier__text, .changes-earlier__toggle) { color: var(--tt-text-2); }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] + .changes-line[data-paired][data-kind='add'] { margin-top: 4px; }
 /* In a narrow panel the lines keep what room there is for words: a document reads a step smaller, its gutter and the
    file's head grow tighter, so a paragraph wraps at about fifty characters rather than forty. */

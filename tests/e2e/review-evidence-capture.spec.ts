@@ -486,6 +486,72 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await scrollTranscript(page, 'middle')
     }
   } },
+  { name: 'turn-quiet', covers: ['turn-quiet-hover', 'turn-quiet-focus', 'turn-quiet-glass', 'turn-quiet-clay'], run: async capture => {
+    // A quick turn's Worked for line keeps its room but shows nothing until the pointer is over the turn or the keyboard
+    // reaches it (Zach's pick C, November 6, 2026, ADR-0134), read where "Wait, which one was cut 3?" stands mid-thread.
+    const { page } = capture
+    await openThread(page, 'Split AgentControl')
+    await drawWholeThread(page)
+    const ask = transcript(page).locator('.thread-message[data-role="user"]').filter({ hasText: 'Wait, which one was cut 3?' }).first()
+    const line = transcript(page).locator('.thread-message[data-role="user"]:has-text("Wait, which one was cut 3?") + .thread-work[data-quiet]').first()
+    await expect(line).toHaveCount(1)
+    // TEMP-MEASURE begin
+    console.log('TEMP-MEASURE', JSON.stringify(await transcript(page).evaluate(log => {
+      const content = log.querySelector('.thread-transcript__content') as HTMLElement
+      const force = document.createElement('style'); force.textContent = '[role="log"] * { content-visibility: visible !important; }'
+      document.head.append(force)
+      const after = content.getBoundingClientRect().height
+      const before = document.createElement('style')
+      before.textContent = ".thread-pane .thread-work[data-quiet] > .thread-work__summary { opacity: 1 !important; } .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user']) { overflow-clip-margin: 8px; } .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user'])::after { content: ''; position: absolute; right: 0; bottom: -7px; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }"
+      document.head.append(before)
+      const was = content.getBoundingClientRect().height
+      const rules = [...content.querySelectorAll(':scope > .thread-message:not([data-role="user"])')].filter(el => getComputedStyle(el, '::after').content === '""').length
+      before.remove()
+      const rulesNow = [...content.querySelectorAll(':scope > .thread-message:not([data-role="user"])')].filter(el => getComputedStyle(el, '::after').content === '""').length
+      const quiet = content.querySelectorAll('.thread-work[data-quiet]').length
+      const lines = content.querySelectorAll('.thread-work').length
+      const hidden = [...content.querySelectorAll('.thread-work[data-quiet] > .thread-work__summary')].filter(el => getComputedStyle(el).opacity === '0').length
+      const names = [...content.querySelectorAll('.thread-work[data-quiet] > .thread-work__summary')].map(el => el.textContent)
+      force.remove()
+      return { before: was, after, rulesBefore: rules, rulesNow, lines, quiet, hidden, names, messages: content.querySelectorAll('.thread-message').length }
+    })))
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    console.log('TEMP-MEASURE reduced', await line.locator('.thread-work__summary').evaluate(el => getComputedStyle(el).transitionDuration))
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    console.log('TEMP-MEASURE motion', await line.locator('.thread-work__summary').evaluate(el => getComputedStyle(el).transitionDuration + ' ' + getComputedStyle(el).transitionProperty))
+    // TEMP-MEASURE end
+    const centre = (): Promise<void> => ask.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    // Neither a resize nor a switch of look keeps the pointer's hover, so the pointer comes to the bubble after both.
+    const point = async (): Promise<void> => {
+      await centre()
+      const box = (await ask.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await expect(line.locator('.thread-work__summary')).toHaveCSS('opacity', '1')
+    }
+    const hoverShows = 'The pointer over "Wait, which one was cut 3?" in the long thread: its quick turn\'s Worked for line shows, while the quick turns around it keep their room with nothing in it.'
+    for (const theme of [DEFAULT_THEME_ID, 'glass', 'clay'] as const) {
+      await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), theme)
+      const state = theme === DEFAULT_THEME_ID ? 'turn-quiet-hover' : `turn-quiet-${theme}`
+      const named = theme === DEFAULT_THEME_ID ? '' : theme === 'glass' ? ' On Glass.' : ' On Clay.'
+      for (const size of [[1600, 1000] as const, ...SMALLER_SIZES]) await capture.shoot(state, `${hoverShows}${named}`, '', { size, before: point })
+    }
+    await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
+    // Tab first, so the focus ring is the keyboard's; the copy control under the bubble comes just before the line.
+    await centre()
+    await page.keyboard.press('Tab')
+    await ask.locator('.thread-message__copy').focus()
+    await page.keyboard.press('Tab')
+    await expect(line.locator('.thread-work__summary')).toBeFocused()
+    const focusShows = 'The keyboard on the same quick turn\'s Worked for line, reached with Tab from the copy control under the bubble: it shows with its focus ring.'
+    for (const size of [[1600, 1000] as const, ...SMALLER_SIZES]) {
+      await resizeContentWindowFor(capture.launched, size[0], size[1])
+      await centre()
+      await capture.shoot('turn-quiet-focus', focusShows, '', { size })
+    }
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await scrollTranscript(page, 'middle')
+  } },
   { name: 'steps-cut', covers: ['steps-cut'], run: async capture => {
     // A finished turn's rows beside the pull request, where the transcript is narrow and a long test command has to give way.
     const { page } = capture
@@ -766,7 +832,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   // The rest of reading a long comparison, and a diff away from the default palette. Controls are found by what they are,
   // since a new control's words only reach a build once the catalogs are extracted.
-  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-wrap', 'changes-one-file', 'changes-earlier', 'changes-clay', 'doc-edit-clay'], run: async capture => {
+  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-wrap', 'changes-one-file', 'changes-reworked', 'changes-reworked-glass', 'changes-reworked-clay', 'changes-clay', 'doc-edit-clay'], run: async capture => {
     const { page } = capture
     await openPullRequestThread(page)
     const panel = await toolsTab(page, 'Changes')
@@ -807,14 +873,33 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(500)
     await capture.shoot('changes-one-file', 'One file at a time, after a press on Next file, with the tree off.')
     await viewChoice(panel, 'one-file', false)
-    // A paragraph reworked all through reads as it is now; its earlier wording opens under it.
-    await wheelToFile(page, panel, 'CONTEXT.md')
-    const earlier = panel.locator('.changes-earlier__toggle').first()
-    await earlier.click()
-    await expect(earlier).toHaveAttribute('aria-expanded', 'true')
-    await page.waitForTimeout(300)
-    await capture.shoot('changes-earlier', 'CONTEXT.md in Changes with the earlier wording of its reworked paragraph, line 338, opened under it.')
-    await earlier.click()
+    // A paragraph reworked all through reads as two paragraphs, the old one whole and then the new one whole: at each
+    // size, on the default theme, on Glass and on Clay.
+    const reworked = panel.locator('.changes-file[data-file-path="CONTEXT.md"] .changes-line[data-reworked]').first()
+    const toReworked = async (): Promise<void> => {
+      await wheelToFile(page, panel, 'CONTEXT.md')
+      const box = (await panel.locator('.changes-files').boundingBox())!
+      // Clear of the file's head, which stays at the top while its lines scroll under it.
+      const under = (): Promise<number> => reworked.boundingBox().then(row => row!.y - box.y - 56)
+      await expect(async () => {
+        const distance = await under()
+        if (Math.abs(distance) > 4) await page.mouse.wheel(0, distance)
+        await page.waitForTimeout(150)
+        expect(Math.abs(await under())).toBeLessThanOrEqual(4)
+      }).toPass({ timeout: 60_000 })
+    }
+    for (const theme of [DEFAULT_THEME_ID, 'glass', 'clay']) {
+      await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), theme)
+      for (const size of [[1600, 1000] as const, ...SMALLER_SIZES]) {
+        await resizeContentWindowFor(capture.launched, size[0], size[1])
+        await toReworked()
+        await expect(reworked.locator('.changes-reworked__was')).toBeVisible()
+        const named = theme === DEFAULT_THEME_ID ? '' : theme === 'glass' ? ' On Glass.' : ' On Clay.'
+        await capture.shoot(theme === DEFAULT_THEME_ID ? 'changes-reworked' : `changes-reworked-${theme}`, `CONTEXT.md in Changes with its reworked paragraph, line 338, read as two paragraphs: as it was, its removed words struck, then as it is now, its new words underlined.${named}`, '', { size })
+      }
+    }
+    await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
     await viewChoice(panel, 'tree', true)
     await wheelToFile(page, panel, 'CONTEXT.md')
@@ -1604,7 +1689,7 @@ test.describe('review evidence', () => {
           }
         })
       }
-      if (!ONLY || ONLY.includes('watcher-room')) {
+      if (!ONLY || ONLY.includes('watcher-room') || ONLY.includes('watcher-quiet')) {
         await runState('watcher-room', () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'design-threads', agents: 'design-threads' }, async launched => {
           const { page } = launched
           await freezeMain(launched)
@@ -1622,7 +1707,39 @@ test.describe('review evidence', () => {
           }, { at: [minutesAgo(30), minutesAgo(29), minutesAgo(9), minutesAgo(8)] })
           await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
           await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
-          await captureFor(launched, repository, out).shoot('watcher-room', 'Watcher\'s room with its night scene, watching four threads, under a short conversation.', 'Watcher itself is the stand-in the watcher specs seed, and its scene is held by the design-threads clock with every owl sitting.')
+          const room = captureFor(launched, repository, out)
+          const scene = 'Watcher itself is the stand-in the watcher specs seed, and its scene is held by the design-threads clock with every owl sitting.'
+          if (!ONLY || ONLY.includes('watcher-room')) await room.shoot('watcher-room', 'Watcher\'s room with its night scene, watching four threads, under a short conversation.', scene)
+          if (!ONLY || ONLY.includes('watcher-quiet')) {
+            // The same conversation with the work Watcher did for each answer: a look at both pull requests that took its time,
+            // then one quick read of the checks, whose Worked for line keeps its room and shows only under the pointer (Zach's
+            // pick C, November 6, 2026, ADR-0134).
+            await page.evaluate(async ({ at }) => {
+              const later = (index: number, seconds: number): string => new Date(Date.parse(at[index]!) + seconds * 1_000).toISOString()
+              await window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'release-notes', text: '', status: 'idle', messages: [
+                { id: 'w-0', role: 'user', text: 'Keep an eye on the footer links and the visual gate, and tell me when either needs me.', createdAt: at[0]! },
+                { id: 'w-1', role: 'assistant', text: 'Watching both. The visual gate thread is waiting for you on a permission to run the unit suite. Footer links is still fixing the help page.', createdAt: later(0, 41) },
+                { id: 'w-2', role: 'user', text: 'Is the footer links pull request green yet?', createdAt: at[2]! },
+                { id: 'w-3', role: 'assistant', text: 'Not yet. **Package (Windows)** is still running, and Gates passed on its [second run](https://github.com/millZach/Sotto/actions). I will send it to merge once the required checks pass.', createdAt: later(2, 4) },
+              ], activities: [
+                { id: 'turn-w-0', turnId: 'w-0', afterMessageId: 'w-0', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at[0]!, completedAt: later(0, 41), durationMs: 41_000 },
+                { id: 'w-0-a', turnId: 'w-0', afterMessageId: 'w-0', sequence: 1, kind: 'command', status: 'completed', title: 'Bash', command: 'gh pr view 2101 --json statusCheckRollup', startedAt: later(0, 3), completedAt: later(0, 5), durationMs: 2_000 },
+                { id: 'w-0-b', turnId: 'w-0', afterMessageId: 'w-0', sequence: 2, kind: 'command', status: 'completed', title: 'Bash', command: 'gh pr view 2098 --json statusCheckRollup', startedAt: later(0, 6), completedAt: later(0, 8), durationMs: 2_000 },
+                { id: 'turn-w-2', turnId: 'w-2', afterMessageId: 'w-2', sequence: 3, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at[2]!, completedAt: later(2, 4), durationMs: 4_000 },
+                { id: 'w-2-a', turnId: 'w-2', afterMessageId: 'w-2', sequence: 4, kind: 'command', status: 'completed', title: 'Bash', command: 'gh pr checks 2101', startedAt: later(2, 1), completedAt: later(2, 3), durationMs: 2_000 },
+              ] })
+            }, { at: [minutesAgo(30), minutesAgo(29), minutesAgo(9), minutesAgo(8)] })
+            const quick = page.locator('.watcher-pane .thread-work[data-quiet]')
+            await expect(quick).toHaveCount(1)
+            const ask = page.locator('.watcher-pane .thread-message[data-role="user"]').filter({ hasText: 'Is the footer links pull request green yet?' })
+            const point = async (): Promise<void> => {
+              const box = (await ask.boundingBox())!
+              await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+              await expect(quick.locator('.thread-work__summary')).toHaveCSS('opacity', '1')
+            }
+            await room.shoot('watcher-quiet', 'Watcher\'s conversation with its work: the first answer\'s Worked for line in view, the quick second one keeping its room with nothing in it.', scene)
+            await room.shoot('watcher-quiet-hover', 'The pointer over "Is the footer links pull request green yet?": its quick turn\'s Worked for line shows.', scene, { before: point })
+          }
         }))
       }
     })

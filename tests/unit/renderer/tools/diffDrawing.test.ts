@@ -225,7 +225,7 @@ describe('decorateDiff', () => {
     expect(decoration.paint.get(lines[4]!)?.source).toBe(true)
   })
 
-  it('reads a reworked paragraph once, as it is now, and says it was reworked', () => {
+  it('says a paragraph changed in three places was reworked', () => {
     const before = 'Main hands each write to the worker, which commits it and confirms it back, and a read that cannot wait lays the held events over what the store returns, so the publish never waits for the disk.'
     const after = 'Main posts each write to the store worker, which commits it and confirms it back, and a read that cannot wait lays the held events over what the store returns, so the update path never waits for the disk.'
     const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
@@ -249,7 +249,7 @@ describe('decorateDiff', () => {
     expect(editWeight(before, after, wordSegments(before, after)!)).toBe('reworked')
   })
 
-  it('reads a line that changed more than it kept once too, each change in its place, its earlier wording a press away', () => {
+  it('reads a line that changed in more places than a light edit as reworked', () => {
     const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
     const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
     const segments = wordSegments(before, after)!

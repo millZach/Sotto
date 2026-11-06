@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isCommentLine, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { EarlierWording, EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, ReworkedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
@@ -836,14 +836,15 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const before = row.old!, after = row.next!
     const number = after.newLine ?? before.oldLine
     const paintBefore = decoration?.paint.get(before), paintAfter = decoration?.paint.get(after)
-    // A reworked line has what it said before under it, whole, shut until asked for; one rewritten whole reads as it is now.
+    // A reworked line reads as two paragraphs, as it was and as it is now; one rewritten whole carries no word marks on either.
     const reworked = decoration?.reworked.has(before) ?? false, rewritten = decoration?.rewritten.has(before) ?? false
     return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={rewritten || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
-        <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={rewritten ? 'now' : undefined} />
-        {reworked ? <EarlierWording before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} focusable={current} /> : null}
+        {reworked
+          ? <ReworkedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />
+          : <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />}
       </span>
     </div>
   }

@@ -26,8 +26,8 @@ const REWRITTEN_SHARE = 0.68
 /**
  * A prose line is a light edit, read once with what went struck through before what came, only while it changed in
  * this many places at most and no change on either side runs past LIGHT_EDIT_RUN letters, about eight words. Any more
- * and it was reworked: it reads once the same way, and its earlier wording, whole, is one press away
- * (DiffDecoration.reworked).
+ * and it was reworked: it reads as two paragraphs, the old one whole with what went struck through, then the new one
+ * whole with what came underlined (DiffDecoration.reworked).
  */
 const LIGHT_EDIT_CHANGES = 2
 const LIGHT_EDIT_RUN = 48
@@ -71,8 +71,8 @@ export interface DiffDecoration {
    */
   readonly inline: ReadonlyMap<DiffLine, readonly WordSegment[]>
   /**
-   * The removed lines among `inline` that were reworked rather than edited: they read once as an edited line does, at
-   * each change what went struck before what came, and the whole earlier wording stays one press away.
+   * The removed lines among `inline` that were reworked rather than edited: they read as two paragraphs, the old one
+   * whole with what went struck through, then the new one whole with what came underlined.
    */
   readonly reworked: ReadonlySet<DiffLine>
   /**
@@ -379,8 +379,8 @@ export function wordSegments(before: string, after: string): WordSegment[] | nul
 
 /**
  * How a line read once (wordSegments) reads: `edited`, a light edit, whose struck and new words a reader takes in at
- * once; `reworked`, changed in more places or at more length, which reads the same way with its whole earlier wording
- * one press away.
+ * once; `reworked`, changed in more places or at more length, which reads as two paragraphs, as it was and as it is
+ * now.
  */
 export function editWeight(before: string, after: string, segments: readonly WordSegment[]): 'edited' | 'reworked' {
   let changes = 0, longest = 0
@@ -656,8 +656,8 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
     if (!document) continue
     const segments = words ? wordSegments(before.text, after.text) : null
     if (!segments && Math.max(inkLength(before.text), inkLength(after.text)) > LONG_REWRITE) {
-      // A long line rewritten whole reads as it is now, its earlier wording one press away, rather than as two long
-      // paragraphs, one of them struck through.
+      // A long line rewritten whole reads as two paragraphs, as it was and as it is now, with no word marks on either,
+      // rather than as one paragraph struck through above the other.
       inline.set(before, [{ kind: 'changed', before: { start: 0, end: before.text.length }, after: { start: 0, end: after.text.length } }])
       reworked.add(before); rewritten.add(before)
     } else if (segments) {

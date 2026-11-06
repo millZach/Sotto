@@ -2,7 +2,7 @@ import React, { Fragment, memo, useEffect, useMemo, useState, type CSSProperties
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { I18n } from '@lingui/core'
-import { Check, ChevronRight, Copy } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/codeHighlighter'
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
 import { shownLineCount } from '../state/interfaceNumbers'
@@ -140,13 +140,14 @@ const ADDED_LINE: DiffLine = { kind: 'add', text: '', oldLine: null, newLine: nu
  * A prose line and what it became, read once (wordSegments): the words both keep, then at each change the words it
  * took out, struck through, and the words it put in, underlined, each pair once and in its place. Every character of
  * both lines is drawn, in order, and a screen reader hears which words went and which came. A reworked line
- * (DiffDecoration.reworked) reads the same way, with its whole earlier wording under it (EarlierWording).
+ * (DiffDecoration.reworked) reads as two paragraphs instead (ReworkedText).
  *
- * `as` picks one side. `now` draws a line rewritten whole (DiffDecoration.rewritten) as it is now, with no word marks,
- * which the stylesheet reads from its row. `earlier` draws the line as it was, the words that went in the removed ink.
+ * `as` picks one side. `now` draws the line as it is now, the words that came underlined, and `earlier` as it was, the
+ * words that went struck through; a line rewritten whole (DiffDecoration.rewritten) has its word marks taken off by the
+ * stylesheet, which reads them from its row.
  *
- * Drawn on its line, rather than as its earlier wording, every changed word is a span of its own, so the line's edge
- * lights beside each line of the paragraph a change reaches.
+ * Drawn as it is now or read once, every changed word is a span of its own, and so is an empty one where words went
+ * with nothing in their place, so the line's edge lights beside each line of the paragraph a change reaches.
  */
 export function EditedText({ before, after, segments, paintBefore, paintAfter, as }: {
   readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
@@ -167,7 +168,10 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
   return segments.map((segment, index) => {
     if (segment.kind === 'kept') return <PaintedText key={index} text={after.slice(segment.after.start, segment.after.end)} paint={paintWithin(paintAfter, segment.after)} />
     if (as === 'earlier') return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}</Fragment>
-    if (as === 'now') return <Fragment key={index}>{side(after, segment.after, paintAfter, false, false)}</Fragment>
+    if (as === 'now') {
+      const gone = segment.after.end <= segment.after.start && segment.before.end > segment.before.start
+      return <Fragment key={index}>{gone ? <span className="changes-w" /> : side(after, segment.after, paintAfter, false, false)}</Fragment>
+    }
     const went = before.slice(segment.before.start, segment.before.end), came = after.slice(segment.after.start, segment.after.end)
     // Words that went and words that came, with no space of their own between them, are held a little apart.
     const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
@@ -176,26 +180,19 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
 }
 
 /**
- * Under a reworked line, what it said before, whole, shut until asked for. The line above already shows each change in
- * its place, so this is for reading the earlier paragraph through. A press here only opens or shuts it: it never picks
- * the line it sits in.
+ * A reworked line as two paragraphs: the paragraph as it was, whole and a step quieter, the words that went struck
+ * through; under it the paragraph as it is now, whole, the words that came underlined. Each reads straight through,
+ * and nothing is shut away. A line rewritten whole has no words kept to read a change against, so the stylesheet
+ * takes the marks off both.
  */
-export function EarlierWording({ before, after, segments, paintBefore, paintAfter, focusable = true }: {
+export function ReworkedText({ before, after, segments, paintBefore, paintAfter }: {
   readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
   readonly paintBefore: LinePaint | undefined; readonly paintAfter: LinePaint | undefined
-  /** In Changes' grid only the current row's control is a Tab stop, as the row is. */
-  readonly focusable?: boolean | undefined
 }): ReactNode {
-  const { t } = useLingui()
-  const [open, setOpen] = useState(false)
-  return <span className="changes-earlier">
-    <button type="button" className="changes-earlier__toggle tt-focusable" aria-expanded={open} tabIndex={focusable ? 0 : -1}
-      onClick={event => { event.stopPropagation(); setOpen(shown => !shown) }}>
-      <ChevronRight size={12} aria-hidden="true" />
-      {open ? t`Hide earlier wording` : t`Show earlier wording`}
-    </button>
-    {open ? <span className="changes-earlier__text"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="earlier" /></span> : null}
-  </span>
+  return <>
+    <span className="changes-reworked__was"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="earlier" /></span>
+    <span className="changes-reworked__now"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="now" /></span>
+  </>
 }
 
 /**
@@ -243,7 +240,7 @@ function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; re
   </div>
 }
 
-/** A document's line and what it became, as one line (EditedText), a reworked one with its earlier wording under it. */
+/** A document's line and what it became, as one line (EditedText), or a reworked one as two paragraphs (ReworkedText). */
 function EditedLine({ before, after, segments, decoration, numbers }: {
   readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbers: boolean
 }): ReactNode {
@@ -253,8 +250,9 @@ function EditedLine({ before, after, segments, decoration, numbers }: {
     {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
     <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
-      <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={rewritten ? 'now' : undefined} />
-      {reworked ? <EarlierWording before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} /> : null}
+      {reworked
+        ? <ReworkedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />
+        : <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />}
     </span>
   </div>
 }

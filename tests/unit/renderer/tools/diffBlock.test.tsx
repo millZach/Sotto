@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, render } from '@testing-library/react'
 import { I18nProvider } from '@lingui/react'
 import { i18n } from '@lingui/core'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -40,38 +40,44 @@ describe('DiffBlock', () => {
     expect(edited.querySelector('.changes-line__number')!.textContent).toBe('4')
   })
 
-  it('reads a reworked paragraph once, each change in its place, with its whole earlier wording one press away', () => {
+  it('reads a reworked paragraph as two: the old one whole with what went struck, then the new one whole with what came', () => {
     const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
     const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
     const container = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md')
     const row = container.querySelector('.changes-line[data-kind="edited"]')!
     expect(row.getAttribute('data-reworked')).toBe('true')
     expect(row.getAttribute('data-rewritten')).toBeNull()
-    // In the paragraph, at each change, the words that went struck before the words that came, each pair once.
     const text = row.querySelector('.changes-line__text')!
-    const marks = [...text.querySelectorAll(':scope > del, :scope > ins')].map(mark => mark.textContent)
-    expect(marks.slice(0, 4)).toEqual(['Removed: worker thread runs them on a connection of its own', 'Added: store worker runs them between its writes', 'Removed: no save', 'Added: nothing'])
-    // Shut, the line under it only says what a press does; nothing of the paragraph shows twice.
-    const toggle = row.querySelector<HTMLButtonElement>('.changes-earlier__toggle')!
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.textContent).toBe('Show earlier wording')
-    expect(row.querySelector('.changes-earlier__text')).toBeNull()
-    fireEvent.click(toggle)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(toggle.textContent).toBe('Hide earlier wording')
-    const earlier = row.querySelector('.changes-earlier__text')!
-    expect(earlier.textContent!.replace(/Removed: /gu, '')).toBe(before)
-    expect(earlier.querySelector('del')!.textContent).toBe('Removed: worker thread runs them on a connection of its own')
+    // Two paragraphs and nothing else: no words read in pairs on the line, and nothing to open.
+    expect([...text.children].map(child => child.className)).toEqual(['changes-reworked__was', 'changes-reworked__now'])
+    expect(row.querySelector('button')).toBeNull()
+    const was = text.querySelector('.changes-reworked__was')!, now = text.querySelector('.changes-reworked__now')!
+    // As it was, whole, with only what went marked; as it is now, whole, with only what came marked.
+    expect(was.textContent!.replace(/Removed: /gu, '')).toBe(before)
+    expect(was.querySelector('ins')).toBeNull()
+    expect([...was.querySelectorAll('del')].map(mark => mark.textContent).slice(0, 2)).toEqual(['Removed: worker thread runs them on a connection of its own', 'Removed: no save'])
+    expect(now.textContent!.replace(/Added: /gu, '')).toBe(after)
+    expect(now.querySelector('del')).toBeNull()
+    expect([...now.querySelectorAll('ins')].map(mark => mark.textContent).slice(0, 2)).toEqual(['Added: store worker runs them between its writes', 'Added: nothing'])
   })
 
-  it('reads a long paragraph rewritten whole as it is now, with no word marks, and its earlier wording a press away', () => {
+  it('marks the line where words went with nothing in their place, in a reworked paragraph as it is now', () => {
+    const before = 'Every write goes this way, and the store confirms each write on main as it makes it, then posts it, then waits, then posts the next one.'
+    const after = 'Every write goes this way, and the store worker confirms each write as it makes it, then posts it.'
+    const row = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md').querySelector('.changes-line[data-reworked]')!
+    const now = row.querySelector('.changes-reworked__now')!
+    expect(now.textContent!.replace(/Added: /gu, '')).toBe(after)
+    expect(now.querySelector(':scope > .changes-w:empty')).not.toBeNull()
+  })
+
+  it('reads a long paragraph rewritten whole as two paragraphs, as it was and as it is now', () => {
     const before = 'The worker thread that will make every write to the event store and run its log checkpoints, confirming each posted write back to main. It is planned, not built: until it is, the store confirms on main.'
     const after = 'Store worker thread making each write the event store holds, and its checkpoints too. Its commit shows before its confirmation arrives, so the overlay leaves out what main already holds, and closing waits a minute at most.'
     const row = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md').querySelector('.changes-line[data-kind="edited"]')!
     expect(row.getAttribute('data-rewritten')).toBe('true')
-    expect(row.querySelector('.changes-line__text > del')).toBeNull()
-    expect(row.querySelector('.changes-line__text > ins')!.textContent).toBe(`Added: ${after}`)
-    expect(row.querySelector('.changes-earlier__toggle')!.textContent).toBe('Show earlier wording')
+    expect(row.querySelector('.changes-reworked__was')!.textContent).toBe(`Removed: ${before}`)
+    expect(row.querySelector('.changes-reworked__now')!.textContent).toBe(`Added: ${after}`)
+    expect(row.querySelector('button')).toBeNull()
   })
 
   it('leaves code as the line that went above the line that came', () => {

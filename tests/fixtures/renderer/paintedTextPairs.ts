@@ -63,17 +63,17 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
   // A document's edited line read once has no wash of its own: in code its words' washes sit on the code background, and its sign takes the warning ink.
   // What such a line keeps reads in the secondary ink, as do the words that went from it, and so does a picked document line's context.
-  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and an opened earlier wording in the secondary ink.
+  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and a reworked paragraph's old wording in the secondary ink.
   ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
-  ...each('--changes-ink-removed', [context, [...context, hover], [...context, picked]], 'what went in a document: removed words, a removed paragraph, the words that went in its earlier wording'),
-  ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited or reworked line keeps'),
+  ...each('--changes-ink-removed', [context, [...context, hover], [...context, picked]], 'what went in a document: removed words and a removed paragraph'),
+  ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited line keeps, and a reworked paragraph as it was, its struck words too'),
   ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
   ...each('text', [context, [...context, hover], [...context, picked]], 'words that came in a document'),
   // Modified is one amber in both modes (changes.css): an edited line's sign, and a file's M on its head and in the tree.
   ...each('--changes-modified', [context, [...context, hover]], 'edited line sign'),
   ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
-  // The tab where a line of code runs on past the edge, on its line's own colour, and the earlier wording's toggle, pointed at.
-  ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab and earlier wording, pointed at'),
+  // The tab where a line of code runs on past the edge, on its line's own colour, pointed at.
+  ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab, pointed at'),
   // The runs-on arrow is a tag in the sunken fill with its line's wash over it: muted at rest, the secondary ink on a pointed
   // line, the body's on a picked one.
   ...tagLines.flatMap(line => [pair('text-muted', line, 'runs-on arrow at rest'), pair('text-2', [...line, hover], 'runs-on arrow on a pointed line'), pair('text', [...line, picked], 'runs-on arrow on a picked line')]),
