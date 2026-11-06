@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
+  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
   statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -31,6 +31,18 @@ describe('a finished turn\'s record', () => {
     expect(workSummary([record({ id: 'x', kind: 'tool', title: 'mcp__sotto_browser__browser_open' })])).toBe('Used Browser open')
     expect(workSummary([record({ id: 'y', kind: 'tool', title: 'Tool' }), record({ id: 'z', kind: 'tool', title: 'Tool' })])).toBe('Used 2 tools')
     expect(workSummary([record({ id: 'w', kind: 'tool', title: 'A name far too long to sit on the line' })])).toBe('Used 1 tool')
+  })
+
+  it('tells a turn that only thought for a moment from one that did work or took its time', () => {
+    const thought = record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary' })
+    const quick = turn({ durationMs: 6_000 })
+    expect(onlyAMoment(quick, at, [], [quick, thought])).toBe(true)
+    expect(onlyAMoment(quick, at, [], [quick, thought, record({ id: 'c' })])).toBe(false)
+    expect(onlyAMoment(turn({ durationMs: 40_000 }), at, [], [thought])).toBe(false)
+    expect(onlyAMoment(turn({ durationMs: 6_000, status: 'failed' }), at, [], [thought])).toBe(false)
+    // With no record of how long it ran, the turn is timed from its message to its last reply or record.
+    expect(onlyAMoment(undefined, at, ['2026-09-12T10:00:04.000Z'], [thought])).toBe(true)
+    expect(onlyAMoment(undefined, undefined, [], [thought])).toBe(false)
   })
 
   it('leaves out thinking and files, and says nothing of a failed step', () => {

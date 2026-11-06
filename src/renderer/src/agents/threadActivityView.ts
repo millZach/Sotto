@@ -1160,6 +1160,19 @@ export function workHeadline(turn: AgentActivity | undefined, threadRunning: boo
   return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
 }
 
+/** Under this, a turn that only thought took a moment: a question answered from what the thread already knew. */
+const MOMENT_MS = 15_000
+/**
+ * Whether a finished turn only thought, and briefly: it ended as it should, in under fifteen seconds, and every step it took
+ * was the model's reasoning, so it ran, read, changed and started nothing. Its Worked for line then says nothing the reply
+ * under it does not. Arguments as `workHeadline` takes them, and the turn's records.
+ */
+export function onlyAMoment(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[], records: readonly AgentActivity[]): boolean {
+  if ((turn?.status ?? 'completed') !== 'completed') return false
+  const took = workDuration(turn, startedAt, moments)
+  return took !== undefined && took < MOMENT_MS && records.every(record => !isStep(record) || record.kind === 'reasoning')
+}
+
 function workDuration(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[]): number | undefined {
   const start = startedAt ? Date.parse(startedAt) : Number.NaN
   const end = Math.max(...moments.map(moment => moment ? Date.parse(moment) : Number.NaN).filter(Number.isFinite))

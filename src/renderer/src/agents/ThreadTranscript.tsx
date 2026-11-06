@@ -69,7 +69,7 @@ import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, 
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
 import { shownWords, type LaterWords } from './interfaceWords'
 import { shownCount } from '../state/interfaceNumbers'
-import { compactionOf, isStep, liveTurnId, newsWorkLabel, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, workSummary, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, isStep, liveTurnId, newsWorkLabel, onlyAMoment, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, workSummary, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 /** No message is left behind while no fork card is open. */
@@ -146,8 +146,10 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed, changes, sayOnce, onDisclosure, onSeek, lifted, who, children }: {
+function TurnWork({ headline, steps, did, delegated, moment, open, setOpen, turn, failed, changes, sayOnce, onDisclosure, onSeek, lifted, who, children }: {
   readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
+  /** The turn only thought, for a moment, and wrote nothing on the way: its closed line steps back further. */
+  readonly moment: boolean
   /** How many steps the fold holds, after the headline ("Worked for 2m 04s · 12 steps"). */
   readonly steps: number
   /** What those steps did, after their count ("· Ran 5 commands, used Read"). */
@@ -182,7 +184,7 @@ function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed
     ;(onSeek ?? seekWithoutTranscript)(message)
   }
   return <>
-    <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-labelledby={`${bodyId}-headline`}
+    <section className="thread-work" data-expanded={open || undefined} data-moment={moment || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-labelledby={`${bodyId}-headline`}
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
         onClick={event => { onDisclosure(event.currentTarget); setOpen(!open); setStepsOpen(!open) }}>
@@ -523,9 +525,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const sayOnce = speaker !== 'watcher'
   // A fold that holds one group and no replies has no need of that group's line: it would say what the Worked for line says.
   const bare = sayOnce && !work.length && folded(groups).length === 1
+  const startedAt = turn.user?.createdAt
+  const moment = sayOnce && !work.length && !delegations?.length && onlyAMoment(lifecycle, startedAt, moments, records)
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, startedAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} moment={moment} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
