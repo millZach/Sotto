@@ -74,8 +74,8 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
       <div className="agent-request__head"><strong><Trans>{threadTitle} wants to start a cloud iPhone.</Trans></strong></div>
       {session.description ? <p className="agent-request__text">{session.description}</p> : null}
       <p className="agent-request__text tt-paragraph"><Trans comment="{price} is US dollars a minute; run.cloud is the service's name.">Uploads <code dir="ltr">{buildPath}</code> ({size}) to run.cloud and starts an iPhone simulator. About ${price} a minute. {ph({ monthMinutes: shownCount(monthMinutes) })} of {ph({ capMinutes: shownCount(capMinutes) })} minutes used this month.</Trans></p>
-      <div className="agent-request__actions" data-answers="">
-        <Button variant="secondary" disabled={answering} onClick={() => answer(true)}><Trans>Start cloud iPhone</Trans></Button>
+      <div className="agent-request__actions">
+        <Button disabled={answering} onClick={() => answer(true)}><Trans>Start cloud iPhone</Trans></Button>
         <Button variant="secondary" disabled={answering} onClick={() => answer(false)}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
       </div>
       {left !== null && left <= 60_000 ? <p className="agent-request__status tt-paragraph" role="status">{plural(secondsLeft, { other: '# seconds left to answer' })}</p> : null}

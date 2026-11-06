@@ -19,9 +19,6 @@
 .agent-request__actions:empty { display: none; }
 .agent-request__actions .tt-button, .agent-request__footer .tt-button, .agent-request__hold .tt-button { min-height: 34px; padding: 0 15px; font-size: var(--tt-type-body); }
 .agent-request__actions .tt-button[aria-pressed='true'] { box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
-/* A permission's answers are one weight, none filled (ADR-0004: the user answers every permission, and the card nudges
-   toward none). Each is drawn in the body's ink, so Deny reads as plainly a choice as Allow. */
-.agent-request__actions[data-answers] .tt-button { color: var(--tt-text); }
 .agent-request__choices { display: grid; gap: 4px; margin: 0; font-size: var(--tt-type-small); color: var(--tt-text-muted); }
 .agent-request__choices div { display: flex; flex-wrap: wrap; gap: 0 6px; }
 .agent-request__choices dt { color: var(--tt-text-2); font-weight: 500; }

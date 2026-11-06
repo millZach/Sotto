@@ -251,20 +251,20 @@ function PermissionActions({ request, disabled, pressed, onChoose, names, labels
   if (choices && choices.length === 0) return <p className="agent-request__fallback tt-paragraph"><Trans>Sotto has no choice it can send for this request. Answer it in the provider’s app.</Trans></p>
   if (choices) {
     const described = choices.filter(choice => choice.description)
-    // The provider's order is kept, and every choice carries one weight: the user answers a permission (ADR-0004), so
-    // the card leans toward no answer, Deny as plainly a choice as Allow.
+    // The provider's order is kept; the single-use approval, or a plan's acceptance, is the one emphasized action.
+    const primary = choices.find(choice => choice.kind === 'allow-once')?.id ?? (names ? choices[0]?.id : undefined)
     return <>
-      <div className="agent-request__actions" data-answers="">
-        {choices.map(choice => <Button key={choice.id} variant="secondary" disabled={disabled}
+      <div className="agent-request__actions">
+        {choices.map(choice => <Button key={choice.id} variant={choice.id === primary ? 'primary' : 'secondary'} disabled={disabled}
           aria-label={names?.[choice.id]} aria-pressed={pressed === choice.id || undefined} data-choice-kind={choice.kind}
           onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{labels?.[choice.id] ?? choice.label}</Button>)}
       </div>
       {described.length > 0 ? <dl className="agent-request__choices">{described.map(choice => <div key={choice.id}><dt>{choice.label}</dt><dd><LinkedText text={choice.description!} /></dd></div>)}</dl> : null}
     </>
   }
-  return <div className="agent-request__actions" data-answers="">
+  return <div className="agent-request__actions">
     <Button variant="secondary" disabled={disabled} aria-pressed={pressed === 'deny' || undefined} onClick={() => onChoose('deny', legacyPermissionAnswer(false))}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
-    <Button variant="secondary" disabled={disabled} aria-pressed={pressed === 'allow' || undefined} onClick={() => onChoose('allow', legacyPermissionAnswer(true))}>{t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })}</Button>
+    <Button disabled={disabled} aria-pressed={pressed === 'allow' || undefined} onClick={() => onChoose('allow', legacyPermissionAnswer(true))}>{t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })}</Button>
   </div>
 }
 
