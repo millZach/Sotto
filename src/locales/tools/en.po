@@ -51,7 +51,7 @@ msgstr "{0, plural, other {The # most recently updated of {total}.}}"
 msgid "{added} added, {removed} removed"
 msgstr "{added} added, {removed} removed"
 
-#. The line totals of a pull request; Changes says its own leave whitespace changes out.
+#. The line totals of a pull request, which count every line, whitespace changes included.
 #: src/renderer/src/tools/PullRequestDetails.tsx
 msgid "{added} lines added, {removed} removed, counting whitespace changes, as GitHub does."
 msgstr "{added} lines added, {removed} removed, counting whitespace changes, as GitHub does."

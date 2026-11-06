@@ -26,10 +26,11 @@ const openExternal = (url: string): void => { void window.sotto?.openExternalLin
 function LineCounts({ additions, deletions, quiet, whole }: { readonly additions: number; readonly deletions: number; readonly quiet?: boolean; readonly whole?: boolean }): ReactNode {
   const { t } = useLingui()
   const added = shownLineCount(additions), removed = shownLineCount(deletions)
-  // Whole: the pull request's own totals, which GitHub counts with every whitespace change, where Changes leaves those
-  // out by default; the words say so, so the two figures side by side are not read as a mismatch.
+  // Whole: the pull request's own totals, which GitHub counts with every whitespace change. Changes counts a branch's
+  // lines the same way, whitespace hidden or not, so the two figures side by side agree; the words say how these are
+  // counted for the rare totals that still differ (an older host's, which leave hidden whitespace out and say so).
   const said = whole
-    ? t({ message: `${added} lines added, ${removed} removed, counting whitespace changes, as GitHub does.`, comment: 'The line totals of a pull request; Changes says its own leave whitespace changes out.' })
+    ? t({ message: `${added} lines added, ${removed} removed, counting whitespace changes, as GitHub does.`, comment: 'The line totals of a pull request, which count every line, whitespace changes included.' })
     : t({ message: `${added} added, ${removed} removed`, comment: '{added} and {removed} are counts of lines in a pull request.' })
   // Quiet: a folder's sum over its files, in the muted text rather than the two status colours.
   return <span className="pr-surface__counts" data-quiet={quiet || undefined} title={whole ? said : undefined}>
