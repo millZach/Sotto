@@ -265,6 +265,8 @@ describe('IPC validation and lifecycle', () => {
     delete fullPatch['tailnetConnections']
     // Chosen through its own channel, which loads the model too (ADR-0094).
     delete fullPatch['speechModel']
+    // Sotto's own mark for #2233's one-time move of Compact Watcher at; no control sets it.
+    delete fullPatch['watcherCompactAtMoved']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
     await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true, microphoneId: 'rejected-microphone' })).rejects.toThrow('Invalid IPC payload')

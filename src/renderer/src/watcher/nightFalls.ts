@@ -298,7 +298,7 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   root.dataset.roomTransition = options.forward ? 'in' : 'out'
   root.style.setProperty('--room-transition-ms', `${duration}ms`)
 
-  const owlSelector = ':is(.thread-nav__foot, .watcher-head) .thread-nav__seg button[data-room="watcher"] .watcher-owl'
+  const owlSelector = '.thread-nav__foot .thread-nav__seg button[data-room="watcher"] .watcher-owl'
   const centre = (): number | null => { const owl = document.querySelector(owlSelector)?.getBoundingClientRect(); return owl && owl.width > 0 ? owl.left + owl.width / 2 : null }
   const from = centre()
   document.body.append(canvas)

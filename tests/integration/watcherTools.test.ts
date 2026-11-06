@@ -2348,7 +2348,7 @@ it('keeps the decisions, rules and issues Watcher gives, list by list, and reads
   await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.compactAtTokens).toBe(400_000)
+  expect(read.compactAtTokens).toBe(250_000)
   expect([texts(read.kept.decisions), texts(read.kept.rules), texts(read.kept.issues)]).toEqual([['Merge #1186 once CI is green?'],
     ['Full test suites run in CI, not on the laptop.'], ['#1189 Watcher: auto-compact its conversation']])
   expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
@@ -2567,11 +2567,11 @@ it('saves none of Watcher’s kept words with Keep local history off', async () 
   expect(saved).not.toContain('synthetic_private_rule_51c2')
 })
 
-it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
+it('compacts Watcher once its conversation passes 250K tokens while it rests, and tells it to read its state after', async () => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
   let watcher: Partial<AgentThread> = { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
-    usage: { contextUsed: 400_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+    usage: { contextUsed: 250_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
   vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
     const snapshot = real()
     return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
@@ -2587,9 +2587,9 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   await nudge()
   // At the point, not past it.
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
-  expect(f.service.state().context).toMatchObject({ tokens: 400_000, compactAt: 400_000, canCompact: true, compacting: false })
+  expect(f.service.state().context).toMatchObject({ tokens: 250_000, compactAt: 250_000, canCompact: true, compacting: false })
   // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
-  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
+  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 262_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
   await nudge()
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
   watcher = { ...watcher, status: 'idle' }
