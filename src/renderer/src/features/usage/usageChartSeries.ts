@@ -227,6 +227,18 @@ export const QUIET_ROOM = 2
  * spans, and `start` and `width` place each day across it, from 0 to 1.
  */
 export interface ChartLayout { readonly stretches: ChartStretch[]; readonly room: number; readonly start: number[]; readonly width: number[] }
+/**
+ * The days a fold keeps standing (`chartStretches`' `busy`): each day with work, and each day not reported whole, whose
+ * nothing could be work no record counted. Only a day every record reports as a complete zero is empty enough to fold
+ * into "No tokens for 29 days".
+ */
+export function keptDays(series: readonly Pick<ChartSeries, 'values' | 'figures'>[], count: number): boolean[] {
+  return Array.from({ length: count }, (_, at) => {
+    if (series.some(item => (item.values[at] ?? 0) > 0)) return true
+    const figure = sumFigures(series.map(item => item.figures[at] ?? wholeFigure(0)))
+    return !figure.known || figure.partial || figure.value > 0
+  })
+}
 export function chartStretches(busy: readonly boolean[], run: number): ChartLayout {
   const stretches: ChartStretch[] = []
   for (let at = 0; at < busy.length;) {

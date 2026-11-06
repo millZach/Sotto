@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldRun, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
+  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldRun, keptDays, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
   type ChartFigure, type SeriesCandidate,
 } from '../../../src/renderer/src/features/usage/usageChartSeries'
 import { activityRow, field, tokens } from '../../fixtures/renderer/usageReads'
@@ -143,6 +143,19 @@ describe('Usage chart series', () => {
     // Not asked to fold, or with no run long enough, each day keeps an equal share.
     expect(chartStretches(busy, 0).room).toBe(30)
     expect(chartStretches([true, false, false, false, false, true], QUIET_RUN).room).toBe(6)
+  })
+
+  it('folds only days reported as complete zeroes, never days whose tokens nothing reported', () => {
+    // Thirty days: work on the last two, the ten before them reported as nothing, and the eighteen before those unreported.
+    const days = Array.from({ length: 30 }, (_, at) => at >= 28 ? { prompts: 1, input: 100, output: 10, tokensKnown: true, tokensPartial: false }
+      : at >= 18 ? { prompts: 0, input: 0, output: 0, tokensKnown: true, tokensPartial: false }
+      : { prompts: 0, input: 0, output: 0, tokensKnown: false, tokensPartial: false })
+    const kept = keptDays(totalPlan('tokens', 'bars', days).series, 30)
+    expect(kept.slice(0, 18).every(Boolean)).toBe(true)
+    expect(kept.slice(18, 28).some(Boolean)).toBe(false)
+    expect(chartStretches(kept, QUIET_RUN).stretches.filter(stretch => stretch.kind === 'quiet')).toEqual([{ kind: 'quiet', from: 18, to: 27 }])
+    // Prompts are always counted whole, so their empty days fold.
+    expect(keptDays(totalPlan('prompts', 'bars', days).series, 30).filter(Boolean)).toHaveLength(2)
   })
 
   it('folds only a sparse range longer than a week, and draws a busier one day by day', () => {
