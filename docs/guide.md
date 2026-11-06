@@ -1427,7 +1427,7 @@ If the popup cannot read the threads or their messages, a notice says so. Reopen
 
 Drag the card by any part that is not words or a control to move it; it keeps that place, and grows from its bottom edge, until Sotto quits. Its width is fixed. It wears Sotto's theme, light or dark, and holds still when motion is reduced.
 
-Change the shortcut in **Settings → Keyboard → Popup**: press the shortcut, then the new keys, and let go. Keys a dictation shortcut uses are refused, and so are keys another app already holds, which Sotto finds out by trying them; the old shortcut keeps working until the new one is taken. **Remove shortcut** leaves the popup to the tray; the reset arrow brings back `Alt+Shift+Space`. On Linux, whether a desktop lets Sotto take a shortcut depends on the desktop, and the row says when it could not. Stable shows none of this and keeps a shortcut you saved.
+Change the shortcut in **Settings → Keyboard → Popup**: press the shortcut, then the new keys, and let go. Keys a dictation shortcut uses are refused, and so are keys another app already holds, which Sotto finds out by trying them; the old shortcut keeps working until the new one is taken. **Remove shortcut** leaves the popup to the tray; the reset arrow brings back `Alt+Shift+Space`. Turn off **Use the popup** there if you don't want it at all: Sotto then doesn't load it, take its shortcut or offer it in the tray, and turning it back on restores your shortcut. On Linux, whether a desktop lets Sotto take a shortcut depends on the desktop, and the row says when it could not. Stable shows none of this and keeps a shortcut you saved.
 
 ## Sotto Owl
 
