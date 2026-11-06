@@ -160,6 +160,29 @@ async function openThread(page: Page, title: string): Promise<void> {
   await expect(focusedPane(page).getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
+/**
+ * A long thread opens on its newest turns and the reader's own presses bring the rest in, so a state that reads its
+ * earlier messages presses Show earlier messages until all of it is drawn, whatever ran before it.
+ */
+async function drawWholeThread(page: Page): Promise<void> {
+  const earlier = transcript(page).locator('.thread-transcript__earlier').getByRole('button')
+  await expect(async () => {
+    if (await earlier.count()) await earlier.first().click({ timeout: 2_000 }).catch(() => undefined)
+    expect(await transcript(page).locator('.thread-message').count()).toBeGreaterThanOrEqual(100)
+  }).toPass({ timeout: 120_000 })
+}
+
+/**
+ * Opens the pull request's thread with its turn's steps folded, as a finished turn starts, so a pull request state shows
+ * the same transcript beside it whether or not an earlier state opened those steps.
+ */
+async function openPullRequestThread(page: Page): Promise<void> {
+  await openThread(page, 'Thread store on a worker')
+  const fold = transcript(page).getByRole('button', { name: /^Worked for.*Ran 3 commands/u }).first()
+  if (await fold.getAttribute('aria-expanded') === 'true') await fold.click()
+  await expect(fold).toHaveAttribute('aria-expanded', 'false')
+}
+
 /** Puts a transcript's scroll where a state names it, and holds until the transcript stops moving it. */
 async function scrollTranscript(page: Page, to: 'top-of-turn' | 'middle' | 'bottom'): Promise<void> {
   await transcript(page).evaluate((log, where) => {
@@ -410,12 +433,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   { name: 'thread-long', covers: ['steps-finished', 'steps-finished-open'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
-    // A long thread opens on its newest turns; the reader's own presses bring the rest in.
-    const earlier = transcript(page).locator('.thread-transcript__earlier').getByRole('button')
-    await expect(async () => {
-      if (await earlier.count()) await earlier.first().click({ timeout: 2_000 }).catch(() => undefined)
-      expect(await transcript(page).locator('.thread-message').count()).toBeGreaterThanOrEqual(100)
-    }).toPass({ timeout: 120_000 })
+    await drawWholeThread(page)
     await scrollTranscript(page, 'middle')
     const shows = 'A long thread (102 messages and 134 tool calls, the calls folded in their turns) scrolled to its middle, with the sidebar full: a twelve-cut refactor, its questions, a failed typecheck and a flaky test fixed, a rebase and three pull requests. It opens on its newest turns, so Show earlier messages is pressed until all of it is drawn.'
     const differs = 'The session is written by hand, and its commands print a line or two where a real run prints more.'
@@ -494,6 +512,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
+    await drawWholeThread(page)
     await scrollTranscript(page, 'middle')
     const pane = focusedPane(page)
     const user = transcript(page).locator('.thread-message[data-role="user"]').filter({ hasText: 'titleRequests' }).first()
@@ -677,7 +696,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   { name: 'changes', covers: ['changes-big', 'changes-expanded', 'changes-file', 'changes-sideways', 'changes-tree-press'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     const panel = await toolsTab(page, 'Changes')
     await panel.locator('.changes-scope__select').selectOption('branch')
     await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
@@ -749,7 +768,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   // since a new control's words only reach a build once the catalogs are extracted.
   { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-wrap', 'changes-one-file', 'changes-earlier', 'changes-clay', 'doc-edit-clay'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     const panel = await toolsTab(page, 'Changes')
     await panel.locator('.changes-scope__select').selectOption('branch')
     await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
@@ -814,7 +833,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     await pullRequestMoment(capture, 'checks-running')
     await pullRequestMoment(capture, 'checks-failed')
     await pullRequestMoment(capture, 'ready')
@@ -828,7 +847,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   // How the answer holds: the blocked and the ready surface at every size, in a third theme, and the states that take Merge's place.
   { name: 'pr-states', covers: ['pr-blocked-many', 'pr-auto-merge', 'pr-merged', 'pr-failed-clay', 'pr-ready-clay', 'pr-ready-glass', 'pr-merge-method'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     const scripted = 'The pull request lives in the scripted gh: its checks, reviews and how it stands are data, read through the real status reader and surface.'
     await pullRequestMomentRead(capture, 'checks-failed')
     for (const size of SMALLER_SIZES) await capture.shoot('pr-checks-failed', PR_NOTES['checks-failed'], scripted, { modes: ['dark'], size })
@@ -862,7 +881,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   // Every moment of the pull request, in both modes at every size, so each line's label can be read against its reason. Run by name.
   { name: 'pr-every', covers: ['pr-changes-requested', 'pr-no-review-needed', 'pr-closed'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     const scripted = 'The pull request lives in the scripted gh: its checks, reviews and how it stands are data, read through the real status reader and surface.'
     for (const moment of Object.keys(PR_STATE) as PullRequestMoment[]) {
       await pullRequestMomentRead(capture, moment)
@@ -874,7 +893,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   // The drill-in folded under the plain answer: every check, the changed files, the description, the repository's open pull requests and one of them read.
   { name: 'pr-detail', covers: ['pr-checks-fold', 'pr-all-checks', 'pr-files', 'pr-review-in-changes', 'pr-description', 'pr-clay', 'pr-open-list', 'pr-other'], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     const scripted = 'The pull request and the repository\'s others live in the scripted gh: checks, times, files and counts are data, read through the real status reader and surface. The files and their counts are the real diff\'s.'
     await pullRequestMomentRead(capture, 'checks-failed')
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
@@ -932,7 +951,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   { name: 'git-dialog', covers: [], run: async capture => {
     const { page } = capture
-    await openThread(page, 'Thread store on a worker')
+    await openPullRequestThread(page)
     await refreshBranch(page, 'Thread store on a worker')
     const quick = focusedPane(page).locator('.git-action__quick')
     await expect(focusedPane(page).locator('.git-action__label')).toHaveText(/Commit/u, { timeout: 30_000 })
