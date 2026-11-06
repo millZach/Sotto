@@ -274,13 +274,14 @@ export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTarget
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
 /**
  * A waiting question card's own words, for Watcher to say what it asks (#2230): the question, the header first where it
- * has one, up to eight choices, how many more choices and questions it has, and the names of the prototype pages Sotto
- * found for it. The worker's words, read only; read_state and question news carry them, worked out live and never saved.
+ * has one, up to eight choices, how many more choices and questions it has, the names of the prototype pages Sotto found
+ * for it, and up to three web links the card shows. The worker's words, read only; read_state and question news carry
+ * them, worked out live and never saved.
  */
 // Cut by characters where they are made, so these bounds are in UTF-16 units with room for any character.
 export const watcherCardWordsSchema = z.object({ question: z.string().min(1).max(1_200), choices: z.array(z.string().max(400)).max(8),
   moreChoices: z.number().int().positive().optional(), moreQuestions: z.number().int().positive().optional(),
-  prototype: z.array(z.string().max(800)).max(3).optional() }).strict()
+  prototype: z.array(z.string().max(800)).max(3).optional(), links: z.array(z.string().max(500)).max(3).optional() }).strict()
 export type WatcherCardWords = z.infer<typeof watcherCardWordsSchema>
 /** A waitingOnUser row as read_state gives it: a question card's row carries `asks`, its own words (#2230). */
 export const watcherStateWaitingSchema = watcherWaitingOnUserSchema.extend({ asks: watcherCardWordsSchema.optional() }).strict()

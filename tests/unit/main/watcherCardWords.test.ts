@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { watcherCardLine, watcherWaitingCardWords } from '../../../src/main/agents/watcherNews'
+import { watcherCardLine, watcherNewsText, watcherWaitingCardWords } from '../../../src/main/agents/watcherNews'
+import type { WatcherEvent } from '../../../src/shared/watcherNews'
 import { watcherCardWordsSchema } from '../../../src/shared/watcher'
 import type { AgentRequest } from '../../../src/shared/agents'
 
@@ -31,4 +32,22 @@ it('keeps a card\'s words short: the question, eight choices and how many more (
   expect(words.moreChoices).toBe(3)
   expect(watcherCardWordsSchema.safeParse(words).success).toBe(true)
   expect(watcherCardLine(words)).toContain(', and 3 more.')
+})
+
+it('gives the web links the card shows: in its words and in the agent\'s message it follows (#2230)', () => {
+  const words = watcherWaitingCardWords({ kind: 'question', text: 'Pick one at https://forge.example.ts.net/proto/index.html.', options: [] },
+    'Both takes are up: http://localhost:5173/rail and https://forge.example.ts.net/proto/index.html')!
+  expect(words.links).toEqual(['https://forge.example.ts.net/proto/index.html', 'http://localhost:5173/rail'])
+  expect(watcherCardLine(words)).toContain('Its links: https://forge.example.ts.net/proto/index.html, http://localhost:5173/rail.')
+})
+
+it('lets every reply\'s words give way before a waiting question\'s in a crowded note (#2230)', () => {
+  const hostId = '6f1c2a5e-8d3b-4c7a-9e21-0b5d7f3a1c42', requestId = '3b9e7d21-4a6c-4f8e-b1d2-7c5a9e0f3b18', at = '2026-11-05T12:00:00.000Z'
+  const target = (n: number) => ({ hostId, threadId: `thread-${n}` })
+  const finished = Array.from({ length: 30 }, (_, n): WatcherEvent => ({ id: `f${n}`, kind: 'turn-finished', requestId, target: target(n), generation: 1, observedAt: at, turnId: `t${n}` }))
+  const asked = Array.from({ length: 12 }, (_, n): WatcherEvent => ({ id: `q${n}`, kind: 'needs-user', requestId, target: target(100 + n), generation: 1, observedAt: at, requestCardId: `c${n}`, requestCardKind: 'question' }))
+  const text = watcherNewsText({ source: 'watcher', watcher: { hostId, threadId: 'watcher' }, omitted: 0, events: [...asked, ...finished] },
+    event => event.kind === 'needs-user' ? `Its question, in the worker's words: "Which take for ${event.requestCardId}?".` : `Its whole reply, in the worker's words: "${'x'.repeat(480)}".`)
+  for (let n = 0; n < 12; n++) expect(text).toContain(`Which take for c${n}?`)
+  expect(text).not.toContain('omitted')
 })

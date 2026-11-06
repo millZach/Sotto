@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -283,6 +283,8 @@ function cutUtf8(text: string, bytes: number): string {
 const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent. Its conversation is still in Watcher history on the Threads page; put the offer away to start the new Watcher without it.'
 /** How long a replacement gives a tool call under way to end before it goes on without it (#1735). */
 const TOOL_CALL_GRACE_MS = 5_000
+/** The agent's message a waiting question follows, whose links its card shows (#2230): its newest that is not a visual. */
+const cardReply = (thread: Pick<AgentThread, 'messages'>): string => thread.messages.findLast(item => item.role === 'assistant' && !isVisualMessage(item))?.text ?? ''
 /** A card the last Watcher waited on, in its own words, for the handover (#1735). */
 function watcherCardWords(request: AgentThread['requests'][number]): string {
   const asked = request.questions?.map(question => question.question).filter(Boolean).join(' ')
@@ -1131,7 +1133,7 @@ export class WatcherService implements WatcherControlHooks {
         const holder = event.delegatedThreadId === undefined ? thread : index ? index.thread({ hostId: event.target.hostId, threadId: event.delegatedThreadId })
           : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
         const words = holder?.requests.find(item => item.id === event.requestCardId)
-        const asks = words && watcherWaitingCardWords(words)
+        const asks = words && watcherWaitingCardWords(words, cardReply(holder!))
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
@@ -2322,7 +2324,7 @@ export class WatcherService implements WatcherControlHooks {
     if (row.waitsFor !== 'question' || row.requestCardId === undefined) return row
     const threadId = row.delegatedThreadId ?? row.target.threadId
     const thread = row.target.hostId === this.hostId() ? this.localThread(threadId) : this.owningThread(row.target.hostId, threadId)
-    const request = thread?.requests.find(item => item.id === row.requestCardId), asks = request && watcherWaitingCardWords(request)
+    const request = thread?.requests.find(item => item.id === row.requestCardId), asks = request && watcherWaitingCardWords(request, cardReply(thread!))
     return asks ? { ...row, asks } : row
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
