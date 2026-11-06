@@ -588,19 +588,9 @@
 .watcher-ask__said-body > :last-child { margin-bottom: 0; }
 .watcher-ask__said-cut { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .watcher-ask > .agent-request { margin-top: 2px; }
-/* Once answered, one row (the owner's ask on November 6, 2026): the check, who answered which thread, what was chosen or how
-   many choices, and Open, each part keeping one line and the thread's name giving way first. The whole sentence, every
-   choice in it, waits above the row as its tooltip while the pointer or the keyboard is on it. */
-.watcher-ask-receipt { position: relative; display: flex; align-items: center; gap: 0 8px; min-width: 0; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
-.watcher-ask-receipt__mark { flex: none; color: var(--watcher-ready-ink); }
-.watcher-ask-receipt__lead { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.watcher-ask-receipt__detail { flex: none; max-width: 40%; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
-.watcher-ask-receipt__detail::before { margin-right: 8px; content: '·'; }
-.watcher-ask-receipt > .watcher-ask__open { margin-left: 2px; }
-.watcher-ask-receipt__words { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 2; display: none; width: max-content; max-width: min(520px, 100%); padding: 6px 10px 7px;
-  border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm);
-  color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; text-shadow: none; pointer-events: none; }
-.watcher-ask-receipt:is(:hover, :focus-within) > .watcher-ask-receipt__words { display: block; }
+.watcher-ask-receipt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
+.watcher-ask-receipt__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.watcher-ask-receipt > .watcher-ask__open { margin-left: 0; }
 
 /* ---------- Stop all ---------- */
 /* At the end of Watcher's header: a quiet pill like Watch, whose stop square takes the error ink only on hover, since a
@@ -614,6 +604,20 @@
 .watcher-stop-all__button[aria-disabled='true'] { border-color: var(--tt-hairline); color: var(--tt-text-muted); cursor: default; }
 .watcher-stop-all__button[aria-disabled='true']:is(:hover, :active) { border-color: var(--tt-hairline); background: transparent; color: var(--tt-text-muted); }
 .watcher-stop-all__button[aria-disabled='true']:hover > svg { color: inherit; }
+/* The answered line, once answered, is one row (the owner's ask on November 6, 2026): the check, who answered which
+   thread, what was chosen or how many choices, and Open, each part keeping one line and the thread's name giving way
+   first. The whole sentence, every choice in it, waits above the row as its tooltip while the pointer or the keyboard is
+   on it. These follow the answered line's first rules above, which they take the place of. */
+.watcher-ask-receipt { position: relative; flex-wrap: nowrap; align-items: center; gap: 0 8px; min-width: 0; }
+.watcher-ask-receipt__mark { flex: none; color: var(--watcher-ready-ink); }
+.watcher-ask-receipt__lead { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-ask-receipt__detail { flex: none; max-width: 40%; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.watcher-ask-receipt__detail::before { margin-right: 8px; content: '·'; }
+.watcher-ask-receipt > .watcher-ask__open { margin-left: 2px; }
+.watcher-ask-receipt > .watcher-ask-receipt__words { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 2; display: none; flex: none; width: max-content; max-width: min(520px, 100%); padding: 6px 10px 7px;
+  border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm);
+  color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; text-shadow: none; pointer-events: none; }
+.watcher-ask-receipt:is(:hover, :focus-within) > .watcher-ask-receipt__words { display: block; }
 /* With the Watcher and Teams tabs, the lit tab already says Watcher: the room's name is said once, by the tab, and the
    heading stays for assistive tech (the owner's ask on November 6, 2026). */
 .watcher-room .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; min-width: 0; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

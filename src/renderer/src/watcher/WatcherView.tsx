@@ -39,7 +39,8 @@ import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
-import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
+import { isThreadClosed } from '../../../shared/threadActivity'
+import { workingThreadsByMachine } from '../../../shared/workingThreads'
 import { BrowserPageRouteContext, LinkedFileRouteContext, type LinkedFileRoute } from '../tools/webLinks'
 import { linkedFileThread } from '../tools/linkedFile'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
@@ -86,8 +87,6 @@ const WATCHER_PANE_ID = 'watcher-pane'
 interface HeaderParts {
   readonly room: WatcherRoom | null
   readonly count: number
-  /** How many threads have a turn running, on every machine, as the machines line counts them. */
-  readonly working: number
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
@@ -97,6 +96,19 @@ interface HeaderParts {
   readonly update: UpdateControlProps | null
   /** The Watcher and Teams tabs, while Teams is on (ADR-0186). */
   readonly tabs?: ReactNode
+}
+
+/**
+ * How many threads have a turn running on every machine, counted as the machines line counts them, for All threads to
+ * say what is going on (the owner's ask on November 6, 2026). Counted again only when the thread list changes.
+ */
+function useWorkingThreads(): number {
+  const threads = useAgents().state?.host.threads
+  return useMemo(() => {
+    let count = 0
+    for (const working of workingThreadsByMachine(threads ?? []).values()) count += working
+    return count
+  }, [threads])
 }
 
 type RoomTab = 'watcher' | 'teams'
@@ -138,11 +150,12 @@ function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null 
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, working, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
   const mac = useOptionalApp()?.platform === 'darwin'
+  const working = useWorkingThreads()
   const workingWords = plural(working, { 0: 'None working', other: '# working' })
   const workingId = useId()
   return <header className="thread-workspace__head watcher-head">
@@ -549,12 +562,6 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   const groups = useOverview(state, rows, now, watcherId)
   const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
-  // The threads with a turn running on every machine, counted as the machines line counts them, from the list All threads holds.
-  const working = useMemo(() => {
-    let count = 0
-    for (const group of groups) for (const entry of group.entries) if (isThreadTurnRunning(entry.overview.thread)) count++
-    return count
-  }, [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const view = useRoomView()
   const besideRow = view.besideId !== null && view.besideId !== watcherId ? rowsById.get(view.besideId) : undefined
@@ -728,7 +735,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   </>
   const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
   const header = <>
-    <WatcherHeader room={room} count={overviewCount(groups)} working={working} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
+    <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} update={update} tabs={tabs} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
     {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
