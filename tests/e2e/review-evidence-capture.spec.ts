@@ -15,7 +15,7 @@ import { onReleaseTrack } from './support/releaseTrack'
 import { openThreads, toggleTools, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 import { holdOwlSky } from './support/sottoOwl'
-import { seedWatcherRoom } from './support/watcherRoom'
+import { seedWatcherControls, seedWatcherRoom, VOICE_QUESTION } from './support/watcherRoom'
 import { fillPrompt, promptField } from './support/prompt'
 import { seedUsageHistory, usageAssistantFrame, usageDashboardHarness, usageResultFrame, usageWait, waitForNativePrompt } from './support/usageDashboard'
 
@@ -1550,6 +1550,73 @@ const COMMON_DIFFERENCES = [
  * Everything here is data: Claude Code's transcripts and a Codex CLI rollout in the harness's own home, read by the real
  * importer, and the scripted Claude client's answers.
  */
+/** The Watcher room states with its controls in use: run together, on their own launch. */
+const WATCHER_CONTROLS = ['watcher-controls', 'watcher-answered-hover', 'watcher-way-tip', 'watcher-new']
+
+/**
+ * Watcher's room an afternoon into its work (`seedWatcherControls`): answers to news with their work in the header, two
+ * replies seconds apart, a watched thread's question answered on its card, Stop all with two threads to stop and Move
+ * threads with forge connected; then the pointer on the answered line and on the way off the page, and two replies
+ * arriving while the reader is back up the conversation.
+ */
+async function captureWatcherControls(out: string): Promise<void> {
+  const repository = await buildEvidenceRepository()
+  await withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'design-threads', agents: 'design-threads' }, async launched => {
+    const { page } = launched
+    await freezeMain(launched)
+    await freezeRenderer(page)
+    await resizeContentWindowFor(launched, 1600, 1000)
+    const seeded = await seedWatcherControls(page)
+    await page.evaluate(async request => window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'grok-previews', text: request.text, request, status: 'running' }), VOICE_QUESTION)
+    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeAttached()
+    const pane = page.locator('#watcher-pane')
+    const log = pane.getByRole('log', { name: 'Thread transcript' })
+    // The user's own answer, on the card in Watcher's conversation: four voices, a length and where the key lives.
+    const card = pane.getByRole('region', { name: 'Question from Grok voice previews' })
+    await expect(card).toBeVisible()
+    for (const voice of ['Ara', 'Rex', 'Eve', 'Leo']) await card.getByRole('checkbox', { name: voice }).click()
+    await card.getByRole('radio', { name: 'Two seconds' }).click()
+    await card.getByRole('radio', { name: 'System keychain' }).click()
+    await card.getByRole('button', { name: 'Send answers' }).click()
+    const answered = pane.locator('.watcher-ask-receipt')
+    await expect(answered).toBeVisible()
+    await log.evaluate(element => { element.scrollTop = element.scrollHeight })
+    const room = captureFor(launched, repository, out)
+    const scene = 'Watcher itself is the stand-in the watcher specs seed, and its scene is held by the design-threads clock with every owl sitting. The question was answered on its card by this run\'s own presses.'
+    const shows = 'Watcher\'s room an afternoon in: answers to news with their work folded in, two replies seconds apart, a watched thread\'s question answered on its card, Stop all and Move threads in the header.'
+    await room.shoot('watcher-controls', shows, scene)
+    for (const size of SMALLER_SIZES) await room.shoot('watcher-controls', shows, scene, { size })
+    const onAnswered = async (): Promise<void> => {
+      await answered.scrollIntoViewIfNeeded()
+      const box = (await answered.boundingBox())!
+      await page.mouse.move(box.x + Math.min(120, box.width / 3), box.y + box.height / 2)
+      await page.waitForTimeout(400)
+    }
+    await room.shoot('watcher-answered-hover', 'The pointer on the line that replaced the answered card.', scene, { before: onAnswered })
+    const onSettings = async (): Promise<void> => {
+      const link = pane.locator('.watcher-head__way .thread-nav__page[href="#settings"]')
+      const box = (await link.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.waitForTimeout(900)
+    }
+    await room.shoot('watcher-way-tip', 'The pointer resting on Settings in the header\'s row of icons.', scene, { before: onSettings })
+    // Back up the conversation, then two replies arrive.
+    await page.mouse.move(0, 0)
+    await log.evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
+    await page.waitForTimeout(300)
+    await page.evaluate(async ({ at, messages, activities }) => {
+      await window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'release-notes', text: '', status: 'idle', activities, messages: [...messages,
+        { id: 'c-6', role: 'assistant', text: 'Footer links’ checks passed. It is ready to merge once you say so.', createdAt: at[0]! },
+        { id: 'c-7', role: 'assistant', text: 'Weekly note finished the Friday wrap. It is in notes/weekly.md.', createdAt: at[1]! }] })
+    }, { at: [minutesAgo(1), minutesAgo(0)], messages: [...seeded.messages], activities: [...seeded.activities] })
+    await expect(pane.locator('.thread-transcript__jump[data-unseen]')).toBeVisible()
+    const shown = 'Two replies arrived while the reader was back at the top of Watcher\'s conversation.'
+    await room.shoot('watcher-new', shown, scene)
+    for (const size of SMALLER_SIZES) await room.shoot('watcher-new', shown, scene, { size })
+  })
+}
+
 async function captureConnectedUsage(out: string): Promise<void> {
   const harness = await usageDashboardHarness()
   const shows = 'The Usage page for someone using Claude Code and Codex: fourteen days of their own records, seven models, one thread in Sotto, and Claude\'s limits.'
@@ -1701,7 +1768,12 @@ test.describe('review evidence', () => {
           await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
           const room = captureFor(launched, repository, out)
           const scene = 'Watcher itself is the stand-in the watcher specs seed, and its scene is held by the design-threads clock with every owl sitting.'
-          if (!ONLY || ONLY.includes('watcher-room')) await room.shoot('watcher-room', 'Watcher\'s room with its night scene, watching four threads, under a short conversation.', scene)
+          if (!ONLY || ONLY.includes('watcher-room')) {
+            const shows = 'Watcher\'s room with its night scene, watching four threads, under a short conversation.'
+            await room.shoot('watcher-room', shows, scene)
+            for (const size of SMALLER_SIZES) await room.shoot('watcher-room', shows, scene, { size })
+            await resizeContentWindowFor(launched, 1600, 1000)
+          }
           if (!ONLY || ONLY.includes('watcher-quiet')) {
             // The same conversation with the work Watcher did for each answer: a look at both pull requests that took its time,
             // then one quick read of the checks, whose Worked for line keeps its room and shows only under the pointer (Zach's
@@ -1734,6 +1806,7 @@ test.describe('review evidence', () => {
           }
         }))
       }
+      if (!ONLY || WATCHER_CONTROLS.some(name => ONLY.includes(name))) await runState('watcher-controls', () => captureWatcherControls(out))
     })
     // Its own launch: production main over an isolated home, so it reads the provider clients' records the way it would on a computer that has them.
     if (!ONLY || ['usage', 'usage-sizes'].some(name => ONLY.includes(name))) await runState('usage', () => captureConnectedUsage(out))
