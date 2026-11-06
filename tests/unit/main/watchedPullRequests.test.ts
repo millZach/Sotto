@@ -77,8 +77,25 @@ describe('Watcher\'s reads of watched pull requests', () => {
     const stacked: ScriptedPull = { number: 2, base: 'feat/other', checks: [{ name: 'Changed areas', state: 'SKIPPED' }] }
     const g = harness([stacked], [url(2)])
     await g.pass()
-    expect(g.seen(2)).toMatchObject({ checks: 'pending', requiredPassed: false })
-    expect(g.seen(2)).not.toHaveProperty('pendingChecks')
+    expect(g.seen(2)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 0, optional: 0 } })
+    // Rules that require nothing: every running check is optional.
+    stacked.checks = [{ name: 'Changed areas', state: 'SUCCESS' }, { name: 'Tests', state: 'IN_PROGRESS' }]
+    await g.pass()
+    expect(g.seen(2)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 0, optional: 1 } })
+  })
+
+  it('knows no pass where it cannot read which checks are required, and counts another app\'s check of a required name as optional (#2116)', async () => {
+    // The sign-in cannot read the rules and GitHub flags nothing: the first job passing is no pass, and nothing is counted.
+    const unread: ScriptedPull = { number: 1, rulesUnreadable: true, checks: [{ name: 'Changed areas', state: 'SUCCESS' }] }
+    const f = harness([unread], [url(1)])
+    await f.pass()
+    expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false })
+    expect(f.seen(1)).not.toHaveProperty('pendingChecks')
+    // The required build passed; another app's build of the same name, not flagged, still runs and holds no merge.
+    const twin: ScriptedPull = { number: 2, requiredChecks: ['build'], checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'build', status: true, state: 'PENDING' }] }
+    const g = harness([twin], [url(2)])
+    await g.pass()
+    expect(g.seen(2)).toMatchObject({ requiredPassed: true, pendingChecks: { required: 0, optional: 1 } })
   })
 
   it('tells Watcher of checks passing, the required checks passing, a conflict, remarks moving and a merge', async () => {

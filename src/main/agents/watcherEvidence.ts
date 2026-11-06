@@ -57,8 +57,8 @@ export interface PullRequestObservation {
   /** Whether every check the base branch requires passed on `head`, as babysitting reads it (ADR-0061). */
   requiredPassed?: boolean
   /**
-   * Where the base branch's rules name the checks a merge needs: how many of them are still to finish on `head`, one
-   * GitHub has not made yet included, and how many other checks, which no merge waits on, are still running (#2116).
+   * Where Sotto can read which checks a merge needs: how many of them are still to finish on `head`, one GitHub has not
+   * made yet included, and how many other checks, which no merge waits on, are still running (#2116).
    */
   pendingChecks?: { required: number; optional: number }
 }
