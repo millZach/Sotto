@@ -165,6 +165,10 @@ msgstr ""
 msgid "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comments. Send it or delete one first.}}"
 msgstr ""
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "{more, plural, one {# more file} other {# more files}}"
+msgstr ""
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{more, plural, other {{name} and # more are still running}}"
 msgstr ""
