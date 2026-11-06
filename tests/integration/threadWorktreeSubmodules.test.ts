@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -110,7 +110,9 @@ describe("independent working-copy allocation", () => {
     const module = join(nested, 'module')
     const recorded = (await git(module, ['rev-parse', 'HEAD'])).trim()
     const moduleDirectory = (await git(module, ['rev-parse', '--absolute-git-dir'])).trim()
-    expect(moduleDirectory.startsWith(join(nested, '.git', 'modules'))).toBe(true)
+    // Git prints forward slashes, and on a Windows runner a long folder name where the temp path holds the short one.
+    const modulesHome = await realpath(join(nested, '.git', 'modules'))
+    expect((await realpath(moduleDirectory)).startsWith(modulesHome)).toBe(true)
     await git(module, ['checkout', '-b', 'private'])
     await writeFile(join(module, 'private.txt'), 'local-only nested module history')
     await git(module, ['add', '.'])
