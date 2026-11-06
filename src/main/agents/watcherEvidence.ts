@@ -72,6 +72,13 @@ export interface WatcherAttentionFact { readonly pr: string; readonly kind: Watc
  * the plain one `heldFacts` makes; a key with returns has a number where the kind would be.
  */
 export const isMergeFact = (key: string): boolean => (JSON.parse(key) as unknown[])[1] === 'merged'
+/**
+ * The pull request facts that wake Watcher by themselves (#2226, Zach's pick on November 5, 2026): checks failed, the
+ * required checks passed (all checks passing says they did), and a merge. The rest, approved, a review asking for changes,
+ * comments or reviews that moved, a Bug Bot review, a conflict and a close, ride with the next news that wakes it.
+ * Required checks passing stays a wake until #2229's READY TO MERGE takes its place, since it is what sends a thread to merge.
+ */
+export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'required-passed', 'merged'])
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
 const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {
@@ -188,10 +195,10 @@ export class WatcherEvidenceStore {
       .map(item => { const { id, observedAt, ...said } = item; void id; void observedAt; return JSON.stringify(said) }).sort())
   }
   /**
-   * The pull request facts that need Watcher (#1190): checks failed or passed on a head, its required checks passed on a
+   * The pull request facts Watcher is told of (#1190): checks failed or passed on a head, its required checks passed on a
    * head, merged or closed, approved or asked for changes, a conflict, and each move of its comments or reviews. A fact here
-   * that was not there before wakes Watcher; a pending check, a new head, a check count or auto-merge alone does not, and
-   * rides with what does.
+   * that was not there before is news; only those of WAKING_ATTENTION wake Watcher (#2226), and the rest, like a pending
+   * check, a new head, a check count or auto-merge, ride with what does.
    */
   attentionFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
     const returning = this.returning.get(targetKey(target))

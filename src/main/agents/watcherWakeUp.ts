@@ -5,10 +5,10 @@ import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, ty
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
-import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
+import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_RIDING_KINDS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
-import { WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
+import { WAKING_ATTENTION, WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, toldEventsForLater, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
@@ -164,6 +164,18 @@ export function receiptNeedsWatcher(operation: Pick<WatcherRecord['operations'][
 export const receiptRevision = (operation: Pick<WatcherRecord['operations'][number], 'deliveryState' | 'refusalCode' | 'creationUncertain'>): string =>
   observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
 /** Whether a finish still waits on the work it left running: its news rides with that work's work-settled news (#1190). */
+/** An attention fact's key as `heldFacts` makes it, `[pr, kind, detail]`, without the return count a fact that came back carries. */
+const plainFact = (key: string): unknown[] => {
+  const parsed = JSON.parse(key) as unknown[]
+  return parsed.length === 2 && typeof parsed[0] === 'string' && typeof parsed[1] === 'number' ? JSON.parse(parsed[0]) as unknown[] : parsed
+}
+/** Whether Watcher was told the required checks passed on the pull request and commit this checks-passed fact names (#2226). */
+const requiredPassTold = (key: string, told: ReadonlySet<string> | undefined): boolean => {
+  if (!told?.size) return false
+  const [pr, , head] = plainFact(key)
+  for (const fact of told) { const [toldPr, kind, toldHead] = plainFact(fact); if (kind === 'required-passed' && toldPr === pr && toldHead === head) return true }
+  return false
+}
 const busyFinish = (event: WatcherEvent): boolean => event.kind === 'turn-finished' && (event.backgroundWorkCount ?? 0) > 0
 /**
  * The work a finished turn is still waiting on: background work (Claude's background tasks), the roster's working
@@ -580,6 +592,8 @@ export class WatcherWakeUp {
    */
   private attends(event: WatcherEvent): boolean {
     if (event.kind === 'evidence-changed') return this.waking.has(event.id) && (this.attentionUntold(event.target) || this.restoredNews(event))
+    // A card or page that closed, a swarm's progress, a restart and a finished move only ride with news that does (#2226).
+    if (WATCHER_RIDING_KINDS.has(event.kind)) return false
     return !busyFinish(event) || this.ripe(event) || this.movedOn(event)
   }
   private ripe(event: WatcherEvent): boolean { return this.now() - Date.parse(event.observedAt) >= WATCHER_QUIET_MS }
@@ -616,26 +630,40 @@ export class WatcherWakeUp {
     return byPr
   }
   /**
-   * Whether a thread's pull requests say something Watcher has not been told (#1190). Checks that failed and then went back
-   * to running before the news went say nothing new, so the news no longer needs Watcher by itself.
+   * Whether a thread's pull requests say something Watcher has not been told that wakes it (#1190, #2226): checks that
+   * failed, the required checks passing or a merge. Checks that failed and then went back to running before the news went
+   * say nothing new, so the news no longer needs Watcher by itself. Every check passing on a commit whose required checks
+   * Watcher was told passed says nothing it must act on either. The rest of what they say rides with news that wakes it.
    */
   private attentionUntold(target: WatcherThreadTarget): boolean {
     // Unread after a restart, before GitHub is read again, is unknown: news from before it keeps needing Watcher as it did.
     // Any other thread with no pull request facts has nothing to tell, however its news was marked (November 2, 2026).
     if (!this.evidence.readsPullRequests(target)) return this.restoredUnread.has(targetKey(target))
     const told = this.toldAttention.get(targetKey(target))
-    for (const fact of this.evidence.attention(target)) if (!told?.has(fact)) return true
+    for (const fact of this.evidence.attentionFacts(target)) {
+      if (WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key) && !(fact.kind === 'checks-passed' && requiredPassTold(fact.key, told))) return true
+    }
     return false
+  }
+  /** Whether a thread's pull requests say something Watcher has not been told that only rides with news that wakes it (#2226). */
+  private ridingUntold(target: WatcherThreadTarget): boolean {
+    if (!this.evidence.readsPullRequests(target)) return false
+    const told = this.toldAttention.get(targetKey(target))
+    return this.evidence.attentionFacts(target).some(fact => !WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key))
   }
   /**
    * Forgets the pull request facts Watcher was told that are no longer true, so checks that fail again on the same commit,
    * or a conflict that comes back, are news again. A merge is always true: GitHub never unmerges, so one Watcher was told
-   * stays told while its pull request is gone from the thread, and is no news when it comes back (#1495).
+   * stays told while its pull request is gone from the thread, and is no news when it comes back (#1495). Required checks
+   * that passed stay told while every check has passed on the same commit, which says they did (#2226).
    */
   private forgetEnded(target: WatcherThreadTarget): void {
     const key = targetKey(target), told = this.toldAttention.get(key)
     if (!told?.size) return
-    const now = this.evidence.attention(target), still = new Set([...told].filter(fact => now.has(fact) || isMergeFact(fact)))
+    const now = this.evidence.attention(target)
+    const passed = new Set([...now].flatMap(fact => { const [pr, kind, head] = plainFact(fact); return kind === 'checks-passed' ? [JSON.stringify([pr, head])] : [] }))
+    const passedOn = (fact: string): boolean => { const [pr, kind, head] = plainFact(fact); return kind === 'required-passed' && passed.has(JSON.stringify([pr, head])) }
+    const still = new Set([...told].filter(fact => now.has(fact) || isMergeFact(fact) || passed.size > 0 && passedOn(fact)))
     if (still.size !== told.size) this.toldAttention.set(key, still)
   }
   /** News a restart restored from the queue while its facts are not read again yet: it still needs Watcher, as it did. */
@@ -1524,7 +1552,9 @@ export class WatcherWakeUp {
       const key = targetKey(target), held = this.pending.filter(event => targetKey(event.target) === key)
       const waiting = held.filter(event => event.kind === 'evidence-changed')
       const ending = held.some(event => TURN_ENDS.has(event.kind))
-      if (!waiting.length && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
+      // What its pull requests say that wakes no one waits for news that does (#2226). A turn's end brings its own evidence,
+      // which leaves that waiting news out of date before this runs, so it is made again as the facts stand, to ride with it.
+      if (!waiting.length && !(ending && (this.ridingUntold(target) || (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local')))) return
       // Keeping a pull request's waiting news current keeps it news that needs Watcher, but no news that came since.
       marks = waiting.some(event => this.waking.has(event.id))
     }
