@@ -91,15 +91,12 @@ describe('Overview projection', () => {
     expect(watcherOverview({ host: settledProject }, now)[0]!.group).toBe('Idle')
     expect(watcherOverview({ host: { ...settledProject, projects: [{ ...settledProject.projects[0]!, hostId: 'other-host' }] } }, now)[0]!.group).toBe('Needs you')
   })
-  it('puts a prototype waiting for review under Needs you while the thread is open and not put aside (ADR-0108)', () => {
+  it('never puts a prototype under Needs you on its own: the question card that links it does (ADR-0108, November 6, 2026)', () => {
     const prototypeReady = { source: 'reply:m-1', pages: [{ token: 'p'.repeat(32), kind: 'file' as const, name: 'x.html', start: 'x.html' }] }
-    expect(project({ prototypeReady }).group).toBe('Needs you')
-    expect(project({ prototypeReady, pullRequests: [openPr] }).group).toBe('Needs you')
-    // A wake-up turn may run while the mark stands; the prototype still waits on the user.
-    expect(project({ prototypeReady, status: 'running' }).group).toBe('Needs you')
-    expect(project({ prototypeReady, archivedAt: centerTime }).group).toBe('Idle')
-    expect(project({ prototypeReady, settledAt: centerTime }).group).toBe('Idle')
-    expect(project({ prototypeReady, workspaceSettledAt: centerTime }).group).toBe('Idle')
+    expect(project({ prototypeReady }).group).toBe('Idle')
+    expect(project({ prototypeReady, pullRequests: [openPr] }).group).toBe('Ready for review')
+    expect(project({ prototypeReady, status: 'running' }).group).toBe('Working')
+    expect(project({ prototypeReady, requests: [{ id: 'q', kind: 'question', text: 'Which take?', options: [] }] }).group).toBe('Needs you')
   })
   it('qualifies identical IDs on different hosts and reads no user marks', () => {
     expect(watcherObservationKey(thread())).not.toBe(watcherObservationKey(thread({ hostId: '22222222-2222-4222-8222-222222222222' })))

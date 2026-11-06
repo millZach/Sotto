@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -98,6 +98,37 @@ describe("independent working-copy allocation", () => {
       expect((await f.service.reclaim(a, { confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories })).reclaimedAt).toBeTruthy()
     }
     await expect(lstat(childDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+  }, 60_000)
+  it.each(['deinitialized', 'checked-out'] as const)("counts a nested repository's own submodule history (%s)", async state => {
+    const f = await fixture(), nestedOrigin = await fixture(), moduleOrigin = await fixture()
+    await git(nestedOrigin.project, ['-c', 'protocol.file.allow=always', 'submodule', 'add', moduleOrigin.project, 'module'])
+    await git(nestedOrigin.project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', 'Add module'])
+    const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    // A plain clone inside the worktree: its own commits are all on its remote.
+    const nested = join(a.path!, 'nested')
+    await git(a.path!, ['-c', 'protocol.file.allow=always', 'clone', '--recurse-submodules', nestedOrigin.project, 'nested'])
+    const module = join(nested, 'module')
+    const recorded = (await git(module, ['rev-parse', 'HEAD'])).trim()
+    const moduleDirectory = (await git(module, ['rev-parse', '--absolute-git-dir'])).trim()
+    // Git prints forward slashes, and on a Windows runner a long folder name where the temp path holds the short one.
+    const modulesHome = await realpath(join(nested, '.git', 'modules'))
+    expect((await realpath(moduleDirectory)).startsWith(modulesHome)).toBe(true)
+    await git(module, ['checkout', '-b', 'private'])
+    await writeFile(join(module, 'private.txt'), 'local-only nested module history')
+    await git(module, ['add', '.'])
+    await git(module, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Private nested module work'])
+    const privateCommit = (await git(module, ['rev-parse', 'HEAD'])).trim()
+    await git(module, ['checkout', '--detach', recorded])
+    if (state === 'deinitialized') await git(nested, ['submodule', 'deinit', '--', 'module'])
+    const preview = await f.service.reclaimFacts(a)
+    // The checked-out module has a row of its own; its history is not counted twice.
+    expect(preview.repositories).toEqual(state === 'deinitialized'
+      ? [{ path: 'nested/', changeCount: 0, kind: 'repository', unpushedCommitCount: 1 }]
+      : [{ path: 'nested/', changeCount: 0, kind: 'repository', unpushedCommitCount: 0 }, { path: 'nested/module/', changeCount: 0, kind: 'repository', unpushedCommitCount: 1 }])
+    await expect(f.service.reclaim(a, { withUncommittedChanges: true, confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories.map(row => ({ ...row, unpushedCommitCount: 0 })) })).rejects.toThrow('The nested work changed')
+    expect(await git(moduleDirectory, ['--git-dir', moduleDirectory, 'cat-file', '-t', privateCommit])).toBe('commit\n')
+    expect((await f.service.reclaim(a, { withUncommittedChanges: true, confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories })).reclaimedAt).toBeTruthy()
+    await expect(lstat(moduleDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   }, 60_000)
   it.each(['clean', 'recursive', 'dirty-hidden'])('reclaims initialized submodules safely (%s)', async mode => {
     const recursive = mode === 'recursive'

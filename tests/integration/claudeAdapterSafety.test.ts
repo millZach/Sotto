@@ -55,6 +55,8 @@ describe('Claude native request mapping', () => {
       // A finished background task is Claude Code's own turn, whether or not the frame carries its origin.
       { ...user, origin: { kind: 'task-notification' } }, { ...user, message: { content: '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>' } }]) expect(authoredClaudeUser(frame)).toBe(false)
     expect(authoredClaudeUser(user)).toBe(true)
+    // Claude Code 2.1.277 and later mark a prompt typed into the interactive CLI as the human's.
+    expect(authoredClaudeUser({ ...user, origin: { kind: 'human' }, entrypoint: 'cli' })).toBe(true)
   })
 })
 

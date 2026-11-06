@@ -17,6 +17,18 @@ final class StreamingTests: XCTestCase {
         XCTAssertEqual(next.revision, 3)
         XCTAssertEqual(original.messages.first?.text, "Hello")
     }
+    /// A step window's count of earlier steps (ADR-0194) comes with the whole detail and stays through its deltas; a
+    /// removal of a step the phone never held, as a full thread's oldest steps go, changes nothing.
+    func testStepWindowCountSurvivesDeltasAndUnheldRemovals() throws {
+        let windowed = try decode(ThreadDetail.self, #"{"threadId":"t","revision":2,"earlierAvailable":true,"earlierSteps":1751,"messages":[{"id":"m","role":"assistant","text":"Hello"}],"activities":[{"id":"a","sequence":1,"kind":"command","status":"running","title":"Testing"}]}"#)
+        XCTAssertEqual(windowed.earlierSteps, 1751)
+        let delta = try decode(ThreadDetailDelta.self, #"{"threadId":"t","baseRevision":2,"revision":3,"messageDeltas":[],"activityDeltas":[{"id":"oldest","removed":true},{"record":{"id":"b","sequence":2,"kind":"command","status":"running","title":"Testing"}}]}"#)
+        let next = try XCTUnwrap(windowed.applying(delta))
+        XCTAssertEqual(next.earlierSteps, 1751)
+        XCTAssertEqual(next.activities?.map(\.id), ["a", "b"])
+        XCTAssertNil(try decode(ThreadDetail.self, detail).earlierSteps)
+        XCTAssertEqual(StepWindow.earlier(threadID: "t"), ["op": .string("earlier-steps"), "threadId": .string("t")])
+    }
     func testMissingBaseAndUnknownAppendTargetRequireResync() throws {
         let original = try decode(ThreadDetail.self, detail)
         for json in [
@@ -43,7 +55,7 @@ final class StreamingTests: XCTestCase {
         guard case .delta(let threadID, let update) = delta else { return XCTFail("Expected delta") }
         XCTAssertEqual(threadID, "t"); XCTAssertEqual(snapshot?.applying(update)?.revision, 3)
         XCTAssertEqual(Wire.snapshotHello["afterSeq"], .number(9_007_199_254_740_991))
-        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"), .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records")]))
+        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"), .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records"), .string("step-window")]))
     }
     func testInvalidFramesAndUnrequestedPushesAreRefused() async {
         for json in [#"{"v":2,"event":"detail","threadId":"t","detail":null}"#,

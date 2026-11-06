@@ -206,7 +206,15 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   const wakes = snoozedUntil === undefined ? '' : wakeWords(snoozedUntil)
   const snooze = canSnooze ? (): void => setSnoozeMenu('beside') : undefined
-  const wake = canSnooze && snoozedUntil !== undefined ? (): void => snoozeThreads([id], null) : undefined
+  const setSnooze = (until: number | null): void => {
+    if (row.thread.snoozedUntil === undefined) snoozeThreads([id], until)
+    else {
+      // A user's choice replaces any legacy entry still waiting to migrate.
+      snoozeThreads([id], null)
+      void command({ type: 'snooze-thread', threadId: id, until: until === null ? null : new Date(until).toISOString() })
+    }
+  }
+  const wake = canSnooze && snoozedUntil !== undefined ? (): void => setSnooze(null) : undefined
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
   const menuGroups = (): PaneMenuItem[][] => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: true }, {
@@ -266,9 +274,9 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     </span>
     {menu !== null ? <RowMenu label={t`Actions for ${title}`} groups={menuGroups()} anchor={() => rowItem.current} place={menu}
       onClose={restore => { setMenu(null); if (restore) rowButton.current?.focus() }} /> : null}
-    {snoozeMenu !== null ? <RowMenu label={t`Snooze ${title}`} groups={snoozeGroups(until => snoozeThreads([id], until), () => setPicking(true))} anchor={() => rowItem.current} place={snoozeMenu}
+    {snoozeMenu !== null ? <RowMenu label={t`Snooze ${title}`} groups={snoozeGroups(setSnooze, () => setPicking(true))} anchor={() => rowItem.current} place={snoozeMenu}
       onClose={restore => { setSnoozeMenu(null); if (restore) rowButton.current?.focus() }} /> : null}
-    {picking ? <SnoozeUntil title={title} anchor={() => rowItem.current} onSnooze={until => snoozeThreads([id], until)}
+    {picking ? <SnoozeUntil title={title} anchor={() => rowItem.current} onSnooze={setSnooze}
       onDone={restore => { setPicking(false); if (restore) rowButton.current?.focus() }} /> : null}
   </li>{swarm}</>
 })
@@ -578,7 +586,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const rowKeys = useMemo(() => ({ rename: renameKey, menu: menuKey }), [renameKey, menuKey])
   // One object for the whole list, rebuilt only when a pane action actually changes: every row compares it.
   const snoozing = useOwlFeature('thread-snooze')
-  const snoozes = useThreadSnoozes()
+  const snoozes = useThreadSnoozes(state.host.threads)
   const panes = useMemo<PaneActions>(() => ({ currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, openBesideChord, settleShortcut, restoreShortcut, rowKeys, snoozing }),
     [currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, openBesideChord, settleShortcut, restoreShortcut, rowKeys, snoozing])
   // The thread list and the collapsed rail are each one Tab stop with arrow keys inside (ADR-0164).

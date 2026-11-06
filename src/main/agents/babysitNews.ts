@@ -138,11 +138,15 @@ export interface BabysitFinding {
  * check of it yet (a job waiting on others), and any other GitHub flags required; where neither, every check. A rule is
  * met only by a check of its name that GitHub also flags required, so another app's check of the same name cannot pass
  * it. Each is named by its context in every case, so a gate read without the rules and then with them is one gate.
+ * Where every check is the gate, one at least must have succeeded: a skipped check, or a workflow that runs none of its
+ * jobs, is no run of the checks, so it passes nothing (#2116).
  */
+/** The checks that can meet a rule of this name: of that context, and flagged required by GitHub (`gateOf`). */
+export const requiredChecksOf = (checks: readonly BabysitCheck[], context: string): BabysitCheck[] => checks.filter(check => check.context === context && check.required)
 export function gateOf(checks: readonly BabysitCheck[], ruled: readonly string[]): { readonly names: readonly string[]; readonly required: boolean; readonly passed: boolean } {
   const flagged = checks.filter(check => check.required && !ruled.includes(check.context))
-  if (!ruled.length && !flagged.length) return { names: [...new Set(checks.map(check => check.context))], required: false, passed: checks.length > 0 && checks.every(isPassed) }
-  const ruledPassed = ruled.every(context => { const named = checks.filter(check => check.context === context && check.required); return named.length > 0 && named.every(isPassed) })
+  if (!ruled.length && !flagged.length) return { names: [...new Set(checks.map(check => check.context))], required: false, passed: checks.some(check => check.status === 'success') && checks.every(isPassed) }
+  const ruledPassed = ruled.every(context => { const named = requiredChecksOf(checks, context); return named.length > 0 && named.every(isPassed) })
   return { names: [...new Set([...ruled, ...flagged.map(check => check.context)])], required: true, passed: ruledPassed && flagged.every(isPassed) }
 }
 

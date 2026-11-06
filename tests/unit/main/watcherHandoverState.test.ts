@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { watcherHandoverState, type WatcherHandoverStateInput } from '../../../src/main/agents/watcherHandoverState'
+import { WATCHER_KEPT_RULES_MAX } from '../../../src/shared/watcher'
 
 const at = '2026-10-28T12:00:00.000Z'
 const target = (threadId: string) => ({ hostId: '7f6c1d64-4d55-4b3c-9d32-2a8d2a2b3c11', threadId })
@@ -43,5 +44,16 @@ describe('the state a new Watcher’s handover carries (#1735)', () => {
     expect(text).not.toContain('read_state lists them all')
     expect(text.split('\n').every(line => line.length <= 520)).toBe(true)
     expect(text).toContain('One message the user wrote to the last Watcher had not gone.')
+  })
+
+  // #2236: the rules list holds more open lines than the other lists, and a new Watcher is told every one.
+  it('names every open rule the user gave, however many the list holds', () => {
+    const at = '2026-11-05T10:00:00.000Z'
+    const rules = Array.from({ length: WATCHER_KEPT_RULES_MAX }, (_, index) => ({ id: `r${index + 1}`, text: `Rule ${index + 1}`, touchedAt: at }))
+    const issues = Array.from({ length: 45 }, (_, index) => ({ id: `i${index + 100}`, text: `Issue ${index + 1}`, touchedAt: at }))
+    const text = watcherHandoverState({ ...empty, kept: { decisions: [], rules, issues } })
+    expect(text).toContain(`- r${WATCHER_KEPT_RULES_MAX}: Rule ${WATCHER_KEPT_RULES_MAX}`)
+    expect(text.split('\n').filter(line => /^- r\d+: /u.test(line))).toHaveLength(WATCHER_KEPT_RULES_MAX)
+    expect(text).toContain('- And 5 more. read_state lists them all.')
   })
 })

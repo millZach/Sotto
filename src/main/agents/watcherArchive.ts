@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -344,9 +345,13 @@ export class WatcherArchive {
   private latest: string | undefined
   private tail: Promise<unknown>
   private loaded = false
+  /** Whether there was an index to read when the archive opened. Work is archived only after the read, so with none the lookups answer from the start. */
+  private readonly indexFound: boolean
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean,
     private readonly openFile: WatcherArchiveOpen = (path, flags) => open(path, flags)) {
-    this.index = new AtomicJsonStore(join(directory, WATCHER_ARCHIVE_INDEX), input => indexSchema.parse(input), emptyIndex)
+    const indexPath = join(directory, WATCHER_ARCHIVE_INDEX)
+    this.index = new AtomicJsonStore(indexPath, input => indexSchema.parse(input), emptyIndex)
+    this.indexFound = existsSync(indexPath)
     this.tail = this.load().catch(() => undefined)
   }
   private turn<T>(work: () => Promise<T>): Promise<T> {
@@ -389,6 +394,8 @@ export class WatcherArchive {
   }
   /** Settles once whatever was asked of the archive before it has settled. */
   settled(): Promise<void> { return this.tail.then(() => undefined, () => undefined) }
+  /** Whether the lookups below answer for everything archived: the index is read, or there was none to read. */
+  get lookupsReady(): boolean { return this.loaded || !this.indexFound }
   /** Settles once the index is read, so the lookups below answer for everything archived. */
   ready(): Promise<void> { return this.loaded ? Promise.resolve() : this.turn(async () => { if (!this.loaded) await this.load() }) }
   /** Whether this request was archived. */

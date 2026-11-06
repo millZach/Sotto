@@ -38,11 +38,13 @@ const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().o
   phoneOrigin: watcherPhoneOriginSchema.optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 /**
- * The to-do list is gone (ADR-0188, reversed November 4, 2026), and a queue an earlier build saved may still hold its news: a
- * checked-off to-do's, or Watcher's news of one. Left in, it would fail the schema, and the whole queue would be set aside as
- * damaged. So that news goes as the file is read, with any wake-up that held nothing else.
+ * News an earlier build saved that no longer exists: the to-do list's (ADR-0188, reversed November 4, 2026), a checked-off
+ * to-do's or Watcher's news of one, and Watcher's news of a prototype waiting for review (ADR-0108, amended November 6,
+ * 2026). Left in, it would fail the schema, and the whole queue would be set aside as damaged. So that news goes as the
+ * file is read, with any wake-up that held nothing else.
  */
-function withoutToDoNews(input: unknown): unknown {
+const RETIRED_WATCHER_KINDS: ReadonlySet<unknown> = new Set(['to-do-added', 'to-do-checked', 'prototype-ready', 'prototype-closed'])
+function withoutRetiredNews(input: unknown): unknown {
   const stored = input as { items?: unknown } | null
   if (!Array.isArray(stored?.items)) return input
   const items = stored.items.flatMap((item: unknown) => {
@@ -52,7 +54,7 @@ function withoutToDoNews(input: unknown): unknown {
       const value = part as { source?: unknown; events?: unknown; omitted?: unknown } | null
       if (value?.source === 'to-do') return []
       if (value?.source !== 'watcher' || !Array.isArray(value.events)) return [part]
-      const events = value.events.filter((event: { kind?: unknown } | null) => event?.kind !== 'to-do-added' && event?.kind !== 'to-do-checked')
+      const events = value.events.filter((event: { kind?: unknown } | null) => !RETIRED_WATCHER_KINDS.has(event?.kind))
       if (events.length === value.events.length) return [part]
       return events.length || value.omitted ? [{ ...value, events }] : []
     })
@@ -106,7 +108,7 @@ export class FollowupStore {
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
-    this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), input => storedSchema.parse(withoutToDoNews(input)), () => ({ items: [], receipts: [] }))
+    this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), input => storedSchema.parse(withoutRetiredNews(input)), () => ({ items: [], receipts: [] }))
   }
   /**
    * Reads the queue, staging any image an older version kept inline. `kept` says whether a follow-up's content is
@@ -545,6 +547,22 @@ export class FollowupStore {
       Object.assign(item, { news: kept, text: word(kept), status: 'failed', error, updatedAt: new Date().toISOString() })
       const last = state.items.findLastIndex(candidate => candidate.threadId === item.threadId)
       state.items.splice(last + 1, 0, item)
+    })
+  }
+  /**
+   * A message whose steer its turn ended without taking (#1408) goes back to the head of its thread's queue, behind only a
+   * leading resume note, ready to go as the next message. Only while it still holds `commandId`, the steer that was not
+   * taken: its next claim gives it a new command, so a second word of the same steer moves nothing and nothing is sent twice.
+   */
+  requeueAtHead(id: string, commandId: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(item => item.id === id)
+      if (!item || item.commandId !== commandId || item.status !== 'dispatching' && item.status !== 'uncertain') return false
+      state.items = state.items.filter(candidate => candidate !== item)
+      const head = state.items.findIndex(candidate => candidate.threadId === item.threadId && !leadsQueue(candidate, item.threadId))
+      Object.assign(item, { status: 'queued', updatedAt: new Date().toISOString() })
+      delete item.error
+      state.items.splice(head === -1 ? state.items.length : head, 0, item)
     })
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {

@@ -1,35 +1,27 @@
-import { PROVIDER_LABELS, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { PROVIDER_LABELS, type AgentMessage, type AgentRequest, type AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
-import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
-import type { WatcherEvidence } from '../../shared/watcher'
+import type { WatcherCardWords, WatcherEvidence } from '../../shared/watcher'
+import { SETTLE_IT } from '../../shared/watcherQuestions'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
     event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.kind === 'thread-moved' ? event.moveId ?? null : event.kind === 'thread-told' ? event.id : event.turnId ?? null])
+      : event.kind === 'thread-moved' ? event.moveId ?? null : event.kind === 'thread-told' || event.kind === 'user-answered' ? event.id : event.turnId ?? null])
 }
 /**
- * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits
- * in, or the reply that named its page.
+ * News that carries words nothing else holds: a thread's own message and the user's answer to Watcher's own question.
+ * A takeover never drops it and the limits never leave it out.
  */
-export function watcherPrototypeSource(event: Pick<WatcherEvent, 'requestCardId' | 'messageId'>): string | undefined {
-  return event.requestCardId !== undefined ? requestSource(event.requestCardId) : event.messageId !== undefined ? replySource(event.messageId) : undefined
-}
-/** What a `prototype-ready` event carries to name a mark's source, or undefined when the source is too long to carry. */
-export function watcherPrototypeFields(source: string): Pick<WatcherEvent, 'requestCardId' | 'messageId'> | undefined {
-  const parsed = parsePrototypeSource(source)
-  if (!parsed || parsed.id.length > 512) return undefined
-  return parsed.kind === 'request' ? { requestCardId: parsed.id } : { messageId: parsed.id }
-}
+export const carriesWords = (event: Pick<WatcherEvent, 'kind'>): boolean => event.kind === 'thread-told' || event.kind === 'user-answered'
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))
   for (const event of later) {
     const target = targetKey(event.target)
     // A thread's own message is told whoever holds the thread: a takeover fences what Watcher sends, not what it hears.
-    if (event.kind === 'taken-over') { for (const [slot, previous] of events) if (targetKey(previous.target) === target && previous.kind !== 'thread-told') events.delete(slot) }
-    else if (event.kind !== 'thread-told' && [...events.values()].some(previous => targetKey(previous.target) === target && previous.kind === 'taken-over')) continue
+    if (event.kind === 'taken-over') { for (const [slot, previous] of events) if (targetKey(previous.target) === target && !carriesWords(previous)) events.delete(slot) }
+    else if (!carriesWords(event) && [...events.values()].some(previous => targetKey(previous.target) === target && previous.kind === 'taken-over')) continue
     const slot = eventSlot(event), previous = events.get(slot)
     if (previous?.kind === 'turn-failed' && event.kind === 'turn-finished') continue
     events.set(slot, event)
@@ -40,7 +32,7 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
   const all = foldWatcherEvents(earlier?.events ?? [], later.events), targets = new Set<string>()
   const events: WatcherEvent[] = [], omitted = (earlier?.omitted ?? 0) + later.omitted
   // A thread's own message is never what these limits leave out: nothing else holds its words.
-  for (const event of [...all.filter(item => item.kind === 'thread-told'), ...all.filter(item => item.kind !== 'thread-told')]) {
+  for (const event of [...all.filter(carriesWords), ...all.filter(item => !carriesWords(item))]) {
     const target = targetKey(event.target)
     if (events.length >= 400 || !targets.has(target) && targets.size >= WATCHER_NEWS_TARGETS_MAX) continue
     targets.add(target); events.push(event)
@@ -50,8 +42,11 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
 export const requestRevision = (request: unknown): string => observationDigest(request)
 /** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
-/** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told'>, string> = {
+/**
+ * Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`).
+ * Evidence news has no words of its own: its line is what Sotto's detail says changed, and with none it has no line (#2232).
+ */
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told' | 'user-answered' | 'evidence-changed'>, string> = {
   'swarm-progress': 'The swarm made progress. Read its lead for the synthesis.',
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
@@ -60,9 +55,6 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-re
   quiet: 'No progress was observed for twenty minutes of connected work.',
   'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
-  'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
-  'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
-  'prototype-closed': 'This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.',
 }
 const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
 /**
@@ -74,23 +66,24 @@ export type WatcherNewsDetail = (event: WatcherEvent) => string | undefined
 export type WatcherNewsHeld = (event: WatcherEvent) => number | undefined
 /**
  * A card that no longer waits on the user (October 24, 2026). Sotto says the user answered only when it saw them answer,
- * and never what they answered: the news approves nothing.
+ * and never what they answered: the news approves nothing. It says the card ended without an answer only when it saw no
+ * answer and the thread's turn had ended too (#2230); otherwise it says it cannot tell.
  */
 function closedWords(event: WatcherEvent): string {
   const card = event.requestCardKind === 'permission' ? 'permission request' : 'question', delegated = event.delegatedThreadId
   const nothing = 'This news carries none of their answer and approves nothing.'
-  if (delegated !== undefined) return event.answeredByUser
+  const which = delegated !== undefined ? `The ${card} in ${delegated}, a thread this one delegated to,` : `This thread’s ${card}`
+  if (event.answeredByUser) return delegated !== undefined
     ? `The user answered the ${card} in ${delegated}, a thread this one delegated to, so it no longer waits on them for it. ${nothing}`
-    : `The ${card} in ${delegated}, a thread this one delegated to, is no longer open: the user answered it, or its turn ended without an answer.`
-  return event.answeredByUser
-    ? `The user answered this thread’s ${card}, so it no longer waits on them for it. ${nothing}`
-    : `This thread’s ${card} is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.`
+    : `The user answered this thread’s ${card}, so it no longer waits on them for it. ${nothing}`
+  if (event.endedWithoutAnswer) return `${which} ended without an answer: its turn ended and Sotto saw no answer from the user. It no longer waits on them.`
+  return `${which} is no longer open, so it no longer waits on the user for it. Sotto cannot tell whether the user answered it where Sotto does not see, as on a paired computer's own phone, or its turn moved on without an answer: do not tell the user they answered it.`
 }
 /** A provider by its own name, for Sotto's words; an ID this build does not know is named as it is. */
 const providerName = (provider: string | undefined): string => provider === undefined ? 'Its provider' : Object.hasOwn(PROVIDER_LABELS, provider)
   ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider
 /** Whether a `threads-restarted` or `thread-moved` event's thread is one no request watches (ADR-0144, #1178). */
-const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || event.kind === 'thread-told') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || event.kind === 'thread-told' || event.kind === 'user-answered') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
 /** A restarted thread's line (ADR-0144), in Sotto's words: which limit had stopped it, and whether Watcher watches it. */
 const restartedWords = (event: WatcherEvent): string => `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.${
   unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`
@@ -125,56 +118,119 @@ function toldWords(event: WatcherEvent): string {
   return `${worker} ${user} ${grant}`
 }
 /**
+ * The user's answer on a card of Watcher's own question (#2228): the question and the user's choice, which is theirs, from
+ * their press on Sotto's card. A settle question's Settle it is their agreement to that one settle.
+ */
+function answeredWords(event: WatcherEvent): string {
+  const answered = event.answered
+  if (!answered) return 'The user answered a question of yours that Sotto cannot read. Ask them again if it still matters.'
+  const said = `The user answered your question ${JSON.stringify(answered.question)} on its card: ${JSON.stringify(answered.choice)}. That is the user's own choice, from their press on Sotto's card, not a thread's or a tool's words.`
+  const settle = !answered.settle ? 'Act on it now.'
+    : answered.choice === SETTLE_IT ? 'They agree to settle this thread: call settle_thread for it now, which Sotto allows once for this answer.'
+      : 'They want this thread kept: do not settle it, and do not ask again unless more work comes in and finishes.'
+  return `${said} ${settle} [question ${answered.questionId}]`
+}
+/**
  * The messages from threads that wait for the next wake-up, so those that go always fit whole. Each fits alone: at most
  * two sets of words, each at most TELL_WATCHER_WORDS_BYTES_MAX and doubled at worst by JSON, and the sentences around them.
  */
 export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet<string> {
   const later = new Set<string>()
   let used = 0
+  // The user's answers to Watcher's own questions wait the same way (#2228): nothing else holds the choice either.
   for (const event of events) {
-    if (event.kind !== 'thread-told') continue
-    const size = Buffer.byteLength(toldWords(event)) + 200
+    if (!carriesWords(event)) continue
+    const size = Buffer.byteLength(event.kind === 'thread-told' ? toldWords(event) : answeredWords(event)) + 200
     if (used > 0 && used + size > WATCHER_NEWS_BYTES_MAX * 3 / 4) later.add(event.id)
     else used += size
   }
   return later
 }
-const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'swarm-progress' && event.swarm
+/** How much of a waiting card's own words Watcher is given (#2230): its question, a few of its choices and its pages. */
+const CARD_QUESTION_CHARS = 300, CARD_CHOICES_MAX = 8, CARD_CHOICE_CHARS = 100, CARD_PAGES_MAX = 3
+const cut = (text: string, max: number): string => { const characters = [...text.trim()]; return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : characters.join('') }
+/** Each web address written in a text, once, in the order written, without the punctuation that ends a sentence. */
+const webLinks = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>"'`()[\]]+/giu)].map(match => match[0].replace(/[.,;:!?]+$/u, '')))]
+  .filter(link => link.length <= 500)
+/**
+ * A waiting question card as Watcher may read it (#2230): its question, the header first where it has one, its choices,
+ * the prototype pages Sotto found for it, by the name the thread gave them, never the token that opens them (ADR-0085),
+ * and the web links the card shows: those in its words and in the agent's message it follows (`reply`). The worker's
+ * words, read only: Watcher still never answers a card. A permission request gives none, since its words can carry a
+ * command's arguments. Worked out as Watcher reads, never saved.
+ */
+export function watcherWaitingCardWords(request: Pick<AgentRequest, 'kind' | 'text' | 'options' | 'questions' | 'pages'>, reply = ''): WatcherCardWords | undefined {
+  if (request.kind !== 'question') return undefined
+  const first = request.questions?.[0], question = first ? first.header?.trim() ? `${first.header.trim()}: ${first.question}` : first.question : request.text
+  if (!question.trim()) return undefined
+  const choices = (first ? first.options : request.options).map(option => cut(option.label, CARD_CHOICE_CHARS)).filter(Boolean)
+  const more = Math.max(0, (request.questions?.length ?? 0) - 1), pages = (request.pages ?? []).slice(0, CARD_PAGES_MAX).map(page => cut(page.name, 200))
+  const links = webLinks([request.text, ...(request.questions ?? []).map(item => item.question), reply].join('\n')).slice(0, CARD_PAGES_MAX)
+  return { question: cut(question, CARD_QUESTION_CHARS), choices: choices.slice(0, CARD_CHOICES_MAX),
+    ...choices.length > CARD_CHOICES_MAX ? { moreChoices: choices.length - CARD_CHOICES_MAX } : {}, ...more ? { moreQuestions: more } : {}, ...pages.length ? { prototype: pages } : {},
+    ...links.length ? { links } : {} }
+}
+/** A waiting card's words as its news line gives them (#2230), labelled as the worker's. */
+export function watcherCardLine(words: WatcherCardWords): string {
+  const choices = words.choices.length ? ` Its choices: ${words.choices.map(choice => JSON.stringify(choice)).join(', ')}${words.moreChoices ? `, and ${words.moreChoices} more` : ''}.` : ''
+  return `Its question, in the worker's words: ${JSON.stringify(words.question)}.${choices}${words.moreQuestions ? ` The card asks ${words.moreQuestions} more ${words.moreQuestions === 1 ? 'question' : 'questions'}.` : ''}${
+    words.prototype ? ` Its prototype: ${words.prototype.map(page => JSON.stringify(page)).join(', ')}.` : ''}${words.links ? ` Its links: ${words.links.join(', ')}.` : ''}`
+}
+const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'user-answered' ? answeredWords(event) : event.kind === 'swarm-progress' && event.swarm
   ? `${event.swarm.done} of ${event.swarm.count} angles done, ${event.swarm.failed} failed, ${event.swarm.queued} queued. The lead holds their replies and writes the synthesis. This grants no permission.`
   : event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
-  : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
+  : event.kind === 'request-closed' ? closedWords(event) : event.kind === 'evidence-changed' ? '' : words[event.kind]
 /**
  * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
  * context channel as the request note (ADR-0073), never in the message itself. A finish told with its own work-settled
  * news is said once, by the work-settled line. A finish held for its work until it went by itself (`held`) opens by
  * saying so, so Watcher reads that thread rather than wait on. Sotto's detail goes while there is room for it: it gives
  * way, the newest line's first, before any event does.
+ *
+ * Each thing is said once (#2232): what Watcher is told for every wake-up is in its prompt, not here; events carry no ID,
+ * since no tool takes one; lines that say the same of the same thread are one line with a count; and evidence news is
+ * only what its detail says changed, so one with nothing to say has no line. Those words are short and are the line, so
+ * they never give way before the event does.
  */
 export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, held?: WatcherNewsHeld): string {
   const opening = NEWS_OPENING
   const settled = new Set(news.events.filter(event => event.kind === 'work-settled').map(event => JSON.stringify([targetKey(event.target), event.turnId ?? null])))
   // A thread's own message goes first: when the news runs out of room, it is never what gives way (`toldEventsForLater`).
-  const told = (event: WatcherEvent): number => event.kind === 'thread-told' ? 0 : 1
+  const told = (event: WatcherEvent): number => carriesWords(event) ? 0 : 1
   const shown = news.events.filter(event => !(event.kind === 'turn-finished' && settled.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))))
     .sort((left, right) => told(left) - told(right))
   const details = shown.map(event => detail?.(event))
+  // The order details give way in, last first: a waiting question's words go last, since only they say what it asks (#2230).
+  const asks = (index: number) => shown[index]!.kind === 'needs-user' ? 0 : 1
+  const rank: number[] = []
+  shown.map((_, index) => index).sort((left, right) => asks(left) - asks(right) || left - right).forEach((index, place) => { rank[index] = place })
   const minutes = shown.map(event => held?.(event))
   const said = (event: WatcherEvent, index: number) => minutes[index] !== undefined
     ? `Held ${minutes[index]} minutes, thread idle. The foreground turn finished with background work or monitoring still running (${event.backgroundWorkCount}), no turn has run in the thread since, and Sotto has not seen that work end, so read the thread to see whether it is stuck. Work-settled news still comes if it ends. This is not review or merge approval.`
     : `${kindWords(event)}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
       ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}`
-  const line = (event: WatcherEvent, index: number, extra: string | undefined) => `${JSON.stringify(event.target)}: ${said(event, index)}${event.operationId && event.kind !== 'delivery-changed'
-    ? ` This turn answers operation ${event.operationId}.` : ''}${extra ? ` ${extra}` : ''}${unwatched(event) ? '' : event.told?.opened ? ` Use requestId ${event.requestId} for what it asks.` : ` Use requestId ${event.requestId} for this thread.`} [${event.id}]`
+  // What a line says after its thread, so two events that say the same of one thread make one line.
+  const body = (event: WatcherEvent, index: number, extra: string | undefined) => [said(event, index), event.operationId && event.kind !== 'delivery-changed'
+    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
+    .filter(Boolean).join(' ')
   // Each provider whose limit reset is said once, before its threads' lines (ADR-0144).
   const restarts = new Map<string, number>()
   for (const event of shown) if (event.kind === 'threads-restarted') restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
   const restartLines = [...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`)
   const compose = (count: number, detailed: number) => {
-    const lines = shown.slice(0, count).map((event, index) => line(event, index, index < detailed ? details[index] : undefined))
+    const lines = new Map<string, { target: string; body: string; count: number }>()
+    shown.slice(0, count).forEach((event, index) => {
+      // Evidence news is its words, so they go with the event rather than give way before it.
+      const extra = event.kind === 'evidence-changed' || rank[index]! < detailed ? details[index] : undefined
+      if (event.kind === 'evidence-changed' && !extra) return
+      const target = JSON.stringify(event.target), text = body(event, index, extra), key = JSON.stringify([target, text])
+      const same = lines.get(key)
+      if (same) same.count++; else lines.set(key, { target, body: text, count: 1 })
+    })
     const omitted = news.omitted + shown.length - count
-    return [opening, ...restartLines, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
-      'A reply given whole here is enough to act on. Use read_operation for a brief’s receipt and outcome, and for a reply cut or left out here. Use read_thread only for what a reply does not say, such as evidence and other worker messages, or for a cut reply whose line names no operation. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
+    return [opening, ...restartLines, ...[...lines.values()].map(item => `${item.target}${item.count > 1 ? `, ${item.count} times` : ''}: ${item.body}`),
+      ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : [])].join('\n')
   }
   for (let detailed = shown.length; detailed >= 0; detailed--) {
     const text = compose(shown.length, detailed)
@@ -234,9 +290,10 @@ const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot
 /**
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
+ * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name.
  */
 export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>,
-  evidence: readonly WatcherEvidence[] = []): string | undefined {
+  evidence: readonly WatcherEvidence[] = [], pending: ReadonlyMap<string, { readonly required: number; readonly optional: number }> = new Map()): string | undefined {
   const links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
   const reviews = new Map<string, WatcherEvidence>()
   for (const item of evidence) if (item.bugBotReview && item.url) {
@@ -248,6 +305,10 @@ export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlyS
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
     const said = [...facts].flatMap(fact => fact === 'remarks' || fact === 'bug-bot-review' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
+    // Which checks still running hold a merge, so Watcher waits on those and not on the others (#2116).
+    const waiting = facts.size ? pending.get(pr) : undefined
+    if (waiting?.required) said.push(`${waiting.required} required ${waiting.required === 1 ? 'check is' : 'checks are'} still to finish`)
+    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which no merge waits on`)
     // Each meaningful PR news line carries its coverage, including checks passing and a merge. Idle polls say nothing.
     if (facts.size) {
       const item = reviews.get(pr)

@@ -1,8 +1,9 @@
 import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { WATCHER_KEPT_CLOSED_MAX, WATCHER_KEPT_CLOSED_MS, WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_LISTS, watcherKeptLegacySchema, watcherKeptRecordSchema,
-  type WatcherKeepStateInput, type WatcherKeptItem, type WatcherKeptList, type WatcherKeptRecord, type WatcherKeptState } from '../../shared/watcher'
+import { WATCHER_KEPT_CLOSED_MAX, WATCHER_KEPT_CLOSED_MS, WATCHER_KEPT_LISTS, watcherKeptLegacySchema, watcherKeptOpenMax, watcherKeptRecordSchema,
+  type WatcherKeepStateInput, type WatcherKeptChange, type WatcherKeptItem, type WatcherKeptList, type WatcherKeptRecord, type WatcherKeptState } from '../../shared/watcher'
+import { keptChanges } from './watcherStateChanges'
 import type { WatcherRoomState } from '../../shared/watcherRoom'
 
 const nothingKept = (): WatcherKeptRecord => ({ decisions: [], rules: [], issues: [], updatedAt: null, nextId: 1 })
@@ -44,7 +45,7 @@ export interface WatcherKeepRefusal { readonly code: 'INVALID_INPUT' | 'STATE_FU
 
 /**
  * keep_state's change, worked out whole before anything is kept: every line it edits or closes must be there, and no
- * list it changes may pass WATCHER_KEPT_ITEMS_MAX open lines, or the call is refused and nothing changes. Adding never
+ * list it changes may pass its open lines (`watcherKeptOpenMax`), or the call is refused and nothing changes. Adding never
  * makes room by dropping another line; a list given whole replaces only its open lines, and its closed lines stay until
  * they clear. Each change is safe to repeat: adding words a list already has open touches that line, and closing a
  * closed line or dropping one already gone changes nothing.
@@ -88,9 +89,12 @@ export function applyKeep(record: WatcherKeptRecord, input: WatcherKeepStateInpu
     else next[list].push({ id: `${LETTER[list]}${nextId++}`, text, touchedAt: now })
   }
   for (const list of WATCHER_KEPT_LISTS) {
-    const open = next[list].filter(line => line.closedAt === undefined).length
-    if (changed.has(list) && open > WATCHER_KEPT_ITEMS_MAX) {
-      return refused('STATE_FULL', `${NAME[list]} would hold ${open} open lines, and it holds at most ${WATCHER_KEPT_ITEMS_MAX}. Close the lines that are done or drop ones no longer needed, then add again.`)
+    const open = next[list].filter(line => line.closedAt === undefined).length, most = watcherKeptOpenMax(list)
+    // The rules are the user's (#2236): a full list never asks Watcher to drop or merge one of them to make room.
+    if (changed.has(list) && open > most) {
+      return refused('STATE_FULL', list === 'rules'
+        ? `Rules would hold ${open} open lines, and it holds at most ${most}. These are the user's rules: do not drop, merge or close one to make room. Tell the user this rule was not kept, and ask which of their rules no longer applies.`
+        : `${NAME[list]} would hold ${open} open lines, and it holds at most ${most}. Close the lines that are done or drop ones no longer needed, then add again.`)
     }
     // Closed lines past their limit are done: the oldest clear now rather than in a day.
     const closed = next[list].filter(line => line.closedAt !== undefined).sort((a, b) => Date.parse(a.closedAt!) - Date.parse(b.closedAt!))
@@ -159,16 +163,20 @@ export class WatcherStateStore {
     this.shown = { record: this.kept, until: nextClearing(this.kept, now), state }
     return state
   }
-  /** Applies keep_state's change (`applyKeep`), or keeps nothing and says why. */
-  keep(input: WatcherKeepStateInput, now: string): Promise<WatcherKeptState | WatcherKeepRefusal> {
+  /**
+   * Applies keep_state's change (`applyKeep`), or keeps nothing and says why. Gives what is kept now and, in the same turn,
+   * which lines the call changed (#2231), the only part keep_state gives back.
+   */
+  keep(input: WatcherKeepStateInput, now: string): Promise<{ state: WatcherKeptState; changed: WatcherKeptChange[] } | WatcherKeepRefusal> {
     return this.inTurn(async () => {
       await this.ensureRead()
       const next = applyKeep(this.kept, input, now)
       if (!('nextId' in next)) return next
       if (this.historyEnabled()) await this.store.write(next)
       else await this.removeSaved()
+      const at = Date.parse(now), before = keptAsShown(this.kept, at)
       this.kept = next
-      return this.read()
+      return { state: this.read(), changed: keptChanges(before, keptAsShown(next, at)) }
     })
   }
   /** Keep local history changed: turned off, nothing kept stays on disk; turned on, what is kept now is saved. */
@@ -184,12 +192,9 @@ export class WatcherStateStore {
 type WatchedThread = WatcherRoomState['watchedThreads'][number]
 /** What a watched thread waits on, in Sotto's words, from its own facts: never anything it said. */
 export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected' | 'settled' | 'backgroundWorkCount' | 'paused'>
-  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[]
-    readonly prototypeReady?: boolean }): string {
+  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[] }): string {
   if (thread.waitsOn.some(card => card.kind === 'permission')) return 'The user’s answer to its permission request.'
   if (thread.waitsOn.length) return 'The user’s answer to its question.'
-  // A prototype waiting for review is the user's to open, as a card is theirs to answer (ADR-0108).
-  if (thread.prototypeReady) return 'The user’s review of the prototype it made. Only the user can review it.'
   // A thread it delegated to is its to see through (#1190), so that thread's card is what it waits on too.
   if (thread.delegatedWaitsOn?.some(card => card.kind === 'permission')) return 'The user’s answer to a permission request in a thread it delegated to.'
   if (thread.delegatedWaitsOn?.length) return 'The user’s answer to a question in a thread it delegated to.'
