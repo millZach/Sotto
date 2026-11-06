@@ -67,6 +67,11 @@
 .help-topic summary h2 { font-size: var(--tt-type-reading); font-weight: 500; }
 .help-topic p { padding: 0 20px 16px; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; }
 .help-topic p + p { margin-top: -6px; }
+/* Choices a topic names one by one, such as the speech models: each its own line under the sentence that introduces them,
+   its name in the full ink and what qualifies it after. */
+.help-topic__list { display: grid; gap: 4px; max-width: 70ch; margin: -8px 0 0; padding: 0 20px 14px 40px; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.5; }
+.help-topic__list li::marker { color: var(--tt-text-muted); }
+.help-topic__list b { color: var(--tt-text); font-weight: 500; }
 .help-aside { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .help-aside .tt-panel { border: 0; padding: 0; background: none; }
 .help-aside .tt-panel__header { padding: 0 0 14px; }
