@@ -17,13 +17,13 @@ export function collectLaunchScript(child: ChildProcess): Promise<LaunchScriptOu
     messages: output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>) })))
 }
 
-/** One operation as SSH sends it: source on stdin, configuration in one argument. */
-export function launchScriptChild(configuration: Record<string, unknown>, env?: NodeJS.ProcessEnv, track: (child: ChildProcess) => void = () => undefined): ChildProcessWithoutNullStreams {
+/** One operation as SSH sends it: source on stdin, configuration in one argument. A prelude runs first, as a case's fault. */
+export function launchScriptChild(configuration: Record<string, unknown>, env?: NodeJS.ProcessEnv, track: (child: ChildProcess) => void = () => undefined, prelude = ''): ChildProcessWithoutNullStreams {
   const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify(configuration)],
     { shell: false, windowsHide: true, ...(env ? { env } : {}) })
   track(child)
   const fixtureCleanup = process.platform === 'win32' && typeof configuration.dataDirectory === 'string'
     ? `'use strict';\nrequire(${JSON.stringify(resolve('tests/fixtures/fakeHostSignalCleanup.mjs'))}).installFakeHostSignalCleanup(${JSON.stringify(configuration.dataDirectory)});\n` : ''
-  child.stdin!.end(fixtureCleanup + LAUNCH_SCRIPT_SOURCE)
+  child.stdin!.end(fixtureCleanup + prelude + LAUNCH_SCRIPT_SOURCE)
   return child
 }

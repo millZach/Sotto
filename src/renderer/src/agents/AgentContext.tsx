@@ -1,11 +1,12 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ResponseStreamingProvider } from './responseStreaming'
+import { flushSync } from 'react-dom'
 import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
 import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../../../shared/threadLanes'
-import { wrapAgentBridge } from './agentStateCatalogs'
+import { askedAtOf, threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
@@ -55,7 +56,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   watcherEnabledRef.current = watcherEnabled
   // A connection owns its command lane and draft durability knowledge. Neither page
   // navigation nor outstanding writes create a new store; a different bridge does.
-  const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
+  // `observed` counts the broadcasts that arrived; `newest` is the thread revision of the last numbered broadcast or reply that
+  // landed, and `read` where the newest whole read the subscription delivered since then was asked for (#306).
+  const session = useMemo(() => ({ current: false, observed: 0, newest: undefined as number | undefined, read: undefined as number | undefined, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
   /**
    * Main publishes every thread's state but only the history of the threads this window says it is
    * looking at, so the window holds those histories and splices them back into each arriving shell.
@@ -68,8 +71,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
     /** The threads the last commit held, by ID in order, and whether a state arrived while hidden that is not committed yet. */
     committedThreads: '', committedHistory: undefined as boolean | undefined, heldWhileHidden: false,
-    /** Each state received, numbered in the order it arrived, and the newest the draft store has been handed. */
-    received: 0, draftsFed: 0,
+    /** Each state received, numbered in the order it arrived, the newest the draft store has been handed, and the newest drawn. */
+    received: 0, draftsFed: 0, drawn: 0,
   }), [bridge])
   /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
   const draftsRef = useRef<ThreadDraftStore | null>(null)
@@ -264,7 +267,32 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // threads that render took 60-70 ms, once per saved pause).
           const urgent = request.type !== 'save-thread-draft'
           // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0140).
-          if (!PREVIEW_COMMANDS.has(request.type) && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
+          // Main numbers a reply and the broadcasts from one counter, so where both carry a number the reply counts when it
+          // is newer than the last broadcast or reply that landed. Main sends a command's own broadcast just before its
+          // reply, so a broadcast reaching the window while the command ran is the usual case, and dropping the reply then
+          // left the caller acting on state the window had not drawn (#306). A reply a newer broadcast passed is dropped,
+          // and that broadcast commits as the reply would have, so the window has drawn at least the command's effect when
+          // the caller reads it. Without a number, any broadcast during the command drops the reply, as before.
+          // A whole read the subscription recovered with carries no number. It holds what main had when it answered, so a reply
+          // to a command asked after that read is newer than it; one asked before it may not be, and is dropped (askedAtOf).
+          const revision = threadRevisionOf(next)
+          const asked = askedAtOf(next)
+          const afterRead = session.read === undefined || (asked !== undefined && asked > session.read)
+          const current = revision !== undefined ? afterRead && (session.newest === undefined || revision > session.newest) : version === session.observed
+          if (!PREVIEW_COMMANDS.has(request.type)) {
+            const land = (): void => {
+              const held = detail.pendingShell !== null
+              commitPendingShell({ urgent })
+              if (current) { receiveState(next, { urgent }); if (revision !== undefined) { session.newest = revision; session.read = undefined } }
+              // A newer shell a thread's detail or its frame already handed to a transition is received but not drawn, and
+              // the dropped reply schedules nothing of its own, so that shell commits urgently here in the reply's place.
+              else if (urgent && !held && detail.shell !== null && detail.drawn < detail.received) receiveState(detail.shell, { urgent })
+            }
+            // A caller that reads the state or the page once the command answers finds what it committed drawn, not only
+            // queued (#306): the reply, or the newer state that landed in its place, commits before the answer goes back.
+            // A draft save's reply is background news and stays a transition.
+            if (urgent) flushSync(land); else land()
+          }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
       } catch (error) {
@@ -317,6 +345,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
+      // A numbered broadcast was sent after any read main answered before it; a whole state with no number counts by when it
+      // was asked for, and one that was not asked for at all counts as newer than every reply.
+      const revision = threadRevisionOf(next)
+      if (revision !== undefined) { session.newest = revision; session.read = undefined }
+      else session.read = Math.max(session.read ?? 0, askedAtOf(next) ?? Infinity)
       if (!active) return
       if (detail.pendingShell !== null) commitPendingShell()
       if (!detail.channel || document.hidden) { receive(next); return }
@@ -373,6 +406,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // says nothing about what is on disk now.
   // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
   const committedAt = snapshot?.session === session ? snapshot.received : 0
+  useLayoutEffect(() => { detail.drawn = committedAt }, [committedAt, detail])
   useLayoutEffect(() => {
     if (shownState === null || shownState.stale === true || committedAt < detail.draftsFed) return
     detail.draftsFed = committedAt

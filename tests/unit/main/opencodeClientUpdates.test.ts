@@ -13,11 +13,20 @@ const answer = (version: string): Response => new Response(JSON.stringify({ vers
 const noMise = async () => ({ MISE_DATA_DIR: join(await root('sotto-opencode-mise-'), 'mise') })
 /** The prefix npm reads a `<x>/lib/node_modules` package under: `<x>` here, but `<x>\lib` on Windows. */
 const libPrefix = (x: string): string => process.platform === 'win32' ? join(x, 'lib') : x
-/** npm's launcher for a global package: a link to its program outside Windows, where npm writes a script instead. */
-const npmLauncher = async (launcher: string, program: string): Promise<void> => {
-  if (process.platform === 'win32') return
+/**
+ * npm's launcher for a `<x>/lib/node_modules` package, where npm puts it: a link in `<x>/bin` to its program, or on
+ * Windows a script in the prefix itself (`<x>\lib\opencode.cmd`), since npm makes no `bin` folder there.
+ */
+const npmLauncher = async (x: string, program: string): Promise<string> => {
+  if (process.platform === 'win32') {
+    const script = join(x, 'lib', 'opencode.cmd')
+    await mkdir(dirname(script), { recursive: true }); await writeFile(script, '')
+    return script
+  }
+  const launcher = join(x, 'bin', 'opencode')
   await mkdir(dirname(program), { recursive: true }); await writeFile(program, '')
   await mkdir(dirname(launcher), { recursive: true }); await symlink(program, launcher)
+  return launcher
 }
 
 describe('which OpenCode Sotto finds, and which it refuses', () => {
@@ -115,10 +124,10 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     const cli = join(brew, 'lib', 'node_modules', '@opencode', 'cli')
     await mkdir(join(cli, 'bin'), { recursive: true }); await writeFile(join(cli, 'package.json'), '{}')
     await mkdir(join(brew, 'bin'), { recursive: true })
-    await npmLauncher(join(brew, 'bin', 'opencode'), join(cli, 'bin', 'opencode'))
+    const launcher = await npmLauncher(brew, join(cli, 'bin', 'opencode'))
     // The package's own program, and npm's launcher in Homebrew's bin beside the package it starts.
     expect(await detectClientInstall('opencode', join(cli, 'bin', 'opencode'), await noMise())).toEqual({ channel: 'npm', npmPrefix: libPrefix(brew) })
-    expect(await detectClientInstall('opencode', join(brew, 'bin', 'opencode'), await noMise())).toEqual({ channel: 'npm', npmPrefix: libPrefix(brew) })
+    expect(await detectClientInstall('opencode', launcher, await noMise())).toEqual({ channel: 'npm', npmPrefix: libPrefix(brew) })
     const clients = new ProviderClients({ fetchImpl: async () => answer('2.0.40'), npmPath: async () => join(brew, 'npm-cli.js') })
     expect(await clients.check('opencode', '2.0.31', join(cli, 'bin', 'opencode'), await noMise())).toMatchObject({ channel: 'npm', canInstall: true })
     // A Homebrew prefix with no npm package is Homebrew's, and its command stays one to run by hand.
@@ -158,7 +167,7 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     const system = join(await root('sotto-opencode-system-'), 'usr', 'bin', 'opencode')
     expect(await detectClientInstall('opencode', system, environment)).toEqual({ channel: 'unknown' })
     // npm's own launcher beside that global package is still npm's.
-    await npmLauncher(join(prefix, 'bin', 'opencode'), join(cli, 'bin', 'opencode'))
-    expect(await detectClientInstall('opencode', join(prefix, 'bin', 'opencode'), environment)).toEqual({ channel: 'npm', npmPrefix: libPrefix(prefix) })
+    const launcher = await npmLauncher(prefix, join(cli, 'bin', 'opencode'))
+    expect(await detectClientInstall('opencode', launcher, environment)).toEqual({ channel: 'npm', npmPrefix: libPrefix(prefix) })
   })
 })

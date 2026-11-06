@@ -52,10 +52,21 @@ it('reports an unreadable violation log instead of silently accepting the protoc
   } finally { fault.path = ''; await writeFile(path, ''); await f.cleanup() }
 })
 
-it('keeps malformed trailing JSON visible instead of discarding the recorded prefix', async () => {
+// The fake appends each request as one line, so a read can land while the last line is still half-written (#1622).
+it('leaves a request still being appended for the next read', async () => {
   const f = await grokFixture()
   const path = join(f.root, 'requests.jsonl')
-  const content = JSON.stringify({ method: 'session/load', params: { sessionId: 'known-session' } }) + '\n{"method":'
+  const known = { method: 'session/load', params: { sessionId: 'known-session' } }
+  try {
+    await writeFile(path, JSON.stringify(known) + '\n{"method":"session/pro')
+    expect(await f.driver.requests()).toEqual([known])
+  } finally { await f.cleanup() }
+})
+
+it('keeps a malformed finished line visible instead of discarding the recorded prefix', async () => {
+  const f = await grokFixture()
+  const path = join(f.root, 'requests.jsonl')
+  const content = JSON.stringify({ method: 'session/load', params: { sessionId: 'known-session' } }) + '\n{"method":\n'
   try {
     await writeFile(path, content)
     await expect(f.driver.requests()).rejects.toBeInstanceOf(SyntaxError)

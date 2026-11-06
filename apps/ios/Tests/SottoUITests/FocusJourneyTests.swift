@@ -598,7 +598,9 @@ import UIKit
 
         // Three drags up the page and three back as the thread goes on working. The app reads what each did.
         let distance: CGFloat = 180
-        let x = size.width - 32, middle = size.height * 0.45
+        // Stay in the page's empty margin. A press over reply text can select words and open Add to prompt instead of
+        // scrolling (run 42170206822, attempt 2); then the five remaining drags are compared with six directions.
+        let x = size.width - 8, middle = size.height * 0.45
         let origin = window.coordinate(withNormalizedOffset: .zero)
         let towardEnd = [false, false, false, true, true, true]
         for down in towardEnd {
@@ -1792,7 +1794,7 @@ import UIKit
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
-        XCTAssertTrue(asking.label.contains("Codex asks before every command, even one that only reads, and before every edit."),
+        XCTAssertTrue(asking.label.contains("Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."),
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)

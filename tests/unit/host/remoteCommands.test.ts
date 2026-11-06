@@ -170,6 +170,9 @@ describe('remote command allow-list', () => {
       'thread-delegations',
       // The prompts above a pane's window, a read for the message scrubber on a listener that offers thread-prompts (ADR-0109).
       'thread-prompts',
+      // Moves this client's own step window back (ADR-0194): a read, which may widen the thread's window as Show earlier
+      // messages does, on a listener that offers step-window.
+      'earlier-steps',
       // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
       'branch-move',
       // A thread moved here from another machine, for a recorded desktop (#1178): the host makes it from the incoming ref a

@@ -82,7 +82,8 @@ held stands in, or the one the last `get()` listed, until the next broadcast. A 
 never sent that catalog, so main recorded none as sent to it and the next broadcast carries it in full; until
 then that host has no models, which is what the window already showed. Where the reply is committed against broadcasts is
 unchanged: `AgentContext` still drops a reply that a broadcast overtook. The catalog revision orders only
-catalogs. Issue #306 is open; if it gives the state its own revision, the receipt carries that revision too.
+catalogs. The November 5 amendment below orders replies against broadcasts by the thread revision instead, and stops an
+older reply moving the catalog counter.
 
 Two sentences of the Decision above no longer hold. The page's cache no longer "lives exactly as long as the
 subscription does": it lives as long as the page, and every `onState` listener and every command share it, so
@@ -99,7 +100,8 @@ widget included, although the widget never saw the receipt: to main the catalog 
 reaches the screen, because the
 recovery answers with main's current catalog. Naming the old content by its old revision instead was
 considered and not done: main cannot tell that reply from a catalog that really went back to what it was,
-such as a provider that reconnects, and a window holding the newer revision would then keep showing it.
+such as a provider that reconnects, and a window holding the newer revision would then keep showing it. The November 5
+amendment removes this cost for a reply main numbered as it was built: it can now tell that reply is older.
 
 `AGENT_GET` is unchanged and still answers whole: it is the one recovery path for both. The remote host socket
 protocol is untouched. A content comparison now serves every key that holds the same array: `host.models` and
@@ -436,3 +438,44 @@ shells the rest of the reply is the larger part: on forge it fell from 119 KB to
 the November 1 replay, from about 295 KB to about 279 KB (`docs/perf/2026-11-02-iphone-command-reply-threads.md`). That note
 also records what compressing phones' messages would save, which stays a later change as the November 1 amendment says.
 
+## November 5, 2026 amendment: a reply the window was broadcast ahead of still lands (#306)
+
+The router publishes a command's effect before it answers, and when no broadcast is waiting out its publish window that
+broadcast goes at once, so it reaches the window while the command is still out. `AgentContext` dropped any reply a
+broadcast arrived during, and the broadcast waited for its frame. A caller that read the state or the page after the
+command read what was there before it.
+
+**Main numbers a reply when the router builds it.** The main window's broadcasts and its replies' changed thread records
+already shared one counter in `ThreadRecordsBroadcast` (October 30 amendment), but a reply took its number as it was
+encoded, a few microtasks after it was built, and a broadcast sent in between could hold a newer state under a lower
+number. The router now tells the broadcaster each state it builds to answer a command (`replyBuilt`), and the reply takes
+the next revision then. The revision is held beside the reply, by its `host`, which the router's top-level additions leave
+in place: one counter step and one weak entry per reply, nothing read from or copied out of the state. An answer that
+remakes its `host` after it is built, as clearing threads does when it drops their history, is numbered once remade. A broadcast is
+still numbered as it is sent. That is never too early: the broadcast a command sets off holds at least the state its
+reply was built from, because only the newest state waits out a publish window. Nothing on the wire changed.
+
+**The page keeps the newest and draws it before the command answers.** `wrapAgentBridge` notes the thread revision each
+state it puts back crossed under, beside the state rather than in it, so state sharing still finds an unchanged broadcast
+unchanged (`threadRevisionOf`). `AgentContext` keeps the revision of the last broadcast that arrived or reply that landed,
+and commits a reply when its revision is higher, after the held shell, as it commits any reply. A reply a newer broadcast
+passed is still dropped, and the newer state commits in its place: the held shell, or, when a thread's detail or its
+frame already handed that shell to a transition, the newest shell received, urgently, since a queued transition is not
+drawn yet. Both commit inside `flushSync`, so React has drawn them
+by the time the command's promise resolves and a caller that reads the state or the page in its continuation finds the
+command's effect. A draft save's reply stays a transition: the composer does not watch it land. A recovery read through
+`AGENT_GET` carries no thread revision, so the page orders it by when it asked: main answers a read at once and builds a
+command's reply only once the command has run, so a reply to a command asked after the read is newer than it and lands,
+and one asked before it is dropped, since the read may hold the command's effect too (`askedAtOf`). An unnumbered state
+the page did not ask for counts as newer than every reply. A reply with no thread revision (a page with no subscription
+yet, a test bridge) is ordered as before: any broadcast during the command drops the reply.
+
+**A reply older than the window's state no longer moves the catalog counter.** The September 26 amendment recorded that a
+reply built before a catalog change and encoded after that change's broadcast took a catalog revision of its own for the
+old content, so the window made one `AGENT_GET` and the next broadcast resent the catalog in full. Two commands that run
+at once can do the same with no broadcast between them, when the later-built reply is encoded first. A reply numbered
+below the newest the window was sent, the last broadcast delivered or a reply encoded after it, is older than the
+window's state, and the window drops it. `encodeReceipt` now
+names such a reply's catalogs by the revisions they hold now, without comparing or storing its content, and the window
+resolves the newer catalog it holds. A receipt nobody numbered as it was built, such as one a test encodes directly, is
+encoded as before.
