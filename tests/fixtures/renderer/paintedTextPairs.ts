@@ -67,7 +67,9 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited or reworked line keeps'),
   ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
   ...each('text', [context, [...context, hover], [...context, picked]], 'words that came in a document'),
-  ...each('warning', [context, [...context, hover]], 'edited line sign'),
+  // Modified is one amber in both modes (changes.css): an edited line's sign, and a file's M on its head and in the tree.
+  ...each('--changes-modified', [context, [...context, hover]], 'edited line sign'),
+  ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
   // A document's lines: body ink on an added line, secondary on a removed one.
@@ -140,7 +142,7 @@ export function inMode(value: string, mode: Mode): string {
 
 /** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them, in the mode the root is painted in. */
 export function withPaintedLayers(declarations: Map<string, string>, mode: Mode): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
   for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name, mode))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')

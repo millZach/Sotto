@@ -160,7 +160,12 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: var(--tt-radius-tag); color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); font-weight: 600; line-height: 1; }
 .changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { color: var(--tt-success); }
 .changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { color: var(--tt-error-text); }
-.changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--tt-warning); }
+.changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--changes-modified); }
+/* Modified is one amber in both modes: a file's M, an edited line's edge and its sign. The warning ink is no use for it
+   by day, where it is darkened toward brick for text and reads beside the removed role's red as a second red. So by day
+   that ink is turned back to amber's hue at its own lightness, so it keeps its 4.5:1 and the contrast setting, with
+   less chroma, so the dark gold it makes is inside sRGB and not clipped back toward orange; by night it is the warning ink. */
+:is(.changes-surface, .changes-block) { --changes-modified: light-dark(oklch(from var(--tt-warning) calc(l - .01) calc(c * .7) calc(h + 28)), var(--tt-warning)); }
 
 /* The lines. Code runs one row a line, as an editor shows it, so its indents and line starts scan down the file; a
    line longer than the panel runs on past its edge and its file scrolls sideways, on its own. Wrap long lines in View
@@ -265,9 +270,9 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 /* A document's edited line read once (EditedText): the paragraph once, with at each change the words that went, struck
    through, then the words that came. The words it keeps read a step quieter than the words that came. The line has a
    modified file's edge and the edited sign. */
-.changes-diff__rows { --changes-edge-edited: color-mix(in srgb, var(--tt-warning) 60%, transparent); }
+.changes-diff__rows { --changes-edge-edited: color-mix(in srgb, var(--changes-modified) 60%, transparent); }
 .changes-line[data-kind='edited'] { color: var(--tt-text-2); box-shadow: inset 2px 0 0 var(--changes-edge-edited); }
-.changes-line[data-kind='edited'] .changes-line__sign { color: var(--tt-warning); }
+.changes-line[data-kind='edited'] .changes-line__sign { color: var(--changes-modified); }
 .changes-word--edit { text-decoration: none; }
 del.changes-word--edit { background: var(--changes-word-removed); color: var(--tt-text-2); text-decoration: line-through; text-decoration-thickness: 1px; }
 ins.changes-word--edit { background: var(--changes-word-added); color: var(--changes-word-ink-added); }
@@ -399,10 +404,10 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    margin, and rests faint beside the lines it kept: on a long paragraph the eye finds the changed lines before it reads
    a word. Every changed word is a span of its own (EditedText) whose mark is held to the line's left edge, and so is
    an empty one where words went with nothing in their place, so that line lights too. A picked line has the accent's edge instead. */
-.changes-diff__rows { --changes-edge-edited-rest: color-mix(in srgb, var(--tt-warning) 22%, transparent); }
+.changes-diff__rows { --changes-edge-edited-rest: color-mix(in srgb, var(--changes-modified) 22%, transparent); }
 .changes-line[data-kind='edited'] { position: relative; box-shadow: inset 2px 0 0 var(--changes-edge-edited-rest); }
 .changes-line[data-kind='edited'] .changes-w::before {
-  content: ''; position: absolute; left: 0; width: 2px; height: 1lh; background: var(--tt-warning); pointer-events: none;
+  content: ''; position: absolute; left: 0; width: 2px; height: 1lh; background: var(--changes-modified); pointer-events: none;
 }
 .changes-line[data-kind='edited']:is([aria-selected='true'], [data-noted]) .changes-w::before { content: none; }
 .changes-gone {
