@@ -51,10 +51,13 @@ const ANIMATION_HOLD_MS = 900
 /** The content size a capture names, with the shipped minimum left as it is. */
 const resizeContentWindowFor = (launched: LaunchedSotto, width: number, height: number): Promise<void> => resizeContentWindow(launched, width, height, [820, 560])
 
-/** Holds the frame still. The pointer goes to the corner first unless the image is of what it points at. */
-async function settle(page: Page, pointerAway = true): Promise<void> {
+/**
+ * Holds the frame still. The pointer goes to the corner first unless the image is of what it points at, and the open row is
+ * brought to the sidebar's middle unless the state set the sidebar's scroll itself.
+ */
+async function settle(page: Page, pointerAway = true, keepSidebarScroll = false): Promise<void> {
   if (pointerAway) await page.mouse.move(0, 0)
-  const blank = await page.evaluate(async hold => {
+  const blank = await page.evaluate(async ({ hold, keepSidebarScroll }) => {
     await document.fonts.ready
     const endOf = (animation: Animation): number | undefined => animation.effect?.getComputedTiming().endTime as number | undefined
     await Promise.race([
@@ -72,7 +75,7 @@ async function settle(page: Page, pointerAway = true): Promise<void> {
     // The sidebar's own scroll depends on when a row last moved, so the open thread's row is brought to its middle, as a
     // reader would scroll to it, and the image repeats.
     const list = document.querySelector('.thread-nav__scroll'), open = list?.querySelector('[aria-current="page"]')
-    if (list && open) list.scrollTop += open.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - open.clientHeight) / 2
+    if (keepSidebarScroll) { /* The state put the list where its image needs it. */ } else if (list && open) list.scrollTop += open.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - open.clientHeight) / 2
     else if (list) list.scrollTop = 0
     const frames = (): Promise<unknown> => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))
     await frames()
@@ -91,7 +94,7 @@ async function settle(page: Page, pointerAway = true): Promise<void> {
     const box = list.getBoundingClientRect(), middle = box.top + box.height / 2
     const rows = [...list.querySelectorAll('.thread-nav__row')].filter(row => { const at = row.getBoundingClientRect(); return at.height > 0 && at.top <= middle + 60 && at.bottom >= middle - 60 })
     return rows.length > 0 && rows.every(row => Number(getComputedStyle(row).opacity) < 0.1)
-  }, ANIMATION_HOLD_MS)
+  }, { hold: ANIMATION_HOLD_MS, keepSidebarScroll })
   if (blank) throw new Error('The sidebar\'s thread list drew no rows: their fades did not follow the list.')
   await holdOwlSky(page)
 }
@@ -111,7 +114,7 @@ interface Capture {
    * One image per mode at the current size, with the composer's crop from the same frame. `before` runs once the size and
    * the mode are set, for what neither survives, such as the pointer's hover, and the pointer then stays where it left it.
    */
-  shoot(state: string, shows: string, differs?: string, options?: { readonly modes?: readonly Mode[]; readonly size?: readonly [number, number]; readonly before?: () => Promise<void> }): Promise<void>
+  shoot(state: string, shows: string, differs?: string, options?: { readonly modes?: readonly Mode[]; readonly size?: readonly [number, number]; readonly before?: () => Promise<void>; readonly keepSidebarScroll?: boolean }): Promise<void>
 }
 
 function captureFor(launched: LaunchedSotto, repository: EvidenceRepository, out: string): Capture {
@@ -124,7 +127,7 @@ function captureFor(launched: LaunchedSotto, repository: EvidenceRepository, out
       for (const mode of options.modes ?? MODES) {
         await setAppearance(page, { appearance: mode }, mode)
         await options.before?.()
-        await settle(page, options.before === undefined)
+        await settle(page, options.before === undefined, options.keepSidebarScroll)
         const file = `${state}-${mode}-${width}.png`
         const image = await page.screenshot({ caret: 'hide' })
         await writeFile(join(out, file), image)
@@ -579,9 +582,25 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await expect(row).toBeVisible()
     await capture.shoot('doc-edit-collapsed', 'An edit to a Markdown document in the transcript: the turn\'s steps open and the edit\'s own row folded.', 'The Worked for fold is pressed open so the edit\'s row shows; a finished turn starts with it folded.')
     await capture.shoot('doc-edit-collapsed', 'The same at the minimum window.', '', { modes: ['dark'], size: [820, 560] })
+    const composer = focusedPane(page).locator('form.thread-prompt')
+    /**
+     * The edit's row pressed at the window's size, as a reader there would: a window pressed open at 820 and shot at 1600
+     * shows where the narrow press left the diff, not where a press at 1600 brings it.
+     */
+    const open = async (width: number, height: number): Promise<void> => {
+      await resizeContentWindowFor(capture.launched, width, height)
+      await row.click()
+      await expect(log.locator('.thread-activity__change').first()).toBeVisible()
+      // The press can take the reader off the end, so the composer slims; it is not done moving when its animations are.
+      let lastTop = Number.NaN
+      await expect.poll(async () => { const top = (await composer.boundingBox())?.y ?? Number.NaN, still = top === lastTop; lastTop = top; return still }, { intervals: [500] }).toBe(true)
+    }
+    await open(1600, 1000)
+    await capture.shoot('doc-edit-expanded', 'The same edit unfolded with its diff showing, pressed at this size.')
     await row.click()
-    await expect(log.locator('.thread-activity__change, .thread-activity__details').first()).toBeVisible()
-    await capture.shoot('doc-edit-expanded', 'The same edit unfolded with its diff showing.')
+    await open(820, 560)
+    await capture.shoot('doc-edit-expanded', 'The same edit unfolded at the minimum window, pressed at that size: the diff is taller than the room under its row, so the row rises to the top and the diff reads from its start.', '', { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await row.click()
     await work.click()
   } },
@@ -905,6 +924,16 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.keyboard.press('Escape')
     await head.locator('.working-copy__trigger').focus()
     await capture.shoot('header-focus', 'The working copy holding keyboard focus at the edge of the box beside the name.', '', { modes: ['dark'] })
+    // The Council's landmark and Tools' panel named under the header as the keys reach them, in their tooltips' words.
+    for (const [symbol, state] of [['[data-pane-council-toggle]', 'header-council-focus'], ['.tools-toggle', 'header-tools-focus']] as const) {
+      const named = async (): Promise<void> => {
+        await page.keyboard.press('Tab')
+        await head.locator(symbol).focus()
+        await expect(page.locator('.focus-name')).toBeVisible()
+      }
+      await capture.shoot(state, `The keyboard on ${state === 'header-council-focus' ? 'the Council' : 'Tools'} in the header, named under it.`, '', { modes: ['dark', 'light'], before: named })
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    }
   } },
   // Asked for by name only: the sidebar, Needs you and the header together, at every size, in both modes and on another theme.
   { name: 'shell-surface', covers: [], run: async capture => {
@@ -1071,6 +1100,39 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await expect(card.locator('.needs-you__entry')).toHaveCount(2)
     }
   } },
+  // Asked for by name only: a scrolled sidebar with its folder's head stuck at the top, and a row passing under the head's
+  // edge at each part of its height: only its padding under, its name under, both its lines under. The current row and a
+  // working one pass under too, on the default theme, Glass and Clay.
+  { name: 'sidebar-stuck-head', covers: [], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Write the split plan down')
+    // The list scrolled so the stuck head's edge lies `into` pixels below the named row's top.
+    const under = (title: string, into: number) => async (): Promise<void> => {
+      await page.mouse.move(0, 0)
+      await page.evaluate(({ title, into }) => {
+        const list = document.querySelector<HTMLElement>('.thread-nav__scroll')!
+        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__title')?.textContent === title)!
+        const edge = Number.parseFloat(getComputedStyle(list).getPropertyValue('--folder-head-edge')) || 35
+        list.scrollTop += row.getBoundingClientRect().top - list.getBoundingClientRect().top - edge + into
+      }, { title, into })
+    }
+    const shoot = (state: string, shows: string, title: string, into: number, modes: readonly Mode[] = MODES, size?: readonly [number, number]): Promise<void> =>
+      capture.shoot(state, shows, '', { modes, before: under(title, into), keepSidebarScroll: true, ...size ? { size } : {} })
+    await shoot('stuck-head-padding', 'The sidebar scrolled so only the top padding of "Fix the socket host flake" is under the stuck head of sotto.', 'Fix the socket host flake', 5)
+    await shoot('stuck-head-name', 'The same row scrolled on until the head\'s edge crosses its name.', 'Fix the socket host flake', 14)
+    await shoot('stuck-head-words', 'The same row scrolled on until the head\'s edge crosses its second line.', 'Fix the socket host flake', 36)
+    await shoot('stuck-head-name', 'Its name under the head at a narrower window.', 'Fix the socket host flake', 14, ['dark'], [1280, 800])
+    await shoot('stuck-head-working', 'A working row, "Plan the split", with its name under the head.', 'Plan the split', 14)
+    await shoot('stuck-head-current', 'The open thread\'s row, "Write the split plan down", with its name under the head.', 'Write the split plan down', 14)
+    for (const theme of ['glass', 'clay'] as const) {
+      await setAppearance(page, { appearance: 'dark', lightTheme: theme, darkTheme: theme }, 'dark')
+      const name = theme === 'glass' ? 'Glass' : 'Clay'
+      await shoot(`stuck-head-name-${theme}`, `A row's name under the stuck head on ${name}.`, 'Fix the socket host flake', 14)
+      await shoot(`stuck-head-words-${theme}`, `A row's second line under the stuck head on ${name}.`, 'Fix the socket host flake', 36)
+      await shoot(`stuck-head-current-${theme}`, `The open thread's row with its name under the stuck head on ${name}.`, 'Write the split plan down', 14)
+    }
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default. Usage
   // at the smaller sizes is captureConnectedUsage's.
   { name: 'shell-check', covers: [], run: async capture => {
@@ -1095,7 +1157,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every']
+const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {
