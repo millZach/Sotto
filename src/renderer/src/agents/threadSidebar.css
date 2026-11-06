@@ -359,6 +359,11 @@
    running threads the names lead and one moving ring, not a column of teal words, says each is at work. */
 .thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: 450; }
 .thread-nav__row--details .thread-nav__standing > .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen]) { color: inherit; }
+/* At night the words under a moving or waiting row's name and its clock take the secondary ink, not the muted one: they
+   are read again and again over a long session, and the muted ink's thin strokes strained at caption size. A resting
+   row's single line keeps its muted time (ADR-0135, Zach's pick C), so a working row still stands apart by more than
+   its ring. By day every row already takes the secondary ink (below). */
+.thread-nav__row--details:not([data-resting], [data-steps-back]) :is(.thread-nav__standing, .thread-nav__time) { color: var(--tt-text-2); }
 /* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
    ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
    itself here was a cycle, which only reached the secondary ink by falling back to the row's colour. A folder's count
