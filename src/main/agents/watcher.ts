@@ -3656,12 +3656,12 @@ export class WatcherService implements WatcherControlHooks {
     this.observedHost = undefined
     const localId = this.options.control.hostId()
     if (!localId) return
-    // Until the archive's index is read, Watcher's archived sends are nobody's, and a pass would take Watcher's own message
-    // at a thread's head for the user's turn and pause its watch (#1783). It waits for the index, as for the ID, and runs
-    // once it is read, or could not be, knowing Sotto's sends for the user as the coordinator's own pass does, so a fenced
-    // message at a head is not taken over a second time.
+    // Until the archive's index is read, when there is one, Watcher's archived sends are nobody's, and a pass would take
+    // Watcher's own message at a thread's head for the user's turn and pause its watch (#1783). It waits for the index, as
+    // for the ID, and runs once it is read, or could not be, knowing Sotto's sends for the user as the coordinator's own
+    // pass does, so a fenced message at a head is not taken over a second time.
     const archive = this.options.control.archivedWatcherWork()
-    if (archive && !archive.indexRead && this.archiveRead !== archive) {
+    if (archive && !archive.lookupsReady && this.archiveRead !== archive) {
       if (this.archiveAwaited !== archive) {
         this.archiveAwaited = archive
         void archive.ready().catch(() => undefined).then(() => {
