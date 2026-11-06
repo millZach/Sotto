@@ -84,9 +84,17 @@ const attempt = typeof cfg.attempt === 'string' && /^[a-f0-9]{8,64}$/.test(cfg.a
 const resultFile = attempt && typeof cfg.resultFile === 'string' && path.isAbsolute(cfg.resultFile) && path.dirname(path.resolve(cfg.resultFile)) === data ? path.resolve(cfg.resultFile) : null;
 let claimed = false;
 const resultText = value => JSON.stringify({ v: 1, attempt, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
-const writeResult = async value => {
+// Windows refuses a rename for a moment while another process has the file open, as the host does each time it reads its
+// outcome; such a rename is tried again every 50 ms, up to tries more times.
+const renameWhenFree = async (from, to, tries) => {
+  for (let tried = 0; ; tried++) {
+    try { await fs.rename(from, to); return; }
+    catch (error) { if (tried >= tries || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error; await pause(50); }
+  }
+};
+const writeResult = async (value, tries = 0) => {
   const temporary = resultFile + '.' + process.pid + '.tmp';
-  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); return true; }
+  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await renameWhenFree(temporary, resultFile, tries); return true; }
   catch { await fs.rm(temporary, { force: true }).catch(() => undefined); return false; }
 };
 // True only when this process claimed the attempt and the host can read what it claimed with: a restart whose status could
@@ -103,7 +111,10 @@ const record = async event => {
   if (!resultFile) return;
   const value = { state: 'finished', result: briefly(event) };
   if (!claimed) { await claim(value); return; }
-  await writeResult(value);
+  // How a claimed restart ended is tried for up to two seconds: one that never lands leaves the status restarting with this
+  // process gone, which the host can only read as an update lost. The claim itself is tried once, since the host that asked
+  // waits only a moment more for it before it answers that the restart was not sent.
+  await writeResult(value, 40);
 };
 const finish = async event => { await record(event); await say(event); process.exit(0); };
 // The host that asked answers its desktop once the restart has claimed the file, then says so beside it. The restart waits
@@ -572,14 +583,8 @@ const takeoverPath = updateLockPath + '.takeover';
 // killed partway leaves is cleared when versions are pruned.
 const removeIfStill = async (folder, matches) => {
   const aside = folder + '.' + process.pid + '.' + crypto.randomUUID() + '.removing';
-  for (let tries = 0; ; tries++) {
-    try { await fs.rename(folder, aside); break; }
-    catch (error) {
-      if (error && error.code === 'ENOENT') return 'gone';
-      if (tries >= 10 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return 'kept';
-      await pause(50);
-    }
-  }
+  try { await renameWhenFree(folder, aside, 10); }
+  catch (error) { return error && error.code === 'ENOENT' ? 'gone' : 'kept'; }
   const moved = await lockOwner(aside);
   let outcome = 'removed';
   if (!matches(moved)) {

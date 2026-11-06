@@ -286,6 +286,19 @@ npx vitest run tests/integration/codexNewestTurnLive.test.ts --maxWorkers=1 --di
 SOTTO_CODEX_TURNS_LIVE=1 npx vitest run tests/integration/codexNewestTurnLive.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
+## Codex permission modes live check
+
+`tests/integration/codexApprovalPolicyLive.test.ts` is gated by `SOTTO_CODEX_POLICY_LIVE=1`. It starts the installed Codex app-server in a throwaway `CODEX_HOME`, so it needs no sign-in and never reads the user's own Codex threads, and it runs no model turn. For each of a Codex thread's four permission modes it starts an ephemeral thread with the adapter's own policy and moves another thread to it with `thread/settings/update`, and checks Codex reports the same approval policy, reviewer and sandbox back. Codex 0.165 and newer refuse `approval_policy = "untrusted"` in its configuration and on the command line, and Ask for approval sends `untrusted` on requests, so run this after a Codex update (#2185). It last passed on Codex CLI 0.167.0 on forge, November 5, 2026:
+
+```powershell
+$env:SOTTO_CODEX_POLICY_LIVE = '1'
+npx vitest run tests/integration/codexApprovalPolicyLive.test.ts --maxWorkers=1
+```
+
+```sh
+SOTTO_CODEX_POLICY_LIVE=1 npx vitest run tests/integration/codexApprovalPolicyLive.test.ts --maxWorkers=1
+```
+
 ## Gated assertions
 
 A shared runner interleaves two vitest workers with everything else on the host, so an absolute

@@ -442,6 +442,102 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     for (const index of [7, 8]) expect(restored.identities('thread', `turn-${index}`)).toEqual(reference.identities('thread', `turn-${index}`))
   })
 
+  /**
+   * File IDs as NTFS gives them: 64 bits with a reuse count on top, so two files made one after the other round to one
+   * number and differ only as bigints (#2145). Each file gets its own ID, given in the order first seen, just above 2^63,
+   * where all of them round to 2^63 as a number, and a creation time as Windows keeps it, in 100 ns steps, which as
+   * milliseconds is a fraction.
+   */
+  const ROUNDED_ID = String(Number(2n ** 63n))
+  const WINDOWS_BIRTH_NS = 1_762_412_345_678_912_300n
+  async function largeFileIds(): Promise<void> {
+    const probe = await open(tmpdir(), 'r')
+    const handles = Object.getPrototypeOf(probe) as { stat(options?: { bigint?: boolean }): Promise<{ dev: number | bigint; ino: number | bigint; birthtimeMs: number | bigint; birthtimeNs?: bigint }> }
+    await probe.close()
+    const native = handles.stat
+    const ids = new Map<string, bigint>()
+    vi.spyOn(handles, 'stat').mockImplementation(async function (this: unknown, options?: { bigint?: boolean }) {
+      const stats = await native.call(this, options)
+      const key = `${stats.dev}:${stats.ino}`
+      const id = ids.get(key) ?? 2n ** 63n + BigInt(ids.size + 1)
+      ids.set(key, id)
+      stats.ino = options?.bigint ? id : Number(id)
+      if (options?.bigint) { stats.birthtimeNs = WINDOWS_BIRTH_NS; stats.birthtimeMs = WINDOWS_BIRTH_NS / 1_000_000n }
+      else stats.birthtimeMs = Number(WINDOWS_BIRTH_NS) / 1e6
+      return stats
+    })
+  }
+  /** A thread's rollout read through its first turn and saved, the second turn written after, and its saved position. */
+  async function savedThenGrown(): Promise<{ root: string; positions: MemoryPositions; saved: RolloutPosition }> {
+    const { root, path } = await rollout()
+    await largeFileIds()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const first = watcher(root, [], { positions })
+    await first.pollThread('thread')
+    await first.stop()
+    await appendFile(path, turn(2))
+    return { root, positions, saved: JSON.parse(positions.kept.get('thread')!) as RolloutPosition }
+  }
+  /** `saved` as a version before #2145 wrote it: the ID rounded to a number, and no mark that it is whole. */
+  function legacyOf(saved: RolloutPosition): RolloutPosition {
+    const legacy: RolloutPosition = { ...saved, ino: ROUNDED_ID }
+    delete legacy.wholeId
+    return legacy
+  }
+  /** What a later start reports from `position`; with no message marked seen, a read from the first byte reports the first turn's again. */
+  async function readFrom(root: string, positions: MemoryPositions, position: RolloutPosition): Promise<string[]> {
+    positions.kept.set('thread', JSON.stringify({ ...position, seen: [] }))
+    const messages: AgentMessage[] = []
+    await watcher(root, messages, { positions }).pollThread('thread')
+    return messages.map(message => message.id)
+  }
+
+  it('tells a rollout put in its place from the one it read when file IDs are too large for a number', async () => {
+    const { root, path } = await rollout()
+    await largeFileIds()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const messages: AgentMessage[] = []
+    const first = watcher(root, messages, { positions })
+    await first.pollThread('thread')
+    await writeFile(`${path}.new`, turn(7) + turn(8))
+    await rename(`${path}.new`, path)
+    await first.pollThread('thread')
+    expect(messages.map(message => message.id)).toEqual(['user-1', 'user-7', 'user-8'])
+    await first.stop()
+    const saved = JSON.parse(positions.kept.get('thread')!) as RolloutPosition
+    expect(BigInt(saved.ino!)).toBeGreaterThan(2n ** 63n)
+    expect(saved.wholeId).toBe(true)
+  })
+
+  it('reads on from where it left off after a restart when file IDs and creation times are as Windows gives them', async () => {
+    const { root, positions, saved } = await savedThenGrown()
+    expect(saved).toMatchObject({ ino: String(2n ** 63n + 1n), wholeId: true })
+    expect(saved.birthtimeMs).toBeCloseTo(Number(WINDOWS_BIRTH_NS) / 1e6, 3)
+    // Kept as JSON, as the positions store keeps it, and read back by a later start.
+    expect(await readFrom(root, positions, JSON.parse(JSON.stringify(saved)) as RolloutPosition)).toEqual(['user-2'])
+  })
+
+  it('never lets a position saved with its whole file ID match another ID that rounds to it', async () => {
+    const { root, positions, saved } = await savedThenGrown()
+    expect(saved.wholeId).toBe(true)
+    // Same creation time, another ID that a number would round to the same value: still another file.
+    const other = String(2n ** 63n + 1000n)
+    expect(String(Number(other))).toBe(String(Number(saved.ino)))
+    expect(await readFrom(root, positions, { ...saved, ino: other })).toEqual(['user-1', 'user-2'])
+  })
+
+  it('reads on from a position saved before file IDs were read whole when its creation time matches', async () => {
+    const { root, positions, saved } = await savedThenGrown()
+    expect(await readFrom(root, positions, legacyOf(saved))).toEqual(['user-2'])
+  })
+
+  it('reads from the first byte a position saved before file IDs were read whole when its creation time differs', async () => {
+    const { root, positions, saved } = await savedThenGrown()
+    expect(await readFrom(root, positions, { ...legacyOf(saved), birthtimeMs: (saved.birthtimeMs ?? 0) + 5000 })).toEqual(['user-1', 'user-2'])
+  })
+
   it('ends a read queued for a thread let go while it waited, without taking the thread up again', async () => {
     const { root, path } = await rollout()
     const positions = new MemoryPositions()

@@ -1095,6 +1095,8 @@ export class ThreadWorktrees {
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
     const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
     const inspectedSubmoduleDirectories = new Set<string>()
+    /** Each plain nested repository's row and Git directory, whose submodules' history is counted once the walk is done. */
+    const nestedRepositories: Array<{ row: { unpushedCommitCount?: number | undefined }; gitDirectory: string }> = []
     const nestedWorktrees: { path: string; commonDirectory: string }[] = []
     const canonicalRoot = await realpath(path)
     let outsideLink: string | undefined
@@ -1195,7 +1197,9 @@ export class ThreadWorktrees {
               let changeCount = 0
               for (let i = 0; i < records.length; i++) { changeCount++; if (/^[RC]|^.[RC]/u.test(records[i]!)) i++ }
               const repositoryPath = local + '/'
-              repositories.push({ path: repositoryPath, changeCount, ...history, kind })
+              const repository: (typeof repositories)[number] = { path: repositoryPath, changeCount, ...history, kind }
+              repositories.push(repository)
+              if (!submodule && (bare || gitMarker?.isDirectory())) nestedRepositories.push({ row: repository, gitDirectory: bare ? full : join(full, '.git') })
               if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
             }
           }
@@ -1245,6 +1249,26 @@ export class ThreadWorktrees {
       }
     }
     await visit(root, '', undefined)
+    // A nested repository's own submodules keep their history in its Git directory, and a deinitialized
+    // one keeps nothing else, so removal would delete it unseen (#687). It is added to the repository's
+    // row, whose files the walk already counted; history a checkout inside it already counted is skipped.
+    const retainedHistory = async (directory: string): Promise<number> => {
+      if (entryKind(await present(directory)) !== 'directory') return 0
+      if (entryKind(await present(join(directory, 'HEAD'))) === 'file') {
+        const counted = inspectedSubmoduleDirectories.has(pathKey(await waited(realpath(directory))))
+        // Recursive deinit keeps core.worktree pointing at a deleted checkout, so it is overridden.
+        const own = counted ? 0 : Number((await git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
+        return own + await retainedHistory(join(directory, 'modules'))
+      }
+      // A module name with slashes is a folder of folders before its metadata.
+      let count = 0
+      for (const entry of await waited(readdir(directory, { withFileTypes: true }))) if (entry.isDirectory()) count += await retainedHistory(join(directory, entry.name))
+      return count
+    }
+    for (const { row, gitDirectory } of nestedRepositories) {
+      const retained = await retainedHistory(join(gitDirectory, 'modules'))
+      if (retained) row.unpushedCommitCount = (row.unpushedCommitCount ?? 0) + retained
+    }
     // Deinitializing a submodule empties its checkout but keeps its history in this worktree's
     // Git directory. Force removal destroys that metadata too, including recursive submodules.
     const rootMarker = await lstat(join(path, '.git'))

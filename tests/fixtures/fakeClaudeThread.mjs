@@ -351,6 +351,10 @@ lines.on('line', async line => {
       for (const state of ['queued', 'started']) output({ type: 'command_lifecycle', command_uuid: initScript.foreignLifecycle ? randomUUID() : frame.uuid, state, uuid: randomUUID(), session_id: session })
     }
     if (deferredInit) { output(deferredInit); deferredInit = undefined }
+    // initialize-script.json `holdAfterInit`: the model's first step takes a while to come back after the turn's init, as a
+    // real reply's does. It is a tool call that writes `tool-ran`, and runs once the file the value names exists, so a test
+    // can let it run only after it has seen what Sotto did with the init.
+    if (initScript.holdAfterInit) { await released(initScript.holdAfterInit); writeFileSync(join(root, 'tool-ran'), session) }
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
     const scriptPath = join(root, 'script.json')

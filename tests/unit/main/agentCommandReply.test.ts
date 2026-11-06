@@ -16,6 +16,7 @@ import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
 
 import { LocalHostService } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
+import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -39,7 +40,8 @@ afterEach(async () => {
   }
 })
 
-async function fixture() {
+async function fixture(options: { replyBuilt?: (state: AgentState) => void; encoders?: ReturnType<typeof receiptEncoders> } = {}) {
+  const { replyBuilt } = options
   const root = await mkdtemp(join(tmpdir(), 'sotto-command-reply-')); roots.push(root)
   const host = new E2EAgentHost()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
@@ -52,17 +54,17 @@ async function fixture() {
   host.event({ type: 'ready', threadId: 'workshop', text: 'Indigo it is.' })
   await control.command({ type: 'refresh' })
 
-  const router = new DesktopHostRouter(() => emptyDesktopState(HOST_ID))
+  const router = new DesktopHostRouter(() => emptyDesktopState(HOST_ID), replyBuilt ? { replyBuilt } : {})
   disposables.push(() => router.dispose())
   router.add({ hostId: HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control }),
     detail: threadId => control.threadDetail(threadId), preview: () => null })
 
   const registry = ipcRegistry()
   const { ipc, main } = registry
-  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { ...receiptEncoders() }))
+  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { ...options.encoders ?? receiptEncoders() }))
   const send = (command: AgentCommand) =>
     registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
-  return { control, send }
+  return { control, send, router }
 }
 
 describe('a command reply to the window', () => {
@@ -83,5 +85,40 @@ describe('a command reply to the window', () => {
     // The row facts the sidebar reads still arrive, and the history is still there for a window that asks.
     expect(reply.host.threads.find(thread => thread.id.endsWith('workshop'))!.summary).toMatchObject({ messageCount: 2 })
     expect(f.control.threadDetail('workshop')?.messages.map(message => message.text)).toEqual(['Pick the palette', 'Indigo it is.'])
+  })
+})
+
+describe('a command reply numbered as it is built (#306)', () => {
+  it.each<[string, AgentCommand]>([
+    ['a command that publishes', { type: 'select-thread', threadId: 'workshop' }],
+    ['a command answered without publishing', { type: 'refresh-thread-worktree', threadId: 'workshop', background: true }],
+    // Clearing answers without the threads' history, which gives the answer a `host` of its own after it is built.
+    ['clearing threads', { type: 'clear-threads', olderThanDays: 0, threadIds: ['workshop'] }],
+  ])('tells the broadcaster of the very reply the window is sent before it is encoded, for %s', async (_name, command) => {
+    const built = new WeakSet<object>()
+    const numbered: boolean[] = []
+    const { encodeReceipt, encodeChangedThreadRecordsReceipt } = receiptEncoders()
+    const f = await fixture({ replyBuilt: state => { built.add(state.host) },
+      encoders: { encodeReceipt: state => { numbered.push(built.has(state.host)); return encodeReceipt(state) },
+        encodeChangedThreadRecordsReceipt: state => { numbered.push(built.has(state.host)); return encodeChangedThreadRecordsReceipt(state) } } })
+    // With the window listening, the router publishes a command's effect and answers with that publication.
+    disposables.push(f.router.subscribe(() => undefined))
+    await f.send(command)
+    expect(numbered).toEqual([true])
+  })
+
+  it('keeps the revision a clearing answer took when it was built, behind a broadcast sent before it is encoded', async () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const revisions: { reply?: number; broadcast?: number } = {}
+    const f = await fixture({ replyBuilt: broadcaster.replyBuilt, encoders: { ...receiptEncoders(broadcaster),
+      encodeReceipt: state => {
+        // A newer state goes out between the answer's build and its encoding.
+        broadcaster.send({ ...state, host: { ...state.host } }, payload => { revisions.broadcast = payload.host.threads.revision; return true })
+        revisions.reply = broadcaster.encodeChangedThreadRecordsReceipt(state).host.threads.revision
+        return broadcaster.encodeReceipt(state)
+      } } })
+    disposables.push(f.router.subscribe(() => undefined))
+    await f.send({ type: 'clear-threads', olderThanDays: 0, threadIds: ['workshop'] })
+    expect(revisions.reply).toBeLessThan(revisions.broadcast!)
   })
 })
