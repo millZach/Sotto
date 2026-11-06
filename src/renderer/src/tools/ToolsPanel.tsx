@@ -163,7 +163,7 @@ const NO_THREAD: Record<ToolSurfaceId, MessageDescriptor> = {
 const RAIL_STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
 
 /**
- * The panel's surfaces as a rail on its outer edge: a symbol each, its word kept for the tooltip and a screen reader, the open one raised. A dot marks a
+ * The panel's surfaces as a rail on its outer edge: an icon over a short word, the open one raised. A dot marks a
  * surface with something live, and its words are the surface's description in the rail. The open surface draws no
  * dot, since its own line of chrome already says what is live there; a screen reader still hears the words. Only
  * implemented surfaces are listed.
