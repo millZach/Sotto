@@ -146,3 +146,7 @@ Babysitting PR #964 said "The required checks passed" five times before they had
 ## Amendment: the iPhone's control (October 21, 2026, #1281)
 
 Decision 11 gave phones no control. [ADR-0102](0102-the-iphone-reads-a-threads-pull-request-in-a-sheet.md) gives the iPhone's pull request sheet **Babysit pull request** and **Stop babysitting**, an Owl feature. The phone sends the same two commands to a host that lists `pull-request-babysit`, reads `babysitting` and `babysitEnded` for its line, and grants nothing. Everything else here stands.
+
+## Amendment: a skipped check passes nothing (November 5, 2026, #2116)
+
+Where no rule and no flag names the required checks, the gate is every check, and one of them must have succeeded. A head whose only check is skipped, as a stacked pull request's can be or as GitHub lists another workflow's before CI's jobs exist, has not passed. Where rules name the gate, nothing changes: GitHub counts a skipped required check as passed, and so does Sotto. [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md) records what Watcher's news says of the same reads.

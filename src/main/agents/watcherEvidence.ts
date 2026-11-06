@@ -56,13 +56,21 @@ export interface PullRequestObservation {
   remarks?: string
   /** Whether every check the base branch requires passed on `head`, as babysitting reads it (ADR-0061). */
   requiredPassed?: boolean
+  /**
+   * Where the base branch's rules name the checks a merge needs: how many of them are still to finish on `head`, one
+   * GitHub has not made yet included, and how many other checks, which no merge waits on, are still running (#2116).
+   */
+  pendingChecks?: { required: number; optional: number }
 }
 /**
  * What a pull request says that needs Watcher (#1190), beyond the evidence it keeps: a conflict, a review asking for
  * changes, its required checks passing on a head, and how many times its comments or reviews moved since Sotto first read
  * them. In memory only, like evidence; `observedAt` keeps a late read from undoing a newer one.
  */
-interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string; observedAt: string }
+interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string
+  /** What `pendingChecks` said of `head`: words for the news, never a reason to wake Watcher. */
+  pending?: { head: string; required: number; optional: number }
+  observedAt: string }
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks' | 'bug-bot-review'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
@@ -269,6 +277,21 @@ export class WatcherEvidenceStore {
     for (const fact of this.attentionFacts(target)) byPr.set(fact.pr, (byPr.get(fact.pr) ?? new Set()).add(fact.kind))
     return byPr
   }
+  /**
+   * How many checks each pull request's newest commit still waits on, by pull request, for the words a wake-up carries
+   * (#2116): those its base branch's rules require and the others. Only on the commit evidence last read it on.
+   */
+  pendingChecks(target: WatcherThreadTarget): Map<string, { required: number; optional: number }> {
+    const key = targetKey(target), heads = new Map<string, Set<string>>(), pending = new Map<string, { required: number; optional: number }>()
+    for (const item of this.entries.get(key)?.values() ?? []) if (item.source === 'github' && item.url && item.headId) {
+      const pr = pullRequestKey(item.url) ?? item.url
+      heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
+    }
+    for (const [pr, said] of this.attending.get(key) ?? []) {
+      if (said.pending && (!heads.get(pr)?.size || heads.get(pr)!.has(said.pending.head))) pending.set(pr, { required: said.pending.required, optional: said.pending.optional })
+    }
+    return pending
+  }
   /** The facts evidence does not hold, so a change to them is a change too. */
   attentionIdentity(target: WatcherThreadTarget): string[] {
     return this.attentionFacts(target).filter(fact => BESIDE_EVIDENCE.has(fact.kind) || fact.returns > 0).map(fact => fact.key).sort()
@@ -357,7 +380,7 @@ export class WatcherEvidenceStore {
    * that changed. A read older than the one kept says nothing new, as evidence ignores a late answer for an earlier head.
    */
   private attend(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
-    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined && read.requiredPassed === undefined) return false
+    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined && read.requiredPassed === undefined && read.pendingChecks === undefined) return false
     const key = targetKey(target), pr = pullRequestKey(read.url) ?? read.url
     const byPr = this.attending.get(key) ?? new Map<string, PullRequestAttention>()
     const before = byPr.get(pr) ?? { remarksMoved: 0, observedAt: read.observedAt }, after = { ...before, observedAt: read.observedAt }
@@ -367,6 +390,8 @@ export class WatcherEvidenceStore {
     if (read.requiredPassed !== undefined) { if (read.requiredPassed && read.head) after.requiredPassedHead = read.head; else delete after.requiredPassedHead }
     // A read of another commit, whatever it says of its checks, ends the pass of the one before.
     else if (read.head && after.requiredPassedHead !== undefined && after.requiredPassedHead !== read.head) delete after.requiredPassedHead
+    if (read.pendingChecks && read.head) after.pending = { head: read.head, ...read.pendingChecks }
+    else if (read.head && after.pending && (read.requiredPassed !== undefined || after.pending.head !== read.head)) delete after.pending
     // The first read of its remarks is where they stand, not news; each move after it is.
     if (read.remarks !== undefined) { if (before.remarks !== undefined && before.remarks !== read.remarks) after.remarksMoved++; after.remarks = read.remarks }
     byPr.set(pr, after)

@@ -113,11 +113,23 @@ export function checksAfter(last: ChecksRead | undefined, asked: boolean, detail
 
 /**
  * What one read of an open pull request tells Watcher (#1190): its state, conflict, remarks fingerprint and checks, and
- * whether the checks the base branch requires passed, from the same gate babysitting tells a thread by.
+ * whether the checks the base branch requires passed, from the same gate babysitting tells a thread by. Every check has
+ * passed only once that gate has (#2116): right after a push GitHub may list a skipped check of another workflow, or the
+ * first job alone, before the jobs the rules require exist. Where the rules name the gate, it also says how many of its
+ * checks are still to finish and how many others are still running, so Watcher knows which pending checks hold a merge.
  */
 export function openPullRequestObservation(fingerprint: PullRequestFingerprint, detail: DetailAnswer | null, now: number,
   previous: PullRequestObservation | undefined, checksAsked: boolean): PullRequestObservation {
-  const required = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null
-    ? { requiredPassed: detail.checksComplete !== false && gateOf(detail.checks, detail.requiredChecks ?? []).passed } : {}
-  return { ...pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), previous, checksAsked), ...required }
+  const observation = pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), previous, checksAsked)
+  const checks = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? detail.checks : null
+  if (!checks) return observation
+  const gate = gateOf(checks, detail!.requiredChecks ?? []), requiredPassed = detail!.checksComplete !== false && gate.passed
+  return { ...observation, ...observation.checks === 'passed' && !requiredPassed ? { checks: 'pending' as const } : {}, requiredPassed,
+    ...gate.required ? { pendingChecks: pendingChecks(checks, gate.names) } : {} }
+}
+/** The gate's checks not yet finished, one GitHub has not made yet included, and the other checks still running (#2116). */
+function pendingChecks(checks: NonNullable<DetailAnswer['checks']>, required: readonly string[]): NonNullable<PullRequestObservation['pendingChecks']> {
+  const finished = (context: string) => { const named = checks.filter(check => check.context === context); return named.length > 0 && named.every(check => check.status !== 'pending') }
+  return { required: required.filter(context => !finished(context)).length,
+    optional: checks.filter(check => check.status === 'pending' && !required.includes(check.context)).length }
 }

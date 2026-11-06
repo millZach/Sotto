@@ -868,3 +868,11 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: checks pass only once the required ones have, and news says which running checks hold a merge (#2116)
+
+Watcher's news said "all checks passed on its newest commit" on #2083 a minute after a push: the only check GitHub listed was another workflow's skipped iPhone benchmark, and a skipped check counted as passed. A pull request stacked on another's branch read as passed on one skipped check the same way (#2077). The audit of October 14 to November 5 also found Watcher waiting about two hours on an optional iPhone job while the required checks had been green, and counted the required-checks news on #1994 as early because Native iOS still ran. GitHub's own times show the three required checks had passed then. Native iOS is optional in the ruleset, and the news did not say so.
+
+- **Every check passed only once the required ones have.** A read whose checks all finished without failing says passed only when the base branch's required checks have passed on that head, one GitHub has not made yet counting as not passed. Until then it reads as pending, in the news and in `read_state`. Where no rule names the required checks, one check at least must have succeeded ([ADR-0061](0061-a-thread-can-babysit-its-pull-request.md), the same day).
+- **News says which running checks hold a merge.** Where the rules name the required checks, a pull request's news line adds how many of them are still to finish and how many other checks are still running, "which no merge waits on". These are counts: a check's name still never reaches Watcher's evidence. They never wake Watcher by themselves.
+- **Not done here: runs a thread starts by hand.** News when a workflow-dispatch run that a watched thread started finishes or fails needs Sotto to know which runs a thread started, and is #2260.
