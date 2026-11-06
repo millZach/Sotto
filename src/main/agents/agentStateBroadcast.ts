@@ -348,8 +348,11 @@ export class AgentStateBroadcaster {
    * top-level additions to a reply leave in place. Held beside the state, so a reply is never copied to carry it.
    */
   private readonly taken = new WeakMap<object, number>()
-  /** The thread revision of the last broadcast delivered to the window. */
-  private delivered = 0
+  /**
+   * The newest thread revision sent to a window: the last broadcast delivered, or a reply encoded after it that the router
+   * built later. A reply built before it is older than the window's state, whichever of the two carried that state.
+   */
+  private newest = 0
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
@@ -370,7 +373,7 @@ export class AgentStateBroadcaster {
     const payload = threads.payload.base !== null && parts?.revision === threads.payload.base ? withKeptParts(whole, parts) : whole
     const delivered = deliver(payload)
     if (delivered) {
-      this.delivered = threads.payload.revision
+      if (threads.payload.revision > this.newest) this.newest = threads.payload.revision
       for (const [key, revision] of confirmed) this.sent.set(key, revision)
       threads.commit()
       // The parts go with the threads' base: a read while this was delivered leaves neither.
@@ -406,19 +409,21 @@ export class AgentStateBroadcaster {
    *
    * It is not a pure encoder. Naming a catalog's revision goes through `revisionFor`, which advances the
    * counter the window uses and stores `state`'s catalog as the current content when that content
-   * differs from what the counter last held. A reply the router built before a broadcast the window was delivered
-   * (`replyBuilt`) does not: it is older than the window's state, so its catalogs are named by the revisions they hold
+   * differs from what the counter last held. A reply the router built before a broadcast the window was delivered, or
+   * before a reply already encoded (`replyBuilt`), does not: it is older than the window's state, so its catalogs are named by the revisions they hold
    * now, and the window resolves the newer catalog it holds (ADR-0028, November 5 amendment). A reply nobody numbered
    * as it was built, such as one a test encodes directly, is encoded as before.
    *
    * An arrow property rather than a method, so `registerAgentIpc` can be handed it on its own.
    */
   readonly encodeReceipt = (state: AgentState): AgentCommandReceipt => {
-    // A reply built before a broadcast the window was delivered is older than the window's state (#306), and the window
-    // drops it. Its catalogs are named by the revisions they hold now without moving the counter: the window resolves the
-    // newer one it holds, and neither it nor the next broadcast pays for a catalog only this reply held.
+    // A reply built before a broadcast the window was delivered, or before another command's reply already encoded, is
+    // older than the window's state (#306), and the window drops it. Its catalogs are named by the revisions they hold now
+    // without moving the counter: the window resolves the newer one it holds, and neither it nor the next broadcast pays
+    // for a catalog only this reply held. Concurrent commands can finish out of the order the router built their replies.
     const taken = this.taken.get(state.host)
-    const older = taken !== undefined && taken < this.delivered
+    const older = taken !== undefined && taken < this.newest
+    if (taken !== undefined && !older) this.newest = taken
     return this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: (older ? this.revisions.current(key) : undefined) ?? this.revisionFor(key, models), omitted: true }))
   }
 

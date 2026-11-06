@@ -6,7 +6,7 @@ import { msg } from '@lingui/core/macro'
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
 import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../../../shared/threadLanes'
-import { threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
+import { askedAtOf, threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
@@ -56,8 +56,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   watcherEnabledRef.current = watcherEnabled
   // A connection owns its command lane and draft durability knowledge. Neither page
   // navigation nor outstanding writes create a new store; a different bridge does.
-  // `observed` counts the broadcasts that arrived; `newest` is the thread revision of the last broadcast or reply that landed, if it had one (#306).
-  const session = useMemo(() => ({ current: false, observed: 0, newest: undefined as number | undefined, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
+  // `observed` counts the broadcasts that arrived; `newest` is the thread revision of the last numbered broadcast or reply that
+  // landed, and `read` where the newest whole read the subscription delivered since then was asked for (#306).
+  const session = useMemo(() => ({ current: false, observed: 0, newest: undefined as number | undefined, read: undefined as number | undefined, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
   /**
    * Main publishes every thread's state but only the history of the threads this window says it is
    * looking at, so the window holds those histories and splices them back into each arriving shell.
@@ -272,13 +273,17 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // left the caller acting on state the window had not drawn (#306). A reply a newer broadcast passed is dropped,
           // and that broadcast commits as the reply would have, so the window has drawn at least the command's effect when
           // the caller reads it. Without a number, any broadcast during the command drops the reply, as before.
+          // A whole read the subscription recovered with carries no number. It holds what main had when it answered, so a reply
+          // to a command asked after that read is newer than it; one asked before it may not be, and is dropped (askedAtOf).
           const revision = threadRevisionOf(next)
-          const current = revision !== undefined && session.newest !== undefined ? revision > session.newest : version === session.observed
+          const asked = askedAtOf(next)
+          const afterRead = session.read === undefined || (asked !== undefined && asked > session.read)
+          const current = revision !== undefined ? afterRead && (session.newest === undefined || revision > session.newest) : version === session.observed
           if (!PREVIEW_COMMANDS.has(request.type)) {
             const land = (): void => {
               const held = detail.pendingShell !== null
               commitPendingShell({ urgent })
-              if (current) { receiveState(next, { urgent }); if (revision !== undefined) session.newest = revision }
+              if (current) { receiveState(next, { urgent }); if (revision !== undefined) { session.newest = revision; session.read = undefined } }
               // A newer shell a thread's detail or its frame already handed to a transition is received but not drawn, and
               // the dropped reply schedules nothing of its own, so that shell commits urgently here in the reply's place.
               else if (urgent && !held && detail.shell !== null && detail.drawn < detail.received) receiveState(detail.shell, { urgent })
@@ -340,7 +345,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
-      session.newest = threadRevisionOf(next)
+      // A numbered broadcast was sent after any read main answered before it; a whole state with no number counts by when it
+      // was asked for, and one that was not asked for at all counts as newer than every reply.
+      const revision = threadRevisionOf(next)
+      if (revision !== undefined) { session.newest = revision; session.read = undefined }
+      else session.read = Math.max(session.read ?? 0, askedAtOf(next) ?? Infinity)
       if (!active) return
       if (detail.pendingShell !== null) commitPendingShell()
       if (!detail.channel || document.hidden) { receive(next); return }

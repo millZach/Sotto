@@ -177,6 +177,26 @@ describe('AgentStateBroadcaster', () => {
     expect(sent[2]!.host.models).toEqual({ revision: 2, omitted: true })
   })
 
+  it('leaves the catalog counter alone for a reply built before another command reply already encoded (#306)', () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const sent: AgentStateBroadcast[] = []
+    const deliver = (payload: AgentStateBroadcast): boolean => { sent.push(payload); return true }
+    broadcaster.send(state([model('gpt-5')]), deliver)
+    // Two commands run at once: the first's reply is built, the catalog changes, the second's reply is built with it, and
+    // the second finishes first, while the broadcast that carries the change is still waiting out its publish window.
+    const older = state([model('gpt-5')])
+    broadcaster.replyBuilt(older)
+    const newer = state([model('gpt-5', { ready: false })])
+    broadcaster.replyBuilt(newer)
+    expect(broadcaster.encodeReceipt(newer).host.models).toEqual({ revision: 2, omitted: true })
+    // The older reply names the revision the window resolves from the newer one, and the broadcast resends nothing new.
+    expect(broadcaster.encodeReceipt(older).host.models).toEqual({ revision: 2, omitted: true })
+    broadcaster.send(state([model('gpt-5', { ready: false })]), deliver)
+    expect(sent[1]!.host.models).toEqual({ revision: 2, models: newer.host.models })
+    broadcaster.send(state([model('gpt-5', { ready: false })]), deliver)
+    expect(sent[2]!.host.models).toEqual({ revision: 2, omitted: true })
+  })
+
   it('numbers a reply by when the router built it, not when it is encoded (#306)', () => {
     const broadcaster = new AgentStateBroadcaster()
     const deliver = (): boolean => true

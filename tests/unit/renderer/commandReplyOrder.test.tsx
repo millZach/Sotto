@@ -47,7 +47,7 @@ function page(initial: AgentState) {
     threadDetail: vi.fn(async () => null),
     onThreadDetail: (listener: (update: AgentThreadDetailUpdate) => void) => { detail = listener; return () => { detail = null } },
   } as unknown as AgentWireBridge
-  return { bridge: wrapAgentBridge(bridge), withChanges, emit: (raw: unknown) => broadcast?.(raw),
+  return { bridge: wrapAgentBridge(bridge), raw: bridge, withChanges, emit: (raw: unknown) => broadcast?.(raw),
     emitDetail: (update: AgentThreadDetailUpdate) => detail?.(update) }
 }
 
@@ -115,5 +115,24 @@ describe('a command reply a broadcast reached the window ahead of (#306)', () =>
     const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })
       .then(() => result.current.state?.host.threads[0]!.title))
     expect(seen).toBe('Later')
+  })
+
+  it('draws a reply to a command asked after a recovery read that answers with the state from before it', async () => {
+    const { result, withChanges, emit, raw } = await connect()
+    const before = fullState([thread('workshop', 'Before'), thread('docs')])
+    const renamed = fullState([thread('workshop', 'Renamed'), thread('docs')])
+    // A broadcast measured from one this window never held sends it to read the whole state; main answers later.
+    let answer: (state: AgentState) => void = () => undefined
+    vi.mocked(raw.get).mockImplementationOnce(() => new Promise<AgentState>(resolve => { answer = resolve }))
+    act(() => emit(wire(before, { revision: 2, base: 7, changed: [] })))
+    withChanges.mockImplementation(async () => {
+      // The read was asked before the command, so it holds the state from before the command, and lands while it runs.
+      answer(before)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      return wire({ ...renamed, notice: 'From the reply' }, { revision: 4, base: null, changed: renamed.host.threads })
+    })
+    const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })
+      .then(() => ({ title: result.current.state?.host.threads[0]!.title, notice: result.current.state?.notice })))
+    expect(seen).toEqual({ title: 'Renamed', notice: 'From the reply' })
   })
 })

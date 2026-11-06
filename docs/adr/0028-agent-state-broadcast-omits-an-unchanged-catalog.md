@@ -463,14 +463,19 @@ passed is still dropped, and the newer state commits in its place: the held shel
 frame already handed that shell to a transition, the newest shell received, urgently, since a queued transition is not
 drawn yet. Both commit inside `flushSync`, so React has drawn them
 by the time the command's promise resolves and a caller that reads the state or the page in its continuation finds the
-command's effect. A draft save's reply stays a transition: the composer does not watch it land. A reply or broadcast with
-no thread revision (a page with no subscription yet, a recovery read through `AGENT_GET`, a test bridge) is ordered as
-before: any broadcast during the command drops the reply.
+command's effect. A draft save's reply stays a transition: the composer does not watch it land. A recovery read through
+`AGENT_GET` carries no thread revision, so the page orders it by when it asked: main answers a read at once and builds a
+command's reply only once the command has run, so a reply to a command asked after the read is newer than it and lands,
+and one asked before it is dropped, since the read may hold the command's effect too (`askedAtOf`). An unnumbered state
+the page did not ask for counts as newer than every reply. A reply with no thread revision (a page with no subscription
+yet, a test bridge) is ordered as before: any broadcast during the command drops the reply.
 
 **A reply older than the window's state no longer moves the catalog counter.** The September 26 amendment recorded that a
 reply built before a catalog change and encoded after that change's broadcast took a catalog revision of its own for the
-old content, so the window made one `AGENT_GET` and the next broadcast resent the catalog in full. A reply numbered below
-the last broadcast delivered to the window is older than the window's state, and the window drops it. `encodeReceipt` now
+old content, so the window made one `AGENT_GET` and the next broadcast resent the catalog in full. Two commands that run
+at once can do the same with no broadcast between them, when the later-built reply is encoded first. A reply numbered
+below the newest the window was sent, the last broadcast delivered or a reply encoded after it, is older than the
+window's state, and the window drops it. `encodeReceipt` now
 names such a reply's catalogs by the revisions they hold now, without comparing or storing its content, and the window
 resolves the newer catalog it holds. A receipt nobody numbered as it was built, such as one a test encodes directly, is
 encoded as before.

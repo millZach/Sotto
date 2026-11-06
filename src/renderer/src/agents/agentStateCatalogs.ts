@@ -28,6 +28,17 @@ const threadRevisions = new WeakMap<AgentState, number>()
 /** The thread revision `state` crossed under, when the page put it back from a broadcast or a receipt that carried one. */
 export function threadRevisionOf(state: AgentState): number | undefined { return threadRevisions.get(state) }
 
+/**
+ * Where each whole read through `get()` and each command's reply stands in the order this page asked main for them (#306).
+ * Main answers a read at once and builds a command's reply only once the command has run, both in the order they were
+ * asked, so a reply to a command asked after a read holds at least what the read held. A read carries no thread revision,
+ * and this is how `AgentContext` orders a reply against a recovery read that landed while the command ran.
+ */
+const askedAt = new WeakMap<AgentState, number>()
+
+/** Where `state`, a whole read or a command's reply, was asked for among this page's reads and commands. */
+export function askedAtOf(state: AgentState): number | undefined { return askedAt.get(state) }
+
 /** `state`, noted as crossing under the revision of `wire`'s thread records when they carried one. */
 function numbered(state: AgentState, wire: unknown): AgentState {
   const revision = typeof wire === 'object' && wire !== null && !Array.isArray(wire) ? (wire as { revision?: unknown }).revision : undefined
@@ -63,8 +74,12 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   if (existing) return existing
   const catalogs: CatalogCache = new Map()
   const lastRead: LastRead = new Map()
+  // Reads and commands counted in the order the page asks for them.
+  let asked = 0
   const get = async (): Promise<AgentState> => {
+    const at = ++asked
     const full = await bridge.get()
+    askedAt.set(full, at)
     lastRead.set(hostCatalogKey(full.host.hostId), full.host.models)
     for (const client of full.host.clientHosts ?? []) {
       lastRead.set(clientCatalogKey(client.hostId), client.models)
@@ -89,7 +104,12 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     get,
     onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
     // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
-    command: async request => putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request))),
+    command: async request => {
+      const at = ++asked
+      const state = await putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)))
+      askedAt.set(state, at)
+      return state
+    },
   }
   wrapped.set(bridge, result)
   return result
