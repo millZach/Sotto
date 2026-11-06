@@ -195,7 +195,9 @@ it has not read whole, the file's identity, and what reading up to there gave. T
 reported and each turn's identity rows, the turn under way included. A tail restored from it holds exactly what one that
 read the rollout from its first byte to there holds, so identity corroboration and takeover are unchanged. What a tail
 holds stands for one file at no shorter a length: another file found in its place, while Sotto runs or at a later start,
-or one that shrank, is read from its first byte again. A rollout
+or one that shrank, is read from its first byte again. A file is known by its whole 64-bit file ID, or by its creation
+time where it has none; a position saved before IDs were read whole (#2145) may hold its ID rounded, and stands for the
+file only when that rounded ID and its creation time both match. A rollout
 gone from where it was is looked for again, and keeps its position where it is the same file. Opening or sending to a
 thread reads on from its position, as its whole read before resuming always did, so it reads only what was written
 since. Taking up a position costs a fraction of the read it replaces: 5 ms for a 20 MB rollout's position of 1 MB,
