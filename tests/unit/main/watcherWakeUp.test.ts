@@ -1780,6 +1780,42 @@ it('lets a closed pull request ride with the next news that wakes Watcher (#2226
   expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toBe('Pull request #9: closed without merging.')
 })
 
+it('lets comments that wait ride with a question that comes in the same pass as a Git change (#2226)', async () => {
+  const f = fixture(), { git } = gitFixture(f)
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  const read = (remarks: string) => f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', remarks })
+  read('comments:1'); read('comments:2'); await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered).toEqual([])
+  // One pass sees the working copy move and a question appear: the question's news leaves the comments' out of date.
+  Object.assign(git, { changedFiles: 5, readAt: new Date(f.now()).toISOString() })
+  f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered.map(news => kinds(news)?.sort())).toEqual([['evidence-changed', 'needs-user']])
+  expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
+})
+
+it('puts what wakes Watcher ahead of news that rides, and keeps what one wake-up has no room for (#2226)', async () => {
+  const f = fixture()
+  // A usage limit's reset restarts more threads than one wake-up's news names: news that only rides.
+  const restarted = Array.from({ length: 60 }, (_, n): AgentThread => ({ id: `restarted-${n}`, providerId: 'claude', projectId: 'project', modelId: 'model',
+    title: `Restarted ${n}`, status: 'running', lastTurn: { id: `turn-${n}`, status: 'running' }, messages: [], requests: [] }))
+  f.snapshot.threads.push(...restarted)
+  f.wakes.threadsRestarted('claude', restarted.map(thread => ({ hostId: centerTarget.hostId, threadId: thread.id })))
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered).toEqual([])
+  f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered).toHaveLength(1)
+  expect(kinds(f.delivered[0])).toContain('needs-user')
+  const first = f.delivered[0]!.events.filter(event => event.kind === 'threads-restarted').length
+  expect(first).toBeLessThan(60)
+  // What did not fit waits for the next news that wakes Watcher.
+  expect(f.wakes.news().filter(event => event.kind === 'threads-restarted').length).toBeGreaterThanOrEqual(60 - first)
+  f.wakes.settled(f.delivered[0]!.events, 'told'); await f.wakes.drained()
+  finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = new Set(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted').map(event => event.target.threadId))
+  expect(told.size).toBe(60)
+})
+
 it('tells Watcher of a receipt only when it says something a tool’s answer did not', async () => {
   const f = fixture(), operation = f.record.operations[0]!
   operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_BUSY'

@@ -8,7 +8,7 @@ import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_RIDING_KINDS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
-import { WAKING_ATTENTION, WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
+import { WAKING_ATTENTION, WatcherEvidenceStore, attentionFactParts, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, toldEventsForLater, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
@@ -164,16 +164,11 @@ export function receiptNeedsWatcher(operation: Pick<WatcherRecord['operations'][
 export const receiptRevision = (operation: Pick<WatcherRecord['operations'][number], 'deliveryState' | 'refusalCode' | 'creationUncertain'>): string =>
   observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
 /** Whether a finish still waits on the work it left running: its news rides with that work's work-settled news (#1190). */
-/** An attention fact's key as `heldFacts` makes it, `[pr, kind, detail]`, without the return count a fact that came back carries. */
-const plainFact = (key: string): unknown[] => {
-  const parsed = JSON.parse(key) as unknown[]
-  return parsed.length === 2 && typeof parsed[0] === 'string' && typeof parsed[1] === 'number' ? JSON.parse(parsed[0]) as unknown[] : parsed
-}
 /** Whether Watcher was told the required checks passed on the pull request and commit this checks-passed fact names (#2226). */
 const requiredPassTold = (key: string, told: ReadonlySet<string> | undefined): boolean => {
   if (!told?.size) return false
-  const [pr, , head] = plainFact(key)
-  for (const fact of told) { const [toldPr, kind, toldHead] = plainFact(fact); if (kind === 'required-passed' && toldPr === pr && toldHead === head) return true }
+  const passed = attentionFactParts(key)
+  for (const fact of told) { const said = attentionFactParts(fact); if (said.kind === 'required-passed' && said.pr === passed.pr && said.detail === passed.detail) return true }
   return false
 }
 const busyFinish = (event: WatcherEvent): boolean => event.kind === 'turn-finished' && (event.backgroundWorkCount ?? 0) > 0
@@ -661,8 +656,8 @@ export class WatcherWakeUp {
     const key = targetKey(target), told = this.toldAttention.get(key)
     if (!told?.size) return
     const now = this.evidence.attention(target)
-    const passed = new Set([...now].flatMap(fact => { const [pr, kind, head] = plainFact(fact); return kind === 'checks-passed' ? [JSON.stringify([pr, head])] : [] }))
-    const passedOn = (fact: string): boolean => { const [pr, kind, head] = plainFact(fact); return kind === 'required-passed' && passed.has(JSON.stringify([pr, head])) }
+    const passed = new Set([...now].flatMap(fact => { const { pr, kind, detail } = attentionFactParts(fact); return kind === 'checks-passed' ? [JSON.stringify([pr, detail])] : [] }))
+    const passedOn = (fact: string): boolean => { const { pr, kind, detail } = attentionFactParts(fact); return kind === 'required-passed' && passed.has(JSON.stringify([pr, detail])) }
     const still = new Set([...told].filter(fact => now.has(fact) || isMergeFact(fact) || passed.size > 0 && passedOn(fact)))
     if (still.size !== told.size) this.toldAttention.set(key, still)
   }
@@ -987,6 +982,21 @@ export class WatcherWakeUp {
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   /**
+   * One wake-up's news of these events. When its limits leave some out, what wakes Watcher goes first, so news that only
+   * rides never crowds it out, and what was left out waits for the next wake-up rather than being lost (#2226); what
+   * folding replaced, as a takeover does, is gone.
+   */
+  private newsWithRoom(watcher: WatcherThreadTarget, events: readonly WatcherEvent[]): WatcherNews {
+    const all = foldWatcherEvents([], events)
+    let news = foldWatcherNews(undefined, { source: 'watcher', watcher, events: all, omitted: 0 })
+    if (news.events.length === all.length) return news
+    const waking = new Set(all.filter(event => this.attends(event)).map(event => event.id))
+    news = foldWatcherNews(undefined, { source: 'watcher', watcher, events: [...all.filter(event => waking.has(event.id)), ...all.filter(event => !waking.has(event.id))], omitted: 0 })
+    const sent = new Set(news.events.map(event => event.id))
+    this.pending = foldWatcherEvents(all.filter(event => !sent.has(event.id)), this.pending)
+    return news
+  }
+  /**
    * Whether these events may make Watcher's next hidden wake-up (hiddenWakeUp.ts): some of them need Watcher, none is in
    * its queue, and none missed since the last that reached it, or a retry is due.
    */
@@ -1024,7 +1034,7 @@ export class WatcherWakeUp {
     if (this.closed) return
     // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
     if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
-    const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
+    const news = watcher && events.length ? this.newsWithRoom(watcher, events) : undefined
     // The retries this wake-up answers: those counted by now. One counted while it is saved is for the next.
     const retries = this.retries
     this.tail = this.tail.catch(() => undefined).then(async () => {
@@ -1552,9 +1562,11 @@ export class WatcherWakeUp {
       const key = targetKey(target), held = this.pending.filter(event => targetKey(event.target) === key)
       const waiting = held.filter(event => event.kind === 'evidence-changed')
       const ending = held.some(event => TURN_ENDS.has(event.kind))
-      // What its pull requests say that wakes no one waits for news that does (#2226). A turn's end brings its own evidence,
-      // which leaves that waiting news out of date before this runs, so it is made again as the facts stand, to ride with it.
-      if (!waiting.length && !(ending && (this.ridingUntold(target) || (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local')))) return
+      // What its pull requests say that wakes no one waits for news that does (#2226). News of the thread made in the same
+      // pass, as a turn's end that brings its own evidence or a card beside a Git change, leaves that waiting news out of
+      // date before this runs, so it is made again as the facts stand, to ride with that news.
+      const beside = held.some(event => event.kind !== 'evidence-changed')
+      if (!waiting.length && !(beside && this.ridingUntold(target)) && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
       // Keeping a pull request's waiting news current keeps it news that needs Watcher, but no news that came since.
       marks = waiting.some(event => this.waking.has(event.id))
     }

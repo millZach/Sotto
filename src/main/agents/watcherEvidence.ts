@@ -73,6 +73,15 @@ export interface WatcherAttentionFact { readonly pr: string; readonly kind: Watc
  */
 export const isMergeFact = (key: string): boolean => (JSON.parse(key) as unknown[])[1] === 'merged'
 /**
+ * An attention fact's parts, by its key: the pull request, the kind and the detail `heldFacts` gave it (the head, for
+ * checks), whether or not the fact came back and carries a return count. Callers compare facts by these, not by the key's form.
+ */
+export function attentionFactParts(key: string): { readonly pr: unknown; readonly kind: unknown; readonly detail: unknown } {
+  const parsed = JSON.parse(key) as unknown[]
+  const [pr, kind, detail] = parsed.length === 2 && typeof parsed[0] === 'string' && typeof parsed[1] === 'number' ? JSON.parse(parsed[0]) as unknown[] : parsed
+  return { pr, kind, detail }
+}
+/**
  * The pull request facts that wake Watcher by themselves (#2226, Zach's pick on November 5, 2026): checks failed, the
  * required checks passed (all checks passing says they did), and a merge. The rest, approved, a review asking for changes,
  * comments or reviews that moved, a Bug Bot review, a conflict and a close, ride with the next news that wakes it.
