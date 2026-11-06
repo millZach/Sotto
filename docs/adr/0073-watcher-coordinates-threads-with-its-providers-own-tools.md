@@ -886,3 +886,14 @@ Zach chose to drop the every-reply rule and let Sotto own the list. He picked it
 - **Sotto shows the list; Watcher doesn't repeat it.** Watcher names something that waits on the user when news first brings it, when the user asks what waits on them, or when its reply is about it.
 - **Watcher never says nothing waits.** The list is Sotto's to show as empty.
 - **Unchanged:** Watcher checks `waitingOnUser` before it says something waits on the user, and a worker's prose ask with no card is still carried until its card is up. That ask isn't on the list, so Sotto can't show it.
+
+## November 5, 2026: news says each thing once (#2232)
+
+An audit of Watcher's sessions from October 14 to November 5 found most of the news text was the same words again. Every note ended with a paragraph of about 463 characters that repeated the prompt, 2.7 MB in all. Every line ended with its event's ID in brackets, a 64-character digest no tool takes, which was a quarter of the news in one session. Two cards on one thread made two identical lines. And "Sotto observed changed evidence. Read the thread for the sourced facts." came about 100 times a day after the November 2 fix above, riding with turn ends that had nothing new about a pull request. Only the model reads this text, so nothing the user sees changes.
+
+- **The prompt says it; the news does not.** The closing paragraph is gone. What it said that the prompt did not is now in the prompt once: `read_operation` gives a send's receipt and outcome, a watched thread's requestId lets Watcher follow up with it within bounds, and a thread takes at most four prompts from Watcher in one Watcher turn, whichever requestIds they go under. This supersedes the October 23 note that the footer says when to use `read_operation`.
+- **No event IDs.** Lines name their thread, any operation and the requestId, which the tools take. Events keep their IDs in the queue, the record's `wakeEventIds` and the told set; only the text drops them.
+- **One line for the same thing.** Lines that say the same of the same thread are one line, its thread followed by how many times, as in `{…}, 2 times: This thread waits on the user…`.
+- **Evidence news is what changed.** Its line is Sotto's words for what a pull request now says, and nothing else. Evidence news with nothing to say has no line. Those words are the line, so they never give way to room before the event does; a reply's words still give way first. What wakes Watcher does not change.
+
+Measured on three wake-ups of 1, 4 and 11 events (`tests/unit/main/watcherNewsSize.test.ts`): 1,097, 2,188 and 4,849 characters before, 566, 974 and 2,305 after, from 508 to 240 characters per event.

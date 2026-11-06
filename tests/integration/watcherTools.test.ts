@@ -9,7 +9,7 @@ import { queueHold } from '../../src/main/agents/watcherSendHolds'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
-import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import { isWatcherNews, watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
@@ -1213,6 +1213,9 @@ const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined
   const item = queued(f).find(candidate => candidate.threadId === f.id && candidate.wakeUp)
   return item && (watcherWakeUpNote(item.news ?? []) ?? '')
 }
+/** Whether Watcher's waiting wake-up holds evidence news: its line is only what changed, which the note works out as it goes (#2232). */
+const waitingEvidence = (f: Awaited<ReturnType<typeof fixture>>): boolean => queued(f).some(candidate => candidate.threadId === f.id && candidate.wakeUp
+  && (candidate.news ?? []).some(item => isWatcherNews(item) && item.events.some(event => event.kind === 'evidence-changed')))
 
 it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
@@ -1526,7 +1529,7 @@ it('never sends a thread’s own facts alone after a pull request’s wake-up th
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
   const moves = async (count: number) => {
@@ -1577,7 +1580,7 @@ it('loses no news that came while a wake-up was sent when saving its acknowledge
   await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp && item.status === 'dispatching')).toBe(false))
   await f.finish(f.id)
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 20_000 })
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))).toBe(true), { timeout: 20_000 })
 }, 40_000)
 
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
@@ -2288,13 +2291,13 @@ it('tells pull request news again when the thread’s own facts change while its
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const entered = deferred<void>(), release = deferred<void>()
   f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))
   try {
     const finishing = f.finish(f.id)
     await entered.promise
@@ -2314,7 +2317,7 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const { read } = pullRequestNews(f, started.target.threadId)
   f.service.pullRequestObserved(read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!, news = waitingNews(f)
   const ids = f.control.watcherRecord().wakeEventIds
