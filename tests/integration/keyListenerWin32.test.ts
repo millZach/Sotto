@@ -1,17 +1,40 @@
 // @vitest-environment node
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { keyListenerWin32Invocation } from '../../src/main/hotkeys/keyListenerWin32'
 
 const CS_PATH = join(__dirname, '../../native/key-listener/win32.cs')
 const LIVE = process.env.SOTTO_KEY_LISTENER_LIVE === '1'
-// 17 passing Windows CI samples took 4.65–22.54 s including shutdown. Keep about twice the slowest
-// whole test for startup; the earlier 10 s failures were killed before startup could be measured.
-// docs/perf/2026-11-03-git-worktree-tests.md records the samples and the profiling limits.
+// 17 passing Windows CI samples took 4.65–22.54 s including shutdown and the compile
+// (docs/perf/2026-11-03-git-worktree-tests.md). The compile now runs once in beforeAll, so this
+// covers only PowerShell starting, loading the compiled helper and installing the hook.
 const HELPER_START_MS = 45_000
+// A budget only a hung compiler reaches. On a loaded runner csc has stalled past 45 s here and past
+// 60 s for the askpass helper in the same shard at the same minute (#1771, #1410).
+const COMPILE_MS = 180_000
+
+// Compiles win32.cs with the Add-Type the app runs, to an assembly the timed starts load instead.
+function compileHelper(outputPath: string): Promise<void> {
+  const quote = (value: string): string => `'${value.replace(/'/g, "''")}'`
+  // Progress records would otherwise reach stderr as CLIXML and hide a compile error.
+  const script = `$ProgressPreference = 'SilentlyContinue'; Add-Type -LiteralPath ${quote(CS_PATH)} -OutputAssembly ${quote(outputPath)} -OutputType Library`
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      { windowsHide: true, timeout: COMPILE_MS - 5_000 },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(`the key listener did not compile: ${error.message}; stdout ${stdout}; stderr ${stderr}`))
+        else resolve()
+      },
+    )
+  })
+}
 
 interface Helper {
   lines: string[]
@@ -20,8 +43,9 @@ interface Helper {
   closeAndExit(timeoutMs: number): Promise<number | null>
 }
 
-function startHelper(acceptSynthetic: boolean): Helper {
-  const invocation = keyListenerWin32Invocation(CS_PATH, acceptSynthetic)
+function startHelper(assemblyPath: string, acceptSynthetic: boolean): Helper {
+  // The app's own invocation; Add-Type -LiteralPath loads a compiled assembly as it compiles a source file.
+  const invocation = keyListenerWin32Invocation(assemblyPath, acceptSynthetic)
   const child = spawn(invocation.executable, [...invocation.args], {
     shell: false,
     windowsHide: true,
@@ -81,9 +105,23 @@ function startHelper(acceptSynthetic: boolean): Helper {
 }
 
 describe.runIf(process.platform === 'win32')('Windows key listener helper', () => {
+  let directory = ''
+  let assemblyPath = ''
+
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'sotto-key-listener-'))
+    assemblyPath = join(directory, 'SottoKeyListener.dll')
+    await compileHelper(assemblyPath)
+  }, COMPILE_MS)
+
+  afterAll(async () => {
+    // A killed helper can hold the assembly a moment longer; a leftover temp folder is harmless.
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => undefined)
+  })
+
   // Shutdown has its own 5 s deadline; leave another 5 s for protocol checks and scheduling.
   it('compiles, installs the hook, prints only protocol lines and exits when stdin closes', async () => {
-    const helper = startHelper(false)
+    const helper = startHelper(assemblyPath, false)
 
     await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
@@ -94,7 +132,7 @@ describe.runIf(process.platform === 'win32')('Windows key listener helper', () =
   }, HELPER_START_MS + 10_000)
 
   it.runIf(LIVE)('reports a watched F13 sent with SendInput when synthetic input is accepted', async () => {
-    const helper = startHelper(true)
+    const helper = startHelper(assemblyPath, true)
     await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
     // Give the writer thread time to apply `keys` before the injected key arrives.
