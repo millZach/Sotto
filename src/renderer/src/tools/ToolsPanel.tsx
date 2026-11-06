@@ -39,6 +39,7 @@ import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
 import { useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
+import { readPullRequestBase } from './ChangesBasePicker'
 import { PullRequestSurface } from './PullRequestSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
@@ -478,7 +479,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
-    onReviewChanges={() => { store.showBranchChanges(changesFor, thread.id) }}
+    // Changes compares against the pull request's own target branch, by the ref that stands for it in this working copy;
+    // one it does not have is asked for by name, and Changes says it is not a branch here rather than compare another.
+    onReviewChanges={baseBranch => { void readPullRequestBase(window.sotto?.agents?.gitRefs, thread.id, baseBranch).then(base => store.showBranchChanges(changesFor, thread.id, base ?? baseBranch)) }}
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.

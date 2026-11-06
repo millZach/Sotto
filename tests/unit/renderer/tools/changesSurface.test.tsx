@@ -11,7 +11,7 @@ import type { AgentState } from '../../../../src/shared/agents'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
-import { baseChoices } from '../../../../src/renderer/src/tools/ChangesBasePicker'
+import { baseChoices, readPullRequestBase } from '../../../../src/renderer/src/tools/ChangesBasePicker'
 import { inWorkingCopy } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { changesChord } from '../../../../src/renderer/src/tools/changesShortcut'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -616,6 +616,30 @@ describe('diff rows and base choices', () => {
       { id: 'only', label: 'only', local: null, remote: 'origin/only' },
       { id: 'fork/main', label: 'fork/main', local: null, remote: 'fork/main' },
     ])
+  })
+
+  it('stands a pull request’s target branch for its origin copy, else its local branch, else nothing', async () => {
+    const ref = (name: string, remote?: string): GitRef => ({ name, ...(remote ? { remote } : {}), current: false, isDefault: false, worktreePath: null })
+    const read = vi.fn(async () => ({ refs: [ref('main'), ref('release'), ref('origin/main', 'origin'), ref('origin/release', 'origin'), ref('release-notes'), ref('origin/hotfix', 'origin')], isRepository: true, hasRemote: true, nextCursor: null, total: 6 }))
+    // A pull request into release compares against origin/release, not the branch Sotto would work out on its own.
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBe('origin/release')
+    expect(read).toHaveBeenCalledWith({ threadId: 'thread-1', query: 'release', includeMatchingRemoteRefs: true, limit: 200 })
+    await expect(readPullRequestBase(read, 'thread-1', 'hotfix')).resolves.toBe('origin/hotfix')
+    read.mockResolvedValueOnce({ refs: [ref('release')], isRepository: true, hasRemote: false, nextCursor: null, total: 1 })
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBe('release')
+    await expect(readPullRequestBase(read, 'thread-1', 'gone')).resolves.toBeNull()
+    read.mockRejectedValueOnce(new Error('offline'))
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBeNull()
+    await expect(readPullRequestBase(undefined, 'thread-1', 'release')).resolves.toBeNull()
+  })
+
+  it('opens Review in Changes on the branch against the base it is given', () => {
+    const git = fakeGit()
+    const store = new ToolsPanelStore()
+    store.showBranchChanges(git.bridge, 'thread-1', 'origin/release')
+    expect(store.changes.thread('thread-1')?.scope).toEqual({ kind: 'branch', base: 'origin/release' })
+    store.showBranchChanges(git.bridge, 'thread-2')
+    expect(store.changes.thread('thread-2')?.scope).toEqual({ kind: 'branch', base: null })
   })
 
   it('keeps watching the active working copy when an earlier activation finishes late', async () => {

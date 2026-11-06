@@ -71,7 +71,8 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
 export function PullRequestSurface({ thread, command, onStatus, babysit, onReviewChanges }: {
   readonly thread: AgentThread; readonly command: Command | undefined; readonly onStatus: (message: string) => void
   /** Opens Changes on this thread's branch against its base. Absent where the window has no Changes to open. */
-  readonly onReviewChanges?: (() => void) | undefined
+  /** Opens Changes on the branch against the pull request's own target branch, the one it would merge into. */
+  readonly onReviewChanges?: ((baseBranch: string) => void) | undefined
   /** The thread's host babysits pull requests, and the name its agent goes by. Absent where it cannot. */
   readonly babysit?: { readonly agent: string } | undefined
 }): ReactNode {
@@ -380,7 +381,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
           aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} whole /> : undefined}
           peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} all={detail.changedFiles} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
-          <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
+          <PullRequestFiles detail={detail} onReview={detail.branch && onReviewChanges ? () => onReviewChanges(detail.baseBranch) : undefined} />
         </Fold> : null}
       </div>
       {/* Other pull requests, the thread's and the repository's: lists that lead elsewhere, on a card of their own under this one's. */}

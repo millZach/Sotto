@@ -864,7 +864,8 @@ describe('the drill-in under the merge checklist', () => {
     fireEvent.click(within(list).getAllByRole('button')[0]!)
     await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/o\/r\/pull\/74\/files#diff-[0-9a-f]{64}$/u)))
     fireEvent.click(screen.getByRole('button', { name: 'Review in Changes' }))
-    expect(onReview).toHaveBeenCalledOnce()
+    // Against the branch the pull request merges into.
+    expect(onReview).toHaveBeenCalledExactlyOnceWith('main')
   })
   it('lists the changed files under their folders, the folder that changed most first, each folder with its lines', async () => {
     mount({ detail: detail({ changedFiles: 4, files: [{ path: 'README.md', additions: 1, deletions: 0 }, { path: 'src/a.ts', additions: 2, deletions: 1 }, { path: 'tests/a.test.ts', additions: 30, deletions: 0 }, { path: 'src/b.ts', additions: 5, deletions: 0 }] }) })

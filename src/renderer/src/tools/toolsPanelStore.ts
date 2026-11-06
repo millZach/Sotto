@@ -140,10 +140,13 @@ export class ToolsPanelStore {
    * Opens the Pull request surface for a thread, as the pull request badge under its composer asks. A panel
    * pinned to another thread is pinned to this one instead, since the press names this thread's pull request.
    */
-  /** Opens Changes on a thread's branch against its base, as Review in Changes asks from the Pull request surface. */
-  showBranchChanges(bridge: GitChangesBridge | undefined, threadId: string): void {
+  /**
+   * Opens Changes on a thread's branch against `base`, as Review in Changes asks from the Pull request surface with the
+   * ref that stands for the pull request's target branch; null is the base Sotto works out.
+   */
+  showBranchChanges(bridge: GitChangesBridge | undefined, threadId: string, base: string | null = null): void {
     this.changes.activate(bridge, threadId)
-    this.changes.setScope(bridge, threadId, { kind: 'branch', base: null })
+    this.changes.setScope(bridge, threadId, { kind: 'branch', base })
     this.update({ open: true, surface: 'changes' })
   }
   showPullRequest(threadId: string): void {
