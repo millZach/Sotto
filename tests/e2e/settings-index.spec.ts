@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { clickOrProbeHang } from './support/hangProbe'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
 const categories = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
@@ -180,7 +181,8 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await mkdir(join(projectsDirectory, 'inner'), { recursive: true })
     await page.evaluate(async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, join(projectsDirectory, 'inner'))
     const projects = page.getByRole('button', { name: 'Change the default projects directory on this computer', exact: true })
-    await projects.click()
+    // This click has hung on Windows CI with nothing saved to say why (#2051); a timeout records main, the renderer and the desktop.
+    await clickOrProbeHang(launched, projects)
     const browser = page.getByRole('dialog', { name: /^Default projects directory on this computer/ })
     await expect(browser.getByRole('button', { name: 'inner', exact: true })).toHaveAttribute('aria-current', 'location')
     await page.keyboard.press('Backspace')
