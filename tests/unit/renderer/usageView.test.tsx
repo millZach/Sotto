@@ -102,6 +102,19 @@ describe('Usage page', () => {
     const chart = screen.getByRole('group', { name: /^Prompts per day/u })
     expect([...chart.querySelectorAll('.usage-chart__label')].map(label => label.textContent).length).toBeGreaterThan(0)
   })
+  it('says the figure of the day being read over its bar when more than a few days have work', async () => {
+    const host = localHost()
+    const days = ['2026-10-02', '2026-10-04', '2026-10-06', '2026-10-08', '2026-10-09', '2026-10-11', '2026-10-13']
+    host.activity = { ...host.activity!, daily: days.map((day, at) => ({ ...activityRow(5 + at, 0, 0, tokens(1_000_000, 10_000, 800_000, 10_000)), day })) }
+    const { user } = await open(dashboard(host))
+    const chart = screen.getByRole('group', { name: /^Prompts per day/u })
+    expect(chart.querySelectorAll('.usage-chart__label')).toHaveLength(0)
+    chart.focus()
+    await user.keyboard('{End}{ArrowLeft}')
+    expect([...chart.querySelectorAll('.usage-chart__column[data-on] .usage-chart__label')].map(label => label.textContent)).toEqual(['11'])
+    await user.keyboard('{Escape}')
+    expect(chart.querySelectorAll('.usage-chart__label')).toHaveLength(0)
+  })
   it('draws a line of prompts per day in the index only when more than a few days have work', async () => {
     await open()
     expect(measure(/^Prompts /u).querySelector('.usage-spark')).toBeNull()

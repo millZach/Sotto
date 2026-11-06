@@ -129,7 +129,8 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
       const parts = plan.series.filter(item => (item.values[at] ?? 0) > 0)
       // A day with nothing keeps a one-pixel mark on the baseline, as the chart always had; a quiet stretch draws none.
       const shown = parts.length > 0 ? parts : quiet ? [] : plan.series.slice(0, 1)
-      const total = labelled ? dayTotal(at) : 0
+      // The day being read says its figure over its bar too, so a pointer or the keys read the chart where it is drawn.
+      const total = labelled || day === selected ? dayTotal(at) : 0
       return <span key={day} className="usage-chart__column" data-on={day === selected || undefined} style={{ '--usage-i': at } as Style}>
         {shown.map((item, place) => <i key={item.key} className="usage-chart__bar" data-tone={item.tone} data-top={place === shown.length - 1 || undefined}
           style={{ '--usage-h': height(item.values[at] ?? 0) } as Style} />)}
@@ -159,7 +160,9 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
         {first !== undefined ? <path className="usage-chart__area" data-tone={first.tone} d={`${path(first.values)} L${(count - 0.5).toFixed(2)},100 L0.50,100 Z`} /> : null}
         {plan.series.map(item => <path key={item.key} className="usage-chart__line" data-tone={item.tone} d={path(item.values)} vectorEffect="non-scaling-stroke" />)}
       </svg>
-      {index >= 0 ? <><span className="usage-chart__cross" style={{ left: across(index, count) }} />{plan.series.map(item => dot(item, index, true))}</>
+      {index >= 0 ? <><span className="usage-chart__cross" style={{ left: across(index, count) }} />{plan.series.map(item => dot(item, index, true))}
+        {dayTotal(index) > 0 ? <b className="usage-chart__label usage-chart__label--at" aria-hidden="true"
+          style={{ left: across(index, count), bottom: `${(Math.max(...plan.series.map(item => Math.max(0, item.values[index] ?? 0))) / top * 100).toFixed(3)}%` }}>{scale(dayTotal(index))}</b> : null}</>
         : count <= 7 ? plan.series.flatMap(item => days.map((_, at) => dot(item, at, false))) : null}
     </div>
   }

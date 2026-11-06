@@ -203,6 +203,8 @@
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__bar { opacity: .28; }
 .usage-chart__label { flex: none; align-self: center; margin-bottom: 5px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; transition: opacity .15s; }
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__label { opacity: .28; }
+/* On lines the day being read says its figure, the day's total, over its highest dot. */
+.usage-chart__label--at { position: absolute; margin: 0 0 12px; transform: translateX(-50%); }
 /* A sparse range folds each long run of empty days into the room of two, marked as a break in the baseline and
    counted over it, so the days with work take the width. A day there that is being read shows as a faint band. */
 .usage-chart__columns[data-folded] > .usage-chart__column { max-width: none; align-items: center; }

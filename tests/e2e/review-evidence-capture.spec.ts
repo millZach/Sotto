@@ -1532,6 +1532,16 @@ async function captureConnectedUsage(out: string): Promise<void> {
     await shoot('usage-room-clay-dark-1600.png', 1600, 1000, 'dark', `${shows} Its Room left view on the Clay theme.`)
     await page.evaluate(async theme => { await window.sotto!.updateSettings({ darkTheme: theme }) }, DEFAULT_THEME_ID)
     await measures.getByRole('tab', { name: /^Prompts /u }).click()
+    // The Per day chart read by the pointer: on its busiest day, which says its figure over its bar.
+    for (const mode of MODES) {
+      await harness.appearance(mode); await harness.resize(1600, 1000)
+      const columns = page.getByRole('group', { name: /^Prompts per day/u }).locator('.usage-chart__column')
+      const busiest = await columns.evaluateAll(elements => elements.reduce((best, element, at, all) => element.getBoundingClientRect().height >= 0
+        && (element.querySelector('.usage-chart__bar')?.getBoundingClientRect().height ?? 0) > (all[best]!.querySelector('.usage-chart__bar')?.getBoundingClientRect().height ?? 0) ? at : best, 0))
+      await columns.nth(busiest).hover()
+      await shoot(`usage-day-${mode}-1600.png`, 1600, 1000, mode, `${shows} The pointer on the Per day chart's busiest day.`)
+    }
+    await page.mouse.move(0, 0)
     // At the minimum the stage sits under the index: the same page scrolled to it.
     await page.locator('.usage-stage').evaluate(element => {
       const scroll = element.closest<HTMLElement>('.usage-scroll')!
