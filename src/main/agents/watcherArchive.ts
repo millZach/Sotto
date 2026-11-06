@@ -389,6 +389,8 @@ export class WatcherArchive {
   }
   /** Settles once whatever was asked of the archive before it has settled. */
   settled(): Promise<void> { return this.tail.then(() => undefined, () => undefined) }
+  /** Whether the index is read, so the lookups below answer for everything archived. */
+  get indexRead(): boolean { return this.loaded }
   /** Settles once the index is read, so the lookups below answer for everything archived. */
   ready(): Promise<void> { return this.loaded ? Promise.resolve() : this.turn(async () => { if (!this.loaded) await this.load() }) }
   /** Whether this request was archived. */

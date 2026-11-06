@@ -111,6 +111,10 @@ it('answers reads, retries and new calls on archived work as it did before the w
     Object.assign(f.control, { watcherArchive: starting })
     const reading = call('read_operation', { operationId: laterOperation })
     await new Promise(resolve => setTimeout(resolve, 50))
+    // A pass over the threads then waits for the index too, rather than take Watcher's archived start at the head of the
+    // thread it started for the user's turn and pause its watch (#1783).
+    service.observe(f.control.watcherSnapshot(), new Set())
+    expect(f.control.watcherRecordView().watches?.find(item => item.target.threadId === started.target.threadId)).toMatchObject({ pausedByUserMessageId: null })
     release()
     expect(await reading).toMatchObject({ status: 'ok', limits: { promptCount: 3 } })
     Object.assign(f.control, { watcherArchive: archived })
