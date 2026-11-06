@@ -895,10 +895,6 @@ msgstr "{title} no longer waits on you."
 msgid "{topShare} of prompts"
 msgstr "{topShare} of prompts"
 
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "{total, plural, one {Filter # thread} other {Filter # threads}}"
-msgstr "{total, plural, one {Filter # thread} other {Filter # threads}}"
-
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
 msgstr "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
@@ -990,10 +986,6 @@ msgstr "{words, plural, one {{shown} word} other {{shown} words}}"
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "{words} · {wpm} wpm"
 msgstr "{words} · {wpm} wpm"
-
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "{working, plural, =0 {None working} other {# working}}"
-msgstr "{working, plural, =0 {None working} other {# working}}"
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{working, plural, one {# thread on {name} is working. It updates once they finish.} other {# threads on {name} are working. It updates once they finish.}}"

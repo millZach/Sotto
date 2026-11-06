@@ -895,10 +895,6 @@ msgstr ""
 msgid "{topShare} of prompts"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "{total, plural, one {Filter # thread} other {Filter # threads}}"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
 msgstr ""
@@ -989,10 +985,6 @@ msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "{words} · {wpm} wpm"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "{working, plural, =0 {None working} other {# working}}"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
