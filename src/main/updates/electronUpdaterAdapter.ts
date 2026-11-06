@@ -22,7 +22,7 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
  * - Stable keeps `allowPrerelease = false` and the packaged GitHub feed.
  *   Owl selects only the owl tag channel and validates its manifest.
  *
- * - No install ID. See `keepInstallIdHome`.
+ * - No install ID. See `withoutInstallId`.
  *
  * The logger is silenced because no update failure is worth a console line the
  * user cannot act on; the service turns each one into a phase instead.
@@ -32,7 +32,7 @@ export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdap
   updater.autoInstallOnAppQuit = false
   updater.allowPrerelease = false
   updater.logger = null
-  const leftoverIdRemoved = keepInstallIdHome(updater)
+  const leftoverIdRemoved = withoutInstallId(updater)
   if (getReleaseTrack(updater.currentVersion.version) === 'owl') {
     updater.allowPrerelease = true
     updater.channel = 'owl'
@@ -105,7 +105,7 @@ type StagingInternals = {
  * drives the real updater and checks the headers it sends and that no file
  * appears, so an electron-updater update that moves them goes red there.
  */
-function keepInstallIdHome(updater: AppUpdater): Promise<void> {
+function withoutInstallId(updater: AppUpdater): Promise<void> {
   const internals = updater as unknown as StagingInternals
   internals.stagingUserIdPromise = { value: Promise.resolve('00000000-0000-0000-0000-000000000000') }
   updater.isUserWithinRollout = () => true
