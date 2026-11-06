@@ -3346,6 +3346,11 @@ msgstr "Show the browser for {title}: {actionText}"
 msgid "Show the cloud iPhone in Tools"
 msgstr "Show the cloud iPhone in Tools"
 
+#. Tooltip on the mark at the edge of Changes where a line of code runs on past the panel; a press scrolls to its end.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Show the end of this line"
+msgstr "Show the end of this line"
+
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Show the test iPhone in Tools"
 msgstr "Show the test iPhone in Tools"
