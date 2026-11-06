@@ -13,8 +13,8 @@ import type { ThreadHostEvent } from '../../src/main/agents/host'
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 afterEach(async () => { for (const f of fixtures.splice(0).reverse()) await f.cleanup() })
 
-async function fixture() {
-  const f = await codexFixture(); fixtures.push(f)
+async function fixture(session: Parameters<typeof codexFixture>[3] = {}) {
+  const f = await codexFixture(undefined, false, 2000, session); fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   const create = async (title: string): Promise<string> => {
@@ -74,6 +74,78 @@ describe('Codex app-server per thread session', () => {
     await f.driver.completeTurn(lost, 'Carried on')
     await expect.poll(() => replied(lost, 'Carried on')).toBe(true)
     expect((await f.host.snapshot()).connected).toBe(true)
+  })
+
+  it('keeps a thread’s app-server, turn and question when a whole read carries more picture bytes than a line may hold', async () => {
+    // A Codex thread that had made 106 paintings answered one whole read with a 341 MB line, nearly all of it the
+    // paintings' bytes. Sotto stopped its app-server for that line, failing the turn and its open question, and every
+    // later send, stop and read asked for the same line again. Here a line may hold 64 KiB and the pictures make 128.
+    const { f, create, send, thread, replied } = await fixture({ maxFrameBytes: 64 * 1024 })
+    const painting = await create('Painting')
+    await send(painting, 'Paint the frames')
+    await expect.poll(async () => (await thread(painting)).status).toBe('running')
+    const server = await f.serverOf(painting)
+    for (let index = 0; index < 4; index++) {
+      const drawn = await f.action(painting, { type: 'picture', bytes: 24 * 1024, text: `Frame ${index}` })
+      await expect.poll(() => f.acted(drawn)).toBe(true)
+    }
+    await f.driver.raiseQuestion(painting, 'Which take?')
+    await expect.poll(async () => (await thread(painting)).requests.length).toBe(1)
+
+    await expect(f.adapter.refreshThread(painting)).resolves.toBeDefined()
+    const read = await thread(painting)
+    expect(read.status).toBe('running')
+    expect(read.requests).toHaveLength(1)
+    expect(JSON.stringify(read.activities)).not.toContain('Codex stopped before this reply finished')
+    expect(await f.serverOf(painting)).toBe(server)
+
+    // The question is answered on the app-server that asked it, the turn finishes, and the thread takes the next send.
+    expect(await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: painting, requestId: read.requests[0]!.id, answer: 'Blue' })).toEqual({ accepted: true })
+    await f.driver.completeTurn(painting, 'Painted')
+    await expect.poll(async () => (await thread(painting)).status).toBe('idle')
+    expect(await send(painting, 'Now the full video')).toEqual({ accepted: true })
+    expect(await f.serverOf(painting)).toBe(server)
+    await f.driver.completeTurn(painting, 'Started the full video')
+    await expect.poll(() => replied(painting, 'Started the full video')).toBe(true)
+  })
+
+  it('stops a thread whose app-server does not answer the Stop, and starts it again for the next send', async () => {
+    const { f, create, send, thread, replied } = await fixture()
+    const stuck = await create('Stuck')
+    await send(stuck, 'Long task')
+    await expect.poll(async () => (await thread(stuck)).status).toBe('running')
+    const server = await f.serverOf(stuck)
+
+    // The app-server takes the Stop and does nothing with it, as a hung one would.
+    await f.script({ hangOn: 'turn/interrupt' })
+    expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: stuck })).toEqual({ accepted: true })
+    const stopped = await thread(stuck)
+    expect(stopped.status).toBe('idle')
+    expect(stopped.lastTurn?.status).toBe('interrupted')
+    expect(f.adapter.resumedThreads()).not.toContain(stuck)
+
+    await f.script({})
+    expect(await send(stuck, 'Carry on')).toEqual({ accepted: true })
+    expect(await f.serverOf(stuck)).not.toBe(server)
+    await f.driver.completeTurn(stuck, 'Carried on')
+    await expect.poll(() => replied(stuck, 'Carried on')).toBe(true)
+  })
+
+  it('starts a thread on a new app-server when the one it was resuming on hangs', async () => {
+    const { f, create, send, replied } = await fixture()
+    const stuck = await create('Stuck')
+    await f.script({ reply: 'First reply' })
+    await send(stuck, 'First')
+    await expect.poll(() => replied(stuck, 'First reply')).toBe(true)
+    // Its app-server goes, so the next action resumes it on a new one, and that one hangs on the resume.
+    await f.action(stuck, { type: 'exit' })
+    await expect.poll(() => f.adapter.resumedThreads().includes(stuck)).toBe(false)
+    await f.script({ hangOn: 'thread/resume' })
+    expect(await send(stuck, 'Second').then(result => result, (error: unknown) => error)).not.toEqual({ accepted: true })
+
+    await f.script({ reply: 'Third reply' })
+    expect(await send(stuck, 'Third')).toEqual({ accepted: true })
+    await expect.poll(() => replied(stuck, 'Third reply')).toBe(true)
   })
 
   it('finishes creating a thread whose app-server a client update made outdated halfway', async () => {
