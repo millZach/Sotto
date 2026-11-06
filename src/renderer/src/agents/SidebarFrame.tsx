@@ -77,7 +77,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
  * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
- * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
+ * page draws. The sidebar foot and Watcher's footer both draw this one; the foot draws it `iconOnly`, its
  * lit tile showing no name, so every tile there carries its name as a tooltip.
  */
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
@@ -120,7 +120,7 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 
 /**
  * The way off the page as one row of icons: the room switch, a hairline, the other pages as icon links, then the update
- * control. The sidebar's foot draws it, and so does Watcher's header, which has no sidebar (ADR-0152).
+ * control. The sidebar's foot draws it, and so does Watcher's footer, which has no sidebar (ADR-0152).
  */
 export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl }: {
   readonly className: string
@@ -174,6 +174,28 @@ export function useCollapseToggleFocus(collapsed: boolean): React.RefObject<HTML
     previous.current = collapsed
   }, [collapsed])
   return toggle
+}
+
+/** The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. */
+export function SidebarRail({ platform, onExpand, toggle, children, toast, foot }: {
+  readonly platform: SottoPlatform | undefined
+  readonly onExpand: () => void
+  readonly toggle?: React.RefObject<HTMLButtonElement | null>
+  readonly children?: ReactNode
+  readonly toast?: ReactNode
+  readonly foot?: ReactNode
+}): ReactNode {
+  const { t } = useLingui()
+  const railOn = useOwlFeature('sidebar-rail')
+  const watcherOn = useWatcherEnabled()
+  return <div className="thread-nav__rail">
+    {platform === 'darwin' ? null : <SottoMark className="thread-nav__glyph" />}
+    <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+    {railOn && watcherOn ? <RailWatcher /> : null}
+    <div className="thread-nav__rail-list">{children}</div>
+    {toast}
+    {foot ?? <SidebarFoot />}
+  </div>
 }
 
 /** The handle on a sidebar's right edge: drag it, or focus it and use the arrow keys. Double-click resets the width. */
@@ -253,8 +275,6 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
-  const railOn = useOwlFeature('sidebar-rail')
-  const watcherOn = useWatcherEnabled()
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
@@ -280,14 +300,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {size.collapsed ? null : toast}
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
-    {size.collapsed ? <div className="thread-nav__rail">
-      {mac ? null : <SottoMark className="thread-nav__glyph" />}
-      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
-      {railOn && watcherOn ? <RailWatcher /> : null}
-      <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
-      {toast}
-      {foot ?? <SidebarFoot />}
-    </div> : <SidebarResize size={size} onResizing={setResizing} />}
+    {size.collapsed ? <SidebarRail platform={platform ?? app?.platform} toggle={toggle} onExpand={() => size.collapse(false)} toast={toast} foot={foot}>
+      {collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}
+    </SidebarRail> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }
 

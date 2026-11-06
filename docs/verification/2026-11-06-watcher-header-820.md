@@ -1,5 +1,7 @@
 # Watcher's header at the minimum window
 
+This records PR #2249's header before navigation moved to the footer. PR #2253 retains its whole-title, no-wrap and Teams clipping protections, but replaces the two-row header and navigation-driven label thresholds. See [the bottom-navigation verification](2026-11-05-watcher-bottom-navigation.md) for the resulting layout and checks.
+
 The title could shrink to its `3em` floor and show an ellipsis. The narrow grid also placed the newer Teams tabs into columns that had been sized for the older header. The old breakpoints underestimated the room switch, page links and update control. At 400 pixels this squeezed All threads on macOS and put Windows navigation over Stop all and outside the pane.
 
 The replacement uses three container queries. Stop all loses its words and gaps tighten at 1000 pixels. Below 800, All threads keeps its icon and count; the title stays unless the Watcher tab already supplies the name. Below 650, navigation and Stop all take a second row. The heading remains available to assistive technology. Names, handlers, keyboard order and drag exclusions are unchanged.

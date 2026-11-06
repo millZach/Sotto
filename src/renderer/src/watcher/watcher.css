@@ -69,8 +69,14 @@
 .thread-options__pinned > svg { flex: none; }
 
 /* ---------- The room ---------- */
-/* One column, one row: the way off the page is in the header, so the composer sits at the window's floor. */
-.threads-view.watcher-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+/* The shared sidebar foot owns the bottom row, keeping the scene, composer and beside pane above its controls. */
+.threads-view.watcher-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+/* Match the sidebar's 1px right border when positioning the shared update control. */
+.watcher-foot { --thread-nav-inset: 10px; grid-row: 2; padding-right: 1px; }
+/* A collapsed sidebar keeps the shared rail beside the room, leaving both panes clear of its vertical foot. */
+.threads-view.watcher-room[data-sidebar-collapsed] { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.watcher-room[data-sidebar-collapsed] > .watcher-foot { grid-column: 1; grid-row: 1; padding-right: 0; }
+.watcher-room[data-sidebar-collapsed] > .thread-workspace { grid-column: 2; }
 /* The status words, which the needs-ink leans a fifth of the way toward the text colour: the warning and success hues
    are tuned against the canvas and can fall under 4.5:1 on a raised surface, and the lean raises contrast in either mode. */
 .watcher-room {
@@ -99,6 +105,8 @@
    after it, so they paint over it. */
 .watcher-room { --owl-sky-inset: 0px; }
 .watcher-room.threads-view--mac { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); }
+/* The collapsed rail already reserves the traffic lights' width. */
+.watcher-room.threads-view--mac[data-sidebar-collapsed] { --owl-sky-inset: 0px; }
 .watcher-room.threads-view--mac .watcher-room__sky { background: var(--tt-owl-room-night); }
 .watcher-room__sky { position: absolute; top: 0; left: 0; width: calc(520px + var(--owl-sky-inset)); max-width: 100%; height: 104px; pointer-events: none;
   background: radial-gradient(130px 70px at calc(26px + var(--owl-sky-inset)) 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);
@@ -119,52 +127,16 @@
 .watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 /* On the button's own fill the muted count falls short of 4.5:1 in some themes, so it lifts with the label. */
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
-
-/* The header's far end uses the sidebar foot's room switch, page links and update control (threadsChrome.css). */
-.watcher-head { --foot-hover: color-mix(in srgb, var(--tt-text) 6%, transparent); --foot-lit: color-mix(in srgb, var(--tt-text) 12%, transparent); }
-/* The way off the page, after All threads: the sidebar foot's row, its controls 30px squares with an 8px radius on a 2px
-   gap, the lit room in a neutral tint of the text colour and a hover in a fainter one. */
-.watcher-head__way { display: inline-flex; flex: none; align-items: center; gap: 2px; margin-left: 4px; -webkit-app-region: no-drag; }
-.watcher-head .watcher-head__rooms { --room-tile: 30px; gap: 2px; }
-.watcher-head .watcher-head__rooms [role='tab'] { width: 30px; padding: 0; border-radius: var(--tt-radius-row); background: transparent; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-.watcher-head .watcher-head__rooms [role='tab']:hover:not([aria-selected='true']) { background: var(--foot-hover); }
-.watcher-head .watcher-head__rooms [role='tab'][aria-selected='true'] { gap: 0; padding: 0; background: var(--foot-lit); color: var(--tt-text); }
-.watcher-head__way .thread-nav__pages { gap: 2px; }
-.watcher-head__way .thread-nav__page { border-radius: var(--tt-radius-row); }
-.watcher-head__way .thread-nav__page:hover { background: var(--foot-hover); }
-.watcher-head__way .update-control { border-radius: var(--tt-radius-row); }
-.watcher-head__way .update-control:hover:not([aria-disabled='true']) { background: var(--foot-hover); }
-
-/* Keep labels whole. At a compact width Stop all loses its words before the title does; with Teams on,
-   the Watcher tab can carry the name. Wider headers keep their original spacing and labels. */
-@container thread-pane (width <= 1000px) {
+/* The navigation has its own footer, so only the room controls share the header. Keep words at full window
+   widths; in narrow panes the Watcher tab supplies the name and All threads keeps its icon and count. */
+@container thread-pane (width <= 650px) {
   .watcher-head > .thread-workspace__title { gap: 6px; }
-  .watcher-head .watcher-stop-all__text { display: none; }
-  .watcher-head .watcher-stop-all__button { padding: 0 7px; }
+  .watcher-stop-all__text { display: none; }
+  .watcher-stop-all__button { padding: 0 7px; }
 }
-/* All threads keeps its icon and count in a narrow pane. */
-@container thread-pane (width < 800px) {
+@container thread-pane (width < 600px) {
   .watcher-head__list-text { display: none; }
   .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-/* Beside a thread, navigation and Stop all move together to a second row, in the same keyboard order.
-   The first row keeps the title, or the Watcher and Teams tabs, and All threads' icon and count.
-   On macOS only that first row keeps the traffic lights' room; navigation starts at the pane's edge. */
-@container thread-pane (width < 650px) {
-  .threads-view .thread-pane .watcher-head {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 44px 30px;
-    column-gap: 6px; height: auto; padding: 0 12px 6px 14px;
-  }
-  .watcher-head > .thread-workspace__title { display: contents; }
-  .watcher-head > :is(.watcher-head__tile, .watcher-context) { grid-row: 1; grid-column: 1; margin-right: 0; }
-  .watcher-head :is(h1, .watcher-head__tabs) { grid-row: 1; grid-column: 2; justify-self: start; }
-  .watcher-head__list { grid-row: 1; grid-column: 3; gap: 4px; padding: 0 6px 0 7px; }
-  .watcher-head .watcher-head__way { grid-row: 2; grid-column: 1 / 3; justify-self: start; margin-left: 0; }
-  .watcher-head > .thread-workspace__actions { grid-row: 2; grid-column: 3; justify-self: end; }
-  .threads-view.threads-view--mac .thread-pane .watcher-head { padding-left: 14px; }
-  .threads-view--mac .watcher-head > :is(.watcher-head__tile, .watcher-context) { margin-left: var(--owl-sky-inset); }
-  /* Before Watcher starts, the title or tabs is the first visible item beside the lights. */
-  .threads-view--mac .watcher-head:not(:has(.watcher-head__tile)) :is(h1, .watcher-head__tabs) { margin-left: var(--owl-sky-inset); }
 }
 
 /* The Sotto Owl tile once Watcher runs (#1189, pick C): a button, with a thin bar under it filling toward the point
