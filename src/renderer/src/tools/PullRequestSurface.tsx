@@ -334,7 +334,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       <span className="pr-surface__lead">
         {chosen ? <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} onClick={() => show(null)}><ArrowLeft size={15} aria-hidden="true" /></button> : null}
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
-        <span className="pr-surface__number">#{detail.number}</span>
+        {/* The thread's own pull request: its number is already in the thread's header and on Merge, so the line names
+            the surface, as Changes' does. Another pull request, opened from a list, names itself by its number. */}
+        {chosen ? <span className="pr-surface__number">#{detail.number}</span> : <span className="pr-surface__number">{t`Pull request`}</span>}
         <span className="pr-surface__tag">{stateLabel(detail)}</span>
       </span>
       <div className="tools-chrome__actions">
@@ -377,7 +379,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           <PullRequestChecks url={detail.url} checks={detail.checks} />
         </Fold> : null}
         {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
-          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined}
+          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} whole /> : undefined}
           peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} all={detail.changedFiles} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
           <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
         </Fold> : null}

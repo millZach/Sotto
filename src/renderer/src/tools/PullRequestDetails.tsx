@@ -23,12 +23,17 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 
 /** One count of lines, "+2,114" or "−2,097", in the interface language's digits. */
-function LineCounts({ additions, deletions, quiet }: { readonly additions: number; readonly deletions: number; readonly quiet?: boolean }): ReactNode {
+function LineCounts({ additions, deletions, quiet, whole }: { readonly additions: number; readonly deletions: number; readonly quiet?: boolean; readonly whole?: boolean }): ReactNode {
   const { t } = useLingui()
   const added = shownLineCount(additions), removed = shownLineCount(deletions)
+  // Whole: the pull request's own totals, which GitHub counts with every whitespace change, where Changes leaves those
+  // out by default; the words say so, so the two figures side by side are not read as a mismatch.
+  const said = whole
+    ? t({ message: `${added} lines added, ${removed} removed, counting whitespace changes, as GitHub does.`, comment: 'The line totals of a pull request; Changes says its own leave whitespace changes out.' })
+    : t({ message: `${added} added, ${removed} removed`, comment: '{added} and {removed} are counts of lines in a pull request.' })
   // Quiet: a folder's sum over its files, in the muted text rather than the two status colours.
-  return <span className="pr-surface__counts" data-quiet={quiet || undefined}>
-    <span className="tt-visually-hidden">{t({ message: `${added} added, ${removed} removed`, comment: '{added} and {removed} are counts of lines in a pull request.' })}</span>
+  return <span className="pr-surface__counts" data-quiet={quiet || undefined} title={whole ? said : undefined}>
+    <span className="tt-visually-hidden">{said}</span>
     {/* A side with no lines says nothing, so what a file did reads at a glance: only added, only removed, or both. */}
     <span data-side="added" aria-hidden="true">{additions > 0 || deletions === 0 ? `+${added}` : ''}</span> <span data-side="removed" aria-hidden="true">{deletions > 0 ? `−${removed}` : ''}</span>
   </span>

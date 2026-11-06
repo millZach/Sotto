@@ -507,6 +507,9 @@ describe('the Pull request surface', () => {
     const { gitPullRequest } = mount({ thread: linked, detail: request => request.reference?.endsWith('/70')
       ? detail({ number: 70, url: 'https://github.com/o/r/pull/70', title: 'Older work', state: 'merged', linked: 'linked', branch: false }) : detail({ linked: 'created' }) })
     await opened()
+    // The thread's own pull request: its number is in the thread's header and on Merge, so the top line names the surface.
+    const strip = (): HTMLElement => document.querySelector<HTMLElement>('.pr-surface__top .pr-surface__lead')!
+    expect(strip()).toHaveTextContent(/^Pull request\s*Open$/u)
     const fold = screen.getByRole('button', { name: 'Linked pull requests 2' })
     expect(fold).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(fold)
@@ -515,6 +518,8 @@ describe('the Pull request surface', () => {
       'PR #74, Open: Make the greeting friendlier. Created from this thread', 'PR #70, Merged: Older work. Linked by you'])
     fireEvent.click(within(list).getByRole('button', { name: /^PR #70/u }))
     expect(await screen.findByRole('heading', { name: '#70 Older work' })).toBeInTheDocument()
+    // Another one names itself by its number.
+    expect(strip()).toHaveTextContent(/^#70\s*Merged$/u)
     expect(gitPullRequest).toHaveBeenLastCalledWith({ threadId: 'thread-1', reference: 'https://github.com/o/r/pull/70' })
     await waitFor(() => expect(screen.getByRole('heading', { name: '#70 Older work' })).toHaveFocus())
   })
@@ -865,6 +870,8 @@ describe('the drill-in under the merge checklist', () => {
     await opened()
     const fold = screen.getByRole('button', { name: /^Changed files 2/u })
     expect(fold).toHaveTextContent('+12')
+    // The totals are GitHub's, whitespace changes counted, and say so where Changes says its own leave those out.
+    expect(fold.querySelector('.pr-surface__counts')).toHaveAttribute('title', '12 lines added, 3 removed, counting whitespace changes, as GitHub does.')
     fireEvent.click(fold)
     const list = screen.getByRole('list', { name: 'Changed files' })
     expect(within(list).getAllByRole('button').map(row => row.getAttribute('aria-label'))).toEqual(['Open src/deep/b.ts on GitHub. 11 added, 2 removed', 'Open src/a.ts on GitHub. 1 added, 1 removed'])
