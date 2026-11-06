@@ -151,10 +151,11 @@ test('a running turn folds its steps under the glowing working words, opens them
       await theme(page, mode)
       await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
       await page.screenshot({ path: resolve(shots, `live-1280-${mode}.png`) })
-      // The light held mid-word, so the evidence shows how strongly it lights the letters.
+      // The light held mid-word, so the evidence shows how strongly it lights the letters. Two layers move as one: the lit
+      // copy, and the muted words fading out where it fades in.
       const held = await page.evaluate(() => document.getAnimations().filter(animation => (animation as CSSAnimation).animationName === 'thread-activity-glow')
         .map(animation => { animation.pause(); animation.currentTime = 1_550; return true }).length)
-      expect(held).toBe(1)
+      expect(held).toBe(2)
       await live.screenshot({ path: resolve(shots, `live-glow-held-${mode}.png`), scale: 'device' })
       await page.evaluate(() => { for (const animation of document.getAnimations()) if ((animation as CSSAnimation).animationName === 'thread-activity-glow') animation.play() })
     }
@@ -243,6 +244,8 @@ test('the shipped minimum width and reduced motion keep rows readable without si
     await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toBeVisible()
     await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'none')
     expect(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element, '::after').content)).toBe('none')
+    expect(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element, '::before').content)).toBe('none')
+    await expect(live.locator('.thread-activity-live__word')).not.toHaveCSS('color', 'rgba(0, 0, 0, 0)')
     await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     await page.screenshot({ path: resolve(shots, 'live-820-reduced-motion-light.png') })

@@ -208,14 +208,44 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
    keep their muted ink; a lit copy of them in the accent at its most vivid shows only inside the moving band, so the
    letters themselves light up at full strength on every theme rather than taking a tint, with no halo (Zach's pick,
    variant A of docs/prototypes/working-words-glow-strength-prototype.html). Under reduced motion the words hold still
-   and the dot stays, still. */
+   and the dot stays, still.
+   The band is shaped so that any one frame reads as light passing rather than some words picked out: about ten letters
+   wide whatever the line's length, rather than a share of it that lit several whole words at once on a long line, with
+   a short core at full strength and long eased edges, slanted, so letters brighten towards the middle and fade on both
+   sides; and the muted words fade out as the lit copy fades in, so lit letters keep the words' weight instead of
+   drawing twice, heavier, over them.
+   The mask is twice the words' width plus the band, so the band starts just before the first letter and ends just past
+   the last. */
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word { color: var(--tt-text-muted); }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word {
+    --glow-band: 10.5em;
+    --glow-04: color-mix(in srgb, black 4%, transparent); --glow-16: color-mix(in srgb, black 16%, transparent);
+    --glow-50: color-mix(in srgb, black 50%, transparent); --glow-84: color-mix(in srgb, black 84%, transparent);
+    --glow-96: color-mix(in srgb, black 96%, transparent);
+    --glow-lit: linear-gradient(110deg, transparent calc(50% - var(--glow-band) * .5), var(--glow-04) calc(50% - var(--glow-band) * .44),
+      var(--glow-16) calc(50% - var(--glow-band) * .35), var(--glow-50) calc(50% - var(--glow-band) * .26), var(--glow-84) calc(50% - var(--glow-band) * .17),
+      black calc(50% - var(--glow-band) * .08), black calc(50% + var(--glow-band) * .08), var(--glow-84) calc(50% + var(--glow-band) * .17),
+      var(--glow-50) calc(50% + var(--glow-band) * .26), var(--glow-16) calc(50% + var(--glow-band) * .35), var(--glow-04) calc(50% + var(--glow-band) * .44),
+      transparent calc(50% + var(--glow-band) * .5));
+    --glow-unlit: linear-gradient(110deg, black calc(50% - var(--glow-band) * .5), var(--glow-96) calc(50% - var(--glow-band) * .44),
+      var(--glow-84) calc(50% - var(--glow-band) * .35), var(--glow-50) calc(50% - var(--glow-band) * .26), var(--glow-16) calc(50% - var(--glow-band) * .17),
+      transparent calc(50% - var(--glow-band) * .08), transparent calc(50% + var(--glow-band) * .08), var(--glow-16) calc(50% + var(--glow-band) * .17),
+      var(--glow-50) calc(50% + var(--glow-band) * .26), var(--glow-84) calc(50% + var(--glow-band) * .35), var(--glow-96) calc(50% + var(--glow-band) * .44),
+      black calc(50% + var(--glow-band) * .5));
+    color: transparent;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::before,
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
-    content: attr(data-word); position: absolute; inset: 0; overflow: hidden; color: var(--tt-working-light); pointer-events: none; text-overflow: ellipsis; white-space: nowrap;
-    -webkit-mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
-    mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+    content: attr(data-word); position: absolute; inset: 0; overflow: hidden; pointer-events: none; text-overflow: ellipsis; white-space: nowrap;
     animation: thread-activity-glow 4.2s cubic-bezier(.45, 0, .55, 1) infinite;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::before {
+    color: var(--tt-text-muted);
+    -webkit-mask: var(--glow-unlit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat; mask: var(--glow-unlit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
+    color: var(--tt-working-light);
+    -webkit-mask: var(--glow-lit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat; mask: var(--glow-lit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat;
   }
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] > .thread-activity-live__line:has(.thread-activity-live__word) > .thread-activity__pulse { display: none; }
 }
