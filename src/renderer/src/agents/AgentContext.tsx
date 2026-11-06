@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro'
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
 import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../../../shared/threadLanes'
-import { wrapAgentBridge } from './agentStateCatalogs'
+import { threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
@@ -55,7 +55,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   watcherEnabledRef.current = watcherEnabled
   // A connection owns its command lane and draft durability knowledge. Neither page
   // navigation nor outstanding writes create a new store; a different bridge does.
-  const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
+  // `observed` counts the broadcasts that arrived; `newest` is the thread revision of the last broadcast or reply that landed, if it had one (#306).
+  const session = useMemo(() => ({ current: false, observed: 0, newest: undefined as number | undefined, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
   /**
    * Main publishes every thread's state but only the history of the threads this window says it is
    * looking at, so the window holds those histories and splices them back into each arriving shell.
@@ -264,7 +265,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // threads that render took 60-70 ms, once per saved pause).
           const urgent = request.type !== 'save-thread-draft'
           // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0140).
-          if (!PREVIEW_COMMANDS.has(request.type) && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
+          // Main numbers a reply and the broadcasts from one counter, so where both carry a number the reply counts when it
+          // is newer than the last broadcast or reply that landed. Main sends a command's own broadcast just before its
+          // reply, so a broadcast reaching the window while the command ran is the usual case, and dropping the reply then
+          // left the caller acting on state the window had not drawn (#306). A reply a newer broadcast passed is dropped,
+          // and that broadcast commits as the reply would have, so the window has drawn at least the command's effect when
+          // the caller reads it. Without a number, any broadcast during the command drops the reply, as before.
+          const revision = threadRevisionOf(next)
+          const current = revision !== undefined && session.newest !== undefined ? revision > session.newest : version === session.observed
+          if (!PREVIEW_COMMANDS.has(request.type)) {
+            commitPendingShell({ urgent })
+            if (current) { receiveState(next, { urgent }); if (revision !== undefined) session.newest = revision }
+          }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
       } catch (error) {
@@ -317,6 +329,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
+      session.newest = threadRevisionOf(next)
       if (!active) return
       if (detail.pendingShell !== null) commitPendingShell()
       if (!detail.channel || document.hidden) { receive(next); return }

@@ -82,7 +82,7 @@ held stands in, or the one the last `get()` listed, until the next broadcast. A 
 never sent that catalog, so main recorded none as sent to it and the next broadcast carries it in full; until
 then that host has no models, which is what the window already showed. Where the reply is committed against broadcasts is
 unchanged: `AgentContext` still drops a reply that a broadcast overtook. The catalog revision orders only
-catalogs. Issue #306 is open; if it gives the state its own revision, the receipt carries that revision too.
+catalogs. The November 5 amendment below orders replies against broadcasts by the thread revision instead.
 
 Two sentences of the Decision above no longer hold. The page's cache no longer "lives exactly as long as the
 subscription does": it lives as long as the page, and every `onState` listener and every command share it, so
@@ -436,3 +436,33 @@ shells the rest of the reply is the larger part: on forge it fell from 119 KB to
 the November 1 replay, from about 295 KB to about 279 KB (`docs/perf/2026-11-02-iphone-command-reply-threads.md`). That note
 also records what compressing phones' messages would save, which stays a later change as the November 1 amendment says.
 
+## November 5, 2026 amendment: a reply the window was broadcast ahead of still lands (#306)
+
+The router publishes a command's effect before it answers, and when no broadcast is waiting out its publish window that
+broadcast goes at once, so it reaches the window while the command is still out. `AgentContext` dropped any reply a
+broadcast arrived during, and the broadcast waited for its frame. A caller that read the state or the page after the
+command read what was there before it.
+
+**The main window's reply and its broadcasts are already numbered by one counter.** The October 30 amendment measures a
+reply's changed thread records with the same `ThreadRecordsBroadcast` as a broadcast's, and its `revision` comes from the
+same counter, advanced as each is encoded. Main builds a reply's shell and encodes it in the same task, with no timer
+between, and the broadcast a command sends opens a publish window that holds back any other until after the reply is
+encoded. So a reply numbered above a broadcast was built after that broadcast was sent and holds at least what it held. No new revision was needed,
+and nothing on the wire or in main changed.
+
+**The page reads that number and keeps the reply when it is the newest.** `wrapAgentBridge` notes the thread revision each
+state it puts back crossed under, beside the state rather than in it, so state sharing still finds an unchanged broadcast
+unchanged (`threadRevisionOf`). `AgentContext` keeps the revision of the last broadcast that arrived or reply that landed,
+and commits a reply when its revision is higher, after the held shell, as it commits any reply. A reply a
+newer broadcast passed is still dropped, and the held shell commits in its place as the reply would have, so the window
+has drawn at least the command's effect when the caller reads it. A reply or broadcast with no thread revision (a page with
+no subscription yet, a recovery read through `AGENT_GET`, a test bridge) is ordered as before: any broadcast during the
+command drops the reply.
+
+One order the number cannot see: the publisher's `flush()` (a thread detail that opens a message sends the held shell
+at once) can send a newer state between a reply's build and its encoding, which are a few microtasks apart. That reply
+is then numbered above a broadcast newer than it, and lands over it until the next broadcast, which the streaming message
+that set off the flush brings. A broadcast that arrives after a newer reply still commits over it, as before; the next
+broadcast corrects it. The
+catalog counter's extra revision for a reply encoded after a catalog change, described in the September 26 amendment, is
+unchanged.
