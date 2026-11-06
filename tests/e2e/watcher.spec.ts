@@ -2194,8 +2194,6 @@ test.describe("Watcher's room on the built app", () => {
     const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
       a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
     const round = (value: number) => Math.round(value * 10) / 10
-    // watcher.css: below this width the Watcher tab carries the name, when Teams is on.
-    const NAME_FROM = 600
     // All threads' label returns at this width, captured with three-digit counts.
     const CAPTURE_100 = 600
     const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
@@ -2249,11 +2247,13 @@ test.describe("Watcher's room on the built app", () => {
                 const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all, ${counts} counts`
                 expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
                 // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
-                // styles keep it (always without Teams, from NAME_FROM pixels with Teams).
+                // styles keep it: always without Teams, and never with Teams, whose lit Watcher tab names the room (the
+                // owner's pick of November 6, 2026).
                 const { name, ...always } = reading.present
-                // More Watcher actions went with the Threads in flight limit (#1183); the remaining controls stay present.
-                expect.soft(always, where).toEqual({ tile: true, list: true, stopAll })
-                expect.soft(name, `the name shown, ${where}`).toBe(!reading.hasTeams || reading.pane >= NAME_FROM)
+                // More Watcher actions went with the Threads in flight limit (#1183); the remaining controls stay present,
+                // Stop all too, unavailable while nothing of Watcher's runs (November 6, 2026).
+                expect.soft(always, where).toEqual({ tile: true, list: true, stopAll: true })
+                expect.soft(name, `the name shown, ${where}`).toBe(!reading.hasTeams)
                 for (const [index, part] of reading.parts.entries()) {
                   for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
                   expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
