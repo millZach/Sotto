@@ -55,6 +55,6 @@ public extension ThreadDetail {
         }
         if !delta.activityDeltas.isEmpty { activities.sort { $0.sequence < $1.sequence } }
         return ThreadDetail(threadId: threadId, revision: delta.revision, messages: messages,
-                            earlierAvailable: earlierAvailable, activities: activities)
+                            earlierAvailable: earlierAvailable, activities: activities, earlierSteps: earlierSteps)
     }
 }

@@ -48,6 +48,9 @@ import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, 
 import type { HeldProviders } from '../shared/heldProviders'
 import { delegationBriefSchema, delegationsReadSchema, stateWithoutDelegation, DELEGATIONS_CHANGED_MAX } from '../shared/delegation'
 import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
+import { deltaInStepWindow, detailInStepWindow, STEP_WINDOW_STEPS, stepWindowAfterDelta, stepWindowStart, type StepWindowCut, type StepWindowStart } from '../shared/stepWindow'
+/** The most times one press of Show earlier messages on a phone widens a thread's own window, twenty turns each (ADR-0194). */
+const EARLIER_STEP_WIDENINGS = 25
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 import type { HostBranchMoves } from './branchMoves'
@@ -147,7 +150,12 @@ interface Peer { productEvents?: { answer: ProductEventPermission | null } | und
    */
   settledOnRequest?: boolean; listed?: Set<string>
   /** Whether its hello accepted `usable-models`: its catalog leaves out models that are not ready and nothing names. */
-  usableModels?: boolean }
+  usableModels?: boolean
+  /**
+   * With `step-window` (ADR-0194), where each observed thread's window starts for this client, as cut for the last whole it
+   * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
+   */
+  stepWindows?: Map<string, StepWindowCut> | undefined }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -800,6 +808,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     peer.observed = new Set(threadIds.filter(id => !hiddenThread(peer, id)))
     for (const id of peer.held.keys()) if (!peer.observed.has(id)) peer.held.delete(id)
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
+    for (const id of peer.stepWindows?.keys() ?? []) if (!peer.observed.has(id)) peer.stepWindows!.delete(id)
     for (const id of backlogs.get(peer)?.keys() ?? []) if (!peer.observed.has(id)) backlogs.get(peer)!.delete(id)
   }
   /**
@@ -825,9 +834,25 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return peer.unknownProviders.size ? detailWithoutProviders(summary, peer.unknownProviders) : summary
   }
+  /**
+   * A whole detail for this client, from where its step window on the thread starts (ADR-0194): where the last whole it was
+   * sent started while that message is still there, or, the first time, `STEP_WINDOW_STEPS` steps back; `from` moves it.
+   */
+  const windowedFor = (peer: Peer, threadId: string, detail: AgentThreadDetail | null, moved?: StepWindowStart | null): AgentThreadDetail | null => {
+    const sent = forPeer(peer, detail)
+    if (!peer.stepWindows || sent === null) return sent
+    const held = peer.stepWindows.get(threadId)
+    // A window that held no step yet is cut afresh: a stored thread's steps can come in a whole after its messages, and
+    // the phone has drawn none of them. One whose steps came in deltas is never cut from above.
+    const keeps = held && (held.start === null ? held.steps > 0 : sent.messages.some(message => message.id === held.start!.from))
+    const start = moved !== undefined ? moved : keeps ? held.start : stepWindowStart(sent, STEP_WINDOW_STEPS)
+    const { detail: windowed, cut } = detailInStepWindow(sent, start)
+    peer.stepWindows.set(threadId, cut)
+    return windowed
+  }
   const sendWhole = (peer: Peer, threadId: string, detail: AgentThreadDetail | null): void => {
     peer.opening.delete(threadId)
-    if (push(peer, { v: 1, event: 'detail', threadId, detail: forPeer(peer, detail) }) && detail) peer.held.set(threadId, detail.revision)
+    if (push(peer, { v: 1, event: 'detail', threadId, detail: windowedFor(peer, threadId, detail) }) && detail) peer.held.set(threadId, detail.revision)
     else peer.held.delete(threadId)
   }
   const detail = (peer: Peer, threadId: string): void => { sendWhole(peer, threadId, service.threadDetail(threadId)) }
@@ -927,7 +952,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const held = peer.held.get(threadId)
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
     if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
-    const delta = made.delta(peer)
+    const cut = peer.stepWindows?.get(threadId)
+    const delta = cut ? deltaInStepWindow(made.delta(peer), cut) : made.delta(peer)
+    if (cut) { const grown = stepWindowAfterDelta(cut, delta); if (grown !== cut) peer.stepWindows!.set(threadId, grown) }
     if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.unknownProviders.size ? deltaWithoutProviders(delta, peer.unknownProviders) : delta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
     else peer.held.delete(threadId)
   }
@@ -1393,6 +1420,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
         peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
+        // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
+        peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1462,7 +1491,29 @@ export async function startSocketServer(options: SocketServerOptions) {
         const whole = shell(peer, service.shell(), true), held = heldBack(peer, whole)
         return settledPage(whole.host.threads.filter(thread => held.has(thread.id)), whole.host.projects, request) satisfies HostSettledThreadsPage
       }
-      case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
+      case 'detail': return windowedFor(peer, request.threadId, service.threadDetail(request.threadId))
+      // Another `STEP_WINDOW_STEPS` steps above this client's window (ADR-0194). The thread's own window is widened first when
+      // it holds no more, as Show earlier messages does on a desktop; the client reads the thread after this answer.
+      case 'earlier-steps': {
+        if (!peer.stepWindows) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        let detail = service.threadDetail(request.threadId)
+        if (!detail) return null
+        // Counted on what the phone is sent, as it places it, from where its window starts now, deltas included.
+        const wanted = detailInStepWindow(forPeer(peer, detail)!, peer.stepWindows.get(request.threadId)?.start ?? null).cut.steps + STEP_WINDOW_STEPS
+        let start = stepWindowStart(forPeer(peer, detail)!, wanted)
+        // A thread of short turns may need its own window widened more than once to hold that many more steps.
+        const holds = (read: AgentThreadDetail): number => detailInStepWindow(forPeer(peer, read)!, null).cut.steps
+        for (let widened = 0; start === null && detail.earlierAvailable && holds(detail) < wanted && widened < EARLIER_STEP_WIDENINGS; widened++) {
+          const before = detail.messages.length
+          try { await service.command({ type: 'load-earlier-messages', threadId: request.threadId }, { clientId: peer.client.clientId, user: '', transport: 'socket' }) }
+          catch { throw new Refusal('unavailable') }
+          detail = service.threadDetail(request.threadId) ?? detail
+          if (detail.messages.length <= before) break
+          start = stepWindowStart(forPeer(peer, detail)!, wanted)
+        }
+        return windowedFor(peer, request.threadId, detail, start)
+      }
       case 'activity-body': {
         // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment); a hidden thread was refused above.
         // Its visuals are already gone: a record carries none. It is read without copying, and only serialized here.
@@ -1865,7 +1916,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (carried) recordCatalog(peer, carried)
         seeded?.commit()
         if (!response.ok) return
-        if (request.op === 'detail') {
+        if (request.op === 'detail' || request.op === 'earlier-steps') {
           // A thread read whole is held at that revision, and the deltas that follow it apply.
           const read = response.result as AgentThreadDetail | null
           if (read && peer.observed.has(request.threadId) && !peer.opening.has(request.threadId)) peer.held.set(request.threadId, read.revision)
