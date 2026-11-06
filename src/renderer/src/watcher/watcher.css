@@ -270,7 +270,7 @@
 .watcher-hold__held { margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .watcher-hold__error { margin: 4px 0 0; color: var(--tt-error-text); font-size: var(--tt-type-caption); }
 .watcher-hold__details { margin-top: 4px; font-size: var(--tt-type-caption); }
-.watcher-hold__details > summary { width: fit-content; border-radius: var(--tt-radius-mark); color: var(--tt-link); cursor: pointer; }
+.watcher-hold__details > summary { width: fit-content; border-radius: var(--tt-radius-mark); color: var(--tt-link); }
 .watcher-hold__details > pre { max-height: 7.5em; margin: 4px 0 2px; padding: 6px 8px; overflow: auto; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken);
   color: var(--tt-text-2); font-family: var(--tt-font-mono); white-space: pre-wrap; }
 
