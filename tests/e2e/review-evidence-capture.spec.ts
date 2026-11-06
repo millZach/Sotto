@@ -587,9 +587,16 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
      * The edit's row pressed at the window's size, as a reader there would: a window pressed open at 820 and shot at 1600
      * shows where the narrow press left the diff, not where a press at 1600 brings it.
      */
+    /** Presses the row until it reads `want`, so a press lost to a transcript still moving after a resize is pressed again. */
+    const fold = async (want: boolean): Promise<void> => {
+      await expect(async () => {
+        if (await row.getAttribute('aria-expanded') !== String(want)) await row.click()
+        await expect(row).toHaveAttribute('aria-expanded', String(want), { timeout: 1500 })
+      }).toPass({ timeout: 15_000 })
+    }
     const open = async (width: number, height: number): Promise<void> => {
       await resizeContentWindowFor(capture.launched, width, height)
-      await row.click()
+      await fold(true)
       await expect(log.locator('.thread-activity__change').first()).toBeVisible()
       // The press can take the reader off the end, so the composer slims; it is not done moving when its animations are.
       let lastTop = Number.NaN
@@ -597,11 +604,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await open(1600, 1000)
     await capture.shoot('doc-edit-expanded', 'The same edit unfolded with its diff showing, pressed at this size.')
-    await row.click()
+    await fold(false)
     await open(820, 560)
     await capture.shoot('doc-edit-expanded', 'The same edit unfolded at the minimum window, pressed at that size: the diff is taller than the room under its row, so the row rises to the top and the diff reads from its start.', '', { modes: ['dark'], size: [820, 560] })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await row.click()
+    await fold(false)
     await work.click()
   } },
   { name: 'changes', covers: ['changes-big', 'changes-expanded', 'changes-file', 'changes-tree-press'], run: async capture => {
