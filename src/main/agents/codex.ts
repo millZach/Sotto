@@ -277,6 +277,8 @@ export interface CodexAppServerHostOptions {
   limitStops?: boolean
   logEvent?: (event: CodexAdapterEvent) => void
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
+  /** The most one line from an app-server may hold; the transport's own budget unless a test asks for less. */
+  maxFrameBytes?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
 }
@@ -686,6 +688,7 @@ export class CodexAppServerHost implements AgentHost {
     const environment = withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable)
     const server = new CodexProcess({ executable, args: this.options.args ? [...this.options.args, ...(judge?.arguments().slice(2) ?? [])] : judge?.arguments() ?? ['app-server', '--stdio', ...configArguments], cwd: judge?.cwd ?? this.options.userDataPath,
       env: judge ? judge.environment(environment) : environment, requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
+      ...(this.options.maxFrameBytes ? { maxFrameBytes: this.options.maxFrameBytes } : {}),
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
       onLost: lost => this.lost(lost),

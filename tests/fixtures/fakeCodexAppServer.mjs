@@ -535,6 +535,15 @@ function control(action) {
     thread.turns.at(-1).items.push({ type: 'userMessage', id: randomUUID(), content: [{ type: 'text', text: action.text }] })
     save()
   }
+  // A picture Codex generated in the newest turn. Its item keeps the picture's bytes, as Codex 0.166.0's does, so a
+  // whole read hands every one of them back again in its one line.
+  else if (action.type === 'picture') {
+    const turn = thread.turns.at(-1)
+    const item = { type: 'imageGeneration', id: randomUUID(), status: 'completed', revisedPrompt: action.text ?? 'A picture',
+      result: Buffer.alloc(action.bytes ?? 1024, 7).toString('base64'), savedPath: action.savedPath ?? null }
+    turn.items.push(item); save()
+    notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+  }
   else if (action.type === 'notify-burst') {
     process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join(''))
   }

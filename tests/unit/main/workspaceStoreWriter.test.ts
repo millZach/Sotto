@@ -180,6 +180,18 @@ describe('a read that needs the store waits for what was posted for its thread',
     expect(result?.messages.map(item => item.message.id)).toEqual(['ask', 'reply'])
   })
 
+  it('gives Watcher the thread’s stored history, as unavailable, when its provider cannot read the thread back', async () => {
+    const f = await fixture({ deferred: false, watcher: true })
+    f.adapter.publish(added('ask', 'Paint the frames', 'user'))
+    f.adapter.publish(added('reply', 'Painted'))
+    await f.host.flush()
+    // A Codex thread whose app-server ended mid-read failed every read before its stored history was reached.
+    Object.assign(f.adapter, { refreshThread: () => Promise.reject(new Error('Codex disconnected before acknowledgement.')) })
+    const read = await f.host.watcherRead(WORKSHOP)
+    expect(read?.availability).toBe('unavailable')
+    expect(read?.messages.map(item => item.message.id)).toEqual(['ask', 'reply'])
+  })
+
   it('commits an answer after the words it answered, even when they wait behind a batch in flight', async () => {
     const f = await fixture({ deferred: true })
     f.adapter.publish(added('reply', 'Asked'))
