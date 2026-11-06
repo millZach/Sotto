@@ -58,9 +58,13 @@ export function ToolsToggle({ threadId, focused, store = toolsPanelStore, state 
   const live = [delegatedWaiting ? t`A delegated thread needs you` : null, workingAgents ? t`Agents are working` : null, browserWaiting ? t`A browser request is waiting for your answer` : null].filter(Boolean).join('. ') || undefined
   const pinnedWords = pinnedTitle === null ? null : t({ message: `Showing ${pinnedTitle}, pinned`, comment: '{pinnedTitle} is a thread\'s title.' })
   const name = pinnedTitle === null ? tools : t({ message: `Tools are pinned to ${pinnedTitle}`, comment: '{pinnedTitle} is a thread\'s title.' })
-  // Icon only in the header; the word stays for a screen reader, and as the title when nothing else explains it.
-  return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open && (focused || pinned === threadId)} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedWords, live].filter(Boolean).join('. ') || undefined} title={live ? `${name}. ${live}` : name}
+  const pressed = chrome.open && (focused || pinned === threadId)
+  // Icon only in the header; the word stays for a screen reader. The tooltip says what a press does and, while Tools is
+  // hidden, what it holds, since a panel's outline alone does not say it.
+  const does = pinnedTitle !== null ? name : pressed ? t`Hide Tools`
+    : `${t`Show Tools`} · ${t({ message: 'Browser, files, changes and more', comment: 'Says what the Tools panel holds, after Show Tools in the pane header button\'s tooltip.' })}`
+  return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={pressed} aria-controls={TOOLS_PANEL_ID}
+    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedWords, live].filter(Boolean).join('. ') || undefined} title={live ? `${does}. ${live}` : does}
     onPointerDown={() => { pressedUnfocused.current = !focused }} onKeyDown={() => { pressedUnfocused.current = false }}
     onClick={() => {
       const opensOnly = pressedUnfocused.current

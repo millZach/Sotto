@@ -388,6 +388,14 @@ describe('shared tools panel', () => {
     expect(store.getSnapshot().open).toBe(false)
   })
 
+  it('says in its tooltip what a press does, and while Tools is hidden what it holds', () => {
+    const store = new ToolsPanelStore()
+    render(<ToolsToggle threadId="grok-previews" focused store={store} state={threadsStateFixture()} />)
+    expect(toggle()).toHaveAttribute('title', 'Show Tools · Browser, files, changes and more')
+    act(() => store.setOpen(true))
+    expect(toggle()).toHaveAttribute('title', 'Hide Tools')
+  })
+
   it('returns focus straight to the Tools symbol when Close is activated, docked, pinned or overlaid', async () => {
     const { store, rerender } = setup({ inPane: true })
     const closeFromKeyboard = (): void => {

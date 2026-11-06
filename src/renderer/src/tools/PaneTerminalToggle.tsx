@@ -52,9 +52,11 @@ function CouncilToggle({ threadId, store = paneTerminalChromeStore }: { readonly
   const { t } = useLingui()
   const chrome = usePaneTerminalChrome(threadId, store)
   const shown = chrome.open && chrome.view === 'council'
+  // The landmark alone does not say what the Council is, so the tooltip and a screen reader say it as well as the press.
+  const what = t({ message: 'Puts one question to threads on several providers', comment: 'Says what the Council is, after Show Council in the pane header button’s tooltip (ADR-0177).' })
   return <button type="button" className="pane-action tt-focusable" data-pane-council-toggle aria-pressed={shown}
     aria-label={t({ message: 'Council', comment: 'The pane header button that shows the Council in the drawer under the thread (ADR-0177).' })}
-    title={shown ? t`Hide Council` : t`Show Council`} onClick={() => store.toggle(threadId, 'council', true)}>
+    aria-description={what} title={shown ? t`Hide Council` : `${t`Show Council`} · ${what}`} onClick={() => store.toggle(threadId, 'council', true)}>
     <Landmark size={16} aria-hidden="true" />
   </button>
 }

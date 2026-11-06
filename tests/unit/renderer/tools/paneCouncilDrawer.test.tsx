@@ -49,6 +49,9 @@ afterEach(() => { cleanup(); clearCouncilDraft(); vi.restoreAllMocks(); vi.unstu
 describe('the Council in a pane’s drawer (ADR-0177)', () => {
   it('opens on its own tab at half the pane from the header’s Council button, and starts no shell for it', async () => {
     const { council, shells, terminal } = setup()
+    // The landmark alone does not say what the Council is, so its tooltip and description do.
+    expect(council).toHaveAttribute('title', 'Show Council · Puts one question to threads on several providers')
+    expect(council).toHaveAccessibleDescription('Puts one question to threads on several providers')
     await userEvent.click(council)
     expect(council).toHaveAttribute('aria-pressed', 'true')
     expect(council).toHaveAttribute('title', 'Hide Council')
