@@ -1976,6 +1976,38 @@ it('starts a thread in a new worktree in a Git project unless Watcher gives a re
   create.mockRestore()
 })
 
+it('treats the project’s own checkout as the shared checkout, and starts nothing shared it cannot tell is safe', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const choices = await f.call('list_working_copies', { project: f.start().project })
+  if (choices.status !== 'ok' || !('choices' in choices)) throw new Error('copy read refused')
+  const own = choices.choices.find(item => item.kind === 'existing-worktree')!
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId } }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  const reason = 'The user asked for this one on the checkout itself.'
+  const started = await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId }, sharedReason: reason })
+  expect(started).toMatchObject({ status: 'ok', sharedReason: reason })
+  // read_operation gives the reason back too, as for a start whose answer came too late for its client.
+  if (started.status !== 'ok' || !('receipt' in started)) throw new Error('start refused')
+  expect(await f.call('read_operation', { operationId: started.receipt.operationId })).toMatchObject({ status: 'ok', sharedReason: reason })
+  // When Sotto cannot tell whether the project is Git, the shared checkout is refused without a reason.
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockRejectedValue(new Error('synthetic-git-unreadable'))
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: true })
+})
+
+it('answers a retry of a start that named no working copy as it was first answered, even once the project has Git', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const first = await f.call('start_thread', unnamed)
+  expect(first).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  await initializeGitRepository(f.project.path)
+  const again = await f.call('start_thread', unnamed)
+  expect(again).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  if (first.status !== 'ok' || again.status !== 'ok' || !('receipt' in first) || !('receipt' in again)) throw new Error('start refused')
+  expect(again.receipt.operationId).toBe(first.receipt.operationId)
+})
+
 it('starts a thread in the folder of a project that is not a Git repository, and says why', async () => {
   const f = await fixture()
   const { workingCopy: _named, ...unnamed } = f.start(); void _named

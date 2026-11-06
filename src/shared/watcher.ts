@@ -440,6 +440,8 @@ export const watcherToolSchemas = {
     input: z.object({ operationId: z.uuid() }).strict(),
     // The outcome fields are optional: stop and settle carry none, and an older owning host sends none.
     output: boundedRead(result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState,
+      // A start's reason to share the checkout, as its start result gave it (#2235). The desktop's alone, in memory only.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(), queue: workerQueue.optional(), effectiveChoices: workerChoices.optional(),
       outcome: watcherOutcomeSchema.optional(), reference: watcherOutcomeReferenceSchema.optional(), outcomeNote: shortText.min(1).optional(),
       // The worker's own words for the turn that answered, never Sotto's evidence.
