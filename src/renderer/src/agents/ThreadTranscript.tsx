@@ -769,7 +769,13 @@ function openedLift(scroller: HTMLElement, control: HTMLElement, pressedAt: numb
   const view = { top: box.top + (parseFloat(style.scrollPaddingTop) || 0), bottom: box.top + scroller.clientHeight - (parseFloat(style.scrollPaddingBottom) || 0) }
   const shift = pressedAt - control.getBoundingClientRect().top
   const rect = opened.getBoundingClientRect()
-  return revealLift(view, { top: pressedAt }, { top: rect.top + shift, bottom: rect.bottom + shift })
+  // Only the disclosures in view can be left cut through by its top.
+  const lines = [...scroller.querySelectorAll<HTMLElement>('button[aria-expanded]')].flatMap(line => {
+    if (line === control) return []
+    const box = line.getBoundingClientRect()
+    return box.height > 0 && box.bottom + shift > view.top && box.top + shift < view.bottom ? [{ top: box.top + shift, bottom: box.bottom + shift }] : []
+  })
+  return revealLift(view, { top: pressedAt }, { top: rect.top + shift, bottom: rect.bottom + shift }, lines)
 }
 
 /**
