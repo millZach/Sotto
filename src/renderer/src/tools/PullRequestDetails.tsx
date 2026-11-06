@@ -1,5 +1,5 @@
 import React, { memo, useId, useMemo, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleMinus, CircleX, ExternalLink, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleMinus, CircleX, createLucideIcon, ExternalLink, type LucideIcon } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestFile } from '../../../shared/gitPullRequests'
 import { MessageContent } from '../agents/MessageContent'
@@ -7,8 +7,16 @@ import { Button } from '../components/Button'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, fileOnGitHub, filesByFolder, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
 
+/**
+ * What a running check wears: a dashed ring, as lucide's, but six long dashes on a heavier stroke with square ends, so at
+ * 13 to 20 px each dash keeps its full colour (3:1 on the panel in every light theme) where lucide's eight short arcs
+ * blur into a pale dotted ring. Its gaps still say not finished.
+ */
+export const RunningMark: LucideIcon = createLucideIcon('running-mark', [
+  ['circle', { cx: '12', cy: '12', r: '9.5', strokeWidth: '2.75', strokeLinecap: 'butt', strokeDasharray: '6.6 3.35', key: 'ring' }],
+])
 const CHECK_ICONS: Readonly<Record<GitPullRequestCheck['status'], LucideIcon>> = {
-  success: CircleCheck, failure: CircleX, cancelled: CircleX, pending: CircleDashed, 'action-required': Circle, skipped: CircleMinus, neutral: CircleMinus,
+  success: CircleCheck, failure: CircleX, cancelled: CircleX, pending: RunningMark, 'action-required': Circle, skipped: CircleMinus, neutral: CircleMinus,
 }
 const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url)
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }

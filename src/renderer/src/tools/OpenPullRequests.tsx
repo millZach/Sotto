@@ -1,16 +1,16 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, CircleCheck, CircleDashed, CircleX, GitPullRequest, GitPullRequestDraft, RotateCw, Search, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleCheck, CircleX, GitPullRequest, GitPullRequestDraft, RotateCw, Search, type LucideIcon } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { isPullRequestListLimited, type GitPullRequestList, type GitPullRequestListItem } from '../../../shared/gitPullRequests'
 import { agoWords } from '../watcher/machineWords'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
-import { PullRequestLineCounts } from './PullRequestDetails'
+import { PullRequestLineCounts, RunningMark } from './PullRequestDetails'
 import { limitedWords, listChecksWord, listMatches, listReviewWord, stateLabel } from './pullRequestSurface.logic'
 
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 type ListRead = { readonly status: 'idle' } | { readonly status: 'loading'; readonly list: GitPullRequestList | null } | { readonly status: 'ready'; readonly list: GitPullRequestList } | { readonly status: 'none' } | { readonly status: 'failed'; readonly words: string; readonly list: GitPullRequestList | null }
-const LIST_CHECK_ICONS: Readonly<Record<GitPullRequestListItem['checks'], LucideIcon | null>> = { passed: CircleCheck, failing: CircleX, running: CircleDashed, none: null }
+const LIST_CHECK_ICONS: Readonly<Record<GitPullRequestListItem['checks'], LucideIcon | null>> = { passed: CircleCheck, failing: CircleX, running: RunningMark, none: null }
 /** A review that decided, in the marks the merge checklist gives its review line. */
 const LIST_REVIEW_ICONS: Readonly<Record<NonNullable<GitPullRequestListItem['reviewDecision']>, LucideIcon | null>> = { approved: CircleCheck, changes_requested: CircleX, review_required: null }
 

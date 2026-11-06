@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
-  AlarmClock, AlarmClockOff, ArrowLeft, Ban, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
+  AlarmClock, AlarmClockOff, ArrowLeft, Ban, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
@@ -20,7 +20,7 @@ import { useRestartStopped } from '../agents/RestartStopped'
 import { shownCount } from '../state/interfaceNumbers'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import { OpenPullRequests } from './OpenPullRequests'
-import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestFilesPeek, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
+import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestFilesPeek, PullRequestLineCounts, RunningMark, UnlinkedDock } from './PullRequestDetails'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, checksInOrder, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
   mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
@@ -33,7 +33,7 @@ type Command = (command: AgentCommand) => Promise<AgentState | null>
 /** `at: 'babysit'`: a refused Stop, said in the babysitting line beside the Stop it answers rather than above the checklist. */
 type Notice = { readonly text: string; readonly tone: 'status' | 'error'; readonly at?: 'babysit' }
 type Busy = GitPullRequestAction | 'unlink' | 'create-pr' | 'babysit'
-const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: CircleDashed, todo: Circle, unknown: CircleHelp, open: CircleAlert }
+const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: RunningMark, todo: Circle, unknown: CircleHelp, open: CircleAlert }
 /** Said before a line's words, since its colour and icon are not read. */
 const LINE_STATE: Record<LineTone, MessageDescriptor> = {
   done: msg({ message: 'Done', comment: 'A merge checklist line\'s state, said before its words.' }),
@@ -309,7 +309,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
           <div><strong>{t`Closed without merging`}</strong></div>
           <Button variant="secondary" disabled={running} onClick={() => void act('reopen')}>{busy === 'reopen' ? busyLabel('reopen') : t({ message: 'Reopen', context: 'pull request', comment: 'Reopens a closed pull request.' })}</Button></div>
-          : detail.autoMerge ? <div className="pr-surface__finished" data-state="auto"><CircleDashed size={20} aria-hidden="true" />
+          : detail.autoMerge ? <div className="pr-surface__finished" data-state="auto"><RunningMark size={20} aria-hidden="true" />
             <div><strong>{t`Auto-merge is on`}</strong><span>{autoMethod ? t({ message: `GitHub merges this with ${autoMethod} when every line is done.`, comment: '{autoMethod} is the merge method, as in "squash and merge".' }) : t`GitHub merges this when every line is done.`}</span></div>
             <Button variant="secondary" aria-label={t`Turn off auto-merge`} disabled={running} onClick={() => void act('disable-auto-merge')}>{busy === 'disable-auto-merge' ? busyLabel('disable-auto-merge') : t({ message: 'Turn off', comment: 'Turns off auto-merge.' })}</Button></div>
             : <>
