@@ -149,6 +149,16 @@ export class PopupWindow {
     window.webContents.send(channel, payload)
   }
 
+  /** The popup is turned off: the window and its renderer go. Unlike dispose, a later show makes them again. */
+  close(): void {
+    this.showVersion++
+    this.opening = false
+    const window = this.window
+    if (window === null) return
+    this.forget(window)
+    if (!window.isDestroyed()) window.destroy()
+  }
+
   trustedRenderers(): readonly WindowRendererIdentity[] {
     const window = this.window
     if (window === null || window.isDestroyed() || window.webContents.isDestroyed() || this.loadedUrl === null) return []

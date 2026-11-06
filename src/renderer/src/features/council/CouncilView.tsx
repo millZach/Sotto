@@ -2,14 +2,13 @@ import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } fr
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
-  type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
+  type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
-import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
@@ -33,20 +32,6 @@ export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafti
     if (live === null || council.createdAt > live.createdAt) live = council
   }
   return live ?? (!drafting && newest?.status === 'done' ? newest : null)
-}
-
-/** The Layout menu, on the bar of the drawer's Council tab: the same setting as Settings → Council. */
-export function CouncilLayoutMenu(): ReactNode {
-  const { t } = useLingui()
-  const app = useOptionalApp()
-  if (!app) return null
-  const layouts: { value: CouncilLayout; label: string }[] = [
-    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
-    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
-    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
-  ]
-  return <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={app.settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT} options={layouts}
-    onChoose={value => void app.actions.updateSettings({ councilLayout: value })} />
 }
 
 type CouncilViewProps = { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }

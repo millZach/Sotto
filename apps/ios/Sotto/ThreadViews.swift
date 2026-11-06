@@ -824,12 +824,17 @@ private struct Conversation: View {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
                         opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
+                .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
                 .equatable()
+                .benchRowFrame("run", row.id, in: .named(Self.pageSpace))
             // The run's pictures stay in view whether it is open or folded (ADR-0170).
-            if model.showsAgentPictures(ref.hostID) { AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 } }
+            if model.showsAgentPictures(ref.hostID) {
+                AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 }
+                    .benchRowFrame("pictures", row.id, in: .named(Self.pageSpace))
+            }
         }
     }
 

@@ -10,7 +10,7 @@ import { isDrawerShortcut, setDrawerShortcut } from './paneTerminalShortcut'
 import { usePaneTerminalShortcut } from './PaneTerminalToggle'
 import { paneTerminalChromeStore, paneTerminalStore, shownView, usePaneTerminalChrome, type PaneDrawerView, type PaneTerminalChromeStore } from './paneTerminalStore'
 import { TerminalMachine, TerminalSurface, type LeadTab } from './TerminalSurface'
-import { CouncilLayoutMenu, CouncilView } from '../features/council/CouncilView'
+import { CouncilView } from '../features/council/CouncilView'
 import { useCouncilEnabled } from '../features/council/useCouncils'
 import { useThreadTerminals, windowTerminalBridge, type TerminalStore, type TerminalViewFactory } from './terminalStore'
 import { useTerminalViewFactory } from './terminalViewLoader'
@@ -226,7 +226,7 @@ export function PaneTerminalDrawer({ threadId, thread, project, machine, bridge,
       <TerminalSurface threadId={threadId} store={store} bridge={terminalBridge} viewFactory={factory} viewFailed={failed}
         idSuffix={`-drawer-${threadId}`} chromeTitle={null} newLabel={t`New shell`} autoStart startSize={startSize} focusNextRef={focusNext} machine={machine} leadTab={councilTab}
         barEnd={interrupt => <div className="terminal-bar__end">
-          {view === 'council' ? <CouncilLayoutMenu /> : <>
+          {view === 'council' ? null : <>
             <TerminalMachine machine={machine} />
             {branch ? <span className="pane-terminal__branch" title={t({ message: `Branch ${branch}`, comment: '{branch} is a Git branch name.' })}><GitBranch size={13} aria-hidden="true" /><bdi>{branch}</bdi></span> : null}
             {interrupt}

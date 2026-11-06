@@ -20,6 +20,8 @@ export interface TrayActions {
   show(): void
   /** Present only while the popup is on (ADR-0181): opens it, the way its shortcut does. */
   showPopup?: () => void
+  /** False hides Show popup while the user has turned the popup off. */
+  popupOn?: () => boolean
   /** Windows has no application menu, so the tray carries "Check for Updates…". */
   checkForUpdates?: () => void
   showTurnRecords?: () => void
@@ -54,7 +56,7 @@ export class TrayController {
             click: this.actions.toggleDictation,
           }]),
       { type: 'normal', label: t`Show Sotto`, click: this.actions.show },
-      ...(this.actions.showPopup ? [{ type: 'normal' as const, label: t`Show popup`, click: this.actions.showPopup }] : []),
+      ...(this.actions.showPopup && this.actions.popupOn?.() !== false ? [{ type: 'normal' as const, label: t`Show popup`, click: this.actions.showPopup }] : []),
       ...(this.actions.checkForUpdates
         ? [{ type: 'normal' as const, label: t`Check for Updates…`, click: this.actions.checkForUpdates }]
         : []),

@@ -6,8 +6,9 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { chordInline, chordWords, sameChord } from '../../../../shared/dictationShortcuts'
 import { popupShortcutRefusal, type PopupShortcutRefusal, type PopupShortcutState } from '../../../../shared/popup'
 import type { SottoPlatform } from '../../../../shared/platform'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/settings'
+import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../../shared/settings'
 import { ShortcutKey } from '../../components/ShortcutKey'
+import { Toggle } from '../../components/Toggle'
 import { useOwlFeature } from '../../state/owlFeature'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
@@ -20,18 +21,27 @@ const DEFAULT_CHORD = DEFAULT_SETTINGS.popupShortcut
 interface Line { readonly text: LaterWords; readonly alert: boolean }
 
 /**
- * Settings › Keyboard's row for the popup's shortcut (ADR-0181), only while the Owl feature is on: the recorder the other
- * rows use, Remove, and Back to the default. Main registers new keys before they are saved, so keys another app holds
- * are refused and the old ones keep working; the row says when the saved keys could not be taken.
+ * Settings › Keyboard's Popup group (ADR-0181), only while the Owl feature is on: the switch that turns the popup off, and
+ * while it is on the row for its shortcut, with the recorder the other rows use, Remove, and Back to the default. Main
+ * registers new keys before they are saved, so keys another app holds are refused and the old ones keep working; the row
+ * says when the saved keys could not be taken.
  */
-export function PopupShortcutSetting({ settings, platform }: {
-  readonly settings: Pick<AppSettings, 'popupShortcut' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
+export function PopupShortcutSetting({ settings, platform, onSave }: {
+  readonly settings: Pick<AppSettings, 'popupEnabled' | 'popupShortcut' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
   readonly platform: SottoPlatform
+  readonly onSave: (patch: SettingsPatch) => unknown
 }): ReactNode {
+  const { t } = useLingui()
   const on = useOwlFeature('popup')
   const bridge = on ? window.sotto?.popup : undefined
   if (bridge === undefined) return null
-  return <PopupShortcutRow settings={settings} platform={platform} bridge={bridge} />
+  return (
+    <SettingsGroup title={t`Popup`} icon={MessageSquareText}>
+      <Toggle setting="popup-enabled" label={t`Use the popup`} checked={settings.popupEnabled} onCheckedChange={checked => void onSave({ popupEnabled: checked })}
+        description={t`Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray.`} />
+      {settings.popupEnabled ? <PopupShortcutRow settings={settings} platform={platform} bridge={bridge} /> : null}
+    </SettingsGroup>
+  )
 }
 
 function PopupShortcutRow({ settings, platform, bridge }: {
@@ -120,51 +130,49 @@ function PopupShortcutRow({ settings, platform, bridge }: {
   const label = t`Show the popup`
 
   return (
-    <SettingsGroup title={t`Popup`} icon={MessageSquareText}>
-      <div className="dictation-shortcuts">
-        <div className="dictation-shortcuts__row" role="group" data-setting="popup-shortcut" aria-labelledby={`${id}-label`} aria-describedby={`${id}-description`}>
-          <div className="dictation-shortcuts__text">
-            <span className="tt-field__label" id={`${id}-label`}>{label}</span>
-            <p className="tt-field__description tt-paragraph" id={`${id}-description`}>
-              <Trans>Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys.</Trans>
-              {platform === 'linux' ? <> <Trans>On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it.</Trans></> : null}
-              {changed && DEFAULT_CHORD !== null ? <> <Trans>Default is</Trans> {inline(DEFAULT_CHORD)}.</> : null}
-            </p>
-          </div>
-          <div className="dictation-shortcuts__controls">
-            {recording ? (
-              <span className="dictation-shortcuts__recording">
-                {recorder.held.length === 0
-                  ? <span className="dictation-shortcuts__prompt"><Trans>Press the new keys…</Trans></span>
-                  : <ShortcutKey accelerator={recorder.held.join('+')} platform={platform} />}
-                <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Cancel recording`} title={t`Cancel recording`} data-recording-cancel autoFocus onClick={recorder.cancel}>
+    <div className="dictation-shortcuts">
+      <div className="dictation-shortcuts__row" role="group" data-setting="popup-shortcut" aria-labelledby={`${id}-label`} aria-describedby={`${id}-description`}>
+        <div className="dictation-shortcuts__text">
+          <span className="tt-field__label" id={`${id}-label`}>{label}</span>
+          <p className="tt-field__description tt-paragraph" id={`${id}-description`}>
+            <Trans>Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys.</Trans>
+            {platform === 'linux' ? <> <Trans>On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it.</Trans></> : null}
+            {changed && DEFAULT_CHORD !== null ? <> <Trans>Default is</Trans> {inline(DEFAULT_CHORD)}.</> : null}
+          </p>
+        </div>
+        <div className="dictation-shortcuts__controls">
+          {recording ? (
+            <span className="dictation-shortcuts__recording">
+              {recorder.held.length === 0
+                ? <span className="dictation-shortcuts__prompt"><Trans>Press the new keys…</Trans></span>
+                : <ShortcutKey accelerator={recorder.held.join('+')} platform={platform} />}
+              <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Cancel recording`} title={t`Cancel recording`} data-recording-cancel autoFocus onClick={recorder.cancel}>
+                <X size={13} aria-hidden="true" />
+              </button>
+            </span>
+          ) : (
+            <span className="dictation-shortcuts__chord">
+              {changed ? <span className="thread-shortcuts__dot" title={t`Changed from the default`} /> : null}
+              <button ref={chip} type="button" className={`dictation-shortcuts__chip tt-focusable${chord === null ? ' thread-shortcuts__none' : ''}`} aria-label={t`Change shortcut, ${words}`} onClick={() => void record()}>
+                {chord === null ? <Trans>No shortcut</Trans> : <ShortcutKey accelerator={chord} platform={platform} />}
+              </button>
+              {changed && DEFAULT_CHORD !== null ? (
+                <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Reset ${label} to its default`} title={t`Reset to ${inline(DEFAULT_CHORD)}`} onClick={() => void replace(DEFAULT_CHORD).then(() => setFocusChip(true))}>
+                  <RotateCcw size={13} aria-hidden="true" />
+                </button>
+              ) : null}
+              {chord !== null ? (
+                <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Remove shortcut, ${words}`} title={t`Remove shortcut`} onClick={() => void replace(null).then(() => setFocusChip(true))}>
                   <X size={13} aria-hidden="true" />
                 </button>
-              </span>
-            ) : (
-              <span className="dictation-shortcuts__chord">
-                {changed ? <span className="thread-shortcuts__dot" title={t`Changed from the default`} /> : null}
-                <button ref={chip} type="button" className={`dictation-shortcuts__chip tt-focusable${chord === null ? ' thread-shortcuts__none' : ''}`} aria-label={t`Change shortcut, ${words}`} onClick={() => void record()}>
-                  {chord === null ? <Trans>No shortcut</Trans> : <ShortcutKey accelerator={chord} platform={platform} />}
-                </button>
-                {changed && DEFAULT_CHORD !== null ? (
-                  <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Reset ${label} to its default`} title={t`Reset to ${inline(DEFAULT_CHORD)}`} onClick={() => void replace(DEFAULT_CHORD).then(() => setFocusChip(true))}>
-                    <RotateCcw size={13} aria-hidden="true" />
-                  </button>
-                ) : null}
-                {chord !== null ? (
-                  <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Remove shortcut, ${words}`} title={t`Remove shortcut`} onClick={() => void replace(null).then(() => setFocusChip(true))}>
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                ) : null}
-              </span>
-            )}
-          </div>
-          {shownLine === null ? null : (
-            <p className={`dictation-shortcuts__message tt-paragraph${shownLine.alert ? ' is-error' : ''}`} role={shownLine.alert ? 'alert' : 'status'}>{shownWords(shownLine.text)}</p>
+              ) : null}
+            </span>
           )}
         </div>
+        {shownLine === null ? null : (
+          <p className={`dictation-shortcuts__message tt-paragraph${shownLine.alert ? ' is-error' : ''}`} role={shownLine.alert ? 'alert' : 'status'}>{shownWords(shownLine.text)}</p>
+        )}
       </div>
-    </SettingsGroup>
+    </div>
   )
 }

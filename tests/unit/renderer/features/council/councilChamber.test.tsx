@@ -1,11 +1,11 @@
 import React from 'react'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
-import { chamberCouncil, CouncilLayoutMenu, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { chamberCouncil, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { clearCouncilDraft, heldCouncilForm, holdCouncilForm, holdCouncilMode, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
@@ -40,7 +40,7 @@ function provide(threads: readonly Partial<AgentThread>[] = [], models?: AgentSt
     const current = vi.mocked(useOptionalAgents).mock.results.at(-1)!.value as ReturnType<typeof agentContextFixture>
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(withThread(current.state!, id, change), command))
   }
-  return { command, navigate, updateSettings, publish }
+  return { command, navigate, publish }
 }
 const noSeats = { panelists: [], chair: undefined }
 
@@ -439,24 +439,5 @@ describe('the chamber’s figures', () => {
     render(<CouncilChamber council={councilFixture({ stage: 'done', rows: [row('A', 'answer', 'done')] }, { status: 'done' })} askSeats={noSeats} layout="long-table" />)
     expect(screen.getByRole('button', { name: 'Chair, Wonder Full, holding up the verdict. Open its thread' })).toBeInTheDocument()
     expect(command).not.toHaveBeenCalled()
-  })
-})
-
-describe('the Council tab’s Layout menu', () => {
-  it('names the layout, changes the setting, and closes on Escape with focus back on its button', async () => {
-    const user = userEvent.setup()
-    const { updateSettings } = provide()
-    render(<CouncilLayoutMenu />)
-    const button = screen.getByRole('button', { name: 'Layout: Long table' })
-    await user.click(button)
-    const menu = screen.getByRole('listbox', { name: 'Layout' })
-    expect(within(menu).getAllByRole('option').map(option => option.textContent)).toEqual(['Long table', 'Half circle', 'Round table'])
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('listbox')).toBeNull()
-    expect(button).toHaveFocus()
-    await user.click(button)
-    await user.click(screen.getByRole('option', { name: 'Round table' }))
-    expect(updateSettings).toHaveBeenCalledWith({ councilLayout: 'round-table' })
-    expect(button).toHaveFocus()
   })
 })

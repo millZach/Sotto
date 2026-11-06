@@ -41,3 +41,7 @@ At Drake's ask, after using it: photos could not be attached, moving between a t
 ## Consequences
 
 Every Owl user on Windows, macOS and Linux gets the popup. On stable it shows nothing and registers no shortcut, and the saved shortcut is kept whole. A new global shortcut is a chord taken from every other app while Sotto runs, which is why it can be cleared. Drake's Agent Popup keeps its own shortcut and its Sotto half, now connected without a code (ADR-0180).
+
+## Amendment: the popup can be turned off (November 5, 2026)
+
+At Drake's ask, since he uses Agent Popup instead and wanted no window of this one in the running app. **Use the popup** (`popupEnabled`, Settings → Keyboard, on by default) changes part 2 and the tray item. Off, main makes no window, and a window already made is destroyed with its renderer rather than hidden; the shortcut is let go, with the saved keys kept for turning it back on; and the tray drops **Show popup**. It applies at once, with no restart, and a press that arrives anyway does nothing. Main still builds the popup's small objects at start, since they hold no window and cost nothing until one is shown. This is separate from the Owl feature, which still decides whether any of it exists, and from **Let apps on this computer connect** (ADR-0180), which Agent Popup needs.
