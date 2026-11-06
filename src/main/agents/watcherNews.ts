@@ -53,6 +53,7 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-re
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'This thread waits on the user to answer its request, which they do on its card in your conversation or in the thread. Only the user can answer it.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
+  'at-rest': 'This thread has been at rest for twenty minutes, nothing running and nothing asked of the user, with a pull request of its own still open. Read where it stands and send it its next step, or leave it if it waits on the user or a merge. This is not review or merge approval.',
   'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
 }

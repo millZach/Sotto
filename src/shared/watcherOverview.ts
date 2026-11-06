@@ -6,6 +6,11 @@ export const WATCHER_GROUPS = ['Needs you', 'Ready for review', 'Working', 'Land
 export const watcherGroupSchema = z.enum(WATCHER_GROUPS)
 export type WatcherGroup = z.infer<typeof watcherGroupSchema>
 export const WATCHER_QUIET_MS = 20 * 60 * 1_000
+/**
+ * How long a watched thread rests, its turn ended with nothing running or asked, with a pull request of its own still open,
+ * before Watcher hears it is at rest (#2307). The same twenty minutes as quiet, which is the working thread's.
+ */
+export const WATCHER_AT_REST_MS = WATCHER_QUIET_MS
 
 /** Observation times belong to the observer, not to a provider's republished snapshot. */
 export interface WatcherObservation {

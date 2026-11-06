@@ -3,7 +3,7 @@ import { activityBodySize } from '../../shared/activityBodies'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
-import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
+import { WATCHER_AT_REST_MS, WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
@@ -13,6 +13,7 @@ import { carriesWords, eventSlot, foldWatcherEvents, foldWatcherNews, requestRev
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
+import { watcherOpenPullRequests } from './watcherSlimReads'
 import { byPlace, type WatcherHostsIndex, type WatcherHostsReader, type WatcherHostsTouched } from './watcherHosts'
 
 const RETRY_LIMIT = 8
@@ -34,7 +35,11 @@ const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', '
 /** How many hidden wake-ups in a row may miss Watcher before only news that needs it makes another (hiddenWakeUp.ts). */
 export const WAKE_UP_TRIES = 3
 
-interface Progress { swarm?: string; fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
+interface Progress { swarm?: string; fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void
+  /** The at-rest check's timer, while one waits for the thread's twenty minutes at rest (`restCheck`). */
+  rest?: () => void }
+/** Stops a thread's quiet and at-rest timers, as its progress is let go or starts again. */
+const stopTimers = (progress: Progress | undefined): void => { progress?.cancel?.(); delete progress?.cancel; progress?.rest?.(); delete progress?.rest }
 /**
  * Opaque progress only: no plan, message, tool input or output text crosses the host projection. A remote thread's cut
  * bodies count at their whole size, so output growing on its host is progress (ADR-0025, October 18 amendment).
@@ -186,7 +191,7 @@ const workSettledScope = (target: WatcherThreadTarget, turnId: string | undefine
  * part in a newer request is not told its last finish again, and the saved IDs say so after a restart too.
  */
 const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet',
-  'request-closed'])
+  'request-closed', 'at-rest'])
 /** Who answered a card, as the coordinator says when an answer goes: the user, or Sotto sending a prototype's question back. */
 export type WatcherCardAnswerer = 'user' | 'sotto'
 /**
@@ -1213,7 +1218,7 @@ export class WatcherWakeUp {
         // A thread Watcher does not watch makes no news, so a pass looks at it only for one of Watcher's own reads. It keeps
         // no progress, so watching it again starts a new quiet episode.
         if (!watched.has(key)) {
-          this.progress.get(key)?.cancel?.(); this.progress.delete(key)
+          stopTimers(this.progress.get(key)); this.progress.delete(key)
           if (this.everyThread) this.observeUnwatched(snapshot, thread, target, stamp)
           continue
         }
@@ -1233,7 +1238,7 @@ export class WatcherWakeUp {
     // A holder no watched thread answers for any more forgets its cards, so watching again starts from what is open then.
     for (const [holder, open] of this.openCards) if (!holders.has(holder) && !(watched.has(open.owner) && listed(holder) && (holder === open.owner || muted.get(holder) === open.owner))) this.openCards.delete(holder)
     this.lookedAt = lookedAt
-    for (const [key, progress] of this.progress) if (!listed(key) || index && !watched.has(key)) { progress.cancel?.(); this.progress.delete(key) }
+    for (const [key, progress] of this.progress) if (!listed(key) || index && !watched.has(key)) { stopTimers(progress); this.progress.delete(key) }
     if (index) this.evidence.removeMissingOf(moved!.keys(), listed); else this.evidence.removeMissing(this.sawThreads!)
     if (index && this.verifying) this.verifyPass(snapshot, watched, muted)
     for (const { participant, key } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover, {}, key)
@@ -1376,6 +1381,50 @@ export class WatcherWakeUp {
       this.event('quiet', target, progress.progressAt, { ...(live.lastTurn ? { turnId: live.lastTurn.id } : {}) })
       this.options.changed?.()
     }, Math.max(0, Math.max(progress.progressAt, progress.connectedAt) + WATCHER_QUIET_MS - this.now()))
+    if (watched.has(key) && !muted.has(key)) this.restCheck(snapshot, thread, target, key, progress)
+    else { progress.rest?.(); delete progress.rest }
+  }
+  /**
+   * Where a watched thread at rest stands with its own open pull requests, as its at-rest news is told once for (#2307): its
+   * newest turn, and each open pull request's head and whether its checks have finished. At rest is connected, a turn
+   * ended with nothing running, no sub-agent working, no work its host cannot count, and nothing asked of the user.
+   * Undefined when it is not at rest or has no open pull request.
+   */
+  private restState(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget): string | undefined {
+    // At rest after a turn: a thread that never ran one has no turn of its own to have ended with work left.
+    if (!thread.lastTurn || thread.lastTurn.status === 'running') return undefined
+    if (!this.connected(snapshot, thread) || !threadCapabilities(snapshot, thread).observe || isThreadTurnRunning(thread) || this.active(thread)
+      || thread.requests.length || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)) || !this.workSettled(thread, target.hostId)) return undefined
+    const seen = new Set<string>(), links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
+      .filter(pr => { const prKey = pullRequestKey(pr.url) ?? pr.url; return !seen.has(prKey) && Boolean(seen.add(prKey)) })
+    const open = watcherOpenPullRequests(links, this.evidence.read(target))
+    if (!open.length) return undefined
+    return observationDigest([thread.lastTurn?.id ?? null, ...open.map(({ pr, summary }) =>
+      [pullRequestKey(pr.url) ?? pr.url, summary.headId ?? null, summary.checks === 'passed' || summary.checks === 'failed'])])
+  }
+  /**
+   * At-rest news (#2307): a watched thread that has been at rest for WATCHER_AT_REST_MS since its last progress, with a pull
+   * request of its own still open, is told once for where it stands, so a lane whose turn ended with CI still to come is not
+   * left until the user notices. Its ID is the state, so the same state is told once, after a restart too; its checks
+   * finishing, a new head or a new turn is a new state. The timer reads the thread again when it fires.
+   */
+  private restCheck(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string, progress: Progress, fired = false): void {
+    progress.rest?.(); delete progress.rest
+    const state = this.restState(snapshot, thread, target)
+    if (state === undefined) return
+    const wait = Math.max(progress.progressAt, progress.connectedAt) + WATCHER_AT_REST_MS - this.now()
+    if (wait <= 0) { this.event('at-rest', target, state, { ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {}, revision: state }, key); return }
+    // A timer that fired early waits for the next pass rather than set itself again.
+    if (fired) return
+    progress.rest = this.schedule(() => {
+      delete progress.rest
+      const current = this.options.snapshot(), live = this.lookUp(current, target)
+      if (!live || this.progress.get(key) !== progress || !this.watchedByKey().has(key)) return
+      // Progress in an update whose pass is still owed is progress all the same: that pass starts the wait again.
+      if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
+      this.restCheck(current, live, target, key, progress, true)
+      this.options.changed?.()
+    }, wait)
   }
   /** A connected thread a watched thread delegated to: its cards are that watched thread's news (`observePass`). */
   private observeDelegatedCards(snapshot: AgentHostSnapshot, child: AgentThread, childKey: string, owner: string, holders: Set<string>): void {
@@ -1547,6 +1596,12 @@ export class WatcherWakeUp {
       if (this.evidence.paired(fact)) changed.set(key, fact.target)
     }
     for (const [key, target] of changed) this.evidenceChanged(target, before.get(key), false, this.attentionMoved(target, attention.get(key)!))
+    if (changed.size) { const snapshot = this.options.snapshot(); for (const target of changed.values()) this.restAgain(snapshot, target) }
+  }
+  /** Checks that finished, or a pull request that ended, while a watched thread rests is a new place for it to stand (#2307). */
+  private restAgain(snapshot: AgentHostSnapshot, target: WatcherThreadTarget, thread = this.lookUp(snapshot, target)): void {
+    const key = targetKey(target), progress = this.progress.get(key)
+    if (thread && progress && this.watchedByKey().has(key)) this.restCheck(snapshot, thread, target, key, progress)
   }
   pullRequest(read: PullRequestObservation): void {
     if (this.closed) return
@@ -1558,6 +1613,7 @@ export class WatcherWakeUp {
       const before = this.knownEvidenceIds(target), attention = this.evidence.attention(target)
       // Checks that only start running again, a new head or a new count ride with the next news that needs Watcher (#1190).
       if (this.evidence.pullRequest(target, read)) this.evidenceChanged(target, before, false, this.attentionMoved(target, attention))
+      this.restAgain(snapshot, target, thread)
     }
     this.options.changed?.()
   }
@@ -1674,12 +1730,13 @@ export class WatcherWakeUp {
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
+    if (event.kind === 'at-rest') return this.restState(snapshot, thread, event.target) === event.revision
     // Work that started again withdraws it; stillDue keeps the turn owed it.
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)
     // A busy finish held for its work whose thread has begun another turn happened all the same, and is told (#1190).
     if (busyFinish(event) && thread.lastTurn && thread.lastTurn.id !== event.turnId) return true
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
-  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
+  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) stopTimers(progress); this.pending = []; this.rememberPending.clear() }
   async drained(): Promise<void> { await this.tail }
 }

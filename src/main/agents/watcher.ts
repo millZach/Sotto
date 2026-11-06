@@ -405,6 +405,8 @@ function threadPullRequests(thread: AgentThread): { number: number; url: string;
     return true
   })
 }
+/** How an at-rest line says each open pull request's checks stand (#2307). */
+const AT_REST_CHECKS = { passed: 'checks passed', failed: 'checks failed', pending: 'checks running', unknown: 'checks not read yet' } as const
 const withSince = (checksPassedAt: string | undefined) => checksPassedAt === undefined ? {} : { checksPassedAt }
 /** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
 /**
@@ -1153,6 +1155,11 @@ export class WatcherService implements WatcherControlHooks {
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
+      // A thread at rest: where each of its open pull requests stands, as Sotto last read it (#2307).
+      if (event.kind === 'at-rest') {
+        const open = watcherOpenPullRequests(threadPullRequests(thread), this.wakes.evidence.read(event.target))
+        return open.length ? `Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.` : undefined
+      }
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
       // A finish held for its work whose thread began another turn first: its work-settled news will not come, and the

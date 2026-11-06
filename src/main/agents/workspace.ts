@@ -71,6 +71,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestPress, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
+import { createdPullRequestUrls, endedTurn, OPENED_PULL_REQUESTS_MAX, openedDuringTurn, pullRequestUrlsIn } from './openedPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
@@ -1566,6 +1567,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   keepWrittenMedia(store: WrittenMediaStore, wanted: () => boolean): void { this.writtenMediaKept = { store, wanted } }
   /** A turn that may have written pictures ended: what it wrote is found off the update path and becomes a step of its own. */
   private turnEnded(threadId: string): void {
+    this.followTurnPullRequests(threadId)
     const start = this.turnStarts.get(threadId)
     const kept = this.writtenMediaKept
     if (!start || !kept) return
@@ -1573,6 +1575,56 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Turned off while the turn worked: the switch says now, as it does for the turn's pictures.
     if (!kept.wanted()) return
     void writtenMedia(start.folder, start.at, kept.store).then(found => { if (found) this.addWrittenStep(threadId, start, found) }).catch(() => undefined)
+  }
+  /**
+   * A turn ended: the pull requests it opened are linked to its thread as ones it created, and its branch's own pull
+   * request is asked of GitHub (`openedPullRequests.ts`). Without this a thread that opens one from its own shell, on a
+   * branch nobody has open, has neither, so read_state, the merge queue and Watcher's pull request news never see it. The
+   * turn's records are read now, before an idle thread's are let go; its reply and GitHub after, off the update path and
+   * outside the thread's lane, which only the links' write takes. Never rejects.
+   */
+  private followTurnPullRequests(threadId: string): void {
+    const thread = this.threadById(threadId)
+    if (!thread || this.stopping || !this.visible(thread) || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.councilJudge) return
+    // What the open thread's timer asks, for a thread nobody has open: a lookup kept fresh is not asked again (#820).
+    const git = thread.worktree?.git
+    if (git?.isRepository && git.hasRemote && git.branch && !git.isDefaultBranch) void this.readRemoteStatus(threadId, { background: true })
+    const service = this.gitPullRequests
+    if (!service) return
+    const turn = endedTurn(thread.activities), created = createdPullRequestUrls(turn.records)
+    void (async () => {
+      await Promise.resolve()
+      const linked = new Set((this.threadById(threadId)?.pullRequests ?? []).map(link => pullRequestKey(link.url)))
+      const named = turn.startedAt === undefined ? [] : pullRequestUrlsIn(this.turnReply(threadId))
+      const asked = new Map<string, boolean>()
+      for (const url of created) asked.set(url, true)
+      for (const url of named) if (!asked.has(url)) asked.set(url, false)
+      const wanted = [...asked].filter(([url]) => !linked.has(pullRequestKey(url))).slice(0, OPENED_PULL_REQUESTS_MAX)
+      if (!wanted.length) return
+      let folder: string
+      try { folder = this.threadRepositoryFolder(threadId, 'pull requests') } catch { return }
+      const found: GitPullRequestView[] = []
+      for (const [url, ranCreate] of wanted) {
+        if (this.stopping) return
+        let view: GitPullRequestView
+        try { view = await service.view(folder, url) } catch { continue }
+        this.observePullRequest(view)
+        if (ranCreate || openedDuringTurn(view.createdAt, turn.startedAt)) found.push(view)
+      }
+      if (!found.length || this.stopping) return
+      await this.onLane(threadId, async () => {
+        let changed = false
+        for (const view of found) changed = this.linkPullRequestRecord(threadId, view, 'created') !== null || changed
+        if (!changed) return
+        await this.saveLinks()
+        this.publish()
+      })
+    })().catch(() => undefined)
+  }
+  /** The words of a thread's newest turn's replies, read from its last turn alone. */
+  private turnReply(threadId: string): string {
+    const messages = this.readWindow(threadId, 1)?.messages ?? []
+    return messages.filter(message => message.role === 'assistant').map(message => message.text).join('\n')
   }
   /**
    * The step that shows what a turn wrote: placed with the turn's first record when it has one, else after the message

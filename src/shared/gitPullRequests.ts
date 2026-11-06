@@ -171,6 +171,11 @@ export const gitPullRequestDetailSchema = z.object({
    */
   headId: z.string().max(64).optional(),
   /**
+   * When it was opened, as GitHub records it. The host links a pull request a thread's reply names only when it was
+   * opened during that turn (`openedPullRequests.ts`). Absent when GitHub did not say, and from an earlier host.
+   */
+  createdAt: z.string().max(64).optional(),
+  /**
    * The host's ID for this reading, from a host that lists `pull-request-confirmation` (#1691). A client that is about to
    * merge, close or turn on auto-merge names the reading it shows by it, and the host binds the receipt to that reading's
    * head. Absent from this computer's own reads.
