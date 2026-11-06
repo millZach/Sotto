@@ -225,7 +225,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line__on::after {
   content: '\2192'; display: grid; place-items: center; width: 3ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
   background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
-  box-shadow: inset 0 0 0 1px var(--tt-border); color: var(--tt-text); font-family: var(--tt-font-ui); font-weight: 500; cursor: pointer;
+  color: var(--tt-text); font-family: var(--tt-font-ui); font-weight: 500; cursor: pointer;
 }
 @container scroll-state(stuck: right) { .changes-line__on::before, .changes-line__on::after { visibility: visible; } .changes-line__on::after { pointer-events: auto; } }
 /* Scrolled sideways to read the rest of a line, the numbers and signs stay at the left, each line's edge with them,
