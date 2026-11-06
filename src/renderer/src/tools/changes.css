@@ -364,17 +364,20 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 }
 .changes-line__text[data-shape='quote']:not([data-source]) { padding-left: 10px; box-shadow: inset 2px 0 0 var(--tt-hairline); }
 /* A document's change is read the way an editor marks a page: as it reads now, with the change in the margin and under
-   its words, and never as blocks of colour. The edge and the sign say where a paragraph changed, and they are what the
-   eye finds first going down a long file. Nothing in a document carries a wash, so a page of new or rewritten text is
-   still a page. The lines around a change are quiet, and what is there now reads in the body's ink, all of it, so a
+   its words, and never as blocks of colour over what it says. The edge and the sign say where a paragraph changed, and
+   they are what the eye finds first going down a long file. Nothing there now carries a wash, so a page of new or
+   rewritten text is still a page. The lines around a change are quiet, and what is there now reads in the body's ink, all of it, so a
    changed paragraph is one paragraph and not a mix of inks that reads as scattered bold. The words that came carry one
-   mark, a hairline underline in the added role's colour. What went reads in the removed role's ink, mixed into the
-   body's so it holds 4.5:1 and still reads as words, struck through as track changes strike what went: a paragraph
-   taken out, and the words that went from a line read once. Hue lives only in those lines, that ink and the edges. */
+   mark, a hairline underline in the added role's colour. What went, a paragraph taken out or the words that went from
+   a line read once, is struck through in the removed role's colour, as track changes strike what went. Its letters
+   keep nearly the body's ink, warmed a little toward the removed role, so a removed line reads as easily as the prose
+   around it and the stroke, the edge and the sign say it went. Hue lives only in those marks, the edges and a removed
+   paragraph's faint wash. */
 .changes-diff__rows[data-reading='document'] {
   --changes-added: transparent; --changes-removed: transparent;
-  --changes-ink-removed: color-mix(in oklab, var(--tt-error-text) 70%, var(--tt-text));
-  --changes-under-added: color-mix(in srgb, var(--tt-success) 55%, transparent); --changes-under-removed: var(--changes-ink-removed);
+  --changes-ink-removed: color-mix(in oklab, var(--tt-error-text) 18%, var(--tt-text));
+  --changes-strike-removed: color-mix(in srgb, var(--tt-error-text) 70%, transparent);
+  --changes-under-added: color-mix(in srgb, var(--tt-success) 55%, transparent); --changes-under-removed: var(--changes-strike-removed);
 }
 .changes-diff__rows[data-reading='document'] .changes-line[data-kind='edited'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] .changes-word {
@@ -383,10 +386,13 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 }
 .changes-diff__rows[data-reading='document'] :is([data-kind='remove'] .changes-word, del.changes-word--edit) { text-decoration-color: var(--changes-under-removed); }
 .changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--changes-ink-removed); text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); }
-/* A paragraph taken out is struck through in its ink at half strength, so the stroke marks it without crossing out its
-   letters, and a removal is as plain at a glance as an addition without a wash. The words a removed line changed are
-   struck at full strength. A whole file taken out keeps the secondary ink and only its edge, since every line of it went. */
-.changes-diff__rows[data-reading='document'] { --changes-strike-removed: color-mix(in srgb, var(--changes-ink-removed) 50%, transparent); }
+/* A paragraph taken out is struck through, one hairline in the removed role's colour, and rests on the faintest wash of
+   that role, so it stands apart from the prose around it as a block that went while its letters stay the body's. Only
+   a removal has it: what is there now reads as the page, and the words struck inside a paragraph have none, so a
+   reworked paragraph never turns to patchwork. A whole file taken out keeps the secondary ink and only its edge, since
+   every line of it went. */
+.changes-diff__rows { --changes-removed-prose: light-dark(color-mix(in srgb, var(--tt-error) 5%, transparent), color-mix(in srgb, var(--tt-error) 8%, transparent)); }
+.changes-diff__rows[data-reading='document']:not([data-whole]) { --changes-removed: var(--changes-removed-prose); }
 .changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] { color: var(--changes-ink-removed); }
 /* A heading taken out reads in that ink too, not in the body's ink a heading has. */
 .changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] > .changes-line__text[data-shape] { color: inherit; }
@@ -436,7 +442,6 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 }
 .changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { text-decoration-line: none; }
 .changes-line[aria-selected='true'] :is(.changes-earlier__text, .changes-earlier__toggle) { color: var(--tt-text-2); }
-.changes-diff__rows[data-reading='document'] .changes-line[data-paired] { background: none; }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] + .changes-line[data-paired][data-kind='add'] { margin-top: 4px; }
 /* In a narrow panel the lines keep what room there is for words: a document reads a step smaller, its gutter and the
    file's head grow tighter, so a paragraph wraps at about fifty characters rather than forty. */

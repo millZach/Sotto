@@ -63,9 +63,9 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
   // A document's edited line read once has no wash of its own: in code its words' washes sit on the code background, and its sign takes the warning ink.
   // What such a line keeps reads in the secondary ink, as do the words that went from it, and so does a picked document line's context.
-  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and its earlier wording in the muted ink, or the secondary ink on a picked line.
+  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and an opened earlier wording in the secondary ink.
   ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
-  ...each('--changes-ink-removed', [context, [...context, hover], [...context, picked]], 'what went in a document: removed words, a removed paragraph, its earlier wording'),
+  ...each('--changes-ink-removed', [context, [...context, hover], [...context, picked]], 'what went in a document: removed words, a removed paragraph, the words that went in its earlier wording'),
   ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited or reworked line keeps'),
   ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
   ...each('text', [context, [...context, hover], [...context, picked]], 'words that came in a document'),
@@ -77,13 +77,11 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // The runs-on arrow is a tag in the sunken fill with its line's wash over it: muted at rest, the secondary ink on a pointed
   // line, the body's on a picked one.
   ...tagLines.flatMap(line => [pair('text-muted', line, 'runs-on arrow at rest'), pair('text-2', [...line, hover], 'runs-on arrow on a pointed line'), pair('text', [...line, picked], 'runs-on arrow on a picked line')]),
-  // A shut earlier wording's glimpse: the words that went in the removed ink, on the toggle at rest, pointed at and on a picked line.
-  ...each('--changes-ink-removed', [[...context, 'hover-strong'], [...context, picked, 'hover-strong']], 'words that went in a glimpse, pointed at'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
-  // A document's lines: body ink on an added line, secondary on a removed one.
+  // A document's lines: body ink on an added line, the removed ink, nearly the body's, on a removed one.
   pair('text', added, 'added line of a document'),
-  pair('--changes-ink-removed', removed, 'removed line of a document'),
+  ...each('--changes-ink-removed', [['code-bg', '--changes-removed-prose'], ['code-bg', '--changes-removed-prose', hover], ['code-bg', '--changes-removed-prose', picked]], 'removed paragraph of a document, on its faint wash'),
   // Inside the changed words syntax colour gives way to the body ink, so it only ever sits on the line's wash.
   ...CHANGES_CODE_INKS.flatMap(ink => each(ink, [context, added, removed], 'syntax colour in a diff')),
   ...each('success', [added, [...added, hover]], 'added line sign'),
@@ -151,7 +149,7 @@ export function inMode(value: string, mode: Mode): string {
 
 /** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them, in the mode the root is painted in. */
 export function withPaintedLayers(declarations: Map<string, string>, mode: Mode): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified', '--changes-ink-removed']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified', '--changes-ink-removed', '--changes-removed-prose']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
   for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name, mode))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')
