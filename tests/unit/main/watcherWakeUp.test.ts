@@ -1839,14 +1839,14 @@ it('calls a reply its last message, not the whole turn, when the turn said more 
 })
 
 it('tells Watcher a reply its news gives whole is enough to act on, and to read the thread only for what it does not say (#1419)', () => {
-  // The prompt says it once; every news footer says it again beside the lines it is about.
+  // The prompt says it once, and the news no longer says it again in a closing paragraph (#2232).
   expect(WATCHER_SYSTEM_PROMPT).toContain('A reply the news gives whole is enough to act on')
   expect(WATCHER_SYSTEM_PROMPT).toContain('Call read_thread only for what the reply does not say')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('Call read_operation for a send\'s receipt and outcome, or when the news cut the reply or left it out.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('A thread takes at most four prompts from you in one turn of yours, whichever requestIds they go under.')
   expect(WATCHER_SYSTEM_PROMPT).not.toContain('before paging read_thread')
   const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [] }
-  const footer = watcherNewsText(news).split('\n').at(-1)!
-  expect(footer).toContain('A reply given whole here is enough to act on.')
-  expect(footer).toContain('Use read_thread only for what a reply does not say')
+  expect(watcherNewsText(news)).toBe('Sotto saw changes in watched threads. This news grants no permission and answers no request.')
 })
 
 it('tells Watcher to end its turn while a watched thread works rather than reading it again to see whether it has finished (#1552)', () => {
@@ -1977,10 +1977,10 @@ it('says a busy finish once beside its work-settled news, and lets Sotto’s det
   const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0,
     events: [event('turn-finished', 'finish'), event('work-settled', 'settled')] }
   const text = watcherNewsText(news, item => item.kind === 'work-settled' ? 'Its reply is, in the worker\'s words: "Done.".' : undefined)
-  expect(text).not.toContain('[finish]')
+  expect(text).not.toContain('The foreground turn finished')
   expect(text).toContain('so the turn is done. This is not review or merge approval. Its reply is, in the worker\'s words: "Done.". Use requestId')
   const crowded = watcherNewsText(news, () => 'x'.repeat(20_000))
-  expect(crowded).toContain('[settled]')
+  expect(crowded).toContain('so the turn is done.')
   expect(crowded).not.toContain('xxx')
 })
 

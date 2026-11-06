@@ -752,7 +752,7 @@ export class WatcherService implements WatcherControlHooks {
     pullRequestState?: (url: string) => Promise<{ readonly state: 'open' | 'closed' | 'merged'; readonly headRefOid: string | null }>
     /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer holds a settle. Read once at start. */
     babysittingRetired?: boolean
-    /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at 400K (#1189). */
+    /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at the default, 250K (#2233). */
     compactAt?: () => number }) {
     this.hosts = new WatcherHosts({ local: () => options.control.watcherSnapshot(), localThreads: snapshot => options.control.hostThreadsOf(snapshot), remote: () => this.remote })
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), hosts: this.hosts, record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
@@ -1137,7 +1137,7 @@ export class WatcherService implements WatcherControlHooks {
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
-      if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target))
+      if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
       // A finish held for its work whose thread began another turn first: its work-settled news will not come, and the
       // newest turn's reply is not this one's, so what the worker said by then is quoted instead (#2059).

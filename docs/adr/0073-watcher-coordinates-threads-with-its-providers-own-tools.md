@@ -658,6 +658,14 @@ Of four slider designs in an HTML prototype (captured as the tag `prototype/watc
 
 Idle compaction (ADR-0127) now reaches Watcher's own conversation too, while Watcher rests.
 
+## November 5, 2026: Watcher compacts at 250k by default (#2233)
+
+This amends October 24's **Compact Watcher at** default. Over October 14 to November 5 the median Watcher call carried 216k-248k tokens, with a p90 of about 360k. All 67 compactions came at about 400k, every 3 to 7 hours, and cache reads were $680 of Watcher's $1,042. Zach chose 250k as the new default, over 200k (the slider's floor, with about twice as many compactions) and over changing the default for new installs only.
+
+- **The default is 250k.** The slider keeps its range, 200k to 1M on a 50k step.
+- **A saved 400k moves once.** Settings are saved whole, so a saved 400k, the old default, can't be told apart from a point nobody touched. The first read of a profile without Sotto's mark `watcherCompactAtMoved` moves a saved 400k to 250k, and every later read keeps what is saved, 400k included. Any other saved point never moves. The mark is not on the patch list, and no control sets it. A stable build doesn't know the mark and drops it at its next save; an Owl build reading that file afterwards moves a saved 400k once more.
+- **Unchanged:** what a compaction keeps. Compacting earlier changes only how often it runs. `read_state` after a compaction, the kept lines and the continuity summary's distinctions (November 3, #2102) carry the same things at any point.
+
 ## October 24, 2026: Watcher hears the user answer, reads what waits on them, and keeps its notes a line at a time
 
 Watcher kept telling Zach that items were waiting on him after he had answered them. When the user answered a watched thread's question or permission card, or a prototype stopped waiting for review, Sotto sent Watcher no news, so its notes and its last news still said the card was open. Its notes were hard to keep too: `keep_state` replaced a whole list, twenty lines of three hundred characters, so Watcher dropped unfinished notes to make room, and a note that was done could only be deleted. Zach asked for five changes on October 24, 2026.
@@ -713,7 +721,7 @@ Watcher's computer puts the phone's message in Watcher's conversation, or in its
 
 On October 28 a thread finished the collapsed rail's tinted trays (#1715) and ended its turn asking Zach to judge the faint trays and "say when" to open the pull request. Watcher passed that on once. Its next 40 replies never repeated it, and several said there was nothing waiting on him, because a question written in a reply is not on `waitingOnUser`. The finished work sat 185 minutes. With the Owl build that waited 30 minutes for a second "go", asks that were not repeated cost 220 minutes that day (`~/Developer/Reports/sotto-pr-latency-2026-10-28.md`, sections 4 and 5).
 
-`watcherPrompt.ts` now tells Watcher two more things. Every reply to the user names each thing `waitingOnUser` lists, every time, until it is answered, and never says that nothing waits while the list has anything on it. A worker reply that ends by asking the user to decide something with no card for it, such as whether to ship, which take to keep or whether to approve an ADR change, is not on that list: Watcher sends the thread back to ask it as a question card with its choices, and carries the ask in its replies until the card is up. `waitingOnUser` stays the authority on what waits on the user, with this one exception, which the prompt's waitingOnUser line and the glossary's Waiting on the user now name. A prose ask is carried from the news that brought it, not kept with keep_state, and only until its card is up. The worker's half is in ADR-0080's amendment of the same day.
+`watcherPrompt.ts` now tells Watcher two more things. Every reply to the user names each thing `waitingOnUser` lists, every time, until it is answered (superseded November 5, 2026, below: Sotto shows the list), and never says that nothing waits while the list has anything on it. A worker reply that ends by asking the user to decide something with no card for it, such as whether to ship, which take to keep or whether to approve an ADR change, is not on that list: Watcher sends the thread back to ask it as a question card with its choices, and carries the ask in its replies until the card is up. `waitingOnUser` stays the authority on what waits on the user, with this one exception, which the prompt's waitingOnUser line and the glossary's Waiting on the user now name. A prose ask is carried from the news that brought it, not kept with keep_state, and only until its card is up. The worker's half is in ADR-0080's amendment of the same day.
 
 ## October 28, 2026: a settled thread is not watched
 
@@ -868,6 +876,35 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: Sotto shows what waits on the user (#2227)
+
+The October 28 rule above had every reply name each thing `waitingOnUser` lists. Over October 14 to November 5, 3,532 replies carried that block, and 2,597 were identical to the reply before (694K characters). Because Watcher still wrote the list from memory, it still went wrong: on October 23 three replies said "Nothing needs you" while a card waited. Since then the room has gained the needs-you count at the top of Watcher's room, which opens the list itself (ADR-0152, November 5), alongside the sidebar's Needs you and the iPhone's.
+
+Zach chose to drop the every-reply rule and let Sotto own the list. He picked it over repeating the block only when the list changed, and over Sotto adding a count line under each reply.
+
+- **Sotto shows the list; Watcher doesn't repeat it.** Watcher names something that waits on the user when news first brings it, when the user asks what waits on them, or when its reply is about it.
+- **Watcher never says nothing waits.** The list is Sotto's to show as empty.
+- **Unchanged:** Watcher checks `waitingOnUser` before it says something waits on the user, and a worker's prose ask with no card is still carried until its card is up. That ask isn't on the list, so Sotto can't show it.
+
+## November 5, 2026: news says each thing once (#2232)
+
+An audit of Watcher's sessions from October 14 to November 5 found most of the news text was the same words again. Every note ended with a paragraph of about 463 characters that repeated the prompt, 2.7 MB in all. Every line ended with its event's ID in brackets, a 64-character digest no tool takes, which was a quarter of the news in one session. Two cards on one thread made two identical lines. And "Sotto observed changed evidence. Read the thread for the sourced facts." came about 100 times a day after the November 2 fix above, riding with turn ends that had nothing new about a pull request. Only the model reads this text, so nothing the user sees changes.
+
+- **The prompt says it; the news does not.** The closing paragraph is gone. What it said that the prompt did not is now in the prompt once: `read_operation` gives a send's receipt and outcome, a watched thread's requestId lets Watcher follow up with it within bounds, and a thread takes at most four prompts from Watcher in one Watcher turn, whichever requestIds they go under. This supersedes the October 23 note that the footer says when to use `read_operation`.
+- **No event IDs.** Lines name their thread, any operation and the requestId, which the tools take. Events keep their IDs in the queue, the record's `wakeEventIds` and the told set; only the text drops them.
+- **One line for the same thing.** Lines that say the same of the same thread are one line, its thread followed by how many times, as in `{…}, 2 times: This thread waits on the user…`.
+- **Evidence news is what changed.** Its line is Sotto's words for what a pull request now says, and nothing else. Evidence news with nothing to say has no line. Those words are the line, so they never give way to room before the event does; a reply's words still give way first. What wakes Watcher does not change.
+
+Measured on three wake-ups of 1, 4 and 11 events (`tests/unit/main/watcherNewsSize.test.ts`): 1,097, 2,188 and 4,849 characters before, 566, 974 and 2,305 after, from 508 to 240 characters per event.
+
+## November 5, 2026: checks pass only once the required ones have, and news says which running checks hold a merge (#2116)
+
+Watcher's news said "all checks passed on its newest commit" on #2083 a minute after a push: the only check GitHub listed was another workflow's skipped iPhone benchmark, and a skipped check counted as passed. A pull request stacked on another's branch read as passed on one skipped check the same way (#2077). The audit of October 14 to November 5 also found Watcher waiting about two hours on an optional iPhone job while the required checks had been green, and counted the required-checks news on #1994 as early because Native iOS still ran. GitHub's own times show the three required checks had passed then. Native iOS is optional in the ruleset, and the news did not say so.
+
+- **Every check passed only once the required ones have.** A read whose checks all finished without failing says passed only when the base branch's required checks have passed on that head, one GitHub has not made yet counting as not passed. Until then it reads as pending, in the news and in `read_state`. Where the rules require nothing and GitHub flags nothing, every check is the gate and one at least must have succeeded ([ADR-0061](0061-a-thread-can-babysit-its-pull-request.md), the same day). Where the `gh` sign-in cannot read the base branch's rules, no pass is known, since GitHub flags only the required checks that exist, so Watcher is never told one: such a pull request reads as pending until it merges, and a failing check is still news. The Pull request panel's own read does not know the required checks either, so checks it sees all finish are left to Watcher's background read.
+- **News says which running checks hold a merge.** Where Sotto can read which checks are required, a pull request's news line adds how many of them are still to finish and how many other checks are still running, "which no merge waits on". These are counts: a check's name still never reaches Watcher's evidence. They never wake Watcher by themselves.
+- **Not done here: runs a thread starts by hand.** News when a workflow-dispatch run that a watched thread started finishes or fails needs Sotto to know which runs a thread started, and is #2260.
 
 ## November 5, 2026: Watcher reads what a waiting question asks, and whether a closed card was answered (#2230)
 

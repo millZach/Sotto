@@ -21,7 +21,7 @@ import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherGlance } from '../../../src/renderer/src/watcher/WatcherGlance'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
-import type { UpdateControlProps } from '../../../src/renderer/src/features/updates/UpdateControl'
+import { UpdateControl, type UpdateControlProps } from '../../../src/renderer/src/features/updates/UpdateControl'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -1047,26 +1047,27 @@ describe('the room switch', () => {
     expect(tabs()[1]).toHaveFocus()
   })
 
-  it('puts the way off the page right after All threads: the room switch, a hairline, the pages and the update, each a press of its own', async () => {
+  it('puts the way off the page in the footer: the room switch, a hairline, the pages and the update, each a press of its own', async () => {
     const navigate = mockApp('watcher')
     mockAgents(stateWithWatcher())
     const { bridge } = fakeBridge(roomState())
     const onActivate = vi.fn()
     const update = { status: { phase: { phase: 'available', version: '9.9.9', problem: null } }, busy: false, onActivate } as unknown as UpdateControlProps
-    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} update={update} /></SidebarChromeProvider></WatcherRoomProvider>)
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={<UpdateControl {...update} />}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
     await paneReady()
     const head = document.querySelector<HTMLElement>('.watcher-head')!
-    // In the order the eye reads them, and all before Stop all's end of the header: All threads, the room switch with
-    // its owl lit, then Settings and Help (Usage and Memory are behind their gates here), then the update. No More menu.
+    // All threads stays in the header. The shared footer follows the room, retaining each control and its order.
+    const foot = document.querySelector<HTMLElement>('.watcher-foot')!
     const list = within(head).getByRole('button', { name: /^All threads, \d+\. Show the list$/ })
-    const rooms = within(head).getByRole('tablist', { name: 'Page' })
+    const rooms = within(foot).getByRole('tablist', { name: 'Page' })
     expect(within(rooms).getByRole('tab', { name: 'Watcher' })).toHaveAttribute('aria-selected', 'true')
-    const pages = within(head).getByRole('navigation', { name: 'Pages' })
+    const pages = within(foot).getByRole('navigation', { name: 'Pages' })
     expect(within(pages).getAllByRole('link').map(link => link.textContent)).toEqual(['Settings', 'Help'])
-    const updating = within(head).getByRole('button', { name: 'Update 9.9.9 ready to download' })
+    const updating = within(foot).getByRole('button', { name: 'Update 9.9.9 ready to download' })
     const order = [list, rooms, pages, updating]
     for (const [index, node] of order.slice(1).entries()) expect(order[index]!.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(head.querySelector('.thread-workspace__title .watcher-head__way')).not.toBeNull()
+    expect(head.querySelector('[role=tablist]')).toBeNull()
+    expect(foot.querySelector('.thread-nav__foot')).not.toBeNull()
     expect(within(head).queryByRole('button', { name: /^More/ })).toBeNull()
     fireEvent.click(within(pages).getByRole('link', { name: 'Settings' }))
     expect(navigate).toHaveBeenCalledWith('settings')
@@ -1077,6 +1078,24 @@ describe('the room switch', () => {
   it('is Dictate | Threads alone with the gate off', () => {
     const { tabs } = foot('threads', false)
     expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Threads'])
+  })
+
+  it.each(['darwin', 'win32', 'linux'] as const)('keeps the collapsed %s rail and expands back to the saved width with focus on Watcher', async platform => {
+    mockApp('watcher')
+    vi.mocked(useOptionalApp).mockReturnValue({ ...useOptionalApp()!, platform })
+    localStorage.setItem('sotto.threadWorkspace.sidebar', JSON.stringify({ width: 280, chosen: true, collapsed: true }))
+    mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState())
+    render(<WatcherRoomProvider bridge={bridge}><WatcherView now={NOW} /></WatcherRoomProvider>)
+    await paneReady()
+    const foot = document.querySelector<HTMLElement>('.watcher-foot')!
+    expect(foot).toHaveStyle({ width: platform === 'darwin' ? '80px' : '52px' })
+    expect(foot.querySelector('.thread-nav__rail .thread-nav__foot')).not.toBeNull()
+    fireEvent.click(within(foot).getByRole('button', { name: 'Expand sidebar' }))
+    expect(foot).toHaveStyle({ width: '280px' })
+    expect(foot.querySelector('.thread-nav__rail')).toBeNull()
+    expect(within(foot).getByRole('tab', { name: 'Watcher' })).toHaveFocus()
+    expect(JSON.parse(localStorage.getItem('sotto.threadWorkspace.sidebar')!).collapsed).toBe(false)
   })
 })
 

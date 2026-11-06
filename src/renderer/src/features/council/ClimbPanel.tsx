@@ -12,7 +12,7 @@ import { councilAskable } from './councilDraft'
 import { OriginPicker } from './CouncilView'
 import { ULTRACODE, withoutUltracode } from '../../../../shared/ultracode'
 
-type FormDraft = { spec: ClimbSpec; context: string; preview?: ClimbResult['preview']; referencePreview?: ClimbResult['preview'] }
+type FormDraft = { origin: string; spec: ClimbSpec; context: string; preview?: ClimbResult['preview']; referencePreview?: ClimbResult['preview'] }
 const drafts = new Map<string, FormDraft>()
 const attemptSteps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, null]
 const turnSteps = [...Array.from({ length: 20 }, (_, index) => (index + 1) * 5), null]
@@ -55,9 +55,9 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
   const { t } = useLingui(), app = useOptionalApp(), agents = useOptionalAgents(), state = agents?.state
   const local = state?.connections?.find(connection => connection.kind === 'local')?.hostId
   const threads = (state?.host.threads ?? []).filter(item => councilAskable(item, local))
-  const [origin, setOrigin] = useState(thread ?? ''), [records, setRecords] = useState<ClimbRecord[]>([])
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [approved, setApproved] = useState(false)
   const cached = drafts.get(thread ?? '')
+  const [origin, setOrigin] = useState(cached?.origin ?? thread ?? ''), [records, setRecords] = useState<ClimbRecord[]>([])
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [approved, setApproved] = useState(false)
   const [preview, setPreview] = useState<ClimbResult['preview']>(cached?.preview), [referencePreview, setReferencePreview] = useState<ClimbResult['preview']>(cached?.referencePreview), [notice, setNotice] = useState(''), [context, setContext] = useState(cached?.context ?? '')
   const chosen = threads.find(item => item.id === origin) ?? threads[0]
   const models = (state?.host.models ?? []).filter(model => supportsClimbJudging(model.providerId, app?.platform ?? 'win32') && model.ready && !model.legacy)
@@ -66,11 +66,12 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
   const [spec, setSpec] = useState<ClimbSpec>(() => cached?.spec ?? { goal: '', constraints: '', source: { kind: 'folder', root: chosen?.workingDirectory ?? state?.host.projects.find(project => project.id === chosen?.projectId)?.path ?? '', paths: [], exclude: [] },
     judges: [defaultSeat, defaultSeat, defaultSeat], chair: defaultSeat, criteria: [criterion()], attempts: 5, modelTurns: 30 })
   useEffect(() => { onPanel({ panelists: spec.judges, chair: spec.chair }) }, [spec.judges, spec.chair, onPanel])
-  const current = records.find(record => record.originThread === chosen?.id && !['done', 'stopped', 'settled'].includes(record.phase))
-  const shown = current ?? records.find(record => record.originThread === chosen?.id) ?? null
+  const ownRecords = records.filter(record => thread === undefined || record.originThread === thread)
+  const current = ownRecords.find(record => record.originThread === chosen?.id && !['done', 'stopped', 'settled'].includes(record.phase))
+  const shown = ownRecords.find(record => !['done', 'stopped', 'settled'].includes(record.phase)) ?? ownRecords[0] ?? null
   useEffect(() => { onRecord(shown); return () => onRecord(null) }, [shown, onRecord])
   const editable = !current || current.phase === 'approval'
-  useEffect(() => { drafts.set(thread ?? '', { spec, context, preview, referencePreview }) }, [thread, spec, context, preview, referencePreview])
+  useEffect(() => { drafts.set(thread ?? '', { origin, spec, context, preview, referencePreview }) }, [thread, origin, spec, context, preview, referencePreview])
   useEffect(() => {
     let live = true
     const read = (): void => { void bridge.climb?.({ type: 'read' }).then(result => { if (live && result.climbs) setRecords(result.climbs) }, () => { if (live) setError(t`Sotto could not read the Climbs. Open the Council again.`) }) }
@@ -140,7 +141,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
     </> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {error ? <p className="council-notice" role="alert">{error}</p> : null}
-    {records.filter(record => record.originThread === chosen?.id).map(record => <ClimbProgress key={record.id} record={record} busy={busy} call={call} />)}
+    {ownRecords.map(record => <ClimbProgress key={record.id} record={record} busy={busy} call={call} />)}
   </section>
 }
 function ClimbProgress({ record, busy, call }: { record: ClimbRecord; busy: boolean; call(request: ClimbRequest): Promise<void> }): ReactNode {

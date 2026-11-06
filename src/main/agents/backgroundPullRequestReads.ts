@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
 import { pullRequestObservation, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
-import { gateOf } from './babysitNews'
+import { gateOf, requiredChecksOf } from './babysitNews'
 import type { RunGitCommand } from './gitStatus'
 import type { PullRequestObservation } from './watcherEvidence'
 
@@ -113,11 +113,30 @@ export function checksAfter(last: ChecksRead | undefined, asked: boolean, detail
 
 /**
  * What one read of an open pull request tells Watcher (#1190): its state, conflict, remarks fingerprint and checks, and
- * whether the checks the base branch requires passed, from the same gate babysitting tells a thread by.
+ * whether the checks the base branch requires passed, from the same gate babysitting tells a thread by. Every check has
+ * passed only once that gate has (#2116): right after a push GitHub may list a skipped check of another workflow, or the
+ * first job alone, before the jobs the rules require exist. Where the sign-in cannot read the rules, no pass is known,
+ * since GitHub flags only the required checks that exist, so none is said. Where it can, it also says how many required
+ * checks are still to finish and how many others are still running, so Watcher knows which pending checks hold a merge.
  */
 export function openPullRequestObservation(fingerprint: PullRequestFingerprint, detail: DetailAnswer | null, now: number,
   previous: PullRequestObservation | undefined, checksAsked: boolean): PullRequestObservation {
-  const required = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null
-    ? { requiredPassed: detail.checksComplete !== false && gateOf(detail.checks, detail.requiredChecks ?? []).passed } : {}
-  return { ...pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), previous, checksAsked), ...required }
+  const observation = pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), previous, checksAsked)
+  const checks = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? detail.checks : null
+  if (!checks) return observation
+  // GitHub flags only the required checks that exist, so without the rules the flags never say none is missing.
+  const gate = gateOf(checks, detail!.requiredChecks ?? []), known = detail!.requiredChecks !== null
+  const requiredPassed = known && detail!.checksComplete !== false && gate.passed
+  return { ...observation, ...observation.checks === 'passed' && !requiredPassed ? { checks: 'pending' as const } : {}, requiredPassed,
+    ...known ? { pendingChecks: pendingChecks(checks, gate.required ? gate.names : []) } : {} }
+}
+/**
+ * The required checks not yet finished, one GitHub has not made yet included, and the other checks still running (#2116).
+ * A check counts as required as the gate counts it: of a required name and flagged required, so another app's check of
+ * the same name is one of the others.
+ */
+function pendingChecks(checks: NonNullable<DetailAnswer['checks']>, required: readonly string[]): NonNullable<PullRequestObservation['pendingChecks']> {
+  const finished = (context: string) => { const named = requiredChecksOf(checks, context); return named.length > 0 && named.every(check => check.status !== 'pending') }
+  return { required: required.filter(context => !finished(context)).length,
+    optional: checks.filter(check => check.status === 'pending' && !(check.required && required.includes(check.context))).length }
 }
