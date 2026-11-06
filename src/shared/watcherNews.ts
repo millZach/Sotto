@@ -29,7 +29,8 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * waiting for the user's review (ADR-0108), named by its question (`requestCardId`) or by the reply that named its page
  * (`messageId`); like all news it answers and approves nothing. `request-closed` and `prototype-closed` come once when a card or
  * prototype Watcher was told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
- * user answer that card. They carry none of the answer, and approve nothing. `threads-restarted` comes once for each thread
+ * user answer that card, or `endedWithoutAnswer` when it did not and the thread's turn had ended too (#2230). They carry
+ * none of the answer, and approve nothing. `threads-restarted` comes once for each thread
  * Sotto restarted when the usage limit that stopped it reset (ADR-0144), `restartedBy` naming that provider, watched or not:
  * a thread no request watches carries `WATCHER_UNWATCHED_REQUEST_ID`, which no request has. It approves nothing either.
  * `thread-moved` comes once for each move the user made of a thread to another machine (#1178) as it ends, watched or not:
@@ -53,7 +54,7 @@ export const watcherEventSchema = z.object({
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
   revision: z.string().max(512).optional(), operationId: z.uuid().optional(),
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),
-  delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
+  delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(), endedWithoutAnswer: z.literal(true).optional(),
   swarm: z.object({ id: z.uuid(), count: z.number().int().positive(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative() }).strict().optional(),
   restartedBy: z.string().min(1).max(64).optional(),
   moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),

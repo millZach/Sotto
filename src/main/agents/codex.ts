@@ -278,6 +278,8 @@ export interface CodexAppServerHostOptions {
   limitStops?: boolean
   logEvent?: (event: CodexAdapterEvent) => void
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
+  /** The most one line from an app-server may hold; the transport's own budget unless a test asks for less. */
+  maxFrameBytes?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
 }
@@ -687,6 +689,7 @@ export class CodexAppServerHost implements AgentHost {
     const environment = withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable)
     const server = new CodexProcess({ executable, args: this.options.args ? [...this.options.args, ...(judge?.arguments().slice(2) ?? [])] : judge?.arguments() ?? ['app-server', '--stdio', ...configArguments], cwd: judge?.cwd ?? this.options.userDataPath,
       env: judge ? judge.environment(environment) : environment, requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
+      ...(this.options.maxFrameBytes ? { maxFrameBytes: this.options.maxFrameBytes } : {}),
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
       onLost: lost => this.lost(lost),
@@ -1460,9 +1463,11 @@ export class CodexAppServerHost implements AgentHost {
         this.emit()
       })
     })().catch(error => {
-      // Codex refused the resume, so the thread's app-server holds nothing: it is let go rather than kept for a watched thread.
+      // Codex refused the resume, or did not answer it in time, so the thread's app-server holds nothing Sotto knows of:
+      // it is let go rather than kept for a watched thread, and the next action starts a new one rather than wait on a
+      // hung one again (#2268).
       const runtime = this.runtimes.get(id)
-      if (error instanceof Rejected && runtime && !this.live.has(id)) { this.runtimes.delete(id); this.endServer(runtime.server) }
+      if ((error instanceof Rejected || error instanceof Uncertain) && runtime && !this.live.has(id)) { this.runtimes.delete(id); this.endServer(runtime.server) }
       // A fork whose source rollout is gone cannot be opened again (#1028): the thread says so in place of its history.
       if (error instanceof Rejected && (error.missingThreadId === alias.codexThreadId || error.missingLineageId !== undefined)) {
         const thread = this.ensureThread(id)
@@ -2114,11 +2119,19 @@ export class CodexAppServerHost implements AgentHost {
           if (!watcherGuard) await this.decline(id)
           watcherGuard?.()
           const turnId = this.runningTurns.get(id)
-          if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
-            this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
-            this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
-            this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
-          }, undefined, undefined, watcherGuard)
+          const server = this.runtimes.get(id)?.server
+          const stopped = (): void => {
+            this.ensureThread(id).lastTurn = { id: turnId!, status: 'interrupted' }
+            this.activity.turn(this.ensureThread(id), { id: turnId!, status: 'interrupted' }, true)
+            this.terminalTurns.add(turnKey(id, turnId!)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
+          }
+          if (turnId) try { await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, stopped, undefined, undefined, watcherGuard) }
+          catch (error) {
+            // An app-server that took the Stop but does not answer it in time is stopped itself, so the turn ends as
+            // asked and the thread's next action starts it again, rather than every later action waiting on it (#2268).
+            if (!(error instanceof Uncertain) || !server || this.runtimes.get(id)?.server !== server || this.runningTurns.get(id) !== turnId) throw error
+            stopped(); server.abort()
+          }
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`

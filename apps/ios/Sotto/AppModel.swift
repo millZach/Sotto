@@ -48,6 +48,11 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
+        if let wake = snoozeWakeAt, wake <= Date() {
+            snoozeWakeTask?.cancel()
+            snoozeWakeAt = nil
+            listed = Listed()
+        }
         let holding = holdingThreads
         let key = Listed.GroupKey(show: show, query: query, opened: opened, holding: holding)
         if let kept = listed.groups[key] { return kept }
@@ -55,6 +60,17 @@ extension AppModel {
         if listed.groups.count >= 8 { listed.groups = [:] }
         let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
         listed.groups[key] = groups
+        if let wake = groups.nextSnoozeWake, snoozeWakeAt == nil || wake < snoozeWakeAt! {
+            snoozeWakeAt = wake
+            snoozeWakeTask?.cancel()
+            snoozeWakeTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, wake.timeIntervalSinceNow) * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.snoozeWakeAt = nil
+                self.listed = Listed()
+                self.objectWillChange.send()
+            }
+        }
         return groups
     }
     /// The threads this iPhone holds something for, by `ThreadRef.id`: words, photos or files in the reply box, a refused
@@ -1310,6 +1326,8 @@ struct RailAsk: Equatable {
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
+    private var snoozeWakeAt: Date?
+    private var snoozeWakeTask: Task<Void, Never>?
     private struct Listed {
         struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef?; let holding: Set<String> }
         var groups: [GroupKey: FocusThreads] = [:]
@@ -3368,24 +3386,40 @@ struct RailAsk: Equatable {
             }
         }
     }
-    private func applyDetail(_ next: ThreadDetail?, ref: ThreadRef, epoch: UUID, versionAtRead: Int? = nil) throws {
-        guard let now = generations[ref.hostID], epoch == now, ref == selected else { return }
+    /// `widened`: a step window moved back (ADR-0194) answers with the revision the phone may already hold, and still
+    /// takes its place. Whether it was taken.
+    @discardableResult
+    private func applyDetail(_ next: ThreadDetail?, ref: ThreadRef, epoch: UUID, versionAtRead: Int? = nil, widened: Bool = false) throws -> Bool {
+        guard let now = generations[ref.hostID], epoch == now, ref == selected else { return false }
         if let next, next.threadId != ref.threadID { throw ClientError.invalidIdentity }
         guard SnapshotGuard.accepts(requestGeneration: epoch, currentGeneration: now,
                                     requestedThread: ref.id, selectedThread: selected?.id,
                                     incomingRevision: next?.revision, currentRevision: openDetail?.revision,
-                                    changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return }
-        if let next, next.revision == openDetail?.revision { return }
+                                    changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return false }
+        if let next, next.revision == openDetail?.revision, !widened { return true }
         openDetail = next; detailVersion += 1
         if detailStore.held != nil { detailStore.held = nil }
         if detailProblem != nil { detailProblem = nil }
+        return true
     }
     func earlier(_ ref: ThreadRef) async {
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }
         let current = generations[ref.hostID]
         do {
-            let command = try Commands.loadEarlier(threadID: ref.threadID)
-            _ = try await connection.call(["op": .string("command"), "command": command])
+            // A computer that cuts threads to a step window moves this phone's window back by 200 steps (ADR-0194);
+            // one that doesn't widens the thread's own window by twenty turns, as a desktop's press does.
+            // The answer is the thread from the window's new start, at the revision the phone may already hold, so it takes
+            // that copy's place; one a delta overtook on the way is read again, from the same start.
+            if live[ref.hostID]?.features.contains(StepWindow.feature) == true, let current {
+                let version = detailVersion
+                let wider = try await connection.call(StepWindow.earlier(threadID: ref.threadID), as: Optional<ThreadDetail>.self)
+                let applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                if !applied, generations[ref.hostID] == current, selected == ref { reloadDetail(ref) }
+                return
+            } else {
+                let command = try Commands.loadEarlier(threadID: ref.threadID)
+                _ = try await connection.call(["op": .string("command"), "command": command])
+            }
             guard generations[ref.hostID] == current, selected == ref else { return }
             try await observeAndRead(ref.hostID)
         } catch { if generations[ref.hostID] == current { feedback = error.localizedDescription } }

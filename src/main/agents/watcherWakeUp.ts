@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { activityBodySize } from '../../shared/activityBodies'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
@@ -759,9 +759,9 @@ export class WatcherWakeUp {
     for (const target of pullRequests.values()) this.evidenceChanged(target, [], false, 'again')
     // A closing is news of a change, which observing afresh cannot see again, so it is made again here while still due.
     for (const event of events) {
-      const { requestCardId, requestCardKind, delegatedThreadId, answeredByUser, messageId } = event
+      const { requestCardId, requestCardKind, delegatedThreadId, answeredByUser, endedWithoutAnswer, messageId } = event
       const fields = { ...requestCardId === undefined ? {} : { requestCardId }, ...requestCardKind === undefined ? {} : { requestCardKind },
-        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...answeredByUser ? { answeredByUser } : {}, ...messageId === undefined ? {} : { messageId } }
+        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...answeredByUser ? { answeredByUser } : {}, ...endedWithoutAnswer ? { endedWithoutAnswer } : {}, ...messageId === undefined ? {} : { messageId } }
       if (event.kind === 'request-closed' && this.due(event)) this.event('request-closed', event.target, [requestCardId, delegatedThreadId ?? null], fields)
       if (event.kind === 'prototype-closed' && this.due(event)) this.event('prototype-closed', event.target, [watcherPrototypeSource(event)], fields)
     }
@@ -1354,7 +1354,7 @@ export class WatcherWakeUp {
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
         holders.add(key)
-        this.cardsClosed(target, key, target, undefined, thread.requests)
+        this.cardsClosed(target, key, target, undefined, thread)
         // A prototype waiting for the user's review is told once for its source while the mark stands (ADR-0108).
         const prototype = thread.prototypeReady && watcherPrototypeFields(thread.prototypeReady.source)
         if (prototype) this.event('prototype-ready', target, [thread.prototypeReady!.source], prototype)
@@ -1390,7 +1390,7 @@ export class WatcherWakeUp {
     if (!this.connected(snapshot, child)) return
     const [hostId, threadId] = JSON.parse(owner) as [string, string]
     holders.add(childKey)
-    this.cardsClosed({ hostId, threadId }, owner, { hostId, threadId: child.id }, child.id, child.requests)
+    this.cardsClosed({ hostId, threadId }, owner, { hostId, threadId: child.id }, child.id, child)
     for (const card of child.requests) this.event('needs-user', { hostId, threadId }, [child.id, card.id, requestRevision(card)],
       { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), delegatedThreadId: child.id })
   }
@@ -1455,11 +1455,13 @@ export class WatcherWakeUp {
   /**
    * News that a card Watcher was told of no longer waits on the user (October 24, 2026): one the holding thread had open at
    * the last pass that read it, and has no longer. A card whose own news was never told, as one answered before its news
-   * went or whose wake-up missed, makes none, and neither does one Sotto answered itself.
+   * went or whose wake-up missed, makes none, and neither does one Sotto answered itself. One Sotto did not see answered
+   * whose thread's turn has ended too ended without an answer (#2230); one whose turn still runs may have been answered
+   * where Sotto does not see, as on a paired host's own phone, so it says neither.
    */
   private cardsClosed(owner: WatcherThreadTarget, ownerKey: string, holder: WatcherThreadTarget, delegatedThreadId: string | undefined,
-    requests: AgentThread['requests']): void {
-    const holderKey = targetKey(holder), before = this.openCards.get(holderKey)
+    thread: Pick<AgentThread, 'requests' | 'status' | 'lastTurn'>): void {
+    const requests = thread.requests, holderKey = targetKey(holder), before = this.openCards.get(holderKey)
     // The ID its needs-user news has, as `event` gives a kind told once.
     const told = (card: AgentThread['requests'][number]) => observationDigest(['needs-user', owner,
       delegatedThreadId === undefined ? [card.id, requestRevision(card)] : [delegatedThreadId, card.id, requestRevision(card)]])
@@ -1476,7 +1478,8 @@ export class WatcherWakeUp {
       const by = this.answers.get(JSON.stringify([holderKey, id]))
       if (by === 'sotto') continue
       this.event('request-closed', owner, [id, delegatedThreadId ?? null], { requestCardId: id, requestCardKind: kind,
-        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...by === 'user' ? { answeredByUser: true as const } : {} }, ownerKey)
+        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...by === 'user' ? { answeredByUser: true as const }
+          : !isThreadTurnRunning(thread) ? { endedWithoutAnswer: true as const } : {} }, ownerKey)
     }
   }
   /**
