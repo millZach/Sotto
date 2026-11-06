@@ -13,6 +13,11 @@ thread or two. A one-minute recording of main on the owner's machine put this at
 - **What reaches the disk is the same.** The spliced text is the same, byte for byte, as serializing the whole saved
   state, and it is compared with the last text written exactly as before, so no write is skipped or added. With
   `SOTTO_VERIFY_THREAD_CHANGES=1` every flush also serializes the whole state and fails if the two differ.
+- **A read before a send that changed nothing keeps the texts.** That read rebuilds every thread's record and then
+  finds the state unchanged (#765). Each kept text follows its record to the rebuilt copy when `JSON.stringify` would
+  write the copy the same, fields in the same order, so the next save still serializes no thread. The check walks the
+  records `sameSnapshot` has just walked, short-circuiting on the same shared records. Before this, the next save after
+  each send serialized every thread (40 of 40 in the unit test).
 - **Every thread is serialized again** after the file is read, while the store is unavailable and records ride in the
   file, and on the first save after either.
 

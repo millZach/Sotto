@@ -23,7 +23,7 @@ import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shown
 import { SHOWN_STEP_PREFIX, WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { sameSnapshot } from './sameSnapshot'
+import { sameJsonText, sameSnapshot } from './sameSnapshot'
 import { immutableActivities, immutableModels, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -277,6 +277,8 @@ function jsonArrayItems(text: string): string[] {
   if (text.length > 2) items.push(text.slice(start, text.length - 1))
   return items
 }
+/** A thread's text as the cheaper flush last put it in `workspace.json`, the record it was made from and whether local history was on (#1332). */
+interface ThreadText { readonly source: AgentThread; readonly history: boolean; readonly text: string }
 const modelProviderKey = (model: AgentModel): string => model.providerId ?? model.provider
 /**
  * The catalog as `workspace.json` keeps it with cheaper publish windows on: a provider's permission
@@ -974,7 +976,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * and whether local history was on (#1332). A thread marked since (`unwritten`), or another record in its place, is
    * serialized again; the rest keep their text, so a save that changed nothing serializes no thread.
    */
-  private threadTexts = new Map<string, { readonly source: AgentThread; readonly history: boolean; readonly text: string }>()
+  private threadTexts = new Map<string, ThreadText>()
   /** The threads whose saved text may differ from `threadTexts`'; all of them when set. */
   private readonly unwritten = new Set<string>()
   private unwrittenAll = true
@@ -5030,7 +5032,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private organizationText(savedThread: (thread: AgentThread) => AgentThread, scrubThread: (thread: AgentThread) => void, keepActivities: boolean): string {
     const history = this.historyEnabled()
     const all = this.unwrittenAll || keepActivities
-    const kept = this.threadTexts, texts = new Map<string, { readonly source: AgentThread; readonly history: boolean; readonly text: string }>()
+    const kept = this.threadTexts, texts = new Map<string, ThreadText>()
     const parts: string[] = []
     // The threads serialized again, with where each goes, made in the same call as the organization around them.
     const fresh: AgentThread[] = [], placed: { readonly at: number; readonly id: string; readonly source: AgentThread }[] = []
@@ -5069,6 +5071,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (JSON.stringify(whole).replace(`"models":"${CATALOG_PLACEHOLDER}"`, () => `"models":${this.catalogText()}`) !== text) throw new Error('The saved workspace text differs from the whole saved state: a thread changed without being marked.')
     }
     return text
+  }
+  /**
+   * After a read that changed nothing (#765), each thread's kept text follows its record to the copy `accept` put in its
+   * place, so the next save does not serialize every thread again (#1332). It follows only a copy that `JSON.stringify`
+   * would write as the same text, fields in the same order; any other is serialized again. `sameSnapshot` has already
+   * walked the same records, so this costs what that did.
+   */
+  private keepThreadTexts(previous: readonly AgentThread[]): void {
+    const threads = this.state.snapshot.threads
+    for (let at = 0; at < threads.length; at++) {
+      const thread = threads[at]!, old = previous[at]
+      if (!old || old === thread || old.id !== thread.id) continue
+      const held = this.threadTexts.get(thread.id)
+      if (held?.source === old && sameJsonText(old, thread)) this.threadTexts.set(thread.id, { ...held, source: thread })
+    }
   }
   /**
    * The catalog's serialized form, remade only when the certified catalog array itself changes, so a
@@ -5315,6 +5332,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const { marks } = before
       for (const id of marks.remerge) this.remerge.add(id)
       this.remergeAll = marks.remergeAll; this.unpublishedAll = marks.unpublishedAll; this.unsavedAll = marks.unsavedAll; this.releasableAll = marks.releasableAll; this.unwrittenAll = marks.unwrittenAll
+      this.keepThreadTexts(before.snapshot.threads)
       if (this.dirty) this.writeSoon()
       return this.workspaceSnapshot()
     }

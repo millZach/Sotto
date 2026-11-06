@@ -67,6 +67,18 @@ async function serialized(work: () => Promise<void>): Promise<number> {
   return characters
 }
 
+/** The thread records `JSON.stringify` was handed during `work`: the flush hands those it serializes again in one array. */
+async function serializedThreads(work: () => Promise<void>): Promise<number> {
+  const native = JSON.stringify
+  let threads = 0
+  vi.spyOn(JSON, 'stringify').mockImplementation(((...args: Parameters<typeof JSON.stringify>) => {
+    if (Array.isArray(args[0])) threads += args[0].filter(item => typeof item === 'object' && item !== null && 'projectId' in item && 'messages' in item).length
+    return native(...args)
+  }) as typeof JSON.stringify)
+  try { await work() } finally { vi.mocked(JSON.stringify).mockRestore() }
+  return threads
+}
+
 const saved = async (root: string) => JSON.parse(await readFile(join(root, 'workspace.json'), 'utf8')) as { snapshot: { threads: AgentThread[] } }
 
 describe('the threads’ kept text in the workspace flush (#1332)', () => {
@@ -102,6 +114,21 @@ describe('the threads’ kept text in the workspace flush (#1332)', () => {
     adapter.emit()
     const characters = await serialized(() => host.flush())
     expect(characters).toBeLessThan(file / 4)
+  })
+
+  it('serializes no thread after a read before a send that changed nothing', async () => {
+    const { adapter, host } = await fixture()
+    // The read rebuilds every thread's record, and the state it leaves says what it said before.
+    await host.refreshThread('thread-5', { beforeSend: true })
+    vi.stubEnv('SOTTO_VERIFY_THREAD_CHANGES', '')
+    for (let flush = 0; flush < 2; flush++) {
+      adapter.emit()
+      expect(await serializedThreads(() => host.flush())).toBe(0)
+    }
+    // And what it writes is still what the whole state says.
+    vi.stubEnv('SOTTO_VERIFY_THREAD_CHANGES', '1')
+    adapter.emit()
+    await host.flush()
   })
 
   it('serializes every thread again when local history is turned off, and strips what it must', async () => {
