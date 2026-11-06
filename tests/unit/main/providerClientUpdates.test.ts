@@ -155,6 +155,32 @@ describe('which channel owns an install', () => {
       : { behind: true, channel: 'npm', canInstall: true, command: `npm install -g --prefix ${shown} --allow-scripts=@xai-official/grok @xai-official/grok@latest` })
   })
 
+  it('never lets an old npm Claude Code in the Windows global root claim a native one it does not hold (#1920)', async () => {
+    // A native Claude Code in ~\.local\bin\claude.exe, with an old @anthropic-ai/claude-code left in %APPDATA%\npm.
+    // npm would update the copy nothing runs and leave the native one as it was.
+    const home = await root('sotto-claude-native-beside-npm-')
+    const appData = join(home, 'AppData', 'Roaming')
+    const leftover = join(appData, 'npm', 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(leftover, { recursive: true }); await writeFile(join(leftover, 'package.json'), '{}')
+    const environment = { APPDATA: appData, npm_config_prefix: join(appData, 'npm'), MISE_DATA_DIR: join(home, 'mise') }
+    const native = join(home, '.local', 'bin', 'claude.exe')
+    expect(await detectClientInstall('claude', native, environment, 'win32')).not.toMatchObject({ channel: 'npm' })
+    const clients = new ProviderClients({ fetchImpl: async () => answer('2.1.316'), npmPath: async () => join(appData, 'npm', 'npm.cmd'), platform: 'win32' })
+    const reading = await clients.check('claude', '2.1.300', native, environment)
+    expect(reading.channel).not.toBe('npm')
+    expect(reading.command ?? '').not.toContain('npm install')
+  })
+
+  it('still reads a real Windows npm install of Claude Code as npm, under the prefix that holds it', async () => {
+    const appData = join(await root('sotto-claude-npm-windows-'), 'AppData', 'Roaming')
+    const prefix = join(appData, 'npm'), folder = join(prefix, 'node_modules', '@anthropic-ai', 'claude-code')
+    await mkdir(join(folder, 'bin'), { recursive: true }); await writeFile(join(folder, 'package.json'), '{}')
+    const environment = { APPDATA: appData, MISE_DATA_DIR: join(appData, 'mise') }
+    // npm's launcher in the prefix, and the binary inside the package.
+    expect(await detectClientInstall('claude', join(prefix, 'claude.cmd'), environment, 'win32')).toEqual({ channel: 'npm', npmPrefix: prefix })
+    expect(await detectClientInstall('claude', join(folder, 'bin', 'claude.exe'), environment, 'win32')).toEqual({ channel: 'npm', npmPrefix: prefix })
+  })
+
   it('lets npm run the install scripts of the one package it installs, which npm 12 skips while still exiting 0', async () => {
     const action = await updateActionFor('grok', { channel: 'npm', npmPrefix: join('prefix') }, undefined, async () => 'npm-cli.js')
     expect(action).toMatchObject({ asNode: true, command: `npm install -g --prefix ${join('prefix')} --allow-scripts=@xai-official/grok @xai-official/grok@latest`,

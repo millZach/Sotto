@@ -160,15 +160,24 @@ async function npmPackageFolder(packageName: string, executable: string, environ
   const linked = real !== undefined && dirname(real) !== await realpath(bin).catch(() => bin)
   const grokVersionLink = packageName === CLIENT_PACKAGES.grok && real !== undefined && !linked
     && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase() && GROK_VERSIONED.test(basename(real))
-  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...environment ? npmGlobalRoots(environment) : []]
+  const globalRoots = environment ? npmGlobalRoots(environment) : []
+  // Windows has no link to resolve, so a global root claims only a binary under its own prefix: a native Claude Code in
+  // `~\.local\bin` is not an old copy's in `%APPDATA%\npm\node_modules`. Grok Build is the exception, because its npm
+  // install script copies grok.exe to `~\.grok\bin` (ADR-0042).
+  const grokCopy = packageName === CLIENT_PACKAGES.grok && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase()
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...globalRoots]
   for (const root of roots) {
     const folder = join(root, ...names)
     const mustResolve = real !== undefined && inside <= 0 && ((ownPrefix.includes(root) && !grokVersionLink) || linked)
     if (mustResolve && !within(real, await realpath(folder).catch(() => folder))) continue
+    if (platform === 'win32' && inside <= 0 && !grokCopy && !ownPrefix.includes(root) && !within(executable, npmGlobalPrefix(root))) continue
     try { await access(join(folder, 'package.json'), constants.F_OK); return folder } catch { /* Try the next global layout. */ }
   }
   return undefined
 }
+/** The prefix a global root belongs to: `<prefix>/lib/node_modules` on macOS and Linux, `<prefix>\node_modules` on Windows. */
+const npmGlobalPrefix = (root: string): string =>
+  basename(dirname(root)).toLowerCase() === 'lib' ? dirname(dirname(root)) : dirname(root)
 /**
  * The prefix npm installed a global package under: `<prefix>/lib/node_modules/<package>`, or on Windows
  * `<prefix>\node_modules\<package>` whatever the prefix is called. Anything else is not a global install Sotto can name a prefix for.
