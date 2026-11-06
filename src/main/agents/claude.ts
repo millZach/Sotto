@@ -54,6 +54,7 @@ import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from '.
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricterModeNote } from './claudePermissionMode'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
@@ -61,7 +62,7 @@ import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
 import { CLAUDE_RESUME_FAILED, CLAUDE_RESUME_FAILED_SESSION } from '../../shared/threadFailures'
 import { ReadsBeforeSend } from './readsBeforeSend'
-import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
 /**
@@ -96,9 +97,6 @@ const aliasSchema = z.object({ councilJudge: z.literal(true).optional(), session
 type Alias = z.infer<typeof aliasSchema>
 /** One folder however it is spelled: resolved, and on Windows without regard to case. */
 const pathKey = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
-// Native CLI permission modes. Aliases without a stored mode keep the original
-// approval-required behaviour.
-const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' } as const satisfies Record<AgentRuntimeMode, string>
 /**
  * The tool the CLI offers only where someone can answer it. Its absence from a session's tool list is
  * how Sotto reads "this CLI has no approval surface", because the CLI reports no other sign of it.
@@ -286,7 +284,14 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    */
   subagentMode?: AgentRuntimeMode | undefined
   /** The level this CLI runs Ultracode at, from its launch or its last confirmed change; undefined while Ultracode is off (ADR-0148). */
-  ultracodeEffort?: UltracodeEffort | undefined }
+  ultracodeEffort?: UltracodeEffort | undefined
+  /**
+   * The permission mode this CLI should run, from its launch or its last confirmed change, and one a change still waiting
+   * on the CLI's answer may already have moved it to. A session's init frame is checked against them (#657).
+   */
+  mode: AgentRuntimeMode; modeChanging?: AgentRuntimeMode | undefined
+  /** Whether this CLI's stricter mode has been noted on the thread already: once per CLI, not once per turn. */
+  stricterNoted?: true }
 /**
  * The one hook a Watcher's CLI is started with (ADR-0073), and every thread's where Dynamic threads are on (ADR-0191), since a thread can owe a note at any send: UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
@@ -1338,8 +1343,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let reached = from
     for (const step of steps) {
       watcherGuard?.()
+      if (step.field === 'runtimeMode') runtime.modeChanging = to.runtimeMode
       try { await runtime.protocol.control(step.request) }
       catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached, stopped: step.field } }
+      finally { runtime.modeChanging = undefined }
+      if (step.field === 'runtimeMode') runtime.mode = to.runtimeMode
       reached = { ...reached, [step.field]: to[step.field] }
       if (step.ultracodeEffort !== undefined) runtime.ultracodeEffort = step.ultracodeEffort ?? undefined
     }
@@ -1654,7 +1662,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, mode: alias.runtimeMode ?? 'approval-required', takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
         ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
@@ -1901,6 +1909,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (alias.councilJudge && (!Array.isArray(frame.tools) || frame.tools.length !== 0)) {
         thread.status = 'error'; this.changed(id); void this.stopRuntime(id, runtime); this.emit(); return
       }
+      if (!alias.councilJudge && this.checkPermissionMode(id, runtime, frame)) return
       if (!alias.councilJudge) this.checkApprovalSurface(frame)
       this.queries.add(id)
     }
@@ -2680,6 +2689,45 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * (`markAll`). What goes through the message log is marked by the log.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
+  /**
+   * Compare the mode a turn's init frame says Claude Code runs with the one this CLI should run (#657, ADR-0043 amended
+   * November 6, 2026). A wrapper script or managed settings can change it on the way. Looser is stopped here, before the
+   * turn reaches the model, so nothing runs that the user did not choose to let run: the CLI is ended at once, not left to
+   * finish, and the turn fails with words saying so. Stricter goes on, with one note per CLI. Says whether it stopped.
+   */
+  private checkPermissionMode(id: string, runtime: Runtime, frame: ClaudeFrame): boolean {
+    const reported = frame.permissionMode
+    if (typeof reported !== 'string' || runtime.modeChanging && reported === nativePermissionModes[runtime.modeChanging]) return false
+    const drift = permissionModeDrift(runtime.mode, reported)
+    if (!drift || drift === 'stricter' && runtime.stricterNoted) return false
+    const thread = this.threads.get(id)!
+    if (drift === 'stricter') {
+      runtime.stricterNoted = true
+      this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'completed', title: 'Stricter permission mode', text: stricterModeNote(runtime.mode, reported) })
+      return false
+    }
+    const message = looserModeStopped(runtime.mode, reported)
+    runtime.protocol.halt(); void this.stopRuntime(id, runtime)
+    const turn = thread.lastTurn?.status === 'running' ? thread.lastTurn : undefined
+    if (turn) {
+      // The prompt reached Claude Code, so it is recorded as sent; its turn then ends here, with what happened.
+      this.recordUnechoed.get(turn.id)?.()
+      this.acknowledgements.get(turn.id)?.()
+      this.completedOrigins.add(turn.id)
+      thread.lastTurn = { ...turn, status: 'failed' }; thread.status = 'error'
+      this.markTurn(id, 'failed', turn.messageId, message)
+    } else this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'failed', title: 'Claude Code stopped', error: message })
+    thread.requests = []; this.changed(id); this.emit()
+    return true
+  }
+  /** One record of Sotto's own on the thread's activity, under its newest message. */
+  private noteOnThread(id: string, note: Pick<AgentActivity, 'id' | 'kind' | 'status' | 'title' | 'text' | 'error'>): void {
+    const thread = this.ensureActivityHistory(id); if (!thread) return
+    const turnId = thread.lastTurn?.status === 'running' && thread.lastTurn.messageId || this.messageLog.lastUserMessageId(id) || 'native-history'
+    const afterMessageId = this.lastTextMessageId(id)
+    thread.activities = mergeAgentActivities(thread.activities, [{ ...note, turnId, sequence: 0, startedAt: new Date().toISOString(), ...(afterMessageId ? { afterMessageId } : {}) }])
+    this.changed(id)
+  }
   /**
    * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report
    * a refused surface any other way: it keeps working, answers every prompt that needed a person with a

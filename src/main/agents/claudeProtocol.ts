@@ -112,6 +112,19 @@ export class ClaudeProtocol {
     const timer = setTimeout(() => this.child.kill(), 500)
     timer.unref(); void this.closed.then(() => clearTimeout(timer))
   }
+  /**
+   * End the CLI now, for a turn that must not act (#657): `stop` lets it finish what it is doing first. The interrupt and
+   * the end of its input reach a CLI that outlives the process Sotto started, as one a wrapper script runs without `exec`
+   * does; the kill ends the rest.
+   */
+  halt(): void {
+    this.stopping = true
+    try {
+      this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`)
+      this.child.stdin.end()
+    } catch { /* Its input is already closed. */ }
+    this.child.kill('SIGKILL')
+  }
   private abort(): void { this.fail(); this.child.kill() }
   private fail(): void {
     this.ended = true
