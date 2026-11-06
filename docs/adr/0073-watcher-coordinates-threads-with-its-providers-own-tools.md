@@ -721,7 +721,7 @@ Watcher's computer puts the phone's message in Watcher's conversation, or in its
 
 On October 28 a thread finished the collapsed rail's tinted trays (#1715) and ended its turn asking Zach to judge the faint trays and "say when" to open the pull request. Watcher passed that on once. Its next 40 replies never repeated it, and several said there was nothing waiting on him, because a question written in a reply is not on `waitingOnUser`. The finished work sat 185 minutes. With the Owl build that waited 30 minutes for a second "go", asks that were not repeated cost 220 minutes that day (`~/Developer/Reports/sotto-pr-latency-2026-10-28.md`, sections 4 and 5).
 
-`watcherPrompt.ts` now tells Watcher two more things. Every reply to the user names each thing `waitingOnUser` lists, every time, until it is answered, and never says that nothing waits while the list has anything on it. A worker reply that ends by asking the user to decide something with no card for it, such as whether to ship, which take to keep or whether to approve an ADR change, is not on that list: Watcher sends the thread back to ask it as a question card with its choices, and carries the ask in its replies until the card is up. `waitingOnUser` stays the authority on what waits on the user, with this one exception, which the prompt's waitingOnUser line and the glossary's Waiting on the user now name. A prose ask is carried from the news that brought it, not kept with keep_state, and only until its card is up. The worker's half is in ADR-0080's amendment of the same day.
+`watcherPrompt.ts` now tells Watcher two more things. Every reply to the user names each thing `waitingOnUser` lists, every time, until it is answered (superseded November 5, 2026, below: Sotto shows the list), and never says that nothing waits while the list has anything on it. A worker reply that ends by asking the user to decide something with no card for it, such as whether to ship, which take to keep or whether to approve an ADR change, is not on that list: Watcher sends the thread back to ask it as a question card with its choices, and carries the ask in its replies until the card is up. `waitingOnUser` stays the authority on what waits on the user, with this one exception, which the prompt's waitingOnUser line and the glossary's Waiting on the user now name. A prose ask is carried from the news that brought it, not kept with keep_state, and only until its card is up. The worker's half is in ADR-0080's amendment of the same day.
 
 ## October 28, 2026: a settled thread is not watched
 
@@ -876,3 +876,13 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: Sotto shows what waits on the user (#2227)
+
+The October 28 rule above had every reply name each thing `waitingOnUser` lists. Over October 14 to November 5, 3,532 replies carried that block, and 2,597 were identical to the reply before (694K characters). Because Watcher still wrote the list from memory, it still went wrong: on October 23 three replies said "Nothing needs you" while a card waited. Since then the room has gained the needs-you count at the top of Watcher's room, which opens the list itself (ADR-0152, November 5), alongside the sidebar's Needs you and the iPhone's.
+
+Zach chose to drop the every-reply rule and let Sotto own the list. He picked it over repeating the block only when the list changed, and over Sotto adding a count line under each reply.
+
+- **Sotto shows the list; Watcher doesn't repeat it.** Watcher names something that waits on the user when news first brings it, when the user asks what waits on them, or when its reply is about it.
+- **Watcher never says nothing waits.** The list is Sotto's to show as empty.
+- **Unchanged:** Watcher checks `waitingOnUser` before it says something waits on the user, and a worker's prose ask with no card is still carried until its card is up. That ask isn't on the list, so Sotto can't show it.
