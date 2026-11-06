@@ -302,6 +302,8 @@ const answerDecisionId = (clientId: string, commandId: string): string =>
  */
 const MESSAGES_PER_SECOND = 100
 const EVENT_PAGES_PER_SECOND = 100
+/** Characters an event page's request may take and still be paced rather than counted: far above any valid one. */
+const EVENT_PAGE_REQUEST_MAX = 32 * 1024
 /**
  * How long a phone's shell whose only news is Watcher's conversation waits after the last shell to that phone. Watcher
  * writing its reply changes its page with every word, and its page rides on every shell a phone with Watcher is pushed,
@@ -1811,13 +1813,14 @@ export async function startSocketServer(options: SocketServerOptions) {
     const now = Date.now()
     // The message budget is spent before the request is checked against the protocol, so a client sending more than its
     // budget is closed without the host checking what it sent (#2273). An unreadable request still spends it, so a client
-    // cannot loop on one for free. Only an event page is paced instead, and its request is small enough to check first.
+    // cannot loop on one for free. Only an event page is paced instead, and only a request small enough to be one is
+    // checked before it spends anything.
     const spendMessage = (): boolean => {
       if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
       if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return false }
       return true
     }
-    const eventPage = typeof raw === 'object' && raw !== null && (raw as { op?: unknown }).op === 'events'
+    const eventPage = text.length <= EVENT_PAGE_REQUEST_MAX && typeof raw === 'object' && raw !== null && (raw as { op?: unknown }).op === 'events'
     if (!eventPage && !spendMessage()) return
     if (peer.inFlight >= 32) { peer.frames.close(); return }
     const parsed = hostRequestSchema.safeParse(raw)

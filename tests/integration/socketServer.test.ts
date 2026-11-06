@@ -490,3 +490,19 @@ it('spends the message budget before it checks a request against the protocol (#
   expect(checked).toHaveBeenCalledTimes(100)
   expect(peer.messages.filter(message => (message.error as { code?: string } | undefined)?.code === 'invalid_request')).toHaveLength(100)
 })
+
+it('counts a large request that names event pages against the message budget before checking it (#2273)', async () => {
+  const { pairing, paired } = await pairedClient('Sotto desktop')
+  const { service } = recordingService()
+  listener = await startSocketServer({ service, pairing })
+  const session = pairing.signSession(paired.clientId)
+  const peer = await connected(listener.descriptor.port, session)
+  const closed = new Promise<void>(resolve => peer.frames.onClose(resolve))
+  const checked = vi.spyOn(hostRequestSchema, 'safeParse')
+  onTestFinished(() => checked.mockRestore())
+  // Only a small request can be an event page; this one is paced like any other and refused by its id.
+  const padding = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`field-${index}`, 0]))
+  for (let index = 0; index < 150; index++) peer.frames.send({ v: 1, id: `pages-${index}`, session, op: 'events', afterSeq: 0, ...padding })
+  await closed
+  expect(checked).toHaveBeenCalledTimes(100)
+})
