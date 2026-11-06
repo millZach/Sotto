@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
+  activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type CommandCut, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -413,6 +413,22 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
 }
 
 /**
+ * A folded row's command, which gives way in the folders of the file it names before anything else, so its pattern, the
+ * file's own name and what follows stay readable on a row too narrow for it whole. The parts are spans in one left-to-right
+ * isolate, so a right-to-left interface keeps the command's direction (ADR-0123); the folders are laid out right to left so
+ * they lose their start, and the left-to-right mark keeps their last separator on their right.
+ */
+function RowCommand({ command, className }: { readonly command: string; readonly className: string }): ReactNode {
+  const cut: CommandCut | null = commandCut(command)
+  if (cut === null) return <span className={className} dir="ltr">{command}</span>
+  return <span className={className} dir="ltr" data-cut="">
+    <span className="thread-activity__command-before">{cut.before}</span>
+    <span className="thread-activity__command-folders">{`${cut.folders}\u200e`}</span>
+    <span className="thread-activity__command-rest">{cut.rest}</span>
+  </span>
+}
+
+/**
  * The plan record whose checklist stands above the working line, which the opened steps under that line keep as one
  * step without opening it again, so opening the steps adds what they did and never says the plan twice.
  */
@@ -461,8 +477,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
       {purpose ? <>
         <span className="thread-activity__subject">{purpose}</span>
-        {open && script ? null : <span className="thread-activity__command" dir="ltr">{shown.subject}</span>}
-      </> : <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />}
+        {open && script ? null : open ? <span className="thread-activity__command" dir="ltr">{shown.subject}</span> : <RowCommand command={shown.subject} className="thread-activity__command" />}
+      </> : !open && record.kind === 'command' && shown.mono && !shown.preview
+        ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
+        : <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
@@ -678,6 +696,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // Read again only when the turn's steps, its newest reply or what it waits on change, not for each word of a reply
   // streaming in, or when the interface language does, since the words are in it.
   const now = useMemo(() => workingNow(steps, replyId, waitingOn), [steps, replyId, waitingOn, i18n.locale])
+  // With the steps open, the step running now is their newest row, so the line leaves it there and carries the turn's own
+  // words, the Spaceballs words, as it does between steps: each is said once. A reply being written or a request waiting on
+  // the user has no row, so the line keeps saying it.
+  const lineNow = open && now?.stepId !== undefined ? null : now
   // When the provider sent a plan, its checklist stands above the line while the turn runs (ADR-0134, November 5 amendment,
   // "the plan stays in view"). Its record is still one of the steps under the line, a row that does not open the list again;
   // once the steps are open the checklist reads each item whole, as the opened plan did.
@@ -696,10 +718,6 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // A turn that compacts part-way keeps its steps one press away.
   if (thread.compaction?.status === 'running') {
     return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
-  // With the steps open, the step running now is their newest row, so the line leaves it there and carries the turn's own
-  // words, the Spaceballs words, as it does between steps: each is said once. A reply being written or a request waiting on
-  // the user has no row, so the line keeps saying it.
-  const lineNow = open && now?.stepId !== undefined ? null : now
       onKeyDown={disclosure?.onKeyDown}>
       <div className="thread-activity-live__line">
         <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />

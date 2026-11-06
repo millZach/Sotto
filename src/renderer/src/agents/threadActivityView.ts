@@ -475,6 +475,24 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', '), ...named }
 }
 
+/** A command cut around the file it names: what comes before the file, the file's folders, and its name with the rest. */
+export interface CommandCut { readonly before: string; readonly folders: string; readonly rest: string }
+
+/** The first argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
+const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/u
+
+/**
+ * Where a command among the opened steps gives way when its row has no room for it whole: in the folders of the first file
+ * it names, so the command, its pattern, the file's own name and what follows stay readable ("rg -c "this\.(a|b)"
+ * …control.ts"). Null for a command that names no file in a folder, which is cut at its end. The working line's own
+ * command is always cut at its end (ADR-0134, November 4 amendment); this is for the rows.
+ */
+export function commandCut(command: string): CommandCut | null {
+  const text = command.replace(/^\u2068|\u2069$/gu, '')
+  const found = COMMAND_FILE.exec(text)
+  if (found === null) return null
+  return { before: text.slice(0, found.index), folders: found[1]!, rest: text.slice(found.index + found[1]!.length) }
+}
 
 /** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
 export const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)

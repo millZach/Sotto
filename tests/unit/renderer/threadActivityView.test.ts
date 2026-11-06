@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
+  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
   statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -544,5 +544,19 @@ describe('file changes that did not go through', () => {
     const groups = groupsOf([denied(), stopped, unseen])
     expect(turnChanges(groups).map(item => item.path)).toEqual(['src/stopped.ts', 'src/unseen.ts'])
     expect(summary(groups)).toBe('Changed 2 files')
+  })
+})
+
+describe('where a folded row’s command gives way', () => {
+  it('cuts in the folders of the first file it names, keeping the command, its pattern, the file and what follows', () => {
+    expect(commandCut('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toEqual({
+      before: 'cat ', folders: 'tests/unit/main/', rest: 'workspaceControl.test.ts | head -n 80',
+    })
+    expect(commandCut('rg -c "this\\.(a|b)" src/main/agents/control.ts')).toEqual({ before: 'rg -c "this\\.(a|b)" ', folders: 'src/main/agents/', rest: 'control.ts' })
+    expect(commandCut('type D:\\Projects\\sotto\\README.md')).toEqual({ before: 'type ', folders: 'D:\\Projects\\sotto\\', rest: 'README.md' })
+  })
+
+  it('leaves a command that names no file in a folder to be cut at its end', () => {
+    for (const command of ['npm test', 'rg -n policy src', 'rg -l x src/main src/host', 'cat README.md', 'ls 2>/dev/null', 'node --import=./a/b.mjs run']) expect(commandCut(command), command).toBeNull()
   })
 })

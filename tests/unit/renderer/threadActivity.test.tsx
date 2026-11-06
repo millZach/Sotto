@@ -188,7 +188,11 @@ describe('settled activity in the transcript', () => {
     // What it was for comes first, the command beside it in the code face; its name says both, and its time.
     const row = within(transcript).getByRole('button', { name: 'Read the request policy, cat src/policy.ts, completed in 0.0s' })
     expect(row.querySelector('.thread-activity__subject')).toHaveTextContent('Read the request policy')
-    expect(row.querySelector('.thread-activity__command')).toHaveTextContent('cat src/policy.ts')
+    // Folded, a command too long for its row gives way in its file's folders first, so it is drawn in parts.
+    const command = row.querySelector('.thread-activity__command')!
+    expect(command.textContent!.replace(/‎/gu, '')).toBe('cat src/policy.ts')
+    expect(command).toHaveAttribute('data-cut')
+    expect([...command.children].map(part => part.textContent!.replace(/‎/gu, ''))).toEqual(['cat ', 'src/', 'policy.ts'])
     // Under a second the folded row shows no time; a slow step keeps its own.
     expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
     expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
