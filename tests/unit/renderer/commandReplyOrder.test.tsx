@@ -6,7 +6,18 @@ import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContex
 import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentModel, type AgentState, type AgentThread, type AgentWireBridge } from '../../../src/shared/agents'
 
+const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+/**
+ * `run` as the window runs it, outside `act()`: nothing flushes React's work for it, so what `run` reads is what React had
+ * committed by then, as it is for a caller in the app.
+ */
+async function outsideAct<T>(run: () => Promise<T>): Promise<T> {
+  const was = actEnvironment.IS_REACT_ACT_ENVIRONMENT
+  actEnvironment.IS_REACT_ACT_ENVIRONMENT = false
+  try { return await run() } finally { if (was === undefined) delete actEnvironment.IS_REACT_ACT_ENVIRONMENT; else actEnvironment.IS_REACT_ACT_ENVIRONMENT = was }
+}
 
 const thread = (id: string, title = id): AgentThread => ({ id, title, projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })
 const models: AgentModel[] = [{ id: 'claude:test', provider: 'Claude Code', providerId: 'claude', name: 'test', ready: true }]
@@ -58,7 +69,7 @@ describe('a command reply a broadcast reached the window ahead of (#306)', () =>
     return { ...wired, result: hook.result }
   }
 
-  it('commits a reply main numbered after the broadcast its command sent, before the caller reads the state', async () => {
+  it('draws a reply main numbered after the broadcast its command sent before the command answers', async () => {
     const { result, withChanges, emit } = await connect()
     const renamed = fullState([thread('workshop', 'Renamed'), thread('docs')])
     withChanges.mockImplementation(async () => {
@@ -67,12 +78,13 @@ describe('a command reply a broadcast reached the window ahead of (#306)', () =>
       // The reply's own fields are what its caller acts on, so it is the reply that must land, not only the broadcast.
       return wire({ ...renamed, notice: 'From the reply' }, { revision: 3, base: 2, changed: [] })
     })
-    await act(async () => { await result.current.command({ type: 'select-thread', threadId: 'workshop' }) })
-    expect(result.current.state?.host.threads[0]!.title).toBe('Renamed')
-    expect(result.current.state?.notice).toBe('From the reply')
+    // Read in the command's own continuation, as a caller that acts on the page does, before anything else lets React run.
+    const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })
+      .then(() => ({ title: result.current.state?.host.threads[0]!.title, notice: result.current.state?.notice })))
+    expect(seen).toEqual({ title: 'Renamed', notice: 'From the reply' })
   })
 
-  it('drops a reply a newer broadcast passed, and commits that broadcast in its place', async () => {
+  it('drops a reply a newer broadcast passed, and draws that broadcast in its place before the command answers', async () => {
     const { result, withChanges, emit } = await connect()
     const replied = fullState([thread('workshop', 'Replied'), thread('docs')])
     const later = fullState([thread('workshop', 'Later'), thread('docs')])
@@ -82,7 +94,8 @@ describe('a command reply a broadcast reached the window ahead of (#306)', () =>
       emit(wire(later, { revision: 3, base: 1, changed: [later.host.threads[0]!] }))
       return reply
     })
-    await act(async () => { await result.current.command({ type: 'select-thread', threadId: 'workshop' }) })
-    expect(result.current.state?.host.threads[0]!.title).toBe('Later')
+    const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })
+      .then(() => result.current.state?.host.threads[0]!.title))
+    expect(seen).toBe('Later')
   })
 })

@@ -28,6 +28,9 @@ export class ModelCatalogRevisions {
   private readonly catalogs = new Map<string, CatalogSnapshot>()
   private lastComparison: { stored: readonly AgentModel[]; incoming: readonly AgentModel[]; lengths: [number, number]; equal: boolean } | null = null
 
+  /** The revision `key`'s catalog has now, without comparing anything or moving it: undefined before it has one. */
+  current(key: string): number | undefined { return this.catalogs.get(key)?.revision }
+
   /** The revision `models` has under `key`: the one it last had when its content is unchanged, otherwise the next. */
   revisionFor(key: string, models: readonly AgentModel[]): number {
     const existing = this.catalogs.get(key)
@@ -198,8 +201,8 @@ export class ThreadRecordsBroadcast {
    * `threads` encoded against what the window was last sent, and the commit that makes it the base once delivered.
    * `host`, when given, is the object `threads` was listed from, whose notes say how its list was made.
    */
-  encode(threads: readonly AgentThread[], host?: object): { payload: AgentThreadsBroadcast; commit: () => void } {
-    const revision = ++this.revision
+  encode(threads: readonly AgentThread[], host?: object, taken?: number): { payload: AgentThreadsBroadcast; commit: () => void } {
+    const revision = taken ?? ++this.revision
     const base = this.base
     const resets = this.resets
     const replaced = base?.host !== undefined && host !== undefined ? threadsReplacedSince(host, base.host) : undefined
@@ -244,6 +247,12 @@ export class ThreadRecordsBroadcast {
     if (!walked.unique) return undefined
     return { revision, commit: () => { this.resets++; this.base = { revision, host: undefined, records: walked.records, overrides: NO_OVERRIDES, order: walked.order } } }
   }
+  /**
+   * The next revision, for a command's reply as main builds it (#306): the reply is measured and encoded later, but it
+   * holds the state of this moment, so it is numbered against the broadcasts by when that state was taken.
+   */
+  take(): number { return ++this.revision }
+
   /** The revision of the broadcast the next is measured from, or null when the next lists every record. */
   get baseRevision(): number | null { return this.base?.revision ?? null }
 
@@ -251,7 +260,7 @@ export class ThreadRecordsBroadcast {
    * `threads` measured from what the window was last sent, as a broadcast would be, for a command's reply: nothing is
    * made the base, so the next broadcast is measured from the same place and carries the same changes (#1330's shape).
    */
-  peek(threads: readonly AgentThread[], host?: object): AgentThreadsBroadcast { return this.encode(threads, host).payload }
+  peek(threads: readonly AgentThread[], host?: object, taken?: number): AgentThreadsBroadcast { return this.encode(threads, host, taken).payload }
 
   /** Verifying mode: a broadcast read in part, against the whole walk from the same base. */
   private verifyPatched(threads: readonly AgentThread[], base: ThreadBase, payload: AgentThreadsBroadcast): void {
@@ -334,6 +343,13 @@ export class AgentStateBroadcaster {
    * revision: the kept parts' base. It moves with the threads' base, and only to a broadcast delivered.
    */
   private parts: { readonly revision: number; readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> } | null = null
+  /**
+   * The thread revision each command reply took as the router built it (#306), by the reply's `host`, which the router's
+   * top-level additions to a reply leave in place. Held beside the state, so a reply is never copied to carry it.
+   */
+  private readonly taken = new WeakMap<object, number>()
+  /** The thread revision of the last broadcast delivered to the window. */
+  private delivered = 0
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
@@ -354,6 +370,7 @@ export class AgentStateBroadcaster {
     const payload = threads.payload.base !== null && parts?.revision === threads.payload.base ? withKeptParts(whole, parts) : whole
     const delivered = deliver(payload)
     if (delivered) {
+      this.delivered = threads.payload.revision
       for (const [key, revision] of confirmed) this.sent.set(key, revision)
       threads.commit()
       // The parts go with the threads' base: a read while this was delivered leaves neither.
@@ -371,6 +388,13 @@ export class AgentStateBroadcaster {
    */
   readonly windowRead = (): void => { this.threads.reset(); this.parts = null }
 
+  /**
+   * The router built `state` to answer a command (#306): it takes the next thread revision now, which its reply carries
+   * however much later it is encoded, so the window orders it against the broadcasts by when its state was taken. One
+   * counter step and one weak entry, with nothing read from the state. An arrow property, so the router can be handed it.
+   */
+  readonly replyBuilt = (state: AgentState): void => { this.taken.set(state.host, this.threads.take()) }
+
   /** The broadcasts whose threads were read only where their host's notes say they were replaced, and those verified (#925 step 6). */
   get threadEncodes(): { readonly patched: number; readonly verified: number } { return { patched: this.threads.patchedEncodes, verified: this.threads.verifiedEncodes } }
 
@@ -382,15 +406,21 @@ export class AgentStateBroadcaster {
    *
    * It is not a pure encoder. Naming a catalog's revision goes through `revisionFor`, which advances the
    * counter the window uses and stores `state`'s catalog as the current content when that content
-   * differs from what the counter last held. A reply shell built before a catalog change and encoded after
-   * its broadcast therefore takes a revision of its own for the old content, and the next broadcast takes
-   * another for the new content and sends it in full to the window (ADR-0028's
-   * September 26 amendment).
+   * differs from what the counter last held. A reply the router built before a broadcast the window was delivered
+   * (`replyBuilt`) does not: it is older than the window's state, so its catalogs are named by the revisions they hold
+   * now, and the window resolves the newer catalog it holds (ADR-0028, November 5 amendment). A reply nobody numbered
+   * as it was built, such as one a test encodes directly, is encoded as before.
    *
    * An arrow property rather than a method, so `registerAgentIpc` can be handed it on its own.
    */
-  readonly encodeReceipt = (state: AgentState): AgentCommandReceipt =>
-    this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: this.revisionFor(key, models), omitted: true }))
+  readonly encodeReceipt = (state: AgentState): AgentCommandReceipt => {
+    // A reply built before a broadcast the window was delivered is older than the window's state (#306), and the window
+    // drops it. Its catalogs are named by the revisions they hold now without moving the counter: the window resolves the
+    // newer one it holds, and neither it nor the next broadcast pays for a catalog only this reply held.
+    const taken = this.taken.get(state.host)
+    const older = taken !== undefined && taken < this.delivered
+    return this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: (older ? this.revisions.current(key) : undefined) ?? this.revisionFor(key, models), omitted: true }))
+  }
 
   /**
    * A command's reply to a window that asked for its threads as changed thread records (ADR-0028, October 30 amendment): `encodeReceipt`'s,
@@ -402,7 +432,7 @@ export class AgentStateBroadcaster {
    */
   readonly encodeChangedThreadRecordsReceipt = (state: AgentState): AgentCommandChangedThreadRecordsReceipt => {
     const receipt = this.encodeReceipt(state)
-    return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host) } }
+    return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host, this.taken.get(state.host)) } }
   }
 
   /** `state` with `host.models` and every `host.clientHosts[].models` replaced by what `catalog` makes of it. */

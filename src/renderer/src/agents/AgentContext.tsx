@@ -1,5 +1,6 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ResponseStreamingProvider } from './responseStreaming'
+import { flushSync } from 'react-dom'
 import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
@@ -274,8 +275,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           const revision = threadRevisionOf(next)
           const current = revision !== undefined && session.newest !== undefined ? revision > session.newest : version === session.observed
           if (!PREVIEW_COMMANDS.has(request.type)) {
-            commitPendingShell({ urgent })
-            if (current) { receiveState(next, { urgent }); if (revision !== undefined) session.newest = revision }
+            const land = (): void => {
+              commitPendingShell({ urgent })
+              if (current) { receiveState(next, { urgent }); if (revision !== undefined) session.newest = revision }
+            }
+            // A caller that reads the state or the page once the command answers finds what it committed drawn, not only
+            // queued (#306): the reply, or the newer state that landed in its place, commits before the answer goes back.
+            // A draft save's reply is background news and stays a transition.
+            if (urgent) flushSync(land); else land()
           }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)

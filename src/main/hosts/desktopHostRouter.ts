@@ -437,7 +437,12 @@ export class DesktopHostRouter {
      * Where the window's Settle of a thread keeps which of its delegated threads elsewhere it settled, and which it could
      * not, for its Restore and a later Settle (#1316 part 3). Absent, they are kept in memory.
      */
-    cascadedSettles?: CascadedSettles } = {}) {
+    cascadedSettles?: CascadedSettles
+    /**
+     * Told each state built to answer a command as it is built (#306): the main window's broadcaster numbers it against
+     * its broadcasts then, before the microtasks that pass until it is encoded. Read and kept by reference, never copied.
+     */
+    replyBuilt?: (state: AgentState) => void } = {}) {
     this.held = heldProvidersOption(options)
     this.cascadedSettles = options.cascadedSettles ?? new CascadedSettles()
   }
@@ -835,7 +840,7 @@ export class DesktopHostRouter {
    * its top level. A publication may still be waiting behind the coordinator's publish window when a command answers, so
    * the answer is built afresh rather than taken from `lastPublished()`, which could miss the command's effect (#306).
    */
-  private reply(): AgentState { return this.build(connection => commandView(connection.service)) }
+  private reply(): AgentState { return this.numbered(this.build(connection => commandView(connection.service))) }
   /**
    * Publishes every host's state as it is now and answers a command with that publication. It is built from each host's
    * live state in this same turn, so it holds the command's own effect, and the answer costs no second build (#1760).
@@ -844,8 +849,10 @@ export class DesktopHostRouter {
    */
   private emitted(): AgentState {
     this.emit()
-    return this.published ? { ...this.published } : this.reply()
+    return this.published ? this.numbered({ ...this.published }) : this.reply()
   }
+  /** `state`, which answers a command, told to whoever numbers replies as it is built (#306). */
+  private numbered(state: AgentState): AgentState { this.options.replyBuilt?.(state); return state }
   /**
    * One host's threads as the router last published them. The host-update and start-at-boot questions ask this on every
    * change; reading every host's shell afresh for it copied the whole state twice per waiting host per update. Before

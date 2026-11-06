@@ -17,9 +17,9 @@ const wrapped = new WeakMap<AgentWireBridge, AgentBridge>()
 
 /**
  * The thread revision each broadcast and command receipt this page put back crossed under, by the state it became (#306).
- * Main numbers a broadcast's changed thread records and a receipt's from one counter as it encodes them, and builds a
- * receipt's shell just before, so a receipt numbered above a broadcast was built after that broadcast was sent and holds
- * at least what it held. `AgentContext` reads this to keep a reply that a broadcast reached the window ahead of. Held beside
+ * Main numbers a broadcast's changed thread records and a receipt's from one counter, a broadcast as it is sent and a
+ * receipt as the router builds it, so a receipt numbered above a broadcast was built after that broadcast was sent and
+ * holds at least what it held. `AgentContext` reads this to keep a reply that a broadcast reached the window ahead of. Held beside
  * the state rather than in it, so state sharing still finds an unchanged broadcast unchanged. A state put back from a
  * whole thread list, or read through `get()`, has none.
  */
