@@ -24,7 +24,8 @@ import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
-import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
+import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, ThreadFolderContext, TurnChangedFiles } from './ThreadActivity'
+import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import { Fold, FOLD_MS } from './Fold'
 import { BrowserLinesStore } from './browserLine'
 import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
@@ -1188,6 +1189,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
     [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
+  // The folder the thread works in, so an opened command says where it ran only when that was somewhere else. A string,
+  // so the steps redraw only when the folder itself changes.
+  const project = state.host.projects.find(item => item.id === thread.projectId)
+  let folder: string | undefined
+  try { folder = resolveThreadWorkingDirectory(thread, project) } catch { folder = undefined }
   // While the running turn writes a reply after taking steps, the reply stands under the working line rather than above it:
   // the steps came first, and once the turn ends its Worked for line stands where the working line stood, above that reply.
   // So the screen reads in the order the work happened, and the line holds its place as the words arrive. The reply is
@@ -1241,7 +1247,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-transcript__viewport" data-room-backdrop=""><div className="thread-workspace__transcript" data-room-backdrop="" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}><SentSkillsContext.Provider value={sentSkills}>
+      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}><SentSkillsContext.Provider value={sentSkills}><ThreadFolderContext.Provider value={folder}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
@@ -1271,7 +1277,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         <div ref={setWritingPlace} className="thread-transcript__writing" />
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
-      </SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
+      </ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}

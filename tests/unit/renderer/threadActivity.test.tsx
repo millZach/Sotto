@@ -143,18 +143,19 @@ describe('settled activity in the transcript', () => {
     await user.keyboard(' ')
     expect(row).toHaveAttribute('aria-expanded', 'true')
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
-    // What ran is said once, by the open row; its body adds where it ran and what came back.
+    // What ran is said once, by the open row; its body leads with what came back, then where it ran, outside the thread's folder.
     expect(row).toHaveTextContent('npm test -- --run')
     expect(within(details).queryByLabelText('command code block')).toBeNull()
     expect(details).not.toHaveTextContent('npm test')
     expect(within(details).getByLabelText('output code block')).toHaveTextContent('PASS 12 tests')
     expect(details).toHaveTextContent('In D:\\work')
-    // The duration is stated once, in the row, and where it came from stands beside it.
+    // The duration is stated once, in the row; where it came from is its tooltip and the row's description, not more words in view.
     expect(details).not.toHaveTextContent('4.2s')
     expect(details).not.toHaveTextContent('Reported by Codex')
-    expect(row).toHaveTextContent(/4\.2s.*Reported by Codex/u)
+    expect(row.querySelector('[title="Reported by Codex"]')).toHaveTextContent(/^4\.2s$/u)
+    expect(row.querySelector('.tt-visually-hidden')).toHaveTextContent('Reported by Codex')
     expect(row).toHaveAccessibleDescription('Reported by Codex')
-    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.textContent || button.getAttribute('aria-label'))).toEqual(['Copy command', 'Copy output code'])
+    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.textContent || button.getAttribute('aria-label'))).toEqual(['Copy output code', 'Copy command'])
 
     await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' }))
     expect(within(transcript).getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: old.*Added: new/u)
@@ -175,11 +176,11 @@ describe('settled activity in the transcript', () => {
     expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
   })
 
-  it('leads a described command’s row with what it was for, and leaves a quick step’s time to the open row', async () => {
+  it('leads a described command’s row with what it was for, and shows a quick step’s time neither folded nor open', async () => {
     const user = userEvent.setup()
-    const { transcript } = mount(stateWith({ activities: [
+    const { transcript } = mount(stateWith({ workingDirectory: 'D:\\Projects\\voice', activities: [
       lifecycle({ status: 'completed', durationMs: 9_000 }),
-      activity({ id: 'read', command: 'cat src/policy.ts', durationMs: 40, output: 'export class RequestPolicy {}',
+      activity({ id: 'read', command: 'cat src/policy.ts', cwd: 'd:/Projects/voice/', durationMs: 40, output: 'export class RequestPolicy {}',
         text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }) }),
       activity({ id: 'test', command: 'npm test', durationMs: 6_100, output: 'PASS' }),
     ] }))
@@ -197,11 +198,17 @@ describe('settled activity in the transcript', () => {
     expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
     expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
     await user.click(row)
-    // Open, the row says what it was for and the command whole, with the time and where it came from; the body says neither again.
-    expect(row).toHaveTextContent(/Read the request policy.*cat src\/policy\.ts.*0\.0s.*Reported by Codex/u)
+    // Open, the row says what it was for and the command whole. Under a second its time is still only in its name, and where
+    // the time came from, the thread's own provider, is said only to assistive tech; the body says none of it again.
+    expect(row).toHaveTextContent(/^Read the request policycat src\/policy\.ts/u)
+    expect(row.querySelector('.thread-activity__meta > :not(.tt-visually-hidden)')).toBeNull()
+    expect(row).toHaveAccessibleDescription('Reported by Codex')
+    expect(row).toHaveAccessibleName('Read the request policy, cat src/policy.ts, completed in 0.0s')
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
     expect(details).not.toHaveTextContent('Read the request policy')
     expect(within(details).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
+    // It ran in the thread's own folder, however that folder is spelt, so the body does not name it.
+    expect(details).not.toHaveTextContent(/\bIn\b/u)
     expect(within(details).getByRole('button', { name: 'Copy command' })).toBeVisible()
   })
 

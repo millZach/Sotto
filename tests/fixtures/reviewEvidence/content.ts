@@ -16,6 +16,19 @@ export const minutesAgo = (minutes: number): string => new Date(E2E_THREADS_NOW 
 const user = (id: string, minutes: number, text: string): Message => ({ id, role: 'user', text, createdAt: minutesAgo(minutes) })
 const assistant = (id: string, minutes: number, text: string): Message => ({ id, role: 'assistant', text, createdAt: minutesAgo(minutes) })
 
+/**
+ * The folder the threads' commands ran in. A provider reports each command's folder, and a thread's commands run in the
+ * thread's own folder, which in the capture is the evidence repository; it is only known once the capture builds it.
+ */
+let commandFolder = 'D:\\Projects\\sotto'
+const ranInFixtureFolder: Activity[] = []
+
+/** Puts every command, written and still to be written, in the folder the capture's project is in. */
+export function placeCommandsIn(folder: string): void {
+  commandFolder = folder
+  for (const record of ranInFixtureFolder) record.cwd = folder
+}
+
 /** Builds one turn's records in order, so sequence numbers and anchors stay right as a thread is written. */
 class Turn {
   private sequence = 0
@@ -25,17 +38,19 @@ class Turn {
       startedAt: minutesAgo(startedMinutesAgo), timingSource: 'provider', ...(durationMs === undefined ? {} : { durationMs, completedAt: new Date(Date.parse(minutesAgo(startedMinutesAgo)) + durationMs).toISOString() }) })
   }
   private add(patch: Partial<Activity> & Pick<Activity, 'id' | 'kind' | 'title'>, after = this.anchor): this {
-    this.records.push({ turnId: this.turnId, sequence: this.sequence++, afterMessageId: after, status: 'completed', timingSource: 'provider', ...patch })
+    const record: Activity = { turnId: this.turnId, sequence: this.sequence++, afterMessageId: after, status: 'completed', timingSource: 'provider', ...patch }
+    if (record.cwd !== undefined) ranInFixtureFolder.push(record)
+    this.records.push(record)
     return this
   }
   command(id: string, command: string, output: string, durationMs = 180, status: Activity['status'] = 'completed', after?: string): this {
-    return this.add({ id, kind: 'command', title: 'Command', command, cwd: 'D:\\Projects\\sotto', output, status,
+    return this.add({ id, kind: 'command', title: 'Command', command, cwd: commandFolder, output, status,
       ...(status === 'running' ? {} : { durationMs, exitCode: status === 'failed' ? 1 : 0 }) }, after)
   }
   /** The command just added, with the input Claude sends for it: the command and what it is for. */
   described(description: string): this {
-    const record = this.records.at(-1)!
-    this.records[this.records.length - 1] = { ...record, text: JSON.stringify({ command: record.command, description }) }
+    // In place, so the record keeps its place among those placeCommandsIn moves.
+    this.records.at(-1)!.text = JSON.stringify({ command: this.records.at(-1)!.command, description })
     return this
   }
   reasoning(id: string, text: string, after?: string): this { return this.add({ id, kind: 'reasoning', title: 'Reasoning summary', text }, after) }

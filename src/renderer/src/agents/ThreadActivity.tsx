@@ -31,6 +31,7 @@ import {
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
 import { Fold } from './Fold'
+import { folderKey } from './projectFolders'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -356,7 +357,9 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
   // Where the row's time came from stands beside that time in the open row; here only what else was lost.
   const notes = [record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
-  const cwd = record.cwd
+  // Where a command ran is said only when it was not the thread's own folder, which the pane's header already names.
+  const folder = useContext(ThreadFolderContext)
+  const cwd = record.cwd && (folder === undefined || folderKey(folder) !== folderKey(record.cwd)) ? record.cwd : undefined
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
   const text = parsed ? inputDetail(record) : record.text
@@ -372,17 +375,14 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     : text ? record.kind === 'reasoning'
       ? <MessageContent text={text} />
       : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null
-  // What ran and what it was for are the open row's; the body adds where it ran, then what came back: each said once.
-  // A command whose input is not the provider's description keeps those words here, first.
+  // What ran and what it was for are the open row's; the body leads with what came back, then where it ran when that was
+  // somewhere else, and the way to copy the command: each said once. A command whose input is not the provider's
+  // description keeps those words here, first.
   const described = record.command !== undefined && stepDescription(record) !== ''
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command && !described ? said : null}
     {script ? <MessageContent text={fenced(record.command!, 'command')} /> : null}
-    {cwd || ran ? <p className="thread-activity__fact thread-activity__where tt-paragraph">
-      {cwd ? <span><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></span> : null}
-      {ran ? <CopyCommand command={ran} /> : null}
-    </p> : null}
     {record.command ? null : said}
     {activityChanges(record).map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
       {/* A single changed file is already named by its row; a tool's files are what it touched. */}
@@ -407,6 +407,10 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
       ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
       : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
+    {cwd || ran ? <p className="thread-activity__fact thread-activity__where tt-paragraph">
+      {cwd ? <span><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></span> : null}
+      {ran ? <CopyCommand command={ran} /> : null}
+    </p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
   </div>
@@ -433,6 +437,12 @@ function RowCommand({ command, className }: { readonly command: string; readonly
  * step without opening it again, so opening the steps adds what they did and never says the plan twice.
  */
 const PlanInViewContext = createContext<string | undefined>(undefined)
+
+/**
+ * The folder the thread works in, so an opened command names the folder it ran in only when that was somewhere else.
+ * Undefined while the thread's folder is not known, and then every opened command names its folder.
+ */
+export const ThreadFolderContext = createContext<string | undefined>(undefined)
 
 const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
   readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
@@ -463,12 +473,14 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running' && !planInView
   const lines = activityLineCounts(record)
-  // Where the time came from qualifies the time, so an open row says it beside it, once, rather than at the foot of its body.
+  // Where the time came from qualifies the time, so an open row keeps it for its time's tooltip and for assistive tech: in
+  // view it would only name the thread's own provider again, or say beside no time that none was recorded.
   const timing = open ? timingNote(record, provider) : ''
   const timingId = useId()
   const quiet = quietUnknown && record.status === 'unknown'
-  // A folded row's time shows only when it says something: a step under a second leaves it to the open row and its name.
-  const brief = !open && quickStep(record)
+  // A row's time shows only when it says something, open or folded: a step under a second leaves it to the row's name.
+  const brief = quickStep(record)
+  const timed = record.status === 'completed' && !brief
   const spoken = planInView ? label.subject : [purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = purpose || label.subject
@@ -486,10 +498,9 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
       {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
       <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
-      {quiet || brief ? null : status}
+      {quiet || brief ? null : timed && timing ? <span title={timing}>{status}</span> : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
-      {timing && status && !quiet ? <span className="thread-activity__timing-gap" aria-hidden="true">·</span> : null}
-      {timing ? <span id={timingId} className="thread-activity__timing">{timing}</span> : null}
+      {timing ? <span id={timingId} className="tt-visually-hidden">{timing}</span> : null}
     </span>
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>

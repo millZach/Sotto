@@ -6,7 +6,7 @@ import sharp from 'sharp'
 
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
-import { EVIDENCE_THREADS, PERMISSION_REQUEST, STREAM_MESSAGE_ID, STREAM_MOMENTS, STREAM_REPLY, STREAM_SHOWN, STREAM_THREAD_ID, evidenceThread, minutesAgo, streamActivities } from '../fixtures/reviewEvidence/content'
+import { EVIDENCE_THREADS, PERMISSION_REQUEST, placeCommandsIn, STREAM_MESSAGE_ID, STREAM_MOMENTS, STREAM_REPLY, STREAM_SHOWN, STREAM_THREAD_ID, evidenceThread, minutesAgo, streamActivities } from '../fixtures/reviewEvidence/content'
 import { buildEvidenceRepository, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
 import { DEFAULT_THEME_ID } from '../../src/shared/themes/library'
 import { pageBoundProblems, setAppearance } from './support/designCapture'
@@ -1409,6 +1409,8 @@ test.describe('review evidence', () => {
     const kept = await readFile(join(out, 'composer', 'boxes.json'), 'utf8').then(text => JSON.parse(text) as Record<string, Box>).catch(() => ({} as Record<string, Box>))
     for (const [file, box] of Object.entries(kept)) boxes.set(file, box)
     const repository = await buildEvidenceRepository()
+    // The threads' commands ran in their own folder, the project's.
+    placeCommandsIn(repository.path)
     await writePullRequestMoment(repository, 'checks-running')
     process.env.SOTTO_E2E_GH_SCRIPT = resolve('tests/fixtures/fakeGh.mjs')
     process.env.SOTTO_E2E_GH_EXECUTABLE = process.execPath

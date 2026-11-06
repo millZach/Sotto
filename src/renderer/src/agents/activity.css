@@ -127,8 +127,6 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] { flex-direction: column; align-items: stretch; gap: 2px; }
 .thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] > * { max-width: none; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .thread-activity__row[data-open] > .thread-activity__toggle .thread-activity__command { color: var(--tt-text-2); }
-/* Where the time came from, beside the time, in the quiet ink whatever the row's outcome. */
-.thread-activity__timing, .thread-activity__timing-gap { color: var(--tt-text-muted); }
 
 .thread-activity__pulse { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
 .thread-activity__pulse:not([data-connected]) { background: var(--tt-text-muted); }
@@ -147,10 +145,23 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details .rich-code[data-language='output'] { border-color: transparent; }
 .thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); }
 .thread-activity__details .rich-code[data-language='output'] .rich-code__scroll { max-height: calc(12lh + 18px); }
+/* The row above says what ran, so what came back needs no bar naming it "output": the output starts at the well's top, with
+   Copy in its corner on the well's own fill, and the lines keep clear of it. Assistive tech still hears "output code
+   block" and "Copy output code". Output still on its way keeps its bar, which says so. */
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) { position: relative; }
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) > .rich-code__bar {
+  position: absolute; z-index: 1; top: 3px; right: 3px; gap: 6px; min-height: 0; padding: 0; border-radius: var(--tt-radius-sm); background: var(--rich-block);
+}
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__language {
+  position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0);
+}
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__status:not(:empty) { padding-left: 8px; }
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 9px 44px 12px 14px; max-height: calc(12lh + 21px); }
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
 .thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
-/* Where a command ran, and the way to copy the command the row above says. */
+/* Under what came back: where a command ran, when that was not the thread's own folder, and the way to copy the command
+   the row above says. */
 .thread-activity__where { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; }
 .thread-activity__copy-command { display: inline-flex; align-items: center; gap: 8px; }
 .thread-activity__copy {
