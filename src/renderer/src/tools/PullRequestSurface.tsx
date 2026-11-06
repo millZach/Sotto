@@ -378,7 +378,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         </Fold> : null}
         {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
           aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined}
-          peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
+          peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} all={detail.changedFiles} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
           <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
         </Fold> : null}
       </div>

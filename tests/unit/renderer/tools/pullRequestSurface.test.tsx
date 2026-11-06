@@ -966,7 +966,7 @@ describe('the drill-in under the merge checklist', () => {
     // A body as tall as `room`, holding 400 pixels, 60 more for each peek and 10 for each file a peek lists, so a count of peeks either fits or scrolls.
     let room = 0
     const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
-      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row:not([data-more])').length
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
     const files = [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }, { path: 'c.ts', additions: 3, deletions: 0 }, { path: 'd.ts', additions: 1, deletions: 0 }]
@@ -1005,18 +1005,26 @@ describe('the drill-in under the merge checklist', () => {
     expect(peeks()).toHaveLength(2)
     expect(peeks()[1]).toMatch(/^src\/deep\/b\.ts.*c\.ts.*src\/a\.ts/u)
     expect(peeks()[1]).not.toContain('d.ts')
+    // Its last line says how many more the fold holds, so three never read as the whole list.
+    expect(peeks()[1]).toMatch(/1 more file$/u)
     cleanup()
-    // Room to spare after every peek: more of the files.
+    // Room to spare after every peek: more of the files, and with every file shown, no line says more.
     room = 1000
     mount({ detail: read })
     await opened()
     expect(peeks()[1]).toContain('d.ts')
+    expect(peeks()[1]).not.toContain('more')
+    cleanup()
+    // GitHub's count wins over the files it listed: four listed of thirty, so the line counts the twenty-six not shown.
+    mount({ detail: { ...read, changedFiles: 30 } })
+    await opened()
+    expect(peeks()[1]).toMatch(/26 more files$/u)
   })
   it('holds the peeks through a resize while a fold is open, and fits them again once every fold is closed', async () => {
     // As above: 400 pixels, 60 more for each peek and 10 for each file a peek lists.
     let room = 1000
     const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
-      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row:not([data-more])').length
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
     const resized: (() => void)[] = []

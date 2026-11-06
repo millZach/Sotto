@@ -172,6 +172,8 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__peek-row > svg { color: var(--tt-text-muted); }
 .pr-surface__peek-row > svg:is([data-status='failure'], [data-status='cancelled']) { color: var(--tt-error-text); }
 .pr-surface__peek-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
+/* The line that says how many more the fold holds than its peek shows: the quietest ink, so it reads as a note on the list. */
+.pr-surface__peek-row[data-more] { color: var(--tt-text-muted); }
 .pr-surface__peek-name { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
 .pr-surface__peek-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
 .pr-surface__peek-folder[data-group] { margin-right: .3em; }

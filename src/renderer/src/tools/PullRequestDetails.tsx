@@ -1,5 +1,6 @@
 import React, { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleMinus, CircleX, createLucideIcon, ExternalLink, type LucideIcon } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestFile } from '../../../shared/gitPullRequests'
 import { MessageContent } from '../agents/MessageContent'
@@ -61,16 +62,21 @@ export function PullRequestChecksPeek({ checks }: { readonly checks: readonly Gi
     </span>
   })}</span>
 }
-/** The most changed files, the first few (`rows`), under the head of their closed fold where the panel has room; for the eye only. */
-export function PullRequestFilesPeek({ files, rows = PEEK_ROWS }: { readonly files: readonly GitPullRequestFile[]; readonly rows?: number | undefined }): ReactNode {
+/**
+ * The most changed files, the first few (`rows`), under the head of their closed fold where the panel has room; for the
+ * eye only. A quiet last line says how many more the pull request changes (`all`, GitHub's count where it has one), so
+ * the few never read as the whole list.
+ */
+export function PullRequestFilesPeek({ files, all, rows = PEEK_ROWS }: { readonly files: readonly GitPullRequestFile[]; readonly all?: number | undefined; readonly rows?: number | undefined }): ReactNode {
   const most = useMemo(() => filesByWeight(files).slice(0, rows), [files, rows])
+  const more = Math.max(all ?? files.length, files.length) - most.length
   return <span className="pr-surface__peek" data-of="files" aria-hidden="true">{most.map(file => {
     const { folder, name } = pathParts(file.path)
     return <span key={file.path} className="pr-surface__peek-row">
       <span className="pr-surface__peek-name"><bdi className="pr-surface__peek-folder">{folder}</bdi><bdi className="pr-surface__peek-file">{name}</bdi></span>
       <LineCounts additions={file.additions} deletions={file.deletions} />
     </span>
-  })}</span>
+  })}{more > 0 ? <span className="pr-surface__peek-row" data-more="">{plural(more, { one: '# more file', other: '# more files' })}</span> : null}</span>
 }
 
 /**
