@@ -6,6 +6,7 @@ import { usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
 import { paneTerminalTarget } from '../tools/paneTerminalShortcut'
 import { paneTerminalChromeStore, shownView } from '../tools/paneTerminalStore'
 import { useCouncilEnabled } from '../features/council/useCouncils'
+import { openCouncilFor } from '../features/council/councilDraft'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from './AgentContext'
 import { ThreadsView, type ThreadPaneSlot, type ThreadPaneSlotProps, type ThreadToolsSlot, type ThreadsViewProps } from './ThreadsView'
@@ -60,6 +61,15 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateCon
   // the Terminal drawer button, so a drawer showing the Council shows its shells instead (ADR-0177).
   const shortcut = usePaneTerminalShortcut()
   const council = useCouncilEnabled()
+  // A thread's agent that starts a Council or a Climb at the user's request opens the Council tab of its pane's drawer,
+  // when that thread has a pane on screen (ADR-0177, November 5, 2026).
+  useEffect(() => {
+    const bridge = council ? window.sotto?.council : undefined
+    if (!bridge) return
+    return bridge.onChanged(change => {
+      for (const item of change.open ?? []) if (panes.current.includes(item.thread)) openCouncilFor(item.thread, item.mode)
+    })
+  }, [council])
   const selectedThreadId = state?.activeThreadId
   useEffect(() => {
     if (shortcut === null) return

@@ -798,8 +798,8 @@ msgid "A different theme when dark"
 msgstr "A different theme when dark"
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
-msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
-msgstr "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
+msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
+msgstr "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"

@@ -592,7 +592,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
 const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || i18n._(msg({ message: 'Attachment', comment: 'An attachment with no name.' }))
-const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+export const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
   [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
@@ -645,7 +645,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
         <img src={source} alt={name} decoding="async" draggable={false} onError={() => setFailed(true)} />
       </button>
       <figcaption><span className="rich-attachment__name" title={name}>{name}</span>
-        {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite">{feedback ?? details}</span>}</figcaption>
+        {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite" data-feedback={feedback ? '' : undefined}>{feedback ?? details}</span>}</figcaption>
       {menuAt ? <LinkMenu at={menuAt} label={t`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }

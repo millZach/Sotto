@@ -198,7 +198,11 @@ export function delegatedRoster(ownerId: string, threads: readonly AgentThread[]
   const ownerMachine = owner ? machineOf(owner) : undefined
   return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host, machineOf(thread), ownerMachine), below }))
     .sort((first, second) => newestFirst(first.row, second.row))
-    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host, machineOf(child), row.machine)).sort(newestFirst)])
+    .map(({ row, below }) => {
+      const children = below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host, machineOf(child), row.machine)).sort(newestFirst)
+      const workingBelow = children.some(child => !child.lastRead && (child.status === 'working' || child.status === 'background'))
+      return [row.finished && workingBelow ? { ...row, finished: false } : row, ...children]
+    })
 }
 
 /**

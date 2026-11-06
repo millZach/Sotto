@@ -99,7 +99,7 @@ test("Watcher's night scene never blinks while the room changes", async () => {
     const region = await page.evaluate(pane => {
       const element = document.querySelector<HTMLElement>(pane)!, base = element.getBoundingClientRect()
       const card = element.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-      const header = Math.max(...[...element.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+      const header = Math.max(...[...element.querySelectorAll(':scope > :is(.watcher-head, .watcher-status, .thread-workspace__error)')].map(node => node.getBoundingClientRect().bottom))
       return { left: base.left + 4, top: header + 70, width: Math.max(40, card.left - base.left - 40), height: Math.max(40, card.top - header - 90), scale: innerWidth }
     }, WATCHER)
     const log = page.locator(`${WATCHER} .thread-workspace__transcript`)

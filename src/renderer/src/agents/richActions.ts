@@ -84,7 +84,7 @@ export async function writeClipboard(text: string): Promise<void> {
  * format it can show (PNG, JPEG, WebP, GIF) arrives in the one format every app pastes.
  */
 export async function writeClipboardImage(source: string): Promise<void> {
-  const copy = window.sotto?.copyImage
+  const copy = window.sotto?.copyImage ?? window.sottoPopup?.copyImage
   if (!copy) throw new Error('Clipboard unavailable')
   const dataUrl = await pngDataUrl(source)
   if (dataUrl.length > MAX_OUTPUT_IMAGE_DATA_URL) throw new ImageTooLargeError()

@@ -95,8 +95,9 @@
 .council-entry__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
 .council-entry__title { display: grid; gap: 2px; min-width: 0; }
 .council-entry__title h2 { margin: 0; color: var(--tt-text); font-size: var(--tt-type-reading); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.council-entry__meta, .council-entry__seats { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
+.council-entry__meta, .council-entry__seats, .council-entry__asked { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-entry__seats { color: var(--tt-text-2); }
+.council-entry__asked { overflow-wrap: anywhere; }
 .council-entry__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .council-round { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
 .council-round__question { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }

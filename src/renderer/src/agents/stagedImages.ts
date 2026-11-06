@@ -13,8 +13,8 @@ const THUMBNAIL_CACHE_CHARACTERS = 8 * 1024 * 1024
 /** `size` is the data URL's length once it is made; 0 while it is being made. */
 const thumbnails = new Map<string, { readonly source: Promise<string | null>; size: number }>()
 
-/** Only the staging calls are used, which cross the bridge as they are. */
-function agents(): AgentWireBridge | undefined { return window.sotto?.agents }
+/** Only the staging calls are used, which cross the bridge as they are. The popup has them on its own bridge. */
+function agents(): Pick<AgentWireBridge, 'stageAttachment' | 'attachmentContent'> | undefined { return window.sotto?.agents ?? window.sottoPopup }
 
 /** Drops the least recently used thumbnails until the cache is within both bounds. The newest is always kept. */
 function evict(): void {
@@ -136,6 +136,20 @@ export async function stageAttachedFile(threadId: string | null, file: { readonl
     const said = stagingError(error)
     throw new Error(said === STAGING_FAILED ? words.failed : said, { cause: error })
   }
+}
+
+/** Reads the full staged image on demand without adding it to the thumbnail cache. */
+export async function fullImageSource(threadId: string | null, handle: Pick<AgentAttachmentHandle, 'digest'>): Promise<string | null> {
+  try {
+    const content = await agents()?.attachmentContent?.({ threadId, digest: handle.digest })
+    if (!content) return null
+    return await new Promise<string | null>(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(new Blob([new Uint8Array(content.bytes)], { type: content.mimeType }))
+    })
+  } catch { return null }
 }
 
 /** The chip's thumbnail: drawn when the image was staged here, or from the bytes its host still keeps. */

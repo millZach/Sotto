@@ -1,0 +1,195 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: when a thread's agent asks the Council over MCP because the user asked for one, what does the pane show?
+  Picked already (Zach, 2026-11-05): the pane's Council drawer opens as it starts; refused when the user's own message
+  does not ask; the verdict comes back to the agent as a wake-up; a Climb still waits for the user's approval.
+  Open question: how the pane says the agent started it. Variants:
+    A "Ordinary step"  - the call is an ordinary tool step; the Council's record names who asked and quotes the user.
+    B "Council step"   - the call is its own step in the conversation, with seats and state, beside the open drawer.
+    C "Drawer line"    - nothing new in the conversation; one line across the drawer's top names who asked, with Stop.
+  Picked: A, Ordinary step (Zach, 2026-11-05).
+  Scenarios (top bar): Asked, Not asked (refused), Verdict back (wake-up), Climb (approval waits).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Council from a thread</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a18; --raised: #232320; --line: #2f2f2b;
+    --text: #ecebe6; --dim: #a3a198; --faint: #7a786f; --accent: #e8c547; --accent-ink: #1a1500; --bad: #e88a73;
+    --r: 8px; --r-sm: 6px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 20px; border-bottom: 1px solid var(--line); background: #0d0d0c; }
+  .bar span { color: var(--faint); font-size: 12px; margin-right: 4px; }
+  .bar button { background: none; border: 1px solid var(--line); color: var(--dim); padding: 4px 11px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .bar button[aria-pressed=true] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  .bar .gap { width: 18px; }
+  .window { max-width: 1280px; height: calc(100vh - 92px); min-height: 560px; margin: 0 auto; display: flex; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .side { width: 220px; border-right: 1px solid var(--line); padding: 12px 10px; color: var(--dim); font-size: 13px; flex: none; }
+  .side .row { padding: 5px 8px; border-radius: var(--r-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .row.on { background: var(--raised); color: var(--text); }
+  .side .row.sub { padding-left: 22px; color: var(--faint); font-size: 12px; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .head .title { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head .title small { color: var(--faint); font-weight: 400; margin-left: 8px; }
+  .hb { border: 1px solid var(--line); background: none; color: var(--dim); border-radius: var(--r-sm); padding: 3px 9px; font: inherit; font-size: 12.5px; }
+  .hb.on { color: var(--text); border-color: var(--accent); }
+  .talk { flex: 1; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+  .msg.user { align-self: flex-end; background: var(--raised); padding: 9px 13px; border-radius: 12px; max-width: 70%; }
+  .msg.agent { max-width: 82%; color: var(--text); }
+  .step { color: var(--faint); font-size: 12.5px; display: flex; gap: 8px; align-items: baseline; }
+  .step b { color: var(--dim); font-weight: 500; }
+  .step.err b { color: var(--bad); }
+  .card { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 10px 12px; max-width: 82%; font-size: 13px; }
+  .card .top { display: flex; gap: 8px; align-items: center; }
+  .card .top b { font-weight: 600; }
+  .card .seats { color: var(--faint); font-size: 12px; margin-top: 4px; }
+  .card .state { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .link { background: none; border: 0; color: var(--accent); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
+  .wake { border-left: 2px solid var(--line); padding-left: 10px; color: var(--faint); font-size: 12.5px; }
+  .composer { margin: 0 16px 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--faint); }
+  .drawer { height: 48%; border-top: 1px solid var(--line); display: flex; flex-direction: column; background: #151514; }
+  .dbar { display: flex; gap: 2px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .tab { padding: 3px 10px; border-radius: var(--r-sm); color: var(--faint); }
+  .tab.on { background: var(--raised); color: var(--text); }
+  .dbar .right { margin-left: auto; color: var(--faint); }
+  .askedline { display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: 12.5px; color: var(--dim); }
+  .askedline q { color: var(--text); }
+  .askedline .hb { margin-left: auto; }
+  .dbody { flex: 1; display: flex; min-height: 0; }
+  .chamber { flex: 1.2; font: 11px/1.15 ui-monospace, monospace; color: var(--faint); white-space: pre; padding: 10px; overflow: hidden; }
+  .chamber .lit { color: var(--accent); }
+  .record { flex: 1; border-left: 1px solid var(--line); padding: 10px 12px; overflow: auto; font-size: 12.5px; }
+  .record h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--dim); }
+  .record .who { color: var(--faint); margin-bottom: 8px; }
+  .record .who q { color: var(--text); }
+  .record .r { display: flex; gap: 8px; padding: 3px 0; color: var(--dim); }
+  .record .r span:last-child { margin-left: auto; color: var(--faint); }
+  .approve { margin-top: 10px; border: 1px solid var(--accent); border-radius: var(--r); padding: 8px 10px; }
+  .approve .hb { border-color: var(--accent); color: var(--accent); margin-top: 6px; }
+  .note { max-width: 1280px; margin: 0 auto; padding: 6px 20px; color: var(--faint); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Variant and scenario">
+  <span>Variant</span>
+  <button data-v="A">A · Ordinary step</button>
+  <button data-v="B">B · Council step</button>
+  <button data-v="C">C · Drawer line</button>
+  <div class="gap"></div>
+  <span>Scenario</span>
+  <button data-s="asked">Asked</button>
+  <button data-s="refused">Not asked</button>
+  <button data-s="verdict">Verdict back</button>
+  <button data-s="climb">Climb</button>
+</div>
+<div class="window">
+  <nav class="side">
+    <div class="row">Sotto</div>
+    <div class="row on">Tidy the settings migration</div>
+    <div class="row sub" id="sideSeats"></div>
+    <div class="row">Release notes for 0.44</div>
+    <div class="row">Fix the tray icon on Windows</div>
+  </nav>
+  <section class="pane">
+    <div class="head">
+      <div class="title">Tidy the settings migration <small>Sotto · feat/settings-migration</small></div>
+      <button class="hb">Commit</button><button class="hb">Watch</button><button class="hb" id="councilBtn">Council</button><button class="hb">Tools</button><button class="hb">Terminal</button><button class="hb">···</button>
+    </div>
+    <div class="talk" id="talk"></div>
+    <div class="composer">Message Claude…</div>
+    <div class="drawer" id="drawer"></div>
+  </section>
+</div>
+<p class="note" id="note"></p>
+<script>
+const params = new URLSearchParams(location.search)
+let v = params.get('variant') ?? 'A', s = params.get('scenario') ?? 'asked'
+const USER_ASKED = 'Have the council review this migration before I merge it.'
+const USER_NOT = 'Looks good, can you review this migration before I merge it?'
+const QUESTION = 'Review the settings migration in src/main/settings/migrate.ts: does it lose or corrupt any saved setting, and is it safe to run twice?'
+const SEATS = 'A Opus · B GPT-6.1 Sol · C Grok 4.7 · Chair Muse Wonder Full'
+const CHAMBER = `
+            ___________________________________
+           /     ,\\o/,       laurel        \\
+          /        |         CHAIR            \\
+   _____ /_________|___________________________\\_____
+        o/          o           \\o
+       /|          /|\\           |\\
+       / \\         / \\          / \\
+    [ A Opus ]  [ B Sol ]   [ C Grok ]
+     reading     writing      thinking`
+function talk() {
+  const user = s === 'refused' ? USER_NOT : USER_ASKED
+  const out = [`<div class="msg user">${user}</div>`]
+  if (s === 'refused') {
+    out.push(`<div class="step err"><b>sotto_council · ask_council</b> refused: your message does not ask for the Council, so nothing was started.</div>`)
+    out.push(`<div class="msg agent">I reviewed it myself instead. Two things… (If you want the Council's view, say so and I'll ask it.)</div>`)
+    return out.join('')
+  }
+  if (s === 'climb') {
+    out[0] = `<div class="msg user">Put this settings page through a Council Climb until the layout reads well at the minimum size.</div>`
+  }
+  const isClimb = s === 'climb'
+  if (v === 'B') {
+    out.push(`<div class="card"><div class="top"><b>${isClimb ? 'Started a Climb' : 'Asked the Council'}</b><span class="state">${s === 'verdict' ? 'Verdict in' : isClimb ? 'Waiting for your approval' : 'Answers · 1 of 3'}</span></div>
+      <div>${isClimb ? 'Goal: the settings page reads well at 820×560 and 1280×800.' : QUESTION}</div>
+      <div class="seats">${isClimb ? 'Judges Opus · Opus · GPT-6.1 Sol · Chair Opus' : SEATS} · from Settings → Council</div>
+      <button class="link">Open the Council</button></div>`)
+  } else {
+    out.push(`<div class="step"><b>sotto_council · ${isClimb ? 'start_climb' : 'ask_council'}</b> ${isClimb ? 'Climb set up; waiting for your approval in the Council drawer.' : 'started: three panelists and a chair, from Settings → Council.'}</div>`)
+  }
+  out.push(`<div class="msg agent">${isClimb ? "I've started a Climb. Its setup chair is proposing criteria; approve them in the Council drawer and judging starts." : "I've asked the Council. I'll carry on and tell you what it says when the verdict is in."}</div>`)
+  if (s === 'verdict') {
+    out.push(`<div class="wake">Sotto woke Claude with the Council's verdict (not shown to you as a message).</div>`)
+    out.push(`<div class="msg agent">The Council's verdict: the migration is safe to run twice, but it drops <code>councilChair</code> when the saved value is null (A and C confirmed it in the code; B could not check). Sol's point about the backup file was raised by one panelist only. Shall I fix the null case?</div>`)
+  }
+  return out.join('')
+}
+function drawer() {
+  if (s === 'refused') return ''
+  const isClimb = s === 'climb'
+  const quote = s === 'climb' ? 'Put this settings page through a Council Climb…' : USER_ASKED
+  const line = v === 'C' ? `<div class="askedline">Claude ${isClimb ? 'started this Climb' : 'asked this Council'} because you said <q>${quote}</q><button class="hb">Stop</button></div>` : ''
+  const who = v === 'A' ? `<div class="who">Asked by Claude in this thread, because you said <q>${quote}</q></div>` : ''
+  const record = isClimb
+    ? `<h4>Climb · setup</h4>${who}<div class="r"><span>Setup chair · Opus</span><span>proposed 4 criteria</span></div>
+       <div class="approve">Goal, evidence (src/renderer/src/features/settings), 4 criteria, judges Opus · Opus · GPT-6.1 Sol, chair Opus, up to 5 attempts.<br><button class="hb">Approve and start</button> <button class="hb">Change…</button></div>`
+    : `<h4>${s === 'verdict' ? 'Verdict' : 'Answers'}</h4>${who}
+       <div class="r"><span>Question</span><span></span></div><div style="color:var(--text);margin-bottom:8px">${QUESTION}</div>
+       <div class="r"><span>A · Opus</span><span>${s === 'verdict' ? 'Fair' : 'reading'}</span></div>
+       <div class="r"><span>B · GPT-6.1 Sol</span><span>${s === 'verdict' ? 'Fair' : 'writing'}</span></div>
+       <div class="r"><span>C · Grok 4.7</span><span>${s === 'verdict' ? 'Fair' : 'thinking'}</span></div>
+       <div class="r"><span>Chair · Muse Wonder Full</span><span>${s === 'verdict' ? 'verdict sent to Claude' : 'framed'}</span></div>`
+  return `<div class="dbar"><span class="tab on">Council</span><span class="tab">zsh</span><span class="right">Layout ▾</span></div>${line}
+    <div class="dbody"><div class="chamber">${CHAMBER.replace('CHAIR', '<span class="lit">CHAIR</span>')}</div><div class="record">${record}</div></div>`
+}
+const NOTES = {
+  A: 'A: nothing new in the conversation but the tool step every MCP call already gets; the Council record names who asked and quotes your message.',
+  B: 'B: the call is a step of its own in the conversation (question, seats, state, Open the Council), and the drawer opens beside it.',
+  C: 'C: nothing new in the conversation; one line across the top of the Council tab names who asked, quotes you, and offers Stop.',
+}
+function render() {
+  document.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  document.querySelectorAll('[data-s]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.s === s)))
+  document.getElementById('talk').innerHTML = talk()
+  const d = drawer(), dr = document.getElementById('drawer')
+  dr.innerHTML = d; dr.style.display = d ? '' : 'none'
+  document.getElementById('councilBtn').classList.toggle('on', !!d)
+  document.getElementById('sideSeats').textContent = d ? (s === 'climb' ? 'Climb setup: Opus' : 'Council A, B, C, chair') : ''
+  document.getElementById('note').textContent = NOTES[v] + (s === 'refused' ? ' Not asked: refused, nothing starts, no drawer opens.' : '')
+  history.replaceState(null, '', `?variant=${v}&scenario=${s}`)
+}
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { v = b.dataset.v; render() })
+document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { s = b.dataset.s; render() })
+addEventListener('keydown', e => { const k = ['A','B','C']; if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { v = k[(k.indexOf(v) + (e.key === 'ArrowRight' ? 1 : 2)) % 3]; render() } })
+render()
+</script>
+</body>
+</html>

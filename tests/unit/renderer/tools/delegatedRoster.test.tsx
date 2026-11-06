@@ -196,6 +196,24 @@ describe('the roster of delegated threads', () => {
     expect(delegatedStatusWord(row())).toBe('Needs your answer')
   })
 
+  it('leaves off Just finished while a second-level thread still works', () => {
+    const state = delegatingState()
+    const merge = state.host.threads.find(thread => thread.id === MERGE)!
+    merge.status = 'idle'; merge.finishedUnread = true
+    const answers = views()
+    answers[PARENT] = [view(MERGE, 13, { outcome: 'answered', outcomeAt: at(2) })]
+    answers[MERGE] = [view(REVIEW, 11)]
+    state.host.threads.find(thread => thread.id === REVIEW)!.status = 'running'
+    const made = new Map(Object.entries(answers).map(([id, list]) => [id, { made: list, received: [] }]))
+    const row = (): DelegatedRosterRow => delegatedRoster(PARENT, state.host.threads, made, state.host).flat().find(item => item.thread.id === MERGE)!
+    expect(row()).toMatchObject({ status: 'answered', finished: false })
+    expect(delegatedStatusWord(row())).toBe('Answered')
+    made.set(MERGE, { made: [view(REVIEW, 11, { outcome: 'background' })], received: [] })
+    expect(row().finished).toBe(false)
+    made.set(MERGE, { made: [view(REVIEW, 11, { outcome: 'answered', outcomeAt: at(1) })], received: [] })
+    expect(delegatedStatusWord(row())).toBe('Just finished')
+  })
+
   it('says what opening does: as a thread, to answer its request, or that it is in the pane', () => {
     const thread = { title: 'PR 1150 to merge' } as AgentThread
     expect(openAction({ thread, waitingFor: null }, false)).toEqual({ kind: 'open', label: 'Open as thread', name: 'Open PR 1150 to merge as a thread' })

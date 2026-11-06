@@ -187,6 +187,10 @@ msgid "{name} has removed this link, so nothing was read. Make a new code to lin
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "{name} has removed this link. Make a new code to link again."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
 msgstr ""
 
@@ -223,11 +227,19 @@ msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again w
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "{name}'s computer has answered a lot of checks just now. Try again in a few minutes."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name}'s host did not stop, so Sotto left {from} running."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "{name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work."
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
@@ -330,6 +342,10 @@ msgstr ""
 msgid "A contributed color theme is missing or outside the extension; nothing was imported."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "A Council or a Climb starts from a thread on this computer. Nothing was started."
+msgstr ""
+
 #: src/main/council/councilIpc.ts
 msgid "A Council starts from a thread on this computer."
 msgstr ""
@@ -377,6 +393,10 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "A required criterion is unmeasurable. No attempt was counted. Review the rubric and evidence in a new Climb."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "A seat in Settings → Council has no connected model. Tell the user to choose another model for it there. Nothing was started."
 msgstr ""
 
 #: src/main/council/councilService.ts
@@ -649,6 +669,10 @@ msgid "Client access could not be revoked. Nothing was saved. Check the host con
 msgstr ""
 
 #: src/main/council/climbService.ts
+msgid "Climb needs connected Claude or Codex models for its judges, and none is ready. Tell the user to connect one. Nothing was started."
+msgstr ""
+
+#: src/main/council/climbService.ts
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr ""
 
@@ -914,6 +938,10 @@ msgstr ""
 
 #: src/main/agents/threadMovesIpc.ts
 msgid "Move threads from the main Sotto window."
+msgstr ""
+
+#: src/main/council/climbService.ts
+msgid "Name the evidence as paths inside this thread's folder, such as src/settings, with no .. or drive letters. Nothing was started."
 msgstr ""
 
 #: src/main/tools/checkpoints.ts
@@ -1315,6 +1343,10 @@ msgstr ""
 msgid "Sotto could not read or change these files. Check that your configuration is readable and writable, then try again."
 msgstr ""
 
+#: src/main/council/climbService.ts
+msgid "Sotto could not read that evidence: a path is missing or cannot be read. Name files or folders that exist inside this thread's folder. Nothing was started."
+msgstr ""
+
 #: src/main/hosts/ipc.ts
 msgid "Sotto could not read that request, so nothing was sent to the host. Close this and try again."
 msgstr ""
@@ -1442,6 +1474,10 @@ msgstr ""
 
 #: src/main/hosts/desktopHosts.ts
 msgid "Sotto is closing. Nothing was checked."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "Sotto is closing. Nothing was started."
 msgstr ""
 
 #: src/main/hosts/desktopHosts.ts
@@ -1802,6 +1838,10 @@ msgid "The Climb could not continue. Your kept rounds are unchanged."
 msgstr ""
 
 #: src/main/council/climbService.ts
+msgid "The Climb could not start."
+msgstr ""
+
+#: src/main/council/climbService.ts
 msgid "The Climb reply is unavailable. The held round was kept."
 msgstr ""
 
@@ -1887,6 +1927,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "The download on this computer did not match the release's checksum, so Sotto installed nothing on {name}."
+msgstr ""
+
+#: src/main/council/climbService.ts
+msgid "The evidence is larger than a Climb takes: at most 10,000 files and 100 MiB. Name fewer paths, or exclude some. Nothing was started."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -2916,6 +2960,10 @@ msgid "This is the same host as {host}, which is already saved. Switch {host} on
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "This link has run out, so nothing was checked. Both of you can press Link again to keep it."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "This link has run out, so nothing was read. Both of you can press Link again to keep it."
 msgstr ""
 
@@ -3053,6 +3101,14 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "This thread already has a Climb. Stop or settle it first."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started."
+msgstr ""
+
+#: src/main/council/climbService.ts
+msgid "This thread has no folder for the Climb's evidence. Nothing was started."
 msgstr ""
 
 #: src/main/hosts/hostedTerminals.ts

@@ -37,3 +37,9 @@ The night scene's thread owls glow in the accent while their thread waits on the
 ## Amendment: a Teams tab on Owl (November 3, 2026)
 
 Zach picked a **Teams** tab beside **Watcher** while the `teams` Owl feature is on ([ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md), decision 9). With it off, decision 1 stands as written. The Watched and Visualize tabs stay gone.
+
+## Amendment: one strip under the header (November 5, 2026)
+
+Drake picked B, **One strip**, in `docs/prototypes/watcher-top-lines-prototype.html`. The needs-you line is now a count that opens a filled list, with up to five names and each reason in its own column. The rest are counted and open All threads. Each name still goes to its card in the conversation when it is there, otherwise to the thread at what it waits on; Shift opens Threads. Escape closes the list and returns to the count. The machines line sits beside that count, wrapping below when needed. Its names have no underline at rest, and spacing replaces the separators and the line below.
+
+The header and conversation stay as decided. The scene measures the combined strip so its glyphs stay clear of both lines. The open list has its own opaque card surface, as ADR-0110 requires; it adds no status capsule or tint.
