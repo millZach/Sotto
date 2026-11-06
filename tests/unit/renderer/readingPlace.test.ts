@@ -183,8 +183,10 @@ describe('how far a press lifts the transcript to show what it opened', () => {
     // of the view through the line, so the line goes past the top whole.
     const line = { top: 80, bottom: 112 }
     expect(revealLift(view, { top: 300 }, { top: 330, bottom: 560 }, [line])).toBe(112 - 40)
-    // Where taking it past would take the pressed step past the top too, the line stays whole in view.
-    expect(revealLift(view, { top: 110 }, { top: 140, bottom: 560 }, [{ top: 75, bottom: 107 }])).toBe(75 - 40 - 4)
+    // Where taking it past would take the pressed step past the top too, what opened still ends in view, since the step
+    // stays on screen; only a fold too tall to end in view anyway stops short with the line whole.
+    expect(revealLift(view, { top: 110 }, { top: 140, bottom: 560 }, [{ top: 75, bottom: 107 }])).toBe(60)
+    expect(revealLift(view, { top: 110 }, { top: 140, bottom: 700 }, [{ top: 75, bottom: 107 }])).toBe(75 - 40 - 4)
     // A line the edge does not cross changes nothing.
     expect(revealLift(view, { top: 300 }, { top: 330, bottom: 560 }, [{ top: 200, bottom: 232 }])).toBe(60)
   })

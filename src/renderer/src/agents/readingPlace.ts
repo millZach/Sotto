@@ -175,8 +175,9 @@ const REVEAL_TOP_GAP_PX = 4
  * view leaves the control where it was. Otherwise far enough that its end comes into view, wherever the press was, but never
  * so far that the control goes past the top of the view: a fold taller than the room under its control shows from its start.
  * Nor does a lift leave one of `lines`, the transcript's other disclosures, cut through by the top of the view, as a press on
- * a step inside a running turn's opened steps left the working line at the minimum window: the line goes past the top whole,
- * or, where that would take the control past the top too, stays in view whole.
+ * a step inside a running turn's opened steps left the working line at the minimum window: the line goes past the top whole.
+ * Where that would take the control past the top too, what opened still ends in view when it can with the control on screen,
+ * and only a fold too tall for that stops short with the line whole in view.
  */
 export function revealLift(view: { readonly top: number; readonly bottom: number }, control: { readonly top: number },
   opened: { readonly top: number; readonly bottom: number }, lines: readonly { readonly top: number; readonly bottom: number }[] = []): number {
@@ -188,5 +189,6 @@ export function revealLift(view: { readonly top: number; readonly bottom: number
   const cut = lines.find(line => line.top < edge - 0.5 && line.bottom > edge + 0.5)
   if (cut === undefined) return lift
   const past = lift + cut.bottom - edge
-  return past <= most ? past : Math.max(0, cut.top - view.top - REVEAL_TOP_GAP_PX)
+  if (past <= most) return past
+  return lift >= hidden ? lift : Math.max(0, cut.top - view.top - REVEAL_TOP_GAP_PX)
 }
