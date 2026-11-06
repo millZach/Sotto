@@ -2705,7 +2705,8 @@ test.describe("Watcher's room on the built app", () => {
       await expect(pane.locator('.thread-host-chip')).toHaveCount(0)
       // The keyboard reaches it after the message and the paperclip, which is off for a model that takes no images, and
       // before the model.
-      const paperclip = pane.getByRole('button', { name: 'Attach screenshots' })
+      // Named for what it takes: any file where Owl's any-file attachments are on, otherwise screenshots.
+      const paperclip = pane.getByRole('button', { name: /^Attach (files|screenshots)$/u })
       expect(await paperclip.evaluate((clip, chip) => Boolean(clip.compareDocumentPosition(chip!) & Node.DOCUMENT_POSITION_FOLLOWING), await button.elementHandle())).toBe(true)
       await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
       await page.keyboard.press('Tab')
