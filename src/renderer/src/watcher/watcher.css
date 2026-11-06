@@ -177,6 +177,15 @@
   .watcher-head__list-text { display: none; }
   .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* All threads' "N working" and Stop all's count take more room than a bare count did, so in the narrowest panes All threads
+   drops its chevron (its name still says it opens a list) and the gaps draw closer, and the header stays one whole row. */
+@container thread-pane (width < 460px) {
+  .watcher-head > .thread-workspace__title { gap: 4px; }
+  .watcher-head .watcher-head__list { gap: 4px; padding: 0 4px 0 5px; }
+  .watcher-head__list > svg:last-child { display: none; }
+  .watcher-head .watcher-stop-all__button { padding: 0 5px; }
+  .watcher-move-threads + .watcher-stop-all::before { margin: 0 6px 0 2px; }
+}
 
 /* The Sotto Owl tile once Watcher runs (#1189, pick C): a button, with a thin bar under it filling toward the point
    where Sotto compacts Watcher's conversation and a dot once it is close, that opens Watcher's context and state. */

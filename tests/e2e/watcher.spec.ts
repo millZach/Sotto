@@ -154,7 +154,11 @@ async function openNeedsYou(page: Page): Promise<Locator> {
 }
 
 async function openRoom(page: Page): Promise<void> {
-  await switchTab(page, 'Watcher').click()
+  // Under a 1000 pixel window Threads stands as the rail, whose foot has no room switch (ADR-0110, November 5, 2026), so
+  // the room's keys open it there.
+  const tab = switchTab(page, 'Watcher')
+  if (await tab.isVisible()) await tab.click()
+  else await page.keyboard.press('ControlOrMeta+2')
   await expect(page.locator('.watcher-foot .thread-nav__seg')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
