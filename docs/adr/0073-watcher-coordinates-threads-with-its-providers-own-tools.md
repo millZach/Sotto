@@ -868,3 +868,14 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: news says each thing once (#2232)
+
+An audit of Watcher's sessions from October 14 to November 5 found most of the news text was the same words again. Every note ended with a paragraph of about 463 characters that repeated the prompt, 2.7 MB in all. Every line ended with its event's ID in brackets, a 64-character digest no tool takes, which was a quarter of the news in one session. Two cards on one thread made two identical lines. And "Sotto observed changed evidence. Read the thread for the sourced facts." came about 100 times a day after the November 2 fix above, riding with turn ends that had nothing new about a pull request. Only the model reads this text, so nothing the user sees changes.
+
+- **The prompt says it; the news does not.** The closing paragraph is gone. What it said that the prompt did not is now in the prompt once: `read_operation` gives a send's receipt and outcome, a watched thread's requestId lets Watcher follow up with it within bounds, and a thread takes at most four prompts from Watcher in one Watcher turn, whichever requestIds they go under. This supersedes the October 23 note that the footer says when to use `read_operation`.
+- **No event IDs.** Lines name their thread, any operation and the requestId, which the tools take. Events keep their IDs in the queue, the record's `wakeEventIds` and the told set; only the text drops them.
+- **One line for the same thing.** Lines that say the same of the same thread are one line, its thread followed by how many times, as in `{…}, 2 times: This thread waits on the user…`.
+- **Evidence news is what changed.** Its line is Sotto's words for what a pull request now says, and nothing else. Evidence news with nothing to say has no line; one whose words gave way to room is counted with the events left out. What wakes Watcher does not change.
+
+Measured on three wake-ups of 1, 4 and 11 events (`tests/unit/main/watcherNewsSize.test.ts`): 1,097, 2,188 and 4,849 characters before, 566, 974 and 2,305 after, from 508 to 240 characters per event.

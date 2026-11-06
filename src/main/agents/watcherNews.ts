@@ -50,8 +50,11 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
 export const requestRevision = (request: unknown): string => observationDigest(request)
 /** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
-/** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told'>, string> = {
+/**
+ * Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`).
+ * Evidence news has no words of its own: its line is what Sotto's detail says changed, and with none it has no line (#2232).
+ */
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told' | 'evidence-changed'>, string> = {
   'swarm-progress': 'The swarm made progress. Read its lead for the synthesis.',
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
@@ -60,7 +63,6 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-re
   quiet: 'No progress was observed for twenty minutes of connected work.',
   'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
-  'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
   'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
   'prototype-closed': 'This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.',
 }
@@ -143,13 +145,18 @@ const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' 
   ? `${event.swarm.done} of ${event.swarm.count} angles done, ${event.swarm.failed} failed, ${event.swarm.queued} queued. The lead holds their replies and writes the synthesis. This grants no permission.`
   : event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
-  : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
+  : event.kind === 'request-closed' ? closedWords(event) : event.kind === 'evidence-changed' ? '' : words[event.kind]
 /**
  * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
  * context channel as the request note (ADR-0073), never in the message itself. A finish told with its own work-settled
  * news is said once, by the work-settled line. A finish held for its work until it went by itself (`held`) opens by
  * saying so, so Watcher reads that thread rather than wait on. Sotto's detail goes while there is room for it: it gives
  * way, the newest line's first, before any event does.
+ *
+ * Each thing is said once (#2232): what Watcher is told for every wake-up is in its prompt, not here; events carry no ID,
+ * since no tool takes one; lines that say the same of the same thread are one line with a count; and evidence news is
+ * only what its detail says changed, so one with nothing to say has no line, and one whose detail gave way is counted
+ * with the events left out.
  */
 export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, held?: WatcherNewsHeld): string {
   const opening = NEWS_OPENING
@@ -164,17 +171,27 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
     ? `Held ${minutes[index]} minutes, thread idle. The foreground turn finished with background work or monitoring still running (${event.backgroundWorkCount}), no turn has run in the thread since, and Sotto has not seen that work end, so read the thread to see whether it is stuck. Work-settled news still comes if it ends. This is not review or merge approval.`
     : `${kindWords(event)}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
       ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}`
-  const line = (event: WatcherEvent, index: number, extra: string | undefined) => `${JSON.stringify(event.target)}: ${said(event, index)}${event.operationId && event.kind !== 'delivery-changed'
-    ? ` This turn answers operation ${event.operationId}.` : ''}${extra ? ` ${extra}` : ''}${unwatched(event) ? '' : event.told?.opened ? ` Use requestId ${event.requestId} for what it asks.` : ` Use requestId ${event.requestId} for this thread.`} [${event.id}]`
+  // What a line says after its thread, so two events that say the same of one thread make one line.
+  const body = (event: WatcherEvent, index: number, extra: string | undefined) => [said(event, index), event.operationId && event.kind !== 'delivery-changed'
+    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
+    .filter(Boolean).join(' ')
   // Each provider whose limit reset is said once, before its threads' lines (ADR-0144).
   const restarts = new Map<string, number>()
   for (const event of shown) if (event.kind === 'threads-restarted') restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
   const restartLines = [...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`)
   const compose = (count: number, detailed: number) => {
-    const lines = shown.slice(0, count).map((event, index) => line(event, index, index < detailed ? details[index] : undefined))
-    const omitted = news.omitted + shown.length - count
-    return [opening, ...restartLines, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
-      'A reply given whole here is enough to act on. Use read_operation for a brief’s receipt and outcome, and for a reply cut or left out here. Use read_thread only for what a reply does not say, such as evidence and other worker messages, or for a cut reply whose line names no operation. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
+    const lines = new Map<string, { target: string; body: string; count: number }>()
+    let gaveWay = 0
+    shown.slice(0, count).forEach((event, index) => {
+      const extra = index < detailed ? details[index] : undefined
+      if (event.kind === 'evidence-changed' && !extra) { if (details[index]) gaveWay++; return }
+      const target = JSON.stringify(event.target), text = body(event, index, extra), key = JSON.stringify([target, text])
+      const same = lines.get(key)
+      if (same) same.count++; else lines.set(key, { target, body: text, count: 1 })
+    })
+    const omitted = news.omitted + shown.length - count + gaveWay
+    return [opening, ...restartLines, ...[...lines.values()].map(item => `${item.target}${item.count > 1 ? `, ${item.count} times` : ''}: ${item.body}`),
+      ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : [])].join('\n')
   }
   for (let detailed = shown.length; detailed >= 0; detailed--) {
     const text = compose(shown.length, detailed)
