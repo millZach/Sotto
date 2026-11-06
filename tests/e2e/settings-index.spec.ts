@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { clickOrProbeHang } from './support/hangProbe'
+import { clickOrProbeHang, evaluateRecordingInput } from './support/hangProbe'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
 const categories = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
@@ -179,7 +179,8 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     // The folder is chosen in the folder browser, which opens at the saved one: up one, then Use this folder.
     const projectsDirectory = join(launched.userData, 'projects')
     await mkdir(join(projectsDirectory, 'inner'), { recursive: true })
-    await page.evaluate(async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, join(projectsDirectory, 'inner'))
+    // Saving it also starts recording the page's input events, for the probe below.
+    await evaluateRecordingInput(page, async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, join(projectsDirectory, 'inner'))
     const projects = page.getByRole('button', { name: 'Change the default projects directory on this computer', exact: true })
     // This click has hung on Windows CI with nothing saved to say why (#2051); a timeout records main, the renderer and the desktop.
     await clickOrProbeHang(launched, projects)

@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { errors, test, type Locator } from '@playwright/test'
+import { errors, test, type Locator, type Page } from '@playwright/test'
 import type { LaunchedSotto } from './sottoLaunch'
 
 /** How long each check is given before it is recorded as unanswered, so a hung app cannot spend the test's deadline. */
@@ -42,9 +42,47 @@ async function desktopScreenshot(): Promise<Buffer | string> {
   } finally { await rm(folder, { recursive: true, force: true }) }
 }
 
+/** Where the page keeps the input events it saw, and how many it keeps, newest last. */
+const INPUT_EVENTS_KEY = '__sottoHangProbeInputEvents'
+const INPUT_EVENTS_KEPT = 60
+
+/**
+ * Runs in the page: records every pointer, mouse, click and focus event that reaches the window, in the capture phase
+ * so nothing the app does can hide one, keeping only the newest few. Self-contained, because it is sent as source.
+ */
+function recordInputEvents(key: string, kept: number): void {
+  const store = window as unknown as Record<string, unknown>
+  if (Array.isArray(store[key])) return
+  const seen: unknown[] = []
+  store[key] = seen
+  const describe = (target: EventTarget | null): string | null => {
+    if (!(target instanceof Element)) return target === null ? null : String(target)
+    return target.getAttribute('aria-label') ?? target.tagName.toLowerCase()
+  }
+  for (const type of ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'focusin', 'focusout']) {
+    window.addEventListener(type, event => {
+      const pointer = event instanceof MouseEvent ? { x: event.clientX, y: event.clientY, button: event.button } : {}
+      seen.push({ type, atMs: Math.round(event.timeStamp), trusted: event.isTrusted, target: describe(event.target), ...pointer })
+      if (seen.length > kept) seen.splice(0, seen.length - kept)
+    }, { capture: true, passive: true })
+  }
+}
+
+/** Read in the page: the events recorded so far and the page's clock, to set their times against. */
+const READ_INPUT_EVENTS = `({ nowMs: Math.round(performance.now()), events: window[${JSON.stringify(INPUT_EVENTS_KEY)}] ?? null })`
+
+/**
+ * Runs `work(arg)` in the page in the same evaluation that starts recording input events, so a later
+ * {@link clickOrProbeHang} can say which events reached the page without an extra round trip before the click.
+ */
+export async function evaluateRecordingInput<A>(page: Page, work: (arg: A) => Promise<unknown>, arg: A): Promise<void> {
+  await page.evaluate(`(${recordInputEvents.toString()})(${JSON.stringify(INPUT_EVENTS_KEY)}, ${INPUT_EVENTS_KEPT}); (${work.toString()})(${JSON.stringify(arg)}).then(() => undefined)`)
+}
+
 /**
  * Clicks `target`, and only when the click times out records why before failing as it would have (#2051): whether
- * main and the renderer each still answer, every Electron process's CPU, and the OS's picture of the desktop, all
+ * main and the renderer each still answer, every Electron process's CPU, the input events that reached the page (when
+ * {@link evaluateRecordingInput} started recording them), and the OS's picture of the desktop, all
  * attached to the test result. A click that works costs nothing more, with no extra round trip before it that could
  * hide a race.
  */
@@ -74,16 +112,17 @@ export async function clickOrProbeHang(launched: LaunchedSotto, target: Locator,
         }
       })),
       // The page's own answer, through the session the click was sent on.
-      within(() => page.evaluate(() => ({
+      within(() => page.evaluate(key => ({
         openDialogs: document.querySelectorAll('dialog[open]').length,
         active: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null,
         hidden: document.hidden, focused: document.hasFocus(),
-      }))),
+        input: { nowMs: Math.round(performance.now()), events: (window as unknown as Record<string, unknown>)[key] ?? null },
+      }), INPUT_EVENTS_KEY)),
       // The page again through a CDP session of its own, so a session stuck behind the click's input cannot pass for a
       // renderer that does not answer.
       within(async () => {
         const session = await page.context().newCDPSession(page)
-        try { return await session.send('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true, timeout: CHECK_MS }) } finally { await session.detach().catch(() => undefined) }
+        try { return await session.send('Runtime.evaluate', { expression: `({ readyState: document.readyState, input: ${READ_INPUT_EVENTS} })`, returnByValue: true, timeout: CHECK_MS }) } finally { await session.detach().catch(() => undefined) }
       }),
       desktopScreenshot(),
     ])
