@@ -210,8 +210,7 @@ describe('the Sotto tile in Watcher’s room', () => {
       watching: [{ target: { hostId: HOST, threadId: 'footer-links' }, title: 'Footer links', waitsOn: 'Waits on your permission to run npm test.' }],
       // What waits on the user is Sotto's live list, not the decisions Watcher noted (October 24, 2026, Zach's pick A).
       waitingOnUser: [{ target: { hostId: HOST, threadId: 'footer-links' }, title: 'Footer links', waitsFor: 'permission', requestCardId: 'card' },
-        { target: { hostId: HOST, threadId: 'tray' }, title: 'Tray icon', waitsFor: 'question', requestCardId: 'q', delegatedThreadId: 'child' },
-        { target: { hostId: HOST, threadId: 'composer' }, title: 'Composer images', waitsFor: 'prototype-review' }],
+        { target: { hostId: HOST, threadId: 'tray' }, title: 'Tray icon', waitsFor: 'question', requestCardId: 'q', delegatedThreadId: 'child' }],
       kept: { decisions: [{ id: 'd1', text: 'Merge #1186 once CI is green?', touchedAt: at }],
         rules: [{ id: 'r2', text: 'Full test suites run in CI, not on the laptop.', touchedAt: at }, { id: 'r3', text: 'Ask before merging.', touchedAt: at }],
         // A closed line is done: Watcher reads it until Sotto clears it, and the panel leaves it out.
@@ -221,8 +220,8 @@ describe('the Sotto tile in Watcher’s room', () => {
     const { panel } = await openPanel()
     const group = (name: string): HTMLElement => within(panel).getByRole('heading', { name }).closest('section')!
     expect(within(group('Watching, 1')).getByRole('listitem')).toHaveTextContent('Footer linksWaits on your permission to run npm test.')
-    expect(within(group('Waiting on you, 3')).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Footer linksPermission request',
-      'Tray iconQuestion in a thread it delegated to', 'Composer imagesPrototype to review'])
+    expect(within(group('Waiting on you, 2')).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Footer linksPermission request',
+      'Tray iconQuestion in a thread it delegated to'])
     expect(within(group('Decisions it noted, 1')).getByText('Merge #1186 once CI is green?')).toBeInTheDocument()
     expect(within(group('Your rules, 2')).getAllByRole('listitem')).toHaveLength(2)
     expect(within(group('Issues filed, 1')).getByText('#1189 Watcher: auto-compact its conversation')).toBeInTheDocument()

@@ -2424,7 +2424,7 @@ it('gives the merge queue and each watched thread’s open pull requests from li
 })
 
 // October 24, 2026: Watcher kept "waiting on you" in its notes and went on saying it after the user answered.
-it('works out what waits on the user from live data at each read: open cards, a delegated thread’s card and a prototype to review', async () => {
+it('works out what waits on the user from live data at each read: open cards and a delegated thread’s card, never a prototype on its own', async () => {
   const f = await fixture()
   const started = await f.call('start_thread', f.start()), other = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started) || other.status !== 'ok' || !('target' in other)) throw new Error('start refused')
@@ -2450,15 +2450,15 @@ it('works out what waits on the user from live data at each read: open cards, a 
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
     { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-below', delegatedThreadId: 'synthetic-delegated-below' },
-    { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
   ]
   // A question card's own words come with its row, read only (#2230); a permission request's never do.
   expect(read.waitingOnUser).toEqual([{ ...listed[0], asks: { question: 'synthetic private question', choices: [] } }, listed[1],
-    { ...listed[2], asks: { question: 'synthetic private question below', choices: [] } }, listed[3]])
+    { ...listed[2], asks: { question: 'synthetic private question below', choices: [] } }])
   expect(JSON.stringify(read)).not.toContain('synthetic private command')
   // The owl panel reads the same live list (Zach's pick A), which carries no card's words.
   expect(f.service.state().state?.waitingOnUser).toEqual(listed)
-  // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
+  // A prototype is not on the list (ADR-0108, November 6, 2026): the question card that links it asks the user.
+  // The user answers: the next read says nothing waits on them, whatever the notes say.
   open = false
   const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (after.status !== 'ok') throw new Error('read refused')
