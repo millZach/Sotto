@@ -468,9 +468,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
-    const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
+    // Only a read that knows the required checks tells a pass (#2116). This one does not, so checks it saw all finish are
+    // left to the background read, which does.
+    const summary = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown), checks = summary === 'passed' ? undefined : summary
     this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
-      state: view.state, availability: 'available', checks, ...(checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
+      state: view.state, availability: 'available', ...checks ? { checks } : {}, ...(checks !== undefined && checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
       reviewApproved: view.reviewDecision === 'approved', changesRequested: view.reviewDecision === 'changes_requested', autoMerge: view.autoMerge !== null,
       ...(view.mergeable !== 'unknown' ? { conflicting: view.mergeable === 'conflicting' } : {}) })
   }
@@ -573,14 +575,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // refreshThread answers from the cache while creation is pending or its provider is disconnected.
     const live = before.nativeSessionStarted !== false && (this.creationOf(threadId)?.phase ?? 'started') === 'started'
       && isThreadProviderConnected(this.state.snapshot, before) && before.clientConnected !== false
-    await this.refreshThread(threadId)
+    // A provider that cannot read the thread back leaves Sotto's own record of it to read, as unavailable (#2268).
+    const refreshed = await this.refreshThread(threadId).then(() => true, () => false)
     const thread = this.thread(threadId)
     this.applyEvents()
     // Positions and the epoch are the store's own, so the read waits for what was posted for the thread.
     await this.settled(threadId)
-    if (this.storeUnavailable || thread.historyStatus === 'error' || thread.historyStatus === 'loading') return undefined
+    if (this.storeUnavailable || thread.historyStatus === 'loading') return undefined
     const epoch = this.threadStore.readMessageEpoch(threadId)
-    return { availability: live && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
+    // A provider that said it could not read the history leaves Sotto's record of it, which is read as unavailable.
+    return { availability: live && refreshed && thread.historyStatus !== 'error' && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
       historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
       activities: this.threadStore.readActivities(threadId, { keep: false }).slice(-100).map(({ id, kind, status, title, startedAt, completedAt }) => ({
         id, kind, status, title: title.slice(0, 2_000), ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) })) }

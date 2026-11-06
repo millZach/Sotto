@@ -2211,8 +2211,22 @@ describe('news that a card or prototype no longer waits on the user', () => {
     f.wakes.answering(centerTarget, 'first', 'user')()
     f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
     const closed = events(f).filter(event => event.kind === 'request-closed')
-    expect(closed.map(event => [event.requestCardId, event.answeredByUser])).toEqual([['first', undefined], ['second', undefined]])
-    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.')
+    expect(closed.map(event => [event.requestCardId, event.answeredByUser, event.endedWithoutAnswer])).toEqual([['first', undefined, undefined], ['second', undefined, undefined]])
+    // Its turn still runs, so the user may have answered where Sotto does not see: the news says neither (#2230).
+    const text = watcherNewsText(f.delivered.at(-1)!)
+    expect(text).toContain('This thread’s question is no longer open, so it no longer waits on the user for it. Sotto cannot tell whether the user answered it')
+    expect(text).toContain('do not tell the user they answered it.')
+  })
+
+  it('says a card ended without an answer when Sotto saw none and the thread\'s turn ended with it (#2230)', async () => {
+    const f = fixture()
+    f.thread.requests = [card('asked', 'question')]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    // The user stops the turn while the question waits: the card goes with it.
+    f.thread.requests = []; f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'interrupted' }
+    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'request-closed')).toEqual([expect.objectContaining({ requestCardId: 'asked', endedWithoutAnswer: true })])
+    expect(events(f).find(event => event.kind === 'request-closed')).not.toHaveProperty('answeredByUser')
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question ended without an answer: its turn ended and Sotto saw no answer from the user. It no longer waits on them.')
   })
 
   it('says nothing of a card whose own news never went, or of one Sotto answered by sending a prototype’s question back', async () => {

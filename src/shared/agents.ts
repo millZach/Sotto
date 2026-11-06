@@ -728,6 +728,8 @@ export const agentThreadSchema = z.object({
   scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
+  /** Host-owned snooze (ADR-0175): null when awake, absent on older hosts and stable. */
+  snoozedUntil: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
   nativeSessionStarted: z.boolean().optional(),
   /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
@@ -1284,6 +1286,11 @@ export const agentThreadDetailSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** True when older messages are still in the thread store; the pane offers Show earlier messages. */
   earlierAvailable: z.boolean().optional(),
+  /**
+   * The steps above a phone's **step window** (ADR-0194), as its host last cut it. Only a client that accepts
+   * `step-window` is sent it; no desktop is.
+   */
+  earlierSteps: z.number().int().nonnegative().optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
@@ -1321,6 +1328,9 @@ export const agentThreadDetailDeltaSchema = z.object({
 export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
+
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
@@ -1605,6 +1615,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
       || value.fastMode !== undefined || value.speed !== undefined, 'Choose a thread setting to change.'),
+  z.object({ type: z.literal('snooze-thread'), threadId: id, until: z.string().datetime().nullable() }).strict(),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client

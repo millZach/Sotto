@@ -138,6 +138,29 @@ describe('babysitting retired by Restart stopped threads', () => {
     } finally { await host.close() }
   })
 
+  it('leaves a pass to the read that knows the required checks when the Pull request panel sees every check finish (#2116)', async () => {
+    vi.spyOn(WatchedPullRequestReader.prototype, 'begin').mockImplementation(() => undefined)
+    vi.spyOn(WatcherService.prototype, 'watchedThreadIds').mockReturnValue(['workshop'])
+    const heard: PullRequestObservation[] = []
+    vi.spyOn(WatcherService.prototype, 'pullRequestObserved').mockImplementation(read => { heard.push(read) })
+    const host = await runtime({ retired: true, run: scriptedGitHub([]).run, watcher: true })
+    try {
+      await host.agentControl.command({ type: 'connect' })
+      let checks = [{ name: 'iPhone benchmarks', status: 'skipped', url: null, description: null }]
+      host.agentHost.setGitPullRequests({ view: async () => ({ number: 1, url, title: 'Pull 1', body: '', state: 'open', draft: false, headId: 'h1',
+        checks, reviewDecision: null, autoMerge: null, mergeable: 'mergeable' }) } as never)
+      await host.agentHost.linkThreadPullRequest('workshop', url)
+      await host.agentHost.readThreadPullRequest({ threadId: 'workshop' })
+      // One skipped check: the panel cannot know the required ones have not run yet, so it says nothing of the checks.
+      expect(heard.at(-1)).toMatchObject({ url, head: 'h1', availability: 'available' })
+      expect(heard.at(-1)).not.toHaveProperty('checks')
+      // A failure it does say.
+      checks = [{ name: 'Gates (Windows)', status: 'failure', url: null, description: null }]
+      await host.agentHost.readThreadPullRequest({ threadId: 'workshop' })
+      expect(heard.at(-1)).toMatchObject({ checks: 'failed', checkCount: 1 })
+    } finally { await host.close() }
+  })
+
   it('leaves babysitting and its reader as they were with the feature off', async () => {
     const begin = vi.spyOn(WatchedPullRequestReader.prototype, 'begin')
     const host = await runtime({ retired: false, watcher: true })

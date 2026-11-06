@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
   type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
@@ -46,6 +46,9 @@ import { ThreadChangesDrift, ThreadMap, verifyingThreadChanges, type ActivityCha
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { ClientUpdates } from './clientUpdates'
+import { ThreadTitles } from './threadTitles'
+// Tests still import this from here; the follow-up that moves them removes this line.
+export { TITLE_WRITE_CLOSING_WAIT_MS } from './threadTitles'
 import { ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -77,10 +80,11 @@ import { BRING_BACK_UNSUPPORTED } from '../../shared/bringChangesBack'
 import { RequestWaits } from './requestWaits'
 import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
+import { ThreadSnoozes } from './threadSnoozes'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
-import { agentCommandSchema } from '../../shared/agents'
+import { agentCommandSchema, isWatcherKind } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import type { CouncilControlHooks, CouncilCoordinatorCommand } from '../council/councilService'
@@ -178,7 +182,6 @@ class HostThreadIndex implements HostThreadsView {
     if (siblings) siblings.add(thread.id); else this.children.set(thread.delegatedBy, new Set([thread.id]))
   }
 }
-const isWatcherKind = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 /**
  * Thread IDs taken out in the order of their place, smallest first: a binary heap, so each push and pop costs the log of
  * what it holds. An ID already held is not held twice.
@@ -297,6 +300,7 @@ const savedSchema = z.object({
   deliveries: z.array(agentDeliverySchema).default([]),
   /** The threads that finished while no client showed them, oldest first (ADR-0046). */
   finishedUnread: z.array(z.string()).default([]),
+  threadSnoozes: z.record(z.string(), z.string().datetime()).default({}),
   /** The prototypes the user opened a page of, or answered the question after, by thread and source, oldest first (ADR-0108). */
   prototypesCleared: z.array(z.object({ threadId: z.string(), source: z.string() })).default([]),
   /** When prototype-ready marks began on this computer, in milliseconds: older replies earn none (ADR-0108). */
@@ -390,8 +394,6 @@ const MOVE_FENCED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['send',
 const DELEGATION_NEWS_RETRY_MS = 10_000
 /** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0155). */
 const UNSENT_THREAD_GRACE_MS = 3_600_000
-/** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
-export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /**
  * Babysitting's news of a pull request, told by what it holds rather than by what it is not, so news of a kind added
  * later is never taken for it when Restart stopped threads drops babysitting's from the queue (ADR-0144).
@@ -430,47 +432,6 @@ const PROMPT_NOT_SAVED = 'Could not save this prompt, so it was not sent. Check 
 const ATTACHMENT_UPKEEP_ERROR = 'Could not remove screenshots Sotto no longer needs. Nothing was lost. Check access to local storage.'
 /** Who a thread's log says answered when Sotto sent a prototype question back (ADR-0108): Sotto, on this host, and no user. */
 const PROTOTYPE_SEND_BACK_CLIENT: ClientIdentity = { clientId: 'sotto-prototype-send-back', user: '', transport: 'ipc' }
-/**
- * The first thing asked of a thread and the first answer it got, the only content a generated title is
- * written from. Automatic naming needs the thread to be at its first exchange and settled: a running turn
- * has no finished reply yet, and a thread that has moved on was named or left alone long ago. A requested
- * Regenerate still reads the same first exchange out of a longer history.
- */
-/** A thread still on the stand-in or a provider's name; absent on threads saved before Sotto recorded it. */
-function carriesDefaultTitle(thread: AgentThread): boolean {
-  return thread.titleSource === undefined || thread.titleSource === 'default'
-}
-/** How often a thread's name may be written again, and how often the threads are looked at for it. */
-const TITLE_REFRESH_MS = 60 * 60_000
-const TITLE_REFRESH_SWEEP_MS = 5 * 60_000
-/** At most this many names are asked for in one sweep, so a sweep after a busy hour stays a trickle of side calls. */
-const TITLE_REFRESHES_PER_SWEEP = 5
-
-/** A thread's first message and its newest exchange, what an hourly name is written from; null until a reply follows. */
-function currentExchange(messages: readonly AgentMessage[]): ThreadTitleExchange | null {
-  const said = (message: AgentMessage): boolean => message.text.trim().length > 0
-  const first = messages.find(message => message.role === 'user' && said(message))
-  const reply = messages.findLastIndex(message => message.role === 'assistant' && !isVisualMessage(message) && said(message))
-  if (!first || reply === -1) return null
-  const prompt = messages.slice(0, reply).findLastIndex(message => message.role === 'user' && said(message))
-  if (prompt === -1) return null
-  const newest = { prompt: messages[prompt]!.text, reply: messages[reply]!.text }
-  return messages[prompt] === first ? newest : { ...newest, opening: first.text }
-}
-
-function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', messages: readonly AgentMessage[]): ThreadTitleExchange | null {
-  if (trigger === 'automatic' && thread.status === 'running') return null
-  // A first-message title says Sotto saw this thread begin, so a steer or a queued follow-up sent during the
-  // first turn does not stop it being named; any other thread is named only while it has said one thing.
-  if (trigger === 'automatic' && thread.titledFromFirstMessage !== true && messages.filter(message => message.role === 'user').length !== 1) return null
-  const prompt = messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
-  if (prompt === -1) return null
-  // A visual's message is Sotto's words about a drawing, not the agent's reply, so a title is never written from it.
-  const reply = messages.slice(prompt + 1).find(message => message.role === 'assistant' && !isVisualMessage(message) && message.text.trim().length > 0)
-  if (!reply) return null
-  return { prompt: messages[prompt]!.text, reply: reply.text }
-}
-
 /**
  * The providers the user has turned off once `off` are turned off and `on` turned on, in the stable provider order.
  * What a headless host leaves alone when it starts (ADR-0036).
@@ -958,6 +919,15 @@ export class AgentControl {
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard, userAnswer: true })
     return this.commandShell(parsed, client, decisionId)
   }
+  /**
+   * An answer on a card of Watcher's own question (#2228): Watcher's service takes it, as the user's own choice, and no
+   * provider hears it. A phone needs its answers grant, as for any card.
+   */
+  private async answerWatcherQuestion(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity): Promise<AgentState> {
+    try { this.watcherOrigins.get(command)?.guard(); this.guardClientGrant(client) } catch (error) { return { ...this.reply(), error: error instanceof Error ? error.message : UNPAIRED_CLIENT_ERROR } }
+    const error = await this.watcherHooks!.answerOwnQuestion!(command.threadId, command).catch(() => 'Sotto could not take this answer. Nothing was sent. Answer it again.')
+    return { ...this.reply(), error }
+  }
   /** User-requested setup only, never exposed as a tool. */
   commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void, keptSpeed?: true): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
@@ -1125,6 +1095,7 @@ export class AgentControl {
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private readonly clients: ProviderClients
   private readonly clientUpdates: ClientUpdates
+  private readonly titles: ThreadTitles
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -1179,6 +1150,8 @@ export class AgentControl {
   private viewedThreadIds: readonly string[] = []
   /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0155). */
   private readonly madeThisRun = new Map<string, number>()
+  /** Shared snooze deadlines, gated by the host’s Owl answer (ADR-0175). */
+  private readonly threadSnoozes: ThreadSnoozes
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
@@ -1255,32 +1228,15 @@ export class AgentControl {
   private detailMessageVersions = 0
   /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
   private readonly certifiedDetailCounters = new Map<string, number>()
-  /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
-  private readonly titleChecked = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
   /**
    * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
    * the targets themselves: a thread that leaves the viewed set frees its snapshot on the next broadcast.
    */
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
-  /** Threads already asked about this run, so a failure is not retried on every provider frame. */
-  private readonly titled = new Set<string>()
-  /** When each thread's name was last written or first seen this run, and its message count then (ADR-0026, hourly names). */
-  private readonly titleNamedAt = new Map<string, { readonly at: number; readonly count: number }>()
-  private titleRefreshTimer: ReturnType<typeof setInterval> | null = null
   /** Clearing commands and the automatic rule, one at a time (ADR-0140). */
   private clearing: Promise<unknown> = Promise.resolve()
   private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
-  private readonly titleWrites = new Set<Promise<void>>()
-  /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
-  private titleWritesLetGo = false
-  private letGoOfTitleWrites!: () => void
-  /** Settles when closing lets go of the title writes still running, so nothing that waits on one waits longer. */
-  private readonly titleWritesReleased = new Promise<null>(resolve => { this.letGoOfTitleWrites = () => resolve(null) })
-  /** Closing's one wait for title writes, so the runtime and `closed()` share the same two seconds. */
-  private closingTitleWait: Promise<void> | undefined
-  /** Threads seen this run with nothing said yet: their first message, when it comes, gives them a first-message title. */
-  private readonly awaitingFirstMessage = new Set<string>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
   private readonly localClient: ClientIdentity = desktopWindowClient()
   constructor(private readonly dependencies: {
@@ -1291,6 +1247,7 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
     dynamicThreadsEnabled?: boolean
+    threadSnoozeEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -1372,6 +1329,9 @@ export class AgentControl {
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.watcherArchive = dependencies.watcherEnabled === true ? new WatcherArchive(dependencies.directory, () => dependencies.historyEnabled?.() !== false) : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
+    this.threadSnoozes = new ThreadSnoozes(dependencies.threadSnoozeEnabled === true, id => this.marksMoved.add(id), () => {
+      this.publish(); this.persistAfterSnapshots()
+    })
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
     this.requestWaits = new RequestWaits()
@@ -1392,6 +1352,10 @@ export class AgentControl {
       state: () => this.state, disposed: () => this.disposed, publish: () => this.publish(), say: text => this.say(text),
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), clients: this.clients, dependencies,
       logHandoffFailure: provider => this.dependencies.logFailure?.('client-update-handoff-failed', provider),
+    })
+    this.titles = new ThreadTitles({
+      state: () => this.state, disposed: () => this.disposed, history: thread => this.threadHistory(thread),
+      acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), persist: () => this.persist(), dependencies,
     })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -1468,11 +1432,12 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, threadSnoozes, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
     // Fences set before the record was read (the move's own record is read first) stand beside those it kept.
     for (const fence of moveFences ?? []) if (!this.moveFences.has(fence.threadId)) this.moveFences.set(fence.threadId, fence.words)
     this.moveFencesRead = true
+    this.threadSnoozes.restore(threadSnoozes)
     this.finishedUnread.restore(finishedUnread)
     this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
@@ -1551,8 +1516,7 @@ export class AgentControl {
     // A client published while Sotto stays open is noticed within five minutes, on this computer and on every host,
     // each running its own (ADR-0042). It never holds Sotto open.
     this.clientUpdates.startChecking()
-    this.titleRefreshTimer = setInterval(() => this.refreshTitles(), TITLE_REFRESH_SWEEP_MS)
-    this.titleRefreshTimer.unref?.()
+    this.titles.startRefreshing()
     this.updateCredentials()
     if (isSubscriptionReasoning(this.state.configuration.reasoning)) {
       // Native login/model discovery must not hold up dictation or the desktop window.
@@ -1888,7 +1852,7 @@ export class AgentControl {
     this.state.obsoleteDrafts = kept(this.state.obsoleteDrafts)
     if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
     this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
-    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titled.delete(threadId); this.titleNamedAt.delete(threadId) }
+    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titles.forget(threadId) }
     if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
     if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
     this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
@@ -2805,6 +2769,7 @@ export class AgentControl {
       outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       obsoleteDrafts: this.state.obsoleteDrafts ?? [],
       finishedUnread: this.finishedUnread.saved(),
+      threadSnoozes: this.threadSnoozes.saved(),
       prototypesCleared: this.prototypeReady.saved(),
       prototypesSince: this.prototypeReady.since(),
       prototypesMarked: this.prototypeReady.marked(),
@@ -3814,8 +3779,9 @@ export class AgentControl {
     restart.onMoved = id => { this.marksMoved.add(id) }
     restart.onChanged = () => { if (!this.disposed) this.publish() }
   }
-  /** The thread with its scheduled restart while one stands (ADR-0144); as it is while the feature is off. */
-  private restartMark<T extends AgentThread>(thread: T): T { return this.limitRestart ? this.limitRestart.publish(thread) : thread }
+  get supportsThreadSnooze(): boolean { return this.threadSnoozes.enabled }
+  /** The thread with its shared snooze and scheduled restart while their features are on. */
+  private restartMark<T extends AgentThread>(thread: T): T { return this.threadSnoozes.publish(this.limitRestart ? this.limitRestart.publish(thread) : thread) }
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
   /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
   cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
@@ -3921,82 +3887,17 @@ export class AgentControl {
     this.publish()
     return this.reply()
   }
-  /**
-   * A thread names itself once, from its first exchange. Only a thread still carrying a stand-in or
-   * provider name is named, so a name typed in the New thread dialog or a later rename is left alone,
-   * and a thread is only ever asked about once per run: a failure leaves the stand-in name rather than
-   * asking again on the next provider frame.
-   */
-  private generateTitles(): void {
-    if (!this.dependencies.writeThreadTitle || !this.dependencies.host.renameThread) return
-    // Local history off means Sotto keeps no thread content; none of it is sent to name a thread either.
-    if (this.dependencies.historyEnabled?.() === false) return
-    for (const thread of this.state.host.threads) {
-      if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
-      this.giveFirstMessageTitle(thread)
-      // A client shows the first reply while its turn is still running and ends the turn on a later frame
-      // that adds no message, so a running thread is not yet checked: checking it would record this count
-      // and skip the frame that finishes the turn.
-      if (thread.status === 'running') continue
-      // A thread's history lives in the store, so read it only when this thread has said something new:
-      // otherwise a thread that will never be named would be read on every provider frame.
-      const messageCount = threadSummaryOf(thread).messageCount
-      if (messageCount < 2 || this.titleChecked.get(thread.id) === messageCount) continue
-      this.titleChecked.set(thread.id, messageCount)
-      const exchange = firstExchange(thread, 'automatic', watcherWakeUpsAsShown(this.threadHistory(thread)))
-      if (!exchange) continue
-      this.titled.add(thread.id)
-      this.titleNamedAt.set(thread.id, { at: Date.now(), count: messageCount })
-      this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
-    }
+  /** Ask again for a thread's name, replacing a generated or stand-in one on explicit request. */
+  private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
+    const writing = this.titles.regenerate(threadId)
+    if (writing) await writing
+    this.publish()
+    return this.reply()
   }
-  /**
-   * Keeps the name Sotto gave a thread current (ADR-0026, November 1, 2026): at most once an hour, a thread that has said
-   * something since its name was last written is named again from its first message and its newest exchange. A name the
-   * user typed is never replaced. A thread is first only noted, so starting Sotto asks nothing of any provider, and a
-   * sweep asks a few at most. Runs on its own timer, off the update path.
-   */
-  private refreshTitles(): void {
-    if (this.disposed || !this.dependencies.writeThreadTitle || !this.dependencies.host.renameThread) return
-    if (this.dependencies.historyEnabled?.() === false) return
-    const now = Date.now()
-    let asked = 0
-    for (const thread of this.state.host.threads) {
-      // Watcher's threads keep their own names, as they never take a first one.
-      if (thread.titleSource === 'user' || isWatcherKind(thread) || isThreadArchived(thread) || thread.status === 'running') continue
-      const count = threadSummaryOf(thread).messageCount
-      const named = this.titleNamedAt.get(thread.id)
-      if (!named) { this.titleNamedAt.set(thread.id, { at: now, count }); continue }
-      if (count <= named.count || now - named.at < TITLE_REFRESH_MS || asked >= TITLE_REFRESHES_PER_SWEEP) continue
-      this.titleNamedAt.set(thread.id, { at: now, count })
-      const exchange = currentExchange(watcherWakeUpsAsShown(this.threadHistory(thread)))
-      if (!exchange) continue
-      asked++
-      this.titled.add(thread.id)
-      this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
-    }
-  }
-  /**
-   * A thread Sotto saw begin, empty and still on a `default` name, takes the opening words of its first message as
-   * soon as that message is in, while the turn still runs. A thread that already had history when this run first
-   * saw it, an older or imported one, keeps the name it has.
-   */
-  private giveFirstMessageTitle(thread: AgentThread): void {
-    if (!this.dependencies.writeFirstMessageTitle || !carriesDefaultTitle(thread) || thread.titledFromFirstMessage) return
-    if (threadSummaryOf(thread).messageCount === 0) { this.awaitingFirstMessage.add(thread.id); return }
-    if (!this.awaitingFirstMessage.has(thread.id)) return
-    // The first message, even when a steer is already beside it on the frame that brings it.
-    const first = watcherWakeUpsAsShown(this.threadHistory(thread)).find(message => message.role === 'user' && message.text.trim().length > 0)
-    if (!first) return
-    this.awaitingFirstMessage.delete(thread.id)
-    this.trackTitleWrite(this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))
-  }
-  /** Keeps a title write where closing can wait for it (#980). */
-  private trackTitleWrite(pending: Promise<void>): Promise<void> {
-    this.titleWrites.add(pending)
-    void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
-    return pending
-  }
+  /** Waits for the thread titles still being written; the runtime stops side calls only after this (#980). */
+  titleWritesSettled(): Promise<void> { return this.titles.settled() }
+  /** Tests run a sweep through this; it goes when they move to the module. */
+  refreshTitles(): void { this.titles.refresh() }
   /** The threads and projects as this coordinator holds them now, read in place; for a side call's material, never per update. */
   liveHost(): Pick<AgentHostSnapshot, 'threads' | 'projects'> { return this.state.host }
   /** The thread as this coordinator holds it now, read in place through the thread index; for a side call's material, never per update. */
@@ -4005,44 +3906,6 @@ export class AgentControl {
   threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
     return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
-  }
-  /** Asks for the name and applies it, unless the thread was renamed by hand while the answer was in flight. */
-  private writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
-    return this.offerTitle(threadId, () => this.dependencies.writeThreadTitle!(threadId, exchange), 'generated')
-  }
-  /**
-   * Works out a name Sotto offers a thread and applies it, unless the thread was renamed by hand while it was
-   * worked out. A first-message title also yields to a generated one that landed first.
-   */
-  private async offerTitle(threadId: string, write: () => Promise<string | null>, source: 'generated' | 'first-message'): Promise<void> {
-    if (this.disposed) return
-    try {
-      const title = await Promise.race([write(), this.titleWritesReleased])
-      // A write started before Sotto began closing is still applied, and `closed()` saves it (#980).
-      if (this.titleWritesLetGo || title === null) return
-      const thread = this.state.host.threads.find(item => item.id === threadId)
-      if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
-      if (source === 'first-message' && (!carriesDefaultTitle(thread) || thread.titledFromFirstMessage)) return
-      this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, source))
-      // Once closing, the final save in `closed()` writes it.
-      if (!this.disposed) await this.persist()
-    } catch {
-      // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.
-      this.dependencies.logFailure?.('thread-title-failed', 'failed')
-    }
-  }
-  /** Ask again for a thread's name, replacing a generated or stand-in one on explicit request. */
-  private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
-    const thread = this.state.host.threads.find(item => item.id === threadId)
-    // The same rule as automatic naming: with local history off, no thread content is sent to name it.
-    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', watcherWakeUpsAsShown(this.threadHistory(thread))) : null
-    if (thread && exchange) {
-      this.titled.add(thread.id)
-      this.titleNamedAt.set(thread.id, { at: Date.now(), count: threadSummaryOf(thread).messageCount })
-      await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
-    }
-    this.publish()
-    return this.reply()
   }
   /**
    * One client's command, answered with the whole state: every loaded history copied in, as `get()`
@@ -4129,6 +3992,7 @@ export class AgentControl {
   }
   private admitCommandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     if (this.disposed) return Promise.resolve({ ...this.reply(), error: 'Sotto is stopping. Restart it before sending another command.' })
+    if (command.type === 'answer' && this.watcherHooks?.ownQuestion?.(command.threadId, command.requestId)) return this.answerWatcherQuestion(command, client)
     const explicitThreadId = 'threadId' in command ? command.threadId : command.type === 'send' ? command.draft?.threadId : undefined
     const implicitThreadId = ['send', 'compose', 'cancel-draft'].includes(command.type)
       ? client.transport === 'socket' ? client.selectedThreadId : this.state.draftThreadId ?? this.state.activeThreadId : undefined
@@ -4304,6 +4168,15 @@ export class AgentControl {
         this.broadcastDetail()
       }
       return Promise.resolve(this.reply())
+    }
+    if (command.type === 'snooze-thread') {
+      if (!this.threadSnoozes.enabled) return Promise.resolve({ ...this.reply(), error: 'Snooze is available in Sotto Owl. Nothing changed.' })
+      const thread = this.threadById(command.threadId)
+      if (!thread || !this.threadAvailable(thread.id)) return Promise.resolve({ ...this.reply(), error: 'That thread is unavailable. Nothing changed.' })
+      this.threadSnoozes.set(thread.id, command.until)
+      this.threadSnoozes.track(this.state.host.threads, id => this.threadById(id), settledIn(this.state.host), value => this.failuresSeen.publish(value))
+      this.publish()
+      return this.persist().then(() => this.reply())
     }
     if (command.type === 'save-thread-draft') {
       try {
@@ -6556,6 +6429,7 @@ export class AgentControl {
     // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
     if (changed) this.finishedUnread.trackChanged(snapshot, changed.threads, changed.gone); else this.finishedUnread.track(snapshot)
     const failuresChanged = changed ? this.failuresSeen.trackChanged(snapshot, changed.threads, changed.gone) : this.failuresSeen.track(snapshot)
+    const snoozesChanged = this.threadSnoozes.track(changed?.threads ?? snapshot.threads, id => this.threadById(id), settledIn(snapshot), thread => this.failuresSeen.publish(thread))
     // A turn stopped at a usage limit is recorded for its restart, from the threads the change named (ADR-0144).
     if (this.limitRestart) { if (changed) this.limitRestart.track(snapshot, changed.threads, changed.gone); else this.limitRestart.trackAll(snapshot) }
     this.scheduleProviderReconnects()
@@ -6569,7 +6443,7 @@ export class AgentControl {
         // the live host instead, so a failed reconnect never empties the histories it holds.
         void this.commandShell(this.automaticConnect()).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...this.state.host, connected: false }) })
       }, 5000)
-      if (failuresChanged) this.persistAfterSnapshots()
+      if (failuresChanged || snoozesChanged) this.persistAfterSnapshots()
       this.publish(); return
     }
     if (this.reconnect) clearTimeout(this.reconnect)
@@ -6619,7 +6493,7 @@ export class AgentControl {
       }
     }
     this.pumpFollowups()
-    this.generateTitles()
+    this.titles.generate()
     this.persistAfterSnapshots()
     this.publish()
   }
@@ -6699,22 +6573,8 @@ export class AgentControl {
     this.firstOutputs.closeAll()
     await this.dependencies.turns?.drain()
   }
-  /**
-   * Waits for the thread titles still being written, at most `TITLE_WRITE_CLOSING_WAIT_MS` (#980). Once disposed, the
-   * wait is made once, and a title that takes longer is let go: the thread keeps the name it had, nothing is written
-   * after the final save, and a regeneration waiting for it returns. The runtime stops side calls only after this.
-   */
-  titleWritesSettled(): Promise<void> {
-    if (!this.disposed) return this.waitForTitleWrites()
-    return this.closingTitleWait ??= this.waitForTitleWrites().then(() => { this.titleWritesLetGo = true; this.letGoOfTitleWrites() })
-  }
-  private async waitForTitleWrites(): Promise<void> {
-    if (this.titleWrites.size === 0) return
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, TITLE_WRITE_CLOSING_WAIT_MS) })
-    try { await Promise.race([Promise.allSettled([...this.titleWrites]), cap]) } finally { clearTimeout(timer) }
-  }
   dispose(): void {
+    this.threadSnoozes.dispose()
     this.disposed = true
     this.commandSummaries?.close()
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
@@ -6727,8 +6587,7 @@ export class AgentControl {
     this.broadcastPending = false
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
     this.clientUpdates.stopChecking()
-    if (this.titleRefreshTimer) clearInterval(this.titleRefreshTimer)
-    this.titleRefreshTimer = null
+    this.titles.stopRefreshing()
     this.unsubscribe?.()
     this.unsubscribeSottoRequests?.()
     this.clientUpdates.letGoOfLine()
