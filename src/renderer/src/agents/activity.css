@@ -95,6 +95,21 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 /* An open row's command under what it was for, in the code face a size smaller. It keeps the second ink, as finished steps
    do, so code reads as clearly as the words about it. */
 .thread-activity__command { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+/* A folded command with no description, too long for its room, gives way where it says least, so its verb and the files it
+   acts on stay in view: npm test -- …threadStoreWorker.test.ts …workspaceStoreWorker.test.ts. First the folders of every file it names,
+   from their start, each down to a sliver for the ellipsis; then what follows the last file; then the files after the
+   first; then its flags and pattern; the first file's name last, each at its end. The verb never gives way. A command that
+   names no file is cut at its end. Each step's weight is large enough that the next gives up nothing until it has to, since any shrink at all would draw an
+   ellipsis. No part has a cap of its own, which would cut a command that has the room. The working line's own command is
+   still cut at its end (ADR-0134, November 4 amendment). */
+.thread-activity__label [data-cut] { display: flex; direction: ltr; unicode-bidi: isolate; }
+.thread-activity__label [data-cut] span { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.thread-activity__label [data-cut] .thread-activity__command-verb { flex-shrink: 0; }
+.thread-activity__label [data-cut] .thread-activity__command-args { flex-shrink: 1e5; }
+/* A later file and its folders go together and are clipped rather than cut, so their two ellipses never stand side by side. */
+.thread-activity__label [data-cut] .thread-activity__command-more { display: flex; flex-shrink: 1e10; text-overflow: clip; }
+.thread-activity__label [data-cut] .thread-activity__command-tail { flex-shrink: 1e15; min-width: 1ch; }
+.thread-activity__label [data-cut] .thread-activity__command-folders { flex-shrink: 1e20; min-width: 1ch; direction: rtl; }
 /* The rows read like the plan's checklist: finished steps in the second ink, and the step running now in full ink a weight
    up with its mark in the accent, the way the plan marks its item in progress. Its clock stays quiet beside it. */
 .thread-activity__row[data-now] > .thread-activity__toggle { color: var(--tt-text); }

@@ -92,7 +92,7 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
     const working = within(transcript).getByRole('button', { name: 'Working, 1 step so far' })
     fireEvent.click(working)
     const steps = document.getElementById(working.getAttribute('aria-controls')!)!
-    expect(within(steps).getByRole('button', { name: 'Run \u2068dev\u2069, npm run dev, completed in 2.0s' })).toBeVisible()
+    expect(within(steps).getByRole('button', { name: 'npm run dev, completed in 2.0s' })).toBeVisible()
     expect(steps.querySelector('.thread-browser')).toBeNull()
     expect(within(steps).queryByText(/sotto browser/iu)).not.toBeInTheDocument()
 
