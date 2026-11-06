@@ -355,6 +355,11 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* The dash keeps its room, so a wrapped item still hangs under its words, and a bullet stands in it. */
 .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-bullet { position: relative; color: transparent; }
 .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-bullet::before { content: '\2022'; position: absolute; left: 0; color: var(--tt-text-muted); text-indent: 0; }
+/* A list item taken out has one mark, the removed sign beside it, and its struck words: its bullet goes, and the stroke
+   starts at its first word rather than running through the bullet's room, which it keeps so the item still hangs as a
+   list item. A box of its own keeps the line's stroke off that room. */
+.changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] > .changes-line__text:not([data-source]) .diff-md-bullet { display: inline-block; white-space: pre; text-indent: 0; }
+.changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] > .changes-line__text:not([data-source]) .diff-md-bullet::before { content: none; }
 .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-strong { font-weight: 600; }
 .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-em { font-style: italic; }
 .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-link { text-decoration: underline; text-decoration-color: var(--tt-text-faint); text-underline-offset: 2px; }
