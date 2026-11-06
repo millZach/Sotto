@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checksToPreview, checkTheChecklistNames, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -873,6 +873,17 @@ describe('the drill-in under the merge checklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review in Changes' }))
     expect(onReview).toHaveBeenCalledOnce()
   })
+  it('lists the changed files under their folders, the folder that changed most first, each folder with its lines', async () => {
+    mount({ detail: detail({ changedFiles: 4, files: [{ path: 'README.md', additions: 1, deletions: 0 }, { path: 'src/a.ts', additions: 2, deletions: 1 }, { path: 'tests/a.test.ts', additions: 30, deletions: 0 }, { path: 'src/b.ts', additions: 5, deletions: 0 }] }) })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Changed files 4/u }))
+    const list = screen.getByRole('list', { name: 'Changed files' })
+    // The files at the top first, under no folder; then each folder by how much it changed, its files the most changed first.
+    const sides = (element: Element): string => [...element.querySelectorAll('[data-side]')].map(side => side.textContent).join(' ').trim()
+    expect([...list.querySelectorAll('.pr-surface__files-folder')].map(folder => `${folder.querySelector('bdi')?.textContent} ${sides(folder)}`)).toEqual(['tests/ +30', 'src/ +7 −1'])
+    expect(within(screen.getByRole('list', { name: 'src/' })).getAllByRole('button').map(row => `${row.querySelector('bdi')?.textContent} ${sides(row)}`)).toEqual(['b.ts +5', 'a.ts +2 −1'])
+    expect(within(list).getAllByRole('button').map(row => row.getAttribute('title'))).toEqual(['README.md', 'tests/a.test.ts', 'src/b.ts', 'src/a.ts'])
+  })
   it('says how many it does not list, and hides the fold from a host that did not read the files', async () => {
     mount({ detail: detail({ changedFiles: 240, files: [{ path: 'a.ts', additions: 1, deletions: 0 }] }) })
     await opened()
@@ -974,7 +985,8 @@ describe('the drill-in under the merge checklist', () => {
     mount({ detail: read })
     await opened()
     expect(peeks()).toHaveLength(1)
-    expect(peeks()[0]).toContain('CI /buildFailed')
+    // The failing check the checklist's line names is not said again under it: the preview adds the rest.
+    expect(peeks()[0]).not.toContain('build')
     expect(peeks()[0]).toContain('CI /lintQueued')
     expect(peeks()[0]).not.toContain('test')
     expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
@@ -1066,6 +1078,16 @@ describe('the drill-in under the merge checklist', () => {
     expect(checkNameParts('CI / Test / shard 1')).toEqual({ group: 'CI', own: 'Test / shard 1' })
     expect(checkNameParts('deploy/preview')).toEqual({ group: null, own: 'deploy/preview' })
     expect(filesByWeight([{ path: 'b', additions: 1, deletions: 1 }, { path: 'a', additions: 1, deletions: 1 }, { path: 'c', additions: 9, deletions: 0 }]).map(file => file.path)).toEqual(['c', 'a', 'b'])
+    const folders = filesByFolder([{ path: 'b/x', additions: 1, deletions: 1 }, { path: 'a/y', additions: 2, deletions: 0 }, { path: 'top', additions: 1, deletions: 0 }, { path: 'c/z', additions: 9, deletions: 4 }, { path: 'c/w', additions: 0, deletions: 1 }])
+    expect(folders.map(folder => [folder.folder, folder.files.map(file => file.path), folder.additions, folder.deletions])).toEqual([['', ['top'], 1, 0], ['c/', ['c/z', 'c/w'], 9, 5], ['a/', ['a/y'], 2, 0], ['b/', ['b/x'], 1, 1]])
+    // The check the checklist names (the first failed, else the first waiting for approval, else the first running) leaves the preview.
+    const named = [check('ok', 'success'), check('late', 'pending'), check('gone', 'cancelled'), check('broke', 'failure')]
+    expect(checkTheChecklistNames(named)?.name).toBe('gone')
+    expect(checklist(detail({ checks: named }))[0]!.why).toBe('gone was cancelled, and 1 more')
+    expect(checksToPreview(named).map(item => item.name)).toEqual(['broke', 'late'])
+    expect(checksToPreview([check('wait', 'action-required'), check('run', 'pending')]).map(item => item.name)).toEqual(['run'])
+    expect(checksToPreview([check('run', 'pending')])).toEqual([])
+    expect(checkTheChecklistNames([check('ok', 'success')])).toBeUndefined()
     expect(pathParts('src/main/x.ts')).toEqual({ folder: 'src/main/', name: 'x.ts' })
     expect(pathParts('x.ts')).toEqual({ folder: '', name: 'x.ts' })
     const item = { number: 74, title: 'Make it friendlier', author: 'mira', headBranch: 'feat/hello' }

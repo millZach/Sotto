@@ -1,11 +1,11 @@
-import React, { memo, useMemo, useState, type ReactNode } from 'react'
+import React, { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleMinus, CircleX, ExternalLink, type LucideIcon } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestFile } from '../../../shared/gitPullRequests'
 import { MessageContent } from '../agents/MessageContent'
 import { Button } from '../components/Button'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
-import { checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, fileOnGitHub, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
+import { checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checksToPreview, checkTime, checkWord, fileOnGitHub, filesByFolder, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
 
 const CHECK_ICONS: Readonly<Record<GitPullRequestCheck['status'], LucideIcon>> = {
   success: CircleCheck, failure: CircleX, cancelled: CircleX, pending: CircleDashed, 'action-required': Circle, skipped: CircleMinus, neutral: CircleMinus,
@@ -14,10 +14,11 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 
 /** One count of lines, "+2,114" or "−2,097", in the interface language's digits. */
-function LineCounts({ additions, deletions }: { readonly additions: number; readonly deletions: number }): ReactNode {
+function LineCounts({ additions, deletions, quiet }: { readonly additions: number; readonly deletions: number; readonly quiet?: boolean }): ReactNode {
   const { t } = useLingui()
   const added = shownLineCount(additions), removed = shownLineCount(deletions)
-  return <span className="pr-surface__counts">
+  // Quiet: a folder's sum over its files, in the muted text rather than the two status colours.
+  return <span className="pr-surface__counts" data-quiet={quiet || undefined}>
     <span className="tt-visually-hidden">{t({ message: `${added} added, ${removed} removed`, comment: '{added} and {removed} are counts of lines in a pull request.' })}</span>
     {/* A side with no lines says nothing, so what a file did reads at a glance: only added, only removed, or both. */}
     <span data-side="added" aria-hidden="true">{additions > 0 || deletions === 0 ? `+${added}` : ''}</span> <span data-side="removed" aria-hidden="true">{deletions > 0 ? `−${removed}` : ''}</span>
@@ -37,11 +38,11 @@ export const PEEK_MORE_FILES = 8
 
 /**
  * The checks that still stand (failed, waiting on an approval, running), the first few, under the head of their closed
- * fold where the panel has room: for the eye only, since the head's press opens the whole list, where each opens.
+ * fold where the panel has room: for the eye only, since the head's press opens the whole list, where each opens. The
+ * one the checklist's line already names is left out, so the preview adds the rest rather than saying it again.
  */
 export function PullRequestChecksPeek({ checks }: { readonly checks: readonly GitPullRequestCheck[] }): ReactNode {
-  const { standing } = checksInOrder(checks)
-  return <span className="pr-surface__peek" data-of="checks" aria-hidden="true">{standing.slice(0, PEEK_ROWS).map((check, index) => {
+  return <span className="pr-surface__peek" data-of="checks" aria-hidden="true">{checksToPreview(checks).slice(0, PEEK_ROWS).map((check, index) => {
     const Icon = CHECK_ICONS[check.status]
     const { group, own } = checkNameParts(check.name)
     return <span key={`${check.name}\n${index}`} className="pr-surface__peek-row" data-status={check.status}>
@@ -132,31 +133,41 @@ export const PullRequestDescription = memo(function PullRequestDescription({ det
 })
 
 /**
- * The files a pull request changes, the most changed first, each with its counts and a press that opens it on GitHub. A
- * pull request of this thread's own branch also offers its whole diff in Changes, where it can be read here.
+ * The files a pull request changes under their folders, as the Changes tree groups them, the folder that changed most
+ * first, each folder's files the most changed first, with its counts and a press that opens it on GitHub. A pull request
+ * of this thread's own branch also offers its whole diff in Changes, where it can be read here.
  */
 export function PullRequestFiles({ detail, onReview }: { readonly detail: Pick<GitPullRequestDetail, 'url' | 'files' | 'changedFiles'>; readonly onReview: (() => void) | undefined }): ReactNode {
   const { t } = useLingui()
   const listLabel = t({ message: 'Changed files', comment: 'The list of files a pull request changes.' })
-  const files = useMemo(() => filesByWeight(detail.files ?? []), [detail.files])
-  const shown = shownCount(files.length), all = shownCount(detail.changedFiles ?? files.length)
+  const folders = useMemo(() => filesByFolder(detail.files ?? []), [detail.files])
+  const listed = detail.files?.length ?? 0
+  const shown = shownCount(listed), all = shownCount(detail.changedFiles ?? listed)
+  const folderId = useId()
   const open = (file: GitPullRequestFile): void => { void fileOnGitHub(detail.url, file.path).then(openExternal) }
   return <>
     {/* First, since a long list would otherwise push the way to read the diff out of sight. */}
     {onReview ? <div className="pr-surface__fold-actions"><Button variant="secondary" onClick={onReview}>{t`Review in Changes`}</Button></div> : null}
-    {files.length ? <ul className="pr-surface__files" aria-label={listLabel}>{files.map(file => {
-      const { folder, name } = pathParts(file.path)
-      const path = file.path, added = shownLineCount(file.additions), removed = shownLineCount(file.deletions)
-      return <li key={file.path}>
-        <button type="button" className="pr-surface__file tt-focusable" title={file.path} onClick={() => open(file)}
-          aria-label={t({ message: `Open ${path} on GitHub. ${added} added, ${removed} removed`, comment: '{path} is a file\'s path; {added} and {removed} are counts of lines.' })}>
-          <span className="pr-surface__file-path"><bdi className="pr-surface__file-folder">{folder}</bdi><bdi className="pr-surface__file-name">{name}</bdi></span>
-          <LineCounts additions={file.additions} deletions={file.deletions} />
-          <ExternalLink size={13} aria-hidden="true" className="pr-surface__file-go" />
-        </button>
+    {listed ? <ul className="pr-surface__files" aria-label={listLabel}>{folders.map((group, at) => {
+      const id = `${folderId}-${at}`
+      return <li key={group.folder} className="pr-surface__files-group">
+        {/* The folder heads its files with what they change between them, quieter than each file's own counts. */}
+        {group.folder ? <span className="pr-surface__files-folder"><span><bdi id={id}>{group.folder}</bdi></span><LineCounts additions={group.additions} deletions={group.deletions} quiet /><span className="pr-surface__file-go" /></span> : null}
+        <ul aria-labelledby={group.folder ? id : undefined}>{group.files.map(file => {
+          const { name } = pathParts(file.path)
+          const path = file.path, added = shownLineCount(file.additions), removed = shownLineCount(file.deletions)
+          return <li key={file.path}>
+            <button type="button" className="pr-surface__file tt-focusable" title={file.path} onClick={() => open(file)}
+              aria-label={t({ message: `Open ${path} on GitHub. ${added} added, ${removed} removed`, comment: '{path} is a file\'s path; {added} and {removed} are counts of lines.' })}>
+              <bdi className="pr-surface__file-name">{name}</bdi>
+              <LineCounts additions={file.additions} deletions={file.deletions} />
+              <ExternalLink size={13} aria-hidden="true" className="pr-surface__file-go" />
+            </button>
+          </li>
+        })}</ul>
       </li>
     })}</ul> : <p className="pr-surface__quiet tt-paragraph">{t`GitHub did not list the files.`}</p>}
-    {(detail.changedFiles ?? 0) > files.length && files.length ? <p className="pr-surface__quiet tt-paragraph">{t({ message: `Showing the ${shown} first of ${all} files.`, comment: '{shown} and {all} are counts of files.' })}</p> : null}
+    {(detail.changedFiles ?? 0) > listed && listed ? <p className="pr-surface__quiet tt-paragraph">{t({ message: `Showing the ${shown} first of ${all} files.`, comment: '{shown} and {all} are counts of files.' })}</p> : null}
     <div className="pr-surface__fold-actions">
       <Button variant="ghost" onClick={() => openExternal(filesOnGitHub(detail.url))}><ExternalLink size={14} aria-hidden="true" />{t`Open files on GitHub`}</Button>
     </div>

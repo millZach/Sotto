@@ -260,9 +260,46 @@ export function checkNameParts(name: string): { readonly group: string | null; r
   const at = name.indexOf(' / ')
   return at > 0 ? { group: name.slice(0, at), own: name.slice(at + 3) } : { group: null, own: name }
 }
+/**
+ * The check the merge checklist names in its checks line: the first that failed, else the first waiting for an approval,
+ * else the first still running, as `checksLine` picks it. The Checks fold's preview leaves it out, so a check is not
+ * said twice one above the other.
+ */
+export function checkTheChecklistNames(checks: readonly GitPullRequestCheck[]): GitPullRequestCheck | undefined {
+  return checks.find(check => FAILED.has(check.status)) ?? checks.find(check => check.status === 'action-required') ?? checks.find(check => check.status === 'pending')
+}
+/** What the closed Checks fold previews: the checks that still stand, without the one the checklist above already names. */
+export function checksToPreview(checks: readonly GitPullRequestCheck[]): readonly GitPullRequestCheck[] {
+  const named = checkTheChecklistNames(checks)
+  return checksInOrder(checks).standing.filter(check => check !== named)
+}
 /** The files a pull request changes, the most changed first, as the iPhone's sheet lists them (ADR-0102). */
 export function filesByWeight(files: readonly GitPullRequestFile[]): GitPullRequestFile[] {
   return [...files].sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions) || a.path.localeCompare(b.path))
+}
+/** The files of one folder of a pull request, with the lines they add and remove between them. */
+export interface GitPullRequestFolder {
+  /** The folder's path with its closing slash, as in "src/main/", or empty for the files at the repository's top. */
+  readonly folder: string
+  readonly files: readonly GitPullRequestFile[]
+  readonly additions: number
+  readonly deletions: number
+}
+/**
+ * The files under their folders, as the Changes tree groups them, so the areas a pull request touches read at a glance:
+ * the files at the repository's top first, then the folders that changed most, each folder's files the most changed first.
+ */
+export function filesByFolder(files: readonly GitPullRequestFile[]): GitPullRequestFolder[] {
+  const byFolder = new Map<string, GitPullRequestFile[]>()
+  for (const file of filesByWeight(files)) {
+    const { folder } = pathParts(file.path)
+    const held = byFolder.get(folder)
+    if (held) held.push(file); else byFolder.set(folder, [file])
+  }
+  const folders = [...byFolder].map(([folder, held]) => ({ folder, files: held,
+    additions: held.reduce((sum, file) => sum + file.additions, 0), deletions: held.reduce((sum, file) => sum + file.deletions, 0) }))
+  return folders.sort((a, b) => (a.folder === '' ? -1 : 0) - (b.folder === '' ? -1 : 0)
+    || (b.additions + b.deletions) - (a.additions + a.deletions) || a.folder.localeCompare(b.folder))
 }
 /** The full list of a pull request's checks, on GitHub. */
 export const checksOnGitHub = (pullRequestUrl: string): string => `${pullRequestUrl.replace(/[?#].*$/u, '').replace(/\/+$/u, '')}/checks`

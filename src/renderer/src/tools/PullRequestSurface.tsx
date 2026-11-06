@@ -22,7 +22,7 @@ import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullReq
 import { OpenPullRequests } from './OpenPullRequests'
 import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestFilesPeek, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checksInOrder, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checksToPreview, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
   mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -199,7 +199,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh pull request`} title={t`Refresh pull request`} data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
 
   // What the closed folds can show under their heads where the panel has room, most needed first: the checks that still
-  // stand, the description's whole first paragraph, the most changed files, and more of them.
+  // stand beyond the one the checklist names, the description's whole first paragraph, the most changed files, and more of them.
   const peeks = useMemo(() => detail ? peeksOf(detail) : NO_PEEKS, [detail])
   const anyOpen = descriptionOpen || checksOpen || filesOpen || linksOpen || openListOpen
   const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, detail)
@@ -461,7 +461,8 @@ const NO_PEEKS: readonly Peek[] = []
 /** The peeks this pull request has something for, most needed first. */
 function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
   const peeks: Peek[] = []
-  if (checksInOrder(detail.checks).standing.length) peeks.push('checks')
+  // Only where some still stand beyond the one the checklist's line names.
+  if (checksToPreview(detail.checks).length) peeks.push('checks')
   // Only where the paragraph says more than the sentence the head already shows.
   if (descriptionPreview(detail.body, true) !== descriptionPreview(detail.body)) peeks.push('description')
   if (detail.files?.length) peeks.push('files')
