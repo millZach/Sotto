@@ -257,6 +257,12 @@
    is most of that space, so a little more than it is enough: the gap before a turn stays about half again the gap under a
    message, and a long thread of short exchanges is not padded out. */
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 16px; }
+/* Each turn after the first starts under a hairline across the column, in the space already kept before its message: a long
+   thread of short exchanges reads as turns without growing. The reply that ends a turn draws it, 6px under its copy room,
+   clear of that control's focus ring and nearer the message it heads. It is the reply's to paint, since a long thread's rows
+   paint only inside their own box. Lines that divide rather than enclose stay hairlines (ADR-0110). */
+.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user']) { overflow-clip-margin: 8px; }
+.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user'])::after { content: ''; position: absolute; right: 0; bottom: -7px; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }
 /* Show all under a diff the transcript cut short is a button, the soft square with an edge that every secondary press wears
    (ADR-0110), on the line that says how much shows, so the box ends close under its last line and clear of the composer. */
 .thread-transcript .changes-block > .changes-diff__more { gap: 10px; padding: 2px 12px 8px; }
