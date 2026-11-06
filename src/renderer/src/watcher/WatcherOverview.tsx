@@ -236,10 +236,8 @@ const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([
  * inside itself, and closes on Escape, which returns focus to what opened it, or on a press outside it, which leaves
  * focus where that press put it. A thread opened from it closes it, and closing that thread returns focus there too.
  */
-export function WatcherOverviewList({ groups, total, watched, besideId, liveClock, anchor, opener, onOpen, onClose }: {
+export function WatcherOverviewList({ groups, watched, besideId, liveClock, anchor, opener, onOpen, onClose }: {
   readonly groups: readonly OverviewGroup[]
-  /** How many threads it lists, which its name and its filter say, since the header says how many work instead. */
-  readonly total?: number | undefined
   readonly watched: ReadonlySet<string>
   readonly besideId: string | null
   readonly liveClock: boolean
@@ -295,7 +293,7 @@ export function WatcherOverviewList({ groups, total, watched, besideId, liveCloc
       style={place ? { top: place.top, left: place.left, maxHeight: `calc(100% - ${place.top}px - 62px)` } : { visibility: 'hidden' }}>
       <label className="watcher-list__filter">
         <Search size={14} aria-hidden="true" /><span className="tt-visually-hidden"><Trans>Filter threads</Trans></span>
-        <input ref={filter} className="tt-focusable" type="search" value={query} placeholder={total === undefined ? t`Filter threads` : plural(total, { one: 'Filter # thread', other: 'Filter # threads' })} autoComplete="off" onChange={event => setQuery(event.currentTarget.value)} />
+        <input ref={filter} className="tt-focusable" type="search" value={query} placeholder={t`Filter threads`} autoComplete="off" onChange={event => setQuery(event.currentTarget.value)} />
       </label>
       <div className="watcher-list__scroll">
         {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} besideId={besideId} liveClock={liveClock} searching={needle !== ''} onOpen={open} />)}

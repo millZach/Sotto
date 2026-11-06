@@ -2221,7 +2221,7 @@ test.describe("Watcher's room on the built app", () => {
           for (const counts of ['seeded', 'three-digit'] as const) {
             // All threads' count is uncapped. The second pass draws it as 100, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
-              for (const count of head.querySelectorAll('.watcher-head__count')) count.textContent = '100 working'
+              for (const count of head.querySelectorAll('.watcher-head__count')) count.textContent = '100'
             })
             for (const [width, height] of counts === 'seeded' ? SIZES : [SIZES[1], SIZES[2]]) {
               await resizeContentWindow(launched, width, height)
