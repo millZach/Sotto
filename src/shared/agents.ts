@@ -1324,6 +1324,9 @@ export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaS
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
 
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
+
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
  * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
