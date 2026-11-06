@@ -321,9 +321,11 @@ describe('Changes as T3’s diff', () => {
     expect(within(panel()).queryByRole('button', { name: /^All files/u })).toBeNull()
     await pressView(user, 'File tree')
     const review = panel().querySelector('.changes-review')!
-    // The place is the button: it says which file is in view, and opens them all.
+    // The button says which file is in view to a screen reader and opens them all; the file's head says it on screen.
     const allFiles = within(panel()).getByRole('button', { name: 'All files, 1 of 3' })
-    expect(allFiles).toHaveTextContent('1 of 3')
+    expect(allFiles).toHaveTextContent('All files')
+    expect(block('docs/new.md')!.querySelector('.changes-file__head .changes-jump__place')).toHaveTextContent('1 of 3')
+    expect(panel().querySelectorAll('.changes-jump__place')).toHaveLength(1)
     expect(review).not.toHaveAttribute('data-tree-over')
     await user.click(allFiles)
     expect(review).toHaveAttribute('data-tree-over')

@@ -125,13 +125,12 @@
   .changes-jump__all { display: none; }
 }
 
-/* From file to file, in the bar. */
+/* From file to file, in the bar: All files where the tree is shut, then the previous and next file. */
 .changes-bar__jump { display: contents; }
-.changes-jump__place, .changes-jump__all-place { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.changes-jump__place { margin: 0 2px 0 4px; }
-.changes-jump__all:hover .changes-jump__all-place, .changes-jump__all[aria-expanded='true'] .changes-jump__all-place { color: var(--tt-text); }
-/* Where the tree is shut the place is All files' own words, so it is not said again beside it. */
-@container tools-body (max-width: 819px) { .changes-jump__place[data-beside] { display: none; } }
+/* Which file of how many is in view, on that file's head after its folder and name: one phrase for where the reader
+   is, under the bar, with the tree shut or open. Only the file in view says it. */
+.changes-jump__place { flex: none; margin-left: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.changes-file__head > .changes-jump__place + .files-icon { margin-left: auto; }
 
 /* A file's whole name, on as many lines as it takes: it wraps where its words join, and anywhere at all only if one word is wider than the row. */
 .changes-name { flex: 1 1 auto; min-width: 0; padding-top: 1px; line-height: 1.35; overflow-wrap: anywhere; }

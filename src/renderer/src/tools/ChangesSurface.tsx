@@ -254,7 +254,7 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
   return <>
     {jumpSlot ? createPortal(<FileJump files={files} current={current} onShow={path => show(path, true)} allFiles={tree ? { open: treeOver, button: allFiles, onPress: () => { if (treeOver) closeTree(); else setTreeOver(true) } } : null} />, jumpSlot) : null}
     <div className="changes-review" data-tree={tree || undefined} data-tree-over={treeOver || undefined}>
-      <ChangesFiles changes={changes} review={review} view={view} store={store} comments={comments} body={list} only={oneFile ? current : null} onInView={noteInView} onShow={show}
+      <ChangesFiles changes={changes} review={review} view={view} store={store} comments={comments} body={list} current={current} only={oneFile ? current : null} onInView={noteInView} onShow={show}
         onCopy={onCopy} onReveal={onReveal} onOpenFile={onOpenFile} platform={platform} />
       {tree ? <ChangesTree files={files} current={current} over={treeOver} toggleButton={allFiles} onLeave={() => setTreeOver(false)} onClose={closeTree}
         onPick={path => { setTreeOver(false); show(path) }} /> : null}
@@ -299,10 +299,16 @@ function holdAtTop(scroller: HTMLElement, block: HTMLElement, instant: boolean, 
   return done
 }
 
+/** Which file of how many a comparison's file is, as in "3 of 30". */
+function placeWords(index: number, count: number, words: I18n): string {
+  const place = (index + 1).toLocaleString(), total = count.toLocaleString()
+  return words._(msg({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' }))
+}
+
 /**
- * Where the reader is among the files, and the previous and next one. It sits in the bar, so it costs the lines no height.
- * In a panel too narrow for the tree beside the lines, the place itself is All files and opens the tree over them, so
- * the bar says where the reader is once rather than beside a second control; beside the tree it is only words.
+ * The way from file to file: the previous and next one, and All files where the tree is shut. It sits in the bar, so
+ * it costs the lines no height. Which file of how many is in view is said on that file's head (FileBlock), beside its
+ * folder and name, so where the reader is reads as one phrase under the bar and no name is said twice.
  */
 function FileJump({ files, current, onShow, allFiles }: {
   readonly files: readonly GitReviewFile[]; readonly current: string | null; readonly onShow: (path: string) => void
@@ -316,8 +322,7 @@ function FileJump({ files, current, onShow, allFiles }: {
   return <>
     {allFiles ? <button ref={allFiles.button} type="button" className="changes-bar__word changes-jump__all tt-focusable" aria-expanded={allFiles.open} title={t`Show every file in this comparison`} onClick={allFiles.onPress}
       aria-label={t({ message: `All files, ${place} of ${total}`, comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".' })}>
-      <ListTree size={15} aria-hidden="true" /><span className="changes-jump__all-place" aria-hidden="true">{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span></button> : null}
-    <span className="changes-jump__place" data-beside={allFiles ? '' : undefined}>{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span>
+      <ListTree size={15} aria-hidden="true" /><span className="changes-bar__word-text">{t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines in Changes, where the panel has no room for it beside them.' })}</span></button> : null}
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!previous} aria-label={t`Previous file`} title={previous ? t({ message: `Previous file: ${previous.path}`, comment: '{previous.path} is a file\'s path.' }) : t`Previous file`} onClick={() => { if (previous) onShow(previous.path) }}><ChevronUp size={15} aria-hidden="true" /></button>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!next} aria-label={t`Next file`} title={next ? t({ message: `Next file: ${next.path}`, comment: '{next.path} is a file\'s path.' }) : t`Next file`} onClick={() => { if (next) onShow(next.path) }}><ChevronDown size={15} aria-hidden="true" /></button>
   </>
@@ -391,15 +396,17 @@ interface ReviewActions {
 
 const NO_COMMENTS: readonly ReviewComment[] = []
 
-const ChangesFiles = memo(function ChangesFiles({ changes, review, view, store, comments: commentStore, body, only, onInView, onShow, onCopy, onReveal, onOpenFile, platform }: {
+const ChangesFiles = memo(function ChangesFiles({ changes, review, view, store, comments: commentStore, body, current, only, onInView, onShow, onCopy, onReveal, onOpenFile, platform }: {
   readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore; readonly comments: ReviewCommentStore
   readonly body: RefObject<HTMLDivElement | null>
+  /** The file in view, whose head says which of how many it is. */
+  readonly current: string | null
   /** The one file to draw, when the view draws one at a time. */
   readonly only: string | null
   readonly onInView: (path: string) => void; readonly onShow: (path: string, instant?: boolean) => void
   readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   const { threadId } = changes
   const key = scopeKey(changes.scope)
   // The saved position is restored once; refreshed content then keeps whatever the reader has scrolled to.
@@ -485,6 +492,7 @@ const ChangesFiles = memo(function ChangesFiles({ changes, review, view, store, 
   return <div ref={body} className="changes-files" data-wrap={view.wrap || undefined} data-layout={view.layout} aria-label={t`Changed files`}
     role="region" onScroll={event => { store.setScroll(threadId, key, event.currentTarget.scrollTop); noteInView() }}>
     {review.files.filter(file => only === null || file.path === only).map(file => <FileBlock key={file.path} file={file} collapsed={collapsed.has(file.path)} split={view.layout === 'split'} labels={labels}
+      place={file.path === current ? placeWords(review.files.indexOf(file), review.files.length, i18n) : null}
       onToggle={() => store.toggleCollapsed(threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
       onOpen={onOpenFile && inWorkingCopy(file, changes) ? onOpenFile : undefined} platform={platform}
       review={reviewOf(file.path)} />)}
@@ -556,8 +564,10 @@ interface FileReview {
   readonly focusDraft: { current: boolean }
 }
 
-const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onToggle, onCopy, onReveal, onOpen, platform, review }: {
+const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, place, onToggle, onCopy, onReveal, onOpen, platform, review }: {
   readonly file: GitReviewFile; readonly collapsed: boolean; readonly split: boolean; readonly labels: readonly string[]
+  /** Which file of how many this is, said only on the head of the file in view: "13 of 30". */
+  readonly place: string | null
   readonly onToggle: () => void; readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined
   readonly onOpen?: ((path: string) => void) | undefined; readonly platform?: string | undefined; readonly review: FileReview
 }): ReactNode {
@@ -575,6 +585,7 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
       <span className="changes-badge" data-status={file.status} role="img" aria-label={status.label} title={status.label}>{status.letter}</span>
       {onOpen ? <button type="button" className="changes-file__name tt-focusable" aria-label={t({ message: `Open ${path}`, comment: '{path} is a file\'s path.' })} title={t({ message: `Open ${path} in Files`, comment: '{path} is a file\'s path.' })} onClick={() => onOpen(file.path)}>{title}</button>
         : <span className="changes-file__name" title={file.path}>{title}</span>}
+      {place !== null ? <span className="changes-jump__place">{place}</span> : null}
       {file.additions !== null && file.deletions !== null ? <span className="changes-counts changes-counts--file">
         <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
         <span className="tt-visually-hidden">{t`${additions} added, ${deletions} removed`}</span>

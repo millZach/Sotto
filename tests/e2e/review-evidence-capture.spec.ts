@@ -741,7 +741,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('changes-wrap', 'The same files with Wrap long lines on: a long line of code wraps inside its file, hanging inside its indent.', '', { modes: ['dark'] })
     await viewChoice(panel, 'wrap', false)
     await viewChoice(panel, 'one-file', true)
-    await panel.locator('.changes-jump__place + button + button').click()
+    await panel.getByRole('button', { name: 'Next file', exact: true }).click()
     await expect(panel.locator('.changes-file')).toHaveCount(1)
     await page.waitForTimeout(500)
     await capture.shoot('changes-one-file', 'One file at a time, after a press on Next file, with the tree off.')

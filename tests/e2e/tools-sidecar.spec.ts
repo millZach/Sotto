@@ -129,7 +129,7 @@ async function chromeContrast(panel: Locator): Promise<{ lowest: number; name: s
     const texts = [
       '.tools-rail__tab', '.tools-chrome__title', '.tools-chrome__detail', '.tools-chrome .terminal-tabs__tab', '.tools-chrome__button:not(:disabled)',
       '.tools-panel__copy', '.tools-panel__branch', '.tools-panel__label', '.tools-panel__foot', '.tools-panel__pinned-owner .tools-panel__thread-title', '.tools-panel__tag',
-      '.changes-scope__select', '.changes-counts__add', '.changes-counts__remove', '.changes-whitespace', '.changes-lead__fact', '.changes-base__against', '.changes-base__value', '.changes-bar__word:not(:disabled)', '.changes-jump__place', '.changes-jump__all-place', '.changes-file__base', '.changes-file__folder',
+      '.changes-scope__select', '.changes-counts__add', '.changes-counts__remove', '.changes-whitespace', '.changes-lead__fact', '.changes-base__against', '.changes-base__value', '.changes-bar__word:not(:disabled)', '.changes-jump__place', '.changes-file__base', '.changes-file__folder',
     ].join(', ')
     const ratios = [...element.querySelectorAll(texts)].map(node => {
       const layers: string[] = []
