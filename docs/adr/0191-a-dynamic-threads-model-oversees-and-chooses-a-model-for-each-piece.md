@@ -22,7 +22,7 @@ What providers allow decides the shape. A thread stays on one provider session f
 
 ## Decision
 
-**1. A switch on one thread.** **Dynamic** is a switch at the foot of the model menu, off by default, with the sentence "Opus 5.5 oversees and chooses a model for each piece. It does no work itself." With it on, the composer reads "Opus 5.5 oversees". It changes only at rest. The thread keeps its Sotto thread ID and provider session.
+**1. A switch on one thread.** **Dynamic** is a switch at the foot of the model menu, off by default. As redesigned on November 6, 2026, it is one row at rest; while a turn holds it fixed, a line below says it can change once the turn finishes. With it on, the composer reads "Opus 5.5 oversees". It changes only at rest. The thread keeps its Sotto thread ID and provider session.
 
 Claude Code and Codex obey instructions given when a provider session is created, and ignore new ones on resume: checked live on November 4, 2026, on Claude Code 2.1.318 and Codex 0.166.0 (`dynamicThreadInstructionsLive.test.ts`). So a thread set before its first message starts on the overseer's instructions, and a thread that changes after that is told by an **overseer note**: one note, on or off, beside its next message, through the channel Watcher's request note uses (Claude Code's prompt hook, Codex's turn context), so it never joins the user's words. Zach chose this over fixing the switch at the first message. A note lives in the conversation rather than in the session's instructions, so a compaction can lose it: one Sotto sees finish sends the note again with the next message.
 

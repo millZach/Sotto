@@ -705,22 +705,6 @@ msgid "{modelCount} · Free with OpenCode Zen"
 msgstr ""
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
-msgstr ""
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece. It does no work itself."
-msgstr ""
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
-msgstr ""
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
-msgstr ""
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 msgstr ""
 
