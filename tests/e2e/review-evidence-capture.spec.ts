@@ -417,8 +417,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       expect(await transcript(page).locator('.thread-message').count()).toBeGreaterThanOrEqual(100)
     }).toPass({ timeout: 120_000 })
     await scrollTranscript(page, 'middle')
-    const shows = 'A long thread (106 messages and 190 tool calls, the calls folded in their turns) scrolled to its middle, with the sidebar full. It opens on its newest turns, so Show earlier messages is pressed until all of it is drawn.'
-    const differs = 'The rounds of this thread are written from a template over twelve cuts, so their shape repeats more than a real session.'
+    const shows = 'A long thread (102 messages and 134 tool calls, the calls folded in their turns) scrolled to its middle, with the sidebar full: a twelve-cut refactor, its questions, a failed typecheck and a flaky test fixed, a rebase and three pull requests. It opens on its newest turns, so Show earlier messages is pressed until all of it is drawn.'
+    const differs = 'The session is written by hand, and its commands print a line or two where a real run prints more.'
     await capture.shoot('thread-long', shows, differs)
     for (const size of SMALLER_SIZES) {
       await resizeContentWindowFor(capture.launched, size[0], size[1])

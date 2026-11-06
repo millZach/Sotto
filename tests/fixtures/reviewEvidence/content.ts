@@ -365,54 +365,220 @@ const LONG_CUTS = [
   { name: 'permissionLedger', method: 'answerRequest', lines: 412, test: 'requestPolicy', note: 'One caller outside the class needed the new import.' },
   { name: 'threadOutbox', method: 'drainOutbox', lines: 288, test: 'threadOutbox', note: 'The retry timer moved with it, so the fake clock in the test had to move too.' },
   { name: 'sendRouter', method: 'submit', lines: 934, test: 'sendRouting', note: 'A send that races a rename kept its order, which was the case I was worried about.' },
-  { name: 'turnTracker', method: 'recordTurn', lines: 655, test: 'turnTracker', note: 'Two tests had been reading a private field. They now ask the tracker instead.' },
+  { name: 'turnTracker', method: 'recordTurn', lines: 655, test: 'turnTracker', note: '' },
   { name: 'worktreeLeases', method: 'leaseWorktree', lines: 371, test: 'worktreeRestore', note: 'A missing worktree is still refused without removing work.' },
   { name: 'historyWindows', method: 'readEarlier', lines: 243, test: 'threadHistory', note: 'The window size stayed in the shared constant, so the iPhone path is unchanged.' },
   { name: 'titleRequests', method: 'requestTitle', lines: 198, test: 'threadTitles', note: 'Generated names still only replace the temporary branch.' },
-  { name: 'providerRecovery', method: 'reconnectHost', lines: 516, test: 'workspaceRecovery', note: 'The backoff read the wrong constant before the move as well. I left it and filed a follow-up.' },
+  { name: 'providerRecovery', method: 'reconnectHost', lines: 516, test: 'workspaceRecovery', note: 'The backoff read the wrong constant before the move as well. I left it alone; it wants its own change.' },
   { name: 'settledState', method: 'settleThread', lines: 227, test: 'threadSettle', note: 'Settling is still a coordinator fact and not a provider one.' },
   { name: 'usageRollup', method: 'recordUsage', lines: 176, test: 'usageLedger', note: 'Numbers still stay on their own host (ADR-0078).' },
   { name: 'pullRequestLinks', method: 'linkPullRequest', lines: 302, test: 'pullRequestLinks', note: 'A thread can still hold several links, and the newest still leads.' },
-  { name: 'statePublisher', method: 'publish', lines: 841, test: 'streamingCopyBudget', note: 'No budget moved. One update still copies nothing.' },
+  { name: 'statePublisher', method: 'publish', lines: 841, test: 'streamingCopyBudget', note: '' },
+] as const
+type LongCut = (typeof LONG_CUTS)[number]
+
+/** A command a turn of the long thread ran: what, what came back, how long it took, and whether it failed. */
+type LongCommand = readonly [command: string, output: string, ms: number, failed?: boolean]
+/**
+ * One exchange of the long thread: what the user asked, how long after the reply before it, what the turn did and for how
+ * long, and the reply. Written as a real session goes: cuts that take minutes, quick questions answered in seconds from
+ * what is already known, checks, a failure and its fix, a rebase, and the pull requests at the end.
+ */
+interface LongRound {
+  readonly ask: string
+  readonly reply: string
+  /** Minutes between the reply before and this message. */
+  readonly gap: number
+  /** How long the turn ran. */
+  readonly seconds: number
+  /** What the turn did, in order. A turn that only thought has its reasoning summary alone. */
+  readonly work: readonly LongStep[]
+}
+type LongStep =
+  | { readonly think: string }
+  | { readonly run: LongCommand }
+  | { readonly edit: readonly [path: string, kind: 'update' | 'add', diff: string] }
+  | { readonly cut: LongCut }
+
+const cutNamed = (name: LongCut['name']): LongCut => LONG_CUTS.find(cut => cut.name === name)!
+const className = (cut: LongCut): string => `${cut.name[0]!.toUpperCase()}${cut.name.slice(1)}`
+const think = (text: string): LongStep => ({ think: text })
+const run = (command: string, output: string, ms: number, failed?: true): LongStep => ({ run: failed ? [command, output, ms, true] : [command, output, ms] })
+const edit = (path: string, diff: string, kind: 'update' | 'add' = 'update'): LongStep => ({ edit: [path, kind, diff] })
+const cutOf = (name: LongCut['name']): LongStep => ({ cut: cutNamed(name) })
+const passed = (files: number, tests: number): string => ` Test Files  ${files} passed (${files})\n      Tests  ${tests} passed (${tests})`
+const testOf = (name: LongCut['name'], tests: number): LongStep => run(`npx vitest run tests/unit/main/${cutNamed(name).test}.test.ts`, passed(1, tests), 5_800 + tests * 90)
+const typecheck = (output = '', failed?: true): LongStep => run('npm run typecheck', output, 36_000, failed)
+const moved = (cut: LongCut, rest = ''): string =>
+  `Moved \`${cut.method}\` and its helpers to \`src/main/agents/${cut.name}.ts\`, ${cut.lines} lines. \`control.ts\` keeps a one-line call, so nothing outside the class changed. \`${cut.test}.test.ts\` passes.${cut.note ? ` ${cut.note}` : ''}${rest ? ` ${rest}` : ''}`
+
+const LONG_ROUNDS: readonly LongRound[] = [
+  { ask: 'Go.', gap: 1, seconds: 104, work: [think('Reading the ledger and its callers'), cutOf('permissionLedger'), testOf('permissionLedger', 31)], reply: moved(cutNamed('permissionLedger')) },
+  { ask: 'Which caller? I thought nothing outside the class moved.', gap: 2, seconds: 6, work: [think('The import that moved')],
+    reply: '`requestPolicy.ts` imported the ledger\'s `PendingAnswer` type from `control.ts`. The type moved with the class, so that one import now points at `permissionLedger.ts`. No code outside the class changed.' },
+  { ask: 'Fine. Outbox next.', gap: 1, seconds: 131, work: [cutOf('threadOutbox'), testOf('threadOutbox', 18)], reply: moved(cutNamed('threadOutbox')) },
+  { ask: 'Run the whole agents folder, not just that one file.', gap: 2, seconds: 52, work: [run('npx vitest run tests/unit/main/agents', passed(41, 612), 48_200)],
+    reply: 'All 41 files pass, 612 tests. The slowest is `workspaceControl.test.ts` at 9.8 s, as it was before the cut.' },
+  { ask: 'Send router.', gap: 1, seconds: 198, work: [think('Where sends and renames meet'), cutOf('sendRouter'), testOf('sendRouter', 44)], reply: moved(cutNamed('sendRouter')) },
+  { ask: 'What race exactly?', gap: 3, seconds: 9, work: [think('The rename and the queued send')],
+    reply: 'A send that arrives while the thread is being renamed. The router queues it behind the rename, and the rename used to read `pendingSends` straight off the class. It now asks the router, which answers in the same tick, so the send still goes after the rename and before the next one.' },
+  { ask: 'ok. turn tracker', gap: 2, seconds: 162, work: [cutOf('turnTracker'), testOf('turnTracker', 27),
+    typecheck('tests/unit/main/turnTracker.test.ts(88,24): error TS2341: Property \'turns\' is private and only accessible within class \'TurnTracker\'.\ntests/unit/main/workspaceControl.test.ts(412,19): error TS2339: Property \'turns\' does not exist on type \'AgentControl\'.', true)],
+    reply: 'Moved `recordTurn` and its helpers to `src/main/agents/turnTracker.ts`, 655 lines, but the typecheck fails: two tests read `turns` straight off the class. I have not changed them yet. Should they ask the tracker, or should I keep a getter on `AgentControl` for now?' },
+  { ask: 'Make them ask the tracker. No getters for tests.', gap: 2, seconds: 113, work: [
+    edit('tests/unit/main/turnTracker.test.ts', '@@ -86,3 +86,3 @@\n-    expect(tracker.turns.get(\'thread-1\')?.status).toBe(\'completed\')\n+    expect(tracker.turnOf(\'thread-1\')?.status).toBe(\'completed\')'),
+    edit('tests/unit/main/workspaceControl.test.ts', '@@ -410,3 +410,3 @@\n-    const turn = control.turns.get(threadId)\n+    const turn = control.turnTracker.turnOf(threadId)'),
+    testOf('turnTracker', 27), run('npx vitest run tests/unit/main/workspaceControl.test.ts', passed(1, 96), 9_800), typecheck()],
+    reply: 'Both tests now ask `turnTracker.turnOf(threadId)`. The typecheck, `turnTracker.test.ts` and `workspaceControl.test.ts` pass.' },
+  { ask: 'Worktree leases. Careful with that one, it is the one that removes folders.', gap: 4, seconds: 167, work: [think('What removes a checkout, and when'), cutOf('worktreeLeases'), testOf('worktreeLeases', 38), typecheck()],
+    reply: moved(cutNamed('worktreeLeases'), 'Nothing in the move touches `git worktree remove`; the class only calls it through the same guard as before.') },
+  { ask: 'Did you run the restore tests on a missing folder or only the happy path?', gap: 2, seconds: 11, work: [run('rg -n "missing|replaced|occupied" tests/unit/main/worktreeRestore.test.ts', '58:  it(\'restores a missing checkout on its recorded branch\', async () => {\n97:  it(\'refuses a checkout that was replaced\', async () => {\n131:  it(\'refuses a branch another worktree holds\', async () => {', 140)],
+    reply: 'Both. `worktreeRestore.test.ts` has three cases for a missing checkout: restored on its recorded branch, refused when the folder was replaced, and refused when another worktree holds the branch. All three pass.' },
+  { ask: 'Good. History windows next.', gap: 1, seconds: 95, work: [cutOf('historyWindows'), testOf('historyWindows', 22)], reply: moved(cutNamed('historyWindows')) },
+  { ask: 'Is the iPhone path covered by a test or are you reading the code?', gap: 2, seconds: 14, work: [run('rg -ln "readEarlier|HISTORY_WINDOW" tests/integration', 'tests/integration/hostServiceContract.ts\ntests/integration/socketHost.test.ts', 120)],
+    reply: 'Covered. `hostServiceContract.ts` reads earlier messages through the socket host with the shared window size, and `socketHost.test.ts` runs that contract. Both pass against the new class.' },
+  { ask: 'Move `titleRequests` next.', gap: 1, seconds: 88, work: [cutOf('titleRequests'), testOf('titleRequests', 16)], reply: moved(cutNamed('titleRequests'), '`threadTitles.test.ts` covers the side call to each provider too.') },
+  { ask: 'How big is control.ts now?', gap: 2, seconds: 4, work: [run('wc -l src/main/agents/control.ts', '4906 src/main/agents/control.ts', 40)],
+    reply: '4,906 lines, from 7,160 when we started. Seven cuts in, five to go.' },
+  { ask: 'Take a break from cutting. Rebase on main, Drake merged the settings history change.', gap: 6, seconds: 141, work: [
+    run('git fetch origin', 'From github.com:millZach/Sotto\n   54978c9fb..3f5027092  main       -> origin/main', 2_100),
+    run('git rebase origin/main', 'CONFLICT (content): Merge conflict in src/main/agents/control.ts\nerror: could not apply 9c1e2d4... Move requestTitle into titleRequests', 1_400, true),
+    edit('src/main/agents/titleRequests.ts', '@@ -41,6 +41,8 @@ export class TitleRequests {\n   requestTitle(threadId: string): AgentHostResult {\n     const thread = this.store.requireThread(threadId)\n+    // Drake: a title asked for while settings history replays waits for it to finish.\n+    if (this.settings.replaying) return this.later(threadId)'),
+    run('git rebase --continue', 'Successfully rebased and updated refs/heads/refactor/agent-control-split.', 900),
+    testOf('titleRequests', 17), run('npx vitest run tests/integration/settingsHistoryIpc.test.ts', passed(1, 12), 14_300)],
+    reply: 'Rebased onto `origin/main` at `3f50270`. One conflict, in `control.ts`, where Drake\'s change touched `requestTitle`\'s old home. I kept the call into `titleRequests` and moved his two lines into the class. `threadTitles.test.ts` and `settingsHistoryIpc.test.ts` pass.' },
+  { ask: 'Show me those two lines.', gap: 1, seconds: 5, work: [think('Drake\'s two lines')],
+    reply: 'In `TitleRequests.requestTitle`, right after the thread is read:\n\n```ts\n// Drake: a title asked for while settings history replays waits for it to finish.\nif (this.settings.replaying) return this.later(threadId)\n```' },
+  { ask: 'Fine. providerRecovery.', gap: 2, seconds: 176, work: [think('Reconnect and its backoff'), cutOf('providerRecovery'), testOf('providerRecovery', 29), typecheck()], reply: moved(cutNamed('providerRecovery')) },
+  { ask: 'Open an issue for the backoff now so we do not lose it.', gap: 1, seconds: 7, work: [run('gh issue create --title "Read the reconnect backoff from its own constant" --label bug', 'https://github.com/millZach/Sotto/issues/2101', 2_300)],
+    reply: 'Opened #2101, "Read the reconnect backoff from its own constant", with the line that reads `RETRY_MS` and the `RECONNECT_BACKOFF_MS` it should read.' },
+  { ask: 'settledState', gap: 3, seconds: 79, work: [cutOf('settledState'), testOf('settledState', 14)], reply: moved(cutNamed('settledState')) },
+  { ask: 'Usage rollup, then pull request links. Both small, do them together.', gap: 2, seconds: 154, work: [cutOf('usageRollup'), testOf('usageRollup', 21), cutOf('pullRequestLinks'), testOf('pullRequestLinks', 19)],
+    reply: 'Both moved. `usageRollup.ts` is 176 lines and `pullRequestLinks.ts` 302. Numbers still stay on their own host (ADR-0078), and a thread can still hold several links, the newest leading. Both test files pass.' },
+  { ask: 'And the publisher. This is the one I care about for the budget.', gap: 2, seconds: 233, work: [think('What the publisher copies per update'), cutOf('statePublisher'),
+    run('npx vitest run tests/perf/streamingCopyBudget.perf.test.ts', passed(1, 8), 22_400), run('npx vitest run tests/unit/main/copySites.test.ts', passed(1, 3), 4_100), typecheck()],
+    reply: 'Moved `publish` to `src/main/agents/statePublisher.ts`, 841 lines. `streamingCopyBudget.perf.test.ts` counts the same as before: nothing copied per update. `copySites.test.ts` passes with the list unchanged.' },
+  { ask: 'Run the owner scale budget too.', gap: 1, seconds: 74, work: [run('npx vitest run tests/perf/ownerScaleWorkBudget.perf.test.ts', passed(1, 6), 69_000)],
+    reply: 'It passes on Owl and stable. With a quarter of the history, the work per update is 3% lower than before the split, because the publisher no longer walks the pending sends.' },
+  { ask: 'Nice. Now go back over every cut. Did anything start reaching back into AgentControl?', gap: 5, seconds: 61, work: [
+    run('rg -n "control\\." src/main/agents/{permissionLedger,threadOutbox,sendRouter,turnTracker,worktreeLeases,historyWindows}.ts', 'src/main/agents/sendRouter.ts:144:    const host = this.control.hosts.get(thread.provider)\nsrc/main/agents/turnTracker.ts:203:      this.control.settle(threadId)', 180),
+    run('rg -n "control\\." src/main/agents/{titleRequests,providerRecovery,settledState,usageRollup,pullRequestLinks,statePublisher}.ts', '', 160)],
+    reply: 'Two did. `turnTracker` calls `control.settle()` when a turn ends, and `sendRouter` reads `control.hosts` to find a host. The other ten read only what their constructors are given.' },
+  { ask: 'Fix both. Pass in what they need.', gap: 1, seconds: 187, work: [
+    edit('src/main/agents/turnTracker.ts', '@@ -12,7 +12,7 @@ export class TurnTracker {\n-  constructor(private readonly control: AgentControl, private readonly store: ThreadStore) {}\n+  constructor(private readonly store: ThreadStore, private readonly settle: (threadId: string) => void) {}'),
+    edit('src/main/agents/sendRouter.ts', '@@ -20,7 +20,7 @@ export class SendRouter {\n-  constructor(private readonly control: AgentControl) {}\n+  constructor(private readonly hosts: ReadonlyMap<ProviderId, AgentHost>, private readonly store: ThreadStore) {}'),
+    edit('src/main/agents/control.ts', '@@ -88,8 +88,8 @@ export class AgentControl {\n-    this.turnTracker = new TurnTracker(this, this.store)\n-    this.sendRouter = new SendRouter(this)\n+    this.turnTracker = new TurnTracker(this.store, threadId => this.settledState.settleThread(threadId))\n+    this.sendRouter = new SendRouter(this.hosts, this.store)'),
+    testOf('turnTracker', 27), testOf('sendRouter', 44), typecheck()],
+    reply: '`TurnTracker` now takes the store and a `settle` function, and `SendRouter` takes the hosts and the store. Neither imports `AgentControl` any more. Their tests and the typecheck pass.' },
+  { ask: 'Does `permissionLedger` still need its own test file, or can the coordinator\'s tests cover it?', gap: 3, seconds: 18, work: [think('What the ledger tests reach that the coordinator cannot'), run('npx vitest run tests/unit/main/requestPolicy.test.ts --reporter=verbose', passed(1, 31), 6_100)],
+    reply: 'Keep it. `requestPolicy.test.ts` builds only the ledger, so a case takes about 20 ms. The coordinator\'s tests would have to build a host, a store and a provider to reach the same 31 cases, at about 500 ms each.' },
+  { ask: 'And the outbox tests?', gap: 1, seconds: 6, work: [think('The outbox tests and the fake clock')],
+    reply: 'Keep those too. They drive the retry timer with a fake clock, which the coordinator\'s tests cannot do without a real host.' },
+  { ask: 'ok. Typecheck and the whole unit suite, then tell me what is left.', gap: 2, seconds: 402, work: [typecheck(), run('npm test -- --maxWorkers=2', ' Test Files  1284 passed (1284)\n      Tests  14902 passed (14902)\n   Duration  6m 12s', 372_000)],
+    reply: 'The typecheck passes, and so does the unit suite: 1,284 files, 14,902 tests, in 6m 12s. What is left: the doc comments that still say AgentControl, the plan\'s checklist, and the pull requests.' },
+  { ask: 'Doc comments first.', gap: 1, seconds: 48, work: [run('rg -n "AgentControl" src/main/agents --glob "!control.ts" -g "*.ts"', 'src/main/agents/permissionLedger.ts:2: * The permission ledger of AgentControl: what each pending request asked and who answered it.\nsrc/main/agents/threadOutbox.ts:3: * AgentControl\'s outbox: sends that wait for a host.', 150),
+    edit('src/main/agents/permissionLedger.ts', '@@ -1,4 +1,4 @@\n /**\n- * The permission ledger of AgentControl: what each pending request asked and who answered it.\n+ * The permission ledger: what each pending request asked and who answered it.'),
+    edit('src/main/agents/threadOutbox.ts', '@@ -3,4 +3,4 @@\n- * AgentControl\'s outbox: sends that wait for a host.\n+ * The outbox: sends that wait for a host.')],
+    reply: 'Two still said AgentControl, in `permissionLedger.ts` and `threadOutbox.ts`. Both now describe their own class, and no code changed.' },
+  { ask: 'Tick the plan\'s checklist.', gap: 1, seconds: 21, work: [edit('docs/plans/agent-control-split.md', '@@ -14,14 +14,16 @@\n-- [ ] Cut 1: permission ledger\n+- [x] Cut 1: permission ledger\n …\n-- [ ] Cut 12: state publisher\n+- [x] Cut 12: state publisher\n+\n+Second pass: Cut 3 and Cut 4 no longer reach back into the coordinator.')],
+    reply: 'Ticked all twelve cuts in `docs/plans/agent-control-split.md`, and noted the second pass\'s two fixes under them.' },
+  { ask: 'Wait, which one was cut 3?', gap: 1, seconds: 3, work: [think('Cut 3')], reply: 'The send router. Cut 4 is the turn tracker.' },
+  { ask: 'Right. How would you split this into pull requests? One per cut is too many to review.', gap: 4, seconds: 27, work: [think('Grouping the cuts so each pull request merges alone'), run('git log --oneline origin/main..HEAD', '(23 commits)', 90)],
+    reply: 'Three, each safe to merge alone:\n\n1. **Requests and sends**: the ledger, the outbox and the send router, with the second-pass fix to the router.\n2. **Turns and state**: the turn tracker, settling and the publisher, with the budget runs in the description.\n3. **The rest**: worktree leases, history windows, titles, recovery, usage and links, plus the doc comments and the plan.\n\nThe first touches the fewest readers, so it goes first.' },
+  { ask: 'Go with that. Make the first branch.', gap: 2, seconds: 44, work: [
+    run('git switch -c refactor/split-requests-and-sends origin/main', 'Switched to a new branch \'refactor/split-requests-and-sends\'', 300),
+    run('git cherry-pick 9a01c3e 4b7d2f0 c55e8a1 e1f0d93', '[refactor/split-requests-and-sends 2d4c9e1] Move the permission ledger out of AgentControl\n …\n 4 files changed, 1634 insertions(+), 1611 deletions(-)', 1_900),
+    run('npx vitest run tests/unit/main/requestPolicy.test.ts tests/unit/main/threadOutbox.test.ts tests/unit/main/sendRouting.test.ts', passed(3, 93), 11_200), typecheck()],
+    reply: 'The branch `refactor/split-requests-and-sends` has the four commits on top of `main`. Its three test files and the typecheck pass.' },
+  { ask: 'Push it and open the pull request.', gap: 1, seconds: 26, work: [run('git push -u origin refactor/split-requests-and-sends', 'To github.com:millZach/Sotto.git\n * [new branch]      refactor/split-requests-and-sends -> refactor/split-requests-and-sends', 3_400),
+    run('gh pr create --title "Move requests and sends out of AgentControl" --body-file .git/PR_BODY.md', 'https://github.com/millZach/Sotto/pull/2104', 4_800)],
+    reply: 'Opened #2104, "Move requests and sends out of AgentControl". The description lists the three classes, what still calls each of them, and the tests that cover it.' },
+  { ask: 'CI?', gap: 5, seconds: 5, work: [run('gh pr checks 2104', 'Gates (Windows)    pending  4m12s\nPackage result     pending\nDesktop result     pending', 1_600)],
+    reply: 'Running. Gates (Windows) has been going for four minutes; Package and Desktop have not started.' },
+  { ask: 'While that runs, make the second branch.', gap: 1, seconds: 58, work: [
+    run('git switch -c refactor/split-turns-and-state origin/main', 'Switched to a new branch \'refactor/split-turns-and-state\'', 300),
+    run('git cherry-pick 77ab0d2 0f3e6c4 a9d10b8 3e2c7f5', '[refactor/split-turns-and-state 81c0a7e] Move the state publisher out of AgentControl\n …\n 5 files changed, 1940 insertions(+), 1902 deletions(-)', 2_200),
+    run('npx vitest run tests/unit/main/turnTracker.test.ts tests/unit/main/threadSettle.test.ts', passed(2, 41), 8_400), typecheck()],
+    reply: '`refactor/split-turns-and-state` is ready: the tracker, settling and the publisher, with the fix that stops the tracker calling back into the coordinator. Its tests and the typecheck pass. I have not pushed it.' },
+  { ask: 'Gates failed on #2104. Look.', gap: 9, seconds: 34, work: [run('gh pr checks 2104', 'Gates (Windows)    fail     11m40s\nPackage result     pass\nDesktop result     pending', 1_500),
+    run('gh run view --log-failed --job 58213377', 'shard 3/4  tests/unit/main/sendRouting.test.ts > keeps a send queued behind a rename\n  Error: Test timed out in 30000ms.', 5_200)],
+    reply: 'Shard 3 failed on one case: `sendRouting.test.ts`, "keeps a send queued behind a rename", timed out after 30 s on the Windows runner. Package passed. Desktop is still running.' },
+  { ask: 'Is that us or a flake?', gap: 1, seconds: 96, work: [think('Whether the rename case can wait for ever'), run('npx vitest run tests/unit/main/sendRouting.test.ts -t "behind a rename" --repeat=20', ' FAIL  tests/unit/main/sendRouting.test.ts > keeps a send queued behind a rename (repeat 7)\n  Error: Test timed out in 30000ms.', 61_000, true)],
+    reply: 'Us. It fails here too, once in twenty runs. The test waits for the rename to settle, but on this branch the router asks the store for the rename, and the fake store answers only on the next tick. When the send lands in between, nothing wakes the queue again.' },
+  { ask: 'Fix it properly, not by raising the timeout.', gap: 1, seconds: 128, work: [
+    edit('src/main/agents/sendRouter.ts', '@@ -151,6 +151,9 @@ export class SendRouter {\n     this.queued.push(send)\n+    // A rename that settles while this send waits wakes the queue, so a send never waits on a tick it missed.\n+    this.store.onSettled(thread.id, () => this.drain(thread.id))'),
+    run('npx vitest run tests/unit/main/sendRouting.test.ts -t "behind a rename" --repeat=50', passed(1, 50), 88_000)],
+    reply: 'The router now wakes its queue when the rename settles, instead of looking once. Fifty runs of that case pass, and the timeout is unchanged.' },
+  { ask: 'push', gap: 1, seconds: 8, work: [run('git push', 'To github.com:millZach/Sotto.git\n   2d4c9e1..6a8f310  refactor/split-requests-and-sends -> refactor/split-requests-and-sends', 3_100)],
+    reply: 'Pushed to #2104. CI started again.' },
+  { ask: 'Does the second branch need the same fix?', gap: 2, seconds: 5, work: [think('Whether the second branch routes sends')],
+    reply: 'No. The second branch does not touch the router; it is only in #2104.' },
+  { ask: 'Make the third branch while we wait.', gap: 1, seconds: 63, work: [
+    run('git switch -c refactor/split-the-rest origin/main', 'Switched to a new branch \'refactor/split-the-rest\'', 300),
+    run('git cherry-pick 5b2e9c0 d8a4f17 12c6e3b 6f0a2d9 b3e7c41 90d1f6a e44c0b7', '[refactor/split-the-rest c0f2b19] Say each class\'s own name in its doc comment\n …\n 9 files changed, 1907 insertions(+), 1844 deletions(-)', 2_600),
+    run('npx vitest run tests/unit/main/worktreeRestore.test.ts tests/unit/main/threadHistory.test.ts tests/unit/main/threadTitles.test.ts tests/unit/main/workspaceRecovery.test.ts tests/unit/main/usageLedger.test.ts tests/unit/main/pullRequestLinks.test.ts', passed(6, 142), 19_600), typecheck()],
+    reply: '`refactor/split-the-rest` has the other six cuts, the doc comments and the plan. All six test files and the typecheck pass. It still carries Drake\'s two lines in `titleRequests.ts`, which `main` already has.' },
+  { ask: 'Is #2104 green yet?', gap: 12, seconds: 4, work: [run('gh pr checks 2104', 'Gates (Windows)    pass     13m02s\nPackage result     pass\nDesktop result     pass', 1_400)],
+    reply: 'Yes. Gates (Windows), Package and Desktop all passed.' },
+  { ask: 'Merge it, then push the second one and open its pull request.', gap: 1, seconds: 47, work: [
+    run('gh pr merge 2104 --merge', '✓ Merged pull request #2104 (Move requests and sends out of AgentControl)', 3_900),
+    run('git switch refactor/split-turns-and-state && git rebase origin/main', 'Successfully rebased and updated refs/heads/refactor/split-turns-and-state.', 2_200),
+    run('git push -u origin refactor/split-turns-and-state', 'To github.com:millZach/Sotto.git\n * [new branch]      refactor/split-turns-and-state -> refactor/split-turns-and-state', 3_300),
+    run('gh pr create --title "Move turns and state out of AgentControl" --body-file .git/PR_BODY.md', 'https://github.com/millZach/Sotto/pull/2107', 4_600)],
+    reply: 'Merged #2104 with a merge commit. Rebased the second branch on the new `main`, pushed it and opened #2107, "Move turns and state out of AgentControl", with the budget runs in its description.' },
+  { ask: 'What does control.ts look like now on main?', gap: 3, seconds: 6, work: [run('git show origin/main:src/main/agents/control.ts | wc -l', '6110', 300)],
+    reply: '6,110 lines on `main`, from 7,160. Once #2107 and the third pull request merge it will be about 2,850, and most of what is left is wiring the classes together.' },
+  { ask: 'Ok. Wait for #2107, then the third. Tell me if anything goes red.', gap: 2, seconds: 3, work: [think('Waiting on CI')],
+    reply: 'I will. #2107 started its checks a minute ago.' },
+  { ask: 'Anything?', gap: 14, seconds: 5, work: [run('gh pr checks 2107', 'Gates (Windows)    pass     12m48s\nPackage result     pass\nDesktop result     pending', 1_400)],
+    reply: 'Gates (Windows) and Package passed on #2107. Desktop is still running.' },
+  { ask: 'Greptile left a comment on 2107. Is it right?', gap: 4, seconds: 39, work: [run('gh api repos/millZach/Sotto/pulls/2107/comments --jq ".[].body"', 'statePublisher.ts:118 — `publish()` iterates `this.threads` while `settleThread` may delete from it in the same tick. Consider iterating a copy.', 1_800),
+    think('Whether settleThread can run inside publish'), run('rg -n "settleThread|publish\\(" src/main/agents/statePublisher.ts src/main/agents/settledState.ts', 'src/main/agents/statePublisher.ts:118:  publish(): void {\nsrc/main/agents/settledState.ts:40:  settleThread(threadId: string): void {', 200)],
+    reply: 'No. `settleThread` never runs inside `publish`: settling is queued by the tracker and drained after the publish returns. Iterating a copy would add a copy on the update path that `copySites.test.ts` would refuse. I would answer it rather than change the code.' },
+  { ask: 'Answer it.', gap: 1, seconds: 9, work: [run('gh api repos/millZach/Sotto/pulls/2107/comments/4410982/replies -f body="..."', '{"id":4411317}', 1_900)],
+    reply: 'Answered on the comment: settling is drained after `publish` returns, so the loop never sees a delete, and a copy there would be one per update.' },
+  { ask: 'Merge 2107 when it is green and open the third. Last one.', gap: 8, seconds: 54, work: [
+    run('gh pr checks 2107', 'Gates (Windows)    pass     12m48s\nPackage result     pass\nDesktop result     pass', 1_400),
+    run('gh pr merge 2107 --merge', '✓ Merged pull request #2107 (Move turns and state out of AgentControl)', 3_800),
+    run('git switch refactor/split-the-rest && git rebase origin/main', 'dropping 90d1f6a Keep a title asked for during a settings replay waiting -- patch contents already upstream\nSuccessfully rebased and updated refs/heads/refactor/split-the-rest.', 2_400),
+    run('git push -u origin refactor/split-the-rest', 'To github.com:millZach/Sotto.git\n * [new branch]      refactor/split-the-rest -> refactor/split-the-rest', 3_200),
+    run('gh pr create --title "Move the rest of AgentControl\'s parts into their own classes" --body-file .git/PR_BODY.md', 'https://github.com/millZach/Sotto/pull/2109', 4_700)],
+    reply: 'Merged #2107. The third branch rebased cleanly; Git dropped Drake\'s two lines since `main` has them. Opened #2109, "Move the rest of AgentControl\'s parts into their own classes".' },
+  { ask: 'Thanks. Anything you would still change, now it is all in?', gap: 3, seconds: 22, work: [think('What the split left behind')],
+    reply: 'Two things, neither for these pull requests. `control.ts` still builds all twelve classes in its constructor, so a test that wants one still builds the coordinator; a small factory would let tests build only what they use. And #2101, the reconnect backoff, is still open.' },
 ]
 
 function longThread(): EvidenceThread {
   const messages: Message[] = [], activities: Activity[] = []
-  let minutes = 330
-  const step = (by: number): number => { minutes -= by; return minutes }
-  messages.push(user('long-u0', step(0), 'Start on the AgentControl split. Follow docs/plans/agent-control-split.md, one cut at a time, and tell me after each one before moving on.'))
-  messages.push(assistant('long-a0', step(1), 'Starting with the permission ledger, since it has the fewest readers. I will move code without changing it, run its tests and stop for you after each cut.'))
-  for (let round = 0; round < 52; round += 1) {
-    const cut = LONG_CUTS[round % LONG_CUTS.length]!
-    const pass = Math.floor(round / LONG_CUTS.length)
-    const uid = `long-u${round + 1}`, aid = `long-a${round + 1}`
-    const asks = pass === 0
-      ? `Good. Move \`${cut.name}\` next.`
-      : pass === 1
-        ? `Check \`${cut.name}\` again now the later cuts are in. Did anything start reaching back into AgentControl?`
-        : pass === 2
-          ? `Does \`${cut.name}\` still need its own test file, or can the coordinator's tests cover it?`
-          : `Last look at \`${cut.name}\`. Anything to tidy before the pull request?`
-    messages.push(user(uid, step(2), asks))
-    const turn = new Turn(`long-turn-${round}`, uid, 'completed', 40_000 + (round * 7_919) % 180_000, minutes)
-    turn.command(`long-${round}-c1`, `rg -n "${cut.method}" src/main/agents/control.ts`, `${1200 + round * 37}:  private ${cut.method}(threadId: string): AgentHostResult {`, 60)
-    turn.command(`long-${round}-c2`, `sed -n ${1200 + round * 37},${1260 + round * 37}p src/main/agents/control.ts`, `  private ${cut.method}(threadId: string): AgentHostResult {\n    const thread = this.requireThread(threadId)\n…`, 45)
-    if (pass === 0) {
-      turn.edit(`long-${round}-e1`, `src/main/agents/${cut.name}.ts`, 'add', `+export class ${cut.name[0]!.toUpperCase()}${cut.name.slice(1)} {\n+  constructor(private readonly store: ThreadStore) {}\n+\n+  ${cut.method}(threadId: string): AgentHostResult {\n+    const thread = this.store.requireThread(threadId)\n+    // moved unchanged from control.ts\n+  }\n+}`)
-      turn.edit(`long-${round}-e2`, 'src/main/agents/control.ts', 'update', `@@ -${1200 + round * 37},12 +${1200 + round * 37},3 @@ export class AgentControl {\n-  private ${cut.method}(threadId: string): AgentHostResult {\n-    const thread = this.requireThread(threadId)\n-    // ${cut.lines} lines moved\n-  }\n+  private ${cut.method}(threadId: string): AgentHostResult {\n+    return this.${cut.name}.${cut.method}(threadId)\n+  }`)
+  // The thread's last reply came 173 minutes before the captures' now; its first message as long before that as the session took.
+  const took = LONG_ROUNDS.reduce((sum, round) => sum + round.gap + round.seconds / 60, 1)
+  let minutes = 173 + took
+  messages.push(user('long-u0', minutes, 'Start on the AgentControl split. Follow docs/plans/agent-control-split.md, one cut at a time, and tell me after each one before moving on.'))
+  minutes -= 1
+  messages.push(assistant('long-a0', minutes, 'Starting with the permission ledger, since it has the fewest readers. I will move code without changing it, run its tests and stop for you after each cut.'))
+  LONG_ROUNDS.forEach((round, index) => {
+    const uid = `long-u${index + 1}`, aid = `long-a${index + 1}`
+    minutes -= round.gap
+    messages.push(user(uid, minutes, round.ask))
+    const turn = new Turn(`long-turn-${index}`, uid, 'completed', round.seconds * 1_000, minutes)
+    let at = 0
+    const next = (): string => `long-${index}-${++at}`
+    for (const step of round.work) {
+      if ('think' in step) turn.reasoning(next(), `**${step.think}**`)
+      else if ('run' in step) { const [command, output, ms, failed] = step.run; turn.command(next(), command, output, ms, failed ? 'failed' : 'completed') }
+      else if ('edit' in step) turn.edit(next(), step.edit[0], step.edit[1], step.edit[2])
+      else {
+        const { cut } = step, line = 1200 + LONG_CUTS.indexOf(cut) * 37
+        turn.command(next(), `rg -n "${cut.method}" src/main/agents/control.ts`, `${line}:  private ${cut.method}(threadId: string): AgentHostResult {`, 60)
+        turn.command(next(), `sed -n ${line},${line + 60}p src/main/agents/control.ts`, `  private ${cut.method}(threadId: string): AgentHostResult {\n    const thread = this.requireThread(threadId)\n…`, 45)
+        turn.edit(next(), `src/main/agents/${cut.name}.ts`, 'add', `+export class ${className(cut)} {\n+  constructor(private readonly store: ThreadStore) {}\n+\n+  ${cut.method}(threadId: string): AgentHostResult {\n+    const thread = this.store.requireThread(threadId)\n+    // moved unchanged from control.ts\n+  }\n+}`)
+        turn.edit(next(), 'src/main/agents/control.ts', 'update', `@@ -${line},12 +${line},3 @@ export class AgentControl {\n-  private ${cut.method}(threadId: string): AgentHostResult {\n-    const thread = this.requireThread(threadId)\n-    // ${cut.lines} lines moved\n-  }\n+  private ${cut.method}(threadId: string): AgentHostResult {\n+    return this.${cut.name}.${cut.method}(threadId)\n+  }`)
+      }
     }
-    turn.command(`long-${round}-c3`, `npx vitest run tests/unit/main/${cut.test}.test.ts`, ` Test Files  1 passed (1)\n      Tests  ${12 + round % 23} passed (${12 + round % 23})`, 6_000 + round * 110)
-    if (round % 5 === 3) turn.command(`long-${round}-c4`, 'npm run typecheck', round % 10 === 3 ? `src/main/agents/${cut.name}.ts(41,7): error TS2339: Property 'requireThread' does not exist on type 'ThreadStore'.` : '', 36_000, round % 10 === 3 ? 'failed' : 'completed')
     activities.push(...turn.records)
-    const reply = pass === 0
-      ? `Moved \`${cut.method}\` and its helpers to \`src/main/agents/${cut.name}.ts\`, ${cut.lines} lines. \`control.ts\` keeps a one-line call, so nothing outside the class changed. \`${cut.test}.test.ts\` passes. ${cut.note}`
-      : pass === 1
-        ? `\`${cut.name}\` is still clean. It reads only what its constructor is given, and \`rg\` finds no call back into \`AgentControl\`. ${cut.note}`
-        : pass === 2
-          ? `Keep it. \`${cut.test}.test.ts\` builds only this class, which takes it from about ${200 + (round * 13) % 400} ms a case to under ${10 + round % 15} ms. The coordinator's tests would have to build everything again to reach the same cases.`
-          : `One small thing: the doc comment on \`${cut.method}\` still says "AgentControl". I fixed that and nothing else. It is ready.`
-    messages.push(assistant(aid, step(1), reply))
-  }
+    minutes -= round.seconds / 60
+    messages.push(assistant(aid, minutes, round.reply))
+  })
   return { key: 'long', id: threadId(7), title: 'Split AgentControl', modelId: 'codex:gpt', project: 'sotto', status: 'idle', messages, activities }
 }
 
