@@ -431,7 +431,7 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
   // Each GO MERGE that went while the merge train held its turn (#2229), with Watcher's reason, kept in memory as main keeps it.
   const receiptOverrides = room?.state?.receiptOverrides
-  const overridesById = useMemo(() => receiptOverrides?.length ? new Map(receiptOverrides.map(item => [item.operationId, { held: item.held, reason: item.reason }] as const)) : undefined, [receiptOverrides])
+  const overridesById = useMemo(() => receiptOverrides?.length ? new Map(receiptOverrides.map(({ operationId, ...override }) => [operationId, override] as const)) : undefined, [receiptOverrides])
   const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, overrides: overridesById, moves: movesPlaced, proposals: proposalsPlaced, teammates }),
     [byMessage, lines, describe, press, asks, placementsById, overridesById, movesPlaced, proposalsPlaced, teammates])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the

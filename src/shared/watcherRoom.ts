@@ -39,6 +39,15 @@ const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission
 export const watcherNextTurnOptionsSchema = z.object({ modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).nullable(),
   speed: agentSpeedSchema.nullable().optional() }).strict()
 export type WatcherNextTurnOptions = z.infer<typeof watcherNextTurnOptionsSchema>
+/**
+ * What held a GO MERGE that went anyway (#2229): the train pull requests whose required checks were running, by number
+ * where it has one and the title of their thread, the base branch when its newest commit's checks had failed, and Watcher's reason.
+ */
+export const watcherMergeTurnOverrideSchema = z.object({ operationId: z.uuid(),
+  running: z.array(z.object({ number: z.number().int().positive().optional(), url: z.string().max(2_048).optional(), title: z.string().max(200) }).strict()).max(100),
+  baseFailed: z.object({ branch: z.string().min(1).max(255), head: z.string().min(1).max(64) }).strict().optional(),
+  reason: z.string().min(1).max(WATCHER_OVERRIDE_REASON_MAX) }).strict()
+export type WatcherMergeTurnOverride = z.infer<typeof watcherMergeTurnOverrideSchema>
 export const watcherRoomStateSchema = z.object({
   current: watcherIdentitySchema.nullable(),
   currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(), speed: agentSpeedSchema.nullable().optional(),
@@ -109,11 +118,11 @@ export const watcherRoomStateSchema = z.object({
    */
   receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).max(1_000).optional(),
   /**
-   * Each GO MERGE Watcher sent this run while the merge train held its turn (#2229): what held it, in Sotto's words, and
-   * Watcher's reason, which its receipt card shows. Kept in memory as the send's own `goMerge` is, so a restart has none.
+   * Each GO MERGE Watcher sent this run while the merge train held its turn (#2229): what held it, as facts the window
+   * words in the interface language, and Watcher's reason, which its receipt card shows. Kept in memory as the send's own
+   * `goMerge` is, so a restart has none.
    */
-  receiptOverrides: z.array(z.object({ operationId: z.uuid(), held: z.array(z.string().min(1).max(400)).max(101),
-    reason: z.string().min(1).max(WATCHER_OVERRIDE_REASON_MAX) }).strict()).max(1_000).optional(),
+  receiptOverrides: z.array(watcherMergeTurnOverrideSchema).max(1_000).optional(),
   /**
    * Watcher's conversation against the point where Sotto compacts it (#1189): its context in tokens as its provider last
    * reported it, null when unreported, whether its provider can compact it, and whether a compaction is under way.

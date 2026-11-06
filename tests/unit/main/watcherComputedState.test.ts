@@ -5,6 +5,8 @@ import { expect, it } from 'vitest'
 import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
 import type { WatcherKeptItem } from '../../../src/shared/watcher'
+import { toldEventsForLater } from '../../../src/main/agents/watcherNews'
+import { WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent } from '../../../src/shared/watcherNews'
 
 const target = (threadId: string) => ({ hostId: '11111111-1111-4111-8111-111111111111', threadId })
 const NOW = Date.parse('2026-10-24T12:00:00.000Z')
@@ -162,6 +164,11 @@ it('holds a GO MERGE while another train pull request of the same repository run
   // Still running on main, or unread, is not red.
   expect(mergeTurnHolds(queue, pr(2), { ...green, state: 'pending' })).not.toHaveProperty('baseFailed')
   expect(mergeTurnHolds(queue, pr(2), undefined)).toEqual({ running: [] })
+  // A check that failed early leaves required ones running, and those still hold the turn.
+  const failedEarly = watcherMergeQueue([{ target: target('b'), title: 'Failing', open: [
+    { url: pr(5), summary: { number: 5, state: 'open', checks: 'failed' }, draft: false, pending: { required: 2, optional: 0 }, train: { since: '2026-11-01T05:00:00.000Z' } }] }])
+  expect(failedEarly[0]).toMatchObject({ requiredChecks: 'failed', checksRunning: { required: 2, optional: 0 } })
+  expect(mergeTurnHolds(failedEarly, pr(1), green).running.map(item => item.pullRequest.number)).toEqual([5])
 })
 
 it('puts a pull request in the train at its first pass or READY TO MERGE, and keeps it there when its checks run again', () => {
@@ -178,4 +185,18 @@ it('puts a pull request in the train at its first pass or READY TO MERGE, and ke
   // An older READY TO MERGE never replaces a newer one.
   store.noteReady(at, url, 'f'.repeat(40), '2026-11-01T09:25:00.000Z'); store.noteReady(at, url, 'e'.repeat(40), '2026-11-01T09:01:00.000Z')
   expect(store.trainOf(at, url)?.ready).toEqual({ head: 'f'.repeat(40), at: '2026-11-01T09:25:00.000Z' })
+})
+
+it('holds READY TO MERGE news that would not fit for the next wake-up, after the threads’ own messages, so none is cut', () => {
+  const event = (index: number, kind: 'thread-told' | 'thread-ready'): WatcherEvent => ({ id: `${kind}-${index}`, kind, requestId: WATCHER_UNWATCHED_REQUEST_ID,
+    target: target(`worker-${index}`), generation: 0, observedAt: '2026-11-05T10:00:00.000Z',
+    ...kind === 'thread-told' ? { told: { words: 'w'.repeat(2_000), opened: false } } : { ready: { pullRequest: pr(index), head: 'a'.repeat(40) } } })
+  const events = [...Array.from({ length: 40 }, (_, index) => event(index, 'thread-ready')), ...Array.from({ length: 3 }, (_, index) => event(index, 'thread-told'))]
+  const later = toldEventsForLater(events)
+  // The messages go first; the READY TO MERGE that fit go with them, and the rest wait rather than run out of room.
+  expect(events.filter(item => item.kind === 'thread-told').every(item => !later.has(item.id))).toBe(true)
+  const going = events.filter(item => item.kind === 'thread-ready' && !later.has(item.id))
+  expect(going.length).toBeGreaterThan(0)
+  expect(later.size).toBeGreaterThan(0)
+  expect(going.map(item => item.id)).toEqual(events.filter(item => item.kind === 'thread-ready').slice(0, going.length).map(item => item.id))
 })

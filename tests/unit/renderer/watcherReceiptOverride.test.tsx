@@ -11,14 +11,14 @@ afterEach(cleanup)
 
 const target = { hostId: '11111111-1111-4111-8111-111111111111', threadId: 'worker' }
 const send = (id: string): WatcherOperation => ({ id, action: 'send', target, deliveryState: 'accepted' }) as unknown as WatcherOperation
-const held = ['#1959 in “Model picker” has its required checks running.']
+const running = [{ number: 1959, title: 'Model picker' }]
 const reason = 'Zach asked for #2263 before the release.'
 
 it('says what a GO MERGE went past and Watcher’s reason in one line, and nothing for any other send', () => {
   const early = send('11111111-0000-4000-8000-000000000001'), plain = send('11111111-0000-4000-8000-000000000002')
   const conversation = {
     receipts: new Map([['reply', [early, plain]]]), takeovers: new Map(),
-    overrides: new Map([[early.id, { held, reason }]]),
+    overrides: new Map([[early.id, { running, reason }]]),
     describe: () => ({ threadId: null, title: 'Required checks gate', providerId: undefined, provider: undefined, computer: undefined, project: undefined, remote: false, status: null, tone: '', ring: '' }),
     press: () => ({}),
   } as unknown as WatcherConversation
@@ -28,4 +28,7 @@ it('says what a GO MERGE went past and Watcher’s reason in one line, and nothi
   expect(document.querySelector(`[data-receipt-id="${early.id}"] [data-merge-turn="early"]`)?.textContent).toBe(line)
   expect(document.querySelector(`[data-receipt-id="${plain.id}"] [data-merge-turn]`)).toBeNull()
   expect(overrideLine(undefined)).toBeNull()
+  // Main red, and a pull request known only by its address, are said the same way.
+  expect(overrideLine({ running: [{ url: 'https://github.com/o/r/pull/7', title: 'Docs' }], baseFailed: { branch: 'main', head: 'dddddddddddd' }, reason }))
+    .toBe('Merge turn given early. main is red: checks failed on its newest commit, dddddddddddd. https://github.com/o/r/pull/7 in “Docs” has its required checks running. Watcher’s reason: Zach asked for #2263 before the release.')
 })

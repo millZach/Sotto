@@ -45,7 +45,7 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
     const url = pr.url ?? pr.summary.url
     return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: requiredChecksOf(pr),
       ...pr.checksPassedAt && pr.summary.checks === 'passed' ? { checksPassedAt: pr.checksPassedAt } : {},
-      ...pr.head ? { head: pr.head } : {},
+      ...pr.head ? { head: pr.head } : {}, ...pr.pending ? { checksRunning: pr.pending } : {},
       ...ready ? { readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } } : {} }]
   })).sort((a, b) => Date.parse(a.inTrainSince) - Date.parse(b.inTrainSince) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
 }
@@ -65,7 +65,8 @@ export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: str
     const address = item.url !== undefined ? pullRequestAddress(item.url) : null
     return going !== null && address !== null && address.owner.toLowerCase() === going.owner.toLowerCase() && address.name.toLowerCase() === going.name.toLowerCase()
   }
-  const running = queue.filter(item => item.requiredChecks === 'running' && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
+  // A check that failed early leaves the rest running: required checks still running hold the turn whatever else failed.
+  const running = queue.filter(item => (item.requiredChecks === 'running' || (item.checksRunning?.required ?? 0) > 0) && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
   return { running, ...base?.state === 'failed' ? { baseFailed: base } : {} }
 }
 

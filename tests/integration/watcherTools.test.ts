@@ -2444,6 +2444,7 @@ it('refuses a GO MERGE while another train pull request runs its required checks
   const send = (goMerge?: object, text = 'GO MERGE #5') => f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text, ...goMerge ? { goMerge } : {} })
   // Said without its mark, it never goes unchecked.
   expect(await send()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('Mark it with goMerge') })
+  expect(await send(undefined, 'Synthetic note.\nGO MERGE #5 once you are green.')).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   const held = await send({ pullRequest: url(5) })
   expect(held).toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD' })
   if (held.status !== 'refused') throw new Error('sent')
@@ -2462,12 +2463,15 @@ it('refuses a GO MERGE while another train pull request runs its required checks
   if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('refused')
   // A retry answers as the send did, and the room carries the reason for its receipt card.
   expect(await f.call('send_to_thread', call)).toEqual(sent)
-  expect(f.service.state().receiptOverrides).toEqual([{ operationId: sent.receipt.operationId, held: ['#7 in “Synthetic worker” has its required checks running.'], reason }])
+  expect(f.service.state().receiptOverrides).toEqual([{ operationId: sent.receipt.operationId, running: [{ number: 7, title: 'Synthetic worker' }], reason }])
   // The worker is sent the words alone: the mark is Sotto's.
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === 'GO MERGE #5')).toBe(true))
   // Nothing holds #7's own turn once main is green: its own running checks are its own.
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'ok', goMerge: { held: [] } })
+  // A send that only mentions GO MERGE is no GO MERGE, and goes as it is.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Do not merge yet. Wait for GO MERGE.' }))
+    .toMatchObject({ status: 'ok' })
 })
 
 // October 24, 2026: Watcher kept "waiting on you" in its notes and went on saying it after the user answered.

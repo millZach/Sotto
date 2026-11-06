@@ -135,15 +135,16 @@ function readyWords(event: WatcherEvent): string {
   return `This thread says its pull request ${ready.pullRequest} is READY TO MERGE at ${ready.head}, with ready_to_merge.${unwatched(event) ? ' No request of yours watches it.' : ''} Give it its turn with send_to_thread's goMerge when the merge train says it is next; this grants nothing and approves nothing.`
 }
 /**
- * The messages from threads that wait for the next wake-up, so those that go always fit whole. Each fits alone: at most
- * two sets of words, each at most TELL_WATCHER_WORDS_BYTES_MAX and doubled at worst by JSON, and the sentences around them.
+ * The messages and READY TO MERGE (#2229) from threads that wait for the next wake-up, so those that go always fit whole,
+ * messages first, in the order the news gives them. Each fits alone: at most two sets of words, each at most
+ * TELL_WATCHER_WORDS_BYTES_MAX and doubled at worst by JSON, and the sentences around them; a READY TO MERGE is shorter,
+ * with room kept for the detail Sotto adds beside it.
  */
 export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet<string> {
   const later = new Set<string>()
   let used = 0
-  for (const event of events) {
-    if (event.kind !== 'thread-told') continue
-    const size = Buffer.byteLength(toldWords(event)) + 200
+  for (const event of [...events.filter(item => item.kind === 'thread-told'), ...events.filter(item => item.kind === 'thread-ready')]) {
+    const size = Buffer.byteLength(event.kind === 'thread-told' ? toldWords(event) : readyWords(event)) + (event.kind === 'thread-told' ? 200 : 600)
     if (used > 0 && used + size > WATCHER_NEWS_BYTES_MAX * 3 / 4) later.add(event.id)
     else used += size
   }

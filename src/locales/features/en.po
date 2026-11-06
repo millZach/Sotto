@@ -168,6 +168,10 @@ msgstr "{at, plural, one {# ahead} other {# ahead}}"
 msgid "{authority} (memory does not grant permission)"
 msgstr "{authority} (memory does not grant permission)"
 
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "{branch} is red: checks failed on its newest commit, {head}."
+msgstr "{branch} is red: checks failed on its newest commit, {head}."
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{busiestCount, plural, one {{shown} prompt} other {{shown} prompts}}"
 msgstr "{busiestCount, plural, one {{shown} prompt} other {{shown} prompts}}"
@@ -560,6 +564,10 @@ msgstr "{name} has no threads to show."
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name} hasn't reported its limits on {host} yet."
 msgstr "{name} hasn't reported its limits on {host} yet."
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "{name} in “{title}” has its required checks running."
+msgstr "{name} in “{title}” has its required checks running."
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{name} is not connected. Connect it in Settings, under Hosts & phones."
@@ -1066,6 +1074,10 @@ msgstr "a new thread"
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "A project is a folder your agents work in, usually a Git repository. Threads start in it."
 msgstr "A project is a folder your agents work in, usually a Git repository. Threads start in it."
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "A pull request in “{title}” has its required checks running."
+msgstr "A pull request in “{title}” has its required checks running."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "A question whose words are not kept"

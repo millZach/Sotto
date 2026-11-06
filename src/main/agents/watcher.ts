@@ -30,7 +30,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser, type WatcherGoMerge, type WatcherGoMergeReceipt } from '../../shared/watcher'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
-import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
+import type { WatcherMergeTurnOverride, WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -306,8 +306,13 @@ type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readon
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
-/** Watcher's GO MERGE, as its sends say it: in capitals, the way the merge workflow writes it (#2229). */
-const GO_MERGE_WORDS = /\bGO MERGE\b/u
+/** What a GO MERGE's check gives its send (#2229): the result's words for Watcher, and the facts its receipt card words when it went past a hold. */
+type MergeTurnChecked = { readonly receipt: WatcherGoMergeReceipt; readonly override?: Omit<WatcherMergeTurnOverride, 'operationId'> }
+/**
+ * Watcher's GO MERGE, as its sends give it: a line that opens with it in capitals, the way the merge workflow writes it
+ * (#2229). A send that only mentions it, as "wait for GO MERGE", is not one.
+ */
+const GO_MERGE_WORDS = /^[\s>*_-]*GO MERGE\b/mu
 const GO_MERGE_UNMARKED = 'This send says GO MERGE. Mark it with goMerge and the pull request it gives its turn to, so Sotto checks the merge train and the base branch before it goes. Nothing was sent.'
 const MERGE_TURN_NEXT = 'Wait for news that those checks finished or that the base branch is green again, then send the GO MERGE. If this merge cannot wait, send it again with goMerge.overrideReason saying why in a sentence the user can read: Sotto shows it on the send’s receipt, and your reply must say it too.'
 /**
@@ -653,6 +658,11 @@ export class WatcherService implements WatcherControlHooks {
    * `placements` is, so the record keeps its shape; after a restart Watcher's reply still says why.
    */
   private readonly goMerges = new Map<string, WatcherGoMergeReceipt>()
+  /**
+   * The GO MERGEs among them that went past what held their turn, as facts for their receipt cards. Replaced whole when
+   * one is added, so a room build hands on the same list and reads no operation history for it.
+   */
+  private goMergeOverrides: WatcherMergeTurnOverride[] = []
   /**
    * Recent starts another machine answered with their thread (#1032): its creation confirmed while their first prompt may
    * still be unconfirmed. In memory only, as `placements` is; read by the working threads warning alone.
@@ -2192,10 +2202,7 @@ export class WatcherService implements WatcherControlHooks {
         return placement ? [{ operationId: operation.id, placement }] : []
       }) } : {},
       // Each GO MERGE this run that went past what held its turn, with Watcher's reason (#2229), from memory as its receipt's is.
-      ...this.goMerges.size ? { receiptOverrides: record.operations.flatMap(operation => {
-        const goMerge = this.goMerges.get(operation.id)
-        return goMerge?.overrideReason ? [{ operationId: operation.id, held: goMerge.held, reason: goMerge.overrideReason }] : []
-      }) } : {} }
+      ...this.goMergeOverrides.length ? { receiptOverrides: this.goMergeOverrides } : {} }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
@@ -4425,7 +4432,7 @@ export class WatcherService implements WatcherControlHooks {
     }
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string,
-    mergeTurn?: () => WatcherGoMergeReceipt): Promise<unknown> {
+    mergeTurn?: () => MergeTurnChecked): Promise<unknown> {
     // Outside the transaction, so a slow answer from GitHub holds up no other Watcher call.
     const settleGuard = name === 'settle_thread' ? await this.askBeforeSettle((input as WatcherToolInput<'settle_thread'>).target) : undefined
     const admitted = await this.transaction(async () => {
@@ -4649,7 +4656,7 @@ export class WatcherService implements WatcherControlHooks {
         ...(start ? { creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID() } : {}),
         ...(send && (input as WatcherToolInput<'send_to_thread'>).expectedTurnId ? { expectedTurnId: (input as WatcherToolInput<'send_to_thread'>).expectedTurnId } : {}),
         ...(send && (input as WatcherToolInput<'send_to_thread'>).expectedLastUserMessageId ? { expectedLastUserMessageId: (input as WatcherToolInput<'send_to_thread'>).expectedLastUserMessageId } : {}) }
-      if (goMerge) this.rememberGoMerge(operation.id, goMerge)
+      if (goMerge) this.rememberGoMerge(operation.id, goMerge.receipt, goMerge.override)
       if (imported && (imported.generation !== (previous?.generation ?? assignment?.generation ?? 0) || record.operations.some(item => item.id === imported.id
         || ['receiptId', 'cardId', 'draftId', 'messageId', 'creationReceiptId', 'firstPromptReceiptId'].some(field => {
           const name = field as 'receiptId' | 'cardId' | 'draftId' | 'messageId' | 'creationReceiptId' | 'firstPromptReceiptId'
@@ -5005,9 +5012,10 @@ ${operation.draftId}`)
     for (const kept of this.steerFallbacks.keys()) { if (this.steerFallbacks.size <= ROLE_STARTS_KEPT) break; this.steerFallbacks.delete(kept) }
   }
   /** What a send that asked to steer did instead, said in its result. In memory only: a retry after a restart has none. */
-  private rememberGoMerge(operationId: string, receipt: WatcherGoMergeReceipt): void {
+  private rememberGoMerge(operationId: string, receipt: WatcherGoMergeReceipt, override: Omit<WatcherMergeTurnOverride, 'operationId'> | undefined): void {
     this.goMerges.set(operationId, receipt)
     for (const kept of this.goMerges.keys()) { if (this.goMerges.size <= ROLE_STARTS_KEPT) break; this.goMerges.delete(kept) }
+    if (override) this.goMergeOverrides = [...this.goMergeOverrides, { operationId, ...override }].slice(-ROLE_STARTS_KEPT)
   }
   private goMergeBlock(operationId: string): { goMerge: WatcherGoMergeReceipt } | Record<string, never> {
     const goMerge = this.goMerges.get(operationId)
@@ -5019,7 +5027,7 @@ ${operation.draftId}`)
    * merge train as read_state works it out and that answer. Held, it refuses unless Watcher gave its reason, which then
    * goes with the receipt. A base branch GitHub could not be asked about holds nothing, and the receipt says so.
    */
-  private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => WatcherGoMergeReceipt> {
+  private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => MergeTurnChecked> {
     const ask = this.options.baseBranchChecks
     let base: BaseBranchChecks | undefined, unread: string | undefined
     if (ask) {
@@ -5040,7 +5048,12 @@ ${operation.draftId}`)
         const shown = held.slice(0, 8), more = held.length - shown.length
         refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
-      return { held, ...held.length && goMerge.overrideReason ? { overrideReason: goMerge.overrideReason } : {}, ...note ? { note } : {} }
+      const reason = held.length ? goMerge.overrideReason : undefined
+      return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },
+        // The same facts for the receipt card, which words them in the interface language.
+        ...reason ? { override: { reason, running: holds.running.map(item => ({ title: item.title.slice(0, 200),
+          ...item.pullRequest.number !== undefined ? { number: item.pullRequest.number } : item.url !== undefined ? { url: item.url } : {} })),
+          ...holds.baseFailed ? { baseFailed: { branch: holds.baseFailed.branch.slice(0, 255), head: holds.baseFailed.head.slice(0, 12) } } : {} } } : {} }
     }
   }
   private fallbackBlock(operationId: string): { note: string } | Record<string, never> {

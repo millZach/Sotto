@@ -265,12 +265,14 @@ const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequest
 /**
  * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
  * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
- * land while its required checks run; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
+ * land while its required checks run, and `checksRunning` how many required and other checks are still to finish on its
+ * head, where Sotto can read which are required; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
  * MERGE its thread sent, with `onHead` saying whether that is still the head.
  */
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   pullRequest: watcherPullRequestSummarySchema, url: z.string().max(2_048).optional(), inTrainSince: time, checksPassedAt: time.optional(),
   requiredChecks: z.enum(['passed', 'running', 'failed', 'unknown']), head: z.string().max(64).optional(),
+  checksRunning: z.object({ required: z.number().int().nonnegative(), optional: z.number().int().nonnegative() }).strict().optional(),
   readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict().optional() }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
