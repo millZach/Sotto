@@ -683,12 +683,22 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
     if (!inside) pick(position, position)
     actions.comment(file.path, quotedLines(shown, selectable, inside ? from : position, inside ? to : position))
   }
+  /** Scrolls the file sideways so a line's end is in view, with room after it. */
+  const showLineEnd = (text: Element | null): void => {
+    const body = grid.current?.parentElement
+    if (!body || !text) return
+    const end = text.getBoundingClientRect().right - body.getBoundingClientRect().left + body.scrollLeft
+    body.scrollTo({ left: Math.max(0, end + 24 - body.clientWidth), behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  }
   const rowOf = (target: EventTarget | null): HTMLElement | null => target instanceof Element ? target.closest<HTMLElement>('[data-position]') : null
   const onClick = (event: MouseEvent<HTMLDivElement>): void => {
     const row = rowOf(event.target)
     if (!row) return
     const position = Number(row.dataset.position)
     setActive(position)
+    // The mark where a line runs on shows that line's end; it picks nothing.
+    const runsOn = (event.target as Element).closest('.changes-line__on')
+    if (runsOn) { showLineEnd(runsOn.closest('.changes-line__text')); return }
     if ((event.target as Element).closest('.changes-line__number')) { commentOn(position); return }
     // A drag that selected text is the reader copying code, not picking lines.
     const text = window.getSelection()
@@ -716,6 +726,14 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
       if (event.shiftKey && selection) pick(selection.anchor, position)
       else if (selection && from === position && to === position) actions.select(null)
       else pick(position, position)
+      return
+    }
+    // Lines of code run one row each, so Right and Left read on past the panel's edge and back.
+    if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && !event.shiftKey) {
+      const body = grid.current?.parentElement
+      if (!body || body.scrollWidth <= body.clientWidth) return
+      event.preventDefault()
+      body.scrollBy({ left: (event.key === 'ArrowRight' ? 1 : -1) * Math.round(body.clientWidth * SIDEWAYS_SHARE), behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
       return
     }
     const last = selectable.length - 1
@@ -766,7 +784,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
  * that edge while the rest of the line is out of sight, and there the stylesheet fades the line out under it; once the
  * line's end is in view it sits after its last character and draws nothing. It holds no text, so a copy is unchanged.
  */
-const RUNS_ON = <span className="changes-line__on" aria-hidden="true" />
+const RUNS_ON = msg({ message: 'Show the end of this line', comment: 'Tooltip on the mark at the edge of Changes where a line of code runs on past the panel; a press scrolls to its end.' })
+function RunsOn({ words }: { readonly words: I18n }): ReactNode {
+  return <span className="changes-line__on" aria-hidden="true" title={words._(RUNS_ON)} />
+}
+
+/** How far Right and Left move a file's lines sideways: most of what is in view, so the eye keeps a few columns. */
+const SIDEWAYS_SHARE = 0.6
 
 const commentTitle = (number: number | null | undefined, words: I18n): string | undefined => number == null ? undefined : words._(msg({ message: `Comment on line ${number}`, comment: '{number} is a line number.' }))
 
@@ -792,7 +816,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} />{code ? RUNS_ON : null}</>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} />{code ? <RunsOn words={i18n} /> : null}</>}</span>
     </div>
   }
   const segments = row.old && row.next && row.old !== row.next ? decoration?.inline.get(row.old) : undefined
@@ -818,7 +842,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
       <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} />{code ? RUNS_ON : null}</span>
+      <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} />{code ? <RunsOn words={i18n} /> : null}</span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>

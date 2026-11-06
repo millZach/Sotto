@@ -104,6 +104,27 @@ describe('review comments in Changes', () => {
     expect(screen.getByRole('textbox', { name: 'Comment on app.ts L4 (before)' })).toHaveFocus()
   })
 
+  it('scrolls a file sideways to a line’s end from the mark at its edge or from Right, picking nothing', async () => {
+    const user = userEvent.setup()
+    setup()
+    await screen.findByText(diffLine('export const ready = true'))
+    const body = grid().parentElement!
+    Object.defineProperty(body, 'scrollWidth', { configurable: true, value: 2000 })
+    Object.defineProperty(body, 'clientWidth', { configurable: true, value: 500 })
+    const scrollTo = vi.spyOn(body, 'scrollTo'), scrollBy = vi.fn()
+    body.scrollBy = scrollBy
+    const mark = row('[data-kind="add"]').querySelector<HTMLElement>('.changes-line__on')!
+    expect(mark).toHaveAttribute('title', 'Show the end of this line')
+    await user.click(mark)
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(row('[data-kind="add"]')).toHaveAttribute('aria-selected', 'false')
+    row('[data-kind="add"]').focus()
+    await user.keyboard('{ArrowRight}')
+    await user.keyboard('{ArrowLeft}')
+    expect(scrollBy.mock.calls.map(([options]) => (options as ScrollToOptions).left)).toEqual([300, -300])
+    expect(row('[data-kind="add"]')).toHaveFocus()
+  })
+
   it('walks, picks and comments from the keyboard alone, one tab stop per file', async () => {
     const user = userEvent.setup()
     const { comments } = setup()

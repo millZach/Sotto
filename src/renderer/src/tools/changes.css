@@ -181,6 +181,11 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line__number { color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
 .changes-line__number:first-child { padding-left: var(--changes-number-pad); box-sizing: content-box; }
 .changes-line__sign { color: var(--tt-text-muted); font-family: var(--tt-font-mono); user-select: none; }
+/* The gutter counts the file as it is now, so it reads 267, 268, 269, 270 down a change. A removed line has no place
+   now: its sign says it went and its number stays out of the count, showing only where the reader points at it to
+   comment. A whole file taken out has only its old numbers, so they show. */
+.changes-diff__rows:not([data-whole]) .changes-line[data-kind='remove'] > .changes-line__number { color: transparent; }
+.changes-diff__rows:not([data-whole]) .changes-line[data-kind='remove'] > .changes-line__number:hover { color: var(--tt-text); }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 /* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
 .changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
@@ -191,21 +196,42 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line > .changes-line__text[data-comment] {
   box-sizing: border-box; width: calc(100cqw - var(--changes-number) - 1ch - 26px); white-space: pre-wrap; overflow-wrap: anywhere;
 }
-/* Where an unwrapped line runs on past the edge of its file's view, it fades out at that edge, so a cut line never
-   reads as a whole one ("WalCh"). The line's end (RUNS_ON in ChangesSurface.tsx) is held at the edge while the rest
-   of the line is out of sight, and only while held does it draw: a fade into the line's own colour, its wash, hover or
-   pick over the code background, so nothing but the letters under it changes. A line whose end is in view draws
-   nothing, and a comment, which wraps, has none. */
+/* Where an unwrapped line runs on past the edge of its file's view, it says so at that edge, so a cut line never reads
+   as a whole one ("WalCh"). The line's end (RunsOn in ChangesSurface.tsx) is held at the edge while the rest of the
+   line is out of sight, and only while held does it draw: the line fades out into its own colour (its wash, hover or
+   pick over the code background, so nothing but the letters under it changes) and ends in an ellipsis on a small
+   tab, the mark a cut line of text carries everywhere. A press on the tab scrolls the file to the line's end, as Right
+   does on a focused line. A line whose end is in view draws nothing, and a comment, which wraps, has none. */
 :is(.changes-line, .changes-split__cell) { --changes-fill: transparent; --changes-over: transparent; }
 .changes-line__on { display: none; }
 .changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line__text:not([data-comment]) > .changes-line__on {
   position: sticky; right: 0; display: inline-block; width: 0; height: 1lh; vertical-align: top; container-type: scroll-state;
 }
+.changes-line__on::before, .changes-line__on::after { content: ''; position: absolute; top: 0; right: 0; height: 100%; visibility: hidden; pointer-events: none; }
 .changes-line__on::before {
-  content: ''; position: absolute; top: 0; right: 0; width: 4ch; height: 100%; visibility: hidden; pointer-events: none;
-  background: linear-gradient(to right, transparent, var(--changes-over) 80%), linear-gradient(to right, transparent, var(--changes-fill) 80%), linear-gradient(to right, transparent, var(--tt-code-bg) 80%);
+  width: 7ch;
+  background: linear-gradient(to right, transparent, var(--changes-over) 55%), linear-gradient(to right, transparent, var(--changes-fill) 55%), linear-gradient(to right, transparent, var(--tt-code-bg) 55%);
 }
-@container scroll-state(stuck: right) { .changes-line__on::before { visibility: visible; } }
+.changes-line__on::after {
+  content: '\2026'; display: grid; place-items: center; width: 2.6ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
+  background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
+  color: var(--tt-text-2); font-family: var(--tt-font-ui); font-weight: 600; cursor: pointer;
+}
+.changes-line:hover .changes-line__on::after { color: var(--tt-text); }
+@container scroll-state(stuck: right) { .changes-line__on::before, .changes-line__on::after { visibility: visible; } .changes-line__on::after { pointer-events: auto; } }
+/* Scrolled sideways to read the rest of a line, the numbers and signs stay at the left, each line's edge with them,
+   as tall as their line so a wrapped comment's later rows pass under them too. A comment, which wraps inside the part
+   of the file in view, stays in view beside them. Number and code share a face and a line height, so top is baseline. */
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line:not([data-kind='hunk']) > :is(.changes-line__number, .changes-line__sign) {
+  position: sticky; z-index: 1; align-self: stretch; margin-right: -5px; padding-right: 5px;
+  background: linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
+}
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line:not([data-kind='hunk']) > .changes-line__number { left: 0; box-shadow: inherit; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line:not([data-kind='hunk']) > .changes-line__sign { left: calc(var(--changes-number) + 5px); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line > .changes-line__text[data-comment] { position: sticky; left: calc(var(--changes-number) + 1ch + 10px); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line[data-position] > .changes-line__number:not(:empty):hover {
+  background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
+}
 /* A short run of code a browser would break at a hyphen or a slash stays whole (codeBreaks in DiffBlock.tsx): a wrapped
    line breaks at a space, and a long run after its dots and commas, before it breaks anywhere at all. */
 .changes-kept { white-space: nowrap; }

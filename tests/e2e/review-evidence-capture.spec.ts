@@ -631,7 +631,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await fold(false)
     await work.click()
   } },
-  { name: 'changes', covers: ['changes-big', 'changes-expanded', 'changes-file', 'changes-tree-press'], run: async capture => {
+  { name: 'changes', covers: ['changes-big', 'changes-expanded', 'changes-file', 'changes-sideways', 'changes-tree-press'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const panel = await toolsTab(page, 'Changes')
@@ -673,6 +673,17 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(500)
     await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
     await capture.shoot('changes-file', 'The same diff, wheeled down to one file, src/main/agents/threadStore.ts, with its hunks.', differs)
+    // The tab where a line runs on past the panel scrolls the file to that line's end. It is drawn by the line's end,
+    // held at the panel's edge, so the press goes to where it is drawn.
+    const file = panel.locator('.changes-file[data-file-path="src/main/agents/threadStore.ts"]')
+    const runsOn = await file.locator('.changes-line[data-kind="add"] .changes-line__on').first().boundingBox()
+    if (runsOn) {
+      await page.mouse.click(runsOn.x - 8, runsOn.y + runsOn.height / 2)
+      await expect.poll(() => file.locator('.changes-diff__body').evaluate(body => body.scrollLeft), { timeout: 5_000 }).toBeGreaterThan(0)
+      await page.waitForTimeout(900)
+      await capture.shoot('changes-sideways', 'threadStore.ts after a press on the tab at the end of line 18, which runs past the panel: the file scrolled sideways to that line\'s end, its numbers and signs held at the left.')
+      await file.locator('.changes-diff__body').evaluate(body => { body.scrollLeft = 0 })
+    }
     // Code wraps hardest where the panel is narrowest.
     for (const size of SMALLER_SIZES) {
       await resizeContentWindowFor(capture.launched, size[0], size[1])
