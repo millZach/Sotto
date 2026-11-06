@@ -6,6 +6,7 @@ import { isPullRequestListLimited, type GitPullRequestList, type GitPullRequestL
 import { agoWords } from '../watcher/machineWords'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { PullRequestLineCounts, RunningMark } from './PullRequestDetails'
+import { foldOnEscape } from '../agents/ThreadActivity'
 import { limitedWords, listChecksWord, listMatches, listReviewWord, stateLabel } from './pullRequestSurface.logic'
 
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
@@ -51,7 +52,9 @@ export function OpenPullRequests({ threadId, shownUrl, open, onToggle, onShow }:
   const Chevron = open ? ChevronDown : ChevronRight
   const total = list ? shownCount(list.total) : null
   const repository = list?.repository
-  return <div className="pr-surface__fold">
+  // Escape that nothing inside answered folds the list and puts the focus back on its heading; the search field's first
+  // Escape clears what it holds.
+  return <div className="pr-surface__fold" onKeyDown={foldOnEscape(open, onToggle)}>
     <button type="button" className="pr-surface__fold-head tt-focusable" aria-expanded={open} aria-controls={open ? panel : undefined} onClick={onToggle}>
       <Chevron size={15} aria-hidden="true" />{heading}{total !== null ? <>{' '}<span className="pr-surface__quiet">{total}</span></> : null}
     </button>

@@ -9,6 +9,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
 import { branchPullRequestUrl, isPullRequestLimited, pullRequestAddress, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 import { PR_ICONS } from '../agents/BranchToolbar'
+import { foldOnEscape } from '../agents/ThreadActivity'
 import { writeClipboard } from '../agents/richActions'
 import { menuEntries } from '../agents/gitActionButton.logic'
 import { Button } from '../components/Button'
@@ -588,7 +589,8 @@ function Fold({ label, count, aside, preview, whole, peek, open, onToggle, child
 }): ReactNode {
   const id = useId()
   const Chevron = open ? ChevronDown : ChevronRight
-  return <div className="pr-surface__fold">
+  // Escape that nothing inside answered folds it and puts the focus back on its heading.
+  return <div className="pr-surface__fold" onKeyDown={foldOnEscape(open, onToggle)}>
     <button type="button" className="pr-surface__fold-head tt-focusable" aria-expanded={open} aria-controls={open ? id : undefined} onClick={onToggle}>
       <Chevron size={15} aria-hidden="true" />{label}{count !== undefined ? <>{' '}<span className="pr-surface__quiet">{shownCount(count)}</span></> : null}
       {preview && !open ? <bdi className="pr-surface__fold-preview" data-whole={whole || undefined} aria-hidden="true">{preview}</bdi> : null}
