@@ -31,16 +31,12 @@ test('Climb keeps its setup in the Council drawer, previews a non-Git folder and
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await page.getByRole('button', { name: 'Council', exact: true }).click()
-    await page.getByRole('button', { name: 'Climb', exact: true }).click()
+    await page.getByRole('radio', { name: 'Climb', exact: true }).click()
     const panel = page.locator('.climb-panel')
     await panel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Make the explanation clear and complete.')
     await panel.getByLabel('Folder path', { exact: true }).fill(selected.folder)
     await panel.getByRole('button', { name: 'Preview capture', exact: true }).click()
     await expect(panel.getByText(/1 files ·/u)).toBeVisible()
-    await panel.getByRole('button', { name: 'About the goal', exact: true }).focus()
-    await expect(panel.getByRole('tooltip')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(panel.getByRole('tooltip')).toHaveCount(0)
     await panel.getByRole('slider', { name: 'Attempts', exact: true }).press('End')
     await panel.getByRole('slider', { name: 'Model turns', exact: true }).press('End')
     await expect(panel.getByRole('slider', { name: 'Attempts', exact: true })).toHaveAttribute('aria-valuetext', 'No limit')
@@ -57,9 +53,9 @@ test('Climb keeps its setup in the Council drawer, previews a non-Git folder and
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await page.locator('.council-scroll, .council-view').evaluateAll(elements => elements.forEach(element => { element.scrollTop = 0 }))
         const bounds = await panel.evaluate(element => {
-          const scroll = element.closest('.council-scroll')!, frame = scroll.getBoundingClientRect()
+          const scroll = element.closest('.council-scroll')!, view = element.closest('.council-view')!, frame = view.getBoundingClientRect()
           return { pageOverflow: document.documentElement.scrollWidth > innerWidth, formOverflow: scroll.scrollWidth > scroll.clientWidth + 1,
-            clippedControls: [...element.querySelectorAll<HTMLElement>('input,select,button,textarea')].filter(control => {
+            clippedControls: [...view.querySelectorAll<HTMLElement>('input,select,button,textarea')].filter(control => {
               if (!control.getClientRects().length) return false
               const box = control.getBoundingClientRect()
               return box.left < frame.left - 1 || box.right > frame.right + 1

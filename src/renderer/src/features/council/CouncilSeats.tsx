@@ -41,38 +41,41 @@ export function useSeatNotes(): (notes: readonly CouncilSeatNote[]) => string[] 
  * them. Settings → Council saves each change; the Ask screen keeps them for one Council. A seat Sotto fills shows the
  * model it fills it with; choosing one makes the seat the user's.
  */
-export function CouncilSeats({ panel, catalog, onChange, setting }: {
+export function CouncilSeats({ panel, catalog, onChange, setting, judging = false, disabled = false }: {
   readonly panel: CouncilPanel
   readonly catalog: readonly AgentModel[]
   readonly onChange: (panel: CouncilPanel) => void
   /** The setting the panel stands for in Find a setting. */
   readonly setting?: string
+  /** Climb has exactly three named judges and requires a concrete model in every seat. */
+  readonly judging?: boolean
+  readonly disabled?: boolean
 }): ReactNode {
   const { t } = useLingui()
   const named = useSeatName()
   const sentences = useSeatNotes()
   const seats = councilSeatsInForce(panel.panelists, panel.chair, catalog)
-  const notes = sentences(councilSeatNotes(seats))
+  const notes = judging ? [] : sentences(councilSeatNotes(seats))
   const choose = (inForce: CouncilSeatInForce | undefined, modelId: string): CouncilSeatChoice => {
     const id = chosenModelId(catalog, modelId, inForce?.modelId ?? '')
     return { modelId: id, reasoningEffort: councilEffort(inForce?.reasoningEffort ?? COUNCIL_SEAT_EFFORT, resolveModel(catalog, id)) }
   }
   const setPanelist = (index: number, seat: CouncilSeatChoice): void => onChange({ ...panel, panelists: panel.panelists.map((held, at) => at === index ? seat : held) })
   const counts = Array.from({ length: COUNCIL_PANELISTS_MAX - COUNCIL_PANELISTS_MIN + 1 }, (_, index) => String(COUNCIL_PANELISTS_MIN + index))
-  return <div className="council-seats" data-setting={setting}>
-    <div className="council-seats__count">
+  return <div className="council-seats" data-setting={setting} data-judging={judging || undefined}>
+    {!judging ? <div className="council-seats__count">
       <span aria-hidden="true">{t`Panelists`}</span>
       <SegmentedControl label={t`How many panelists`} value={String(panel.panelists.length)} options={counts.map(value => ({ value, label: value }))}
         onChange={value => {
           const size = Number(value)
           onChange({ ...panel, panelists: Array.from({ length: size }, (_, index) => panel.panelists[index] ?? null) })
         }} />
-    </div>
+    </div> : null}
     <div className="council-seats__list">
-      {seats.panelists.map((seat, index) => <Seat key={index} name={named(index)} seat={seat} catalog={catalog}
+      {seats.panelists.map((seat, index) => <Seat key={index} name={judging ? t`Judge ${index + 1}` : named(index)} seat={seat} catalog={catalog} disabled={disabled}
         onModel={modelId => setPanelist(index, choose(seat, modelId))}
         onEffort={effort => seat && setPanelist(index, { modelId: seat.modelId, reasoningEffort: effort })} />)}
-      <Seat name={named('chair')} seat={seats.chair} catalog={catalog} chair
+      <Seat name={named('chair')} seat={seats.chair} catalog={catalog} chair disabled={disabled}
         onModel={modelId => onChange({ ...panel, chair: choose(seats.chair, modelId) })}
         onEffort={effort => seats.chair && onChange({ ...panel, chair: { modelId: seats.chair.modelId, reasoningEffort: effort } })} />
     </div>
@@ -80,8 +83,8 @@ export function CouncilSeats({ panel, catalog, onChange, setting }: {
   </div>
 }
 
-function Seat({ name, seat, catalog, chair = false, onModel, onEffort }: {
-  readonly name: string; readonly seat: CouncilSeatInForce | undefined; readonly catalog: readonly AgentModel[]; readonly chair?: boolean
+function Seat({ name, seat, catalog, chair = false, disabled, onModel, onEffort }: {
+  readonly name: string; readonly seat: CouncilSeatInForce | undefined; readonly catalog: readonly AgentModel[]; readonly chair?: boolean; readonly disabled: boolean
   readonly onModel: (modelId: string) => void; readonly onEffort: (effort: string) => void
 }): ReactNode {
   const { t } = useLingui()
@@ -93,10 +96,10 @@ function Seat({ name, seat, catalog, chair = false, onModel, onEffort }: {
     <span className="council-seat__name">{name}</span>
     {seat ? <>
       <div className="council-seat__field">
-        <ModelPicker models={[...catalog]} modelId={seat.modelId} disabled={false} label={t`Choose the model for ${name}. Now ${modelName}`} onChange={onModel} />
+        <ModelPicker models={[...catalog]} modelId={seat.modelId} disabled={disabled} label={t`Choose the model for ${name}. Now ${modelName}`} onChange={onModel} />
       </div>
       <div className="council-seat__field">
-        {efforts.length > 0 && model ? <EffortPicker key={seat.modelId} value={seat.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={false}
+        {efforts.length > 0 && model ? <EffortPicker key={seat.modelId} value={seat.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={disabled}
           label={t`Choose the reasoning effort for ${name}. Now ${effortNow}`} defaultValue={model.defaultReasoningEffort} modelName={model.name} onChange={onEffort} />
           : <span className="council-seat__none">{t({ message: `${modelName} has none`, comment: 'The model offers no reasoning effort levels' })}</span>}
       </div>

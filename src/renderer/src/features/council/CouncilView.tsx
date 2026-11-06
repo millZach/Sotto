@@ -13,8 +13,10 @@ import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
 import { clearCouncilDraft, councilAskable, councilMode, heldCouncilForm, holdCouncilForm, holdCouncilMode, onCouncilDraft, onCouncilMode, readCouncilDraft, type CouncilDraft } from './councilDraft'
-import type { ClimbRecord } from '../../../../shared/councilClimb'
-import { ClimbPanel } from './ClimbPanel'
+import { supportsClimbJudging, type ClimbRecord } from '../../../../shared/councilClimb'
+import { ClimbPanel, type ClimbSeatsState } from './ClimbPanel'
+import { SegmentedControl } from '../../components/SegmentedControl'
+import { ULTRACODE, withoutUltracode } from '../../../../shared/ultracode'
 import { AskedByLine } from './AskedByLine'
 import { CouncilGrid } from './CouncilGrid'
 import { groupCellTurns } from './councilGridModel'
@@ -67,7 +69,9 @@ function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilVi
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
   const [climbRecord, setClimbRecord] = useState<ClimbRecord | null>(null)
-  const [climbPanel, setClimbPanel] = useState<CouncilPanel>({ panelists: [null, null, null], chair: null })
+  const [climbSeats, setClimbSeats] = useState<ClimbSeatsState | null>(null)
+  const judgingCatalog = useMemo(() => (state?.host.models ?? []).filter(model => supportsClimbJudging(model.providerId, app?.platform ?? 'win32') && model.ready && !model.legacy)
+    .map(model => ({ ...model, reasoningEfforts: withoutUltracode(model.reasoningEfforts ?? []), defaultReasoningEffort: model.defaultReasoningEffort === ULTRACODE ? withoutUltracode(model.reasoningEfforts ?? [])[0] : model.defaultReasoningEffort })), [state?.host.models, app?.platform])
   // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
   const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
   const draft = taken.draft
@@ -87,16 +91,17 @@ function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilVi
   }, [thread])
   useEffect(() => { holdCouncilForm(thread ?? '', { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
-  const seats = useSeatsInForce(mode === 'climb' ? climbPanel : seatsPanel, catalog)
+  const seats = useSeatsInForce(mode === 'climb' ? climbSeats?.panel ?? { panelists: [], chair: null } : seatsPanel, mode === 'climb' ? judgingCatalog : catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
   const shownCouncil = chamberCouncil(ownCouncils, question.trim() !== '' || panel !== null)
   return <div className="council-view" data-layout={layout}>
     <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : shownCouncil} askSeats={seats} layout={layout} />
     {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
     {mode === 'ask' && bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
+    {mode === 'climb' && climbSeats?.visible ? <div className="council-seats-bar"><CouncilSeats panel={climbSeats.panel} catalog={judgingCatalog} onChange={climbSeats.onChange} disabled={climbSeats.disabled} judging /></div> : null}
     <div className="council-scroll"><div className="council-page">
-      {bridge?.climb ? <div className="climb-mode" role="group" aria-label={t`Council mode`}><button type="button" aria-pressed={mode === 'ask'} onClick={() => setMode('ask')}>{t`Ask`}</button><button type="button" aria-pressed={mode === 'climb'} onClick={() => setMode('climb')}>{t`Climb`}</button></div> : null}
-      {mode === 'climb' && bridge ? <ClimbPanel thread={thread} bridge={bridge} onPanel={setClimbPanel} onRecord={setClimbRecord} /> : <>
+      {bridge?.climb ? <SegmentedControl label={t`Council mode`} value={mode} options={[{ value: 'ask', label: t`Ask` }, { value: 'climb', label: t`Climb` }]} onChange={value => setMode(value as 'ask' | 'climb')} /> : null}
+      {mode === 'climb' && bridge ? <ClimbPanel thread={thread} bridge={bridge} onPanel={setClimbSeats} onRecord={setClimbRecord} /> : <>
       {/* A new draft is a new question from its thread: the form starts again from it. */}
       {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? chosenOrigin ?? thread} onOrigin={setChosenOrigin} panel={seatsPanel}
         onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
