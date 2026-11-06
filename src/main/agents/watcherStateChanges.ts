@@ -57,16 +57,16 @@ const LISTS: readonly ListName[] = ['watching', 'mergeQueue', 'waitingOnUser', '
 interface Seen { readonly digest: string; readonly gone: unknown }
 type SeenRead = Record<ListName, Map<string, Seen>>
 
-const at = (target: { readonly hostId: string; readonly threadId: string }) => `${target.hostId}\u0000${target.threadId}`
+const targetKey = (target: { readonly hostId: string; readonly threadId: string }) => `${target.hostId}\u0000${target.threadId}`
 const digest = (item: unknown) => createHash('sha256').update(JSON.stringify(item)).digest('base64url')
 /** Each list's items with the key a later read finds them by and how `gone` names them. */
 function items(lists: WatcherStateLists): Record<ListName, { key: string; item: unknown; gone: unknown }[]> {
   return {
-    watching: lists.watching.map(row => ({ key: at(row.target), item: row, gone: row.target })),
-    mergeQueue: lists.mergeQueue.map(row => ({ key: `${at(row.target)}\u0000${row.pullRequest.url ?? row.pullRequest.number}`, item: row,
+    watching: lists.watching.map(row => ({ key: targetKey(row.target), item: row, gone: row.target })),
+    mergeQueue: lists.mergeQueue.map(row => ({ key: `${targetKey(row.target)}\u0000${row.pullRequest.url ?? row.pullRequest.number}`, item: row,
       gone: { target: row.target, pullRequest: { ...row.pullRequest.number === undefined ? {} : { number: row.pullRequest.number },
         ...row.pullRequest.url === undefined ? {} : { url: row.pullRequest.url } } } })),
-    waitingOnUser: lists.waitingOnUser.map(row => ({ key: `${at(row.target)}\u0000${row.waitsFor}\u0000${row.requestCardId ?? ''}\u0000${row.delegatedThreadId ?? ''}`,
+    waitingOnUser: lists.waitingOnUser.map(row => ({ key: `${targetKey(row.target)}\u0000${row.waitsFor}\u0000${row.requestCardId ?? ''}\u0000${row.delegatedThreadId ?? ''}`,
       item: row, gone: row })),
     kept: WATCHER_KEPT_LISTS.flatMap(list => lists.kept[list].map(line => ({ key: line.id, item: line, gone: line.id }))),
     staleNotes: lists.staleNotes.map(note => ({ key: note.id, item: note, gone: note.id })),

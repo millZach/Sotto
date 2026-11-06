@@ -577,7 +577,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   /** A paged read_state's first page, by its page revision: what its final page's changeCursor remembers (#2231). */
-  private readonly stateReads = new Map<string, { lists: WatcherStateLists; since: boolean }>()
+  private readonly stateReads = new Map<string, { lists: WatcherStateLists; since: boolean; openOnly: boolean; owed: boolean }>()
   private readonly stateChanges = new WatcherStateChanges()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
   /** The last read_thread result Watcher was given of each thread, by Watcher conversation and target, and when (#1552). In memory only. */
@@ -4211,11 +4211,16 @@ export class WatcherService implements WatcherControlHooks {
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, first = !input.cursor || input.cursor === 'restart'
-        const kept = input.openOnly ? openKept(all) : all
+        // A later page reads with the options its first page was given, whatever it repeats of them.
+        const earlier = first ? undefined : this.stateReads.get(input.cursor!.split(':')[0]!), openOnly = earlier?.openOnly ?? input.openOnly === true
+        const kept = openOnly ? openKept(all) : all
         // Computed from current records at each first page (#1274), never kept as notes. The watched threads and the
         // merge queue are read once, at the first page, and paged together, a hundred of each to a page; a later page reads
-        // on from what the first one found.
-        const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
+        // on from what the first one found. openOnly leaves out a settled thread a standing watch still holds (#2231).
+        const found = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
+        const settled = openOnly && first ? new Set(this.state().watchedThreads.filter(row => row.settled).map(row => key(row.target))) : undefined
+        const live = settled?.size ? { ...found, watching: found.watching.filter(row => !settled.has(key(row.target))),
+          mergeQueue: found.mergeQueue.filter(row => !settled.has(key(row.target))), waiting: found.waiting.filter(row => !settled.has(key(row.target))) } : found
         const staleNotes = this.staleNotes(all, first ? live.threads : this.watching(this.state().watchedThreads))
         // Only the final page completes recovery: a partial read or an expired cursor leaves the reminder. Look first,
         // so a reminder owed but not yet noticed is not raised again after the final page.
@@ -4229,8 +4234,13 @@ export class WatcherService implements WatcherControlHooks {
         const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length) },
           (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
-        if (first) this.stateReads.set(page.revision, { lists, since: since !== undefined })
+        if (first) this.stateReads.set(page.revision, { lists, since: since !== undefined, openOnly, owed: this.stateOwed })
         const read = this.stateReads.get(page.revision)
+        // A compaction between pages loses the pages Watcher read before it: the read starts again from its first page.
+        if (!first && read && this.stateOwed && !read.owed) {
+          this.stateReads.delete(page.revision)
+          refuse('CURSOR_EXPIRED', 'Your conversation was compacted while you read your state. Read it again from its first page.', true)
+        }
         // A later page of a changedSince read leaves out the kept lines and stale flags its first page already gave.
         const later = !first && read?.since
         if (page.nextCursor === null) this.stateOwed = false

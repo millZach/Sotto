@@ -2617,6 +2617,22 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
   expect(second.nextCursor).toBeNull()
   expect([...first.mergeQueue, ...second.mergeQueue].map(item => item.pullRequest.number)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
   expect(first.mergeQueue).toHaveLength(100)
+  // A later page reads with its first page's openOnly, and a compaction between pages starts the read again (#2231).
+  await f.call('keep_state', { add: [{ list: 'issues', text: '#1490 composer drops pasted images' }, { list: 'issues', text: '#1501 widget flicker' }] })
+  await f.call('keep_state', { close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] })
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true }))
+  if (open.status !== 'ok' || open.nextCursor === null) throw new Error('expected a second page')
+  const openSecond = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: open.nextCursor }))
+  if (openSecond.status !== 'ok') throw new Error('read refused')
+  expect(openSecond.kept.issues.map(line => line.id)).toEqual(['i2'])
+  const delta = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: openSecond.changeCursor! }))
+  if (delta.status !== 'ok') throw new Error('read refused')
+  expect(delta).toMatchObject({ mergeQueue: [], kept: { issues: [] }, nextCursor: null })
+  const whole = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (whole.status !== 'ok' || whole.nextCursor === null) throw new Error('expected a second page')
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  expect(await f.call('read_state', { cursor: whole.nextCursor })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED', restartCursor: 'restart' })
+  expect(f.service.stateNote()).toContain('call read_state')
 })
 
 it('saves none of Watcher’s kept words with Keep local history off', async () => {
