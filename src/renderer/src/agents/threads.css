@@ -257,6 +257,15 @@
    is most of that space, so a little more than it is enough: the gap before a turn stays about half again the gap under a
    message, and a long thread of short exchanges is not padded out. */
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 16px; }
+/* Show all under a diff the transcript cut short is a button, the soft square with an edge that every secondary press wears
+   (ADR-0110), on the line that says how much shows, so the box ends close under its last line and clear of the composer. */
+.thread-transcript .changes-block > .changes-diff__more { gap: 10px; padding: 2px 12px 8px; }
+.thread-transcript .changes-block > .changes-diff__more .files-link {
+  display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control);
+  background: transparent; color: var(--tt-text-2); font: inherit; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.thread-transcript .changes-block > .changes-diff__more .files-link:hover { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.thread-transcript .changes-block > .changes-diff__more .files-link:active { background: var(--tt-hover); color: var(--tt-text); }
 /* Inside the turn the Worked for line is a caption: its press is a row a little taller than its words, not a full control row. */
 .thread-pane:not(.watcher-pane) .thread-work > :is(.thread-work__summary, .thread-changes > .thread-changes__summary) { min-height: 26px; }
 /* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
