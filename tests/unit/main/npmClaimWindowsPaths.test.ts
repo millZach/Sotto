@@ -22,10 +22,12 @@ vi.mock('node:fs/promises', async importOriginal => {
     stat: async (path: string) => { throw missing(path) },
   }
 })
-const { detectClientInstall } = await import('../../../src/main/agents/providerClients')
+const { CLIENT_PACKAGES, detectClientInstall } = await import('../../../src/main/agents/providerClients')
 
 const HOME = 'C:\\Users\\Zach', APPDATA = `${HOME}\\AppData\\Roaming`
 const NATIVE = `${HOME}\\.local\\bin\\claude.exe`
+/** No mise install, so only npm's layout decides. */
+const NO_MISE = { MISE_DATA_DIR: `${HOME}\\no-mise` }
 /** The environment Sotto reads on the laptop, with npm's prefix where a test puts it. */
 const environment = (prefix?: string): NodeJS.ProcessEnv =>
   ({ APPDATA, LOCALAPPDATA: `${HOME}\\AppData\\Local`, ...prefix ? { npm_config_prefix: prefix } : {} })
@@ -53,6 +55,32 @@ describe('a Windows npm root claims only its own launcher (#1920)', () => {
     const custom = `${HOME}\\tools`
     leaveInstall(custom, '@anthropic-ai/claude-code')
     expect(await detectClientInstall('claude', `${custom}\\claude.cmd`, environment(custom), 'win32')).toEqual({ channel: 'npm', npmPrefix: custom })
+  })
+
+  it('reads npm\u2019s own launcher as npm for every client npm installs, not only Claude Code', async () => {
+    const prefix = `${APPDATA}\\npm`
+    for (const [provider, packageName] of Object.entries(CLIENT_PACKAGES) as [Parameters<typeof detectClientInstall>[0], string][]) {
+      files.clear(); leaveInstall(prefix, packageName)
+      const command = provider === 'opencode' ? 'opencode' : provider === 'deepseek' ? 'dsh' : provider
+      expect(await detectClientInstall(provider, `${prefix}\\${command}.cmd`, { ...environment(), ...NO_MISE }, 'win32'), provider)
+        .toEqual({ channel: 'npm', npmPrefix: prefix })
+    }
+  })
+
+  it('reads OpenCode\u2019s npm launcher as npm, and no other copy of it', async () => {
+    const env = { ...environment(), ...NO_MISE }
+    // npm's launcher in its prefix, and the package's own program, under %APPDATA%\npm and a prefix of `<x>\lib`.
+    for (const prefix of [`${APPDATA}\\npm`, `${HOME}\\tools\\lib`]) {
+      files.clear(); leaveInstall(prefix, '@opencode/cli')
+      expect(await detectClientInstall('opencode', `${prefix}\\opencode.cmd`, env, 'win32'), prefix).toEqual({ channel: 'npm', npmPrefix: prefix })
+      expect(await detectClientInstall('opencode', `${prefix}\\node_modules\\@opencode\\cli\\bin\\opencode.exe`, env, 'win32'), prefix)
+        .toEqual({ channel: 'npm', npmPrefix: prefix })
+    }
+    // A `bin` beside `lib\node_modules` is a macOS or Linux layout: npm on Windows never puts a launcher there.
+    expect(await detectClientInstall('opencode', `${HOME}\\tools\\bin\\opencode.exe`, env, 'win32')).toEqual({ channel: 'unknown' })
+    // The install script's copy updates itself, whatever npm package sits in a global root.
+    leaveInstall(`${APPDATA}\\npm`, '@opencode/cli')
+    expect(await detectClientInstall('opencode', `${HOME}\\.opencode\\bin\\opencode.exe`, env, 'win32')).toEqual({ channel: 'self-update' })
   })
 
   it('still lets the npm package claim Grok Build\u2019s copy in ~\\.grok\\bin, which its install script puts there (ADR-0042)', async () => {
