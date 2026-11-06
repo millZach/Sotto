@@ -8,6 +8,8 @@ const RESTS = '.thread-folder, .thread-nav__settled, .thread-folder__rows > :is(
 const AT_BAND = '.thread-folder, .thread-nav__settled'
 /** How near a place, in pixels, a scroll counts as resting on it. */
 const ON_PLACE = 1
+/** How long after the wheel or a touch, in milliseconds, a scroll's end still counts as the hand's, so the list eases on. */
+const HAND_WINDOW = 1000
 
 /**
  * How much room the list's end needs so that the furthest it can scroll is a place to rest. `end` is how far the list
@@ -47,9 +49,10 @@ export function settleAt(at: number, way: number, rests: readonly number[], end:
 
 /**
  * Lets the thread list come to rest on a row's edge. When a scroll ends between places it goes on to the next one the
- * way it was moving, smoothly unless motion is reduced; and it keeps the list's end room (`--list-end-room`) as the list
- * stands, on a resize of the list or of anything in it at most once a frame, so the furthest scroll is a place too. It
- * reads where the places lie and writes one style property and a scroll; it renders nothing.
+ * way it was moving: easing after the wheel or a touch, unless motion is reduced, and at once after a scroll the app or
+ * the keys set. It keeps the list's end room (`--list-end-room`) as the list stands, on a resize of the list or of
+ * anything in it at most once a frame, so the furthest scroll is a place too. It reads where the places lie and writes
+ * one style property and a scroll; it renders nothing.
  */
 export function useListEndRoom(scroll: RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
@@ -91,8 +94,15 @@ export function useListEndRoom(scroll: RefObject<HTMLElement | null>): void {
       const at = list.scrollTop
       const target = settleAt(at, way, rests(), list.scrollHeight - list.clientHeight)
       if (target === null || Math.abs(target - at) < ON_PLACE) return
-      list.scrollTo({ top: target, behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+      // A hand on the wheel or the screen sees the list ease on; a scroll the app or the keys set lands at once, as it was set.
+      const eased = performance.now() - handled < HAND_WINDOW && !prefersReducedMotion()
+      list.scrollTo({ top: target, behavior: eased ? 'smooth' : 'instant' })
     }
+    // When a hand last moved the list, by the wheel, a touchpad or a touch.
+    let handled = Number.NEGATIVE_INFINITY
+    const hand = (): void => { handled = performance.now() }
+    list.addEventListener('wheel', hand, { passive: true })
+    list.addEventListener('touchmove', hand, { passive: true })
     list.addEventListener('scroll', moved, { passive: true })
     list.addEventListener('scrollend', ended)
     const resized = new ResizeObserver(soon)
@@ -114,6 +124,7 @@ export function useListEndRoom(scroll: RefObject<HTMLElement | null>): void {
     return () => {
       cancelAnimationFrame(frame); resized.disconnect(); added.disconnect(); themed.disconnect()
       list.removeEventListener('scroll', moved); list.removeEventListener('scrollend', ended)
+      list.removeEventListener('wheel', hand); list.removeEventListener('touchmove', hand)
     }
   }, [scroll])
 }
