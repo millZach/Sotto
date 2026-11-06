@@ -47,8 +47,15 @@ async function fixture(settleWithoutAsking = true) {
     expect(await service.watchThread({ target })).toMatchObject({ status: 'ok' })
     return target
   }
+  /** The user's Send to Watcher. One sent while a news turn runs waits in Watcher's queue, and its request starts once
+   * that turn ends, so the turn is ended until the request is there. */
   const request = async () => {
+    const before = service.state().requests.length
     expect((await f.control.commandShell({ type: 'manual-send', threadId: watcherId, draftId: randomUUID(), text: 'Synthetic Watcher user request' })).error).toBeNull()
+    await vi.waitFor(async () => {
+      if (service.state().requests.length === before && native(watcherId).status === 'running') await endTurn(watcherId)
+      expect(service.state().requests.length).toBeGreaterThan(before)
+    }, { timeout: 15_000 })
     return service.state().requests.at(-1)!.id
   }
   const ask = async (input: Record<string, unknown>) => (await tools.call(watcherId, 'ask_user', input)).structuredContent as { status: string; questionId: string; note: string; code?: string }
