@@ -5,7 +5,7 @@ import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestFile } fr
 import { MessageContent } from '../agents/MessageContent'
 import { Button } from '../components/Button'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
-import { checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checksToPreview, checkTime, checkWord, fileOnGitHub, filesByFolder, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
+import { checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, fileOnGitHub, filesByFolder, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
 
 const CHECK_ICONS: Readonly<Record<GitPullRequestCheck['status'], LucideIcon>> = {
   success: CircleCheck, failure: CircleX, cancelled: CircleX, pending: CircleDashed, 'action-required': Circle, skipped: CircleMinus, neutral: CircleMinus,
@@ -38,11 +38,11 @@ export const PEEK_MORE_FILES = 8
 
 /**
  * The checks that still stand (failed, waiting on an approval, running), the first few, under the head of their closed
- * fold where the panel has room: for the eye only, since the head's press opens the whole list, where each opens. The
- * one the checklist's line already names is left out, so the preview adds the rest rather than saying it again.
+ * fold where the panel has room: for the eye only, since the head's press opens the whole list, where each opens.
  */
 export function PullRequestChecksPeek({ checks }: { readonly checks: readonly GitPullRequestCheck[] }): ReactNode {
-  return <span className="pr-surface__peek" data-of="checks" aria-hidden="true">{checksToPreview(checks).slice(0, PEEK_ROWS).map((check, index) => {
+  const { standing } = checksInOrder(checks)
+  return <span className="pr-surface__peek" data-of="checks" aria-hidden="true">{standing.slice(0, PEEK_ROWS).map((check, index) => {
     const Icon = CHECK_ICONS[check.status]
     const { group, own } = checkNameParts(check.name)
     return <span key={`${check.name}\n${index}`} className="pr-surface__peek-row" data-status={check.status}>

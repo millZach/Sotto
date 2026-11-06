@@ -260,19 +260,6 @@ export function checkNameParts(name: string): { readonly group: string | null; r
   const at = name.indexOf(' / ')
   return at > 0 ? { group: name.slice(0, at), own: name.slice(at + 3) } : { group: null, own: name }
 }
-/**
- * The check the merge checklist names in its checks line: the first that failed, else the first waiting for an approval,
- * else the first still running, as `checksLine` picks it. The Checks fold's preview leaves it out, so a check is not
- * said twice one above the other.
- */
-export function checkTheChecklistNames(checks: readonly GitPullRequestCheck[]): GitPullRequestCheck | undefined {
-  return checks.find(check => FAILED.has(check.status)) ?? checks.find(check => check.status === 'action-required') ?? checks.find(check => check.status === 'pending')
-}
-/** What the closed Checks fold previews: the checks that still stand, without the one the checklist above already names. */
-export function checksToPreview(checks: readonly GitPullRequestCheck[]): readonly GitPullRequestCheck[] {
-  const named = checkTheChecklistNames(checks)
-  return checksInOrder(checks).standing.filter(check => check !== named)
-}
 /** The files a pull request changes, the most changed first, as the iPhone's sheet lists them (ADR-0102). */
 export function filesByWeight(files: readonly GitPullRequestFile[]): GitPullRequestFile[] {
   return [...files].sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions) || a.path.localeCompare(b.path))

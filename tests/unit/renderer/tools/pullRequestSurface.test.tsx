@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checksToPreview, checkTheChecklistNames, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -985,8 +985,7 @@ describe('the drill-in under the merge checklist', () => {
     mount({ detail: read })
     await opened()
     expect(peeks()).toHaveLength(1)
-    // The failing check the checklist's line names is not said again under it: the preview adds the rest.
-    expect(peeks()[0]).not.toContain('build')
+    expect(peeks()[0]).toContain('CI /buildFailed')
     expect(peeks()[0]).toContain('CI /lintQueued')
     expect(peeks()[0]).not.toContain('test')
     expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
@@ -1080,14 +1079,6 @@ describe('the drill-in under the merge checklist', () => {
     expect(filesByWeight([{ path: 'b', additions: 1, deletions: 1 }, { path: 'a', additions: 1, deletions: 1 }, { path: 'c', additions: 9, deletions: 0 }]).map(file => file.path)).toEqual(['c', 'a', 'b'])
     const folders = filesByFolder([{ path: 'b/x', additions: 1, deletions: 1 }, { path: 'a/y', additions: 2, deletions: 0 }, { path: 'top', additions: 1, deletions: 0 }, { path: 'c/z', additions: 9, deletions: 4 }, { path: 'c/w', additions: 0, deletions: 1 }])
     expect(folders.map(folder => [folder.folder, folder.files.map(file => file.path), folder.additions, folder.deletions])).toEqual([['', ['top'], 1, 0], ['c/', ['c/z', 'c/w'], 9, 5], ['a/', ['a/y'], 2, 0], ['b/', ['b/x'], 1, 1]])
-    // The check the checklist names (the first failed, else the first waiting for approval, else the first running) leaves the preview.
-    const named = [check('ok', 'success'), check('late', 'pending'), check('gone', 'cancelled'), check('broke', 'failure')]
-    expect(checkTheChecklistNames(named)?.name).toBe('gone')
-    expect(checklist(detail({ checks: named }))[0]!.why).toBe('gone was cancelled, and 1 more')
-    expect(checksToPreview(named).map(item => item.name)).toEqual(['broke', 'late'])
-    expect(checksToPreview([check('wait', 'action-required'), check('run', 'pending')]).map(item => item.name)).toEqual(['run'])
-    expect(checksToPreview([check('run', 'pending')])).toEqual([])
-    expect(checkTheChecklistNames([check('ok', 'success')])).toBeUndefined()
     expect(pathParts('src/main/x.ts')).toEqual({ folder: 'src/main/', name: 'x.ts' })
     expect(pathParts('x.ts')).toEqual({ folder: '', name: 'x.ts' })
     const item = { number: 74, title: 'Make it friendlier', author: 'mira', headBranch: 'feat/hello' }
