@@ -133,6 +133,8 @@ function openTurn(session, commandId, text, steered = false, displayText = undef
   addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(displayText !== undefined ? { displayText } : {}), ...(cut ? { truncated: true } : {}), ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !script.suppressUserMessage)
   return turnId
 }
+/** The session whose turn `dropSteer: 'gap-end-on-read'` ends just before answering its next resume. */
+let endOnResume
 function endTurn(session, terminal = 'completed', error = undefined) {
   const turnId = session.activeTurnId
   if (!turnId) return
@@ -323,6 +325,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (!load(session.sessionId, p.config)) { fail('commandRejected', 'Session tool servers conflict with the loaded runtime', 'session_configuration_conflict'); return }
     held.add(session.sessionId); holding(session.sessionId, true)
+    if (endOnResume === session.sessionId) { endOnResume = undefined; endTurn(session) }
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
     const snapshot = globalThis.structuredClone({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
@@ -392,6 +395,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     // `dropSteer` admits one steer and never delivers it, as Muse does when the turn ends first (#1408): `end-turn` ends the
     // turn just after acknowledging, `end-turn-first` just before, and `hold` leaves the turn running for a later end.
     // `gap` takes the steer but the stream drops its user message, says so with a gap, and ends the turn before the read.
+    // `gap-end-on-read` does not take it, says there was a gap, and ends the turn while answering the read after it.
     if (steer && script.dropSteer && session.activeTurnId) {
       const { dropSteer } = script
       writeFileSync(path('script.json'), JSON.stringify({ ...script, dropSteer: undefined }))
@@ -401,6 +405,12 @@ createInterface({ input: process.stdin }).on('line', line => {
         result({ turnId, disposition: 'steered' })
         notify('view/gap', { sessionId: session.sessionId })
         endTurn(session)
+        return
+      }
+      if (dropSteer === 'gap-end-on-read') {
+        endOnResume = session.sessionId
+        result({ turnId: session.activeTurnId, disposition: 'steered' })
+        notify('view/gap', { sessionId: session.sessionId })
         return
       }
       if (dropSteer === 'end-turn-first') endTurn(session)

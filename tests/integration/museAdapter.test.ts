@@ -10,6 +10,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { followupStoreOf } from '../fixtures/followupQueue'
 import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 import { STEER_NOT_TAKEN } from '../../src/shared/agents'
+import { REQUEUE_NOT_SAVED } from '../../src/main/agents/control'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
@@ -619,6 +620,22 @@ it('settles nothing while a gap’s read is pending, so a steer whose user messa
   } finally { await f.cleanup() }
 })
 
+it('settles a steer not taken when its turn ends while the read after a gap is answered (#1408)', async () => {
+  // The turn's end moves the session while the whole history is being read; the read still settles the steer, once.
+  const { f, id } = await open()
+  try {
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+    await f.script({ dropSteer: 'gap-end-on-read' })
+    const steer = { type: 'steer' as const, threadId: id, commandId: randomUUID(), messageId: 'late', text: 'Also check the tests' }
+    await expect(f.host.execute(steer)).rejects.toThrow(STEER_NOT_TAKEN)
+    const shown = await thread(f, id)
+    expect(shown.notTakenMessageIds).toEqual(['late'])
+    expect(shown.messages.map(message => message.id)).not.toContain('late')
+    await expect(f.host.execute(steer)).rejects.toThrow(STEER_NOT_TAKEN)
+    expect((await f.driver.requests()).filter(record => record.method === 'turn/steer')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
 it('settles a steer left unconfirmed once its turn ends without taking it, live and after a restart (#1408)', async () => {
   // A steer admitted while a long tool call runs outlives the delivery wait; its turn's end settles it later.
   for (const restart of [false, true]) {
@@ -670,7 +687,7 @@ it('settles on resume a steer saved before steers named their turn, and one sent
   }
 })
 
-it('keeps a not-taken steer’s outbox entry until its queued message is saved back on the queue, and tries again (#1408)', async () => {
+for (const held of [true, false]) it(`keeps a not-taken steer’s outbox entry until its queued message is saved back on the queue, and tries again, ${held ? 'once its turn ends after the wait' : 'during its wait'} (#1408)`, async () => {
   const f = await museFixture()
   const stack = await agentControlFixture({ host: f.host, credentialOptions: { mode: 'unavailable' }, reasoner: {} })
   const { control } = stack
@@ -687,19 +704,20 @@ it('keeps a not-taken steer’s outbox entry until its queued message is saved b
     expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'First' })).error).toBeNull()
     await expect.poll(() => ownThread()?.status).toBe('running')
     expect((await control.command({ type: 'queue-followup', threadId: id, draftId: randomUUID(), text: 'The queued steer' })).error).toBeNull()
-    await f.script({ dropSteer: 'hold' })
-    await control.command({ type: 'steer-followup', threadId: id, itemId: control.get().followups![0]!.id })
-    const queued = control.get().followups![0]!
-    expect(queued).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
-    const commandId = followupStoreOf(control).peek().items[0]!.commandId!
-    // The queue cannot be saved when the turn ends: the message stays uncertain and its entry stays for another try.
+    // The queue cannot be saved when the turn ends: the message stays where it was and its entry stays for another try.
     const store = followupStoreOf(control)
     const requeue = vi.spyOn(store, 'requeueAtHead').mockRejectedValueOnce(new Error('disk full'))
-    await f.driver.completeTurn(id, 'Done without the steer')
+    await f.script({ dropSteer: held ? 'hold' : 'end-turn' })
+    await control.command({ type: 'steer-followup', threadId: id, itemId: control.get().followups![0]!.id })
+    const commandId = store.peek().items[0]!.commandId!
+    if (held) {
+      expect(control.get().followups![0]!).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
+      await f.driver.completeTurn(id, 'Done without the steer')
+    }
     await expect.poll(() => requeue.mock.calls.length).toBeGreaterThanOrEqual(1)
-    await expect.poll(() => control.get().error).toBe('Could not save the follow-up queue.')
+    await expect.poll(() => control.get().error).toBe(REQUEUE_NOT_SAVED)
     expect(outbox().some(entry => entry.id === commandId)).toBe(true)
-    expect(control.get().followups?.[0]).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
+    expect(control.get().followups?.[0]).toMatchObject({ text: 'The queued steer', status: held ? 'uncertain' : 'dispatching' })
     expect((await requests('turn/start')).length).toBe(1)
     // The next snapshot finds it not taken again; saved this time, it goes as the next message, once.
     await f.action(id, { type: 'gap' })

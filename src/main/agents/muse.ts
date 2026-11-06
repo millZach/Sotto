@@ -135,6 +135,11 @@ const historySchema = z.looseObject({
   totalItemCount: z.number().optional().catch(undefined), nextCursor: z.string().nullable().optional().catch(undefined),
   snapshot: z.looseObject({ state: z.looseObject({ items: z.array(museItemSchema).default([]) }) }).nullable().default(null),
 })
+/** Whether a read served the session's whole history, not a page of it (#1408). */
+function wholeHistory(history: z.infer<typeof historySchema>): boolean {
+  const items = history.items ?? history.snapshot?.state.items ?? []
+  return !history.nextCursor && (history.totalItemCount ?? items.length) <= items.length
+}
 const sessionResumeSchema = z.looseObject({
   session: museSessionSchema, history: historySchema, viewCursor: z.string().default(''),
   pendingRequests: z.array(z.looseObject({ kind: z.string() })).default([]),
@@ -2217,8 +2222,11 @@ export class MuseMspHost implements AgentHost {
       await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
       if (generation !== this.generation || this.processes.get(id) !== entry) return false
     }
-    let whole = false
+    let whole: boolean
     if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); whole = this.settleResumedSteers(id, resumed) }
+    // A turn moved while this read was answered, so its session is stale, but a whole history still confirmed every steer
+    // Muse took before it and the stream every one since: the turns that ended meanwhile are settled from it (#1408).
+    else whole = wholeHistory(resumed.history)
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)
     try {
@@ -2246,8 +2254,7 @@ export class MuseMspHost implements AgentHost {
    */
   private settleResumedSteers(id: string, resumed: z.infer<typeof sessionResumeSchema>): boolean {
     const { history } = resumed, active = resumed.session.activeTurnId
-    const items = history.items ?? history.snapshot?.state.items ?? []
-    if (history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return false
+    if (!wholeHistory(history)) return false
     const pending = this.unsettledSteers.get(id); if (!pending) return true
     // Saved without its turn and absent from the whole history so far: the running turn's end settles it, as one sent into
     // that turn would be, since a steer Muse took is confirmed before its turn ends.

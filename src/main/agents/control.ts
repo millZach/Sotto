@@ -266,6 +266,8 @@ function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
 }
 /** A draft saved without an image its window still showed: the text is kept, the image is not. */
+/** A steer not taken whose message could not be saved back on the queue (#1408): kept, unsent, and tried again. */
+export const REQUEUE_NOT_SAVED = 'Could not save the follow-up queue. Your message is kept and was not sent. Sotto puts it back in the queue the next time this thread updates or Sotto restarts, once saving works again.'
 export const DRAFT_IMAGE_NOT_SAVED = 'An image in this draft is no longer kept, so the draft was saved without it. Your text was saved. Remove the image and attach it again.'
 const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX_DELIVERED_DRAFTS * 2)
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
@@ -4790,6 +4792,7 @@ export class AgentControl {
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
+    this.steeringFollowups.add(item.id)
     try {
       const validatePrompt = (): void => {
         validate()
@@ -4803,10 +4806,14 @@ export class AgentControl {
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
-      // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead.
-      const notTaken = (): boolean => !this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
-        && this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!) === true
-      if (!accepted && (error instanceof Error && error.message === STEER_NOT_TAKEN && !this.outbox.some(entry => entry.id === item.commandId) || notTaken())) {
+      // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead. The provider's
+      // short list of steers not taken is read first, so the transcript is looked at only for a steer it names.
+      const notTaken = (): boolean => {
+        const thread = this.thread(item.threadId)
+        return thread.notTakenMessageIds?.includes(item.messageId!) === true
+          && !thread.messages.some(message => message.role === 'user' && message.id === item.messageId)
+      }
+      if (!accepted && (error instanceof Error && error.message === STEER_NOT_TAKEN || notTaken())) {
         this.requeueNotTaken(item.id, item.commandId!)
         return
       }
@@ -4815,8 +4822,10 @@ export class AgentControl {
       // Its turn may have ended while that was saved, when the queue still showed it dispatching: settled now, it goes next.
       if (status === 'uncertain' && notTaken()) { this.requeueNotTaken(item.id, item.commandId!); return }
       throw error
-    } finally { this.syncFollowups(); this.publish() }
+    } finally { this.steeringFollowups.delete(item.id); this.syncFollowups(); this.publish() }
   }
+  /** Queued messages whose steer is still in flight (`steerFollowup`), which settles them; by follow-up ID. */
+  private readonly steeringFollowups = new Set<string>()
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     const origin = this.watcherOrigins.get(command)
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
@@ -5796,11 +5805,15 @@ export class AgentControl {
       }
     } catch (error) {
       this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
-      if (prompt && (provider === undefined || isUsageProviderId(provider))) {
+      // A queued steer its turn ended without taking (#1408) keeps its entry until its message is saved back on the queue
+      // (`requeueNotTaken`), so a failed save leaves a record that a later snapshot or a restart retries.
+      const keptForRequeue = command.type === 'steer' && error instanceof Error && error.message === STEER_NOT_TAKEN
+        && this.followupStore.peek().items.some(item => item.commandId === command.commandId)
+      if (!keptForRequeue && prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
       }
-      this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+      if (!keptForRequeue) this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
       throw error
@@ -6514,10 +6527,11 @@ export class AgentControl {
    * would have sent it when the turn ended. Nothing is sent from here.
    */
   private settleSteerNotTaken(item: Saved['outbox'][number]): void {
-    // One still dispatching is its steer's to settle, once the queue has saved what that steer last heard (`steerFollowup`).
-    // Any other goes back on the queue, and its entry goes only once that is saved.
+    // One whose steer is still in flight is that steer's to settle, once the queue has saved what it last heard
+    // (`steerFollowup`). Any other, including one whose earlier requeue could not be saved, goes back on the queue, and
+    // its entry goes only once that is saved.
     const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
-    if (queued) { if (queued.status !== 'dispatching') this.requeueNotTaken(queued.id, item.id); return }
+    if (queued) { if (!this.steeringFollowups.has(queued.id)) this.requeueNotTaken(queued.id, item.id); return }
     this.settleNotTakenEntry(item.id)
     if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
   }
@@ -6542,7 +6556,7 @@ export class AgentControl {
     this.requeueing.add(commandId)
     void this.followupStore.requeueAtHead(id, commandId)
       .then(() => { this.settleNotTakenEntry(commandId); this.persistAfterSnapshots() })
-      .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+      .catch(() => { this.state.error = REQUEUE_NOT_SAVED })
       .finally(() => { this.requeueing.delete(commandId); this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }
   private afterSnapshotsPersistQueued = false
