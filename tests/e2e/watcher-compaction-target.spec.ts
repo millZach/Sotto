@@ -3,7 +3,7 @@
  * Watcher's conversation and a line on it where Watcher compacts, 200k to 1M on a 50k step, 250k by default (#2233). It sits
  * under its own Compaction heading after Watched threads, works from the keyboard, saves when it is let go, and nothing
  * clips at any size, in dark or light. Watcher's room is a seeded stand-in, as in watcher-night-scene.spec.ts, so the bar
- * shows a conversation of 312k.
+ * shows a conversation of 212k.
  *
  *   npm run build && npx playwright test tests/e2e/watcher-compaction-target.spec.ts
  */
@@ -28,7 +28,7 @@ async function capture(page: Page, name: string): Promise<void> {
 }
 const saved = (page: Page): Promise<number> => page.evaluate(async () => (await window.sotto!.getSettings()).watcherCompactAtTokens)
 
-/** A current Watcher whose conversation its provider last put at 312k tokens. */
+/** A current Watcher whose conversation its provider last put at 212k tokens. */
 async function seedRoom(page: Page): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
@@ -39,7 +39,7 @@ async function seedRoom(page: Page): Promise<void> {
       current: identity, currentOptions: { modelId: 'claude:opus', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true },
       history: [], runtimeMode: 'approval-required', ownChanges: [], standingWatches: [], requests: [], watchedThreads: [],
       receipts: [], recoveryNotice: null, observedAt: new Date().toISOString(),
-      context: { tokens: 312_000, compactAt: 400_000, canCompact: true, compacting: false },
+      context: { tokens: 212_000, compactAt: 250_000, canCompact: true, compacting: false },
     },
     created: identity,
   }
@@ -67,7 +67,7 @@ test('Compact Watcher at is a slider on Watcher’s conversation, 250k by defaul
       await expect(slider).toHaveValue('250000')
       await expect(slider).toHaveAttribute('aria-valuetext', '250k tokens')
       expect(await saved(page)).toBe(250_000)
-      await expect(panel.getByText('Watcher is at 312k.', { exact: true })).toBeVisible()
+      await expect(panel.getByText('Watcher is at 212k.', { exact: true })).toBeVisible()
 
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
@@ -86,7 +86,7 @@ test('Compact Watcher at is a slider on Watcher’s conversation, 250k by defaul
         }
       }
 
-      // From the keyboard: the arrows move it 50k at a time and letting go saves. Below Watcher's 312k, the room says it
+      // From the keyboard: the arrows move it 50k at a time and letting go saves. Below Watcher's 212k, the room says it
       // compacts at its next rest.
       await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
       await resizeWindow(launched, 1280, 800)
@@ -94,7 +94,7 @@ test('Compact Watcher at is a slider on Watcher’s conversation, 250k by defaul
       await page.keyboard.press('ArrowLeft')
       await expect(slider).toHaveValue('200000')
       await expect.poll(() => saved(page)).toBe(200_000)
-      await expect(panel.getByText('Watcher is at 312k: it compacts at its next rest.', { exact: true })).toBeVisible()
+      await expect(panel.getByText('Watcher is at 212k: it compacts at its next rest.', { exact: true })).toBeVisible()
       await capture(page, 'compact-watcher-at-1280x800-dark-below')
       await page.keyboard.press('End')
       await expect(slider).toHaveValue('1000000')
