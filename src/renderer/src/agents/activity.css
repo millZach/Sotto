@@ -19,11 +19,14 @@
 .thread-work__body { padding: 8px 0 4px; }
 /* In a long thread these lines repeat all the way down, so a closed one is a caption to the reply under it: a size down, with
    no rule. The rule comes back with the open fold, where it has work to do, between the work and the reply. Watcher's
-   conversation keeps its own. */
+   conversation keeps its own. Being the smallest words between the replies, it takes the second ink rather than the muted
+   one, so what the work did reads at a glance and the line still sits well under the replies; hover takes it to full ink. */
 .thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) { margin-bottom: 4px; border-bottom-color: transparent; }
 .thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > :is(.thread-work__summary, .thread-changes) { margin-bottom: 0; }
 .thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > .thread-changes > .thread-changes__summary { margin-bottom: 0; }
 .thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { font-size: var(--tt-type-small); }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { color: var(--tt-text-2); }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary:is(:hover, :active), .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary:is(:hover, :active) { color: var(--tt-text); }
 /* What a disclosure opens. It holds its children's margins in, so they do not jump when the slide ends. */
 .thread-fold { display: flow-root; flex: 0 0 100%; min-width: 0; }
 /* A change's added and removed lines, in Changes' inks. */
@@ -127,13 +130,13 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__open > .thread-activity__details:not(:last-child) { margin-bottom: 6px; }
 .thread-activity__change { display: grid; gap: 6px; min-width: 0; }
 /* A plan reads as a checklist with three different marks: a tick and quiet words for done, the running accent and full-strength
-   words for the step in progress, a hollow ring for what is to come. Done steps stay as easy to read again as the rest. */
+   words a weight up for the step in progress, so where the work is reads at a glance, a hollow ring for what is to come. Done steps stay as easy to read again as the rest. */
 .thread-activity__steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
 .thread-activity__steps li { display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: baseline; gap: 8px; color: var(--tt-text-2); }
 .thread-activity__step-mark { width: 11px; height: 11px; margin-left: 1px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; align-self: center; }
 .thread-activity__step-done { align-self: center; color: var(--tt-text-muted); }
 .thread-activity__steps li[data-status='running'] .thread-activity__step-mark { border-color: var(--tt-activity); background: var(--tt-activity); }
-.thread-activity__steps li[data-status='running'] .thread-activity__step-text { color: var(--tt-text); }
+.thread-activity__steps li[data-status='running'] .thread-activity__step-text { color: var(--tt-text); font-weight: 500; }
 .thread-activity__steps li[data-status='completed'] .thread-activity__step-text { color: var(--tt-text-muted); }
 .thread-activity__step-text { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__agents { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
@@ -195,7 +198,7 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
    working-view prototype, ADR-0134's November 5 amendment "the plan stays in view"): the opened plan's own checklist, a
    size smaller, one line an item, with its tick, its accent dot and its ring. At the minimum window it is the same list;
    each item is cut at its end there, and the opened plan reads it whole. */
-.thread-activity__steps.thread-activity-live__plan { flex-basis: 100%; min-width: 0; gap: 3px; margin: 0 0 4px; font-size: var(--tt-type-small); }
+.thread-activity__steps.thread-activity-live__plan { flex-basis: 100%; min-width: 0; gap: 4px; margin: 0 0 4px; font-size: var(--tt-type-small); }
 .thread-activity-live__plan .thread-activity__step-text { overflow: hidden; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity-live__plan .thread-activity__step-text { transition: color 220ms ease; }
