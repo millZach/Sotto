@@ -808,7 +808,8 @@ test.describe("Watcher's room on the built app", () => {
       const tabs = page.getByRole('tablist', { name: 'Page' }).getByRole('tab')
       await expect(tabs).toHaveCount(3)
       expect(await tabs.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label') ?? node.textContent))).toEqual(['Dictate', 'Watcher', 'Threads'])
-      await expect(switchTab(page, 'Watcher')).toHaveAttribute('title', 'Watcher')
+      // Each tile names its page and its keys (ADR-0158), the lit one too, since the foot shows no names.
+      await expect(switchTab(page, 'Watcher')).toHaveAttribute('title', /^Watcher \((Ctrl|Cmd)\+2\)$/u)
       const press = async (key: string, room: 'Dictate' | 'Watcher' | 'Threads'): Promise<void> => {
         await page.keyboard.press(key)
         await expect(switchTab(page, room)).toHaveAttribute('aria-selected', 'true')
@@ -847,7 +848,8 @@ test.describe("Watcher's room on the built app", () => {
       const composer = indexOf('Watcher message')
       expect(composer).toBeGreaterThan(needsYou)
       expect(indexOf('Watcher')).toBeGreaterThan(composer)
-      expect(order.slice(indexOf('Watcher'), indexOf('Watcher') + 4)).toEqual(['Watcher', 'Usage', 'Settings', 'Help'])
+      // A page link with keys of its own names them after its name (ADR-0158): "Usage (Ctrl+4)".
+      expect(order.slice(indexOf('Watcher'), indexOf('Watcher') + 4).map(name => name.replace(/ \((Ctrl|Cmd)\+\d\)$/u, ''))).toEqual(['Watcher', 'Usage', 'Settings', 'Help'])
       // The update follows Help where the app updates itself, retaining its own focus stop.
       if (await page.locator('.watcher-foot .update-control').count()) {
         await page.keyboard.press('Tab')

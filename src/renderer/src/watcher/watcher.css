@@ -409,6 +409,12 @@
 .watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-tag); background: var(--tt-code-bg); color: var(--tt-code-text);
   font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 
+/* Watcher's permissions stand in the composer's right-hand group, so in a narrow room their list, as wide as its lines
+   need, would open from the chip's left edge past the window's. There it opens back from the chip's right edge instead. */
+@container thread-pane (width < 1000px) {
+  .watcher-pane .thread-prompt .thread-chip-menu__list--foot { right: 0; left: auto; }
+}
+
 /* ---------- New Watcher ---------- */
 /* Zach's pick A of the New Watcher prototype: first in the composer's footer, where an ordinary thread says where it runs.
    Like the composer's other controls it is a text button (ADR-0113), in the secondary text with its icon, and a faint dot
@@ -559,17 +565,18 @@
 /* The answered line, once answered, is one row (the owner's ask on November 6, 2026): the check, who answered which
    thread, what was chosen or how many choices, and Open, each part keeping one line and the thread's name giving way
    first. The whole sentence, every choice in it, waits above the row as its tooltip while the pointer or the keyboard is
-   on it. These follow the answered line's first rules above, which they take the place of. */
+   on it. These follow the answered line's first rules above, which they take the place of. Watcher's own answered
+   question (#2228) is its words alone, so they stay on its line rather than wait above it. */
 .watcher-ask-receipt { position: relative; flex-wrap: nowrap; align-items: center; gap: 0 8px; min-width: 0; }
 .watcher-ask-receipt__mark { flex: none; color: var(--watcher-ready-ink); }
 .watcher-ask-receipt__lead { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-ask-receipt__detail { flex: none; max-width: 40%; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
 .watcher-ask-receipt__detail::before { margin-right: 8px; content: '·'; }
 .watcher-ask-receipt > .watcher-ask__open { margin-left: 2px; }
-.watcher-ask-receipt > .watcher-ask-receipt__words { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 2; display: none; flex: none; width: max-content; max-width: min(520px, 100%); padding: 6px 10px 7px;
+.watcher-ask-receipt:not([data-watcher-question]) > .watcher-ask-receipt__words { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 2; display: none; flex: none; width: max-content; max-width: min(520px, 100%); padding: 6px 10px 7px;
   border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm);
   color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; text-shadow: none; pointer-events: none; }
-.watcher-ask-receipt:is(:hover, :focus-within) > .watcher-ask-receipt__words { display: block; }
+.watcher-ask-receipt:not([data-watcher-question]):is(:hover, :focus-within) > .watcher-ask-receipt__words { display: block; }
 /* With the Watcher and Teams tabs, the lit tab already says Watcher: the room's name is said once, by the tab, and the
    heading stays for assistive tech (the owner's ask on November 6, 2026). */
 .watcher-room .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; min-width: 0; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
