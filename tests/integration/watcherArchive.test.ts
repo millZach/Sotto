@@ -114,9 +114,30 @@ it('answers reads, retries and new calls on archived work as it did before the w
     // A pass over the threads then waits for the index too, rather than take Watcher's archived start at the head of the
     // thread it started for the user's turn and pause its watch (#1783).
     service.observe(f.control.watcherSnapshot(), new Set())
-    expect(f.control.watcherRecordView().watches?.find(item => item.target.threadId === started.target.threadId)).toMatchObject({ pausedByUserMessageId: null })
+    const watchOf = () => f.control.watcherRecordView().watches!.find(item => item.target.threadId === started.target.threadId)!
+    expect(watchOf()).toMatchObject({ pausedByUserMessageId: null })
+    // Meanwhile the user's own message, already fenced when Sotto sent it, reaches the head of that thread. The pass the
+    // index lets through still knows it as Sotto's send, so the one instruction is not taken over a second time.
+    const userMessage = `synthetic-user-${randomUUID()}`, watched = { ...watchOf() }
+    const fenced = { target: started.target, at: new Date().toISOString(), lastRequestId: null,
+      userDrafts: [{ draftId: randomUUID(), digest: 'b'.repeat(64), messageId: userMessage }] }
+    await f.control.updateWatcher(record => { record.localTakeovers = [...(record.localTakeovers ?? []), structuredClone(fenced)] })
+    const host = f.control.watcherSnapshot()
+    vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...host,
+      threads: host.threads.map(thread => thread.id === started.target.threadId ? { ...thread, lastUserMessageId: userMessage } : thread) })
+    vi.spyOn(f.control, 'knownUserMessages').mockReturnValue(new Set([userMessage]))
+    service.observe(f.control.watcherSnapshot(), new Set([userMessage]))
     release()
     expect(await reading).toMatchObject({ status: 'ok', limits: { promptCount: 3 } })
+    await starting.ready()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(watchOf()).toMatchObject({ generation: watched.generation, lastUserMessageId: userMessage })
+    expect(f.control.watcherRecordView().localTakeovers?.find(item => item.target.threadId === started.target.threadId)).toEqual(fenced)
+    vi.restoreAllMocks()
+    await f.control.updateWatcher(record => {
+      record.localTakeovers = record.localTakeovers!.filter(item => item !== record.localTakeovers!.find(takeover => takeover.target.threadId === started.target.threadId))
+      Object.assign(record.watches!.find(item => item.id === watched.id)!, { lastUserMessageId: watched.lastUserMessageId, pausedByUserMessageId: null })
+    })
     Object.assign(f.control, { watcherArchive: archived })
   }
   expect(f.control.watcherRecordView().operations.some(item => operations.includes(item.id))).toBe(false)
