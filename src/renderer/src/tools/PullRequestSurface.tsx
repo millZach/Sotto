@@ -334,9 +334,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       <span className="pr-surface__lead">
         {chosen ? <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} onClick={() => show(null)}><ArrowLeft size={15} aria-hidden="true" /></button> : null}
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
-        {/* The thread's own pull request: its number is already in the thread's header and on Merge, so the line names
-            the surface, as Changes' does. Another pull request, opened from a list, names itself by its number. */}
-        {chosen ? <span className="pr-surface__number">#{detail.number}</span> : <span className="pr-surface__number">{t`Pull request`}</span>}
+        {/* Always its number: a narrow pane's header gives the thread's pull request number up first (ADR-0182). */}
+        <span className="pr-surface__number">#{detail.number}</span>
         <span className="pr-surface__tag">{stateLabel(detail)}</span>
       </span>
       <div className="tools-chrome__actions">
