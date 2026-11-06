@@ -52,11 +52,12 @@
 .usage-subtitle { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 /* The page's controls are three kinds, each drawn once: the views as words on the page's hairline, the filters as one
    filled group above it at the right (under it when the room is narrow), and the chart's own choices on its card. */
-.usage-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin-top: 18px; }
+.usage-bar { position: relative; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin-top: 18px; }
 /* The views: Overview, Subscriptions and Models as words, the open one in the text colour over the accent's 2px line, as
    a split's thread tabs are, on a hairline that runs the page's width. */
-.usage-tabs { position: relative; display: flex; gap: 24px; }
-.usage-tabs::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100cqi; height: 1px; background: var(--tt-hairline); pointer-events: none; }
+.usage-tabs { display: flex; gap: 24px; }
+/* The hairline: under the first line of the bar, which the 40px views always lead, whether the filters share it or wrap. */
+.usage-bar::before { content: ''; position: absolute; top: 39px; right: 0; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }
 .usage-tabs button { position: relative; z-index: 1; min-height: 40px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 500; white-space: nowrap; transition: color 120ms ease; }
 .usage-tabs button:hover { color: var(--tt-text-2); }
 .usage-tabs button:focus-visible { outline-offset: -2px; }
