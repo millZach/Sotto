@@ -445,12 +445,14 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
   /**
    * File IDs as NTFS gives them: 64 bits with a reuse count on top, so two files made one after the other round to one
    * number and differ only as bigints (#2145). Each file gets its own ID, given in the order first seen, just above 2^63,
-   * where all of them round to 2^63 as a number.
+   * where all of them round to 2^63 as a number, and a creation time as Windows keeps it, in 100 ns steps, which as
+   * milliseconds is a fraction.
    */
   const ROUNDED_ID = String(Number(2n ** 63n))
+  const WINDOWS_BIRTH_NS = 1_762_412_345_678_912_300n
   async function largeFileIds(): Promise<void> {
     const probe = await open(tmpdir(), 'r')
-    const handles = Object.getPrototypeOf(probe) as { stat(options?: { bigint?: boolean }): Promise<{ dev: number | bigint; ino: number | bigint }> }
+    const handles = Object.getPrototypeOf(probe) as { stat(options?: { bigint?: boolean }): Promise<{ dev: number | bigint; ino: number | bigint; birthtimeMs: number | bigint; birthtimeNs?: bigint }> }
     await probe.close()
     const native = handles.stat
     const ids = new Map<string, bigint>()
@@ -460,6 +462,8 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
       const id = ids.get(key) ?? 2n ** 63n + BigInt(ids.size + 1)
       ids.set(key, id)
       stats.ino = options?.bigint ? id : Number(id)
+      if (options?.bigint) { stats.birthtimeNs = WINDOWS_BIRTH_NS; stats.birthtimeMs = WINDOWS_BIRTH_NS / 1_000_000n }
+      else stats.birthtimeMs = Number(WINDOWS_BIRTH_NS) / 1e6
       return stats
     })
   }
@@ -505,6 +509,14 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     const saved = JSON.parse(positions.kept.get('thread')!) as RolloutPosition
     expect(BigInt(saved.ino!)).toBeGreaterThan(2n ** 63n)
     expect(saved.wholeId).toBe(true)
+  })
+
+  it('reads on from where it left off after a restart when file IDs and creation times are as Windows gives them', async () => {
+    const { root, positions, saved } = await savedThenGrown()
+    expect(saved).toMatchObject({ ino: String(2n ** 63n + 1n), wholeId: true })
+    expect(saved.birthtimeMs).toBeCloseTo(Number(WINDOWS_BIRTH_NS) / 1e6, 3)
+    // Kept as JSON, as the positions store keeps it, and read back by a later start.
+    expect(await readFrom(root, positions, JSON.parse(JSON.stringify(saved)) as RolloutPosition)).toEqual(['user-2'])
   })
 
   it('never lets a position saved with its whole file ID match another ID that rounds to it', async () => {
