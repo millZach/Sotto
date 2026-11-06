@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-bottom-navigation/**',
       'artifacts/watcher-top-lines/**',
       'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',

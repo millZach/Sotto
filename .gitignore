@@ -933,3 +933,12 @@ artifacts/watcher-top-lines/*
 !artifacts/watcher-top-lines/beside-dark-820.png
 !artifacts/watcher-top-lines/machine-warning-dark-400.png
 !artifacts/watcher-top-lines/machine-warning-light-400.png
+
+# Watcher bottom navigation: keep the cited headless frames.
+artifacts/watcher-bottom-navigation/*
+!artifacts/watcher-bottom-navigation/before-mac-820.png
+!artifacts/watcher-bottom-navigation/after-mac-820.png
+!artifacts/watcher-bottom-navigation/before-windows-beside-820.png
+!artifacts/watcher-bottom-navigation/after-windows-beside-820.png
+!artifacts/watcher-bottom-navigation/after-mac-beside-1280-light.png
+!artifacts/watcher-bottom-navigation/after-mac-beside-1600-light.png

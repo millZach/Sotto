@@ -153,7 +153,7 @@ async function openNeedsYou(page: Page): Promise<Locator> {
 
 async function openRoom(page: Page): Promise<void> {
   await switchTab(page, 'Watcher').click()
-  await expect(page.locator('.watcher-head__rooms')).toBeVisible()
+  await expect(page.locator('.watcher-foot .thread-nav__seg')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
 
@@ -247,15 +247,19 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-/** The header's way off the page stays inside the window, every composer reaches no lower than the window's floor,
+/** The footer stays inside the window, every composer stays above it,
     and the window controls never cover a pane header's controls. */
 async function roomEdges(page: Page, width: number, height: number): Promise<void> {
-  const way = await box(page.locator('.watcher-head__way'))
+  const way = await box(page.locator('.watcher-foot .thread-nav__foot'))
   expect(way.x + way.width, `the way off the page at ${width}x${height}`).toBeLessThanOrEqual(width)
+  expect(way.y + way.height, `the footer at ${width}x${height}`).toBe(height)
+  for (const pane of await page.locator('.watcher-pane, .watcher-beside').all()) {
+    expect(overlaps(way, await box(pane)), `footer clear of a pane at ${width}x${height}`).toBe(false)
+  }
   const controls = await box(page.locator('.threads-view__winctl'))
   for (const composer of await page.locator('.thread-workspace__compose .thread-prompt').all()) {
     const card = await box(composer)
-    expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(height)
+    expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(way.y)
   }
   for (const control of await page.locator('.thread-workspace__head :is(button, [role="meter"])').all()) {
     if (!await control.isVisible()) continue
@@ -309,7 +313,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__title', '.watcher-glance__why', '.watcher-glance__more',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
-      '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
+      '.watcher-foot .thread-nav__seg button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
@@ -708,17 +712,17 @@ test.describe("Watcher's room on the built app", () => {
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
-      // Shown, and not only to assistive technology (the name, below 450 pixels off macOS).
+      // Shown, and not only to assistive technology (the name, when the Watcher tab carries it).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
-        ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), ...head.querySelectorAll('.watcher-head__tabs button'), head.querySelector('.watcher-head__list'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       return {
         pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
         head: { ...rect(head), right: head.getBoundingClientRect().right - parseFloat(style.paddingRight), height: head.getBoundingClientRect().height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         // A label or count cut off by its own control.
-        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1, .watcher-head__tab')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
@@ -742,7 +746,7 @@ test.describe("Watcher's room on the built app", () => {
             // macOS draws its own traffic lights and has none of Sotto's window controls.
             room.querySelector<HTMLElement>('.threads-view__winctl')?.style.setProperty('display', mac ? 'none' : '')
           }, platform === 'darwin')
-          // Off macOS this checks the two narrowest panes, which this change leaves as they were.
+          // Off macOS this also checks the two narrowest panes with the same one-row header.
           for (const [width, height, steps] of platform === 'darwin' ? SPOTS : SPOTS.slice(0, 2)) {
             await resizeContentWindow(launched, width, height)
             await settle(page)
@@ -763,7 +767,8 @@ test.describe("Watcher's room on the built app", () => {
             if (platform === 'darwin') {
               // Nothing of the header's in the traffic lights' row where they are drawn, 16 to about 76 pixels in.
               for (const part of reading.parts.filter(candidate => candidate.top < 38)) expect.soft(part.left, `${part.name} clear of the traffic lights, ${where}`).toBeGreaterThanOrEqual(84)
-            } else expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+            }
+            expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
             result[`mac-header-${platform}-${appearance}-${Math.round(reading.pane)}px-${width}x${height}`] = reading
             if (platform === 'darwin') {
               // The capture draws the traffic lights in where macOS 26 puts them (16 pixels in and down, about 60 across),
@@ -785,7 +790,7 @@ test.describe("Watcher's room on the built app", () => {
     recorded.set('mac-header', result)
   })
 
-  test('the header switch answers the keyboard, and Tab follows the eye through the room', async () => {
+  test('the footer matches Threads, answers the keyboard, and Tab follows the eye through the room', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -800,41 +805,45 @@ test.describe("Watcher's room on the built app", () => {
         await expect(switchTab(page, room)).toHaveAttribute('aria-selected', 'true')
         await expect(switchTab(page, room)).toBeFocused()
       }
+      const footBoxes = () => page.locator('.thread-nav__foot :is([role="tab"], a, button)').evaluateAll(nodes => nodes.map(node => {
+        const box = node.getBoundingClientRect()
+        return { x: box.x, y: box.y, width: box.width, height: box.height }
+      }))
+      const threadsFoot = await footBoxes()
       await switchTab(page, 'Threads').focus()
       await press('ArrowLeft', 'Watcher')
-      // In Watcher's room the switch sits right after All threads, where the tabs were (Zach, October 27, 2026), and
-      // focus is on its lit owl.
-      await expect(page.locator('.watcher-head').getByRole('tab', { name: 'Watcher' })).toBeFocused()
-      const rooms = await box(page.locator('.watcher-head__rooms'))
-      const list = await box(allThreads(page))
-      expect(rooms.y + rooms.height).toBeLessThanOrEqual(44)
-      expect(rooms.x).toBeGreaterThanOrEqual(list.x + list.width)
-      expect(rooms.x).toBeLessThan(list.x + list.width + 16)
+      // The same controls keep the Threads footer's exact boxes; switching hands focus to the lit owl.
+      await expect(page.locator('.watcher-foot').getByRole('tab', { name: 'Watcher' })).toBeFocused()
+      expect(await footBoxes()).toEqual(threadsFoot)
+      await expect(page.locator('.watcher-head').getByRole('tablist', { name: 'Page' })).toHaveCount(0)
       await press('ArrowLeft', 'Dictate')
       await press('End', 'Threads')
       await press('Home', 'Dictate')
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (the room switch's one stop on the lit owl, the pages, the update control, then
-      // Stop all while threads Watcher started run), the needs-you line, the conversation, then the composer.
+      // All threads, Stop all, the needs-you line, conversation and composer precede the footer in Tab order.
       await allThreads(page).focus()
       const order: string[] = []
-      for (let step = 0; step < 50 && !order.includes('Watcher message'); step++) {
+      for (let step = 0; step < 70 && !order.includes('Help'); step++) {
         await page.keyboard.press('Tab')
         order.push(await focusedName(page))
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 4)).toEqual(['Watcher', 'Usage', 'Settings', 'Help'])
-      const stopAll = indexOf('Stop all threads Watcher started, 2 threads')
-      // The update control, where the app updates itself, sits between Help and Stop all.
-      expect(stopAll).toBeGreaterThanOrEqual(4)
-      expect(stopAll).toBeLessThanOrEqual(5)
+      expect(order[0]).toBe('Stop all threads Watcher started, 2 threads')
       expect(order.some(entry => /^More/.test(entry))).toBe(false)
       const needsYou = indexOf('Show 2 threads that need you')
-      expect(needsYou).toBeGreaterThan(stopAll)
-      expect(indexOf('Watcher message')).toBeGreaterThan(needsYou)
+      expect(needsYou).toBeGreaterThan(0)
+      const composer = indexOf('Watcher message')
+      expect(composer).toBeGreaterThan(needsYou)
+      expect(indexOf('Watcher')).toBeGreaterThan(composer)
+      expect(order.slice(indexOf('Watcher'), indexOf('Watcher') + 4)).toEqual(['Watcher', 'Usage', 'Settings', 'Help'])
+      // The update follows Help where the app updates itself, retaining its own focus stop.
+      if (await page.locator('.watcher-foot .update-control').count()) {
+        await page.keyboard.press('Tab')
+        await expect(page.locator('.watcher-foot .update-control')).toBeFocused()
+      }
       expect(indexOf(/^Open Visual gate flake to answer/)).toBe(-1)
       expect(indexOf(/^Open Streaming WAV stall/)).toBe(-1)
       const count = watcherPane(page).getByRole('button', { name: 'Show 2 threads that need you' })
@@ -2017,16 +2026,16 @@ test.describe("Watcher's room on the built app", () => {
   })
 
   test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
-    // The header off macOS: the tile, the name, All threads, the way off the page (the room switch, the pages and the
-    // update control), then Stop all while it shows, on one row. On macOS the header starts past the traffic lights, which its own journey checks.
+    // The header off macOS: the tile, the name, All threads and Stop all. Navigation is in the footer.
+    // On macOS the row starts past the traffic lights, which its own journey checks.
     test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
       // Shown, and not only to assistive technology (the name, in a narrow pane).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
-        ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), ...head.querySelectorAll('.watcher-head__tabs button'), head.querySelector('.watcher-head__list'),
+        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       const box = head.getBoundingClientRect()
       const present = (selector: string) => { const node = head.querySelector(selector); return node !== null && shown(node) }
@@ -2036,19 +2045,20 @@ test.describe("Watcher's room on the built app", () => {
         head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         labels: labels.map(node => node.textContent ?? ''),
+        hasTeams: head.querySelector('.watcher-head__tabs') !== null,
         present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), stopAll: present('.watcher-stop-all__button') },
         // A label or count cut off by its own control, or the name cut to an ellipsis.
-        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1, .watcher-head__tab')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
     const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
       a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
     const round = (value: number) => Math.round(value * 10) / 10
-    // watcher.css: while Stop all shows, Watcher's name gives way below this width.
-    const NAME_FROM = 500
-    // The narrowest pane that shows All threads' label beside Stop all, captured with three-digit counts.
-    const CAPTURE_100 = 570
+    // watcher.css: below this width the Watcher tab carries the name, when Teams is on.
+    const NAME_FROM = 600
+    // All threads' label returns at this width, captured with three-digit counts.
+    const CAPTURE_100 = 600
     const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
     await mkdir(evidence, { recursive: true })
     const readings: Record<string, unknown> = {}
@@ -2097,12 +2107,11 @@ test.describe("Watcher's room on the built app", () => {
                 const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all, ${counts} counts`
                 expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
                 // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
-                // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
+                // styles keep it (always without Teams, from NAME_FROM pixels with Teams).
                 const { name, ...always } = reading.present
-                // More Watcher actions went with the Threads in flight limit (#1183), and the tabs with Watched and Watcher's
-                // picture (October 27, 2026).
+                // More Watcher actions went with the Threads in flight limit (#1183); the remaining controls stay present.
                 expect.soft(always, where).toEqual({ tile: true, list: true, stopAll })
-                if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
+                expect.soft(name, `the name shown, ${where}`).toBe(!reading.hasTeams || reading.pane >= NAME_FROM)
                 for (const [index, part] of reading.parts.entries()) {
                   for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
                   expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
@@ -2670,7 +2679,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.getByText(/Watched by Watcher/)).toHaveCount(0)
       await expect(page.getByRole('button', { name: /^Watch |^Stop watching/ })).toHaveCount(0)
       await expect(page.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveCount(0)
-      await expect(page.locator('.watcher-head__rooms')).toHaveCount(0)
+      await expect(page.locator('.watcher-foot .thread-nav__seg')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'New Watcher' })).toHaveCount(0)
       // Stable lists the thread the projection names as Watcher, since stable has no Watcher to give it to.
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })

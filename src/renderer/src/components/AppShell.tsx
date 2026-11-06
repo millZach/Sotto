@@ -120,7 +120,7 @@ export function RoomTabFace({ room, named = true }: { readonly room: Room; reado
 }
 
 /**
- * How every room switch behaves, whatever it looks like (the strip's, the sidebar foot's, Watcher's floating one).
+ * How every room switch behaves, whatever it looks like (the strip's, the sidebar foot's, Watcher's footer).
  * Only the lit tab is in the Tab order, or the first when the open page lights none; arrow keys, Home and End move
  * and open as they go; a press that opens another room hands focus to the lit tab of the switch the opened page
  * draws, and this switch takes it when its page is the one opened and `shown` says it is the switch on screen. The

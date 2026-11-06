@@ -77,7 +77,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
  * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
- * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
+ * page draws. The sidebar foot and Watcher's footer both draw this one; the foot draws it `iconOnly`, its
  * lit tile showing no name, so every tile there carries its name as a tooltip.
  */
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
@@ -120,7 +120,7 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 
 /**
  * The way off the page as one row of icons: the room switch, a hairline, the other pages as icon links, then the update
- * control. The sidebar's foot draws it, and so does Watcher's header, which has no sidebar (ADR-0152).
+ * control. The sidebar's foot draws it, and so does Watcher's footer, which has no sidebar (ADR-0152).
  */
 export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl }: {
   readonly className: string
