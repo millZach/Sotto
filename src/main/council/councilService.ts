@@ -199,7 +199,13 @@ export class CouncilService {
     this.unhook?.(); this.unhook = undefined
     this.cancelTimer?.(); this.cancelTimer = undefined
     await this.climb.close()
-    // A prompt, snapshot removal or save already under way still owns this instance's record.
+  }
+
+  /**
+   * Done once the prompts, snapshot removals and saves already under way have saved their records. Only closing the runtime
+   * ends a send no provider is answering, so quitting waits for this beside that close, never before it.
+   */
+  async settled(): Promise<void> {
     while (this.pendingWork.size) await Promise.allSettled(this.pendingWork)
   }
 

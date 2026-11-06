@@ -37,7 +37,8 @@ async function fixture(options: { readonly control?: (control: CouncilServiceOpt
     bundles: new BranchBundles({ stagingDirectory: join(f.root, 'council-staging'), recordsPath: join(f.root, 'council-staging', 'records.json') }) })
   let council = make()
   await council.recover()
-  cleanups.push(async () => { await council.close() })
+  const stop = async () => { await council.close(); await council.settled() }
+  cleanups.push(stop)
   const view = (): CouncilView => council.views()[0]!
   const seat = (name: string): string => view().seats.find(item => item.seat === name)!.thread
   /** Waits until a seat's thread has been sent a prompt that says `words`, and answers it. */
@@ -50,7 +51,7 @@ async function fixture(options: { readonly control?: (control: CouncilServiceOpt
     await f.endTurn(thread, reply)
   }
   /** The Council alone stops and starts again over its record; `between` runs while it is stopped. */
-  const restart = async (between?: () => Promise<void>) => { await council.close(); await between?.(); council = make(); await council.recover() }
+  const restart = async (between?: () => Promise<void>) => { await stop(); await between?.(); council = make(); await council.recover() }
   return { ...f, origin, folder, view, seat, answer, restart, clock, get council() { return council } }
 }
 
@@ -222,7 +223,7 @@ it('asks once for a missing result block, and goes on with a stage only once a f
   await vi.waitFor(() => expect(f.view().rounds[0]).toMatchObject({ stage: 'fairness', leftOut: ['B'] }), { timeout: 20_000 })
 })
 
-it('drains an in-flight prompt and its final record before closing', async () => {
+it('closes without waiting for a prompt its provider is still taking, and settles once that prompt\'s final record is saved', async () => {
   const sending = deferred(), release = deferred()
   const f = await fixture({ control: control => new Proxy(control, { get: (target, key) => {
     if (key !== 'commandFromCouncil') { const value = Reflect.get(target, key) as unknown; return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value }
@@ -236,13 +237,14 @@ it('drains an in-flight prompt and its final record before closing', async () =>
   await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic question?', panelists: [{ modelId: f.model('codex').id, reasoningEffort: 'high' },
     { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
   await sending.promise
-  let closed = false
-  const closing = f.council.close().then(() => { closed = true })
-  // Let close's already-resolved work finish; only the explicitly held send should keep it open.
+  await f.council.close()
+  let settled = false
+  const settling = f.council.settled().then(() => { settled = true })
+  // Let what has already finished clear; only the explicitly held send should keep it open.
   await new Promise<void>(resolve => setImmediate(resolve))
-  expect(closed).toBe(false)
+  expect(settled).toBe(false)
   release.resolve()
-  await closing
+  await settling
   const saved = JSON.parse(await readFile(join(f.root, 'councils.json'), 'utf8')) as { councils: { turns: { delivery: string }[] }[] }
   expect(saved.councils[0]!.turns[0]!.delivery).toBe('accepted')
 })
@@ -390,7 +392,7 @@ it('records a snapshot removed only once Git no longer lists it, tries again at 
   let saved: Saved
   const open = (index: number) => { const copy = structuredClone(saved.councils[0]!); copy.id = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`; delete copy.settledAt; delete copy.snapshot.removedAt; return copy }
   await f.restart(async () => {
-    // The view marks removal before its save completes. Read the durable record only after close has drained it.
+    // The view marks removal before its save completes. Read the durable record only once the Council has stopped and settled.
     saved = JSON.parse(await readFile(file, 'utf8')) as Saved
     await writeFile(file, JSON.stringify({ ...saved, councils: Array.from({ length: 200 }, (_, index) => open(index + 1)) }))
   })
