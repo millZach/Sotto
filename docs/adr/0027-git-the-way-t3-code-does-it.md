@@ -250,6 +250,12 @@ Each line of the merge checklist now names its state rather than its requirement
 
 Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
-- **The five folds stand together** (`ee7252975`). **Description**, **Checks**, **Changed files**, **Linked pull requests** and **Open pull requests** stand together on one card, filled with no outline as ADR-0110 makes every container, where they were rows between hairlines with nothing under the last, so the surface ends where the card does and an open fold grows inside it. They keep their order and stay closed until pressed. A closed **Description** shows its first line under its name, in up to two lines.
+- **The five folds stand together** (`ee7252975`). **Description**, **Checks**, **Changed files**, **Linked pull requests** and **Open pull requests** stand together on one card, filled with no outline as ADR-0110 makes every container, where they were rows between hairlines with nothing under the last, so the surface ends where the card does and an open fold grows inside it. They keep their order and stay closed until pressed. A closed **Description** shows its first sentence under its name, in up to two lines, where the panel has no room for the previews of the amendment below.
 
 The checklist's lines, Merge's words and what each fold reads are as the amendments above say.
+
+## Amendment, November 5, 2026: the closed folds show what they hold where nothing would scroll
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/pr-previews/`, kept outside the repository, and picked B.
+
+Every fold still stays closed until pressed, as the November 4 amendments have it. Where the surface's body has room, a closed head shows the first of what it holds, most needed first (`8ae093197`): under **Checks** the checks that still stand, failed, waiting on an approval or running, up to three, each with its mark, name, state and time; under **Description** its whole first paragraph in up to four lines, in place of its first sentence; under **Changed files** the three most changed files with their lines, and eight once every other head's preview fits. Each count is tried before the frame is drawn and kept only if the body does not scroll, so a window of 820 by 560 shows none and a long blocked checklist shows fewer; while a fold is open the counts hold, so opening one never moves the heads above it. The previews are for the eye only and are hidden from assistive technology; each head's name is unchanged and is still what a press opens.
