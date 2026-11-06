@@ -209,9 +209,9 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
    as a whole one ("WalCh"). The line's end (RunsOn in ChangesSurface.tsx) is held at the edge while the rest of the
    line is out of sight, and only while held does it draw: the line fades out into its own colour (its wash, hover or
    pick over the code background, so nothing but the letters under it changes) and ends on an arrow in the muted ink:
-   the line goes on that way. It is a hint, so it has no fill of its own and a column of them down the edge reads as
-   one quiet margin, not a row of buttons; an ellipsis there went unseen, and a filled tab in the body ink was the
-   loudest thing on the page. Pointing at the line lifts its arrow to the secondary ink, and pointing at the arrow
+   the line goes on that way. It is a tag (ADR-0110), filled and with no outline, but in the sunken fill tags take with
+   the line's own wash over it and the muted ink, so a column of them down the edge reads as one quiet margin, not a row
+   of buttons; an ellipsis there went unseen, and a tab in the body ink was the loudest thing on the page. Pointing at the line lifts its arrow to the secondary ink, and pointing at the arrow
    gives it the hover fill of a control: a press scrolls the file to the line's end, as Right does on a focused line.
    A line whose end is in view draws nothing, and a comment, which wraps, has none. */
 :is(.changes-line, .changes-split__cell) { --changes-fill: transparent; --changes-over: transparent; }
@@ -226,14 +226,14 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 }
 .changes-line__on::after {
   content: '\2192'; display: grid; place-items: center; width: 3ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
-  background: linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
+  background: linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-surface-sunken);
   color: var(--tt-text-muted); font-family: var(--tt-font-ui); cursor: pointer; transition: color 120ms ease;
 }
 :is(.changes-line, .changes-split__cell):hover .changes-line__on::after { color: var(--tt-text-2); }
 /* On a picked line the accent's wash would sink the muted ink, so the arrow takes the body's, as the numbers do. */
 :is(.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true']) .changes-line__on::after { color: var(--tt-text); }
 .changes-line__on:hover::after {
-  background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-code-bg);
+  background: linear-gradient(var(--tt-hover-strong), var(--tt-hover-strong)), linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-surface-sunken);
   color: var(--tt-text);
 }
 @media (prefers-reduced-motion: reduce) { .changes-line__on::after { transition: none; } }

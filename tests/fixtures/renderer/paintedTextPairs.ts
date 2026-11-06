@@ -34,6 +34,8 @@ const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-over
 /** Changes lines: context on the code background, and added and removed lines with their tint over it. */
 const context = ['code-bg'] as const, added = ['code-bg', '--changes-added'] as const, removed = ['code-bg', '--changes-removed'] as const
 const lines = [context, added, removed] as const
+/** The same lines' washes over the sunken fill a tag at a line's end takes. */
+const tagLines = [['surface-sunken'], ['surface-sunken', '--changes-added'], ['surface-sunken', '--changes-removed']] as const
 /** The words that changed, with the stronger wash over their line's. */
 const wordAdded = [...added, '--changes-word-added'] as const, wordRemoved = [...removed, '--changes-word-removed'] as const
 /** What a line's words are drawn in: the code's own ink, and syntax colour on the keys Changes draws them. */
@@ -72,8 +74,9 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
   // The tab where a line of code runs on past the edge, on its line's own colour, and the earlier wording's toggle, pointed at.
   ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab and earlier wording, pointed at'),
-  // The runs-on arrow rests in the muted ink (as a line number does) and lifts to the secondary ink on a pointed line.
-  ...lines.map(line => pair('text-2', [...line, hover], 'runs-on arrow on a pointed line')),
+  // The runs-on arrow is a tag in the sunken fill with its line's wash over it: muted at rest, the secondary ink on a pointed
+  // line, the body's on a picked one.
+  ...tagLines.flatMap(line => [pair('text-muted', line, 'runs-on arrow at rest'), pair('text-2', [...line, hover], 'runs-on arrow on a pointed line'), pair('text', [...line, picked], 'runs-on arrow on a picked line')]),
   // A shut earlier wording's glimpse: the words that went in the removed ink, on the toggle at rest, pointed at and on a picked line.
   ...each('--changes-ink-removed', [[...context, 'hover-strong'], [...context, picked, 'hover-strong']], 'words that went in a glimpse, pointed at'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
