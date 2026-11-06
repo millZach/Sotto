@@ -1,11 +1,16 @@
+import { ClimbService } from './climbService'
+import type { AgentHostCommand, AgentHostResult } from '../agents/host'
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
-import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
+import { isThreadProviderConnected, PROVIDER_LABELS, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, councilFairnessEffort, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
-  type CouncilCommandResult, type CouncilEstimate, type CouncilKind, type CouncilRoundView, type CouncilSeatChoice, type CouncilView } from '../../shared/council'
+import { COUNCIL_ASKED_WORDS_MAX, COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, councilFairnessEffort, COUNCIL_REMOTE_PROVIDERS, councilSeatsInForce, councilSeatsReady, COUNCIL_VIEWS_MAX, councilEffort,
+  councilFramingViewSchema, type CouncilCitation, type CouncilCommand, type CouncilCommandResult, type CouncilEstimate, type CouncilKind, type CouncilOpen, type CouncilRoundView, type CouncilSeatChoice,
+  type CouncilView } from '../../shared/council'
+import { COUNCIL_VERDICT_NOTE, type CouncilAskedBy, type CouncilUserMessage, type StartClimbInput } from '../../shared/councilTools'
+import { askedKey, deliveryEnded, deliveryText, dueDelivery, originFree, sendDelivery } from './councilDelivery'
 import { citationQuoted, COUNCIL_BLOCK_NAMES, findCouncilBlock, isSourceLink, parseCitation, readAmendBlock, readAnswerBlock, readCruxBlock, readCruxResultBlock, readFairnessBlock,
   readFramingBlock, readReviewBlock, withoutCouncilBlocks, type BlockRead, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilReview } from '../../shared/councilBlocks'
 import { councilCounts } from '../../shared/councilFlow'
@@ -60,9 +65,14 @@ export interface CouncilCoordinator {
   useCouncil(hooks: CouncilControlHooks): () => void
   commandFromCouncil(command: CouncilCoordinatorCommand, guard: () => void): Promise<AgentState>
   hasPendingThreadWork(threadId: string): boolean
+  hasUserDraft?(threadId: string): boolean
+  stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   refreshCouncilObservation(): void
 }
 export interface CouncilHost {
+  closeCouncilJudge?(threadId: string): Promise<void>
+  execute?(command: AgentHostCommand): Promise<AgentHostResult>
+  executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void>
   /** Records a prompt as Sotto's before the provider hears it, as a wake-up is, so no client shows it as the user's. */
   recordSottoMessage(threadId: string, messageId: string): Promise<void>
@@ -80,6 +90,8 @@ export interface CouncilServiceOptions {
   readonly stageDeadline: () => number
   /** Takes a snapshot of uncommitted work; the check's own snapshot code, in a staging folder of the Council's. */
   readonly bundles: Pick<BranchBundles, 'snapshotOf'>
+  /** The panel in Settings → Council, read when a thread's agent asks for a Council (ADR-0177, November 5, 2026). */
+  readonly panel?: () => { readonly panelists: readonly (CouncilSeatChoice | null)[]; readonly chair: CouncilSeatChoice | null }
   readonly run?: RunGitCommand
   readonly now?: () => number
   readonly newId?: () => string
@@ -99,6 +111,7 @@ const clip = (text: string, max: number): string => text.length <= max ? text : 
 
 export class CouncilService {
   private records: CouncilRecord[] = []
+  readonly climb: ClimbService
   private readonly store: CouncilStore
   private storageError: string | undefined
   private readonly run: RunGitCommand
@@ -110,12 +123,23 @@ export class CouncilService {
   private messages = new Set<string>()
   /** Threads with a create or a send on its way. */
   private readonly sending = new Set<string>()
+  private readonly pendingWork = new Set<Promise<unknown>>()
   /** The conversation each Council's threads read, while Sotto runs. */
   private readonly histories = new Map<string, { readonly title: string; readonly quoted: QuotedHistory; readonly parts: readonly string[] }>()
   /** Whether each followed prompt's thread waited on the user at the last pass, so a change there is told. */
   private readonly waiting = new Map<string, boolean>()
-  private readonly listeners = new Set<(councils: readonly string[]) => void>()
+  private readonly listeners = new Set<(councils: readonly string[], open?: readonly CouncilOpen[]) => void>()
+  /** Each delivery's draft, so the coordinator finds its message ID and guard. */
+  private deliveries = new Map<string, CouncilRecord>()
   private watched: readonly string[] = []
+  /** The Councils that owe a verdict to the thread that asked for them, so an update looks at those alone. */
+  private pending: readonly CouncilRecord[] = []
+  private get awaiting(): boolean { return this.pending.length > 0 }
+  /** Each thread's Councils its agent asked for, and each asking thread and message, rebuilt with the rest of the index. */
+  private askedByThread = new Map<string, CouncilRecord[]>()
+  private askedKeys = new Set<string>()
+  /** The thread and user message of each start an agent asked for that is still on its way. */
+  private readonly asking = new Set<string>()
   private unhook: (() => void) | undefined
   private cancelTimer: (() => void) | undefined
   private closed = false
@@ -126,6 +150,8 @@ export class CouncilService {
     this.newId = options.newId ?? randomUUID
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, Math.max(0, delay)); timer.unref?.(); return () => clearTimeout(timer) })
     this.store = new CouncilStore(options.directory)
+    this.climb = new ClimbService({ ...options, save: () => this.save(), unavailable: () => this.storageError,
+      changed: (open?: readonly CouncilOpen[]) => this.tell(this.climb.records.map(record => record.id), open) })
   }
 
   /**
@@ -139,35 +165,57 @@ export class CouncilService {
       return undefined
     })
     await clearTemporaryCouncilEvidence(this.options.directory)
-    this.records = file?.councils ?? []
+    this.records = (file?.councils ?? []).filter((record): record is CouncilRecord => !('phase' in record))
+    this.climb.recover((file?.councils ?? []).filter(record => 'phase' in record))
     const at = new Date(this.clock()).toISOString()
     for (const record of this.records) {
       for (const evidence of record.evidence) if (evidence.kind === 'frozen' && !evidence.retained && !evidence.removedAt) evidence.removedAt = at
       for (const turn of record.turns) if (turn.delivery === 'dispatching') { turn.delivery = 'unconfirmed'; turn.outcome = 'unknown' }
+      if (record.askedBy?.delivery?.state === 'dispatching') record.askedBy.delivery.state = 'unconfirmed'
       const round = currentRound(record)
       if (isOpen(record) && !record.stoppedAt && round.stage !== 'done' && round.question === undefined) { record.stoppedAt = at; record.stoppedBecause = 'words-lost' }
-      if (record.settledAt && record.snapshot && !record.snapshot.removedAt) void this.removeSnapshot(record)
+      if (record.settledAt && record.snapshot && !record.snapshot.removedAt) void this.track(this.removeSnapshot(record))
     }
     this.reindex()
     this.unhook = this.options.control.useCouncil({
-      observe: (snapshot, threads) => this.observe(snapshot, threads),
-      observedThreadIds: () => this.watched,
-      madeThread: threadId => this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
-      messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId,
-      guardFor: draftId => { const held = this.byDraft.get(draftId); return held ? () => this.guard(held.record, held.turn) : undefined },
-      ownsMessage: messageId => this.messages.has(messageId),
+      observe: (snapshot, threads) => { this.observe(snapshot, threads); this.climb.observe(snapshot) },
+      observedThreadIds: () => { const climb = this.climb.observedThreadIds(); return climb.length ? [...this.watched, ...climb] : this.watched },
+      madeThread: threadId => this.climb.madeThread(threadId) || this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
+      messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId ?? this.deliveries.get(draftId)?.askedBy?.delivery?.messageId ?? this.climb.turnForDraft(draftId)?.turn.messageId
+        ?? this.climb.deliveryForDraft(draftId),
+      guardFor: draftId => {
+        const held = this.byDraft.get(draftId), delivery = this.deliveries.get(draftId), climb = this.climb.turnForDraft(draftId)
+        return held ? () => this.guard(held.record, held.turn) : delivery ? () => this.deliveryGuard(delivery) : climb ? () => this.climb.guard(climb.record, climb.turn)
+          : this.climb.deliveryForDraft(draftId) ? () => { if (this.closed) throw new Error('Sotto is closing.') } : undefined
+      },
+      ownsMessage: messageId => this.messages.has(messageId) || this.climb.ownsMessage(messageId),
     })
     if (file) await this.persist()
     this.changed(this.records.filter(isOpen))
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.closed = true
     this.unhook?.(); this.unhook = undefined
     this.cancelTimer?.(); this.cancelTimer = undefined
+    await this.climb.close()
   }
 
-  onChanged(listener: (councils: readonly string[]) => void): () => void {
+  /**
+   * Done once the prompts, snapshot removals and saves already under way have saved their records. Only closing the runtime
+   * ends a send no provider is answering, so quitting waits for this beside that close, never before it.
+   */
+  async settled(): Promise<void> {
+    while (this.pendingWork.size) await Promise.allSettled(this.pendingWork)
+  }
+
+  private track<T>(work: Promise<T>): Promise<T> {
+    const pending = work.finally(() => { this.pendingWork.delete(pending) })
+    this.pendingWork.add(pending)
+    return pending
+  }
+
+  onChanged(listener: (councils: readonly string[], open?: readonly CouncilOpen[]) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
@@ -223,7 +271,116 @@ export class CouncilService {
 
   // Starting.
 
-  private async start(command: Extract<CouncilCommand, { type: 'start' }>): Promise<CouncilCommandResult> {
+  // A thread's agent asks (ADR-0177, amendment of November 5, 2026).
+
+  /**
+   * Whether this thread's agent already started a Council or a Climb for this message of the user's: one message asks for
+   * one, so an agent cannot start several on one request.
+   */
+  private askedAlready(threadId: string, userMessageId: string): boolean {
+    const key = askedKey(threadId, userMessageId)
+    return this.asking.has(key) || this.askedKeys.has(key) || this.climb.askedFor(key)
+  }
+  /**
+   * Whether a thread's agent may start one now, and who asked: Sotto open, its record readable, the thread on this
+   * computer, and no Council or Climb already started for this message of the user's.
+   */
+  private admitAsk(threadId: string, user: CouncilUserMessage): { readonly asked: CouncilAskedBy } | { readonly ok: false; readonly message: string } {
+    if (this.closed) return { ok: false, message: t`Sotto is closing. Nothing was started.` }
+    if (this.storageError) return { ok: false, message: this.storageError }
+    if (this.askedAlready(threadId, user.id)) return { ok: false, message: t`This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started.` }
+    const asked = this.askedBy(this.options.control.watcherSnapshot().threads.find(thread => thread.id === threadId), user)
+    return asked ? { asked } : { ok: false, message: t`A Council or a Climb starts from a thread on this computer. Nothing was started.` }
+  }
+  /** Holds the user's message while a start for it is on its way, so a second call for it in the meantime is refused. */
+  private async reserved<Result>(threadId: string, userMessageId: string, start: () => Promise<Result>): Promise<Result> {
+    const key = askedKey(threadId, userMessageId)
+    this.asking.add(key)
+    try { return await start() } finally { this.asking.delete(key) }
+  }
+  private askedBy(thread: AgentThread | undefined, user: CouncilUserMessage): CouncilAskedBy | undefined {
+    if (!thread?.providerId) return undefined
+    const words = user.text.replace(/\s+/gu, ' ').trim()
+    return { provider: thread.providerId, userMessageId: user.id, ...words ? { words: clip(words, COUNCIL_ASKED_WORDS_MAX) } : {} }
+  }
+
+  /**
+   * A Council asked by the origin thread's own agent, because the user's own newest message there asked for one. The seats
+   * are always the panel in Settings → Council; the agent chooses only the question. It starts at once, and the verdict
+   * goes back to the thread once its fairness check is done.
+   */
+  async askFromThread(threadId: string, question: string, user: CouncilUserMessage): Promise<CouncilCommandResult> {
+    const admitted = this.admitAsk(threadId, user)
+    if (!('asked' in admitted)) return admitted
+    const asked = admitted.asked, snapshot = this.options.control.watcherSnapshot()
+    const panel = this.options.panel?.() ?? { panelists: [null, null, null], chair: null }
+    const seats = councilSeatsInForce(panel.panelists, panel.chair, snapshot.models)
+    if (!councilSeatsReady(seats)) return { ok: false, message: t`A seat in Settings → Council has no connected model. Tell the user to choose another model for it there. Nothing was started.` }
+    const choice = (seat: NonNullable<typeof seats.chair>): CouncilSeatChoice => ({ modelId: seat.modelId, reasoningEffort: seat.reasoningEffort })
+    return this.reserved(threadId, user.id, () => this.start({ type: 'start', originThread: threadId, question, panelists: seats.panelists.map(seat => choice(seat!)), chair: choice(seats.chair!) }, asked))
+  }
+
+  /** A Climb's setup asked by the builder's own agent, at the user's request; the user still approves it in the drawer. */
+  async climbFromThread(threadId: string, input: StartClimbInput, user: CouncilUserMessage): Promise<{ readonly ok: true; readonly climb: string } | { readonly ok: false; readonly message: string }> {
+    const admitted = this.admitAsk(threadId, user)
+    if (!('asked' in admitted)) return admitted
+    return this.reserved(threadId, user.id, () => this.climb.startFromThread(threadId, input, admitted.asked, this.options.panel?.() ?? { panelists: [null, null, null], chair: null }))
+  }
+
+  /** What read_council tells the asking thread: the Councils and Climbs its agent started, or one of them in full. */
+  readForThread(threadId: string, council?: string): Record<string, unknown> {
+    const mine = this.askedByThread.get(threadId) ?? []
+    const climbs = this.climb.askedFrom(threadId)
+    const one = (record: CouncilRecord): Record<string, unknown> => {
+      const round = record.rounds[0]!, done = this.verdictReady(record)
+      return { council: record.id, kind: 'council', status: record.settledAt ? 'settled' : record.stoppedAt ? 'stopped' : done ? 'verdict' : 'working', stage: round.stage,
+        ...round.question !== undefined ? { question: clip(round.question, 2_000) } : {},
+        delivery: record.askedBy?.delivery?.state ?? (done ? 'queued' : 'not yet') }
+    }
+    if (council) {
+      const record = mine.find(item => item.id === council)
+      if (record) {
+        const round = record.rounds[0]!
+        // In full here, as Send to drafts it: a delivery cut to fit one message says this reads all of it.
+        return { ...one(record), ...this.verdictReady(record) ? { verdict: this.draft(record, round, round.verdict!) } : {} }
+      }
+      const climb = climbs.find(item => item.id === council)
+      return climb ? this.climb.readForThread(climb) : { status: 'refused', message: 'That is not a Council or Climb this thread started.' }
+    }
+    return { councils: [...mine.slice(-20).map(one), ...climbs.slice(-20).map(record => this.climb.readForThread(record, false))] }
+  }
+
+  /** Whether the first round's verdict may go to the thread that asked: as Send to allows it, once the fairness check is done. */
+  private verdictReady(record: CouncilRecord): boolean {
+    const round = record.rounds[0]
+    return round?.verdict !== undefined && fairnessDone(record, round, this.clock())
+  }
+  /** A delivery goes only while Sotto runs; a Council the user stopped or settled before its verdict sends nothing. */
+  private deliveryGuard(record: CouncilRecord): void {
+    if (this.closed || record.settledAt) throw new Error('This Council\'s verdict is no longer wanted.')
+  }
+
+  /** Sends each verdict that is due to the thread whose agent asked for it, once that thread is free. */
+  private deliverFree(snapshot: AgentHostSnapshot, thread: (id: string) => AgentThread | undefined): void {
+    if (this.closed) return
+    for (const record of this.pending) {
+      const asked = record.askedBy, round = record.rounds[0]
+      if (!asked || deliveryEnded(asked) || asked.delivery?.state === 'dispatching' || !isOpen(record) || !round || this.sending.has(record.originThread)) continue
+      // A verdict whose words a restart with Keep local history off lost can never go.
+      if (round.stage === 'done' && round.verdict === undefined) { dueDelivery(asked).state = 'failed'; void this.persist(); continue }
+      if (!this.verdictReady(record)) continue
+      const origin = thread(record.originThread)
+      if (!originFree(snapshot, origin, this.options.control)) continue
+      const delivery = dueDelivery(asked)
+      this.deliveries.set(delivery.draftId, record)
+      const text = deliveryText(COUNCIL_VERDICT_NOTE, `Council ${record.id}\n\n${this.draft(record, round, round.verdict!)}`)
+      this.sending.add(record.originThread)
+      void this.track(sendDelivery({ control: this.options.control, host: this.options.host, save: () => this.save() }, record.originThread, delivery, text, () => this.deliveryGuard(record))
+        .finally(async () => { this.sending.delete(record.originThread); this.reindex(); await this.persist(); this.changed([record]) }))
+    }
+  }
+
+  private async start(command: Extract<CouncilCommand, { type: 'start' }>, asked?: CouncilAskedBy): Promise<CouncilCommandResult> {
     const snapshot = this.options.control.watcherSnapshot()
     const origin = snapshot.threads.find(thread => thread.id === command.originThread)
     if (!origin || origin.remoteHost === true || origin.hostId !== undefined && origin.hostId !== this.options.control.hostId()) {
@@ -258,12 +415,15 @@ export class CouncilService {
       history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, parts: parts.length, ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
       seats: ready.map(entry => this.seatOf(entry.seat, entry.role, entry.model!, entry.choice, this.newId())),
       rounds: [{ index: 0, askedAt: now, stage: 'framing', leftOut: [], objections: [], question: command.question, evidence: { source: `${id}:legacy` } }],
-      turns: [], deadlineMinutes: this.options.stageDeadline(),
+      turns: [], deadlineMinutes: this.options.stageDeadline(), ...asked ? { askedBy: asked } : {},
     }
     this.histories.set(id, { title: origin.title, quoted, parts })
     this.records.push(record)
     this.evict()
-    return this.moved(record)
+    const result = await this.moved(record)
+    // Asked by the thread's own agent: its pane opens the Council's tab, so the user sees it start.
+    if (asked) this.tell([record.id], [{ thread: origin.id, mode: 'ask' }])
+    return result
   }
 
   private readyModel(models: readonly AgentModel[], choice: CouncilSeatChoice): AgentModel | undefined {
@@ -344,9 +504,11 @@ export class CouncilService {
   // Following the threads.
 
   private observe(snapshot: AgentHostSnapshot, view?: Pick<HostThreadsView, 'thread'>): void {
-    if (this.closed || this.watched.length === 0) return
+    if (this.closed) return
     let list: Map<string, AgentThread> | undefined
     const thread = (id: string): AgentThread | undefined => view ? view.thread(id) : (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id)
+    if (this.awaiting) this.deliverFree(snapshot, thread)
+    if (this.watched.length === 0) return
     const moved: CouncilRecord[] = []
     let told = false
     for (const record of this.records) {
@@ -378,7 +540,7 @@ export class CouncilService {
       }
       if (changed) moved.push(record)
     }
-    for (const record of moved) void this.moved(record)
+    for (const record of moved) void this.track(this.moved(record))
     if (!moved.length) this.dispatchFree(snapshot, thread)
     if (told && !moved.length) this.tell(this.records.filter(record => isOpen(record) && record.turns.some(turn => this.waiting.has(turn.id))).map(record => record.id))
   }
@@ -391,12 +553,15 @@ export class CouncilService {
     this.changed([record])
     const snapshot = this.options.control.watcherSnapshot()
     let list: Map<string, AgentThread> | undefined
-    this.dispatchFree(snapshot, id => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id))
+    const thread = (id: string): AgentThread | undefined => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id)
+    this.dispatchFree(snapshot, thread)
+    if (this.awaiting) this.deliverFree(snapshot, thread)
     return { ok: true, council: record.id }
   }
 
   /** Sends each queued prompt whose thread is free: idle, connected, asking the user nothing and holding no other work. */
   private dispatchFree(snapshot: AgentHostSnapshot, thread: (id: string) => AgentThread | undefined): void {
+    if (this.closed) return
     for (const record of this.records) {
       if (!isOpen(record) || record.stoppedAt) continue
       for (const turn of record.turns) {
@@ -411,7 +576,7 @@ export class CouncilService {
           if (!held || !isThreadProviderConnected(snapshot, held) || held.clientConnected === false || isThreadTurnRunning(held) || held.requests.length > 0
             || this.options.control.hasPendingThreadWork(held.id)) continue
         }
-        void this.dispatch(record, turn, seat)
+        void this.track(this.dispatch(record, turn, seat))
       }
     }
   }
@@ -480,11 +645,12 @@ export class CouncilService {
       .catch(() => undefined)
   }
   /**
-   * Makes a seat's thread in the snapshot, or in the thread's own folder when it has none, at the narrowest permission its
-   * provider offers, linked to the origin thread.
+   * Makes a seat's thread in the snapshot, or in the thread's own folder when it has none, at the origin's permission
+   * or the closest safer mode its provider offers, linked to the origin thread.
    */
   private async createThread(record: CouncilRecord, seat: CouncilSeat): Promise<boolean> {
-    const models = this.options.control.watcherSnapshot().models
+    const { models, threads } = this.options.control.watcherSnapshot()
+    const origin = threads.find(thread => thread.id === record.originThread)
     const model = resolveModel(models, seat.modelId)
     if (!model?.ready) return false
     const name = seat.seat === COUNCIL_CHAIR ? 'Council chair' : `Council ${seat.seat}`
@@ -492,7 +658,7 @@ export class CouncilService {
       const created = await this.options.control.commandFromCouncil({ type: 'create-thread', threadId: seat.thread, projectId: record.projectId, title: clip(`${name}: ${record.originTitle}`, 120),
         titleSource: 'user', modelId: seat.modelId, ...record.snapshot ? { workingCopy: 'independent' as const, existingWorktreePath: record.snapshot.path } : { workingCopy: 'shared' as const },
         ...seat.effort ? { reasoningEffort: seat.effort } : {},
-        ...narrowestPermission(model) }, () => { if (record.stoppedAt || record.settledAt) throw new Error('This Council has stopped.') })
+        ...seatPermission(origin, model, models) }, () => { if (record.stoppedAt || record.settledAt) throw new Error('This Council has stopped.') })
       if (created.error || !created.host.threads.some(thread => thread.id === seat.thread)) return false
       await this.options.host.setDelegatedBy(seat.thread, record.originThread)
       seat.started = true
@@ -538,7 +704,7 @@ export class CouncilService {
       case 'answer': {
         const answer = readAnswerBlock(text, target.seat, criteriaOf(round).map(criterion => criterion.id))
         read = answer
-        if (answer.ok) { summary = answer.value.answer; void this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : []), researchOf(round)) }
+        if (answer.ok) { summary = answer.value.answer; void this.track(this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : []), researchOf(round))) }
         break
       }
       case 'review': {
@@ -546,7 +712,7 @@ export class CouncilService {
         read = review
         if (review.ok) {
           summary = reviewSummary(review.value)
-          void this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })), researchOf(round))
+          void this.track(this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })), researchOf(round)))
         }
         break
       }
@@ -755,6 +921,7 @@ export class CouncilService {
       evidence: record.evidence.map(item => item.kind === 'frozen' ? { ...item, removed: item.removedAt !== undefined }
         : { kind: item.kind, id: item.id, ...(item.kind === 'legacyGit' ? { removed: item.snapshot.removedAt !== undefined } : {}) }),
       origin: { thread: record.originThread, title: threads.get(record.originThread)?.title ?? record.originTitle },
+      ...record.askedBy ? { askedBy: { provider: record.askedBy.provider, words: record.askedBy.words ?? null } } : {},
       status, ...record.stoppedBecause && record.stoppedAt ? { stoppedBecause: record.stoppedBecause } : {},
       ...record.snapshot ? { snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true,
         removed: record.snapshot.removedAt !== undefined } } : {},
@@ -840,8 +1007,18 @@ export class CouncilService {
         if (!record.stoppedAt && !turn.superseded && !isFinal(turn)) { watched.add(turn.thread); followed.add(turn.id) }
       }
     }
+    const deliveries = new Map<string, CouncilRecord>(), pending: CouncilRecord[] = [], askedKeys = new Set<string>(), askedByThread = new Map<string, CouncilRecord[]>()
+    for (const record of this.records) {
+      if (!record.askedBy) continue
+      askedKeys.add(askedKey(record.originThread, record.askedBy.userMessageId))
+      askedByThread.set(record.originThread, [...askedByThread.get(record.originThread) ?? [], record])
+      const delivery = record.askedBy.delivery
+      if (delivery) { deliveries.set(delivery.draftId, record); messages.add(delivery.messageId) }
+      // A verdict owed to the thread that asked keeps that thread followed until it goes.
+      if (!deliveryEnded(record.askedBy) && isOpen(record)) { pending.push(record); watched.add(record.originThread) }
+    }
     for (const id of [...this.waiting.keys()]) if (!followed.has(id)) this.waiting.delete(id)
-    this.byDraft = byDraft; this.messages = messages
+    this.byDraft = byDraft; this.messages = messages; this.deliveries = deliveries; this.pending = pending; this.askedKeys = askedKeys; this.askedByThread = askedByThread
     const list = [...watched]
     if (list.join('\n') !== this.watched.join('\n')) { this.watched = list; this.options.control.refreshCouncilObservation() }
   }
@@ -849,7 +1026,7 @@ export class CouncilService {
   private save(): Promise<void> {
     const keep = this.options.historyEnabled()
     if (this.storageError) return Promise.resolve()
-    return this.store.writeLatest(() => ({ version: 2, councils: this.records.map(record => savedRecord(record, keep)) }), keep)
+    return this.track(this.store.writeLatest(() => ({ version: 2, councils: [...this.records.map(record => savedRecord(record, keep)), ...this.climb.saved(keep)] }), keep))
   }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 
@@ -857,9 +1034,9 @@ export class CouncilService {
     this.reschedule()
     this.tell(records.map(record => record.id))
   }
-  private tell(ids: readonly string[]): void {
+  private tell(ids: readonly string[], open?: readonly CouncilOpen[]): void {
     if (!ids.length) return
-    for (const listener of this.listeners) listener(ids)
+    for (const listener of this.listeners) listener(ids, open)
   }
   /** One wake for the next deadline or the fairness check's two minutes, never a poll. */
   private reschedule(): void {
@@ -873,14 +1050,35 @@ export class CouncilService {
       const due = this.records.filter(record => isOpen(record) && !record.stoppedAt)
       for (const record of due) advanceRound(record, this.stageClock())
       this.changed(due)
+      // The fairness check's two minutes passing can let a verdict go to the thread that asked for it.
+      if (this.awaiting) {
+        const snapshot = this.options.control.watcherSnapshot()
+        let list: Map<string, AgentThread> | undefined
+        this.deliverFree(snapshot, id => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id))
+      }
     }, next - now)
   }
 }
 
-/** The narrowest permission a model offers (decision 2): Ask for approval where it is offered, or its provider's own mode that allows nothing. */
-export function narrowestPermission(model: AgentModel): { readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string } {
-  if (model.providerModes?.length) return { providerMode: (model.providerModes.find(mode => mode.allows === 'nothing') ?? model.providerModes[0]!).id }
-  const mode = nearestRuntimeMode('approval-required', model.runtimeModes ?? [])
+/** The origin's permission at creation, compared by allowance across mode kinds; unknown modes keep the old narrowest start. */
+function seatPermission(origin: AgentThread | undefined, model: AgentModel, models: readonly AgentModel[]): { readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string } {
+  if (origin?.providerMode && model.providerModes?.some(mode => mode.id === origin.providerMode)) return { providerMode: origin.providerMode }
+  const allowances = ['nothing', 'edits', 'everything'] as const
+  const allowance = origin?.providerMode
+    ? resolveModel(models, origin.modelId)?.providerModes?.find(mode => mode.id === origin.providerMode)?.allows
+    : origin?.runtimeMode === 'full-access' ? 'everything' : origin?.runtimeMode === 'approval-required' ? 'nothing' : origin?.runtimeMode ? 'edits' : undefined
+  if (model.providerModes?.length) {
+    let selected: (typeof model.providerModes)[number] | undefined
+    for (const mode of model.providerModes) {
+      if (allowance && mode.allows && allowances.indexOf(mode.allows) <= allowances.indexOf(allowance)
+        && (!selected || allowances.indexOf(mode.allows) > allowances.indexOf(selected.allows!))) selected = mode
+    }
+    return { providerMode: (selected ?? model.providerModes.find(mode => mode.allows === 'nothing') ?? model.providerModes[0]!).id }
+  }
+  const desired = origin?.providerMode
+    ? allowance === 'everything' ? 'full-access' : allowance === 'edits' ? 'auto-accept-edits' : 'approval-required'
+    : origin?.runtimeMode ?? 'approval-required'
+  const mode = nearestRuntimeMode(desired, model.runtimeModes ?? [])
   return mode ? { runtimeMode: mode } : {}
 }
 

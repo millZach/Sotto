@@ -51,6 +51,12 @@ msgstr "{0, plural, one {Watcher proposes moving # thread to {machine}. Nothing 
 msgid "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
 msgstr "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
 
+#. placeholder {0}: record.completedTurns
+#. placeholder {1}: planned ?? '∞'
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} / {1} turns"
+msgstr "{0} / {1} turns"
+
 #. placeholder {0}: item.letter
 #. placeholder {1}: item.first
 #. placeholder {2}: item.of
@@ -73,6 +79,12 @@ msgstr "{0} confirmed by {1}, rejected by {2}, unchecked by {3} of {4}"
 msgid "{0} doesn’t have {1}"
 msgstr "{0} doesn’t have {1}"
 
+#. placeholder {0}: preview.files
+#. placeholder {1}: preview.bytes
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} files · {1} bytes"
+msgstr "{0} files · {1} bytes"
+
 #. placeholder {0}: item.finding
 #. placeholder {0}: item.letter
 #. placeholder {1}: item.count
@@ -92,6 +104,12 @@ msgstr "{0} It waits on its card in Watcher’s conversation for your press befo
 msgid "{0} on {machine}"
 msgstr "{0} on {machine}"
 
+#. placeholder {0}: referencePreview.files
+#. placeholder {1}: referencePreview.bytes
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "{0} reference files · {1} bytes"
+msgstr "{0} reference files · {1} bytes"
+
 #. placeholder {0}: objection.seat
 #. placeholder {1}: objection.passage
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -108,6 +126,11 @@ msgstr "{0} there"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "{0}, asked again"
 msgstr "{0}, asked again"
+
+#. placeholder {0}: other.name
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{0}, shared from another tailnet"
+msgstr "{0}, shared from another tailnet"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
@@ -204,6 +227,10 @@ msgstr "{count, plural, one {# more} other {# more}}"
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "{count, plural, one {# waiting} other {# waiting}}"
 msgstr "{count, plural, one {# waiting} other {# waiting}}"
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "{count, plural, one {↑ Watcher’s question} other {↑ # questions from Watcher}}"
+msgstr "{count, plural, one {↑ Watcher’s question} other {↑ # questions from Watcher}}"
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "{count, plural, one {It can’t stop one thread on {host}} other {It can’t stop # threads on {host}}}"
@@ -571,6 +598,10 @@ msgid "{name} pressed Link again. Press it too to keep the link."
 msgstr "{name} pressed Link again. Press it too to keep the link."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name} read your desk {count} times, from {from}, while their desks were open."
+msgstr "{name} read your desk {count} times, from {from}, while their desks were open."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "{name} read your desk."
 msgstr "{name} read your desk."
 
@@ -627,6 +658,10 @@ msgstr "{name}: use not reported, the {noun} resets {resetsLong}"
 msgid "{name}'s"
 msgstr "{name}'s"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s computer can't reach this one."
+msgstr "{name}'s computer can't reach this one."
+
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s computer did not answer. Nothing is waiting to send. Ask again when it is on."
 msgstr "{name}'s computer did not answer. Nothing is waiting to send. Ask again when it is on."
@@ -642,6 +677,14 @@ msgstr "{name}'s computer has taken a lot of asks in the last few minutes. Nothi
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s computer is still answering another ask. Nothing was run. Ask again in a minute."
 msgstr "{name}'s computer is still answering another ask. Nothing was run. Ask again in a minute."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s computer may be off, or not shared with you. {name} shares it from Tailscale's Machines page. Then check again."
+msgstr "{name}'s computer may be off, or not shared with you. {name} shares it from Tailscale's Machines page. Then check again."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s computer may be off. Check again when it is on."
+msgstr "{name}'s computer may be off. Check again when it is on."
 
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s computer no longer has this link. Nothing was asked. Make a new code on the Teams tab to link again."
@@ -679,6 +722,10 @@ msgstr "{name}’s load and what runs there"
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name}'s Sotto is too old to check a link. Asks and desks still work. Ask {name} to update it, then check again."
+msgstr "{name}'s Sotto is too old to check a link. Asks and desks still work. Ask {name} to update it, then check again."
 
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "{name}'s Watcher"
@@ -868,6 +915,14 @@ msgstr "{used}% used, past the allowance."
 msgid "{waiting, plural, one {# needs you} other {# need you}}"
 msgstr "{waiting, plural, one {# needs you} other {# need you}}"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+msgstr "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {Show what needs you} other {Show the # things that need you}}"
+msgstr "{waiting, plural, one {Show what needs you} other {Show the # things that need you}}"
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
 msgstr "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
@@ -1000,6 +1055,14 @@ msgstr "<0>Parakeet v3</0> or <1>v2</1>, by NVIDIA."
 msgid "<0>Ready.</0> {size} on this computer."
 msgstr "<0>Ready.</0> {size} on this computer."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "0: unusable; 5: useful with substantial gaps; 10: fully meets the goal with specific evidence."
+msgstr "0: unusable; 5: useful with substantial gaps; 10: fully meets the goal with specific evidence."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb."
+msgstr "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb."
+
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A check"
 msgstr "A check"
@@ -1096,9 +1159,37 @@ msgstr "About <0>{average}</0> a day"
 msgid "About <0>{perPrompt}</0> tokens per prompt"
 msgstr "About <0>{perPrompt}</0> tokens per prompt"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About evidence"
+msgstr "About evidence"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About judges"
+msgstr "About judges"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About kept evidence"
+msgstr "About kept evidence"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About stop rules"
+msgstr "About stop rules"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About targets"
+msgstr "About targets"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "About the goal"
+msgstr "About the goal"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "About these numbers"
 msgstr "About these numbers"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Absolute score"
+msgstr "Absolute score"
 
 #. The macOS Privacy & Security pane, as System Settings names it
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
@@ -1141,13 +1232,17 @@ msgstr "Add another computer"
 msgid "Add another folder"
 msgstr "Add another folder"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Add criterion"
+msgstr "Add criterion"
+
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Added to a new thread's composer. It is sent when you send."
 msgstr "Added to a new thread's composer. It is sent when you send."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
-msgid "Advice, worked out here: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
-msgstr "Advice, worked out here: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
+msgid "Advice from both desks: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
+msgstr "Advice from both desks: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
 
 #. First-run setup: the group of steps about coding agents
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -1192,6 +1287,10 @@ msgstr "All threads, {count}. Show the list"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "All time"
 msgstr "All time"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Allow fix briefs to this builder within these limits."
+msgstr "Allow fix briefs to this builder within these limits."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Allow microphone access if asked"
@@ -1301,6 +1400,10 @@ msgstr "Anything you skipped in setup waits here, with your shortcut, microphone
 msgid "Appearance"
 msgstr "Appearance"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Approve & start round 0"
+msgstr "Approve & start round 0"
+
 #: src/renderer/src/platformCopy.ts
 msgid "Approve access in macOS"
 msgstr "Approve access in macOS"
@@ -1309,21 +1412,45 @@ msgstr "Approve access in macOS"
 msgid "Approve access in Windows"
 msgstr "Approve access in Windows"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Artifact files (one absolute path per line)"
+msgstr "Artifact files (one absolute path per line)"
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "As of {when}"
 msgstr "As of {when}"
+
+#: src/renderer/src/watcher/TeamDesks.tsx
+msgid "As of {when}, again every 2 minutes while open"
+msgstr "As of {when}, again every 2 minutes while open"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Ask"
+msgstr "Ask"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask {threadName}"
+msgstr "Ask {threadName}"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask a follow-up"
 msgstr "Ask a follow-up"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Ask Sotto…"
-msgstr "Ask Sotto…"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Ask chair for proposal"
+msgstr "Ask chair for proposal"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
 msgstr "Ask the Council"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask this thread"
+msgstr "Ask this thread"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher"
+msgstr "Ask Watcher"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Ask Watcher instead"
@@ -1332,6 +1459,16 @@ msgstr "Ask Watcher instead"
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Ask Watcher…"
 msgstr "Ask Watcher…"
+
+#. Under a Council an agent started at the user's request, when the user's words are not kept.
+#: src/renderer/src/features/council/AskedByLine.tsx
+msgid "Asked by {provider} in this thread, at your request."
+msgstr "Asked by {provider} in this thread, at your request."
+
+#. Under a Council an agent started at the user's request; the provider's name, then the user's own message quoted.
+#: src/renderer/src/features/council/AskedByLine.tsx
+msgid "Asked by {provider} in this thread, because you said “{words}”"
+msgstr "Asked by {provider} in this thread, because you said “{words}”"
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Asking {machine}"
@@ -1346,8 +1483,8 @@ msgid "Asking the Council…"
 msgstr "Asking the Council…"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
-msgid "Asks still go through Watcher. {name}'s Teams tab lists each time you read their desk, and their left-out projects never come."
-msgstr "Asks still go through Watcher. {name}'s Teams tab lists each time you read their desk, and their left-out projects never come."
+msgid "Asks still go through Watcher. {name}'s Teams tab lists the reads, and their left-out projects never come. Leave and come back: the desks stay open."
+msgstr "Asks still go through Watcher. {name}'s Teams tab lists the reads, and their left-out projects never come. Leave and come back: the desks stay open."
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
@@ -1383,9 +1520,21 @@ msgstr "at least {shown}"
 msgid "At least <0>{perPrompt}</0> tokens per prompt"
 msgstr "At least <0>{perPrompt}</0> tokens per prompt"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images"
+msgstr "Attach images"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images, or paste or drop them"
+msgstr "Attach images, or paste or drop them"
+
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Attach to a thread"
 msgstr "Attach to a thread"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Attempts"
+msgstr "Attempts"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
@@ -1426,6 +1575,18 @@ msgstr "Back to Teams"
 msgid "Bars"
 msgstr "Bars"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Baseline"
+msgstr "Baseline"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Before round 0"
+msgstr "Before round 0"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Better scores"
+msgstr "Better scores"
+
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "blocked"
 msgstr "blocked"
@@ -1437,6 +1598,14 @@ msgstr "both of you"
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Branch sent"
 msgstr "Branch sent"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Builder"
+msgstr "Builder"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Building"
+msgstr "Building"
 
 #. The kind of work a delegated thread or check was asked for.
 #: src/renderer/src/watcher/checkQueueWords.ts
@@ -1524,17 +1693,30 @@ msgstr "Cancel update, and leave {target} on {from}"
 msgid "Cancelled."
 msgstr "Cancelled."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Candidate"
+msgstr "Candidate"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Capturing baseline"
+msgstr "Capturing baseline"
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Carried {carried}."
 msgstr "Carried {carried}."
 
 #. The Council's chair, as a seat's label
 #. The Council's chair, on its plate in the chamber
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
 msgstr "Chair"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Chair’s proposal"
+msgstr "Chair’s proposal"
 
 #. Opens the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -1579,16 +1761,29 @@ msgid "ChatGPT through Codex"
 msgstr "ChatGPT through Codex"
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Check again"
 msgstr "Check again"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Check both ways"
+msgstr "Check both ways"
 
 #: src/renderer/src/features/updates/updateControlLogic.ts
 msgid "Check for updates"
 msgstr "Check for updates"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Check it works both ways"
+msgstr "Check it works both ways"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Check that the microphone above is the one you speak into, then say something."
 msgstr "Check that the microphone above is the one you speak into, then say something."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Check that this computer is on and that your tailnet's access rules let {name} reach it. Then check again."
+msgstr "Check that this computer is on and that your tailnet's access rules let {name} reach it. Then check again."
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Check the download"
@@ -1674,6 +1869,10 @@ msgstr "Chinese"
 msgid "Choose a folder"
 msgstr "Choose a folder"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Choose a model"
+msgstr "Choose a model"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a project folder"
 msgstr "Choose a project folder"
@@ -1685,6 +1884,10 @@ msgstr "Choose a range of a year or less to see each day. The totals still cover
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a speech model"
 msgstr "Choose a speech model"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Choose a thread"
+msgstr "Choose a thread"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Choose All to see every transcript."
@@ -1734,6 +1937,10 @@ msgstr "Choose threads…"
 msgid "Claude Code subscription"
 msgstr "Claude Code subscription"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated."
+msgstr "Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated."
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Cleanup model"
 msgstr "Cleanup model"
@@ -1769,6 +1976,14 @@ msgstr "Clear search"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Clear usage…"
 msgstr "Clear usage…"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Climb"
+msgstr "Climb"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged."
+msgstr "Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged."
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
@@ -1859,6 +2074,18 @@ msgstr "Compacting Watcher’s conversation."
 msgid "Compacting."
 msgstr "Compacting."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Compare with fixed evidence"
+msgstr "Compare with fixed evidence"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Completed"
+msgstr "Completed"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Completed / planned"
+msgstr "Completed / planned"
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Completed dictation text"
 msgstr "Completed dictation text"
@@ -1945,10 +2172,18 @@ msgstr "Connecting to your microphone."
 msgid "Connecting..."
 msgstr "Connecting..."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Constraints"
+msgstr "Constraints"
+
 #. Follows a token count: how much of the model’s context Watcher uses
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "context"
 msgstr "context"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Context for the setup chair (optional)"
+msgstr "Context for the setup chair (optional)"
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "context, compacts at {point}"
@@ -1958,6 +2193,10 @@ msgstr "context, compacts at {point}"
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Continue"
 msgstr "Continue"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Continue Climb"
+msgstr "Continue Climb"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Continue with the handover"
@@ -2086,6 +2325,10 @@ msgstr "Could not start"
 msgid "Could not stop"
 msgstr "Could not stop"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Council mode"
+msgstr "Council mode"
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Counted, so the next start sees it"
 msgstr "Counted, so the next start sees it"
@@ -2097,6 +2340,10 @@ msgstr "CPU"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Criteria, one to five, one on each line"
 msgstr "Criteria, one to five, one on each line"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Criterion"
+msgstr "Criterion"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check"
@@ -2111,6 +2358,10 @@ msgstr "Crux check, a lookup: {0}"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check: {0}"
 msgstr "Crux check: {0}"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Custom"
+msgstr "Custom"
 
 #. Colour scheme
 #: src/renderer/src/features/onboarding/LookStep.tsx
@@ -2140,6 +2391,7 @@ msgstr "Decisions it noted"
 #. The cleanup model or mode Sotto chooses itself
 #. The cleanup model or mode Sotto chooses itself
 #: src/renderer/src/components/CleanupModelFields.tsx
+#: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Default"
 msgstr "Default"
 
@@ -2192,6 +2444,10 @@ msgstr "deleting or making irreversible changes"
 #: src/renderer/src/features/memory/questions.ts
 msgid "Deleting or making irreversible changes"
 msgstr "Deleting or making irreversible changes"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Design"
+msgstr "Design"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Devin account"
@@ -2288,6 +2544,7 @@ msgstr "done"
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Done"
 msgstr "Done"
 
@@ -2408,6 +2665,10 @@ msgstr "Edits files and runs any command without asking, anywhere on this comput
 msgid "Edits files without asking. Asks before a command that changes something."
 msgstr "Edits files without asking. Asks before a command that changes something."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Effort"
+msgstr "Effort"
+
 #. First-run setup: the group of steps about other computers and the iPhone
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Elsewhere"
@@ -2421,9 +2682,9 @@ msgstr "English"
 msgid "Enter your OpenRouter API key first."
 msgstr "Enter your OpenRouter API key first."
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Esc stops it"
-msgstr "Esc stops it"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
+msgstr "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "Every product event"
@@ -2441,9 +2702,22 @@ msgstr "Every step after this one can be skipped and finished later in Settings.
 msgid "Everywhere"
 msgstr "Everywhere"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Evidence"
 msgstr "Evidence"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exclude paths or globs"
+msgstr "Exclude paths or globs"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exclusions and limits"
+msgstr "Exclusions and limits"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Exhibit"
+msgstr "Exhibit"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Expired"
@@ -2452,6 +2726,14 @@ msgstr "Expired"
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Expires"
 msgstr "Expires"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Export round"
+msgstr "Export round"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Export to a new folder"
+msgstr "Export to a new folder"
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "failed"
@@ -2513,6 +2795,10 @@ msgstr "Findings: {found}."
 msgid "Finish setup"
 msgstr "Finish setup"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Finished"
+msgstr "Finished"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "First question"
 msgstr "First question"
@@ -2521,6 +2807,10 @@ msgstr "First question"
 msgid "First turn ended"
 msgstr "First turn ended"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Fixed reference (optional)"
+msgstr "Fixed reference (optional)"
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Fold"
 msgstr "Fold"
@@ -2528,6 +2818,14 @@ msgstr "Fold"
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Fold updates into a button"
 msgstr "Fold updates into a button"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Folder"
+msgstr "Folder"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Folder path"
+msgstr "Folder path"
 
 #: src/renderer/src/platformCopy.ts
 msgid "Follow macOS or minimize non-essential motion."
@@ -2607,6 +2905,22 @@ msgstr "From the last Watcher, on {provider}. Context, not a new request."
 msgid "from the question"
 msgstr "from the question"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Frozen copies go only to the selected judges. Git is optional. Links, caches, environment files and private keys are excluded by default. Over a limit, nothing is partially captured."
+msgstr "Frozen copies go only to the selected judges. Git is optional. Links, caches, environment files and private keys are excluded by default. Over a limit, nothing is partially captured."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary."
+msgstr "Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Gain over baseline"
+msgstr "Gain over baseline"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Gain over reference"
+msgstr "Gain over reference"
+
 #: src/renderer/src/languages.ts
 msgid "German"
 msgstr "German"
@@ -2614,10 +2928,6 @@ msgstr "German"
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Get {name}'s desk"
 msgstr "Get {name}'s desk"
-
-#: src/renderer/src/watcher/TeamDesks.tsx
-msgid "Get it again"
-msgstr "Get it again"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Get started"
@@ -2627,13 +2937,17 @@ msgstr "Get started"
 msgid "Get the iPhone beta"
 msgstr "Get the iPhone beta"
 
+#: src/renderer/src/watcher/TeamDesks.tsx
+msgid "Getting {name}'s desk…"
+msgstr "Getting {name}'s desk…"
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Getting started"
 msgstr "Getting started"
 
-#: src/renderer/src/watcher/TeamDesks.tsx
-msgid "Getting…"
-msgstr "Getting…"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Git working folder"
+msgstr "Git working folder"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Give F9 to Sotto"
@@ -2663,6 +2977,18 @@ msgstr "Go to the permission from {title} in this conversation"
 msgid "Go to the question from {title} in this conversation"
 msgstr "Go to the question from {title} in this conversation"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Go to Watcher’s question in this conversation: {asked}"
+msgstr "Go to Watcher’s question in this conversation: {asked}"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Goal"
+msgstr "Goal"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Goal preset"
+msgstr "Goal preset"
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Got a code from your teammate?"
 msgstr "Got a code from your teammate?"
@@ -2676,10 +3002,9 @@ msgstr "Got it"
 msgid "Grok subscription"
 msgstr "Grok subscription"
 
-#. A Council chamber layout: tiered seats round an altar, the chair at the back.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Half circle"
-msgstr "Half circle"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Guardrail"
+msgstr "Guardrail"
 
 #. The tag on a message that carries a handover
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -2697,6 +3022,10 @@ msgstr "Handover from the last Watcher"
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Handover of the last Watcher"
 msgstr "Handover of the last Watcher"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Held"
+msgstr "Held"
 
 #. The page link: the Help page
 #: src/renderer/src/components/AppShell.tsx
@@ -2720,6 +3049,10 @@ msgstr "Hide the files it changes"
 msgid "Hide the handover"
 msgstr "Hide the handover"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Hide threads that need you"
+msgstr "Hide threads that need you"
+
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Hide what it said"
 msgstr "Hide what it said"
@@ -2727,6 +3060,14 @@ msgstr "Hide what it said"
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Hide what it said, {title}"
 msgstr "Hide what it said, {title}"
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Hide what needs you"
+msgstr "Hide what needs you"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Higher"
+msgstr "Higher"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "History could not be cleared. Your saved transcripts are unchanged."
@@ -2739,6 +3080,10 @@ msgstr "History is off. New dictations keep their numbers only; older transcript
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "History is off. New dictations keep their numbers only."
 msgstr "History is off. New dictations keep their numbers only."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "History is off. Temporary evidence is written to disk while this Climb runs, then removed at Settle, quit or the next start. Its text and results are not retained."
+msgstr "History is off. Temporary evidence is written to disk while this Climb runs, then removed at Settle, quit or the next start. Its text and results are not retained."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Hold {held} anywhere to talk."
@@ -2797,6 +3142,10 @@ msgstr "How should Sotto keep you in the loop?"
 msgid "How Watcher works"
 msgstr "How Watcher works"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "How your teammate shares theirs"
+msgstr "How your teammate shares theirs"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "ideas"
 msgstr "ideas"
@@ -2835,6 +3184,10 @@ msgstr "Importance"
 msgid "Importing past conversations, retention, export, and deletion. This answer does not enable imports or change your settings."
 msgstr "Importing past conversations, retention, export, and deletion. This answer does not enable imports or change your settings."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Improve the clarity, hierarchy and usability of the selected design while preserving its purpose."
+msgstr "Improve the clarity, hierarchy and usability of the selected design while preserving its purpose."
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "in progress"
 msgstr "in progress"
@@ -2864,6 +3217,10 @@ msgstr "in Tools on the Threads page"
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
 msgstr "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Incumbent"
+msgstr "Incumbent"
 
 #. After a token figure
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -3059,6 +3416,20 @@ msgstr "Its snapshot of {branch} has been removed."
 msgid "Japanese"
 msgstr "Japanese"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judge"
+msgstr "Judge"
+
+#. placeholder {0}: (turn.seat ?? 0) + 1
+#. placeholder {0}: index + 1
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judge {0}"
+msgstr "Judge {0}"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Judging"
+msgstr "Judging"
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Keep history"
 msgstr "Keep history"
@@ -3108,6 +3479,10 @@ msgstr "Kept here"
 msgid "Kept on {from}"
 msgstr "Kept on {from}"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Kept rounds"
+msgstr "Kept rounds"
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Key saved"
 msgstr "Key saved"
@@ -3120,6 +3495,7 @@ msgstr "Key verified."
 msgid "Keyboard"
 msgstr "Keyboard"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Kind"
 msgstr "Kind"
@@ -3204,11 +3580,6 @@ msgstr "Launch when you sign in"
 msgid "Launch when your Mac starts"
 msgstr "Launch when your Mac starts"
 
-#. The Council chamber's layout menu
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Layout"
-msgstr "Layout"
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Leave my keys alone"
 msgstr "Leave my keys alone"
@@ -3238,10 +3609,6 @@ msgstr "Less"
 msgid "Let phones connect"
 msgstr "Let phones connect"
 
-#: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Let your Watcher and a teammate's talk, direct over your tailnet"
-msgstr "Let your Watcher and a teammate's talk, direct over your tailnet"
-
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
 msgstr "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
@@ -3250,6 +3617,10 @@ msgstr "Lets your iPhone reach this computer over your tailnet. Only phones you 
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Light"
 msgstr "Light"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Limits"
+msgstr "Limits"
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Limits come from each provider and count all use of the account, in Sotto or anywhere else. The thin mark on each bar shows how much of that window's time is left."
@@ -3272,8 +3643,16 @@ msgid "Link again"
 msgstr "Link again"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link another teammate"
+msgstr "Link another teammate"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Link with {name}"
 msgstr "Link with {name}"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link with a code"
+msgstr "Link with a code"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Link with a teammate"
@@ -3307,18 +3686,21 @@ msgstr "Loading transcripts."
 msgid "Loading your threads"
 msgstr "Loading your threads"
 
-#. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Long table"
-msgstr "Long table"
-
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "longest freeze"
 msgstr "longest freeze"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Looking at this computer's Tailscale…"
+msgstr "Looking at this computer's Tailscale…"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Looking for speech models on this computer…"
 msgstr "Looking for speech models on this computer…"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Lower"
+msgstr "Lower"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Lowest: {lowestName}, {lowestWindow}"
@@ -3393,9 +3775,17 @@ msgstr "Maximize"
 msgid "Maximize Sotto"
 msgstr "Maximize Sotto"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Maximum score"
+msgstr "Maximum score"
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "may slow down"
 msgstr "may slow down"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Meaningful gain"
+msgstr "Meaningful gain"
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Measure again"
@@ -3518,6 +3908,10 @@ msgstr "Microphones are unavailable. Check your input device, then test again."
 msgid "Minimize Sotto"
 msgstr "Minimize Sotto"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Minimum score"
+msgstr "Minimum score"
+
 #. How OpenRouter picks a host for cleanup
 #. How OpenRouter picks a host for cleanup
 #. The room switch between Dictate, Watcher and Threads
@@ -3529,6 +3923,10 @@ msgstr "Mode"
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Model"
 msgstr "Model"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Model turns"
+msgstr "Model turns"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -3650,6 +4048,10 @@ msgstr "Moving…"
 msgid "Muse subscription"
 msgstr "Muse subscription"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Name"
+msgstr "Name"
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Name a model and the work it suits, or say you have no preference."
 msgstr "Name a model and the work it suits, or say you have no preference."
@@ -3667,6 +4069,7 @@ msgid "Needs attention"
 msgstr "Needs attention"
 
 #. A group of threads in Watcher’s room: they wait on the user
+#: src/renderer/src/watcher/TeamsPage.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Needs you"
 msgstr "Needs you"
@@ -3687,14 +4090,18 @@ msgstr "Needs your choice"
 msgid "Neither of you has an open pull request here."
 msgstr "Neither of you has an open pull request here."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "New criterion"
+msgstr "New criterion"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "New folder path"
+msgstr "New folder path"
+
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
 msgstr "New thread"
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "New thread (/new)"
-msgstr "New thread (/new)"
 
 #. placeholder {0}: project.title
 #: src/renderer/src/popup/PopupApp.tsx
@@ -3756,6 +4163,10 @@ msgstr "No history from {from} yet"
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "No input tokens in this range, so none came from cache."
 msgstr "No input tokens in this range, so none came from cache."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "No limit"
+msgstr "No limit"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "No limits read"
@@ -3955,6 +4366,10 @@ msgstr "not answering"
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Not checked yet. A check reaches each computer once and carries nothing."
+msgstr "Not checked yet. A check reaches each computer once and carries nothing."
+
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Not confirmed yet"
 msgstr "Not confirmed yet"
@@ -4072,8 +4487,8 @@ msgid "Nothing answered at {server}. Nothing was changed. Check the server is on
 msgstr "Nothing answered at {server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
-msgid "Nothing from {name} yet. Get {name}'s desk asks their computer once."
-msgstr "Nothing from {name} yet. Get {name}'s desk asks their computer once."
+msgid "Nothing from {name} yet."
+msgstr "Nothing from {name} yet."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Nothing heard yet."
@@ -4208,6 +4623,10 @@ msgstr "One line by model: {names}."
 msgid "One line by provider: {names}."
 msgstr "One line by provider: {names}."
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "One of you makes a code and sends it however you like, and the other pastes it. One code links both ways. It works once, for 30 minutes."
+msgstr "One of you makes a code and sends it however you like, and the other pastes it. One code links both ways. It works once, for 30 minutes."
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "One shortcut from speech to text"
 msgstr "One shortcut from speech to text"
@@ -4289,6 +4708,10 @@ msgstr "Open System Settings"
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
 msgid "Open System Settings at Privacy & Security, {paneName}"
 msgstr "Open System Settings at Privacy & Security, {paneName}"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Open Tailscale's Machines"
+msgstr "Open Tailscale's Machines"
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Open the {provider} install guide"
@@ -4386,6 +4809,14 @@ msgstr "Other ({count})"
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Other apps"
 msgstr "Other apps"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447), so {names} can't reach this computer. Free one; Sotto looks again every 30 seconds."
+msgstr "Other apps hold the tailnet ports a team link uses (8445 to 8447), so {names} can't reach this computer. Free one; Sotto looks again every 30 seconds."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then make or paste the code again."
+msgstr "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then make or paste the code again."
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Other holds {list}."
@@ -4570,6 +5001,10 @@ msgstr "PR #{number} open"
 msgid "Preferences stay on this computer. Sotto does not send them to any provider."
 msgstr "Preferences stay on this computer. Sotto does not send them to any provider."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preparing proposal"
+msgstr "Preparing proposal"
+
 #: src/renderer/src/App.tsx
 msgid "Preparing Sotto..."
 msgstr "Preparing Sotto..."
@@ -4598,6 +5033,10 @@ msgstr "Press {pressed} anywhere to talk."
 msgid "Press {pressed} to start and stop."
 msgstr "Press {pressed} to start and stop."
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Press ••• beside {machine}, then Share."
+msgstr "Press ••• beside {machine}, then Share."
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Press <0/> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing."
 msgstr "Press <0/> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing."
@@ -4609,6 +5048,10 @@ msgstr "Press a shortcut and speak, and your words arrive as text wherever you w
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Press it to start and again to finish. Your text is always copied before Sotto pastes it."
 msgstr "Press it to start and again to finish. Your text is always copied before Sotto pastes it."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Press Open Tailscale's Machines."
+msgstr "Press Open Tailscale's Machines."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Press Test microphone, then say a few words."
@@ -4625,6 +5068,14 @@ msgstr "Presses ⌘V in the app you were using. Some apps block it."
 #: src/renderer/src/platformCopy.ts
 msgid "Presses Ctrl+V in the app you were using. Some apps block it."
 msgstr "Presses Ctrl+V in the app you were using. Some apps block it."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preview capture"
+msgstr "Preview capture"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Preview reference"
+msgstr "Preview reference"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Previous microphone (unavailable)"
@@ -4730,10 +5181,16 @@ msgstr "Publishing or sending work outside Sotto"
 msgid "Pull request open"
 msgstr "Pull request open"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Quality"
+msgstr "Quality"
+
+#. The kind of request a card in Watcher’s conversation holds
 #. The kind of request a card in Watcher’s conversation holds
 #. Why a thread needs the user, after its name
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherGlance.tsx
+#: src/renderer/src/watcher/WatcherQuestions.tsx
 msgid "question"
 msgstr "question"
 
@@ -4752,9 +5209,17 @@ msgstr "Question {step} of 9"
 msgid "Question from {title}"
 msgstr "Question from {title}"
 
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Question from Watcher"
+msgstr "Question from Watcher"
+
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Question in a thread it delegated to"
 msgstr "Question in a thread it delegated to"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Queued"
+msgstr "Queued"
 
 #. A group of threads in Watcher’s room, and a thread’s status: nothing has happened for a while
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -5013,6 +5478,10 @@ msgstr "Records from before the clear never come back. New work counts afterward
 msgid "Recovered transcript"
 msgstr "Recovered transcript"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Reference"
+msgstr "Reference"
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Refresh memory"
 msgstr "Refresh memory"
@@ -5040,6 +5509,10 @@ msgstr "Remove {short}"
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Remove all"
 msgstr "Remove all"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Remove criterion"
+msgstr "Remove criterion"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Remove link"
@@ -5076,6 +5549,10 @@ msgstr "Replaced by"
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Replacement memory"
 msgstr "Replacement memory"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Reply to this thread…"
+msgstr "Reply to this thread…"
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reporting the crux check"
@@ -5185,6 +5662,10 @@ msgstr "Review current replacement"
 msgid "Revoked"
 msgstr "Revoked"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Right after linking, each computer reaches the other once, carrying nothing. Your teammate's card then says whether it works both ways, and what to share if it doesn't."
+msgstr "Right after linking, each computer reaches the other once, carrying nothing. Your teammate's card then says whether it works both ways, and what to share if it doesn't."
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Room left"
 msgstr "Room left"
@@ -5193,10 +5674,26 @@ msgstr "Room left"
 msgid "Room left on each subscription"
 msgstr "Room left on each subscription"
 
-#. A Council chamber layout: seen from a little above, the chair at the far side.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Round table"
-msgstr "Round table"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round"
+msgstr "Round"
+
+#. placeholder {0}: item.index
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round {0}"
+msgstr "Round {0}"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round 0 · Baseline"
+msgstr "Round 0 · Baseline"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Round exported to a new folder."
+msgstr "Round exported to a new folder."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Rubric and scoring anchors"
+msgstr "Rubric and scoring anchors"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Run agents on another computer"
@@ -5270,6 +5767,18 @@ msgstr "Say what to start or check."
 msgid "Scope"
 msgstr "Scope"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Score"
+msgstr "Score"
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Scroll up to Watcher’s question"
+msgstr "Scroll up to Watcher’s question"
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Scroll up to Watcher’s questions"
+msgstr "Scroll up to Watcher’s questions"
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Search models or paste @preset/…"
 msgstr "Search models or paste @preset/…"
@@ -5287,6 +5796,18 @@ msgstr "Second kind"
 msgid "See every event"
 msgstr "See every event"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected artifacts"
+msgstr "Selected artifacts"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected paths (one per line; blank selects the folder)"
+msgstr "Selected paths (one per line; blank selects the folder)"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Selected text"
+msgstr "Selected text"
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
 msgstr "Send"
@@ -5302,6 +5823,14 @@ msgstr "Send this to your teammate. It works once, until {expires}."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Send to {title}"
 msgstr "Send to {title}"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Send your teammate the link. They open it and accept."
+msgstr "Send your teammate the link. They open it and accept."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Sending"
+msgstr "Sending"
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Sending starts the new Watcher with a <0>handover</0> of the last one, from {provider}."
@@ -5340,6 +5869,10 @@ msgstr "Set up {firstShort}"
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort} and {secondShort}"
 msgstr "Set up {firstShort} and {secondShort}"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Set up a Climb"
+msgstr "Set up a Climb"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up all three"
@@ -5380,12 +5913,14 @@ msgstr "Settings"
 msgid "Settings are unavailable."
 msgstr "Settings are unavailable."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Settle"
 msgstr "Settle"
 
 #. Before a thread’s name on a receipt card
 #. The fold of finished threads at the end of Idle
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
@@ -5406,6 +5941,14 @@ msgstr "Settled on {0}, and its worktree is kept there."
 msgid "Settling"
 msgstr "Settling"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Setup"
+msgstr "Setup"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Setup chair"
+msgstr "Setup chair"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Setup could not be saved. Your choices are intact; please try again."
 msgstr "Setup could not be saved. Your choices are intact; please try again."
@@ -5413,6 +5956,18 @@ msgstr "Setup could not be saved. Your choices are intact; please try again."
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Setup progress: step {stepNumber} of {stepCount}"
 msgstr "Setup progress: step {stepNumber} of {stepCount}"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Share this computer with {name} in Tailscale: on Machines, press ••• beside {machine}, then Share, and send {name} the link. Then check again."
+msgstr "Share this computer with {name} in Tailscale: on Machines, press ••• beside {machine}, then Share, and send {name} the link. Then check again."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Share this computer with your teammate"
+msgstr "Share this computer with your teammate"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share."
+msgstr "Sharing goes one way. Seeing your teammate's computer doesn't let them reach yours, so share yours back. If your teammate is on your own tailnet, there's nothing to share."
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Shift-click opens a thread in Threads. <0>Esc</0> closes."
@@ -5460,12 +6015,8 @@ msgid "Show in folder"
 msgstr "Show in folder"
 
 #: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (⌘O)"
-msgstr "Show in Sotto (⌘O)"
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (Ctrl+O)"
-msgstr "Show in Sotto (Ctrl+O)"
+msgid "Show in Sotto"
+msgstr "Show in Sotto"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Show it in Sotto"
@@ -5579,6 +6130,10 @@ msgstr "Some usage figures were cleared. Usage changed while the question was op
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Sort by"
 msgstr "Sort by"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sotto answers your teammate on your tailnet only, never the internet."
+msgstr "Sotto answers your teammate on your tailnet only, never the internet."
 
 #: src/renderer/src/components/AppShell.tsx
 msgid "Sotto application"
@@ -5736,6 +6291,10 @@ msgstr "Sotto could not read its saved keys. The encrypted file was preserved. A
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
 msgstr "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Sotto could not read the Climbs. Open the Council again."
+msgstr "Sotto could not read the Climbs. Open the Council again."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
@@ -5902,8 +6461,8 @@ msgid "Sotto restored default settings after a local settings file could not be 
 msgstr "Sotto restored default settings after a local settings file could not be read. The original file was preserved."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Sotto says nothing to a teammate's computer until one of you asks or reads a desk, so this page never says who is online."
-msgstr "Sotto says nothing to a teammate's computer until one of you asks or reads a desk, so this page never says who is online."
+msgid "Sotto says nothing to a teammate's computer until one of you asks, checks or reads a desk, so this page never says who is online."
+msgstr "Sotto says nothing to a teammate's computer until one of you asks, checks or reads a desk, so this page never says who is online."
 
 #: src/renderer/src/App.tsx
 msgid "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
@@ -5918,6 +6477,10 @@ msgstr "Sotto stops it and settles it on {0}, and this thread takes sends again 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Sotto threads"
 msgstr "Sotto threads"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sotto turns it on when you make or paste a code, on your tailnet only, never the internet. If your tailnet has Serve off, this step says so."
+msgstr "Sotto turns it on when you make or paste a code, on your tailnet only, never the internet. If your tailnet has Serve off, this step says so."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Sotto turns your voice into text on this computer. Your audio never leaves it."
@@ -5947,6 +6510,7 @@ msgstr "Sotto's main process is slow"
 msgid "Sotto's subagents"
 msgstr "Sotto's subagents"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Source"
 msgstr "Source"
@@ -6172,6 +6736,7 @@ msgid "Still reading {scanningList} history. The figures fill in as it reads."
 msgstr "Still reading {scanningList} history. The figures fill in as it reads."
 
 #. Stops the dictation that is recording
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Stop"
@@ -6270,6 +6835,7 @@ msgid "stopped"
 msgstr "stopped"
 
 #. Before a thread’s name on a receipt card
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Stopped"
@@ -6295,6 +6861,10 @@ msgstr "Stopping"
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stopping…"
 msgstr "Stopping…"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap."
+msgstr "Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap."
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Streak"
@@ -6342,6 +6912,46 @@ msgstr "System default"
 msgid "Tags"
 msgstr "Tags"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale couldn't set up this computer's address, so {names} can't reach it. Sotto looks again every 30 seconds."
+msgstr "Tailscale couldn't set up this computer's address, so {names} can't reach it. Sotto looks again every 30 seconds."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale doesn't show anyone else's computer yet. If your teammate has their own tailnet, they share their computer with you, and you accept."
+msgstr "Tailscale doesn't show anyone else's computer yet. If your teammate has their own tailnet, they share their computer with you, and you accept."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale is on"
+msgstr "Tailscale is on"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale isn't installed on this computer. Install it from tailscale.com and sign in, then check again."
+msgstr "Tailscale isn't installed on this computer. Install it from tailscale.com and sign in, then check again."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale isn't running on this computer, so {names} can't reach it. Start Tailscale; Sotto looks again every 30 seconds."
+msgstr "Tailscale isn't running on this computer, so {names} can't reach it. Start Tailscale; Sotto looks again every 30 seconds."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale isn't running on this computer. Start it and sign in, then check again."
+msgstr "Tailscale isn't running on this computer. Start it and sign in, then check again."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale sees {othersText}."
+msgstr "Tailscale sees {othersText}."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale Serve is allowed"
+msgstr "Tailscale Serve is allowed"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale won't let this account change Serve, so {names} can't reach this computer. Run tailscale set --operator=$USER on it."
+msgstr "Tailscale won't let this account change Serve, so {names} can't reach this computer. Run tailscale set --operator=$USER on it."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Tailscale won't let this account change Serve. Run tailscale set --operator=$USER on this computer, then make or paste the code again."
+msgstr "Tailscale won't let this account change Serve. Run tailscale set --operator=$USER on this computer, then make or paste the code again."
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Talk to your computer and your coding agents"
 msgstr "Talk to your computer and your coding agents"
@@ -6350,20 +6960,27 @@ msgstr "Talk to your computer and your coding agents"
 msgid "talking"
 msgstr "talking"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to the thread. Switch to Watcher"
-msgstr "Talking to the thread. Switch to Watcher"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target"
+msgstr "Target"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to Watcher. Switch to the thread"
-msgstr "Talking to Watcher. Switch to the thread"
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target met"
+msgstr "Target met"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Target type"
+msgstr "Target type"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Team links"
 msgstr "Team links"
 
-#: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Teammates"
+msgstr "Teammates"
+
+#: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Teams"
 msgstr "Teams"
@@ -6437,6 +7054,14 @@ msgstr "The chair let it stand: {0}"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The chair’s framing could not be read, so the panel answers the question alone, as {kinds}."
 msgstr "The chair’s framing could not be read, so the panel answers the question alone, as {kinds}."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The Climb could not continue."
+msgstr "The Climb could not continue."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The Climb's reply was lost. Read its status before trying again."
+msgstr "The Climb's reply was lost. Read its status before trying again."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The conversation is too long for one prompt, so each thread reads all of it in {parts} parts first."
@@ -6592,6 +7217,10 @@ msgstr "The provider of {name} is not connected. Choose another model, or connec
 msgid "The recording could not be completed."
 msgstr "The recording could not be completed."
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "The reference could not be previewed."
+msgstr "The reference could not be previewed."
+
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The selected microphone is unavailable."
 msgstr "The selected microphone is unavailable."
@@ -6649,10 +7278,6 @@ msgstr "The window {host} last read ended at {clock}. Read again for the new one
 msgid "The window {host} last read ended on {day}. Read again for the new one."
 msgstr "The window {host} last read ended on {day}. Read again for the new one."
 
-#: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Their computer must be able to reach yours on a tailnet, and yours theirs. On separate tailnets, share your computers with each other in Tailscale first."
-msgstr "Their computer must be able to reach yours on a tailnet, and yours theirs. On separate tailnets, share your computers with each other in Tailscale first."
-
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Theme"
 msgstr "Theme"
@@ -6664,6 +7289,14 @@ msgstr "There is no project to start a thread in. Add one in Sotto, then send ag
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "These choices become explicit policies. Leaving a box unchecked grants no permission."
 msgstr "These choices become explicit policies. Leaving a box unchecked grants no permission."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "They open Tailscale's admin console and go to Machines."
+msgstr "They open Tailscale's admin console and go to Machines."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "They press ••• beside their computer, then Share, and send you the link."
+msgstr "They press ••• beside their computer, then Share, and send you the link."
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "thinking"
@@ -6684,6 +7317,7 @@ msgstr "This clears every date, provider, model and app on those computers, incl
 
 #. This computer, in the middle of a sentence
 #: src/renderer/src/features/usage/usagePresentation.ts
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "this computer"
 msgstr "this computer"
 
@@ -6698,6 +7332,10 @@ msgstr "this computer"
 msgid "This computer"
 msgstr "This computer"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "This computer couldn't reach {name}'s."
+msgstr "This computer couldn't reach {name}'s."
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
 msgstr "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
@@ -6705,6 +7343,10 @@ msgstr "This computer does not report how busy its processors are, so Watcher tr
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
 msgstr "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "This computer is {machine} on your tailnet."
+msgstr "This computer is {machine} on your tailnet."
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
@@ -6737,6 +7379,10 @@ msgstr "This memory changed in another window. Your unsaved wording is still her
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "This memory was deleted. Your unsaved wording is still here to copy."
 msgstr "This memory was deleted. Your unsaved wording is still here to copy."
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "This model does not read images"
+msgstr "This model does not read images"
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "This month"
@@ -6775,6 +7421,7 @@ msgstr "Thread {threadId}: {ref}"
 #. The room switch and page links: the Threads page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Threads"
 msgstr "Threads"
 
@@ -6782,9 +7429,17 @@ msgstr "Threads"
 msgid "Threads keep working while clients update."
 msgstr "Threads keep working while clients update."
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Threads that need you"
+msgstr "Threads that need you"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
 msgstr "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
+msgstr "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Through"
@@ -6805,6 +7460,10 @@ msgstr "to"
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "to do"
 msgstr "to do"
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "To do"
+msgstr "To do"
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
@@ -6854,6 +7513,10 @@ msgstr "Tokens per day, {range}."
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Tokens per prompt"
 msgstr "Tokens per prompt"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Tolerance"
+msgstr "Tolerance"
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Too old to use"
@@ -6988,8 +7651,8 @@ msgid "Turn off"
 msgstr "Turn off"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Turn on Serve"
-msgstr "Turn on Serve"
+msgid "Turn on Serve in Tailscale"
+msgstr "Turn on Serve in Tailscale"
 
 #: src/renderer/src/platformCopy.ts
 msgid "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
@@ -7002,6 +7665,10 @@ msgstr "Turned off"
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Turning speech into text."
 msgstr "Turning speech into text."
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Turns"
+msgstr "Turns"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Two desks with {name}"
@@ -7025,6 +7692,10 @@ msgstr "Uncached input"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "unchecked"
 msgstr "unchecked"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Unconfirmed"
+msgstr "Unconfirmed"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Under <0>1</0> a day"
@@ -7053,6 +7724,10 @@ msgstr "unknown"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Unknown"
 msgstr "Unknown"
+
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Unmeasurable"
+msgstr "Unmeasurable"
 
 #: src/renderer/src/App.tsx
 msgid "Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again."
@@ -7114,6 +7789,10 @@ msgstr "Update it yourself with {command}."
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Update it, then check again."
 msgstr "Update it, then check again."
+
+#: src/renderer/src/watcher/TeamDesks.tsx
+msgid "Update now"
+msgstr "Update now"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Update ready"
@@ -7253,6 +7932,7 @@ msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installe
 msgstr "Voxtype has these keys now. Sotto takes them over; Voxtype stays installed."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Waiting"
 msgstr "Waiting"
 
@@ -7273,6 +7953,10 @@ msgstr "Waiting for {names}"
 msgid "Waiting for {waitsOn}"
 msgstr "Waiting for {waitsOn}"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Waiting for approval"
+msgstr "Waiting for approval"
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "waiting for its threads"
 msgstr "waiting for its threads"
@@ -7284,10 +7968,6 @@ msgstr "Waiting for the answer."
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Waiting for the update before it."
 msgstr "Waiting for the update before it."
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Waiting for your answer"
-msgstr "Waiting for your answer"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Waiting on its owner"
@@ -7339,6 +8019,11 @@ msgstr "Watched by Watcher"
 msgid "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
 msgstr "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Watcher asks"
+msgstr "Watcher asks"
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Watcher could not be started. Nothing was sent."
 msgstr "Watcher could not be started. Nothing was sent."
@@ -7374,6 +8059,10 @@ msgstr "Watcher isn’t running, so the popup is on your thread."
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Watcher isn’t running. Start it in Sotto, then switch again."
 msgstr "Watcher isn’t running. Start it in Sotto, then switch again."
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Watcher keeps working while this waits"
+msgstr "Watcher keeps working while this waits"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Watcher message"
@@ -7470,6 +8159,10 @@ msgstr "What makes a change ready for you?"
 msgid "What moves and what stays"
 msgstr "What moves and what stays"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "What needs you"
+msgstr "What needs you"
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "What should Sotto always confirm?"
 msgstr "What should Sotto always confirm?"
@@ -7523,6 +8216,10 @@ msgstr "Where you work"
 msgid "Where, last 30 days"
 msgstr "Where, last 30 days"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Who to ask"
+msgstr "Who to ask"
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Whole range"
 msgstr "Whole range"
@@ -7569,7 +8266,9 @@ msgstr "Words, speed, streak and where your words went show here once you have d
 
 #. A group of threads in Watcher’s room, and a thread’s status
 #. A thread’s status
+#: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -7605,6 +8304,10 @@ msgstr "working: {what}"
 msgid "Working…"
 msgstr "Working…"
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Works both ways. Checked {when}."
+msgstr "Works both ways. Checked {when}."
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "wpm today"
 msgstr "wpm today"
@@ -7634,11 +8337,6 @@ msgstr "writing the verdict"
 msgid "Yesterday"
 msgstr "Yesterday"
 
-#. placeholder {0}: linkNames.join(', ')
-#: src/renderer/src/watcher/TeamsPage.tsx
-msgid "You and {0}, direct over your tailnet"
-msgstr "You and {0}, direct over your tailnet"
-
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "You and {name}"
 msgstr "You and {name}"
@@ -7654,6 +8352,11 @@ msgstr "You answered {title}: {words}."
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title}."
 msgstr "You answered {title}."
+
+#. placeholder {0}: question.choice
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "You answered: {0}."
+msgstr "You answered: {0}."
 
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "You asked {name} about merge priority."
@@ -7671,6 +8374,10 @@ msgstr "You can add more projects from the sidebar at any time."
 msgid "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
 msgstr "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "You can read {name}'s desk, but {name} can't read yours or ask your Watcher."
+msgstr "You can read {name}'s desk, but {name} can't read yours or ask your Watcher."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "You chose not to move these threads to {machine}. Nothing was moved."
 msgstr "You chose not to move these threads to {machine}. Nothing was moved."
@@ -7686,6 +8393,10 @@ msgstr "You chose to keep this thread here. Sotto asks {machine} to call the mov
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
 msgstr "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "You open the link and accept. Then check again here."
+msgstr "You open the link and accept. Then check again here."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."
@@ -7827,6 +8538,18 @@ msgstr "Your speed shows here once you have dictated on two days."
 msgid "Your subscriptions, and the work on each computer, in Sotto and outside it."
 msgstr "Your subscriptions, and the work on each computer, in Sotto and outside it."
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Your tailnet has Serve turned off, so {names} can't reach this computer."
+msgstr "Your tailnet has Serve turned off, so {names} can't reach this computer."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Your tailnet hasn't turned on Serve, which carries your teammate's asks to Sotto on your tailnet only."
+msgstr "Your tailnet hasn't turned on Serve, which carries your teammate's asks to Sotto on your tailnet only."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Your teammate's computer is on your tailnet"
+msgstr "Your teammate's computer is on your tailnet"
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Your text is still here"
 msgstr "Your text is still here"
@@ -7842,6 +8565,10 @@ msgstr "Your threads go only to each agent's own provider"
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Your transcripts on this computer are being read."
 msgstr "Your transcripts on this computer are being read."
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Sotto Owl and Tailscale, and each of you does these steps."
+msgstr "Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Sotto Owl and Tailscale, and each of you does these steps."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "yours"

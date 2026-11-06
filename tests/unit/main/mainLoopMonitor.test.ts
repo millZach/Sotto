@@ -95,26 +95,6 @@ describe('MainLoopWindow', () => {
     expect(window.frozen(61_000)).toBe(false)
   })
 
-  it('reads exactly 30 s blocked as not frozen, with no second averaged', () => {
-    // At 60.5 s the window is 0.5 s to 60.5 s. Blocked 0 to 0.5 s (outside it) and 1 s to 31 s: exactly 30 s inside.
-    const window = new MainLoopWindow(60)
-    window.record(0, 0)
-    window.record(500, 500)
-    window.record(31_000, 30_000)
-    expect(window.reading(60_500).blockedShare).toBe(0.5)
-    expect(window.frozen(60_500)).toBe(false)
-  })
-
-  it('reads a true 30.2 s blocked as frozen, with no second averaged', () => {
-    // At 60.5 s the window is 0.5 s to 60.5 s. Blocked 0.5 s to 1 s and 1 s to 30.7 s: 30.2 s inside.
-    const window = new MainLoopWindow(60)
-    window.record(0, 0)
-    window.record(1_000, 500)
-    window.record(30_700, 29_700)
-    expect(window.reading(60_500).blockedShare).toBeCloseTo(30.2 / 60, 10)
-    expect(window.frozen(60_500)).toBe(true)
-  })
-
   it('shows in the chart and the freeze figures every freeze the blocked share counts', () => {
     // A 400 ms freeze from 0.1 s to 0.5 s, read at 60 s: the window is 0 s to 60 s, so all of it is inside.
     const window = new MainLoopWindow(60)

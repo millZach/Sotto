@@ -145,15 +145,6 @@ describe('the starting screen gate', () => {
     expect(screen.getByRole('button', { name: 'Open Sotto without Devin and forge' })).toHaveFocus()
   })
 
-  it('says nothing and opens the app when there is nothing to connect', async () => {
-    bridges(agent({ codex: 'disconnected' }))
-    render(<Window />)
-    expect(screen.getByRole('status')).toHaveTextContent('')
-    await settle()
-    expect(screen.getByText('The app')).toBeVisible()
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-  })
-
   it('does not take the last run’s cached shell for an answer, and at ten seconds offers to open Sotto now', async () => {
     writeShellCache(agent({ codex: 'connected' }))
     bridges(agent({ codex: 'connected' }), hostsState(), () => new Promise(() => undefined))

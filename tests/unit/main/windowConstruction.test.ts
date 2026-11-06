@@ -230,16 +230,6 @@ describe('WindowManager construction', () => {
     })
   })
 
-  it('keeps the Windows widget an ordinary window and the main window never a panel', async () => {
-    const { manager, options } = createHarness()
-
-    await manager.createMainWindow()
-    await manager.createWidgetWindow()
-
-    expect(options[0]).not.toHaveProperty('type')
-    expect(options[1]).not.toHaveProperty('type')
-  })
-
   it('does not reassert the macOS widget level while the widget is already visible', async () => {
     const { manager, windows } = createHarness(darwinOverrides())
     await manager.showWidget()

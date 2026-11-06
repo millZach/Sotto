@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { registerDelegationIpc, type DelegationViews } from '../../../src/main/agents/delegationIpc'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, type DelegatedView, type DelegationView, type RefusedView } from '../../../src/shared/delegation'
+import { DELEGATION_BRIEF_READ, DELEGATION_GIVE, DELEGATIONS_CHANGED, DELEGATIONS_READ, type DelegatedView, type DelegationView, type RefusedView } from '../../../src/shared/delegation'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -26,6 +26,30 @@ function service(views: Record<string, { made: DelegationView[]; received: Deleg
 }
 
 describe('the window\'s read of a thread\'s delegations (#1029)', () => {
+  it('gives a Dynamic thread\'s worker to another model only where the feature is on, for the main window and a thread on this computer', async () => {
+    const { ipc, handlers, main, mainEvent, widgetEvent } = ipcRegistry()
+    const { delegation } = service()
+    const giveTo = vi.fn(async () => ({ status: 'ok' as const }))
+    registerDelegationIpc(ipc, { ...delegation, giveTo }, () => [main], () => LOCAL, vi.fn())()
+    expect(handlers.has(DELEGATION_GIVE)).toBe(false)
+    const close = registerDelegationIpc(ipc, { ...delegation, giveTo }, () => [main], () => LOCAL, vi.fn(), undefined, false, true)
+    const give = handlers.get(DELEGATION_GIVE)!
+    const id = randomUUID()
+    expect(await give(mainEvent, { threadId: hostEntityKey(LOCAL, 'parent'), delegation: id, model: 'native:claude:model:opus' })).toEqual({ status: 'ok' })
+    expect(giveTo).toHaveBeenCalledWith('parent', id, 'native:claude:model:opus')
+    expect(await give(mainEvent, { threadId: hostEntityKey(REMOTE, 'parent'), delegation: id, model: 'native:claude:model:opus' })).toMatchObject({ status: 'refused' })
+    expect(giveTo).toHaveBeenCalledTimes(1)
+    // Why nothing started is put into the interface's words, with what to do next.
+    giveTo.mockResolvedValueOnce({ status: 'refused', reason: 'not-allowed', provider: 'grok', model: 'Grok 4' } as never)
+    expect(await give(mainEvent, { threadId: hostEntityKey(LOCAL, 'parent'), delegation: id, model: 'grok' })).toEqual({ status: 'refused',
+      message: 'Grok Build is off the list Dynamic threads may use. Tick it in Settings, under Threads, to give it work. Nothing was started.' })
+    giveTo.mockResolvedValueOnce({ status: 'refused', reason: 'no-brief', model: 'Opus 5.5' } as never)
+    expect(await give(mainEvent, { threadId: hostEntityKey(LOCAL, 'parent'), delegation: id, model: 'opus' })).toMatchObject({ message: expect.stringContaining('Ask the overseer in a message to give the piece to Opus 5.5.') })
+    await expect(Promise.resolve().then(() => give(widgetEvent, { threadId: 'parent', delegation: id, model: 'm' }))).rejects.toThrow('main Sotto window')
+    close()
+    expect(handlers.has(DELEGATION_GIVE)).toBe(false)
+  })
+
   it('registers nothing and listens to nothing where stable built no delegation', () => {
     const { ipc, handlers, main } = ipcRegistry()
     const send = vi.fn()

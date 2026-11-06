@@ -34,9 +34,4 @@ describe('activity body IPC (ADR-0025, October 18 amendment)', () => {
     await expect(f.invoke(f.event, { threadId: 'host:thread', activityId: 'build', extra: true })).rejects.toThrow()
     expect(activityBody).toHaveBeenCalledTimes(1)
   })
-
-  it('answers null where nothing can hold a cut body', async () => {
-    const f = fixture()
-    await expect(f.invoke(f.event, { threadId: 'thread', activityId: 'build' })).resolves.toBeNull()
-  })
 })

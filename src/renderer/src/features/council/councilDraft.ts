@@ -37,6 +37,27 @@ export function holdCouncilForm(thread: string, form: CouncilForm): void {
   else forms.set(thread, form)
 }
 
+/** Which of the Council tab's modes each thread's pane shows, Ask or Climb, kept while the drawer shows a shell or hides. */
+export type CouncilMode = 'ask' | 'climb'
+const modes = new Map<string, CouncilMode>()
+const modeListeners = new Set<() => void>()
+export function councilMode(thread: string): CouncilMode { return modes.get(thread) ?? 'ask' }
+export function holdCouncilMode(thread: string, mode: CouncilMode): void { modes.set(thread, mode) }
+export function onCouncilMode(listener: () => void): () => void {
+  modeListeners.add(listener)
+  return () => { modeListeners.delete(listener) }
+}
+
+/**
+ * A thread's agent started a Council or a Climb at the user's request (ADR-0177, November 5, 2026): that thread's pane
+ * opens the Council tab of its drawer on it, in the mode it started.
+ */
+export function openCouncilFor(thread: string, mode: CouncilMode, chromeStore: PaneTerminalChromeStore = paneTerminalChromeStore): void {
+  modes.set(thread, mode)
+  for (const listener of [...modeListeners]) listener()
+  chromeStore.show(thread, 'council')
+}
+
 /** Ask the Council on a reply: offers the draft and opens the Council tab of the drawer in the pane of the thread it comes from. */
 export function openCouncilDraft(draft: CouncilDraft, chromeStore: PaneTerminalChromeStore = paneTerminalChromeStore): void {
   offerCouncilDraft(draft)

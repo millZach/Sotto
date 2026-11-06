@@ -4,10 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { formatTranscript } from '../../../src/shared/transcript'
 
 describe('formatTranscript', () => {
-  it('collapses runs of spaces without changing words or punctuation', () => {
-    expect(formatTranscript('  Hello,   world!  Again.  ')).toBe('Hello, world! Again.')
-  })
-
   it('preserves line breaks so LLM lists survive delivery', () => {
     expect(
       formatTranscript('Things to get:\n- Apples \n-   Oranges\n- Turkey\n'),

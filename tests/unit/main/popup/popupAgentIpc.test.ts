@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { isPackaged: false }, BrowserWindow: { fromWebContents: () => null }, dialog: {} }))
 import { registerAgentIpc } from '../../../../src/main/agents/ipc'
 import { DESKTOP_POPUP_CLIENT_ID, DESKTOP_WINDOW_CLIENT_ID } from '../../../../src/main/agents/hostService'
-import { AGENT_COMMAND, AGENT_GET, type AgentState } from '../../../../src/shared/agents'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_COMMAND, AGENT_GET, type AgentState } from '../../../../src/shared/agents'
 import { ipcRegistry, trustedIpcSender } from '../../../fixtures/ipcHarness'
 
 function setup(shown = true) {
@@ -14,10 +14,13 @@ function setup(shown = true) {
   const command = vi.fn(async () => shell)
   const windowRead = vi.fn()
   const popupObserves = vi.fn()
-  const control = { get: () => shell, shell: () => shell, threadDetail: () => null, attachmentPreview: () => null } as unknown as Parameters<typeof registerAgentIpc>[1]
+  const stageAttachment = vi.fn(async () => ({ id: 'a' }))
+  const attachmentContent = vi.fn(async () => null)
+  const attachmentPreview = vi.fn(() => null)
+  const control = { get: () => shell, shell: () => shell, threadDetail: () => null, attachmentPreview, stageAttachment, attachmentContent } as unknown as Parameters<typeof registerAgentIpc>[1]
   registerAgentIpc(registry.ipc, control, { command } as unknown as Parameters<typeof registerAgentIpc>[2], () => [registry.main, popup],
     { encodeReceipt: state => state as never, encodeChangedThreadRecordsReceipt: state => state as never, windowRead, popupObserves, popupShown: () => shown })
-  return { registry, popupEvent: registry.event(popup), command, windowRead, popupObserves }
+  return { registry, popupEvent: registry.event(popup), command, windowRead, popupObserves, stageAttachment, attachmentContent, attachmentPreview }
 }
 
 describe('the popup on the threads\' channels (ADR-0181)', () => {
@@ -37,6 +40,17 @@ describe('the popup on the threads\' channels (ADR-0181)', () => {
     await registry.invoke(AGENT_COMMAND, [{ type: 'interrupt', threadId: 't' }])
     expect(command).toHaveBeenLastCalledWith({ type: 'interrupt', threadId: 't' }, expect.objectContaining({ clientId: DESKTOP_WINDOW_CLIENT_ID }))
     expect(popupObserves).toHaveBeenCalledOnce()
+  })
+
+  it('stages a photo and reads pictures back for the popup, on the same parsed requests as the main window', async () => {
+    const { registry, popupEvent, stageAttachment, attachmentContent, attachmentPreview } = setup()
+    await registry.invoke(AGENT_ATTACHMENT_STAGE, [{ threadId: 't', name: 'a.png', mimeType: 'image/png', bytes: new Uint8Array([1]) }], popupEvent)
+    expect(stageAttachment).toHaveBeenCalledOnce()
+    await registry.invoke(AGENT_ATTACHMENT_CONTENT, [{ threadId: 't', digest: 'a'.repeat(64) }], popupEvent)
+    expect(attachmentContent).toHaveBeenCalledOnce()
+    await registry.invoke(AGENT_ATTACHMENT_PREVIEW, [{ threadId: 't', messageId: 'm', attachmentId: 'a' }], popupEvent)
+    expect(attachmentPreview).toHaveBeenCalledOnce()
+    await expect(registry.invoke(AGENT_ATTACHMENT_STAGE, [{ threadId: 't', name: 'a.png', mimeType: 'text/x-nonsense', bytes: 'nope' }], popupEvent)).rejects.toThrow()
   })
 
   it('observes nothing for a popup that hid while its prompt was on its way', async () => {

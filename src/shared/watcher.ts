@@ -249,6 +249,19 @@ export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optio
   close: z.array(z.object({ id: keptId, note: keptText.optional() }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   drop: z.array(keptId).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional() }).strict()
 export type WatcherKeepStateInput = z.infer<typeof watcherKeepStateInputSchema>
+/**
+ * What keep_state did to one line (#2231): added (with its words, so a list given whole maps its new IDs), edited,
+ * touched (the same words again, so it still stands), closed, or removed (dropped, left out of a list given whole, or a
+ * closed line cleared). keep_state gives only these, never the whole state, which read_state gives.
+ */
+export const WATCHER_KEPT_CHANGES = ['added', 'edited', 'touched', 'closed', 'removed'] as const
+export const watcherKeptChangeSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, change: z.enum(WATCHER_KEPT_CHANGES),
+  text: keptText.optional() }).strict()
+export type WatcherKeptChange = z.infer<typeof watcherKeptChangeSchema>
+const keptCount = z.object({ open: counter, closed: counter }).strict()
+/** How many lines each list holds after a keep_state, open and closed. */
+export const watcherKeptCountsSchema = z.object({ decisions: keptCount, rules: keptCount, issues: keptCount }).strict()
+export type WatcherKeptCounts = z.infer<typeof watcherKeptCountsSchema>
 /** A watched thread as Watcher's state gives it: who it is and, in Sotto's words, what it waits on. */
 export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsOn: z.string().min(1).max(200) }).strict()
@@ -272,10 +285,37 @@ export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
+/**
+ * A waiting question card's own words, for Watcher to say what it asks (#2230): the question, the header first where it
+ * has one, up to eight choices, how many more choices and questions it has, the names of the prototype pages Sotto found
+ * for it, and up to three web links the card shows. The worker's words, read only; read_state and question news carry
+ * them, worked out live and never saved.
+ */
+// Cut by characters where they are made, so these bounds are in UTF-16 units with room for any character.
+export const watcherCardWordsSchema = z.object({ question: z.string().min(1).max(1_200), choices: z.array(z.string().max(400)).max(8),
+  moreChoices: z.number().int().positive().optional(), moreQuestions: z.number().int().positive().optional(),
+  prototype: z.array(z.string().max(800)).max(3).optional(), links: z.array(z.string().max(500)).max(3).optional() }).strict()
+export type WatcherCardWords = z.infer<typeof watcherCardWordsSchema>
+/** A waitingOnUser row as read_state gives it: a question card's row carries `asks`, its own words (#2230). */
+export const watcherStateWaitingSchema = watcherWaitingOnUserSchema.extend({ asks: watcherCardWordsSchema.optional() }).strict()
+export type WatcherStateWaiting = z.infer<typeof watcherStateWaitingSchema>
 /** What waits on the user, a hundred to a page with the watched threads. */
 export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
+export type WatcherStateWatching = z.infer<typeof watcherStateWatchingSchema>
+/** The most items read_state's `gone` names in one list; past this a changedSince read gives the whole state instead. */
+export const WATCHER_STATE_GONE_MAX = 500
+/**
+ * What a changedSince read_state left out (#2231): how many items in each list are as the read its cursor names gave them,
+ * and what that read gave that is no longer there, a thread by its target, a kept line or stale flag by its ID.
+ */
+export const watcherStateUnchangedSchema = z.object({ watching: counter, mergeQueue: counter, waitingOnUser: counter, kept: counter, staleNotes: counter }).strict()
+export const watcherStateGoneSchema = z.object({ watching: z.array(watcherThreadTargetSchema).max(WATCHER_STATE_GONE_MAX),
+  mergeQueue: z.array(z.object({ target: watcherThreadTargetSchema, pullRequest: watcherPullRequestSummarySchema.pick({ number: true, url: true }).strict() }).strict()).max(WATCHER_STATE_GONE_MAX),
+  waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_STATE_GONE_MAX), kept: z.array(keptId).max(WATCHER_STATE_GONE_MAX),
+  staleNotes: z.array(keptId).max(WATCHER_STATE_GONE_MAX) }).partial().strict()
+export type WatcherStateGone = z.infer<typeof watcherStateGoneSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machineShape = { hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
@@ -404,18 +444,27 @@ export const watcherToolSchemas = {
   keep_state: {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
     input: watcherKeepStateInputSchema,
-    output: result({ kept: watcherKeptStateSchema }),
+    // Only the lines this call changed and how many each list holds (#2231): read_state gives the whole state.
+    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX) * WATCHER_KEPT_LISTS.length * 2),
+      counts: watcherKeptCountsSchema }),
   },
   read_state: {
-    // A hundred watched threads to a page; nextCursor reads the rest.
-    input: z.object({ cursor: cursor.optional() }).strict(),
+    // A hundred watched threads to a page; nextCursor reads the rest. openOnly leaves out kept lines already closed;
+    // changedSince, an earlier read's changeCursor, gives only what changed since that read (#2231).
+    input: z.object({ cursor: cursor.optional(), openOnly: z.boolean().optional(), changedSince: cursor.optional() }).strict(),
     // Computed from live data at each read (#1274). The merge queue pages with the watched threads, a hundred of each to a
     // page, and so does waitingOnUser; staleNotes is whole on every page. settleWithoutAsking is the user's Settle without
     // asking: off, Watcher asks on a card before each settle.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
-      waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
+      waitingOnUser: z.array(watcherStateWaitingSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
+      // On the final page: pass it as changedSince to read only what changed after this read.
+      changeCursor: cursor.optional(),
+      // A changedSince read Sotto still held the cursor of: what it left out as unchanged, and what is no longer there.
+      unchanged: watcherStateUnchangedSchema.optional(), gone: watcherStateGoneSchema.optional(),
+      // A changedSince read whose cursor Sotto no longer holds, as after a restart: this read is the whole state.
+      sinceUnknown: z.literal(true).optional() }),
   },
   list_machines: {
     input: z.object({}).strict(),

@@ -1,5 +1,4 @@
 // @vitest-environment node
-import type { MenuItemConstructorOptions } from 'electron'
 import { describe, expect, it } from 'vitest'
 
 import { editContextMenuTemplate, type EditContextMenuParams } from '../../../src/main/app/editContextMenu'
@@ -34,10 +33,5 @@ describe('editContextMenuTemplate (#1821)', () => {
   it('leaves a right-click on anything else alone', () => {
     expect(editContextMenuTemplate(params())).toBeNull()
     expect(editContextMenuTemplate(params({ selectionText: '  \n' }))).toBeNull()
-  })
-
-  it('produces a template Electron accepts as menu options', () => {
-    const template: MenuItemConstructorOptions[] = editContextMenuTemplate(params({ isEditable: true }))!
-    expect(template).toHaveLength(8)
   })
 })

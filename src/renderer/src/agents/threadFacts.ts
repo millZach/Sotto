@@ -518,21 +518,37 @@ const needRank = (row: Pick<ThreadRow, 'state' | 'waitingFor'>): number => row.w
  * The sidebar's rows while delegation is on: no row for a delegated thread, and each thread a delegated thread below it
  * needs the user for says so in the words its own row would: Needs your approval, then Needs your answer, then the
  * error's own words (Needs attention), as one row orders them. Its own waiting wins, and its own error outranks an
- * error below.
+ * error below. Working below keeps an otherwise done, open row working too.
  */
-function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, string>): ThreadRow[] {
+function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, string>, now: number): ThreadRow[] {
   const waiting = new Map<string, ThreadRow>()
+  const working = new Map<string, { stateLabel: string; workingSince: number }>()
+  const waitingLabel = t({ message: 'Waiting', comment: 'A thread row\'s state: a command it started is still running.' })
+  const workingStateLabel = t({ message: 'Working', comment: 'A thread row\'s state: its agent is working.' })
   for (const row of rows) {
     const top = tops.get(row.thread.id)
-    if (top === undefined || needRank(row) === 0) continue
-    const held = waiting.get(top)
-    if (held === undefined || needRank(row) > needRank(held)) waiting.set(top, row)
+    if (top === undefined) continue
+    if (needRank(row) > 0) {
+      const held = waiting.get(top)
+      if (held === undefined || needRank(row) > needRank(held)) waiting.set(top, row)
+    } else if (row.state === 'working') {
+      const held = working.get(top)
+      working.set(top, {
+        stateLabel: row.stateLabel !== waitingLabel || held?.stateLabel === workingStateLabel ? workingStateLabel : row.stateLabel,
+        workingSince: held === undefined || !Number.isFinite(held.workingSince) ? row.workingSince
+          : Number.isFinite(row.workingSince) ? Math.min(held.workingSince, row.workingSince) : held.workingSince,
+      })
+    }
   }
   return rows.filter(row => !tops.has(row.thread.id)).map((row): ThreadRow => {
     const below = waiting.get(row.thread.id)
-    if (below === undefined || row.waitingFor !== null || (below.waitingFor === null && row.state === 'needs')) return row
-    return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: below.stateLabel, attention: true,
-      when: clockLabel(row.activityAt), workingSince: Number.NaN, waitingIn: below.thread.title }
+    if (below !== undefined && row.waitingFor === null && (below.waitingFor !== null || row.state !== 'needs')) {
+      return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: below.stateLabel, attention: true,
+        when: clockLabel(row.activityAt), workingSince: Number.NaN, waitingIn: below.thread.title }
+    }
+    const work = working.get(row.thread.id)
+    if (work === undefined || row.state !== 'done' || row.settledBy !== null) return row
+    return { ...row, state: 'working', ...work, when: workingLabel(work.workingSince, now) }
   })
 }
 
@@ -664,7 +680,7 @@ export function holdSettledRows(open: readonly ProjectFolder[], settled: readonl
 export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false, snoozes?: ReadonlyMap<string, number>): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId), swarms) : undefined
-  const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
+  const rows = tops?.size ? withoutDelegated(allRows, tops, now) : allRows
   const { matching, listed } = listThreads(rows, query)
   const isListed = new Set(listed)
   const needle = query.trim().toLocaleLowerCase()

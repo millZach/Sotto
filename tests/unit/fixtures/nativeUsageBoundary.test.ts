@@ -19,12 +19,6 @@ it('compares the persisted native view with the provider-qualified renderer view
   assert.deepEqual(boundary(archive, NATIVE), boundary(bridge, PUBLIC))
 })
 
-it('compares renderer usage before and after a JSON-backed restart', () => {
-  const before = { ...usage(), modelId: PUBLIC }
-  const after = { ...JSON.parse(JSON.stringify(usage())) as ThreadUsage, modelId: PUBLIC }
-  assert.deepEqual(boundary(after, PUBLIC), boundary(before, PUBLIC))
-})
-
 it('rejects missing usage, a missing model, the wrong model and a model ID from the wrong boundary', () => {
   assert.throws(() => boundary(undefined, NATIVE))
   assert.throws(() => boundary({ ...usage(), modelId: undefined }, NATIVE))

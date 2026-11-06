@@ -4,6 +4,10 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-bottom-navigation/**',
+      'artifacts/watcher-top-lines/**',
+      'artifacts/watcher-own-question/**',
+      'artifacts/watcher-header-820/**',
       'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
@@ -63,6 +67,7 @@ export default tseslint.config(
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
+      'artifacts/council-climb/**',
       'artifacts/bring-changes-back/**',
       'artifacts/watcher-permission-watch/**',
       'artifacts/watcher-header-overlap/**',

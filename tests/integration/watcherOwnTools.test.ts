@@ -11,6 +11,7 @@ import { WATCHER_ROLES_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
+import { WATCHER_QUESTION_TOOL_CLOSED } from '../../src/main/agents/nativeRequests'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
 import type { AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
@@ -76,7 +77,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const { params } of launches) {
       expect(params).toMatchObject({ developerInstructions: expect.stringContaining(WATCHER_SYSTEM_PROMPT) })
       expect(params!.developerInstructions).toContain('Synthetic project developer instructions')
+      // Watcher asks with Sotto's ask_user (#2228): request_user_input, which held its turn, is off for it.
+      expect(params!.developerInstructions).not.toContain(questionInstructions('request_user_input', true))
       const config = params!.config as { mcp_servers: Record<string, unknown> }
+      expect(config).toMatchObject({ 'features.default_mode_request_user_input': false })
       expect(config).not.toHaveProperty('windows.sandbox')
       expect(Object.keys(config.mcp_servers).sort()).toEqual([...names].sort())
       expect(config.mcp_servers.sotto_threads).toMatchObject({ enabled_tools: ['list_threads'], default_tools_approval_mode: 'prompt',
@@ -89,7 +93,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const record of launches) {
       const args = (record.params!.frame as { args: string[] }).args
       if (args.includes('--no-session-persistence')) continue
-      expect(flag(args, '--append-system-prompt')).toBe(`${questionInstructions('AskUserQuestion', false)}\n\n${WATCHER_SYSTEM_PROMPT}`)
+      // Watcher asks with Sotto's ask_user (#2228): AskUserQuestion, which held its turn, is closed to it and never offered.
+      expect(flag(args, '--append-system-prompt')).toBe(WATCHER_SYSTEM_PROMPT)
+      expect(flag(args, '--disallowedTools')).toBe('AskUserQuestion')
+      expect(flag(args, '--append-system-prompt')).not.toContain(questionInstructions('AskUserQuestion', false))
       expect(['default', 'acceptEdits', 'auto', 'bypassPermissions']).toContain(flag(args, '--permission-mode'))
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')
@@ -756,4 +763,22 @@ for (const provider of ['claude', 'codex', 'cursor', 'grok', 'muse'] as const) i
   expect(sent).toContain('earlier Watcher')
   await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('error')
   expect((await f.host.snapshot()).error).toBeUndefined()
+})
+
+// Watcher's own question tool is closed to it on every provider (#2228): Claude Code's and Codex's at launch, and on the
+// others the adapter refuses the question with words that send Watcher to ask_user. It reaches no one and shows no card.
+it.each(['grok', 'cursor', 'muse'] as const)('closes a %s Watcher’s own question tool: its question is cancelled and shows no card', async provider => {
+  const f = await factories[provider](); cleanups.push(f.cleanup)
+  const id = randomUUID()
+  await attach(f.host, f.root, id, f.projectId, provider)
+  await seedModels(f.root, provider)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await f.host.startThreadSession!(id, { modelId: f.modelId, workingDirectory: f.root, runtimeMode: 'approval-required' })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId, runtimeMode: 'approval-required' })
+  await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
+  await f.driver.raiseQuestion(id, 'Synthetic Watcher question')
+  // Muse's cancel says why; Grok Build's and Cursor's own cancels carry no words.
+  await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain(provider === 'muse' ? WATCHER_QUESTION_TOOL_CLOSED : '"cancelled"')
+  expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
 })

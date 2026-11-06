@@ -2,19 +2,22 @@ import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } fr
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
-  type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
+  type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
-import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
-import { clearCouncilDraft, councilAskable, heldCouncilForm, holdCouncilForm, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
+import { clearCouncilDraft, councilAskable, councilMode, heldCouncilForm, holdCouncilForm, holdCouncilMode, onCouncilDraft, onCouncilMode, readCouncilDraft, type CouncilDraft } from './councilDraft'
+import type { ClimbRecord } from '../../../../shared/councilClimb'
+import { ClimbPanel } from './ClimbPanel'
+import { AskedByLine } from './AskedByLine'
 import './council.css'
+
 
 /**
  * The Council the chamber shows: the one being worked now, the newest if several are; with none, the newest Council
@@ -31,39 +34,38 @@ export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafti
   return live ?? (!drafting && newest?.status === 'done' ? newest : null)
 }
 
-/** The Layout menu, on the bar of the drawer's Council tab: the same setting as Settings → Council. */
-export function CouncilLayoutMenu(): ReactNode {
-  const { t } = useLingui()
-  const app = useOptionalApp()
-  if (!app) return null
-  const layouts: { value: CouncilLayout; label: string }[] = [
-    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
-    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
-    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
-  ]
-  return <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={app.settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT} options={layouts}
-    onChoose={value => void app.actions.updateSettings({ councilLayout: value })} />
-}
+type CouncilViewProps = { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }
 
 /**
  * The Council (ADR-0177), the Council tab of a thread pane's drawer: the chamber (`CouncilChamber`, decision 6), the
  * seats across the drawer's whole width under it, and beside the chamber the Ask form and each Council as a text record
  * of its stages, its threads' states and the actions their rows offer, the verdict with Sotto's counts, and Send to the
  * thread. The record is the accessible form of the deliberation. `thread` is the pane's thread, where a question starts
- * from unless the user changes it.
+ * from unless the user changes it. Records belong to their origin; drafts and mode belong to this pane’s thread.
  */
-export function CouncilView({ thread, bridge = window.sotto?.council }: { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }): ReactNode {
+export function CouncilView(props: CouncilViewProps): ReactNode {
+  return <ThreadCouncilView key={props.thread ?? ''} {...props} />
+}
+
+function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilViewProps): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const { councils, failed } = useCouncils(bridge)
+  const ownCouncils = thread === undefined ? councils : councils?.filter(council => council.origin.thread === thread) ?? null
+  const [mode, setMode] = useState<'ask' | 'climb'>(() => councilMode(thread ?? ''))
+  useEffect(() => { holdCouncilMode(thread ?? '', mode) }, [mode, thread])
+  // A thread's agent that starts a Climb, or a Council, brings this tab to it (ADR-0177, November 5, 2026).
+  useEffect(() => onCouncilMode(() => setMode(councilMode(thread ?? ''))), [thread])
   const settings = app?.settings
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   // What the tab held when the drawer last showed a shell or hid.
-  const [held] = useState(() => thread === undefined ? undefined : heldCouncilForm(thread))
+  const [held] = useState(() => heldCouncilForm(thread ?? ''))
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
+  const [climbRecord, setClimbRecord] = useState<ClimbRecord | null>(null)
+  const [climbPanel, setClimbPanel] = useState<CouncilPanel>({ panelists: [null, null, null], chair: null })
   // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
   const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
   const draft = taken.draft
@@ -81,21 +83,24 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
     take()
     return onCouncilDraft(take)
   }, [thread])
-  useEffect(() => { if (thread !== undefined) holdCouncilForm(thread, { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
+  useEffect(() => { holdCouncilForm(thread ?? '', { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
-  const seats = useSeatsInForce(seatsPanel, catalog)
+  const seats = useSeatsInForce(mode === 'climb' ? climbPanel : seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
   return <div className="council-view" data-layout={layout}>
-    <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : chamberCouncil(ownCouncils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
     {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
-    {bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
+    {mode === 'ask' && bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
     <div className="council-scroll"><div className="council-page">
+      {bridge?.climb ? <div className="climb-mode" role="group" aria-label={t`Council mode`}><button type="button" aria-pressed={mode === 'ask'} onClick={() => setMode('ask')}>{t`Ask`}</button><button type="button" aria-pressed={mode === 'climb'} onClick={() => setMode('climb')}>{t`Climb`}</button></div> : null}
+      {mode === 'climb' && bridge ? <ClimbPanel thread={thread} bridge={bridge} onPanel={setClimbPanel} onRecord={setClimbRecord} /> : <>
       {/* A new draft is a new question from its thread: the form starts again from it. */}
       {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? chosenOrigin ?? thread} onOrigin={setChosenOrigin} panel={seatsPanel}
         onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
       {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
       {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
-      <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      <div className="council-list">{(ownCouncils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      </>}
     </div></div>
   </div>
 }
@@ -122,7 +127,7 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
  * The thread a Council question comes from: the thread the user was on when they opened the Council, shown as one line.
  * Change opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
  */
-function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
+export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
   readonly chosen: string; readonly onChoose: (id: string) => void }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
@@ -278,6 +283,7 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
         {open && !running ? <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'settle', council: council.id })}>{t`Settle`}</button> : null}
       </div>
     </header>
+    <AskedByLine askedBy={council.askedBy} />
     <p className="council-entry__seats tt-paragraph">{seatNames}</p>
     <p className="council-entry__meta tt-paragraph">
       {!snapshot ? t`Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite.`

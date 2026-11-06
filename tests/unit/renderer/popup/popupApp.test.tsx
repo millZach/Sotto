@@ -1,6 +1,5 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentRequest, AgentThread, AgentThreadDetail } from '../../../../src/shared/agents'
@@ -9,7 +8,6 @@ import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import type { WatcherRoomResult } from '../../../../src/shared/watcherRoom'
 import { PopupApp } from '../../../../src/renderer/src/popup/PopupApp'
 import { POPUP_MEMORY_KEY, readPopupMemory, writePopupMemory, type PopupTarget } from '../../../../src/renderer/src/popup/popupLogic'
-import { MessageLinks } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { requestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { agentThread, threadsStateFixture } from '../../../fixtures/agentState'
 import { deferred } from '../../../fixtures/deferred'
@@ -43,6 +41,8 @@ function mount(patch: Partial<AgentThread> = {}, watcher?: WatcherRoomResult) {
     threadDetail: vi.fn(async () => ({ threadId: thread.id, revision: 1, messages: thread.messages, activities: [] })),
     onThread: listener => { update = listener; return () => undefined }, onThreadDetail: () => () => undefined,
     openExternalLink: vi.fn(async () => ({ ok: true })), hide: vi.fn(async () => undefined),
+    stageAttachment: vi.fn(async request => ({ id: crypto.randomUUID(), digest: 'a'.repeat(64), name: request.name, mimeType: request.mimeType, sizeBytes: request.bytes.length })),
+    attachmentContent: vi.fn(async () => null), attachmentPreview: vi.fn(async () => null), copyImage: vi.fn(async () => ({ ok: true as const })),
     fit: vi.fn(async () => undefined), open: vi.fn(async () => undefined),
     onShown: listener => { shown = listener; return () => undefined },
     ...(watcher ? { watcher: vi.fn(async () => watcher) } : {}),
@@ -67,7 +67,7 @@ describe('the popup running-turn affordances', () => {
   it.each(liveTurns)('uses the same running state for Stop, Escape, the owl and queueing: %j', async patch => {
     const f = mount(patch)
     const stop = await screen.findByRole('button', { name: 'Stop the running turn' })
-    expect(screen.getByText('Esc stops it')).toBeVisible()
+    expect(screen.getByText('Working…')).toBeVisible()
     expect(f.view.container.querySelector('.popup-owl')).toHaveClass('is-working')
     fireEvent.click(stop)
     expect(f.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: 'thread' })
@@ -82,7 +82,7 @@ describe('the popup running-turn affordances', () => {
     expect(f.command.mock.calls.some(([command]) => command.type === 'manual-send')).toBe(false)
     f.update({ ...f.thread, status: 'idle', lastTurn: { id: 'turn', status: 'completed' } })
     expect(screen.queryByRole('button', { name: 'Stop the running turn' })).toBeNull()
-    expect(f.view.container.querySelector('.popup-owl')).not.toHaveClass('is-working')
+    expect(f.view.container.querySelector('.popup-owl.is-working')).toBeNull()
     fireEvent.keyDown(prompt, { key: 'Escape' })
     expect(f.bridge.hide).toHaveBeenCalledTimes(1)
   })
@@ -138,13 +138,6 @@ describe('links in popup request cards', () => {
     expect(f.command.mock.calls.some(([command]) => command.type === 'answer')).toBe(false)
   })
 
-  it('opens message-link rows through the same bridge', async () => {
-    const f = mount()
-    render(<MessageLinks links={['https://example.com/rows']} />)
-    fireEvent.click(screen.getByRole('link', { name: 'Open the link, example.com/rows' }))
-    expect(f.bridge.openExternalLink).toHaveBeenCalledExactlyOnceWith('https://example.com/rows')
-  })
-
   it.each(['click', 'Enter'])('routes a prototype page to its owning thread by %s', async action => {
     const f = mount({ requests: [{ id: 'prototype', kind: 'question', text: 'Review the prototype', options: [],
       pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'prototype.html', start: '' }] }] })
@@ -160,7 +153,7 @@ describe('links in popup request cards', () => {
     const f = mount({ requests: [{ id: 'prototype', kind: 'question', text: 'Review the prototype', options: [],
       ...(structured ? { questions: [{ id: 'review', question: 'Review the prototype', options: [], multiSelect: false, allowFreeText: true }] } : {}),
       pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'prototype.html', start: '' }] }] }, watcherRoom)
-    fireEvent.click(await screen.findByRole('button', { name: 'Talking to the thread. Switch to Watcher' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ask Watcher' }))
     const link = await screen.findByRole('link', { name: 'Open the prototype, prototype.html' })
     for (const action of ['click', 'Enter']) {
       vi.mocked(f.bridge.open).mockClear()
@@ -197,7 +190,7 @@ it('focuses the prompt on show, keeps card focus during updates, and opens the t
 
 it('switches to Watcher, queues its running turn, and opens its room', async () => {
   const f = mount({ status: 'idle', lastTurn: { id: 'watcher-turn', status: 'running' } }, watcherRoom)
-  fireEvent.click(await screen.findByRole('button', { name: 'Talking to the thread. Switch to Watcher' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Ask Watcher' }))
   const prompt = screen.getByRole('textbox', { name: 'Message Watcher' })
   expect(screen.queryByRole('button', { name: 'Stop the running turn' })).toBeNull()
   fireEvent.change(prompt, { target: { value: 'Next for Watcher' } })
@@ -229,6 +222,7 @@ async function setup({ thread = agentThread(), target = 'thread' }: { thread?: A
       ...state.host, models: { revision: 1, omitted: true }, clientHosts: [],
     } })),
     openExternalLink: async () => ({ ok: true }),
+    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null, copyImage: async () => ({ ok: true as const }),
     hide: vi.fn(async () => undefined),
     fit: async () => undefined,
     open: async () => undefined,
@@ -309,6 +303,7 @@ function bridgeFixture(patch: Partial<PopupBridge> = {}): PopupBridge {
     shell: async () => state, threadDetail: async () => ({ threadId: 'thread', revision: 0, messages: [] }),
     onThreadDetail: () => () => undefined, onThread: () => () => undefined,
     command: async () => ({ ...state, host: { ...state.host, models: { revision: 0, omitted: true }, clientHosts: [] } }), openExternalLink: async () => ({ ok: true }),
+    stageAttachment: async () => { throw new Error('unused') }, attachmentContent: async () => null, attachmentPreview: async () => null, copyImage: async () => ({ ok: true as const }),
     hide: async () => undefined, fit: async () => undefined, open: async () => undefined, onShown: () => () => undefined,
     ...patch,
   }
@@ -349,7 +344,7 @@ it('ignores a failed read after the user starts a new thread', async () => {
   const pending = deferred<AgentThreadDetail | null>()
   writePopupMemory(window.localStorage, { target: 'thread', threadId: 'thread', projectId: null })
   render(<PopupApp bridge={bridgeFixture({ threadDetail: () => pending.promise })} />)
-  await userEvent.click(screen.getByRole('button', { name: 'New thread' }))
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'n', metaKey: true })
   await act(async () => { pending.reject(new Error('old read')) })
   expect(screen.queryByRole('alert')).toBeNull()
 })
@@ -369,4 +364,174 @@ it('clears a history read notice when reopening successfully reads it', async ()
   fail = false
   await act(async () => { show() })
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+describe('moving between Watcher and threads', () => {
+  type Said = readonly AgentThread['messages'][number][]
+  const twoThreads = (said: { readonly mine?: Said; readonly room?: Said } = {}, settings: Partial<typeof DEFAULT_SETTINGS> = {}) => {
+    const mine = agentThread({ id: 'mine', title: 'My thread', messages: [...said.mine ?? [{ id: 'm1', role: 'assistant', text: 'From my thread', createdAt: '2026-11-03T00:00:00.000Z' }]] })
+    const room = agentThread({ id: 'room', title: 'Watcher', kind: 'watcher', messages: [...said.room ?? [{ id: 'w1', role: 'assistant', text: 'From Watcher', createdAt: '2026-11-03T00:00:00.000Z' }]] })
+    const other = agentThread({ id: 'other', title: 'Another thread', messages: [] })
+    const state = threadsStateFixture({ threads: [mine, room, other], projects: [{ id: mine.projectId }] })
+    const hostId = state.hostId ?? state.host.hostId!
+    const watcher = vi.fn(async () => ({ ...watcherRoom, state: { ...watcherRoom.state, current: { ...watcherRoom.state.current!, target: { hostId, threadId: 'room' } } } }) as WatcherRoomResult)
+    const fit = vi.fn<PopupBridge['fit']>(async () => undefined)
+    const hide = vi.fn<PopupBridge['hide']>(async () => undefined)
+    const details: Readonly<Record<string, AgentThread>> = { mine, room, other }
+    const threadDetail = vi.fn(async (id: string) => ({ threadId: id, revision: 1, messages: details[id]!.messages, activities: [] }))
+    const command = vi.fn<PopupBridge['command']>(async () => ({ ...state, host: { ...state.host, models: { revision: 1, omitted: true }, clientHosts: [] } }))
+    let pushed: (thread: AgentThread) => void = () => undefined
+    writePopupMemory(localStorage, { target: 'thread', threadId: 'mine', projectId: mine.projectId })
+    const view = render(<PopupApp bridge={bridgeFixture({ shell: async () => state, watcher, fit, hide, threadDetail, command,
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, ...settings }), onThread: listener => { pushed = listener; return () => undefined } })} />)
+    return { fit, hide, threadDetail, command, room, container: view.container, push: (thread: AgentThread) => pushed(thread) }
+  }
+
+  it('observes both targets, and a switch shows the other at once with no read and the window no shorter', async () => {
+    const f = twoThreads()
+    await screen.findByText('From my thread')
+    await waitFor(() => expect(f.threadDetail).toHaveBeenCalledWith('room'))
+    expect(f.command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['room', 'mine'] })
+    const reads = f.threadDetail.mock.calls.length
+    const tallest = () => Math.max(0, ...f.fit.mock.calls.map(([height]) => height))
+    const before = tallest()
+    f.fit.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Watcher' }))
+    expect(screen.getByText('From Watcher')).toBeInTheDocument()
+    expect(screen.queryByText('From my thread')).toBeNull()
+    expect(f.threadDetail).toHaveBeenCalledTimes(reads)
+    for (const [height] of f.fit.mock.calls) expect(height).toBeGreaterThanOrEqual(before)
+  })
+
+  it('keeps a pushed record and reads no history again when the user picks another thread', async () => {
+    const f = twoThreads()
+    await screen.findByText('From my thread')
+    await waitFor(() => expect(f.threadDetail).toHaveBeenCalledWith('room'))
+    await screen.findByRole('button', { name: 'Ask Watcher' })
+    act(() => f.push({ ...f.room, status: 'running' }))
+    f.threadDetail.mockClear()
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'n', metaKey: true })
+    expect(f.threadDetail).not.toHaveBeenCalledWith('room')
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Watcher' }))
+    expect(screen.getByText('Working…')).toBeInTheDocument()
+  })
+
+  it('parts Watcher\'s reports with a rule and the time, and a thread\'s messages with neither', async () => {
+    const f = twoThreads({ mine: [
+      { id: 'a', role: 'assistant', text: 'One', createdAt: '2026-11-03T00:00:00.000Z' }, { id: 'b', role: 'assistant', text: 'Two', createdAt: '2026-11-03T00:01:00.000Z' },
+    ], room: [
+      { id: 'c', role: 'assistant', text: 'Report one', createdAt: '2026-11-03T00:00:00.000Z' }, { id: 'd', role: 'assistant', text: 'Report two', createdAt: '2026-11-03T00:01:00.000Z' },
+    ] })
+    await screen.findByText('Two')
+    expect(f.container.querySelector('.popup-rule')).toBeNull()
+    await waitFor(() => { fireEvent.click(screen.getByRole('button', { name: 'Ask Watcher' })); expect(screen.getByText('Report two')).toBeInTheDocument() })
+    expect(f.container.querySelectorAll('.popup-rule')).toHaveLength(1)
+  })
+
+  it('leaves a chord the dictation hotkey holds to dictation, and says nothing of those keys', async () => {
+    twoThreads({}, { hotkey: 'CommandOrControl+K' })
+    await screen.findByText('From my thread')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose a thread' })).toHaveAttribute('title', 'Choose a thread'))
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'k', metaKey: true })
+    expect(screen.queryByRole('listbox', { name: 'Threads' })).toBeNull()
+  })
+
+  it('closes the list on Escape wherever the keyboard is, and neither stops a turn nor hides the card', async () => {
+    const f = twoThreads()
+    await screen.findByText('From my thread')
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a thread' }))
+    const elsewhere = screen.getByRole('button', { name: 'Send' })
+    fireEvent.keyDown(elsewhere, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: 'Threads' })).toBeNull()
+    expect(f.hide).not.toHaveBeenCalled()
+  })
+
+  it('keeps the words typed across a switch, and flips with Command+1 and Command+2', async () => {
+    twoThreads()
+    await screen.findByText('From my thread')
+    const prompt = screen.getByRole('textbox')
+    fireEvent.change(prompt, { target: { value: 'Half a thought' } })
+    await screen.findByRole('button', { name: 'Ask Watcher' })
+    await waitFor(() => { fireEvent.keyDown(prompt, { key: '1', metaKey: true }); expect(screen.getByText('From Watcher')).toBeInTheDocument() })
+    expect(screen.getByRole('textbox')).toHaveValue('Half a thought')
+    expect(screen.getByRole('button', { name: 'Ask Watcher' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.keyDown(prompt, { key: '2', metaKey: true })
+    expect(screen.getByText('From my thread')).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Half a thought')
+  })
+
+  it('lists the recent threads on Command+K; the arrows and Return choose one and Escape closes the list', async () => {
+    twoThreads()
+    await screen.findByText('From my thread')
+    const prompt = screen.getByRole('textbox')
+    fireEvent.keyDown(prompt, { key: 'k', metaKey: true })
+    const list = screen.getByRole('listbox', { name: 'Threads' })
+    expect(within(list).queryByText('Watcher')).toBeNull()
+    expect(within(list).getByText('Another thread')).toBeInTheDocument()
+    fireEvent.keyDown(prompt, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: 'Threads' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a thread' }))
+    const rows = within(screen.getByRole('listbox', { name: 'Threads' })).getAllByRole('option')
+    const another = rows.findIndex(row => row.textContent?.includes('Another thread'))
+    for (let press = 0; press < another; press++) fireEvent.keyDown(prompt, { key: 'ArrowDown' })
+    fireEvent.keyDown(prompt, { key: 'Enter' })
+    expect(screen.getByRole('textbox', { name: 'Message Another thread' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ask Another thread' })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('photos in the popup', () => {
+  const photo = () => new File([new Uint8Array([1, 2, 3])], 'crash.png', { type: 'image/png' })
+  const attach = async (view: ReturnType<typeof render>) => {
+    const picker = view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => { fireEvent.change(picker, { target: { files: [photo()] } }) })
+  }
+
+  it('stages a photo through the popup\'s bridge and sends its handle with the words, then clears the box', async () => {
+    const f = mount()
+    await screen.findByRole('textbox', { name: `Message ${f.thread.title}` })
+    await attach(f.view)
+    await waitFor(() => expect(f.bridge.stageAttachment).toHaveBeenCalledWith(expect.objectContaining({ threadId: f.thread.id, name: 'crash.png', mimeType: 'image/png' })))
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    const prompt = screen.getByRole('textbox')
+    fireEvent.change(prompt, { target: { value: 'Same crash?' } })
+    fireEvent.keyDown(prompt, { key: 'Enter' })
+    await waitFor(() => expect(f.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send', text: 'Same crash?', attachments: [expect.objectContaining({ name: 'crash.png' })] })))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove crash.png' })).toBeNull())
+  })
+
+  it('keeps what was written and attached since when a refusal lands late', async () => {
+    const f = mount()
+    await screen.findByRole('textbox', { name: `Message ${f.thread.title}` })
+    await attach(f.view)
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    const accepted = await f.command({ type: 'observe-threads', threadIds: [] })
+    let refuse!: () => void
+    f.command.mockImplementation(request => request.type === 'manual-send'
+      ? new Promise(resolve => { refuse = () => resolve({ ...accepted, error: 'This model does not support screenshots.' }) })
+      : Promise.resolve(accepted))
+    const prompt = screen.getByRole('textbox')
+    fireEvent.change(prompt, { target: { value: 'First' } })
+    fireEvent.keyDown(prompt, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove crash.png' })).toBeNull())
+    fireEvent.change(prompt, { target: { value: 'Second' } })
+    await attach(f.view)
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    await act(async () => { refuse() })
+    expect(await screen.findByRole('alert')).toHaveTextContent('This model does not support screenshots.')
+    expect(screen.getAllByRole('button', { name: 'Remove crash.png' })).toHaveLength(2)
+    expect(screen.getByRole('textbox')).toHaveValue('First\n\nSecond')
+  })
+
+  it('sends a photo with no words, and puts the photo back when main refuses it', async () => {
+    const f = mount()
+    await screen.findByRole('textbox', { name: `Message ${f.thread.title}` })
+    await attach(f.view)
+    await screen.findByRole('button', { name: 'Remove crash.png' })
+    const refusal = { ...(await f.command({ type: 'observe-threads', threadIds: [] })), error: 'This model does not support screenshots.' }
+    f.command.mockImplementation(async request => request.type === 'manual-send' ? refusal : { ...refusal, error: null })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('This model does not support screenshots.')
+    expect(screen.getByRole('button', { name: 'Remove crash.png' })).toBeInTheDocument()
+  })
 })

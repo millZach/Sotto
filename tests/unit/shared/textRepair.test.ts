@@ -1,14 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { collapseRepeatedPhrases, countWords } from '../../../src/shared/textRepair'
-
-describe('countWords', () => {
-  it('counts whitespace-separated words', () => {
-    expect(countWords('  one two\tthree\n')).toBe(3)
-    expect(countWords('')).toBe(0)
-  })
-})
+import { collapseRepeatedPhrases } from '../../../src/shared/textRepair'
 
 describe('collapseRepeatedPhrases', () => {
   it('collapses a hallucinated single-word repetition loop', () => {

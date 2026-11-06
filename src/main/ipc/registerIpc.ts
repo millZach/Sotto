@@ -195,6 +195,7 @@ const settingKeys = [
   'phoneAccess',
   'phoneAccessName',
   'localApps',
+  'popupEnabled',
   'popupShortcut',
   'showBrowserPreviews',
   'browserWithoutAsking',
@@ -910,7 +911,7 @@ export function registerIpc(
       } catch {
         return UNAVAILABLE
       }
-    })
+    }, ['main', 'popup'])
   } catch (registrationError) {
     try {
       cleanup()

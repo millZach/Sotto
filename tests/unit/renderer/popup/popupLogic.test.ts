@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  nextPopupDetail, popupKeyAction, popupProject, POPUP_MEMORY_KEY, readPopupMemory, shownMessages, slashCommandOf, slashCommands, slashMatches, writePopupMemory,
+  newestExchangeStart, nextPopupDetail, popupKeyAction, popupProject, POPUP_MEMORY_KEY, POPUP_THREADS_LISTED, readPopupMemory, recentThreads, shownMessages, slashCommandOf, slashCommands, slashMatches, splitClosingLines, writePopupMemory,
 } from '../../../../src/renderer/src/popup/popupLogic'
-import type { AgentMessage, AgentProject, AgentThreadDetail } from '../../../../src/shared/agents'
+import type { AgentMessage, AgentProject, AgentThread, AgentThreadDetail } from '../../../../src/shared/agents'
 
 const key = (key: string, more: Partial<Pick<KeyboardEvent, 'shiftKey' | 'altKey' | 'metaKey' | 'ctrlKey' | 'isComposing'>> = {}) =>
   ({ key, shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, isComposing: false, ...more })
@@ -110,5 +110,46 @@ describe('the popup\'s conversation (ADR-0181)', () => {
   it('shows what the user and the agent wrote, newest last, without wake-ups', () => {
     const shown = shownMessages([message('1', 'user', 'Ask'), message('2', 'user', 'News', { wakeUp: true }), message('3', 'assistant', 'Answer'), message('4', 'assistant', '  ')])
     expect(shown.map(item => item.id)).toEqual(['1', '3'])
+  })
+})
+
+describe('how the card reads (ADR-0181)', () => {
+  const said = (...roles: readonly AgentMessage['role'][]) => roles.map(role => ({ role }))
+
+  it('opens on the last prompt, or the last three messages when more came after it', () => {
+    expect(newestExchangeStart([])).toBe(0)
+    expect(newestExchangeStart(said('assistant'))).toBe(0)
+    expect(newestExchangeStart(said('user', 'assistant', 'user', 'assistant'))).toBe(2)
+    expect(newestExchangeStart(said('user', 'assistant', 'assistant', 'assistant', 'assistant'))).toBe(2)
+  })
+
+  it('sets the labelled lines that close a reply apart, and no others', () => {
+    const body = 'All checks **passed**.\n\n**Why:** it was the fixture.\n\nSo it merges.'
+    const closing = '**Next:** it merges.\n\n**Needs you:** nothing.\n\n**TLDR:** done.'
+    expect(splitClosingLines(`${body}\n\n${closing}`)).toEqual({ body, closing })
+    expect(splitClosingLines(closing)).toEqual({ body: '', closing })
+    expect(splitClosingLines(body)).toEqual({ body, closing: '' })
+    expect(splitClosingLines('Before.\n\n**A very long label that is not a label at all:** words')).toEqual({ body: 'Before.\n\n**A very long label that is not a label at all:** words', closing: '' })
+  })
+
+  it('lists the open threads the sidebar would show, newest first, at most five', () => {
+    const thread = (id: string, at: string, more: Partial<AgentThread> = {}) => ({ id, projectId: 'open', updatedAt: at, status: 'idle', titleSource: 'provider', messages: [], ...more }) as AgentThread
+    const now = '2026-11-05T00:00:00Z'
+    const projects = [{ id: 'open' }, { id: 'done', workspaceSettledAt: now }] as AgentProject[]
+    const threads = [thread('old', '2026-11-01T00:00:00Z'), thread('new', now), thread('room', now, { kind: 'watcher' }), thread('history', now, { kind: 'watcher-history' }),
+      thread('settled', now, { settledAt: now }), thread('archived', now, { archivedAt: now }), thread('unsent', now, { titleSource: 'default' }),
+      thread('delegated', now, { delegatedBy: 'new' }), thread('in-settled-project', now, { projectId: 'done' })]
+    expect(recentThreads(threads, projects).map(item => item.id)).toEqual(['new', 'old'])
+    expect(recentThreads(Array.from({ length: 9 }, (_, index) => thread(`t${index}`, '2026-11-01T00:00:00Z')), projects)).toHaveLength(POPUP_THREADS_LISTED)
+  })
+
+  it('gives the primary chords the popup\'s own actions, with Command on a Mac and Ctrl elsewhere', () => {
+    expect(popupKeyAction(key('1', { metaKey: true }), quiet)).toBe('ask-watcher')
+    expect(popupKeyAction(key('2', { metaKey: true }), quiet)).toBe('ask-thread')
+    expect(popupKeyAction(key('k', { metaKey: true }), quiet)).toBe('choose-thread')
+    expect(popupKeyAction(key('n', { metaKey: true }), quiet)).toBe('new-thread')
+    expect(popupKeyAction(key('1', { ctrlKey: true }), { ...quiet, platform: 'win32' })).toBe('ask-watcher')
+    expect(popupKeyAction(key('1', { ctrlKey: true }), quiet)).toBeNull()
+    expect(popupKeyAction(key('1', { metaKey: true, shiftKey: true }), quiet)).toBeNull()
   })
 })

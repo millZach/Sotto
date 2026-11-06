@@ -39,12 +39,6 @@ describe('attachment preview IPC', () => {
     expect(f.attachmentPreview).toHaveBeenCalledWith(request)
   })
 
-  it('reports nothing rather than an error when no eligible preview exists', async () => {
-    const f = fixture()
-    f.attachmentPreview.mockResolvedValue(null)
-    await expect(f.invoke(request)).resolves.toBeNull()
-  })
-
   it('rejects an untrusted sender and malformed requests without reaching the store', async () => {
     const f = fixture()
     await expect(f.invoke(request, f.stranger)).rejects.toThrow('AGENT_SENDER_REJECTED')

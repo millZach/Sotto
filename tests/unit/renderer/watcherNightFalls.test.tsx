@@ -9,7 +9,7 @@ import {
 import { inkAt, LIGHT_ACCENT_BOOST } from '../../../src/renderer/src/watcher/nightScene'
 import { settingsIndex } from '../../../src/renderer/src/features/settings/settingsPages'
 import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
-import { NightFallsSettings, speedLabel } from '../../../src/renderer/src/features/settings/NightFallsSettings'
+import { NightFallsSettings } from '../../../src/renderer/src/features/settings/NightFallsSettings'
 
 type StartViewTransition = (update: () => void) => ViewTransition
 
@@ -333,12 +333,6 @@ describe('playing night falls', () => {
 })
 
 describe('night falls settings', () => {
-  it('names the speed the way the dial shows it', () => {
-    expect(speedLabel(1)).toBe('1x')
-    expect(speedLabel(0.75)).toBe('0.75x')
-    expect(speedLabel(1.5)).toBe('1.5x')
-  })
-
   it('switches night falls off and saves the speed when the dial is let go', () => {
     const onSave = vi.fn()
     render(<NightFallsSettings settings={{ roomTransition: true, roomTransitionSpeed: 1, roomTransitionLook: 'band' }} onSave={onSave} />)

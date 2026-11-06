@@ -52,7 +52,7 @@ async function owlsOverColumn(page: Page): Promise<number> {
     const pane = document.getElementById('watcher-pane')!, base = pane.getBoundingClientRect()
     const canvas = pane.querySelector<HTMLCanvasElement>(':scope > canvas.watcher-scene--owl')!, scale = canvas.width / canvas.clientWidth
     const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-status, .thread-workspace__error)')].map(node => node.getBoundingClientRect().bottom))
     const x0 = Math.round((card.left - base.left + 6) * scale), x1 = Math.round((card.right - base.left - 6) * scale)
     const y0 = Math.round((header - base.top) * scale), y1 = Math.round((card.top - base.top) * scale)
     const data = canvas.getContext('2d')!.getImageData(x0, y0, x1 - x0, y1 - y0).data
@@ -168,7 +168,7 @@ async function columnContrast(page: Page, extra: readonly string[] = []): Promis
     }
     const canvas = pane.querySelector<HTMLCanvasElement>(':scope > canvas.watcher-scene--land')!
     const base = pane.getBoundingClientRect(), card = formEl.getBoundingClientRect(), scale = canvas.width / canvas.clientWidth
-    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-status, .thread-workspace__error)')].map(node => node.getBoundingClientRect().bottom))
     const x0 = Math.round((card.left - base.left) * scale), x1 = Math.round((card.right - base.left) * scale)
     const y0 = Math.round((header - base.top) * scale), y1 = canvas.height
     const data = canvas.getContext('2d')!.getImageData(x0, y0, x1 - x0, y1 - y0).data

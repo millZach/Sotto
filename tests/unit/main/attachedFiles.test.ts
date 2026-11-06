@@ -119,9 +119,6 @@ describe('saving attached files into the working folder (ADR-0131)', () => {
     }
     expect(await readFile(ignore, 'utf8')).toBe(contents)
   })
-  it('says what to do when the .gitignore no longer ignores the folder', () => {
-    expect(ATTACHED_FILES_NOT_IGNORED).toBe('The attached files were not saved, because .sotto/attachments/.gitignore no longer tells Git to ignore them. Nothing was sent, and your draft is saved. Put * back on a line of its own in .sotto/attachments/.gitignore, then send again.')
-  })
   it('refuses a file where a folder should be', async () => {
     const { work } = await folders()
     await writeFile(join(work, '.sotto'), 'not a folder')

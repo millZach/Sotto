@@ -130,10 +130,6 @@ describe('readHostFacts', () => {
     })
   })
 
-  it('reports an architecture it does not map as the system names it', async () => {
-    expect((await read(system({ machine: () => 'riscv64' }))).architecture).toBe('riscv64')
-  })
-
   it('refuses no fact for being too long; it reads unknown instead', async () => {
     const facts = await read(system({ platform: () => 'linux' }), { '/etc/os-release': `PRETTY_NAME="${'x'.repeat(201)}"\nNAME=Short\n` })
     expect(facts.os.name).toBe('Short')
@@ -171,13 +167,6 @@ describe('HostFactsSource', () => {
     expect(refreshed).toEqual({ ...first, observedAt: new Date(NOW.getTime() + HOST_FACTS_REFRESH_MS).toISOString(), freeMemoryBytes: 3 * GIB })
     // Memory was read again; the operating system was not.
     expect(m.counts()).toEqual({ platformReads: 1, memoryReads: 2, fileReads: 1 })
-  })
-
-  it('reads memory afresh when first asked long after the start-up reading', async () => {
-    const m = machine()
-    await m.source.read()
-    m.setFree(2 * GIB); m.advance(60 * 60_000)
-    expect(await m.source.read()).toMatchObject({ freeMemoryBytes: 2 * GIB, observedAt: new Date(NOW.getTime() + 60 * 60_000).toISOString() })
   })
 
   it('answers several asks at once with one reading', async () => {

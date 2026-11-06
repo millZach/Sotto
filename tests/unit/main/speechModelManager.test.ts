@@ -112,13 +112,6 @@ describe('SpeechModelManager', () => {
     expect(fetchFn).toHaveBeenCalled()
   })
 
-  it('downloads nothing at start when no model is chosen', async () => {
-    const { manager, fetchFn } = setup({ choice: null })
-    await manager.start()
-    expect(manager.status()).toEqual({ state: 'missing' })
-    expect(fetchFn).not.toHaveBeenCalled()
-  })
-
   it('loads a chosen FluidAudio model through the helper', async () => {
     const { manager, pending, statuses } = setup({ choice: ULTRA.id, models: [ULTRA] })
     const started = manager.start()

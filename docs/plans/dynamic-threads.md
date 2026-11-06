@@ -127,13 +127,15 @@ Before Zach decides on stable, and before the later parts. About five real tasks
 
 Proposed bar, for Zach to change: it goes on if it uses no more limit than roles on the larger tasks and he overrules fewer than one pick in five. Otherwise the result says which half failed. Five tasks is small, so the note reports them one by one and never as an average that claims more than it can show.
 
+**Result, November 5, 2026** ([the note](../verification/2026-11-05-dynamic-threads-comparison.md)). Zach overruled none of the 10 picks, so that half passed. Dynamic used more tokens than roles on both larger tasks, #678 and #683, so the limit half failed. Zach chose to go on to Part 8 anyway. Dynamic stays an Owl feature.
+
 ## Part 8: Later
 
-In the order the comparison points to:
+In the order the comparison points to. Zach's picks, November 5, 2026: the user's note first, ahead of its record, Give it to another model… and more overseers. It reaches a thread when its session starts and once, as an overseer note, after it changes, rather than with every message.
 
-- **Its record:** counts per model on this computer, on Usage's numbers-only terms, with a clear press.
-- **The user's note.**
-- **Give it to another model…** on a row's ···.
+- **The user's note:** **Your note** on the Settings card, up to 600 characters, in the overseer's instructions at creation and as an overseer note after a change. `dynamicSession` keeps digests of the note, never its words.
+- **Its record:** counts per model on this computer, on Usage's numbers-only terms, with a clear press. Built next, Zach's pick on November 5: pieces, finished, moved and tokens per model on the Settings card, and beside each model in an overseer's listing.
+- **Give it to another model…** on a row's ···. Built third, Zach's pick on November 5: the row's menu lists the models the allowed list lets it go to, and the new worker starts on the old brief, replacing the old one.
 - **More overseers:** Grok Build, whose rules are set only at creation, and Muse, whose instructions go with each message.
 - **The iPhone's switch, paired hosts, and Watcher starting Dynamic threads.**
 - **A per-project allowed list,** if client work calls for it.

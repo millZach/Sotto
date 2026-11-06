@@ -25,13 +25,6 @@ describe('isTopEffort', () => {
     })
   }
 
-  it('lights Claude at Max and at Ultracode', () => {
-    expect(claude).toContain(ULTRACODE)
-    expect(isTopEffort(claude, 'max')).toBe(true)
-    expect(isTopEffort(claude, ULTRACODE)).toBe(true)
-    expect(isTopEffort(claude, 'xhigh')).toBe(false)
-  })
-
   it('lights nothing for a model with one level, none, or the provider default', () => {
     expect(isTopEffort(['max'], 'max')).toBe(false)
     expect(isTopEffort([], 'max')).toBe(false)

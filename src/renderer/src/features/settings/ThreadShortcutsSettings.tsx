@@ -21,7 +21,7 @@ import './dictationShortcuts.css'
 import './threadShortcuts.css'
 
 export interface ThreadShortcutsSettingsProps {
-  readonly settings: Pick<AppSettings, 'threadShortcuts' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
+  readonly settings: Pick<AppSettings, 'popupEnabled' | 'threadShortcuts' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
   readonly platform: SottoPlatform
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Dictation's keys keep their own rows; this page's entry for them only points there. */
@@ -100,7 +100,7 @@ const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a l
 export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation, before }: ThreadShortcutsSettingsProps): ReactNode {
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
-  const popupOn = useOwlFeature('popup')
+  const popupOn = useOwlFeature('popup') && settings.popupEnabled
   const [filter, setFilter] = useState('')
   const [target, setTarget] = useState<ThreadShortcutId | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)

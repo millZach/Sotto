@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/teams-desks` (variant A, read on a press, order 1). It is the second slice of `docs/plans/teams-watchers.md`, part of the Owl feature `teams` (ADR-0072). Amends [ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md), decision 5, which said a later slice that wants a command adds it on purpose, and decision 6.
+Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/teams-desks` (variant A, read on a press, order 1). It is the second slice of `docs/plans/teams-watchers.md`, part of the Owl feature `teams` (ADR-0072). Amends [ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md), decision 5, which said a later slice that wants a command adds it on purpose, and decision 6. Decisions 4 and 5 are amended by [ADR-0193](0193-a-team-link-checks-both-ways-and-open-desks-keep-up.md): open desks read every 2 minutes, and close reads fold into one line.
 
 ## Context
 
@@ -18,7 +18,7 @@ A merge order needs facts in a shape Sotto can sort, and a written answer is not
 
 **3. A read runs no model.** Sotto builds the answer from the facts, so it costs neither owner any usage and has no writer for words to steer. It does not start a Watcher turn, and it has no path to a thread, a card or a permission. Nothing in it reaches Watcher: it makes no **teammate's message**, and `read_teammate_messages` cannot return it.
 
-**4. Only a press reads it.** **Get Drake's desk** reads once, and the desk says when until the next press. Opening the desks, leaving them open and a restart send nothing. A failed read is not retried and nothing waits to send.
+**4. Only a press reads it.** (Amended by ADR-0193, decision 4: opening the desks reads when the last read is over 2 minutes old, and open desks read every 2 minutes while they show.) **Get Drake's desk** reads once, and the desk says when until the next press. Opening the desks, leaving them open and a restart send nothing. A failed read is not retried and nothing waits to send.
 
 **5. A read is small, and the owner sees each one.** A desk is at most 40 threads with 5 pull requests each, its texts cut at 160 characters, within 32 KB; threads past that are counted and not sent. The answering computer turns down more than 10 reads from one link in any 10 minutes. Its Teams tab lists the newest 100 reads it answered, by name and time, in a fold under **Latest**. The list holds no words, so it stays with **Keep local history** off.
 

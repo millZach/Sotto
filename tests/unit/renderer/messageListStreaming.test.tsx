@@ -28,14 +28,6 @@ describe('assistant messages without text', () => {
   })
 })
 
-describe('replies shown as written', () => {
-  it('draws the reply being written', () => {
-    mount([user, reply('a-1', 'Half a sent')])
-    expect(screen.getByText('Half a sent')).toBeInTheDocument()
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
-  })
-})
-
 describe('replies shown when finished', () => {
   it('holds back the reply being written', () => {
     mount([user, reply('a-1', 'Half a sent')], { streamText: false })

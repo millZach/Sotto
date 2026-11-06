@@ -76,6 +76,7 @@ import UIKit
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
         if kind == "look" { return await look() }
+        if kind == "pictures" { return await pictures() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -124,6 +125,229 @@ import UIKit
         await quiet()
         finish(nil)
     }
+
+    /// The picture thread (`--bench-pictures`): opened, its first tiles read, the whole page scrolled up and back, then held
+    /// still in its middle, settled and while the thread works, then held inside the run that is growing, then given to a
+    /// finger while the thread works, and last worked on from its end. What the page does is read each frame and what
+    /// the screen shows about once a second, so a jump shows with nothing touching the screen.
+    /// `testAPictureThreadStaysStillUnderItsReader` holds what it finds to account, and is the finger; without one the
+    /// journey waits out the phase. The held phases' frames count those looks, so `open`, `images`, `thread-scroll` and
+    /// `working-end` are the phases to read for what the thread costs.
+    private func pictures() async {
+        next("open")
+        mark("open-begin")
+        model?.alertOpened = long
+        guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        next("images")
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        await quiet()
+        guard let view = Self.pageScroller() else { return finish("no-page") }
+        next("thread-scroll")
+        watch = PageWatch(view: view)
+        scrolled(await scrollWhole(view))
+        await quiet()
+        await settle(view, "settle-mid", at: view.contentSize.height * 0.5)
+        next("hold-mid")
+        await hold(view, seconds: 6, working: false)
+        next("working-mid")
+        await hold(view, seconds: 15, working: true)
+        // Well inside the last run's pictures, with the run still growing below the reader.
+        await settle(view, "settle-live", at: view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom - 1_200)
+        next("working-live")
+        await hold(view, seconds: 15, working: true)
+        await settle(view, "settle-finger", at: view.contentSize.height * 0.5)
+        await fingerOnPage(view)
+        await settle(view, "back-to-end", at: view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+        next("working-end")
+        watch = PageWatch(view: view)
+        var working = true
+        let updates = 30
+        let started = CACurrentMediaTime()
+        model?.benchWork(updates: updates) { working = false }
+        while working { try? await Task.sleep(nanoseconds: 100_000_000) }
+        phaseNotes["updates"] = updates
+        phaseNotes["wallMs"] = (CACurrentMediaTime() - started) * 1000
+        await quiet()
+        finish(nil)
+    }
+
+    private func settle(_ view: UIScrollView, _ name: String, at offset: CGFloat) async {
+        next(name)
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: max(0, offset)), animated: false)
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        await quiet()
+    }
+
+    /// The thread works while whoever launched the journey drags the page, until they leave a file beside the report or
+    /// four minutes pass. XCUITest waits on a busy app before each drag, so six can take minutes in a Debug build, and the
+    /// page must not walk off to its end under the last of them.
+    private func fingerOnPage(_ view: UIScrollView) async {
+        next("finger")
+        watch = PageWatch(view: view)
+        var busy = true
+        model?.benchWork(updates: 480) { busy = false }
+        let started = CACurrentMediaTime()
+        let done = report.path + ".done"
+        while !FileManager.default.fileExists(atPath: done), CACurrentMediaTime() - started < 240 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        model?.benchStopWork()
+        while busy { try? await Task.sleep(nanoseconds: 100_000_000) }
+        await quiet()
+    }
+
+    /// Holds the page where it is and reads what moves: each frame's offset and height, and the screen itself about once
+    /// a second, as the share of its pixels between the bar and the reply box that differ from the first look. `looks`
+    /// counts only the looks set against a first one, so a screen that couldn't be read never passes for a still one.
+    private func hold(_ view: UIScrollView, seconds: Double, working: Bool) async {
+        watch = PageWatch(view: view)
+        let first = glance(view)
+        var last = first
+        var fromFirst = 0.0, step = 0.0, looks = 0
+        var busy = working
+        if working { model?.benchWork(updates: Int(seconds * 2)) { busy = false } }
+        let started = CACurrentMediaTime()
+        while CACurrentMediaTime() - started < seconds || busy {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let now = glance(view) else { continue }
+            if let first { fromFirst = max(fromFirst, Self.changedShare(first, now)); looks += 1 }
+            if let last { step = max(step, Self.changedShare(last, now)) }
+            last = now
+        }
+        phaseNotes["looks"] = looks
+        phaseNotes["pixelsChangedFromFirstPct"] = fromFirst
+        phaseNotes["pixelsChangedBetweenLooksPct"] = step
+    }
+
+    private static let glanceWidth = 120, glanceHeight = 240
+    /// The window, small, as RGBA bytes.
+    private func glance(_ page: UIScrollView) -> [UInt8]? {
+        guard let window = page.window else { return nil }
+        let width = Self.glanceWidth, height = Self.glanceHeight
+        let size = CGSize(width: width, height: height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            _ = window.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: false)
+        }
+        guard let picture = image.cgImage else { return nil }
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn: Bool = bytes.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(picture, in: CGRect(origin: .zero, size: size))
+            return true
+        }
+        return drawn ? bytes : nil
+    }
+    /// The share of pixels between the bar and the reply box that differ between two glances, in percent.
+    private static func changedShare(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        let width = glanceWidth, height = glanceHeight
+        var changed = 0, total = 0
+        for row in (height / 4)..<(height * 7 / 10) {
+            for column in 0..<width {
+                let at = (row * width + column) * 4
+                let red: Int = abs(Int(a[at]) - Int(b[at]))
+                let green: Int = abs(Int(a[at + 1]) - Int(b[at + 1]))
+                let blue: Int = abs(Int(a[at + 2]) - Int(b[at + 2]))
+                total += 1
+                if max(red, max(green, blue)) > 24 { changed += 1 }
+            }
+        }
+        return total > 0 ? Double(changed) / Double(total) * 100 : 0
+    }
+
+    /// The whole page up and back, at 3,000 points a second or faster if that would outlast fifteen seconds each way.
+    private func scrollWhole(_ view: UIScrollView) async -> CGFloat? {
+        let top = -view.adjustedContentInset.top
+        let from = view.contentOffset.y
+        let distance = abs(from - top)
+        guard distance > 0 else { return nil }
+        let seconds = min(15, Double(distance) / 3_000)
+        for (a, b) in [(from, top), (top, from)] {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                motion = Motion(view: view, from: a, to: b, seconds: seconds, done: done)
+            }
+        }
+        return distance
+    }
+
+    /// What the page does, read each frame.
+    @MainActor private struct PageWatch {
+        weak var view: UIScrollView?
+        var firstOffset: CGFloat, lastOffset: CGFloat, firstHeight: CGFloat, lastHeight: CGFloat
+        var minHeight: CGFloat, maxHeight: CGFloat
+        var heightChanges = 0, offsetSteps = 0
+        var biggestHeightStep: CGFloat = 0, biggestOffsetStep: CGFloat = 0, furthest: CGFloat = 0
+        /// Each frame the height stepped by more than a row: when, where the reader stood, and from what to what.
+        var swings: [[String: Double]] = []
+        /// Each finger the page followed, from its landing to its lift: when it lifted, and how far the page went, up the
+        /// page negative. Read here on the frame it happened, so a busy main thread can't make a reading late.
+        var drags: [[String: Double]] = []
+        /// With `--bench-row-frames`, each drag frame by frame, from the finger's first frame to half a second after it
+        /// lifted: `[seconds, state, offset, height, finger y in the window, top of the row under the finger in the page]`,
+        /// the state 1 while the finger is on the glass, 2 while the page coasts after it and 0 once it rests. A row's top moves in
+        /// the page only when something above it changes height, and the row stays under the finger while its top less
+        /// the offset moves as the finger does.
+        var dragFrames: [[[Double]]] = []
+        private var dragFrom: CGFloat?
+        private var anchor: String?
+        private var liftedAt: Double?
+        private let started = CACurrentMediaTime()
+        init(view: UIScrollView) {
+            self.view = view
+            firstOffset = view.contentOffset.y; lastOffset = firstOffset
+            firstHeight = view.contentSize.height; lastHeight = firstHeight
+            minHeight = firstHeight; maxHeight = firstHeight
+        }
+        mutating func update() {
+            guard let view else { return }
+            let offset = view.contentOffset.y, height = view.contentSize.height
+            let heightStep = abs(height - lastHeight), offsetStep = abs(offset - lastOffset)
+            if heightStep > 0.5 { heightChanges += 1; biggestHeightStep = max(biggestHeightStep, heightStep) }
+            if offsetStep > 0.5 { offsetSteps += 1; biggestOffsetStep = max(biggestOffsetStep, offsetStep) }
+            let now = CACurrentMediaTime() - started
+            if heightStep > 200, swings.count < 40 {
+                swings.append(["at": now, "offset": Double(offset), "from": Double(lastHeight), "to": Double(height)])
+            }
+            if view.isDragging {
+                if dragFrom == nil {
+                    dragFrom = lastOffset
+                    if RowFrames.watched { anchor = Self.row(under: view.panGestureRecognizer.location(in: view).y); dragFrames.append([]) }
+                }
+                liftedAt = nil
+            } else if let from = dragFrom {
+                drags.append(["at": now, "moved": Double(offset - from)])
+                dragFrom = nil
+                liftedAt = now
+            }
+            if let anchor, !dragFrames.isEmpty {
+                // `isTracking`, not `isDragging`: the scroll view stays dragging through the coast after a lift (#2211).
+                let state: Double = view.isTracking ? 1 : view.isDecelerating || view.isDragging ? 2 : 0
+                dragFrames[dragFrames.count - 1].append([now, state, Double(offset), Double(height),
+                                                         Double(view.panGestureRecognizer.location(in: nil).y),
+                                                         Double(RowFrames.now[anchor]?.minY ?? -1)])
+                if let liftedAt, now - liftedAt > 0.5 { self.anchor = nil }
+            }
+            furthest = max(furthest, abs(offset - firstOffset))
+            minHeight = min(minHeight, height); maxHeight = max(maxHeight, height)
+            lastOffset = offset; lastHeight = height
+        }
+        func notes() -> [String: Any] {
+            ["firstOffset": Double(firstOffset), "lastOffset": Double(lastOffset), "firstHeight": Double(firstHeight), "lastHeight": Double(lastHeight),
+             "minHeight": Double(minHeight), "maxHeight": Double(maxHeight), "heightChanges": Double(heightChanges), "offsetSteps": Double(offsetSteps),
+             "biggestHeightStep": Double(biggestHeightStep), "biggestOffsetStep": Double(biggestOffsetStep), "furthest": Double(furthest),
+             "swings": swings, "drags": drags, "dragFrames": dragFrames]
+        }
+        /// The row whose part lies under a point of the page, or the nearest one to it.
+        private static func row(under y: CGFloat) -> String? {
+            RowFrames.now.min { a, b in distance(a.value, y) < distance(b.value, y) }?.key
+        }
+        private static func distance(_ frame: CGRect, _ y: CGFloat) -> CGFloat { y < frame.minY ? frame.minY - y : max(0, y - frame.maxY) }
+    }
+    private var watch: PageWatch?
 
     /// Opens the long thread and photographs the page at its end's distances: inside the latest turns, which are made at
     /// open, at their edge, and among the earlier turns, made as they scroll in. Its end is left out, as the working
@@ -185,6 +409,7 @@ import UIKit
         countsAtPhase = BenchProbe.snapshot()
         cpuAtPhase = Self.cpuMs()
         phaseNotes = [:]
+        watch = nil
         phase = name
         sampler?.phase(name)
         mark("phase-" + name)
@@ -337,6 +562,7 @@ import UIKit
         var result: [String: Any] = ["frames": frames.summary(), "counts": counts, "cpuMs": Self.cpuMs() - cpuAtPhase,
                                      "footprintMB": Self.footprintMB(), "peakFootprintMB": peakFootprint]
         result.merge(phaseNotes) { _, new in new }
+        if let watch { result["page"] = watch.notes() }
         return result
     }
 
@@ -355,6 +581,7 @@ import UIKit
             write()
         }
         if frames.count % 30 == 0 { sampleFootprint() }
+        watch?.update()
         guard let motion else { return }
         if motion.started == 0 { self.motion?.started = link.timestamp }
         let progress = motion.started == 0 ? 0 : min(1, (link.timestamp - motion.started) / max(motion.seconds, 0.001))
@@ -389,7 +616,7 @@ import UIKit
     /// It counts from when the phase began, not from its first frame, so a main thread blocked the moment a phase
     /// starts (opening the long thread does) is one long late frame rather than time nobody counted.
     private struct Frames {
-        var count = 0, hitches = 0
+        var count = 0, hitches = 0, over80 = 0
         var first: CFTimeInterval, last: CFTimeInterval, lastHitch: CFTimeInterval = 0, hitchMs = 0.0, longestMs = 0.0
         init(from start: CFTimeInterval) { first = start; last = start }
         mutating func tick(_ link: CADisplayLink) {
@@ -398,12 +625,13 @@ import UIKit
             if gap > 0 {
                 if expected > 0, gap > expected * 1.5 { hitches += 1; hitchMs += (gap - expected) * 1000; lastHitch = CACurrentMediaTime() }
                 longestMs = max(longestMs, gap * 1000)
+                if gap > 0.08 { over80 += 1 }
             }
             last = max(last, now); count += 1
         }
         func summary() -> [String: Double] {
             let seconds = max(0, last - first)
-            return ["frames": Double(count), "seconds": seconds, "hitches": Double(hitches), "hitchMs": hitchMs,
+            return ["frames": Double(count), "seconds": seconds, "hitches": Double(hitches), "over80": Double(over80), "hitchMs": hitchMs,
                     "longestFrameMs": longestMs, "hitchMsPerSecond": seconds > 0 ? hitchMs / seconds : 0]
         }
     }
@@ -675,5 +903,154 @@ private struct PageWindowProbe: UIViewRepresentable {
             BenchDriver.pageWindow(window != nil)
         }
     }
+}
+#endif
+
+extension View {
+    /// Keeps, for the picture-thread journey's drags (`--bench-row-frames`), where this part of a conversation row sits
+    /// in the page, so `PageWatch` can tell a page that moves under the reader's finger from one whose offset only takes
+    /// up a row measured above them. It changes nothing laid out or drawn, and only that journey turns it on; in a build
+    /// without `DEBUG` it is not there.
+    @ViewBuilder func benchRowFrame(_ part: StaticString, _ row: String, in space: NamedCoordinateSpace) -> some View {
+        #if DEBUG && os(iOS)
+        if RowFrames.watched {
+            let key = "\(part) \(row)"
+            onGeometryChange(for: CGRect.self, of: { $0.frame(in: space) }) { RowFrames.now[key] = $0 }
+                .onDisappear { RowFrames.now[key] = nil }
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+/// Where the conversation's rows sit in the page, by row, as they were last laid out (`benchRowFrame`).
+enum RowFrames {
+    static let watched = ProcessInfo.processInfo.arguments.contains("--bench-row-frames")
+    static var now: [String: CGRect] = [:]
+}
+#endif
+
+// MARK: - What a send does to the page
+
+#if DEBUG && os(iOS)
+/// Reads the conversation's scroll view each frame around a send, for the send journeys: only with `SOTTO_SEND_WATCH_FILE`
+/// naming its report. It keeps the seconds before the press and the seconds after it, then writes them all at once, so
+/// nothing it does lands during the send. The page draws as it would without it.
+@MainActor final class SendWatch {
+    static let shared: SendWatch? = {
+        guard let path = ProcessInfo.processInfo.environment["SOTTO_SEND_WATCH_FILE"], !path.isEmpty else { return nil }
+        return SendWatch(report: URL(fileURLWithPath: path))
+    }()
+    nonisolated static var isOn: Bool { ProcessInfo.processInfo.environment["SOTTO_SEND_WATCH_FILE"]?.isEmpty == false }
+    static func press() { shared?.pressed() }
+    static func mark(_ name: @autoclosure () -> String) { shared?.note(name()) }
+    private static let before: CFTimeInterval = 4, after: CFTimeInterval = 7
+
+    private let report: URL
+    private weak var scroller: UIScrollView?
+    private weak var dock: UIView?
+    private var link: CADisplayLink?
+    private var rows: [[Double]] = []
+    private var marks: [[String: Any]] = []
+    private var press: CFTimeInterval?
+
+    private init(report: URL) { self.report = report }
+
+    func attach(_ view: UIScrollView) {
+        scroller = view
+        guard link == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+    func attachDock(_ view: UIView) { dock = view }
+    private func pressed() {
+        guard press == nil else { return }
+        press = CACurrentMediaTime()
+        note("press")
+    }
+    private func note(_ name: String) {
+        guard press != nil else { return }
+        marks.append(["t": CACurrentMediaTime(), "name": name])
+    }
+    /// Time, the offset as set and as drawn, the content's height, the view's height, the room the box and keyboard take,
+    /// whether a finger holds the page, and where the scroll view and the top of the box are drawn on the screen.
+    @objc private func tick() {
+        let now = CACurrentMediaTime()
+        if let view = scroller, let dock {
+            let drawn = view.layer.presentation()?.bounds.origin.y ?? view.contentOffset.y
+            rows.append([now, view.contentOffset.y, drawn, view.contentSize.height, view.bounds.height, view.adjustedContentInset.bottom,
+                         view.isTracking ? 1 : 0, Self.drawnTop(view), Self.drawnTop(dock)])
+        }
+        if let press {
+            if now - press > Self.after { finish() }
+        } else if let first = rows.first, now - first[0] > Self.before * 2 {
+            rows.removeAll { now - $0[0] > Self.before }
+        }
+    }
+    /// Where a view's top is drawn on the screen this frame, mid-animation included: each layer as drawn, less how far
+    /// the layer it sits in has scrolled.
+    private static func drawnTop(_ view: UIView) -> Double {
+        var y = 0.0
+        var layer: CALayer? = view.layer
+        while let current = layer {
+            y += Double((current.presentation() ?? current).frame.minY)
+            if let parent = current.superlayer { y -= Double((parent.presentation() ?? parent).bounds.minY) }
+            layer = current.superlayer
+        }
+        return y
+    }
+    private func finish() {
+        link?.invalidate(); link = nil
+        let whole: [String: Any] = ["press": press ?? 0, "marks": marks, "rows": rows]
+        let data = (try? JSONSerialization.data(withJSONObject: whole)) ?? Data()
+        let target = report.appendingPathExtension("part")
+        try? data.write(to: target)
+        try? FileManager.default.moveItem(at: target, to: report)
+    }
+}
+/// Hands `SendWatch` the scroll view it sits in.
+struct SendWatchAnchor: UIViewRepresentable {
+    final class Anchor: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            var view: UIView? = superview
+            while let next = view {
+                if let scroller = next as? UIScrollView { SendWatch.shared?.attach(scroller); return }
+                view = next.superview
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Anchor { Anchor() }
+    func updateUIView(_ view: Anchor, context: Context) {}
+}
+/// Hands `SendWatch` the top of the box it sits behind.
+private struct SendWatchDock: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        SendWatch.shared?.attachDock(view)
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
+}
+extension View {
+    /// Marks the top of a reply box for `SendWatch`, when a journey reads it.
+    @ViewBuilder func sendWatchDock() -> some View {
+        if SendWatch.isOn { background(SendWatchDock()) } else { self }
+    }
+}
+#else
+enum SendWatch {
+    static func press() {}
+    static func mark(_ name: @autoclosure () -> String) {}
+}
+extension View {
+    func sendWatchDock() -> some View { self }
 }
 #endif

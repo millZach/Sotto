@@ -48,6 +48,11 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
+        if let wake = snoozeWakeAt, wake <= Date() {
+            snoozeWakeTask?.cancel()
+            snoozeWakeAt = nil
+            listed = Listed()
+        }
         let holding = holdingThreads
         let key = Listed.GroupKey(show: show, query: query, opened: opened, holding: holding)
         if let kept = listed.groups[key] { return kept }
@@ -55,6 +60,17 @@ extension AppModel {
         if listed.groups.count >= 8 { listed.groups = [:] }
         let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
         listed.groups[key] = groups
+        if let wake = groups.nextSnoozeWake, snoozeWakeAt == nil || wake < snoozeWakeAt! {
+            snoozeWakeAt = wake
+            snoozeWakeTask?.cancel()
+            snoozeWakeTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, wake.timeIntervalSinceNow) * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.snoozeWakeAt = nil
+                self.listed = Listed()
+                self.objectWillChange.send()
+            }
+        }
         return groups
     }
     /// The threads this iPhone holds something for, by `ThreadRef.id`: words, photos or files in the reply box, a refused
@@ -1167,6 +1183,39 @@ struct DraftFile: Identifiable {
     }
 }
 
+/// What a thread's page showed when a reply was sent to it: its user messages, its last message, and how many replies from
+/// this iPhone were still to join it. The reply has joined once more of the user's messages than that are new since, after
+/// that last message, so earlier messages loaded meanwhile don't count.
+struct ReplySentFrom {
+    let before: Set<String>
+    let last: String?
+    let ahead: Int
+    func joined(_ messages: [Message]) -> Bool {
+        let since = last.flatMap { last in messages.lastIndex { $0.id == last } }.map { messages[($0 + 1)...] } ?? messages[...]
+        return since.lazy.filter { $0.role == "user" && !before.contains($0.id) }.count > ahead
+    }
+}
+
+/// A reply the computer took, kept as it was sent until its words join the page (`AppModel.arriving`).
+struct ArrivingReply {
+    let item: PendingOperation
+    let text: String?
+    let photos: [DraftPhoto]
+    let files: [DraftFile]
+    let from: ReplySentFrom
+    let at: Date
+}
+
+/// A row under a thread's conversation for something on its way or unconfirmed (`AppModel.replyRows`).
+struct ReplyRow: Identifiable {
+    let item: PendingOperation
+    let text: String?
+    let photos: [DraftPhoto]
+    let files: [DraftFile]
+    let sending: Bool
+    var id: String { item.id }
+}
+
 /// A video an agent wrote, as this iPhone fetched it to play (ADR-0170, part 4).
 enum AgentVideoOutcome: Equatable {
     case file(URL)
@@ -1277,6 +1326,8 @@ struct RailAsk: Equatable {
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
+    private var snoozeWakeAt: Date?
+    private var snoozeWakeTask: Task<Void, Never>?
     private struct Listed {
         struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef?; let holding: Set<String> }
         var groups: [GroupKey: FocusThreads] = [:]
@@ -1359,6 +1410,13 @@ struct RailAsk: Equatable {
         if Self.publishesEverything { objectWillChange.send() }
     }
     @Published private(set) var submitted: [String: String] = [:]
+    /// Replies the computer took whose words haven't joined their thread's page yet, by operation ID. Each keeps its row
+    /// under the conversation, as on its way, until the update that shows its words, so the row and the message swap in one
+    /// step. The computer confirms a reply and adds it to the thread in separate pushes, in either order; between the two
+    /// the page lost the row or showed the words twice, and a reader at its end saw it jump up and back down.
+    @Published private(set) var arriving: [String: ArrivingReply] = [:]
+    /// What each reply's thread showed when it was sent, by operation ID, to tell its own message from the others'.
+    private var sentFrom: [String: ReplySentFrom] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
     /// Photos in each reply box, by `PhotoBox.id`, in the order they were chosen.
     @Published private(set) var draftPhotos: [String: [DraftPhoto]] = [:]
@@ -1544,6 +1602,11 @@ struct RailAsk: Equatable {
     private var benchShellRevision = 0
     private var benchSequence = 1_000
     private var benchState: Data?
+    /// Which form of the picture thread this journey measures: full, noimages (grids whose pictures never come), nomedia
+    /// (the same steps, no pictures) or nosteps (only the messages).
+    private var benchPictureArm: String?
+    private var benchWorkSequence = 0
+    private var benchWorkStopped = false
     private func loadUIFixture() {
         isUIFixture = true
         if ProcessInfo.processInfo.arguments.contains("--reset-ui-preferences"), let bundle = Bundle.main.bundleIdentifier {
@@ -1574,6 +1637,9 @@ struct RailAsk: Equatable {
         if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
         // The small reply box's journey: this computer can stop a running turn, so the box offers Stop (ADR-0184).
         if arguments.contains("--ui-can-stop") { caps["interrupt"] = true; answeringCaps["interrupt"] = true }
+        // The send journeys: a reply goes as from a computer that takes it (`deliverFixtureReply`).
+        let sendJourney = arguments.contains("--ui-send-order")
+        if sendJourney { caps["submit"] = true; answeringCaps["submit"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1608,6 +1674,8 @@ struct RailAsk: Equatable {
                 if asking { row["requests"] = [Self.fixtureQuestion] }
             }
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
+            // The send journeys send from a thread at rest, whose turn starts with the send.
+            if sendJourney && id == "iphone" { row["status"] = "idle"; row["summary"] = ["lastMessageAt": date] }
             if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
             if id == "shortcuts" && settingThreads {
                 // `--ui-top-effort` puts it at its model's top level, where the reply box's trace lights.
@@ -1740,12 +1808,22 @@ struct RailAsk: Equatable {
             }
             // With --ui-watcher-nothing-waits, no card waits on the user, so the page ends on Watcher's working line.
             if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
+            // The send journeys' Watcher can be at rest, starting a turn with the send.
+            if arguments.contains("--ui-send-watcher-idle") {
+                page["working"] = false
+                if var current = page["current"] as? [String: Any] { current["status"] = "idle"; page["current"] = current }
+            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
             if arguments.contains("--ui-watcher-two-cards") { answerFixtureNotesWhenAsked(on: laptop) }
         }
         storageReady = true
+        // Words already in the box with no keyboard up, as the mic leaves them.
+        if let at = arguments.firstIndex(of: "--ui-send-draft"), arguments.indices.contains(at + 1) {
+            for id in rows.map(\.0) { drafts[laptop + "/" + id] = arguments[at + 1] }
+            drafts[watcherDraftKey(laptop)] = arguments[at + 1]
+        }
         if arguments.contains("--bench-threads") { startBench(laptop: laptop, arguments: arguments) }
         if arguments.contains("--ui-streaming") {
             // In the pictures journeys the long thread's last reply grows instead of the working thread's update.
@@ -1754,6 +1832,54 @@ struct RailAsk: Equatable {
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
+    }
+    /// A reply going as from a computer: it is on its way for a moment, then the thread's update holds it and the computer's
+    /// list confirms it, in the order `--ui-send-order` names (`message-first`, `confirm-first` or `together`), as the two
+    /// are separate pushes. The thread works, and a moment later a step and the answer arrive and it rests.
+    private func deliverFixtureReply(_ text: String, operation: PendingOperation) async {
+        let arguments = ProcessInfo.processInfo.arguments
+        let order = arguments.firstIndex(of: "--ui-send-order").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "message-first"
+        let ref = ThreadRef(hostID: operation.hostID, threadID: operation.threadID)
+        dispatchingOperations[operation.id] = .some(nil)
+        SendWatch.mark("marker-kept")
+        func stamp() -> String { ISO8601DateFormatter().string(from: Date()) }
+        func apply(messages: [[String: Any]] = [], activities: [[String: Any]] = []) {
+            guard selected == ref, let detail = openDetail else { return }
+            let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                        "messageDeltas": messages.map { ["message": $0] }, "activityDeltas": activities.map { ["record": $0] }]
+            guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
+                  let next = detail.applying(change) else { return }
+            openDetail = next; detailVersion += 1
+        }
+        func setStatus(_ status: String) {
+            guard var root = fixtureShells[ref.hostID], var host = root["host"] as? [String: Any], var threads = host["threads"] as? [[String: Any]],
+                  let index = threads.firstIndex(where: { ($0["id"] as? String) == ref.threadID }) else { return }
+            threads[index]["status"] = status
+            host["threads"] = threads; root["host"] = host
+            guard let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root)) else { return }
+            fixtureShells[ref.hostID] = root
+            update(ref.hostID) { $0.shell = shell }
+        }
+        func joined() { SendWatch.mark("message-joined"); apply(messages: [["id": "sent-" + operation.id, "role": "user", "text": text, "createdAt": stamp()]]) }
+        func confirmed() {
+            SendWatch.mark("confirmed")
+            dispatchingOperations[operation.id] = nil
+            try? forgetDelivered(operation)
+            setStatus("running")
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        switch order {
+        case "confirm-first": confirmed(); try? await Task.sleep(nanoseconds: 150_000_000); joined()
+        case "together": joined(); confirmed()
+        default: joined(); try? await Task.sleep(nanoseconds: 150_000_000); confirmed()
+        }
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        SendWatch.mark("step")
+        apply(activities: [["id": "sent-step-" + operation.id, "sequence": 900_000, "kind": "command", "status": "completed", "title": "Read project notes", "startedAt": stamp()]])
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        SendWatch.mark("answer")
+        apply(messages: [["id": "answer-" + operation.id, "role": "assistant", "text": "Done. The notes say nothing has changed since the last pass, so there is nothing more to do here.", "createdAt": stamp()]])
+        setStatus("idle")
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
@@ -1803,6 +1929,18 @@ struct RailAsk: Equatable {
                           long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
         let now = Date()
         benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
+        // With --bench-pictures, the picture thread's shape in place of the long thread, as one `detail` push.
+        if let arm = arguments.firstIndex(of: "--bench-pictures").flatMap({ arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) {
+            benchPictureArm = arm
+            BenchProbe.count("fixture.imageBytes", by: Self.benchShot.count)
+            _ = Self.benchShotURL
+            let (runMessages, runSteps) = Self.fixturePictureRuns({ BenchWire.stamp(now, $0) }, media: arm == "full" || arm == "noimages", steps: arm != "nosteps")
+            let detail: [String: Any] = ["threadId": BenchWire.longThreadID, "revision": 1, "earlierAvailable": false, "messages": runMessages, "activities": runSteps]
+            let frame: [String: Any] = ["v": 1, "event": "detail", "threadId": BenchWire.longThreadID, "detail": detail]
+            let data = (try? JSONSerialization.data(withJSONObject: frame)) ?? Data()
+            BenchProbe.count("fixture.detailBytes", by: data.count)
+            benchLongFrame = Task { data }
+        }
         Task { [weak self] in
             let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now) }.value
             guard let self else { return }
@@ -1828,6 +1966,38 @@ struct RailAsk: Equatable {
         benchSequence += 1
         push(frame, from: laptop, sequence: benchSequence)
         BenchProbe.record("apply." + kind, nanoseconds: Int(DispatchTime.now().uptimeNanoseconds - applied))
+    }
+    /// A working thread's steps: one every half second, a picture every fourth where this form has pictures, each followed
+    /// by a shell push listing the thread's record. `done` is called after the last, or once `benchStopWork` is.
+    func benchStopWork() { benchWorkStopped = true }
+    func benchWork(updates: Int, done: @escaping @MainActor () -> Void) {
+        guard let laptop = benchLaptop, let state = benchState else { done(); return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        let pictures = benchPictureArm == "full" || benchPictureArm == "noimages"
+        benchWorkStopped = false
+        Task { [weak self] in
+            for _ in 0..<max(1, updates) {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self, !benchWorkStopped, selected == ref, let detail = openDetail else { break }
+                benchWorkSequence += 1
+                let sequence = benchWorkSequence
+                var record: [String: Any] = ["id": "live-\(sequence)", "sequence": 100_000 + sequence, "kind": "tool", "status": "completed", "title": "Ran",
+                                             "command": "node shoot.js --live \(sequence)", "exitCode": 0, "durationMs": 1_000,
+                                             "startedAt": BenchWire.stamp(Date(), 1)]
+                if pictures, sequence % 4 == 0 {
+                    record["media"] = [["id": "shot", "kind": "image", "mimeType": "image/png", "width": 1600, "height": 1000, "name": "live-\(sequence).png",
+                                        "source": "tool-result", "sizeBytes": 192_000]]
+                }
+                let delta: [String: Any] = ["threadId": BenchWire.longThreadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                            "messageDeltas": [[String: Any]](), "activityDeltas": [["record": record]]]
+                let frame: [String: Any] = ["v": 1, "event": "detail-delta", "threadId": BenchWire.longThreadID, "delta": delta]
+                await benchDeliver((try? JSONSerialization.data(withJSONObject: frame)) ?? Data(), kind: "delta")
+                let shell = BenchWire.longThreadRecord(hostID: laptop, now: Date())
+                await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [shell]), kind: "shell")
+                benchShellRevision += 1
+            }
+            done()
+        }
     }
     /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
     /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
@@ -1889,6 +2059,38 @@ struct RailAsk: Equatable {
                       "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
         return (messages, steps)
     }
+    /// The shape of the thread that showed a page jumping under its reader, November 4, 2026: "steps:pictures" for a run,
+    /// "u" or "a" and a length for a message, with the lengths and counts as they were and none of its words. It ends on
+    /// a run of forty pictures, the size of run it has when work goes on past a turn's end.
+    private static func fixturePictureRuns(_ at: (Double) -> String, media: Bool = true, steps wantsSteps: Bool = true) -> ([[String: Any]], [[String: Any]]) {
+        let shape = "24:0 u7570 10:0 u264 18:0 a1035 142:6 a264 53:29 a171 30:0 a1013 52:1 u3277 5:1 a1180 6:0 a138 53:27 a107 10:4 a275 15:0 a83 35:17 a107 4:0 a134 19:2 a109 14:3 a144 2:0 a58 22:5 a116 80:76 a130 83:23 a1397 320:34 a99 75:6 a131 60:16 a86 45:7 a55 10:0 a94 10:6 u65 3:0 a2717 13:0 a70 15:0 a84 19:1 a88 17:4 a126 13:0 a86 47:7 a90 60:40"
+        let sentence = "The page at this width keeps its rhythm, and the next pass tightens the spacing of the list. "
+        var messages: [[String: Any]] = []
+        var steps: [[String: Any]] = []
+        var clock = 8_000.0
+        for (index, part) in shape.split(separator: " ").enumerated() {
+            if let role = part.first, role == "u" || role == "a" {
+                let length = Int(part.dropFirst()) ?? 80
+                let text = String(String(repeating: sentence, count: length / sentence.count + 1).prefix(length))
+                messages.append(["id": "run-message-\(index)", "role": role == "u" ? "user" : "assistant", "createdAt": at(clock), "text": text])
+                clock -= 5
+                continue
+            }
+            let counts = part.split(separator: ":").compactMap { Int($0) }
+            if !wantsSteps { continue }
+            for step in 0..<counts[0] {
+                var record: [String: Any] = ["id": "run-\(index)-\(step)", "sequence": steps.count + 1, "kind": step < counts[1] ? "tool" : "command", "status": "completed",
+                                             "title": "Ran", "command": "node shoot.js --page \(step)", "exitCode": 0, "durationMs": 1_000, "startedAt": at(clock)]
+                if media, step < counts[1] {
+                    record["media"] = [["id": "shot", "kind": "image", "mimeType": "image/png", "width": 1600, "height": 1000, "name": "shot-\(index)-\(step).png",
+                                        "source": "tool-result", "sizeBytes": 192_000]]
+                }
+                steps.append(record)
+                clock -= 1
+            }
+        }
+        return (messages, steps)
+    }
     private static let fixtureScreenshotSize = (width: 1280, height: 800)
     /// A screenshot, wider than a tile, and a photo, taller than wide, each made once.
     private static let fixtureScreenshot = fixtureImage(width: fixtureScreenshotSize.width, height: fixtureScreenshotSize.height)
@@ -1904,12 +2106,42 @@ struct RailAsk: Equatable {
             context.fill(CGRect(x: size.width / 4, y: size.height / 4, width: size.width / 2, height: size.height / 2))
         }
     }
+    /// The picture thread's median picture: 1600 by 1000, about 190 KB of PNG, the size coming from a patch of noise.
+    private static let benchShot: Data = {
+        let size = CGSize(width: 1600, height: 1000)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        var seed: UInt32 = 12_345
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 800, y: 100, width: 700, height: 800))
+            for y in 0..<240 {
+                for x in 0..<240 {
+                    seed = seed &* 1_664_525 &+ 1_013_904_223
+                    let red = CGFloat((seed >> 24) & 255) / 255
+                    let green = CGFloat((seed >> 16) & 255) / 255
+                    let blue = CGFloat((seed >> 8) & 255) / 255
+                    UIColor(red: red, green: green, blue: blue, alpha: 1).setFill()
+                    context.fill(CGRect(x: 200 + x, y: 200 + y, width: 1, height: 1))
+                }
+            }
+        }
+    }()
+    private static let benchShotURL: String = "data:image/png;base64," + benchShot.base64EncodedString()
     /// A picture or photo of the pictures journeys, handed over most of a second after it is asked for, as a computer
     /// across the network does, and not at all once nothing shows it.
     private func fixturePicture(photo: Bool, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         guard fixturePictures else { return nil }
         try? await Task.sleep(nanoseconds: 800_000_000)
         guard wanted() else { return nil }
+        // The picture thread's journey: its median picture, read from a data URL as a computer's answer is.
+        if let arm = benchPictureArm {
+            if arm == "noimages" { return nil }
+            return await Photos.bytes(fromDataURL: Self.benchShotURL)
+        }
         return photo ? Self.fixturePhoto : Self.fixtureScreenshot
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
@@ -2245,12 +2477,18 @@ struct RailAsk: Equatable {
     /// Watcher takes the words, then a moment later answers and sends Babysit #845 release notes a note.
     private func sendToFixtureWatcher(_ text: String, on hostID: String) async {
         let stamp = ISO8601DateFormatter()
+        // The send journeys: the words are on their way a moment, and Watcher works until it answers.
+        let journey = ProcessInfo.processInfo.arguments.contains("--ui-send-order")
+        if journey { SendWatch.mark("sending"); try? await Task.sleep(nanoseconds: 300_000_000); SendWatch.mark("message-joined") }
         // The first message spends the handover offer, carried or not, and a Watcher that has said something can be replaced.
         changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false; $0["newWatcher"] = "available" }
         appendFixtureWatcherMessage(["id": "phone-" + UUID().uuidString, "role": "user", "text": text, "createdAt": stamp.string(from: Date())], on: hostID)
+        if journey { changeFixtureWatcher(on: hostID) { $0["working"] = true } }
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(nanoseconds: journey ? 1_500_000_000 : 700_000_000)
+            if journey { SendWatch.mark("answer") }
             self?.answerFixtureWatcher(on: hostID)
+            if journey, ProcessInfo.processInfo.arguments.contains("--ui-send-watcher-idle") { self?.changeFixtureWatcher(on: hostID) { $0["working"] = false } }
         }
     }
     private func answerFixtureWatcher(on hostID: String) {
@@ -2451,6 +2689,27 @@ struct RailAsk: Equatable {
         return pending.filter { $0.matches(hostID: hostID, clientID: computer.pairing.clientId) }
     }
     func pending(for ref: ThreadRef) -> [PendingOperation] { scoped(ref.hostID).filter { $0.threadID == ref.threadID } }
+    /// The rows under the open thread's conversation for what is on its way or unconfirmed: each kept marker, but a reply
+    /// still sending whose words the page already shows, and each reply the computer took whose words it doesn't show yet.
+    func replyRows(for ref: ThreadRef) -> [ReplyRow] {
+        let messages = shown(for: ref)?.messages ?? []
+        let now = Date()
+        let taken = arriving.values
+            .filter { $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && now.timeIntervalSince($0.at) < Self.arrivingLimit
+                && !$0.from.joined(messages) }
+            .sorted { $0.at < $1.at }
+            .map { ReplyRow(item: $0.item, text: $0.text, photos: $0.photos, files: $0.files, sending: true) }
+        let kept = pending(for: ref).compactMap { item -> ReplyRow? in
+            let sending = isSending(item)
+            if sending, sentFrom[item.id]?.joined(messages) == true { return nil }
+            return ReplyRow(item: item, text: submitted[item.id], photos: submittedPhotos[item.id] ?? [],
+                            files: submittedFiles[item.id] ?? [], sending: sending)
+        }
+        return taken + kept
+    }
+    /// How long a reply the computer took keeps its row for words that haven't joined the page, as when the thread
+    /// isn't open to read them.
+    private static let arrivingLimit: TimeInterval = 30
     func provider(for ref: ThreadRef) -> Provider? {
         let providerID = thread(ref)?.providerId
         return live[ref.hostID]?.shell?.host.providers?.first { $0.id == providerID }
@@ -3127,24 +3386,40 @@ struct RailAsk: Equatable {
             }
         }
     }
-    private func applyDetail(_ next: ThreadDetail?, ref: ThreadRef, epoch: UUID, versionAtRead: Int? = nil) throws {
-        guard let now = generations[ref.hostID], epoch == now, ref == selected else { return }
+    /// `widened`: a step window moved back (ADR-0194) answers with the revision the phone may already hold, and still
+    /// takes its place. Whether it was taken.
+    @discardableResult
+    private func applyDetail(_ next: ThreadDetail?, ref: ThreadRef, epoch: UUID, versionAtRead: Int? = nil, widened: Bool = false) throws -> Bool {
+        guard let now = generations[ref.hostID], epoch == now, ref == selected else { return false }
         if let next, next.threadId != ref.threadID { throw ClientError.invalidIdentity }
         guard SnapshotGuard.accepts(requestGeneration: epoch, currentGeneration: now,
                                     requestedThread: ref.id, selectedThread: selected?.id,
                                     incomingRevision: next?.revision, currentRevision: openDetail?.revision,
-                                    changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return }
-        if let next, next.revision == openDetail?.revision { return }
+                                    changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return false }
+        if let next, next.revision == openDetail?.revision, !widened { return true }
         openDetail = next; detailVersion += 1
         if detailStore.held != nil { detailStore.held = nil }
         if detailProblem != nil { detailProblem = nil }
+        return true
     }
     func earlier(_ ref: ThreadRef) async {
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }
         let current = generations[ref.hostID]
         do {
-            let command = try Commands.loadEarlier(threadID: ref.threadID)
-            _ = try await connection.call(["op": .string("command"), "command": command])
+            // A computer that cuts threads to a step window moves this phone's window back by 200 steps (ADR-0194);
+            // one that doesn't widens the thread's own window by twenty turns, as a desktop's press does.
+            // The answer is the thread from the window's new start, at the revision the phone may already hold, so it takes
+            // that copy's place; one a delta overtook on the way is read again, from the same start.
+            if live[ref.hostID]?.features.contains(StepWindow.feature) == true, let current {
+                let version = detailVersion
+                let wider = try await connection.call(StepWindow.earlier(threadID: ref.threadID), as: Optional<ThreadDetail>.self)
+                let applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                if !applied, generations[ref.hostID] == current, selected == ref { reloadDetail(ref) }
+                return
+            } else {
+                let command = try Commands.loadEarlier(threadID: ref.threadID)
+                _ = try await connection.call(["op": .string("command"), "command": command])
+            }
             guard generations[ref.hostID] == current, selected == ref else { return }
             try await observeAndRead(ref.hostID)
         } catch { if generations[ref.hostID] == current { feedback = error.localizedDescription } }
@@ -3185,9 +3460,13 @@ struct RailAsk: Equatable {
             let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID,
                                              draftID: draft, kind: queuing ? "queue" : "reply")
             try remember(operation); submitted[operation.id] = text; drafts[ref.id] = ""
+            if !queuing { sentFrom[operation.id] = replySentFrom(ref) }
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
             if !stagedFiles.isEmpty { submittedFiles[operation.id] = files(ref); draftFiles[ref.id] = nil }
             photoNotices[ref.id] = nil
+            #if DEBUG && os(iOS)
+            if isUIFixture { await deliverFixtureReply(text, operation: operation); return }
+            #endif
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
     }
@@ -3754,11 +4033,20 @@ struct RailAsk: Equatable {
     }
     private func remember(_ operation: PendingOperation) throws {
         guard pending.count < 100 else { throw ClientError.rejected(String(localized: "Check the unconfirmed actions before sending more.")) }
-        let next = pending + [operation]; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
+        let next = pending + [operation]
+        #if DEBUG && os(iOS)
+        if isUIFixture { pending = next; return }
+        #endif
+        try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
     }
     private func forgetMarker(_ id: String) throws {
-        let next = pending.filter { $0.id != id }; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
+        let next = pending.filter { $0.id != id }
+        #if DEBUG && os(iOS)
+        if isUIFixture { pending = next; submitted.removeValue(forKey: id); sentFrom[id] = nil; return }
+        #endif
+        try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
         submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
+        sentFrom[id] = nil
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
         let hostID = operation.hostID, current = generations[hostID]
@@ -3962,9 +4250,41 @@ struct RailAsk: Equatable {
                     : String(localized: "Your reply to a thread on \(name(item.hostID)) wasn’t sent. Its text is back in that thread.", comment: "%@ is the computer's name")
             }
         } else if accepted || receipt.map({ item.reconciled(receipt: $0, deliveries: shell?.deliveries ?? []) }) == true {
-            try forgetMarker(item.id)
+            try forgetDelivered(item)
             if feedbackOperations.remove(item.id) != nil, feedbackOperations.isEmpty { feedback = nil }
         }
+    }
+    /// Lets go of a reply the computer took. Its row stays until the page shows its words, in the same step (`arriving`).
+    private func forgetDelivered(_ item: PendingOperation) throws {
+        let now = Date()
+        let from = sentFrom[item.id]
+        let messages = shown(for: ThreadRef(hostID: item.hostID, threadID: item.threadID))?.messages ?? []
+        var next = arriving.filter { now.timeIntervalSince($0.value.at) < Self.arrivingLimit }
+        if item.kind == "reply", let from, !from.joined(messages) {
+            next[item.id] = ArrivingReply(item: item, text: submitted[item.id], photos: submittedPhotos[item.id] ?? [],
+                                          files: submittedFiles[item.id] ?? [], from: from, at: now)
+            // A quiet page may not redraw again; let the row go when its time is up.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.arrivingLimit * 1_000_000_000))
+                self?.forgetArriving(item.id)
+            }
+        }
+        // The marker goes first: were both kept, the page would draw two rows of one ID.
+        try forgetMarker(item.id)
+        if Set(next.keys) != Set(arriving.keys) { arriving = next }
+    }
+    private func forgetArriving(_ id: String) { if arriving[id] != nil { arriving[id] = nil } }
+    /// The user's messages the thread's page shows now, and how many of this iPhone's replies are ahead of one sent now.
+    /// Nothing while the page hasn't loaded its messages, as every message it loads would look new: the row then goes
+    /// when the computer confirms the reply, as before.
+    private func replySentFrom(_ ref: ThreadRef) -> ReplySentFrom? {
+        guard let messages = shown(for: ref)?.messages else { return nil }
+        let now = Date()
+        let ahead = arriving.values.filter {
+            $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && now.timeIntervalSince($0.at) < Self.arrivingLimit
+                && !$0.from.joined(messages)
+        }.count
+        return ReplySentFrom(before: Set(messages.lazy.filter { $0.role == "user" }.map(\.id)), last: messages.last?.id, ahead: ahead)
     }
     private func rejectOperation(_ operation: PendingOperation) throws {
         if let text = submitted[operation.id], operation.kind == "reply" || operation.kind == "queue" {

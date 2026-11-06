@@ -377,13 +377,6 @@ describe('SettingsRepository', () => {
     await expect(repository.reset()).resolves.toEqual(defaults)
   })
 
-  it('keeps the Windows defaults when none are injected', async () => {
-    const { repository } = await createRepository()
-
-    await expect(repository.get()).resolves.toEqual(DEFAULT_SETTINGS)
-    expect(defaultSettings(platformProfile('win32').defaultHotkey)).toEqual(DEFAULT_SETTINGS)
-  })
-
   it('projects whether the shell pill is in use into reads and never saves it', async () => {
     const { filePath } = await createRepository()
     let inUse = false

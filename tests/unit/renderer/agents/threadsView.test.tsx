@@ -9,7 +9,6 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { type AgentCommand } from '../../../../src/shared/agents'
-import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { liveAgentState } from '../../../fixtures/renderer/liveAgentState'
 import { handleOf } from '../../../fixtures/stagedImages'
 
@@ -315,17 +314,6 @@ describe('ThreadsView workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New thread' }))
     expect(screen.getByRole('dialog', { name: 'New thread' })).toBeVisible()
     expect(command).not.toHaveBeenCalled()
-  })
-
-  it('shows an empty workspace and a way to create a thread, and says so once: an empty folder shows its name alone', () => {
-    const state = stateFixture(); state.host.threads = [];
-    renderThreads(state)
-    expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-    const projects = screen.getByRole('region', { name: 'Projects' })
-    expect(projects).not.toHaveTextContent('No open threads.')
-    expect(projects).not.toHaveTextContent('No threads yet.')
-    const folder = within(projects).getByRole('button', { name: /^workshop/u })
-    expect(folder).toHaveTextContent(/^workshop$/u)
   })
 
   it('opens a thread in the active project at once from the empty workspace’s own button', async () => {
@@ -635,21 +623,4 @@ it('reconciles a late manual receipt after leaving its composer', async () => {
     await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(''))
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
-  })
-
-it('announces a successful provider connection on the empty workspace', () => {
-    const state = stateFixture()
-    state.activeThreadId = null
-    state.notice = 'Codex connected'
-    vi.mocked(useAgents).mockReturnValue(connection(state))
-    render(<ThreadsView now={E2E_THREADS_NOW} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Codex connected')
-  })
-
-it('offers Dictate and Threads for the beta, without an Agents room', () => {
-    const view = renderThreads(stateFixture())
-    const rooms = () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab').map(tab => tab.getAttribute('aria-label'))
-    expect(rooms()).toEqual(['Dictate', 'Threads'])
-    view.rerender(<ThreadsView now={NOW} />)
-    expect(rooms()).toEqual(['Dictate', 'Threads'])
   })

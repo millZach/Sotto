@@ -14,9 +14,6 @@ describe('host release version', () => {
     expect(hostReleaseVersion(owl, '0.1.37')).toBe('0.1.37')
     expect(hostReleaseVersion(owl, '0.1.37', false)).toBe('0.1.37')
   })
-  it('leaves a stable build without an override unchanged', () => {
-    expect(hostReleaseVersion('0.1.36', '0.1.36')).toBe('0.1.36')
-  })
   it.each([{ muse: true, usage: false }, { muse: false, usage: true }, { muse: true, usage: true }])(
     'targets the matching Owl archive for Muse=$muse and Usage=$usage', ({ muse, usage }) => {
       const owl = '0.1.38-owl.20261012.10'

@@ -1,0 +1,3750 @@
+{
+ "files": {
+  "tests/integration/proofCleanup.test.mjs": {
+   "cases": [
+    {
+     "suites": [
+      "'proof debugger deadlines and disconnects'"
+     ],
+     "title": "'bounds HTTP discovery'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "A 100 ms deadline on a dev-only proof helper; generic toThrow with no message pinned, so it proves little."
+    },
+    {
+     "suites": [
+      "'proof debugger deadlines and disconnects'"
+     ],
+     "title": "'bounds an unanswered WebSocket connection'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Deadline on a proof helper's WebSocket connect; timer plumbing rather than an ordering or safety guard."
+    },
+    {
+     "suites": [
+      "'proof debugger deadlines and disconnects'"
+     ],
+     "title": "'rejects an evaluation on %s and closes its socket'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Name claims the socket closes, but nothing asserts closure; the regex accepts any of three rejection words."
+    },
+    {
+     "suites": [
+      "'proof cleanup ordering'"
+     ],
+     "title": "'bounds an unresponsive cleanup'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Deadline on an unresponsive proof cleanup; timer plumbing, with cleanup ordering and single-run already covered by c5 and c7."
+    }
+   ]
+  },
+  "tests/integration/transcriptionIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'IPC validation and lifecycle'"
+     ],
+     "title": "'reports the speech model as not ready when no service is wired'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only checks the unwired default: each channel returns unavailable or not-ready. A restated fallback with no Sotto logic behind it."
+    }
+   ]
+  },
+  "tests/integration/updateIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'IPC validation and lifecycle'"
+     ],
+     "title": "'reports updating as unavailable when no service is wired'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only checks the unwired default: each update channel returns unavailable. A restated fallback with no Sotto logic behind it."
+    }
+   ]
+  },
+  "tests/integration/widgetPresentationIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'widget presentation and drag channels'"
+     ],
+     "title": "'reports unavailable when no widget coordinator is registered'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only checks the unregistered-coordinator default returns unavailable. A guard with no logic beyond a one-line fallback."
+    },
+    {
+     "suites": [
+      "'widget presentation and drag channels'"
+     ],
+     "title": "'reports unavailable drag handling when no widget dependency is registered'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only checks the unregistered-drag default returns unavailable. A guard with no logic beyond a one-line fallback."
+    }
+   ]
+  },
+  "tests/unit/fixtures/fakeHostSignalCleanup.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Windows synthetic host signal cleanup'"
+     ],
+     "title": "'leaves non-Windows callers unchanged'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pass-through guard: non-Windows callers get the native kill back unchanged. No Sotto logic is exercised."
+    }
+   ]
+  },
+  "tests/unit/main/agentActivityBodyIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'activity body IPC (ADR-0025, October 18 amendment)'"
+     ],
+     "title": "'answers null where nothing can hold a cut body'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line guard: a missing activityBody handler answers null (ipc.ts:142). c1 covers the handler; this proves nothing more."
+    }
+   ]
+  },
+  "tests/unit/main/agentAttachmentPreviewIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'attachment preview IPC'"
+     ],
+     "title": "'reports nothing rather than an error when no eligible preview exists'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "The handler only passes the mock's null through. The real null path is covered by watcherPrivacy.test.ts."
+    }
+   ]
+  },
+  "tests/unit/main/agentThreadPromptsIpc.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the message scrubber’s prompts IPC (ADR-0109)'"
+     ],
+     "title": "'answers null where nothing keeps a store'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts the IPC returns null when no store is wired. A one-line fallback guard with no Sotto logic beyond the default."
+    }
+   ]
+  },
+  "tests/unit/main/agentTurns.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'coordinator turn records'"
+     ],
+     "title": "'makes the developer turn-record command reachable through the native tray'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Tray menu item click only calls the showTurnRecords mock it was given. Wiring check with no observable behaviour beyond the mock."
+    }
+   ]
+  },
+  "tests/unit/main/applicationMenu.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'",
+      "'on %s (#1825)'"
+     ],
+     "title": "'leaves the update check to the tray'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Covered by c1, whose exact win32/linux Sotto submenu list already proves no Check for Updates item is present."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'names the top-level macOS menus after the app'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Only checks top-level labels with appName fixed to Sotto; c10, c11 and c12 already look up Edit, Window and View by label."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'asks for an update check from the app menu'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Only asserts a click calls the callback it was given; no accelerator, position or entry is checked."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'carries the standard window roles'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins a literal list of Electron standard window roles with no stated reason or bug behind it."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'adds reload and developer tools to the View menu only when developer tools are included'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same darwin devtools-on View list as c16 without its turn-records item; the devtools branch is covered by c2 and c16."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'builds an independent template on every call'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts two calls return distinct objects that deep-equal each other; no user-observable behaviour is checked."
+    },
+    {
+     "suites": [
+      "'buildApplicationMenuTemplate'"
+     ],
+     "title": "'produces a template Electron accepts as menu options'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "Only checks an array length on a value typed by the Electron type annotation; TypeScript already guarantees the shape."
+    }
+   ]
+  },
+  "tests/unit/main/attachedFiles.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'saving attached files into the working folder (ADR-0131)'"
+     ],
+     "title": "'says what to do when the .gitignore no longer ignores the folder'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins an exact error string equal to itself; c9 already proves the refusal is thrown with that constant."
+    }
+   ]
+  },
+  "tests/unit/main/chordMatcher.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'createChordMatcher'"
+     ],
+     "title": "'only activates a chord with a key when the key goes down under its modifiers'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Key pressed before its full modifier set is refused, the same branch c2 covers with Space pressed without Control; different literals only."
+    }
+   ]
+  },
+  "tests/unit/main/clientUpdateChecks.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'checking afresh'"
+     ],
+     "title": "'asks nothing while the setting is off'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Asserts no registry ask while the setting is off via checkAfresh; the same readClientsAfresh guard is run by c4's tick, which already covers it."
+    }
+   ]
+  },
+  "tests/unit/main/cloudIphoneService.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'CloudIphoneService'"
+     ],
+     "title": "'returns a screenshot as a PNG data URL'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Passes the electron mock's own data URL through; the PNG prefix comes from the mock, not from the service."
+    }
+   ]
+  },
+  "tests/unit/main/codexComputerUse.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Codex Computer Use calls'"
+     ],
+     "title": "'say what to do when the sandbox or an unavailable connection stopped them'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Its sandbox, crash and native-pipe texts are asserted exactly by c4, c9 and c10; this case repeats the same branches as looser regexes."
+    }
+   ]
+  },
+  "tests/unit/main/desktopNotifier.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'desktop notifier test'"
+     ],
+     "title": "'resolves shown after 5 seconds with neither event'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Pins the 5 second test-notification fallback delay with fake timers; first-settle-wins is covered by c8 and c10."
+    },
+    {
+     "suites": [
+      "'desktop notifier test'"
+     ],
+     "title": "'is unsupported when the system cannot show notifications'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line isSupported guard in test(); c4 already exercises the same unsupported gate in notify."
+    }
+   ]
+  },
+  "tests/unit/main/dictationShortcutLifecycle.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'dictation shortcut lifecycle'"
+     ],
+     "title": "'cancels a recording and resumes the shortcuts when the main window loses the focus'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same standUp path as c6 (rendererGone and windowLostFocus are one function); c3 also drives windowLostFocus. Covered by c6."
+    }
+   ]
+  },
+  "tests/unit/main/dictationShortcutRouter.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'dictation shortcut router recording readiness'"
+     ],
+     "title": "'records in the page when the helper becomes ready without Input Monitoring'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Repeats c23's single denied-before-ready run; title says records in page, but it asserts unavailable."
+    }
+   ]
+  },
+  "tests/unit/main/dictationStateFile.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'shell dictation copy'"
+     ],
+     "title": "'puts every known failure in exactly one recording group, including capture-dependent errors'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Checks only test-local code lists against WIDGET_ERROR_CODES; no product grouping or copy code runs, so it proves nothing about the app."
+    }
+   ]
+  },
+  "tests/unit/main/editContextMenu.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'editContextMenuTemplate (#1821)'"
+     ],
+     "title": "'produces a template Electron accepts as menu options'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Only asserts the editable template has length 8, which c1 already asserts item by item; the type claim is compile-time. Covered by c1."
+    }
+   ]
+  },
+  "tests/unit/main/glassWindow.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the see-through window (ADR-0150)'"
+     ],
+     "title": "'turns a window made see-through at start solid when Transparency effects go off, before the room asks'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Its Transparency-off and back-on transitions repeat c4's exact room, material and background sequence. Only the start state differs, and c2 covers see-through at start."
+    }
+   ]
+  },
+  "tests/unit/main/guiPath.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'reading the login shell PATH'"
+     ],
+     "title": "'gives up when the shell does not finish'",
+     "occurrence": 0,
+     "category": "flaky-by-design",
+     "why": "Real child shell and a real 300 ms deadline racing it. No keep rule covers it, and the give-up path is not an ordering or guard."
+    }
+   ]
+  },
+  "tests/unit/main/handover.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'handover'"
+     ],
+     "title": "'names a wake-up as Sotto rather than the user'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Names a wake-up as Sotto; the store-backed case c17 checks the same branch and also the 'The user' count. Covered by c17."
+    }
+   ]
+  },
+  "tests/unit/main/hangWatch.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the watch on main'"
+     ],
+     "title": "'does not record a sleep of the computer as a hang'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Sleep-gap no-hang check without a quit; c10 runs the same gap branch and asserts nothing saved after the sleep. Covered by c10."
+    }
+   ]
+  },
+  "tests/unit/main/hostFacts.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'readHostFacts'"
+     ],
+     "title": "'reports an architecture it does not map as the system names it'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only checks a one-line fallback that returns the raw architecture string when unmapped; no branch beyond the pass-through."
+    },
+    {
+     "suites": [
+      "'HostFactsSource'"
+     ],
+     "title": "'reads memory afresh when first asked long after the start-up reading'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same branch as c17: an old memory reading is read again. Only the literal (one hour instead of the refresh window) differs."
+    }
+   ]
+  },
+  "tests/unit/main/hostReleaseVersion.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'host release version'"
+     ],
+     "title": "'leaves a stable build without an override unchanged'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Identity mapping on the stable branch, already shown by c1 and by the stable row of c6."
+    }
+   ]
+  },
+  "tests/unit/main/hostTailscale.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Tailscale on this computer'"
+     ],
+     "title": "'opens Tailscale’s download page for Get Tailscale'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts openExternal receives a pinned download URL constant; no branch or user-observable logic beyond passing it."
+    }
+   ]
+  },
+  "tests/unit/main/hotkeyManager.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'HotkeyManager primary shortcut'"
+     ],
+     "title": "'invokes the toggle callback from the registered primary accelerator'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Asserts the toggle fires from the primary accelerator, which c1 already asserts on win32 and darwin with the same callback. Near-copy with a different literal."
+    }
+   ]
+  },
+  "tests/unit/main/mainLoopMonitor.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'MainLoopWindow'"
+     ],
+     "title": "'reads exactly 30 s blocked as not frozen, with no second averaged'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Exact-half-not-frozen boundary at 30 s is already pinned by c5 (30 s not frozen, 30.5 s frozen) and c6 (exactly half at 61 s, not frozen). Same threshold branch, different literals."
+    },
+    {
+     "suites": [
+      "'MainLoopWindow'"
+     ],
+     "title": "'reads a true 30.2 s blocked as frozen, with no second averaged'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "A 30.2 s blocked share read as frozen repeats the over-half branch that c5 and c6 (30.5 s frozen at 60.5 s) already pin. Only the literal differs."
+    }
+   ]
+  },
+  "tests/unit/main/mainWindowLifecycle.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'shows and hides the main window'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts show and hide were each called once on a mock. Show and hide are already asserted by c5, c6 and c10, so this adds nothing."
+    }
+   ]
+  },
+  "tests/unit/main/nativeDictationLifecycle.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'NativeDictationLifecycle widget presence'"
+     ],
+     "title": "'reveals the widget for active dictation snapshots'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Reveals an active snapshot with the idle setting on. c6 covers the same active-reveal branch and proves the setting does not gate it, so c5 adds nothing. Covered by c6."
+    },
+    {
+     "suites": [
+      "'NativeDictationLifecycle cursor-follow compatibility'"
+     ],
+     "title": "'does not lock a display when dictation becomes active'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Named 'does not lock a display', but no display lock exists in the source (cursor-follow was removed). It only asserts an ordinary active reveal, already covered by c6."
+    },
+    {
+     "suites": [
+      "'NativeDictationLifecycle cursor-follow compatibility'"
+     ],
+     "title": "'does not unlock a display when dictation returns to idle'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Named 'does not unlock a display', but no unlock exists. It only asserts an idle snapshot is revealed with the setting on, which c3 already covers."
+    },
+    {
+     "suites": [
+      "'NativeDictationLifecycle cursor-follow compatibility'"
+     ],
+     "title": "'preserves widget publication and visibility behavior without display locking'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Checks active-then-idle reveal flags in sequence under a 'without display locking' name. Each half is already covered by c6 (active reveal) and c4 (idle conceal with setting off)."
+    }
+   ]
+  },
+  "tests/unit/main/openRouterModels.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'listOpenRouterModels'"
+     ],
+     "title": "'says why the list did not come'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Checks http and network reasons on the same paths as c9's rows, without the log; c9 covers both branches."
+    }
+   ]
+  },
+  "tests/unit/main/ownModelServers/service.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'removing a server'"
+     ],
+     "title": "'says a server that is not saved is not found'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Guard returning not-found with a constant message; the same not-found branch is checked in the checking case c21."
+    }
+   ]
+  },
+  "tests/unit/main/ownServerCleanup.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'pickFastest'"
+     ],
+     "title": "'lets the candidate listed first win a tie'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins a tie-break between equal timings no user can see; the fastest-candidate case c1 carries the decision."
+    },
+    {
+     "suites": [
+      "'pickFastest'"
+     ],
+     "title": "'says none passed when every candidate failed a try'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "The none-passed branch of pickFastest is reached with the same outcome through measureOwnCleanup in c15."
+    }
+   ]
+  },
+  "tests/unit/main/pasteCommand.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'createPasteCommands win32 one-shot invocation'"
+     ],
+     "title": "'exposes a warm helper builder on win32 and none on darwin'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Warm-helper choice for win32 and darwin is repeated in pasteCommandLinux c18."
+    },
+    {
+     "suites": [
+      "'createPasteCommands win32 one-shot invocation'"
+     ],
+     "title": "'returns the same frozen command table for repeated lookups'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts a memoised lookup returns the same frozen object; nothing a user or other process could observe."
+    }
+   ]
+  },
+  "tests/unit/main/pasteCommandDarwin.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'createPasteCommands darwin one-shot invocation'"
+     ],
+     "title": "'never uses a hardware key code, which would depend on the keyboard layout'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "The exact-args check in c1 already excludes a key code and requires the keystroke v script."
+    },
+    {
+     "suites": [
+      "'createPasteCommands darwin one-shot invocation'"
+     ],
+     "title": "'offers no warm helper, because macOS has no compile step to pay up front'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Darwin having no warm helper is already asserted in pasteCommandLinux c18."
+    }
+   ]
+  },
+  "tests/unit/main/pasteHelper.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'warm helper invocation'"
+     ],
+     "title": "'exists only on Windows'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Helper presence per platform is already pinned by platformProfile's warm-helper flag and its consistency check against the paste command table."
+    }
+   ]
+  },
+  "tests/unit/main/platformProfile.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'platformProfile'"
+     ],
+     "title": "'describes Windows exactly as the app behaves today'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Checks a subset of the fields that c2's exact whole-row toEqual on the Windows row already pins."
+    },
+    {
+     "suites": [
+      "'platformProfile'"
+     ],
+     "title": "'takes the %s default hotkey from the shared platform table'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Compares the profile's default hotkey with the shared table it is copied from; a one-line identity mapping."
+    },
+    {
+     "suites": [
+      "'platformProfile'"
+     ],
+     "title": "'returns the same frozen %s row on every call'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Checks that the row is frozen and returned as the same object; a memo identity with no behaviour a user could see break."
+    }
+   ]
+  },
+  "tests/unit/main/productEvents/identity.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'product event identity'"
+     ],
+     "title": "'finds the default folders under home'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the default Codex and Claude folder names under home; a pinned path with no stated reason, the env-override path is tested in c5."
+    }
+   ]
+  },
+  "tests/unit/main/productEvents/threadEvents.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'thread.started'"
+     ],
+     "title": "'says a thread in the shared checkout is not in a worktree'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Checks one boolean mapping, worktree mode equals independent. A one-line expression with no branch that matters."
+    },
+    {
+     "suites": [
+      "'turn.completed'"
+     ],
+     "title": "'speed %s with fastMode %s says %s'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the one-line default speed expression as a literal table. Pins labels, with no logic beyond the default."
+    },
+    {
+     "suites": [
+      "'what a thread event may say'"
+     ],
+     "title": "'sends nothing for a thread with no provider'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Tests a one-line guard that returns when providerId is undefined. Nothing beyond that line is exercised."
+    }
+   ]
+  },
+  "tests/unit/main/prototypeQuestions.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'PrototypeQuestions'"
+     ],
+     "title": "'quotes a plain question’s words and its choice’s label'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Formatter whose plain-question output is shown by prototypeQuestionsControl c3. Option-label lookup is covered by c21."
+    }
+   ]
+  },
+  "tests/unit/main/prototypeReady.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'PrototypeReady'"
+     ],
+     "title": "'ends the mark when the user replies after it, but not for a wake-up Sotto sent'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same assertion as c4: a user reply ends the kept mark, and a wake-up does not. The wakeUp flag is also covered by c2."
+    }
+   ]
+  },
+  "tests/unit/main/providerClientUpdates.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'what the installer is allowed to say back'"
+     ],
+     "title": "'says nothing rather than something empty'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line empty-input guard on installerDetail returning undefined; no ordering, privacy or install path depends on it beyond c8 and c9."
+    },
+    {
+     "suites": [
+      "'updating a client from the app'"
+     ],
+     "title": "'still accepts force, which changes nothing now that an update stops no thread'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Re-runs the c26 update path with an unused force flag; the test only checks the option is accepted. Covered by c26."
+    }
+   ]
+  },
+  "tests/unit/main/providerQuota.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'window labels by length'"
+     ],
+     "title": "'names a window by its length, never by a native window name'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pinned formatter table of duration literals with no stated reason; the label outputs it checks are already shown by c39 and c50."
+    }
+   ]
+  },
+  "tests/unit/main/pullRequestTools.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the pull request tools'"
+     ],
+     "title": "'tells the agent to use them instead of polling gh or sleeping, by their full names'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins tool description copy, the tool-name list and a server-name constant; no behaviour, guard or refusal is exercised."
+    }
+   ]
+  },
+  "tests/unit/main/settingsRepository.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'SettingsRepository'"
+     ],
+     "title": "'keeps the Windows defaults when none are injected'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the Windows default hotkey and DEFAULT_SETTINGS equality; c26 already covers the platform-default path."
+    }
+   ]
+  },
+  "tests/unit/main/shownCallouts.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'callouts an agent places on the pictures it shows (ADR-0170, part 6)'"
+     ],
+     "title": "'places at most twelve'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line slice of a constant; the tool schema already refuses thirteen callouts (shownMedia c10 'Too many' case)."
+    }
+   ]
+  },
+  "tests/unit/main/speechModelManager.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'SpeechModelManager'"
+     ],
+     "title": "'downloads nothing at start when no model is chosen'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same setup and assertions as c1 (nothing chosen, start downloads nothing, no fetch). c1 already covers this branch."
+    }
+   ]
+  },
+  "tests/unit/main/startupServiceIdempotence.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'StartupService'"
+     ],
+     "title": "'delegates idempotently to login-item settings'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Setting true twice calls the adapter once. startupService.test.ts c2 pins the same behaviour through the real adapter. Only extra is set(false) when already off, a minor branch."
+    }
+   ],
+   "whole": true
+  },
+  "tests/unit/main/tailnetStore.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'e2eTailnetMap'"
+     ],
+     "title": "'maps a MagicDNS name to a loopback port and leaves every other address alone'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pass-through mapping for an e2e-only stand-in; the e2e specs that use the mapping cover it. The loopback guard in c6 stays."
+    }
+   ]
+  },
+  "tests/unit/main/testIphone.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'BrowserAutomation.input on a touch-enabled page (ADR-0045)'"
+     ],
+     "title": "'sends a touch start, ten touch moves and a touch end for a swipe'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Pins ten touchMove calls on a mocked debugger; no page effect is asserted, so it mirrors the CDP call sequence."
+    }
+   ]
+  },
+  "tests/unit/main/threadAlerts.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the tracker'"
+     ],
+     "title": "'uses unref\\'d real timers by default'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Name promises unref'd timers, but it only asserts track and dispose do not throw; it would pass with ref'd timers."
+    },
+    {
+     "suites": [
+      "'a thread that delegated'"
+     ],
+     "title": "'waits the ordinary settle without a delegated thread present'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/threadAlerts.test.ts 'alerts once per mark after the settle delay, and again after the mark clears and returns' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/transcriptPolishService.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'TranscriptPolishService'"
+     ],
+     "title": "'keeps a deadline floor above the default timeout for the cleanup model'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Slow primary with fallback still running is the same branch as c9, which also checks the result and attempts; c8 adds only a floor constant and a call count."
+    }
+   ]
+  },
+  "tests/unit/main/tray/menuBarOwl.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'stopping the menu bar owl'"
+     ],
+     "title": "'swaps the picture on a timer while it runs'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Swapping frames on a timer is covered by owlAnimator's real-schedule case, which proves one timer and changing frames."
+    }
+   ]
+  },
+  "tests/unit/main/tray/menuBarOwlElectron.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the menu bar owl in Electron'"
+     ],
+     "title": "'builds one image with a 2x picture and a 1x one'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts the representations the fake records from the code's own addRepresentation calls; no Electron scale is observed."
+    },
+    {
+     "suites": [
+      "'the menu bar owl in Electron'"
+     ],
+     "title": "'throws for an image Electron cannot read'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line guard that throws on an empty image; nothing beyond the throw is asserted."
+    },
+    {
+     "suites": [
+      "'the menu bar owl in Electron'"
+     ],
+     "title": "'reads a file under tray/owl, or null when it is not there'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Name says it reads a file under tray/owl; it only checks null for a missing folder and never reads a file."
+    }
+   ]
+  },
+  "tests/unit/main/tray/owlFrames.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the menu bar owl frames'"
+     ],
+     "title": "'throws for a picture that is not width times height pixels'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line size guard on doublePixels; the palette size path is already covered by the wrong-size case."
+    }
+   ]
+  },
+  "tests/unit/main/tray/owlPoses.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the menu bar owl poses'"
+     ],
+     "title": "'knows no frame for a pose the schedule cannot show'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Checks a -1 guard on owlFrameIndex, which has no caller in src."
+    }
+   ]
+  },
+  "tests/unit/main/trayIcon.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'createTrayResource'"
+     ],
+     "title": "'loads the template image from the resolved resource path and marks it'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Template icon from the resolved resource path, marked as template, is already asserted by c5; c6 adds only a tooltip and a not-called check."
+    },
+    {
+     "suites": [
+      "'createTrayResource'"
+     ],
+     "title": "'fails with a finite error when the %s icon is missing'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Missing-icon failure for executable and template sources is already run by c9's empty rows, which also check the tray cleanup."
+    }
+   ]
+  },
+  "tests/unit/main/updateService.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'UpdateService'"
+     ],
+     "title": "'keeps the cadence T3 Code uses: a short startup delay and a few minutes between polls'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Pins two delay constants (15 s startup, 4 min interval) with no behaviour; the schedule and its cancellation are exercised by c9."
+    }
+   ]
+  },
+  "tests/unit/main/visualPlacement.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'placing visuals in a window'"
+     ],
+     "title": "'returns the window unchanged when the thread has no visuals'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line early return for a thread with no visuals; the non-empty placement paths are covered by c1 to c6."
+    }
+   ]
+  },
+  "tests/unit/main/watcherAskPlacements.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'where a waiting request’s card shows in Watcher’s conversation'"
+     ],
+     "title": "'reads a history again only when it changed'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity memo check. c7 already proves an unchanged history is not read again, so this adds only a copy-equality check."
+    }
+   ]
+  },
+  "tests/unit/main/watcherDefaultDelivery.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'what a Watcher send that names no delivery does (ADR-0130)'"
+     ],
+     "title": "'may leave delivery out, and still takes each named one'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "Only checks that the zod send schema accepts an optional delivery and the listed enum values and rejects others, which the schema itself guarantees."
+    }
+   ]
+  },
+  "tests/unit/main/watcherMessageDisplay.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'owned Watcher message presentation'"
+     ],
+     "title": "'returns ordinary and not-ready input by identity'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pass-through returns input unchanged for a missing host or ordinary thread; c3's foreign-thread row already covers the pass-through."
+    }
+   ]
+  },
+  "tests/unit/main/watcherReceiptReplies.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'where a receipt shows in Watcher’s conversation'"
+     ],
+     "title": "'stays under the reply that took the action when a hidden wake-up’s turn replies after it'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same branch as c1 (the reply scan stops at the next user-role message and keeps the last shown reply) with a wake-up literal instead of a user message; c3 covers the wake-up turn's reply."
+    },
+    {
+     "suites": [
+      "'where a receipt shows in Watcher’s conversation'"
+     ],
+     "title": "'stays under its own message when its turn ended with no shown reply and a later instruction got one'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same path as c5's second assertion: an earlier turn with no shown reply stops at a later turn start and stays under its own message; c5 covers it with a wake-up."
+    }
+   ]
+  },
+  "tests/unit/main/watcherSendHolds.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'a prompt that starts with a slash command (#1222)'"
+     ],
+     "title": "'is refused in plain words that send the user to run it'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the refusal's wording with a regex on the constant; no logic or user-visible behaviour beyond the copy."
+    }
+   ]
+  },
+  "tests/unit/main/widgetDragging.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'records native window and Electron cursor origins on start'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Adds only getBounds and cursor call counts to c4, which already pins the same start-and-move setPosition from cursor deltas."
+    },
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'ignores drag reports without a widget window'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Guard test that only checks drag reports without a window do not throw; no observable output is asserted."
+    }
+   ]
+  },
+  "tests/unit/main/widgetMonitorFollowing.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager cursor monitor following'"
+     ],
+     "title": "'resumes following after drag end'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same end-then-follow path with the same bounds as the first terminal path in widgetDragging.test.ts c13, which is kept."
+    }
+   ]
+  },
+  "tests/unit/main/widgetPlacement.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'uses the current idle-resting footprint when migrating a legacy point'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Near-copy of c2: a legacy point migrates to a centered resting edge; only the literals differ."
+    }
+   ]
+  },
+  "tests/unit/main/widgetPlacementMath.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'widget presentation geometry'"
+     ],
+     "title": "'returns the approved native footprint for every edge and presentation'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Pins the same footprint table that c2 already asserts through every presentation and edge's bounds."
+    }
+   ]
+  },
+  "tests/unit/main/widgetPresentation.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'constructs the widget at the bottom idle-resting footprint'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Pins the 124x54 widget footprint, which windowConstruction c4 already checks in full; no-mouse-event check repeats c17."
+    },
+    {
+     "suites": [
+      "'WindowManager lifecycle'"
+     ],
+     "title": "'ignores interactivity requests without a widget window'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line null-window guard; asserts only that a call does not throw. No Sotto logic behind it."
+    }
+   ]
+  },
+  "tests/unit/main/windowConstruction.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'WindowManager construction'"
+     ],
+     "title": "'keeps the Windows widget an ordinary window and the main window never a panel'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Asserts no type key on both windows; c1 and c4 already toStrictEqual both option objects, which rules out a type key."
+    }
+   ]
+  },
+  "tests/unit/omarchy/shellPluginModel.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'where the pill rests'"
+     ],
+     "title": "'keeps it on a full-HD display at 200% scale, 960x540 logical'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Runs the same fits() pill-size branch as c48 with other screen literals; c48 already asserts the pill fits and sits inside the work area."
+    }
+   ]
+  },
+  "tests/unit/preload/bufferedSubscriptions.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'buffered settings subscriptions'"
+     ],
+     "title": "'delivers changes to both the app and voice settings and keeps the app subscribed after voice settings unmount'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Two subscribers, one unsubscribing while the other keeps receiving; the same fan-out and independent-unsubscribe path is already covered by c5 and c1 in this file."
+    }
+   ]
+  },
+  "tests/unit/renderer/activityBodies.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'cut activity bodies on a remote thread (ADR-0025, October 18 amendment)'"
+     ],
+     "title": "'says in one line, after a moment, that a body cut to nothing is on its way'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Checks a delay constant (CUT_BODY_WAIT_MS) before a wait line shows under fake timers. Cosmetic cadence; no ordering or guard from keep rule 8."
+    }
+   ]
+  },
+  "tests/unit/renderer/agentShellAssembly.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'shell updates while the main window is hidden'"
+     ],
+     "title": "'cancels the pending frame and visibility listener on unmount'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Only asserts that cancelAnimationFrame and removeEventListener were called with the ids it was handed. Nothing a user sees depends on the frame or listener being released, so it pins no behaviour."
+    }
+   ]
+  },
+  "tests/unit/renderer/agentStateCatalogs.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'wrapAgentBridge'"
+     ],
+     "title": "'memoizes the wrapped bridge by identity, so a re-render gets the same instance back'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts a memo returns the same instance for the same bridge; the rubric names a memo returning the same object as trivial."
+    }
+   ]
+  },
+  "tests/unit/renderer/agents/checkReplyCard.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a check\\'s row of delegated work'"
+     ],
+     "title": "'words a check, its state and its count without reading anything from its reply'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure formatter outputs for kind, state and count on literal inputs. c1 already shows the Answered state and the '1 delegated thread · 4 checks' summary, and c4 shows '3 delegated threads'."
+    }
+   ]
+  },
+  "tests/unit/renderer/agents/threadOptions.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'composer option chips'"
+     ],
+     "title": "'shows the model with its provider mark, the effort and the permissions as three chips'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only renders three chips with default values and a provider-mark svg; every other case in the file queries these chips by name and checks their state."
+    }
+   ]
+  },
+  "tests/unit/renderer/agents/threadsView.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'ThreadsView workspace'"
+     ],
+     "title": "'shows an empty workspace and a way to create a thread, and says so once: an empty folder shows its name alone'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks heading and folder-name copy in the empty workspace; only renders labels, no Sotto logic behind them."
+    },
+    {
+     "suites": [],
+     "title": "'announces a successful provider connection on the empty workspace'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks a notice string lands in a status region; pure rendering with no logic beyond passing text through."
+    },
+    {
+     "suites": [],
+     "title": "'offers Dictate and Threads for the beta, without an Agents room'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Beta room tab labels are appRooms output, already pinned by the appRooms ids case in appShell.test.tsx c21."
+    }
+   ]
+  },
+  "tests/unit/renderer/appShell.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'AppShell'"
+     ],
+     "title": "'keeps the onboarding title strip on Linux without controls or a macOS inset'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Linux strip with no controls or macOS inset repeats the linux strip branch of c1; only the copy differs."
+    },
+    {
+     "suites": [
+      "'AppShell'"
+     ],
+     "title": "'leaves the window controls to macOS in the sidebar layout too'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Darwin sidebar controls-absent check repeats c1's darwin sidebar branch; only an emptiness assertion is added."
+    },
+    {
+     "suites": [
+      "'AppShell'"
+     ],
+     "title": "'leaves the window controls to macOS and reserves the traffic-light strip'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Duplicates c1 (darwin, strip layout): no window buttons and the mac strip class. Only the absent app mark is extra, a small design line."
+    }
+   ]
+  },
+  "tests/unit/renderer/audioMath.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'resampleMono'"
+     ],
+     "title": "'returns independent arrays for empty and same-rate input'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Same-rate and empty input are identity mappings; the copy-not-alias guard is already held by audioRecorder.test.ts c11."
+    }
+   ]
+  },
+  "tests/unit/renderer/babysitting.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the words around it'"
+     ],
+     "title": "'names pull requests the way a reader says them, and a moment as a time or a day and time'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure formatter: the two-number form is shown by c8's Babysitting #74 and #76; the three-item join is a plain string join."
+    }
+   ]
+  },
+  "tests/unit/renderer/branchToolbar.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'branch toolbar logic'"
+     ],
+     "title": "'orders worktrees by their latest use'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same recency sort as c2 with different literals; c2 also checks the order and the newest-record dedupe."
+    },
+    {
+     "suites": [
+      "'BranchToolbar'"
+     ],
+     "title": "'shows nothing for a folder that is not a repository'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders nothing for a non-repository folder; toolbarApplies is already asserted for that input in c4."
+    }
+   ]
+  },
+  "tests/unit/renderer/browserLine.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the steps in plain words, per provider'"
+     ],
+     "title": "'says a failed step could not be done'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "The failed flag and 'Could not scroll the page' wording are asserted again at the rendered layer by browserLineView.test.tsx c2 and by browserLine.test.ts c14."
+    }
+   ]
+  },
+  "tests/unit/renderer/claudeBotBabysitting.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Claude bot babysitting'"
+     ],
+     "title": "'holds the whole sign: the same pull request mark as Sotto\\'s, a fill, an outline and a pole to the track'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Compares SVG path counts and pole geometry against Sotto's art; pins drawing, no behaviour a user could observe."
+    }
+   ]
+  },
+  "tests/unit/renderer/claudeBotHeld.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Claude bot held'"
+     ],
+     "title": "'stands holding an hourglass whose sand drains, then flips'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Frame-driven hourglass cadence: sand counts and glass turn at fake times; cosmetic animation, not a guard."
+    },
+    {
+     "suites": [
+      "'Claude bot held'"
+     ],
+     "title": "'breathes with the glass in its hand: the glass rises a unit with the body, its sand and turn unchanged'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Breathing animation offsets sampled on a frame clock; cosmetic cadence with no ordering or leak guard."
+    },
+    {
+     "suites": [
+      "'Claude bot held'"
+     ],
+     "title": "'keeps the glass upright while sand drains, flips only in the last half second, and never mirrors the bot'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Glass upright and flip timing sampled over 12 seconds of fake frames; cosmetic cadence."
+    }
+   ]
+  },
+  "tests/unit/renderer/claudeBotMonitoring.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Claude bot monitoring'"
+     ],
+     "title": "'draws the bot carrying the magnifying glass on the track'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks the bot draws with its data attributes and classes present; no Sotto logic."
+    },
+    {
+     "suites": [
+      "'Claude bot monitoring'"
+     ],
+     "title": "'walks out, inspects at the far end and walks back'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Walk-out and walk-back x positions on a fake clock; cosmetic track animation cadence."
+    },
+    {
+     "suites": [
+      "'Claude bot monitoring'"
+     ],
+     "title": "'faces the way it heads: right while inspecting at the far end, left through the rest at the start'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Facing direction sampled over time on fake timers; cosmetic animation, no ordering or guard."
+    }
+   ]
+  },
+  "tests/unit/renderer/claudeBotSprite.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the body'"
+     ],
+     "title": "'is a 23 by 18 picture made of body, highlight and shade only'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the body picture's size and characters; a constant restated, no behaviour behind it."
+    },
+    {
+     "suites": [
+      "'the body'"
+     ],
+     "title": "'fills the box x 5-28, y 10-28 of the 40 by 32 grid, with only its corners cut'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the body's filled box in the grid; pixel geometry with no stated reason."
+    },
+    {
+     "suites": [
+      "'paintBot'"
+     ],
+     "title": "'stands, eyes open, by default'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the default leg, eye and glint paths of one pose; literal art, no logic."
+    },
+    {
+     "suites": [
+      "'paintBot'"
+     ],
+     "title": "'trots: diagonal pairs of legs lift on the first and third frames, and every leg is down between'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins which legs lift on each gait frame; cosmetic pose literals with no guard."
+    },
+    {
+     "suites": [
+      "'paintBot'"
+     ],
+     "title": "'wraps the gait, takes a frame that is not a whole number as the one it falls in, and never throws on one that is not a number'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Wraps a gait index and handles NaN frames; too simple to break unnoticed, visual only."
+    },
+    {
+     "suites": [
+      "'paintBot'"
+     ],
+     "title": "'stands its legs as evenly about the bot\\'s centre as its body is, so turning it round moves nothing but the prop'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Checks leg x positions are symmetric about the centre; pinned geometry with no user-visible effect."
+    },
+    {
+     "suites": [
+      "'paintBot'"
+     ],
+     "title": "'blinks, rests and looks by moving the eyes and the mouth together'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins blink, rest and look eye and mouth paths; literal pose art, not a guard."
+    },
+    {
+     "suites": [
+      "'the sprite'"
+     ],
+     "title": "'carries the pose\\'s prop in the right hand, drawn over the body, and lifts it with the hand'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks the prop sits inside the hand group and draws after the body; DOM structure only."
+    },
+    {
+     "suites": [
+      "'the sprite'"
+     ],
+     "title": "'mirrors about the bot\\'s centre through the facing group, which wraps everything'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks the facing group is the first child and wraps every path; DOM structure, no behaviour."
+    }
+   ]
+  },
+  "tests/unit/renderer/claudeBotWorking.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Claude bot working'"
+     ],
+     "title": "'walks the small bots on Sotto\\'s schedule: from under the arm, at its pace, a beat apart'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Small bots walk on the rAF schedule at fake times; cosmetic cadence with no guard."
+    },
+    {
+     "suites": [
+      "'Claude bot working'"
+     ],
+     "title": "'faces the room from the readout end, waves on the half second and blinks on Sotto\\'s cadence'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Wave and blink timing on the half second and blink cadence; cosmetic animation."
+    }
+   ]
+  },
+  "tests/unit/renderer/clientUpdateCard.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the client update card'"
+     ],
+     "title": "'does not repeat an outcome the card already shows'",
+     "occurrence": 0,
+     "category": "flaky-by-design",
+     "why": "Waits a real 10 ms before asserting one outcome shown once; c7 already pins 'says it once' without a real sleep."
+    }
+   ]
+  },
+  "tests/unit/renderer/cloudIphoneSettings.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Settings > Cloud iPhone'"
+     ],
+     "title": "'says there are no sessions yet'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Says there are no sessions yet; c1 already shows 'No sessions yet.' after status loads with an empty recent list."
+    }
+   ]
+  },
+  "tests/unit/renderer/composerSkills.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'skill search'"
+     ],
+     "title": "'keeps native order and duplicates for an empty query'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Checks that an empty query returns a copy of the list, a one-line guard (`[...skills]`). The stable-order and duplicate-name case in the ranking test (DEPLOY returns both entries in index order) already exercises the same ordering."
+    }
+   ]
+  },
+  "tests/unit/renderer/creatureChoice.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'appearance settings creature'"
+     ],
+     "title": "'shows the saved creature pressed'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Pressed state from a saved creature repeats c2's aria-pressed check through the same button labels; c2 covers the rerender path."
+    }
+   ]
+  },
+  "tests/unit/renderer/cursorProvider.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Cursor’s mark'"
+     ],
+     "title": "'draws Sotto’s own cube in one path'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Pins SVG markup (viewBox, one path, three Z's) with no Sotto logic; c1 already checks the mark's path."
+    }
+   ]
+  },
+  "tests/unit/renderer/deleteThread.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Delete thread… in the pane menu'"
+     ],
+     "title": "'is the last item, after its own rule and in the error colour, for a settled thread'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks a data-tone attribute, enabled state and a preceding HR; no Sotto logic beyond menu placement."
+    }
+   ]
+  },
+  "tests/unit/renderer/designSystem.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Sotto design-system primitives'"
+     ],
+     "title": "'keeps each toggle label and description in one vertical copy region'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a wrapper class exists with two children; structure only, no behaviour or accessible name at stake."
+    }
+   ]
+  },
+  "tests/unit/renderer/dictateRoom.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'DictateRoom'"
+     ],
+     "title": "'copies a transcript through the caller'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Copy transcript click only checks the onCopy mock received the text; no user-observable result, and Copy text retry (c3) already drives the caller copy path."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/council/councilChamber.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the chamber’s figures'"
+     ],
+     "title": "'keeps the Ask view’s seats while a new catalog holds the same models'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts a memo returns the same object for an equal catalog and a new one for a renamed model; no DOM or work count observed, so it proves only memo identity."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/productEvents/productEventsNotice.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Settings > Application > Send product events'"
+     ],
+     "title": "'opens every event from the row'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only checks that a button click opens a dialog; the list's contents and Escape are already pinned by c11."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/clearThreadsSettings.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'quietAgo'"
+     ],
+     "title": "'says how long ago in days, then months, then years'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Display-only relative-date formatter; its days and months outputs are already shown in c3, and the years branch only affects display text."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/dictationShortcuts.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'DictationShortcuts'"
+     ],
+     "title": "'hides remove on the last shortcut'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a remove button is absent on the last shortcut; no outcome or saved value is checked."
+    },
+    {
+     "suites": [
+      "'DictationShortcuts'"
+     ],
+     "title": "'shows the Fn tip on macOS only while a shortcut uses Fn'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Shows a help line only when Fn is used; conditional copy with no behaviour, save or permission behind it."
+    },
+    {
+     "suites": [
+      "'DictationShortcuts'"
+     ],
+     "title": "'records straight away from Add on macOS too'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Add has no platform branch in DictationShortcuts; c17 runs the same path on Windows and also asserts the recording saves."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/hostRows.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'keeps the local host switch, and no longer offers Save, Connect, Disconnect or Use this host'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks removed buttons are absent and that a switch click calls its prop; no logic beyond a pass-through."
+    },
+    {
+     "suites": [],
+     "title": "'sets the row’s connection apart from how the host is, and says so for a host on the tailnet'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a data attribute and a label that c5's row meta check already covers; no Sotto logic beyond mapping."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/languagePicker.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a window\\'s interface language'"
+     ],
+     "title": "'stays English without a bridge'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Bridge-less fallback to English is a one-line default; the startup path is covered by c9 and c10."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/notificationSettings.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Settings → Application → Notifications (Owl desktop-notifications)'"
+     ],
+     "title": "'shows both switches with their saved values, the help line and the test button'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders switches with saved values, help text and a button; the saved-value binding is already exercised by c4's flip-and-send check."
+    },
+    {
+     "suites": [
+      "'Settings → Application → Notifications (Owl desktop-notifications)'"
+     ],
+     "title": "'has an empty live region before any press'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks an empty live region renders before any press; c5 already checks role status and aria-live polite on the answer."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/projectThreadDefaults.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Project thread defaults in Threads settings'"
+     ],
+     "title": "'explains how to add a project when there are none'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Empty-state copy shown when there are no projects; no setting, save or thread behaviour is involved."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/settingsDictionary.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Personal dictionary draft acknowledgements'"
+     ],
+     "title": "'clears the cut-paste message after deleting text below the limit'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Repeats c1's cut-paste clearing when edits drop below the limit, with 3999 instead of 3999 characters; c1 covers the branch."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/settingsFooterStatus.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "\"Settings' footer status\""
+     ],
+     "title": "'takes no line when the page has nothing to say'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a status element is absent when there is nothing to say; a null-render check with no Sotto logic."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/settingsMicrophone.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'SettingsView'"
+     ],
+     "title": "'runs the Settings microphone test on the selected input'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Saved input id passed to start; c17 asserts the same start('headset') call on the saved-selection path."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/settingsSpeechModel.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Settings → Dictation speech model'"
+     ],
+     "title": "'shows the download size on Sotto’s model while it is not on this computer'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Download-size option label; c6 asserts the same 'Parakeet v3, 670 MB' formatted option text on win32 and linux."
+    },
+    {
+     "suites": [
+      "'Settings → Dictation speech model'",
+      "'from the keyboard on %s'"
+     ],
+     "title": "'still chooses with a click in the open list'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Click in the open list choosing a model; c12 already covers choose-by-click in the open list with the same handler."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/settingsUpdatesPrivacy.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'SettingsView'"
+     ],
+     "title": "'says plainly when this build has no update feed at all'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Pins one copy sentence for the unsupported update phase; no logic beyond the text."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/threadShortcuts.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Settings › Keyboard (ADR-0133)'"
+     ],
+     "title": "'filters by action and by keys'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Name claims filtering by action and by keys; the test types only an action word, so key filtering is unproven."
+    },
+    {
+     "suites": [
+      "'Settings › Keyboard (ADR-0133)'"
+     ],
+     "title": "'says which page shortcut saved while a page was hidden holds that page’s default keys'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same expectation shape as c14 and c16: a saved page shortcut holding Ctrl+1 named in the Dictate row. c16 already covers page-holder naming there, with different literals."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/starting/startingScreen.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the starting screen gate'"
+     ],
+     "title": "'says nothing and opens the app when there is nothing to connect'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Empty-state open path is already proven at the logic level by startingView c4; this adds only an empty status region."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/starting/startingView.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the starting screen'"
+     ],
+     "title": "'lists names the way a sentence does'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "listNames is a simple join formatter; startingView c7 already shows a three-name sentence."
+    }
+   ]
+  },
+  "tests/unit/renderer/folderBrowserDialog.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'FolderBrowserDialog'"
+     ],
+     "title": "'offers this computer\\'s own folder dialog beside its folders'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Browse button only forwards the stubbed folder dialog's return to onUse; the basename derivation is trivial."
+    }
+   ]
+  },
+  "tests/unit/renderer/gitActionButton.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the Git action in the pane header'"
+     ],
+     "title": "'opens the pull request for View PR, and the browser for the notice\\'s View PR'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts a stubbed openExternalLink received the PR URL; the notice's second button only repeats that call."
+    }
+   ]
+  },
+  "tests/unit/renderer/hostProviderAgent.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'offers Check again and Have my agent fix it for an error the adapter could not name'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same cannot-start branch offering Have my agent fix it and Check again as c1; the codex error variant adds no new path."
+    }
+   ]
+  },
+  "tests/unit/renderer/hostTailnetWords.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'says when this computer last reached a host as a time today, and a day and time before that'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Expected value re-runs the same toLocale call the function makes; proves only the formatter's output shape."
+    }
+   ]
+  },
+  "tests/unit/renderer/hostUpdates.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the pill'"
+     ],
+     "title": "'shows nothing while no host needs an update'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks only that an empty host list renders nothing; the pill logic is covered by c1."
+    }
+   ]
+  },
+  "tests/unit/renderer/lardo.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Lardo'"
+     ],
+     "title": "'wears the %s pose with its prop'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks that letter paths and prop elements exist per pose; no behaviour beyond DOM presence."
+    },
+    {
+     "suites": [
+      "'Lardo'"
+     ],
+     "title": "'keeps his own colours while babysitting, where the other creatures mute'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Greps lardo.css for the word babysitting; colours could still be muted under another selector, so it proves nothing."
+    },
+    {
+     "suites": [
+      "'Lardo'"
+     ],
+     "title": "'flexes when the turn finishes while he is up, and goes back to his pose'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Asserts the flex cue appears and clears on animation delays; cosmetic cadence, not an ordering or guard."
+    },
+    {
+     "suites": [
+      "'Lardo'"
+     ],
+     "title": "'flexes when the turn\\u2019s end swaps his pose for another, as a held action becomes a command left waiting'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same flex cue on turn end as lardo c6's flex assertion, reached through a different pose swap."
+    }
+   ]
+  },
+  "tests/unit/renderer/lardoSprite.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Lardo sprite'"
+     ],
+     "title": "'wears posing trunks in every frame'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pinned literal that every frame contains a trunks letter; restates art data with no behaviour behind it."
+    },
+    {
+     "suites": [
+      "'Lardo sprite'"
+     ],
+     "title": "'flushes only in his tantrum'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pinned literal listing which frames use the flush letter; restates sprite data, no behaviour checked."
+    }
+   ]
+  },
+  "tests/unit/renderer/mediaCallouts.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'callouts an agent placed on a picture it showed (ADR-0170, part 6)'"
+     ],
+     "title": "'puts no callout section in the editor for a picture without them'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts an absent callout section and no checkbox for a picture without callouts. Empty-state DOM check; the viewer case c2 already covers the no-callouts path."
+    }
+   ]
+  },
+  "tests/unit/renderer/messageContent.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'attachment previews'"
+     ],
+     "title": "'renders nothing without attachments or a note'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks that an empty attachment list renders an empty DOM; no Sotto logic beyond returning nothing for empty input."
+    },
+    {
+     "suites": [
+      "'attachment previews'"
+     ],
+     "title": "'formats sizes and type labels defensively'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure formatter literals; the sizes and type labels it pins are already shown by c22, c23, c26 and c30."
+    },
+    {
+     "suites": [
+      "'file links in a thread'"
+     ],
+     "title": "'stays inert outside a thread, where there is no folder to read a path from'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Repeats the second half of c40: outside a thread, a Markdown file link renders with no link role."
+    },
+    {
+     "suites": [
+      "'a link to a Markdown file'"
+     ],
+     "title": "'leaves every other file to show in its folder'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Non-Markdown file gets the folder link; the same branch is covered by c42 (Guide.pdf, click and Enter), differing only in literals."
+    }
+   ]
+  },
+  "tests/unit/renderer/messageListStreaming.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'replies shown as written'"
+     ],
+     "title": "'draws the reply being written'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only checks that plain reply text renders; the streaming flag it implies is pinned by c3 and c7."
+    }
+   ]
+  },
+  "tests/unit/renderer/microphoneTest.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'worklet microphone setup test'"
+     ],
+     "title": "'opens the dictation recorder on the selected input'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts the recorder factory received the selected device id; the exact-device constraint is proven in audioRecorder.test.ts:162."
+    }
+   ]
+  },
+  "tests/unit/renderer/modelPicker.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'provider model picker'",
+      "'the wheel over the provider rail'"
+     ],
+     "title": "'brings the chosen provider into view on a rail taller than the menu'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Only asserts the scrollIntoView spy was called with block nearest and one element. jsdom has no layout, so the scroll itself is never seen."
+    }
+   ]
+  },
+  "tests/unit/renderer/nativeSkills.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'provider skill picker'"
+     ],
+     "title": "'Backspace removes a chosen pill and its reference, and undo restores both'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Backspace dropping the pill and its reference is already checked by c3, and undo restoring pill and reference by c5. Nothing new is exercised."
+    }
+   ]
+  },
+  "tests/unit/renderer/newThreadOnEveryHost.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a new thread on any computer starts on this computer’s defaults (ADR-0074)'"
+     ],
+     "title": "'sends the same on this computer'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same create call as c1 with the local host id; both return the chosen model through the same startingModelId path. Covered by c1."
+    }
+   ]
+  },
+  "tests/unit/renderer/nightSceneSurface.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the surface the night scene reads (ADR-0126, ADR-0150)'"
+     ],
+     "title": "'is the first solid background on a solid window'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "A transparent leaf over a solid room walks to the first solid colour, the same loop c3 covers with translucent layers. Covered by c3."
+    }
+   ]
+  },
+  "tests/unit/renderer/onboarding.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'first-run onboarding'"
+     ],
+     "title": "'has no Back button on Welcome and advances with Get started'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only checks Welcome has no Back button and shows Get started; every goToStep test already presses Get started."
+    },
+    {
+     "suites": [
+      "'first-run onboarding'"
+     ],
+     "title": "'says when it has heard nothing for a while'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Pins the 6.1 s silence message delay and its copy; cosmetic cadence, not an ordering or a guard."
+    },
+    {
+     "suites": [
+      "'first-run onboarding'"
+     ],
+     "title": "'keeps the wave still while access is still being asked for'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a data attribute is absent while access is requested; cosmetic rest state with no logic behind it."
+    },
+    {
+     "suites": [
+      "'first-run onboarding'"
+     ],
+     "title": "'offers a Mac what it already has first, then downloads of the models it does not have'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Darwin-only Core ML naming of the installed-first ordering already checked by c18 with the same Use and Download sequence."
+    }
+   ]
+  },
+  "tests/unit/renderer/onboardingSteps.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'ComputersStep'"
+     ],
+     "title": "'reports zero hosts when none are saved'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Zero-host count report is the same onHostsChange path as c22's one-host case, differing only by literal."
+    },
+    {
+     "suites": [
+      "'PhoneStep'"
+     ],
+     "title": "'reports success when the beta link opens'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Success text after a click that calls the onOpenLink prop; the same handler path is exercised by c26's failure case."
+    }
+   ]
+  },
+  "tests/unit/renderer/owlSky.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the Sotto Owl night sky'"
+     ],
+     "title": "'keeps its stars in the header strip, in four strengths, with one star on each slow cycle'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts bounds and tier counts on the OWL_SKY_STARS constant table; no sky logic runs, and the Owl gate in c1 and c2 already covers the sky."
+    }
+   ]
+  },
+  "tests/unit/renderer/ownServerTurn.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a turn the server let down'"
+     ],
+     "title": "'opens Settings at Your own model servers'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Only asserts the mocked navigate received the anchor strings the button passes; nothing observable beyond that call."
+    }
+   ]
+  },
+  "tests/unit/renderer/platformCopy.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'platformCopy'"
+     ],
+     "title": "'returns the same frozen row on every call'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts a memoised platform row returns the same frozen object; no caller depends on that identity."
+    }
+   ]
+  },
+  "tests/unit/renderer/popup/popupApp.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'links in popup request cards'"
+     ],
+     "title": "'opens message-link rows through the same bridge'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same openExternalLink bridge call as c4 through MessageLinks, which the request cards already render; c4 covers that path."
+    }
+   ]
+  },
+  "tests/unit/renderer/providersSettings.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'independent provider settings'"
+     ],
+     "title": "\"marks each provider's row with that provider's mark on its own badge\"",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a data-provider attribute and an svg path exist on each badge; no logic beyond rendering a mark."
+    },
+    {
+     "suites": [
+      "'the installed client, in provider settings'"
+     ],
+     "title": "'turns the whole check off from one switch'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Asserts only the configure payload a switch click sends; the persisted allow-list is covered by settingsHistoryIpc."
+    }
+   ]
+  },
+  "tests/unit/renderer/replyQuotes.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the text a reply quote sends'"
+     ],
+     "title": "'says where it is from and quotes each line'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Formatter whose output replyQuoteText and composeQuotedMessage cases already show; only CRLF trimming is added."
+    }
+   ]
+  },
+  "tests/unit/renderer/requests/agentRequestCard.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'links from the message before a question'"
+     ],
+     "title": "'names where each link goes by its host, port and path'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "linkPlace formatter; its host:port/path output is already asserted by c33 and c36 aria-labels."
+    }
+   ]
+  },
+  "tests/unit/renderer/requests/cloudIphoneRequest.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the cloud iPhone request card'"
+     ],
+     "title": "'renders nothing when the thread has no session'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders nothing when no session exists; checks an empty DOM and nothing else."
+    }
+   ]
+  },
+  "tests/unit/renderer/requests/requestDraftRecovery.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'formats a text-only and multi-select answer for the clipboard'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Clipboard formatter for a text-only and single-choice answer; c3 already asserts the exact formatted text."
+    }
+   ]
+  },
+  "tests/unit/renderer/restartStoppedView.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the band at the top of the Threads sidebar'"
+     ],
+     "title": "'names the day when the reset is not today'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Names tomorrow's day, a branch restartWhen c1 and the band wording in c4 already show; adds no new branch."
+    }
+   ]
+  },
+  "tests/unit/renderer/screenshotInput.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'screenshot attachment input'"
+     ],
+     "title": "'shows one plain image with no count'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a class name and absent count element for one image; no Sotto logic beyond the count gate."
+    }
+   ]
+  },
+  "tests/unit/renderer/screenshotResize.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'preparing a screenshot whose first bytes name its size'"
+     ],
+     "title": "'decodes one past the bound and scales it down'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same decode-then-scale-and-encode branch as c5 with a real PNG header prepended; c5 already covers the branch."
+    },
+    {
+     "suites": [
+      "'reading a screenshot held as a data URL'"
+     ],
+     "title": "'decodes its bytes once, for the header and for staging'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Name says the bytes are decoded once, but assertions only check a base64 round trip, which would still pass if decoded twice."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadActivityView.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'activity wording'"
+     ],
+     "title": "'formats recorded durations compactly'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins formatDuration literals. The 2m 04s output is already shown by threadActivity c1; the formatter is simple and nothing it guards would break unnoticed."
+    },
+    {
+     "suites": [
+      "'the action a thread is waiting on'"
+     ],
+     "title": "'reads the command as it was run, and falls back to the title the provider gave'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "heldLabel only collapses whitespace and falls back to the title or 'Running'. Whitespace handling is shown by c33; the fallback is a display string with no stakes."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadDelegation.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'delegation words'"
+     ],
+     "title": "'says a wait and an answer in minutes and seconds'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure duration formatter; the 'x min y s' forms are already pinned by c2's wait-line assertions."
+    },
+    {
+     "suites": [
+      "'delegated work in the delegating thread'",
+      "'a Dynamic thread\\'s worker'"
+     ],
+     "title": "'names any speed it was started at'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Label join formatter (model, effort, speed) with a fallback; a string join with no logic that could break unnoticed."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadMediaTiles.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'an agent\\'s pictures in a turn (ADR-0170)'"
+     ],
+     "title": "'shows no tile for an image step that ended without a picture'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders nothing for an activity with no media; empty-input DOM check with no Sotto logic beyond the null branch."
+    },
+    {
+     "suites": [
+      "'an agent\\'s pictures in a turn (ADR-0170)'"
+     ],
+     "title": "'names a picture by its type and size alone'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Formatter test; the PNG dimensions form is already shown by c1, leaving only a one-line WebP label."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadPaneMenu.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the pane header’s More menu'"
+     ],
+     "title": "'opens the thread beside this one through the caller’s own handler'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a click calls the onOpenBeside prop it was given; the caller's own handler, no Sotto logic."
+    },
+    {
+     "suites": [
+      "'the pane header’s Tools and Terminal symbols (ADR-0182)'"
+     ],
+     "title": "'shows the full name on hover'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a title attribute equals the thread name on hover; a DOM attribute check with no logic."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadQueuePolish.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'queue presentation'"
+     ],
+     "title": "'keeps the user queue available despite retired assignment data'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Only asserts retired copy is absent; the region's existence is the sole real check."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadSidebarFolders.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'ends every folder row on its count, after any dots'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Class-structure check on folder toggles; the count column is measured in an e2e spec."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadSidebarPeek.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'previews a closed folder after the pointer rests, and puts it away after it leaves'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Pins the 350 ms and 300 ms hover delay constants; the preview behaviour is covered by other cases."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadSidebarRail.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the collapsed rail (ADR-0146)'"
+     ],
+     "title": "'edges nothing in the attention colour while nothing waits'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a data attribute is absent when nothing waits; the waiting case covers the edge."
+    },
+    {
+     "suites": [
+      "'the collapsed rail (ADR-0146)'"
+     ],
+     "title": "'marks each tile with two letters of its title'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure two-letter string formatter pinned by literals; no Sotto logic beyond slicing and capitalising."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadTranscript.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'questions a folded reply asked (#1019)'"
+     ],
+     "title": "'draws the code a question quotes as code'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks a markdown code element renders inside a blockquote; no Sotto logic beyond rendering."
+    },
+    {
+     "suites": [
+      "'questions a folded reply asked (#1019)'"
+     ],
+     "title": "'keeps the mark for its full time when Show where it asked is pressed again'",
+     "occurrence": 0,
+     "category": "timers",
+     "why": "Pins a highlight timer's re-press duration with fake timers; timer plumbing, not an ordering guard."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadWorkingCopy.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'ThreadWorkingCopyNotice'"
+     ],
+     "title": "'stays out of the way unless setup failed'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts the notice renders nothing when healthy; a renders-nothing DOM check."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadWorkingDisplay.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'what a finished turn changed'"
+     ],
+     "title": "'says nothing when a turn changed no files'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders nothing for a turn with no changed files; no Sotto logic beyond an absent button, and the counting case covers the shown branch."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadsTour.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'ThreadsTour'"
+     ],
+     "title": "'lights the part each stop names'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a data-hole attribute on the scrim after render; no behaviour beyond the attribute being present."
+    },
+    {
+     "suites": [
+      "'ThreadsTour'"
+     ],
+     "title": "'Skip tour ends it from any stop before the last'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "A Skip click calls onDone, the same finish Done (c1) already exercises; the prop wiring adds nothing."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/browserPane.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'browser steps in plain words'"
+     ],
+     "title": "'says what each step did without guessing what was under a click'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure string-mapping table for step copy; no logic beyond a switch. c6 already shows the click wording."
+    },
+    {
+     "suites": [
+      "'browser steps in plain words'"
+     ],
+     "title": "'names the page while the agent has taken no step yet'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pure formatter output (lead and shortAddress) with no state behaviour; the lead text is shown by c17 and c19."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/browserPlayerStore.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'clampBrowserPlayerRect'"
+     ],
+     "title": "'keeps a rectangle already inside the window untouched'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity check that an in-window rectangle is unchanged; the edge-clamp case in c2 already exercises the clamp."
+    },
+    {
+     "suites": [
+      "'clampBrowserPlayerRect'"
+     ],
+     "title": "'never lets the rectangle sit above the drag strip'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same drag-strip clamp branch as c2 with y=0 instead of y=10; c2 covers it."
+    },
+    {
+     "suites": [
+      "'clampBrowserPlayerRect'"
+     ],
+     "title": "'shrinks a placement that no longer fits a smaller window, keeping it inside'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Shrink into a smaller window through the clamp; c11 checks the same invariants via reclamp."
+    },
+    {
+     "suites": [
+      "'BrowserPlayerStore placement'"
+     ],
+     "title": "'is one placement for every thread: moving it for one thread moves it for all of them'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Names one placement for every thread but passes no thread; rectFor twice with the same window always matches."
+    },
+    {
+     "suites": [
+      "'BrowserPlayerStore placement'"
+     ],
+     "title": "'resizes down to the minimum and no further'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Minimum-size clamp through setRect repeats the clamp's minimum-size branch already proven by c4."
+    },
+    {
+     "suites": [
+      "'BrowserPlayerStore visibility'"
+     ],
+     "title": "'restore and hide move a thread between states directly'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restore and hide are setter pass-throughs; c14 to c16 already exercise the open, shrunk and hidden states."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/changesSurface.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Changes as T3’s diff'"
+     ],
+     "title": "'gives each row its file and line numbers as data for a later selection'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts data-path, data-old-line, data-new-line and data-kind attributes exist on rows; the comment tests already select rows by these, and no Sotto logic is checked here."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/delegatedRoster.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the roster of delegated threads'"
+     ],
+     "title": "'counts delegated threads and agents together, and what needs you'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pluralised count formatter; its outputs ('3 delegated threads · 1 agent', '1 needs you · 2 working', 'None working') are already shown by c6, c12 and c14."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/filesBrowser.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Files browsing model'"
+     ],
+     "title": "'reports a missing bridge as a root problem instead of throwing'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "One-line guard that a missing bridge yields an error row and a failed path action; no delegation, persistence or safety logic beyond the guard."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/iphoneSurface.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the test iPhone surface'"
+     ],
+     "title": "'reloads the app'",
+     "occurrence": 0,
+     "category": "mock-mirror",
+     "why": "Clicking Reload only asserts the store-to-bridge call with pageId; nothing observable beyond the mock call, and the wire is covered at host level."
+    },
+    {
+     "suites": [
+      "'the test iPhone surface'"
+     ],
+     "title": "'offers no Share control on a Muse thread whose client withheld Sotto’s tools'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/renderer/tools/iphoneSurface.test.tsx 'tells a Devin thread whose client withheld Sotto’s tools that it cannot use them, and offers no Share control' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/linkedFile.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the linked file panel'"
+     ],
+     "title": "'says each refusal in its own words rather than the English the service answered in'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins one string from a switch of refusal messages for a single code; name says 'each refusal' but only invalid-request is checked."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/phonePlayerCloud.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the phone player’s cloud iPhone mode'"
+     ],
+     "title": "'keeps the test iPhone unchanged when there is no cloud session'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Claims the test iPhone stays unchanged, but the fixture has no test iPhone task, so it only checks that no cloud panel appears."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/phonePlayerStore.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'phoneLayout'"
+     ],
+     "title": "'never shrinks the screen narrower than 120, however short the window'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same tiny-window input as c4 with a weaker >=120 assertion; c4 pins the exact minimum and implies it."
+    },
+    {
+     "suites": [
+      "'clampPhonePoint'"
+     ],
+     "title": "'keeps a point already inside the window untouched'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity check that an in-window point is unchanged; the edge clamp in c7 covers the clamp logic."
+    },
+    {
+     "suites": [
+      "'clampPhonePoint'"
+     ],
+     "title": "'never lets the player sit above the drag strip'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Drag-strip clamp branch with y=0 already asserted by c7 with y=10; same branch, different literal."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/proactivePanels.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the settings hooks other surfaces read'"
+     ],
+     "title": "'gives Changes its starting layout, whitespace and file state, and nothing before settings arrive'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates DEFAULT_SETTINGS defaults for diff layout, whitespace and file state through a pass-through hook; no logic beyond it."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/pullRequestSurface.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the Pull request surface'"
+     ],
+     "title": "'shows the count in the done colour beside Ready to merge, a line that does not block included'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks only a data-tone attribute on the count; the count text is already pinned by c4's checklistCount assertions."
+    },
+    {
+     "suites": [
+      "'babysitting the pull request shown (ADR-0061, variant C)'"
+     ],
+     "title": "'says the host’s refusal in its own words'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same result.error-to-alert path as c17 with a different host message; c17 keeps the refusal-in-host-words branch."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/runCommand.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'running a reply\\'s command in the drawer (ADR-0139)'"
+     ],
+     "title": "'cuts a long tab name in the middle and keeps the whole of it for screen readers'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Named for keeping the whole tab name for screen readers, but asserts only middleCut output; the accessible name is never checked."
+    }
+   ]
+  },
+  "tests/unit/renderer/tools/terminalUnicode.test.ts": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'places CJK and emoji in two cells and combining accents in the preceding cell'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Runs xterm and its addon directly, not Sotto's createXtermView; passes even if Sotto stops loading the addon."
+    }
+   ],
+   "whole": true
+  },
+  "tests/unit/renderer/updateAllCard.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the Update all card'"
+     ],
+     "title": "'says nothing when everything is current'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only checks that the card renders an empty container when everything is current; renders nothing for empty input, no Sotto logic."
+    },
+    {
+     "suites": [
+      "'the Update all card'"
+     ],
+     "title": "'runs the same press when Settings asks for it'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Runs the same requestUpdateAll to downloadUpdate path that c15 runs on its second press, without the failure first; covered by c15."
+    }
+   ]
+  },
+  "tests/unit/renderer/usageMuseOpenCode.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Muse and OpenCode on the Usage page'"
+     ],
+     "title": "'says which providers are counted in Sotto only and that OpenCode reports no limits'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks static About copy with no Sotto logic; OpenCode being off Subscriptions is already covered by c1."
+    }
+   ]
+  },
+  "tests/unit/renderer/visualCard.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the visual card'"
+     ],
+     "title": "'leaves out the explanation when there is none'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only checks a CSS class is absent when intro and steps are missing; a conditional render with no Sotto logic."
+    }
+   ]
+  },
+  "tests/unit/renderer/visualWalkthrough.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the stepper'"
+     ],
+     "title": "'draws nothing for a visual without steps'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders nothing for a visual with no steps: a container-empty check with no Sotto logic behind it."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherAsks.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a watched thread’s request in Watcher’s conversation'"
+     ],
+     "title": "'draws nothing outside Watcher’s own pane'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Renders with no conversation context and expects null; the early-return guard proves nothing about Watcher's pane."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherCompactionSetting.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Compact Watcher at'"
+     ],
+     "title": "'writes its sentence as a translated paragraph, and its numbers in the interface language'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts a paragraph class name and Intl output for literals; the English formatter is already shown by c1 and c2."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherContextTile.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the Sotto tile in Watcher’s room'"
+     ],
+     "title": "'wears Watcher’s owl instead of the app mark on macOS, and still opens its panel'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks an SVG class is present on macOS; opening the panel is repeated in c6 with the focus and Escape behaviour."
+    },
+    {
+     "suites": [
+      "'the Sotto tile in Watcher’s room'"
+     ],
+     "title": "'shows Watcher’s state in four groups, each saying None when it is empty'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks that each empty state group says None; placeholder copy for empty input with no Sotto logic, while c15 covers the lists."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherNew.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'New Watcher in Watcher’s composer'"
+     ],
+     "title": "'after a provider change the strip still names the provider the last Watcher was on'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same handover strip sentence as watcherHandover c2 (\"from Codex\"), through the same handover.provider path; adds no new branch."
+    },
+    {
+     "suites": [
+      "'the new Watcher’s empty conversation'"
+     ],
+     "title": "'adds no lines when the press carried nothing over'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Asserts an absent carried-lines list when nothing was carried; renders-nothing-for-empty-input check with no logic of its own."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherNightFalls.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'night falls settings'"
+     ],
+     "title": "'names the speed the way the dial shows it'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Simple speed label formatter; '1x' and '1.5x' are already asserted in c30's dial test, and no branch of it is tested elsewhere beyond 0.75x string formatting."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherOwlFamily.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'a thread owl’s mood'"
+     ],
+     "title": "'labels the pile \"+N\", and on the rail never cuts a number short'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins a label formatter; its name says the rail never cuts a number short while the assertion expects '9+'."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherPermissionWatch.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'Watcher’s own changes'"
+     ],
+     "title": "'names one file as one'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Singular spelling of the own-change count line; the plural forms in c12 and c13 already exercise the same formatter."
+    }
+   ]
+  },
+  "tests/unit/renderer/watcherView.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "\"Watcher's room\""
+     ],
+     "title": "'has no limit to set: once Watcher runs its header holds no More Watcher actions, and the watched count is not capped'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Only asserts a removed More button and a removed count label are absent; no Sotto logic, and c2 and c13 already cover the header actions."
+    },
+    {
+     "suites": [
+      "'the room switch'"
+     ],
+     "title": "'has no update control where the app does not update itself, and keeps its pages'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Renders with no update prop and asserts no update-control class; the pages half is already shown by c40."
+    }
+   ]
+  },
+  "tests/unit/renderer/widget/widgetAppearance.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'WidgetApp'"
+     ],
+     "title": "'leaves the resting sliver free of the app mark'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks only that the resting sliver has no app-mark element. Presence/absence with no logic; c2 already covers the mark in active states."
+    }
+   ]
+  },
+  "tests/unit/renderer/widget/widgetPreview.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'visual preview parser'"
+     ],
+     "title": "'renders the one pill widget across its resting, listening, and resolved states'",
+     "occurrence": 0,
+     "category": "dom-basic",
+     "why": "Checks classes, text and bar count per state; no logic beyond DOM presence."
+    }
+   ]
+  },
+  "tests/unit/renderer/widgetDragGesture.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'useWidgetDragGesture'"
+     ],
+     "title": "'suppresses only the click following a completed drag'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same click-suppression branch after a completed drag as c11; only the end event differs."
+    }
+   ]
+  },
+  "tests/unit/renderer/workingThreadsLine.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'the working threads line (#1183)'"
+     ],
+     "title": "'shows nothing at ten'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Hides the line at ten working threads, the same branch as c3's final assertion (covered by c3)."
+    }
+   ]
+  },
+  "tests/unit/shared/accelerator.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Fn and Win'"
+     ],
+     "title": "'names Escape'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Escape is one more well-known key row on the branch c6 already covers."
+    },
+    {
+     "suites": [
+      "'platform isolation'"
+     ],
+     "title": "'uses Control and Ctrl labels on Linux'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Linux shares the win32 modifier alias map, so its Ctrl labels repeat c1 and c5."
+    },
+    {
+     "suites": [
+      "'platform isolation'"
+     ],
+     "title": "'does not leak the darwin Control token onto win32'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Win32 Control alias is c5's row and darwin Control is c11; no new branch."
+    }
+   ]
+  },
+  "tests/unit/shared/bootStart.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'start at boot status (ADR-0054)'"
+     ],
+     "title": "'says in one sentence why a host cannot start at boot'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the English text of a two-branch ternary; interfaceWords.test.ts already holds these sentences to this function, so the copy check adds nothing."
+    }
+   ]
+  },
+  "tests/unit/shared/constants.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'application constants'"
+     ],
+     "title": "'uses the approved product name and shortcut'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the literal values of APP_NAME and DEFAULT_HOTKEY; a constant equals itself, with no logic exercised."
+    },
+    {
+     "suites": [
+      "'application constants'"
+     ],
+     "title": "'derives the legacy shortcut constant from the Windows platform default'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "DEFAULT_HOTKEY is defined as defaultHotkey('win32'); the test restates the definition it was written from."
+    }
+   ],
+   "whole": true
+  },
+  "tests/unit/shared/dictation.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'widget error codes'"
+     ],
+     "title": "'lets main accept a %s snapshot'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "Checks that widgetSnapshotSchema accepts each WIDGET_ERROR_CODES member, but the schema is z.enum(WIDGET_ERROR_CODES) (contracts.ts:25), so it cannot fail."
+    }
+   ]
+  },
+  "tests/unit/shared/dynamicThreads.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Dynamic threads (ADR-0191)'"
+     ],
+     "title": "'has no allowed list until the user has seen one, and four workers at Extra high'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates DEFAULT_DYNAMIC_THREADS values and round-trips a valid settings object; defaults restated, no branch proved."
+    }
+   ]
+  },
+  "tests/unit/shared/hostFacts.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'a paired machine’s work placed but not started as the desktop reads it (#1311)'"
+     ],
+     "title": "'adds a start the host did not name even when it has begun there: an extra count, never a lost one'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Its only assertion repeats c20's first assertion: placedNotStartedWith({placedNotStarted:0, placedThreadIds:[]}, ['started']) is 1."
+    },
+    {
+     "suites": [
+      "'a paired machine’s work placed but not started as the desktop reads it (#1311)'"
+     ],
+     "title": "'reads unknown above the most threads any machine holds'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same branch as c24's last assertion: a count at the maximum plus one reserved start reads unknown, with no ID-list difference."
+    }
+   ]
+  },
+  "tests/unit/shared/iosPalettes.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'iPhone palettes'"
+     ],
+     "title": "'lists the six built-ins and Glass under their own names'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins a literal list of palette ids; the Swift drift check in c3 already fails on any palette change."
+    }
+   ]
+  },
+  "tests/unit/shared/newThreadDefaults.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'nearest reasoning effort'"
+     ],
+     "title": "'keeps the desired effort when the model offers it'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity mapping: an offered effort comes back unchanged; c11 covers the mapping."
+    }
+   ]
+  },
+  "tests/unit/shared/platform.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'resolvePlatform'"
+     ],
+     "title": "'maps darwin to the macOS platform'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity mapping: darwin returns darwin."
+    },
+    {
+     "suites": [
+      "'resolvePlatform'"
+     ],
+     "title": "'maps win32 to the Windows platform'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity mapping: win32 returns win32."
+    },
+    {
+     "suites": [
+      "'resolvePlatform'"
+     ],
+     "title": "'maps linux to its own platform'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Identity mapping: linux returns linux."
+    },
+    {
+     "suites": [
+      "'PLATFORM_ARGUMENT_PREFIX'"
+     ],
+     "title": "'uses the renderer argument convention'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins a string constant against itself; no behaviour beyond the literal."
+    },
+    {
+     "suites": [
+      "'defaultHotkey'"
+     ],
+     "title": "'keeps the shipped Windows shortcut'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the shipped Windows default constant with no issue, ADR or reason in the test."
+    }
+   ]
+  },
+  "tests/unit/shared/providerLists.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'provider lists'"
+     ],
+     "title": "'derive their cap from the provider list'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins PROVIDER_COUNT to 8, restating the mocked eight-entry list's length. No branch of its own."
+    }
+   ]
+  },
+  "tests/unit/shared/providerProfile.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'provider profiles'"
+     ],
+     "title": "'hold one profile for every provider and nothing else'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "PROVIDER_PROFILES is typed Record<ProviderId, ProviderProfile}, so the compiler already guarantees one profile per provider and no extras."
+    }
+   ]
+  },
+  "tests/unit/shared/releaseTrack.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'release track'"
+     ],
+     "title": "'names each track the way the running build names itself in words'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins two display-name literals; no logic beyond constants."
+    }
+   ]
+  },
+  "tests/unit/shared/settings.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Council settings'"
+     ],
+     "title": "'starts with three seats Sotto fills, the long table and a ten-minute stage deadline'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the Council default seats, layout and deadline; restated defaults with no logic."
+    },
+    {
+     "suites": [
+      "'night falls settings'"
+     ],
+     "title": "'looks like the band by default and keeps Stars once chosen'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Restates the default look and round-trips a valid value; no logic beyond the parse."
+    }
+   ]
+  },
+  "tests/unit/shared/speechModel.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "\"Sotto's speech models\""
+     ],
+     "title": "'offers Parakeet Ultra first, as the suggestion, then Parakeet v3 and Parakeet v2'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the product's model names, makers and order; a change detector with no logic."
+    },
+    {
+     "suites": [
+      "\"Sotto's speech models\""
+     ],
+     "title": "'offers each one on the picker with its download size'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "Schema parse of the option plus a pinned byte range; the schema already guarantees the shape."
+    }
+   ]
+  },
+  "tests/unit/shared/teamMergeOrder.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'teamMergeOrder'"
+     ],
+     "title": "'says whose each one is'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Yours/theirs labelling on two single-PR desks is already asserted by c5's whose check on the same branch."
+    },
+    {
+     "suites": [
+      "'teamMergeOrder'"
+     ],
+     "title": "'offers nothing for two empty desks'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Empty-input guard returning an empty list. A one-line guard with no logic a break would hide."
+    }
+   ]
+  },
+  "tests/unit/shared/textRepair.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'countWords'"
+     ],
+     "title": "'counts whitespace-separated words'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Whitespace-split word count, a one-line formatter with no branch of its own beyond the empty string."
+    }
+   ]
+  },
+  "tests/unit/shared/themeBranding.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'widget palette projection'"
+     ],
+     "title": "'requires the palette on every widget snapshot'",
+     "occurrence": 0,
+     "category": "type-redundant",
+     "why": "Checks that a zod schema requires the palette field; the schema already guarantees it."
+    }
+   ]
+  },
+  "tests/unit/shared/threadMoves.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the facts block (#1178)'"
+     ],
+     "title": "'puts the facts after the handover and the line that closes it, as one prompt'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Asserts the handover prompt is two helper outputs joined in order; the facts content is covered by c11 and c12."
+    }
+   ]
+  },
+  "tests/unit/shared/topEffort.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'isTopEffort'"
+     ],
+     "title": "'lights Claude at Max and at Ultracode'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Covered by c1's Claude row, which checks Max and Ultracode light and every other level does not."
+    }
+   ]
+  },
+  "tests/unit/shared/transcript.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'formatTranscript'"
+     ],
+     "title": "'collapses runs of spaces without changing words or punctuation'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Same whitespace-collapse branch as c5 with ASCII spaces only. c5 covers tabs, Unicode spaces and trimming too."
+    }
+   ]
+  },
+  "tests/unit/shared/visualGuest.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the height Sotto gives a page'"
+     ],
+     "title": "'stays between 160 and 640 pixels'",
+     "occurrence": 0,
+     "category": "trivial",
+     "why": "Pins the 160 and 640 constants only; c1's clamp table already proves both bounds."
+    }
+   ]
+  },
+  "tests/unit/shared/watcherGlossary.test.ts": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'defines wake-ups for both Sotto news sources'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Keyword grep of the Wake-up glossary line; passes with any wording that mentions the same nouns, whatever it means."
+    },
+    {
+     "suites": [],
+     "title": "'defines turns independently of which Sotto source sent their wake-up'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Regex on Turn's glossary prose for one absent phrase; proves no behaviour and passes with any reworded definition."
+    },
+    {
+     "suites": [],
+     "title": "'describes the coordinator as sending both sources of wake-up'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Keyword match on the Coordinator glossary entry; passes if the entry is wrong but mentions the nouns."
+    },
+    {
+     "suites": [],
+     "title": "'documents the shipped owning-host Watcher tools without the obsolete local-only restriction'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Greps docs/agent-control.md for tool names and absent phrases; a wording check, not a behaviour check."
+    }
+   ],
+   "whole": true
+  },
+  "tests/unit/shared/watcherRoomPolish.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'where cards and takeover lines are placed'"
+     ],
+     "title": "'uses the shared rule in main and in the window, with no copy of its own'",
+     "occurrence": 0,
+     "category": "vacuous",
+     "why": "Greps two source files for an import and absent strings; passes whenever the import exists, whatever the rule does."
+    }
+   ]
+  },
+  "tests/unit/main/sottoThreads.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'upgrade and event ordering'"
+     ],
+     "title": "'mints UUIDs on a fresh install even though no registry file exists yet'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/sottoThreads.test.ts 'exposes UUIDs and persists provider/session/project bindings before returning a snapshot' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/integration/codexNewestTurn.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Codex send checks the newest turn before reading the whole transcript'"
+     ],
+     "title": "'stops asking on that connection when Codex names a value the check sends as unknown'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/integration/codexNewestTurn.test.ts: 'reads the whole transcript on a Codex without thread/turns/list, and stops asking on that connection' (c20) (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/renderer/threadSidebarStatus.test.tsx": {
+   "cases": [
+    {
+     "suites": [
+      "'a row that needs you says what it needs'"
+     ],
+     "title": "'keeps the native question visible until the user answers'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/renderer/threadSidebarStatus.test.tsx 'says so for a thread with no assignment, whose request never enters the attention queue' (c2): its rowFor asse (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/integration/tellWatcher.test.ts": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'refuses a stop under it, of a waiting check as of a thread'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/integration/tellWatcher.test.ts 'wakes Watcher at once with the worker’s words and the user’s own, and opens a request only for this turn' (c1) (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/threadReadPurpose.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'the coordinator marks only its reads immediately before a send'"
+     ],
+     "title": "'not the read when a thread is selected'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/threadReadPurpose.test.ts 'a saved draft send, and not the selection read before it' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/opencodeServer.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'which OpenCode Sotto drives (ADR-0087)'"
+     ],
+     "title": "'drives %s'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/opencodeClientUpdates.test.ts 'drives OpenCode 2 from 2.0.31 and refuses OpenCode 1 or an older 2 in words that say what to install' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/renderer/features/settings/hostQuestions.test.tsx": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'submits a saved host %s on Enter and reaches Continue before Switch it off'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/renderer/features/settings/hostQuestions.test.tsx 'submits a saved host %s on Enter and reaches Continue before Switch it off' (the passphrase row of (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/claudeMonitoring.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Claude confirmed monitoring'"
+     ],
+     "title": "'never turns an ended monitor into a subagent on a delayed progress update'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/claudeMonitorActivity.test.ts 'does not retain completed monitor identities or admit their delayed progress' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/agentRuntimeLiveLoad.test.ts": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'is off on stable and on in Owl'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/agentRuntimeCrossMachine.test.ts 'is off on stable and on in Owl' (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/codexQuestions.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'a typed Codex answer is marked as the user\\'s own words'"
+     ],
+     "title": "'keeps typed \"Yes\" apart from choosing Yes'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/codexQuestions.test.ts 'sends a typed answer beside choices as a note, without \"None of the above\"' (c4) (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    },
+    {
+     "suites": [
+      "'a Codex question without choices takes typed words'"
+     ],
+     "title": "'sends a typed answer to the question in the issue'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/main/codexQuestions.test.ts 'sends a typed answer to a question without choices as a note, trimmed as the terminal client trims it' (c6) (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/fixtures/nativeUsageBoundary.test.ts": {
+   "cases": [
+    {
+     "suites": [],
+     "title": "'compares renderer usage before and after a JSON-backed restart'",
+     "occurrence": 0,
+     "category": "duplicate",
+     "why": "Keep-list duplicate, covered by tests/unit/fixtures/nativeUsageBoundary.test.ts 'compares the persisted native view with the provider-qualified renderer view' (c1) (two refutation checks agreed; approved by Zach, November 4, 2026)."
+    }
+   ]
+  },
+  "tests/unit/main/watcherThreadChanges.test.ts": {
+   "cases": [
+    {
+     "suites": [
+      "'Watcher and delegation on thread changes (#925 step 5)'"
+     ],
+     "title": "'say what the whole path says across a seeded run of every operation family (seed %i, windows %s)'",
+     "occurrence": 0,
+     "rows": [
+      "[2, 'held']",
+      "[4, 'led']"
+     ],
+     "category": "duplicate",
+     "why": "One fixed seed per window mode still runs every operation family and 70 seeded rounds; seeds 2 and 4 cost 78 s summed (approved by Zach, November 4, 2026)."
+    }
+   ]
+  }
+ }
+}

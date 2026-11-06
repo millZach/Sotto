@@ -1,8 +1,6 @@
 import React, { type ReactElement } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { Lardo, LardoTurns, type LardoPose } from '../../../src/renderer/src/agents/Lardo'
 import { lardoPaths } from '../../../src/renderer/src/agents/lardoSprite'
 
@@ -39,15 +37,6 @@ const skin = (container: HTMLElement) => actorOf(container).querySelector('.lard
 const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
 
 describe('Lardo', () => {
-  it.each<[LardoPose, string | null]>([
-    ['monitoring', null], ['working', null], ['held', '.thread-monitor__sand'], ['babysitting', '.thread-monitor__sign'],
-  ])('wears the %s pose with its prop', (pose, prop) => {
-    const { container } = onComposer(<Lardo pose={pose} agents={3} />)
-    for (const letter of ['k', 's', 'h', 'd', 't']) expect(actorOf(container).querySelector(`.lardo-${letter}`)!.getAttribute('d')).toMatch(/^M\d/u)
-    if (prop) expect(container.querySelector(prop)).not.toBeNull()
-    expect(container.querySelectorAll('.thread-monitor__mini')).toHaveLength(pose === 'working' ? 3 : 0)
-  })
-
   it('holds each pose in its classic stance', () => {
     const stance = (pose: LardoPose) => {
       const { container, unmount } = onComposer(<Lardo pose={pose} />)
@@ -62,34 +51,12 @@ describe('Lardo', () => {
     expect(stance('babysitting')).toBe(lardoPaths('abdominalThigh').s)
   })
 
-  it('keeps his own colours while babysitting, where the other creatures mute', () => {
-    const css = readFileSync(join(process.cwd(), 'src/renderer/src/agents/lardo.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
-    expect(css).not.toMatch(/babysitting/u)
-  })
-
   /** The thread pane's part: the turn's state, and which pose (if any) stands, mounted afresh for each `mount`. */
   function Stage({ running, pose, mount = pose ?? '' }: { readonly running: boolean; readonly pose: LardoPose | null; readonly mount?: string }) {
     return <div className="thread-monitor__track">
       {pose ? <LardoTurns running={running}><Lardo key={mount} pose={pose} /></LardoTurns> : null}
     </div>
   }
-
-  it('flexes when the turn finishes while he is up, and goes back to his pose', () => {
-    const { container, rerender } = render(<Stage running pose="working" />)
-    expect(actorOf(container)).not.toHaveAttribute('data-cue')
-    rerender(<Stage running={false} pose="working" />)
-    expect(actorOf(container)).toHaveAttribute('data-cue', 'flex')
-    advance(400)
-    expect(skin(container)).toBe(lardoPaths('backDoubleBiceps').s)
-    advance(1000)
-    expect(actorOf(container)).not.toHaveAttribute('data-cue')
-  })
-
-  it('flexes when the turn\u2019s end swaps his pose for another, as a held action becomes a command left waiting', () => {
-    const { container, rerender } = render(<Stage running pose="held" mount="action" />)
-    rerender(<Stage running={false} pose="held" mount="command" />)
-    expect(actorOf(container)).toHaveAttribute('data-cue', 'flex')
-  })
 
   it('does not flex for a turn that ended before he came, nor for one he was not up for', () => {
     const { container, rerender } = render(<Stage running pose={null} />)

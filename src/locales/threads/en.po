@@ -702,6 +702,10 @@ msgid "{modelName} oversees and chooses a model for each piece. Turned off, it w
 msgstr "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
+msgstr "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 msgstr "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 
@@ -2511,6 +2515,10 @@ msgstr "Choose branch"
 msgid "Choose model"
 msgstr "Choose model"
 
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Choose model. {modelName} oversees new threads"
+msgstr "Choose model. {modelName} oversees new threads"
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Choose model. {modelNameNow} oversees this thread"
 msgstr "Choose model. {modelNameNow} oversees this thread"
@@ -2694,8 +2702,8 @@ msgid "Code from the {sourceName} page"
 msgstr "Code from the {sourceName} page"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Codex asks before every command, even one that only reads, and before every edit."
-msgstr "Codex asks before every command, even one that only reads, and before every edit."
+msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
+msgstr "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
@@ -3280,6 +3288,10 @@ msgstr "Could not make the marked copy. Nothing was added, and your marks are st
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not open {failedHost}."
 msgstr "Could not open {failedHost}."
+
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "Could not open {name}. It is still attached. Try opening it again."
+msgstr "Could not open {name}. It is still attached. Try opening it again."
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
@@ -4462,6 +4474,14 @@ msgstr "Git refused."
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "Git said:"
 msgstr "Git said:"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give {threadTitle} to"
+msgstr "Give {threadTitle} to"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give it to another model…"
+msgstr "Give it to another model…"
 
 #: src/renderer/src/agents/VisualStepper.tsx
 msgid "Go to step {stepNumber}"
@@ -5673,6 +5693,10 @@ msgstr "No model source matches “{typed}”."
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "No other ready model is on the list in Settings."
+msgstr "No other ready model is on the list in Settings."
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
 msgstr "No preview for this file type"
@@ -5954,6 +5978,11 @@ msgstr "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull r
 msgid "one of its agents"
 msgstr "one of its agents"
 
+#. {provider} is a provider's name.
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+msgstr "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr "Only if the server was started with one"
@@ -5983,7 +6012,9 @@ msgid "Open {file} in the side panel"
 msgstr "Open {file} in the side panel"
 
 #. {name} is an attached image's file name.
+#. {name} is an attached image's file name.
 #: src/renderer/src/agents/MessageContent.tsx
+#: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
 
@@ -6352,6 +6383,7 @@ msgstr "Other: {text}"
 msgid "Outcome unknown"
 msgstr "Outcome unknown"
 
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "oversees"
@@ -8124,6 +8156,10 @@ msgstr "Sotto could not tell how it stood when it last read it."
 msgid "Sotto couldn’t load skills."
 msgstr "Sotto couldn’t load skills."
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+msgstr "Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
@@ -8269,6 +8305,10 @@ msgstr "Start from origin"
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Start here"
 msgstr "Start here"
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Start new threads as Dynamic?"
+msgstr "Start new threads as Dynamic?"
 
 #. A body its host sent cut shows only this part.
 #: src/renderer/src/agents/ActivityBody.tsx
@@ -9985,6 +10025,7 @@ msgid "Wait for this turn to finish before forking"
 msgstr "Wait for this turn to finish before forking"
 
 #. A thread row's state: a command it started is still running.
+#. A thread row's state: a command it started is still running.
 #. The readout beside the creature: the thread waits on something it started.
 #. The readout beside the creature: the thread waits on something it started.
 #: src/renderer/src/agents/threadFacts.ts
@@ -10266,6 +10307,7 @@ msgstr "worked on the cloud iPhone"
 #. A provider's background agent's state: it is running.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
+#. A thread row's state: its agent is working.
 #. A turn that is running.
 #. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
@@ -10421,6 +10463,10 @@ msgstr "Wrote {subject}"
 msgid "You"
 msgstr "You"
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You chose this."
+msgstr "You chose this."
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
 msgstr "You had sent your own message in that thread since this thread last read it. {nothing}"
@@ -10458,6 +10504,11 @@ msgstr "You were working in it, so Sotto did not send this brief."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You were working in that thread, so it takes no brief until your turn there ends. {nothing}"
 msgstr "You were working in that thread, so it takes no brief until your turn there ends. {nothing}"
+
+#. Before the line saying the user, not the overseer, gave this piece to this model.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You:"
+msgstr "You:"
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Your answer"

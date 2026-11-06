@@ -91,7 +91,7 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
     // Watcher's room (Sotto Owl) owns the window the same way but has no sidebar; its header's room switch stands in for one.
     if (document.querySelector('.threads-view') !== null) {
       const watcherRoom = document.querySelector('.watcher-room') !== null
-      for (const selector of watcherRoom ? ['.watcher-head__rooms', '.thread-workspace'] : ['.thread-nav', '.thread-workspace']) {
+      for (const selector of watcherRoom ? ['.watcher-foot .thread-nav__seg', '.thread-workspace'] : ['.thread-nav', '.thread-workspace']) {
         if (document.querySelector(selector) === null) problems.push(selector + '-missing')
       }
     }

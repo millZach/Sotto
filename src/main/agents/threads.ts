@@ -239,6 +239,11 @@ export class SottoThreadHost implements AgentHost {
     this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
       ...overseer ? { overseer: bySession(threadId => overseer.call(roles, threadId)) } : {}, ...overseerNote ? { overseerNote: bySession(threadId => overseerNote.call(roles, threadId)) } : {} })
   }
+  async closeCouncilJudge(threadId: string): Promise<void> {
+    const binding = this.registry.byThread(threadId)
+    const sessionId = binding?.provider === this.provider ? binding.sessionId : this.unbound.get(threadId)
+    if (sessionId) await this.inner.closeCouncilJudge?.(sessionId)
+  }
   async threadInstructionsChanged(threadId: string): Promise<void> {
     const binding = this.registry.byThread(threadId)
     // A session an early start made has no binding yet, and it is the one to let go of (ADR-0057).

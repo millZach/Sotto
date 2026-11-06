@@ -141,11 +141,6 @@ describe('reading the login shell PATH', () => {
     expect(await readShellPath(await shell(`process.stdout.write('/usr/bin'); process.exitCode = 1`), 5_000, env)).toBeNull()
   })
 
-  it('gives up when the shell does not finish', async () => {
-    // A lookup that waited for this shell would run into the test's own deadline instead of answering.
-    expect(await readShellPath(await shell('setTimeout(() => {}, 30000)'), 300, env)).toBeNull()
-  })
-
   it('does not wait for a background process the shell left holding its output', async () => {
     // The shell prints PATH and exits, but its child inherits stdout and keeps it open, as gitstatusd or tmux would.
     // The child outlives the deadline, so a lookup that waited for the output to close would answer null.

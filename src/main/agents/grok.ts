@@ -1539,6 +1539,9 @@ export class GrokAcpHost implements AgentHost {
         const watcher = this.processes.get(owner!)?.watcher
         if (watcher) await this.launchProfile(pending.threadId, rpc)
         if (!current()) return
+        // Watcher's own question tool is closed to it (#2228): it would hold Watcher's turn, so Watcher asks with ask_user.
+        // Grok's own outcome for a question no one answers, which carries no words; Watcher's prompt names ask_user.
+        if (watcher && pending.request.kind === 'question') { rpc.reply(pending.wireId, { outcome: 'cancelled' }).catch(() => undefined); return }
         const admission = watcher ? await this.toolAdmission(pending) : this.ordinaryToolAdmission(pending)
         if (!current()) return
         // Only exact names on the scoped Sotto servers are preallowed. All other tools ask normally.

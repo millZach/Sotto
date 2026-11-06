@@ -12,12 +12,13 @@ import { codexFixture } from '../fixtures/codexFixture'
 let fixture: Awaited<ReturnType<typeof codexFixture>> | undefined
 afterEach(async () => { vi.restoreAllMocks(); await fixture?.cleanup(); fixture = undefined })
 
-/** The bytes main reads from each of `paths`, counted as each read returns, telling a file's handles by the inode they stat. */
+/** The bytes main reads from each of `paths`, counted as each read returns, telling a file's handles by the inode they stat, with the options main stats them with. */
 async function bytesReadFrom(...paths: string[]): Promise<{ readonly bytes: (path?: string) => number }> {
   const probe = await open(process.execPath, 'r')
-  const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<{ bytesRead: number }>; stat(): Promise<{ ino: number }> }
+  const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<{ bytesRead: number }>; stat(...args: unknown[]): Promise<{ ino: number | bigint }> }
   await probe.close()
-  const inodes = new Map(await Promise.all(paths.map(async path => [(await stat(path)).ino, path] as const)))
+  // Keyed by the whole ID: main stats as bigints, and a Windows file ID rounds as a number (#2145).
+  const inodes = new Map(await Promise.all(paths.map(async path => [String((await stat(path, { bigint: true })).ino), path] as const)))
   const owner = new WeakMap<object, string>()
   const totals = new Map(paths.map(path => [path, 0]))
   const read = handles.read, stats = handles.stat
@@ -27,9 +28,9 @@ async function bytesReadFrom(...paths: string[]): Promise<{ readonly bytes: (pat
     if (path) totals.set(path, totals.get(path)! + result.bytesRead)
     return result
   })
-  vi.spyOn(handles, 'stat').mockImplementation(async function (this: object) {
-    const result = await stats.apply(this)
-    const path = inodes.get(result.ino)
+  vi.spyOn(handles, 'stat').mockImplementation(async function (this: object, ...args: unknown[]) {
+    const result = await stats.apply(this, args)
+    const path = inodes.get(String(result.ino))
     if (path) owner.set(this, path)
     return result
   })

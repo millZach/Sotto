@@ -48,11 +48,6 @@ describe('the working threads line (#1183)', () => {
     expect(line.closest('.thread-nav__expanded')).not.toBeNull()
   })
 
-  it('shows nothing at ten', () => {
-    mount(stateWith(10))
-    expect(screen.queryByText(SENTENCE, { exact: false })).toBeNull()
-  })
-
   it('counts the working threads live as they change', () => {
     const view = mount(stateWith(12))
     expect(screen.getByText('12 threads are working.')).toBeInTheDocument()

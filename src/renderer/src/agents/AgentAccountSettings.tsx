@@ -8,6 +8,7 @@ import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../../shared/
 import { chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents, type AgentConnection } from './AgentContext'
 import { newThreadDefaultModelId, newThreadDefaultsCatalog, newThreadOptionsOn } from './newThread'
+import { useNewThreadsDynamicSwitch } from './DynamicSwitch'
 import { ChoiceChip, effortChoices, RUNTIME_LABELS } from './ThreadOptions'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
@@ -58,11 +59,14 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
     other: `${hosts} don’t let this computer answer permission requests yet, so their new threads start on "${asking}".`,
   })
   const save = (patch: Extract<AgentCommand, { type: 'configure' }>['patch']): void => { void command({ type: 'configure', patch }) }
+  const modelName = model?.name ?? ''
+  const dynamic = useNewThreadsDynamicSwitch({ state, provider: model?.providerId, modelName })
   return <div className="account-row account-row--chips">
+    {dynamic.dialog}
     <span className="account-row__heading"><strong>{t`New threads start with`}</strong><span>{t`Model, reasoning effort and permissions.`}</span></span>
     <fieldset className="account-row__control" data-setting="thread-defaults">
       <legend className="tt-visually-hidden">{t`New threads start with`}</legend>
-      <ModelPicker models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
+      <ModelPicker foot={dynamic.foot} suffix={dynamic.suffix} label={dynamic.overseeing ? t`Choose model. ${modelName} oversees new threads` : undefined} models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
       {efforts.length > 0 && <EffortPicker value={reasoning} options={efforts} disabled={false}
         onChange={effort => save({ newThreadReasoningEffort: effort })} defaultValue={model?.defaultReasoningEffort} modelName={model?.name} />}
       <ChoiceChip label={t`Default permissions for new threads`} placeholder={t`Provider default`} value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}
@@ -70,6 +74,7 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
     </fieldset>
     {fitNote ? <p className="account-row__note tt-paragraph">{fitNote}</p> : null}
     {heldNote ? <p className="account-row__note tt-paragraph">{heldNote}</p> : null}
+    {dynamic.blocked ? <p className="account-row__note tt-paragraph">{t({ message: `Only a Claude Code or Codex thread can be Dynamic for now, so ${provider} threads start as usual.`, comment: '{provider} is a provider\'s name.' })}</p> : null}
   </div>
 }
 

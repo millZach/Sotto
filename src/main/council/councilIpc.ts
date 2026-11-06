@@ -1,21 +1,24 @@
+import { COUNCIL_CLIMB, climbRequestSchema, climbResultSchema, type ClimbRequest, type ClimbResult } from '../../shared/councilClimb'
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNCIL_VIEWS_MAX, councilChangedSchema, councilCommandResultSchema, councilCommandSchema,
-  councilEstimateRequestSchema, councilEstimateSchema, councilViewsSchema, type CouncilCommand, type CouncilCommandResult, type CouncilEstimate, type CouncilView } from '../../shared/council'
+  councilEstimateRequestSchema, councilEstimateSchema, councilViewsSchema, type CouncilCommand, type CouncilOpen, type CouncilCommandResult, type CouncilEstimate, type CouncilView } from '../../shared/council'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against schemas built once rather than on every call. */
 const noArguments = z.tuple([])
+const climbArguments = z.tuple([climbRequestSchema])
 const estimateArguments = z.tuple([councilEstimateRequestSchema])
 const commandArguments = z.tuple([councilCommandSchema])
 
 /** What the window's bridge asks of the Council in main. */
 export interface CouncilCalls {
+  climb?: { command(request: ClimbRequest): Promise<ClimbResult> }
   views(): CouncilView[]
   estimate(originThreadId: string): CouncilEstimate
   command(command: CouncilCommand): Promise<CouncilCommandResult>
-  onChanged(listener: (councils: readonly string[]) => void): () => void
+  onChanged(listener: (councils: readonly string[], open?: readonly CouncilOpen[]) => void): () => void
 }
 
 /**
@@ -52,9 +55,26 @@ export function registerCouncilIpc(ipc: IpcMainAdapter, council: CouncilCalls | 
     if (!origin) return councilCommandResultSchema.parse({ ok: false, message: t`A Council starts from a thread on this computer. Choose one of this computer's threads. Nothing was started.` })
     return councilCommandResultSchema.parse(await council.command({ ...command, originThread: origin }))
   })
-  const unsubscribe = council.onChanged(councils => send(COUNCIL_CHANGED, councilChangedSchema.parse({ councils: councils.slice(0, COUNCIL_VIEWS_MAX) })))
+  if (council.climb) ipc.handle(COUNCIL_CLIMB, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) refuse()
+    let [request] = climbArguments.parse(args)
+    if (request.type === 'start') {
+      const origin = ownId(request.origin)
+      if (!origin) return { ok: false, error: t`Choose a builder on this computer.` }
+      request = { ...request, origin }
+    }
+    const result = await council.climb!.command(request)
+    if (result.climbs) result.climbs = result.climbs.map(record => ({ ...record, originThread: windowId(record.originThread),
+      turns: record.turns.map(turn => ({ ...turn, thread: windowId(turn.thread) })),
+      rounds: record.rounds.map(round => ({ ...round, judgments: round.judgments.map(judge => ({ ...judge, thread: windowId(judge.thread) })) })) }))
+    return climbResultSchema.parse(result)
+  })
+  // A thread's agent that started one names its thread by this computer's window key, so its pane opens the Council's tab.
+  const unsubscribe = council.onChanged((councils, open) => send(COUNCIL_CHANGED, councilChangedSchema.parse({ councils: councils.slice(0, COUNCIL_VIEWS_MAX),
+    ...open?.length ? { open: open.slice(0, COUNCIL_VIEWS_MAX).map(item => ({ thread: windowId(item.thread), mode: item.mode })) } : {} })))
   return () => {
     unsubscribe()
+    ipc.removeHandler(COUNCIL_CLIMB)
     ipc.removeHandler(COUNCIL_READ); ipc.removeHandler(COUNCIL_ESTIMATE); ipc.removeHandler(COUNCIL_COMMAND)
   }
 }

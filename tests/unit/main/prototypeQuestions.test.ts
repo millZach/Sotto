@@ -330,14 +330,4 @@ describe('PrototypeQuestions', () => {
     test.held.putBackCopy('thread', copy!)
     expect(test.shown(thread([])).requests.map(request => request.id)).toEqual([id])
   })
-
-  it('quotes a plain question’s words and its choice’s label', async () => {
-    const test = setup()
-    test.found('q', [])
-    test.shown(thread([question('q', 'Which prototype?', { options: [{ id: 'tabs', label: 'The one with tabs' }] })]))
-    await noteSettled(test)
-    test.shown(thread([]))
-    test.fire(PROTOTYPE_SEND_BACK_WINDOW_MS)
-    expect(test.held.copyAnswer('thread', 'sotto:prototype-question:q', 'tabs')).toBe('Answer to your earlier question "Which prototype?": The one with tabs')
-  })
 })

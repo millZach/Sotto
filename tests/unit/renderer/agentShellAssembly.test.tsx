@@ -558,24 +558,6 @@ describe('shell updates while the main window is hidden', () => {
     act(() => wire.emit({ threadId: 'workshop', revision: 1, messages: [] }))
     expect(result.current.state?.notice).toBe('visible')
   })
-
-  it('cancels the pending frame and visibility listener on unmount', async () => {
-    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
-    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(7)
-    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
-    const add = vi.spyOn(document, 'addEventListener')
-    const remove = vi.spyOn(document, 'removeEventListener')
-    const initial = fullState([])
-    const wire = shellBridge(initial)
-    const { result, unmount } = renderHook(() => useAgentConnection(wire.bridge))
-    await waitFor(() => expect(result.current.state).not.toBeNull())
-    act(() => wire.publish({ ...initial, notice: 'pending' }))
-    const listener = add.mock.calls.find(([event]) => event === 'visibilitychange')?.[1]
-    expect(listener).toBeTypeOf('function')
-    unmount()
-    expect(cancel).toHaveBeenCalledWith(7)
-    expect(remove).toHaveBeenCalledWith('visibilitychange', listener)
-  })
 })
 
 describe('a sync command reply racing a low-priority broadcast', () => {

@@ -1,13 +1,7 @@
-import React from 'react'
-import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import {
-  WidgetApp,
-  isVisualPreviewEnabled,
-  parseVisualPreview
-} from '../../../../src/renderer/src/widget/WidgetApp'
-import { setupWidgetTests, snapshot } from '../../../fixtures/renderer/widgetHarness'
+import { isVisualPreviewEnabled, parseVisualPreview } from '../../../../src/renderer/src/widget/WidgetApp'
+import { setupWidgetTests } from '../../../fixtures/renderer/widgetHarness'
 
 setupWidgetTests()
 
@@ -58,49 +52,5 @@ describe('visual preview parser', () => {
     })
     expect(isVisualPreviewEnabled(configurable, '1')).toBe(false)
     expect(isVisualPreviewEnabled({} as Window, '1')).toBe(false)
-  })
-
-  it('renders the one pill widget across its resting, listening, and resolved states', () => {
-    const { rerender, container } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={5_000} />,
-    )
-    // The resting sliver is a bare bar carrying only the hover prompt.
-    expect(container.querySelector('.widget-sliver')).toBeInTheDocument()
-    expect(screen.getByText('Click to dictate')).toBeInTheDocument()
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({
-          status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true,
-          cancellable: true,
-        })}
-        platform="win32" now={5_000}
-      />,
-    )
-    expect(screen.getByTestId('listening-bars')).toHaveClass('widget-bars')
-    expect(container.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
-    expect(screen.getByText('00:05')).toBeVisible()
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({
-          status: 'processing', sessionId: 'processing', startedAt: 0, stage: 'transcribing',
-          progress: 0.4, cancellable: true,
-        })}
-        platform="win32" now={5_000}
-      />,
-    )
-    expect(screen.queryByTestId('listening-bars')).not.toBeInTheDocument()
-    expect(screen.getByTestId('processing-orbit')).toHaveClass('widget-spinner')
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'pasted' })}
-        platform="win32" now={5_000}
-      />,
-    )
-    expect(screen.getByText('Pasted')).toBeVisible()
-    expect(container.querySelector('.widget-state-icon')).toBeInTheDocument()
   })
 })

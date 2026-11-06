@@ -1,3 +1,4 @@
+import { assertCouncilJudgeDirectory, COUNCIL_JUDGE_CLAUDE_ARGS } from '../council/councilJudge'
 import type { MediaCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -53,6 +54,8 @@ import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from '.
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricterModeNote } from './claudePermissionMode'
+import { stoppedWork } from './stoppedWork'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
@@ -60,7 +63,7 @@ import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
 import { CLAUDE_RESUME_FAILED, CLAUDE_RESUME_FAILED_SESSION } from '../../shared/threadFailures'
 import { ReadsBeforeSend } from './readsBeforeSend'
-import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
 /**
@@ -84,7 +87,7 @@ const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uu
  */
 const cursorSchema = z.object({ sessionId: z.string().uuid(), offset: z.number().int().nonnegative(), size: z.number().int().nonnegative(),
   ino: z.string().optional(), birthtimeMs: z.number().optional(), consumedOriginIds: z.array(z.string()).default([]), lastDigest: z.string().optional() })
-const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
+const aliasSchema = z.object({ councilJudge: z.literal(true).optional(), sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
   compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
@@ -95,9 +98,6 @@ const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.str
 type Alias = z.infer<typeof aliasSchema>
 /** One folder however it is spelled: resolved, and on Windows without regard to case. */
 const pathKey = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
-// Native CLI permission modes. Aliases without a stored mode keep the original
-// approval-required behaviour.
-const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' } as const satisfies Record<AgentRuntimeMode, string>
 /**
  * The tool the CLI offers only where someone can answer it. Its absence from a session's tool list is
  * how Sotto reads "this CLI has no approval surface", because the CLI reports no other sign of it.
@@ -119,9 +119,8 @@ const backgroundWorkRunning = (work: readonly AgentBackgroundWork[], action: str
  * account names what ended with it: the user started that work, and it does not come back by itself.
  */
 function workStopped(reason: string, work: readonly { label: string }[], next = 'The provider session starts again with the new settings the next time you use the thread.'): string {
-  const what = work.length === 1 ? `"${work[0]!.label}"` : `${work.length} background tasks`
-  const them = work.length === 1 ? 'it' : 'them'
-  return `${reason}, so Sotto stopped this provider session, and ${what} stopped with it. ${next} Ask Claude to start ${them} again if you still need ${them}.`
+  const { what, again } = stoppedWork(work)
+  return `${reason}, so Sotto stopped this provider session, and ${what} stopped with it. ${next} ${again}`
 }
 type ConfigureCommand = Extract<AgentHostCommand, { type: 'configure-thread' }>
 const SETTINGS_UNCONFIRMED = 'Claude Code did not confirm the settings change'
@@ -199,8 +198,13 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
   if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
   return steps
 }
-/** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
+/**
+ * Appended to Claude Code's own system prompt on every thread process but Watcher's (ADR-0080). Watcher asks with Sotto's
+ * `ask_user` instead, which never holds its turn, and its process is launched with AskUserQuestion closed (#2228).
+ */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
+/** Watcher's question tool is Sotto's own (#2228): AskUserQuestion held Watcher's turn until the user answered. */
+const WATCHER_CLOSED_TOOLS = ['--disallowedTools', APPROVAL_SURFACE_TOOL]
 /**
  * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
  * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
@@ -285,7 +289,14 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    */
   subagentMode?: AgentRuntimeMode | undefined
   /** The level this CLI runs Ultracode at, from its launch or its last confirmed change; undefined while Ultracode is off (ADR-0148). */
-  ultracodeEffort?: UltracodeEffort | undefined }
+  ultracodeEffort?: UltracodeEffort | undefined
+  /**
+   * The permission mode this CLI should run, from its launch or its last confirmed change, and one a change still waiting
+   * on the CLI's answer may already have moved it to. A session's init frame is checked against them (#657).
+   */
+  mode: AgentRuntimeMode; modeChanging?: AgentRuntimeMode | undefined
+  /** Whether this CLI's stricter mode has been noted on the thread already: once per CLI, not once per turn. */
+  stricterNoted?: true }
 /**
  * The one hook a Watcher's CLI is started with (ADR-0073), and every thread's where Dynamic threads are on (ADR-0191), since a thread can owe a note at any send: UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
@@ -605,6 +616,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async threadInstructionsChanged(id: string): Promise<void> {
     if (!this.busy(id)) await this.stopSession(id)
   }
+  async closeCouncilJudge(id: string): Promise<void> {
+    if (!this.aliases[id]?.councilJudge) throw new Error('Only a Climb judge can release its evidence workspace.')
+    await this.stopSession(id)
+    await this.closing.get(id)
+  }
   private async stopSession(id: string): Promise<void> {
     if (this.spares.has(id)) { this.discardSpare(id); return }
     const runtime = this.runtimes.get(id)
@@ -619,6 +635,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * exit handler does not see a stop Sotto made, so a caller that may stop work says so itself.
    */
   private async stopRuntime(id: string, runtime: Runtime): Promise<{ label: string }[]> {
+    const { ended, closed } = this.letRuntimeGo(id, runtime)
+    await closed
+    return ended
+  }
+  /**
+   * `stopRuntime` without the wait: the CLI is off the thread and asked to stop at once, and a start that comes in waits
+   * on `closed` all the same, so a caller that must speak before the CLI closes can (#657).
+   */
+  private letRuntimeGo(id: string, runtime: Runtime): { ended: { label: string }[]; closed: Promise<void> } {
     const thread = this.threads.get(id)
     let ended: { label: string }[] = []
     if (this.runtimes.get(id) === runtime) {
@@ -631,8 +656,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     this.closing.set(id, closed)
-    try { await closed } finally { if (this.closing.get(id) === closed) this.closing.delete(id) }
-    return ended
+    return { ended, closed: closed.finally(() => { if (this.closing.get(id) === closed) this.closing.delete(id) }) }
   }
   /**
    * The thread's CLI is ending, by its own exit or by a stop Sotto made. A thinking block it was writing gets nothing
@@ -994,6 +1018,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * never forked here; it continues from a thin handover instead. The model is asked nothing.
    */
   async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    if (this.aliases[request.source.threadId]?.councilJudge) throw new Error('A Climb judge cannot be forked.')
     const generation = this.generation
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (this.aliases[request.threadId]) return { accepted: true }
@@ -1067,10 +1092,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
       watcherGuard?.()
       // A spare started for exactly this thread hands it the session ID its CLI already runs (#769); any other spare goes.
-      const spare = this.spareFor(command.threadId, cwd, settingsOf(command, this.state.models))
+      const spare = command.councilJudge ? undefined : this.spareFor(command.threadId, cwd, settingsOf(command, this.state.models))
       if (!spare) void this.discardSpare(command.threadId)
       const speed = speedAfterChange(command)
-      const alias: Alias = { sessionId: spare?.sessionId ?? randomUUID(), projectId: project.id, cwd, title: command.title, modelId: command.modelId,
+      const alias: Alias = { ...(command.councilJudge ? { councilJudge: true as const } : {}), sessionId: spare?.sessionId ?? randomUUID(), projectId: project.id, cwd, title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
         ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
@@ -1088,6 +1113,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     // The coordinator's read before this send stands for its first read (#765).
+    if (alias.councilJudge && !['send', 'interrupt'].includes(command.type)) throw new Error('A Climb judge is read-only. Start a new assessment to change its setup.')
     const readForSend = this.readsBeforeSend.take(id, command)
     this.worked(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
@@ -1330,8 +1356,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let reached = from
     for (const step of steps) {
       watcherGuard?.()
+      if (step.field === 'runtimeMode') runtime.modeChanging = to.runtimeMode
       try { await runtime.protocol.control(step.request) }
       catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached, stopped: step.field } }
+      finally { runtime.modeChanging = undefined }
+      if (step.field === 'runtimeMode') runtime.mode = to.runtimeMode
       reached = { ...reached, [step.field]: to[step.field] }
       if (step.ultracodeEffort !== undefined) runtime.ultracodeEffort = step.ultracodeEffort ?? undefined
     }
@@ -1605,15 +1634,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts, so what it says while starting is applied as it comes. A spare's is held, with what it said, until the
    * thread's first send adopts it (`adoptSpare`); until then it is nobody's, and its exit only lets it go.
    */
-  private async spawn(id: string, alias: Pick<Alias, 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
+  private async spawn(id: string, alias: Pick<Alias, 'councilJudge' | 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
     const generation = this.generation
     const profile = await this.watcherProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
-    const browser = profile ? undefined : await this.browserTools?.mcpServer(id)
+    if (alias.councilJudge && alias.reasoningEffort === ULTRACODE) throw new Error('A Climb judge cannot start an Ultracode workflow.')
+    if (alias.councilJudge) await assertCouncilJudgeDirectory(this.options.userDataPath, alias.cwd)
+    const browser = profile || alias.councilJudge ? undefined : await this.browserTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs, and the
     // visual tool while visuals are on.
-    const scoped = await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)
+    const scoped = alias.councilJudge ? [] : await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (spare) spare.scopedTools = scopedNames(scoped)
     const servers = [...(profile ? [{ server: profile.server, definitions: profile.toolNames.map(name => ({ name })) }] : []), ...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
@@ -1632,19 +1663,21 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     // The worker roles (#1042), read once for this launch: one agent per role on Claude, each held to the thread's own
     // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
-    const overseer = profile ? undefined : this.workerRoles?.overseer?.(id)
-    const roles = profile || overseer ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
+    const overseer = profile || alias.councilJudge ? undefined : this.workerRoles?.overseer?.(id)
+    const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
-    const questions = this.options.markdownLinks === true ? `${CLAUDE_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : CLAUDE_QUESTIONS
-    const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    const asks = profile ? undefined : CLAUDE_QUESTIONS
+    const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')
+    // The flag takes a list, so another option follows it.
+    const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), ...(profile ? WATCHER_CLOSED_TOOLS : []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
+      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !!profile || this.workerRoles?.overseerNote !== undefined, subagentMode: roles?.subagents?.widest,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, mode: alias.runtimeMode ?? 'approval-required', takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
         ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
@@ -1748,6 +1781,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts a CLI of its own the usual way.
    */
   private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
+    if (alias.councilJudge) { await this.discardSpare(id); return undefined }
     const generation = this.generation
     const profile = await this.watcherProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
@@ -1887,7 +1921,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'system' && frame.subtype === 'init') {
       // A CLI still running a replaced client names the old version; the provider's is the one on disk.
       if (typeof frame.claude_code_version === 'string' && runtime.clientRevision === this.clientRevision) this.state.version = frame.claude_code_version
-      this.checkApprovalSurface(frame)
+      if (alias.councilJudge && (!Array.isArray(frame.tools) || frame.tools.length !== 0)) {
+        thread.status = 'error'; this.changed(id); void this.stopRuntime(id, runtime); this.emit(); return
+      }
+      if (!alias.councilJudge && this.checkPermissionMode(id, runtime, frame)) return
+      // Watcher's process has AskUserQuestion closed (#2228), so its tool list cannot say whether the surface was refused.
+      if (!alias.councilJudge && !runtime.watcher) this.checkApprovalSurface(frame)
       this.queries.add(id)
     }
     const hook = frame.type === 'control_request' ? object(frame.request) : undefined
@@ -1898,6 +1937,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
         && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined
       if (note !== undefined) runtime.requestNote = undefined
       void this.reply(runtime, frame.request_id, note ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note } } : {}).catch(() => undefined)
+      return
+    }
+    if (frame.type === 'control_request' && alias.councilJudge && object(frame.request)?.subtype === 'can_use_tool') {
+      if (typeof frame.request_id === 'string') void this.reply(runtime, frame.request_id, claudeDenial()).catch(() => undefined)
       return
     }
     if (frame.type === 'control_request') {
@@ -2227,7 +2270,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private ensureThread(id: string, alias: Alias): void {
     this.activityHistoryPending.delete(id)
     const speed = speedAfterChange(alias)
-    this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
+    this.threads.set(id, { id, ...(alias.councilJudge ? { councilJudge: true as const } : {}), projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
     this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.kind !== 'personal' && value.resumeCompactionDismissed)
@@ -2662,6 +2705,69 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * (`markAll`). What goes through the message log is marked by the log.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
+  /**
+   * Compare the mode a turn's init frame says Claude Code runs with the one this CLI should run (#657, ADR-0043 amended
+   * November 6, 2026). A wrapper script or managed settings can change it on the way. Looser is stopped here, as soon as the
+   * frame is read and before the model's first reply reaches Sotto: the CLI is ended at once, not left to finish, and the
+   * turn fails with words saying what Sotto knows. The CLI keeps running after it writes the frame, so what it, its hooks
+   * or a wrapper did meanwhile is not something Sotto can rule out, and the words do not claim it. Stricter goes on, with one note per CLI. Says whether it stopped.
+   */
+  private checkPermissionMode(id: string, runtime: Runtime, frame: ClaudeFrame): boolean {
+    const reported = frame.permissionMode
+    if (typeof reported !== 'string' || runtime.modeChanging && reported === nativePermissionModes[runtime.modeChanging]) return false
+    const drift = permissionModeDrift(runtime.mode, reported)
+    if (!drift || drift === 'stricter' && runtime.stricterNoted) return false
+    const thread = this.threads.get(id)!
+    if (drift === 'stricter') {
+      runtime.stricterNoted = true
+      this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'completed', title: 'Stricter permission mode', text: stricterModeNote(runtime.mode, reported) })
+      return false
+    }
+    const shown = runtime.mode
+    const turn = thread.lastTurn?.status === 'running' ? thread.lastTurn : undefined
+    if (turn) {
+      // The prompt reached Claude Code, so it is recorded as sent; its turn then ends once the CLI is seen gone.
+      this.recordUnechoed.get(turn.id)?.()
+      this.acknowledgements.get(turn.id)?.()
+      this.completedOrigins.add(turn.id)
+    }
+    // Ended rather than left to finish, and its whole process tree with it; `letRuntimeGo` takes it off the thread at once,
+    // so nothing more it says is read, and names the background work that ended with it (ADR-0023). The turn settles once
+    // the halt does, not when the CLI closes: a CLI that outlives its kill may never close, and its warning must still
+    // show. The next start still waits for the close, so a second CLI never runs beside it.
+    const gone = runtime.protocol.halt()
+    const { ended } = this.letRuntimeGo(id, runtime)
+    this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id); this.streaming.delete(id)
+    void gone.then(confirmed => this.settleModeStop(id, runtime, turn, looserModeStopped(shown, reported, { ended, confirmed })))
+    return true
+  }
+  /**
+   * Fail what the halted CLI was doing, once the halt settles, confirmed or not (ADR-0043 amended November 6, 2026): the running turn,
+   * or a /compact, which is not a turn; either way the thread rests on the failure and the next send starts a new CLI.
+   */
+  private settleModeStop(id: string, runtime: Runtime, turn: AgentThread['lastTurn'], message: string): void {
+    const thread = this.threads.get(id); const alias = this.aliases[id]
+    if (!thread) return
+    if (turn && thread.lastTurn?.id === turn.id && thread.lastTurn.status === 'running') {
+      thread.lastTurn = { ...turn, status: 'failed' }
+      this.markTurn(id, 'failed', turn.messageId, message)
+    } else this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'failed', title: 'Claude Code stopped', error: message })
+    if (this.compacting.get(id) === runtime) this.compacting.delete(id)
+    if (alias?.compaction?.status === 'running') {
+      alias.compaction = { commandId: alias.compaction.commandId, ...idleMark(alias.compaction), status: 'failed', error: message }
+      thread.compaction = alias.compaction
+      void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
+    }
+    thread.status = 'error'; thread.requests = []; this.changed(id); this.emit()
+  }
+  /** One record of Sotto's own on the thread's activity, under its newest message. */
+  private noteOnThread(id: string, note: Pick<AgentActivity, 'id' | 'kind' | 'status' | 'title' | 'text' | 'error'>): void {
+    const thread = this.ensureActivityHistory(id); if (!thread) return
+    const turnId = thread.lastTurn?.status === 'running' && thread.lastTurn.messageId || this.messageLog.lastUserMessageId(id) || 'native-history'
+    const afterMessageId = this.lastTextMessageId(id)
+    thread.activities = mergeAgentActivities(thread.activities, [{ ...note, turnId, sequence: 0, startedAt: new Date().toISOString(), ...(afterMessageId ? { afterMessageId } : {}) }])
+    this.changed(id)
+  }
   /**
    * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report
    * a refused surface any other way: it keeps working, answers every prompt that needed a person with a

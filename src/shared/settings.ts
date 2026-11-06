@@ -36,9 +36,12 @@ export type RoomTransitionLook = 'band' | 'stars'
 export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
 /**
  * Compact Watcher at, in tokens: the slider's ends, its step and where it starts. Watcher's conversation is compacted at
- * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026.
+ * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026, and
+ * moved the default to 250K in November 2026 (#2233), when Watcher's median call carried about 230K.
  */
-export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 400_000 } as const
+export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 250_000 } as const
+/** The default before #2233. A saved point at it is moved to the new default once ({@link AppSettings.watcherCompactAtMoved}). */
+export const WATCHER_COMPACT_AT_FORMER_DEFAULT = 400_000
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -223,6 +226,12 @@ export interface AppSettings {
    */
   watcherCompactAtTokens: number
   /**
+   * Whether this profile's Compact Watcher at has been through #2233's one-time move. Settings are saved whole, so a saved
+   * 400K, the old default, can't be told apart from a point never touched: the first read without this mark moves a saved
+   * 400K to the new default, and every read after keeps whatever is saved. Not shown in Settings.
+   */
+  watcherCompactAtMoved: boolean
+  /**
    * The Council's panel (ADR-0177), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
    * five, each the model and effort the user chose or null for a seat Sotto fills from the providers connected now, so
    * nothing here changes when a provider comes or goes. The Ask screen starts from it. Kept whole where the feature is off.
@@ -230,7 +239,7 @@ export interface AppSettings {
   councilPanelists: (CouncilSeatChoice | null)[]
   /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0177). */
   councilChair: CouncilSeatChoice | null
-  /** How the Council's chamber is laid out (ADR-0177 decision 6), the same setting its Layout menu changes. */
+  /** How the Council's chamber is laid out (ADR-0177 decision 6), chosen in Settings → Council. */
   councilLayout: CouncilLayout
   /** How long, in minutes, a Council stage waits for a thread before its row offers Retry, Use another model and Go on without it. */
   councilStageDeadline: number
@@ -315,6 +324,11 @@ export interface AppSettings {
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
+  /**
+   * Whether the popup can be used at all (Owl `popup`, ADR-0181). Off, its window and renderer do not exist, its shortcut
+   * is let go and the tray does not offer it; the saved shortcut is kept for turning it back on.
+   */
+  popupEnabled: boolean
   /**
    * The global shortcut that shows or hides the popup (Owl `popup`, ADR-0181), as an Electron accelerator; null has
    * none, and the popup opens only from the tray. Kept whole while the feature is off.
@@ -465,7 +479,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse' | 'watcherCompactAtMoved'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -510,6 +524,7 @@ const fieldSchemas = {
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
+  watcherCompactAtMoved: z.boolean(),
   councilPanelists: councilPanelistsSchema,
   councilChair: councilChairSchema,
   councilLayout: councilLayoutSchema,
@@ -525,6 +540,7 @@ const fieldSchemas = {
   hotkeyStandby: z.boolean(),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  popupEnabled: z.boolean(),
   popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
@@ -638,6 +654,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
+  watcherCompactAtMoved: true,
   councilPanelists: [...DEFAULT_COUNCIL_PANELISTS],
   councilChair: null,
   councilLayout: DEFAULT_COUNCIL_LAYOUT,
@@ -654,6 +671,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pressShortcuts: [],
   holdShortcuts: [],
   // Option-Shift-Space on a Mac, the chord Sotto Popup used before the popup was built in (ADR-0181).
+  popupEnabled: true,
   popupShortcut: 'Alt+Shift+Space',
   // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
   threadShortcuts: {},
@@ -835,7 +853,10 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerMachineCeilings: parseField(persisted, 'workerMachineCeilings', defaults),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
-    watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
+    // #2233: a point saved at the old default before the move goes to the new one, once; the mark keeps a later 400K.
+    watcherCompactAtTokens: persisted.watcherCompactAtMoved !== true && persisted.watcherCompactAtTokens === WATCHER_COMPACT_AT_FORMER_DEFAULT
+      ? defaults.watcherCompactAtTokens : parseField(persisted, 'watcherCompactAtTokens', defaults),
+    watcherCompactAtMoved: true,
     // Seat by seat, so one damaged seat costs only that seat.
     councilPanelists: persisted.councilPanelists === undefined ? [...defaults.councilPanelists] : parseCouncilPanelists(persisted.councilPanelists),
     councilChair: parseField(persisted, 'councilChair', defaults),
@@ -856,6 +877,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    popupEnabled: parseField(persisted, 'popupEnabled', defaults),
     popupShortcut: parseField(persisted, 'popupShortcut', defaults),
     // Row by row, so one damaged shortcut falls back to its own default and no other.
     threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),

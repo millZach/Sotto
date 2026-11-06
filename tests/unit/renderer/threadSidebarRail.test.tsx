@@ -26,9 +26,6 @@ function owl(on: boolean, queue = false): void {
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatchedThreadIds).mockReturnValue(new Set()); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 afterEach(() => { cleanup(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 
-/** Nothing waits: every thread's requests answered and failures seen. */
-const calm = (state: AgentState): AgentState => ({ ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, requests: [], status: thread.status === 'error' ? 'idle' : thread.status })) } })
-
 function mountCollapsed(state: AgentState, onOpen = vi.fn()): HTMLElement {
   render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)}
     command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()}
@@ -199,13 +196,6 @@ describe('the collapsed rail (ADR-0146)', () => {
     act(() => footer.focus())
     act(() => { fireEvent.keyDown(footer, { key: 'ContextMenu' }) })
     expect(within(within(rail).getByRole('menu', { name: 'Actions for Footer links' })).getByRole('menuitem', { name: 'Open' })).toHaveAttribute('aria-keyshortcuts', 'Enter')
-  })
-
-  it('edges nothing in the attention colour while nothing waits', () => {
-    owl(true)
-    const rail = mountCollapsed(calm(threadsStateFixture()))
-    expect(rail.querySelector('.thread-nav__rail-thread[data-waiting]')).toBeNull()
-    expect(tile(rail, 'Visual gate flake')).toBeInTheDocument()
   })
 
   it('draws each tile as its provider\'s mark with its status ring, and no letters', () => {

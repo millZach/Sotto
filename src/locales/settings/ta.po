@@ -186,6 +186,10 @@ msgstr ""
 msgid "{downloadCount, plural, other {{downloads} downloads}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "{DYNAMIC_NOTE_MAX_CHARACTERS, plural, one {Up to # character.} other {Up to # characters.}}"
+msgstr ""
+
 #: src/renderer/src/features/settings/hostTailnetWords.ts
 msgid "{error} {name} is connected over SSH and nothing was lost. Press {button}."
 msgstr ""
@@ -790,7 +794,7 @@ msgid "A different theme when dark"
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
-msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
+msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -961,6 +965,10 @@ msgstr ""
 #. Edits every color family instead of two colors
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Advanced"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -1590,6 +1598,10 @@ msgstr ""
 msgid "Clear history?"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Clear its record"
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Clear now"
@@ -2003,6 +2015,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Council panel"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Counts only, no words. The overseer reads this when it chooses. Moved means the piece was then given to another model."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
@@ -2491,6 +2507,10 @@ msgstr ""
 msgid "Finish the steps above first."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Finished"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Finishing sign-in on {hostName}, then connecting {name}…"
 msgstr ""
@@ -2964,6 +2984,22 @@ msgstr ""
 msgid "Its price is on openrouter.ai."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record could not be cleared. Its counts may remain. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record could not be read. Nothing was changed. Open Settings again to try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record on this computer"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record was cleared. Pieces from now on are counted here."
+msgstr ""
+
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its text came back in {0} s on Sotto’s test clips."
@@ -3317,6 +3353,7 @@ msgstr ""
 #. The AI model an agent runs on.
 #. The AI model an agent runs on.
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
@@ -3369,6 +3406,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Move to the previous thread in the sidebar’s order."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Moved"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -3664,6 +3705,10 @@ msgstr ""
 msgid "Nothing changed on {name}. Its host is still running as before, and this computer is still connected."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Nothing counted yet. Each piece an overseer gives a model is counted here."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Nothing matches. Clear the filter to see every shortcut."
 msgstr ""
@@ -3717,6 +3762,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Off, open Sotto from the Dock."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4150,6 +4199,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Pieces"
 msgstr ""
 
 #. Precedes theme names people often search for
@@ -5094,6 +5147,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Snowy pines and falling snow under the northern lights."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Sol for reviews. Save Opus for the hard debugging."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -6392,6 +6449,10 @@ msgstr ""
 msgid "Toggle developer tools"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Tokens"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "Too many copies of \"{name}\"."
 msgstr ""
@@ -6762,6 +6823,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Use the Git setting (On)"
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Use the popup"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -7244,6 +7310,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note to the overseer"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts

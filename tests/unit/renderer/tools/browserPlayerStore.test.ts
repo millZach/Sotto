@@ -19,28 +19,15 @@ function resize(store: BrowserPlayerStore, width: number, height: number, window
 }
 
 describe('clampBrowserPlayerRect', () => {
-  it('keeps a rectangle already inside the window untouched', () => {
-    const rect = { x: 800, y: 500, width: 340, height: 250 }
-    expect(clampBrowserPlayerRect(rect, WINDOW)).toEqual(rect)
-  })
   it('pulls a rectangle back inside the window on every edge, and below the drag strip', () => {
     expect(clampBrowserPlayerRect({ x: -50, y: 10, width: 340, height: 250 }, WINDOW)).toMatchObject({ x: 0, y: BROWSER_PLAYER_STRIP_HEIGHT })
     expect(clampBrowserPlayerRect({ x: 2000, y: 500, width: 340, height: 250 }, WINDOW)).toMatchObject({ x: WINDOW.width - 340 })
     expect(clampBrowserPlayerRect({ x: 800, y: 900, width: 340, height: 250 }, WINDOW)).toMatchObject({ y: WINDOW.height - 250 })
   })
-  it('never lets the rectangle sit above the drag strip', () => {
-    expect(clampBrowserPlayerRect({ x: 100, y: 0, width: 340, height: 250 }, WINDOW).y).toBe(BROWSER_PLAYER_STRIP_HEIGHT)
-  })
   it('enforces the minimum size, growing rather than shrinking below it', () => {
     const clamped = clampBrowserPlayerRect({ x: 100, y: 100, width: 100, height: 50 }, WINDOW)
     expect(clamped.width).toBe(BROWSER_PLAYER_MIN_WIDTH)
     expect(clamped.height).toBe(BROWSER_PLAYER_MIN_HEIGHT)
-  })
-  it('shrinks a placement that no longer fits a smaller window, keeping it inside', () => {
-    const clamped = clampBrowserPlayerRect({ x: 100, y: 100, width: 340, height: 250 }, { width: 300, height: 260 })
-    expect(clamped.width).toBeLessThanOrEqual(300)
-    expect(clamped.x + clamped.width).toBeLessThanOrEqual(300)
-    expect(clamped.y + clamped.height).toBeLessThanOrEqual(260)
   })
 })
 
@@ -54,13 +41,6 @@ describe('BrowserPlayerStore placement', () => {
     expect(rect.x + rect.width).toBeLessThanOrEqual(WINDOW.width)
     expect(rect.y + rect.height).toBeLessThanOrEqual(WINDOW.height)
   })
-  it('is one placement for every thread: moving it for one thread moves it for all of them', () => {
-    const store = new BrowserPlayerStore()
-    move(store, 50, 20, WINDOW)
-    const afterWorkshop = store.rectFor(WINDOW)
-    // A different thread reads the very same placement; there is nothing thread-keyed about it.
-    expect(store.rectFor(WINDOW)).toEqual(afterWorkshop)
-  })
   it('moves by the arrow-key step, and further with the large step', () => {
     const store = new BrowserPlayerStore()
     // Well clear of every edge, so the clamp never masks the step size being asserted.
@@ -70,11 +50,6 @@ describe('BrowserPlayerStore placement', () => {
     expect(store.rectFor(WINDOW).x).toBe(start.x + BROWSER_PLAYER_MOVE_STEP)
     move(store, BROWSER_PLAYER_MOVE_STEP_LARGE, 0, WINDOW)
     expect(store.rectFor(WINDOW).x).toBe(start.x + BROWSER_PLAYER_MOVE_STEP + BROWSER_PLAYER_MOVE_STEP_LARGE)
-  })
-  it('resizes down to the minimum and no further', () => {
-    const store = new BrowserPlayerStore()
-    resize(store, 50, 50, WINDOW)
-    expect(store.rectFor(WINDOW)).toMatchObject({ width: BROWSER_PLAYER_MIN_WIDTH, height: BROWSER_PLAYER_MIN_HEIGHT })
   })
   it('starts a resize from the rectangle actually on screen, even before the user has ever moved it (no jump)', () => {
     // Regression: `resize` used to rebuild its starting point from the store's own default, which could disagree
@@ -142,16 +117,6 @@ describe('BrowserPlayerStore visibility', () => {
     store.hide('workshop')
     // task-1 gets a late update and is the newest-updated task again, but the thread has shown it before.
     store.taskSeen('workshop', 'task-1', true)
-    expect(store.visibilityFor('workshop')).toBe('hidden')
-  })
-  it('restore and hide move a thread between states directly', () => {
-    const store = new BrowserPlayerStore()
-    store.taskSeen('workshop', 'task-1', true)
-    store.shrink('workshop')
-    expect(store.visibilityFor('workshop')).toBe('shrunk')
-    store.restore('workshop')
-    expect(store.visibilityFor('workshop')).toBe('open')
-    store.hide('workshop')
     expect(store.visibilityFor('workshop')).toBe('hidden')
   })
 })

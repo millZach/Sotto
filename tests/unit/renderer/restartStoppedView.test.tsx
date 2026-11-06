@@ -173,11 +173,6 @@ describe('the band at the top of the Threads sidebar', () => {
     expect(within(band!).queryByRole('button', { name: /Don’t restart/ })).toBeNull()
   })
 
-  it('names the day when the reset is not today', () => {
-    mount([stopped('a', 'Merge-train fixes', { scheduledRestart: { provider: 'claude', stoppedAt: minutesAgo(1), at: iso(RESET + 24 * 60 * 60_000) } })])
-    expect(bands()[0]).toHaveTextContent(`Claude Code’s limit resets tomorrow at ${clock}. Sotto restarts 1 thread then.`)
-  })
-
   it('is not there on stable', () => {
     mount([stopped('a', 'Merge-train fixes')], { restart: false })
     expect(bands()).toEqual([])

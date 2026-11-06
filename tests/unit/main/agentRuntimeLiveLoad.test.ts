@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { HostFactsSource } from '../../../src/main/agents/hostFacts'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -35,11 +34,6 @@ const machineFields = (host: Awaited<ReturnType<typeof runtime>>) => {
   const output = listMachines(host).outputSchema as { anyOf: { properties?: { machines?: { items: { properties: Record<string, unknown> } } } }[] }
   return Object.keys(output.anyOf.find(branch => branch.properties?.machines)!.properties!.machines!.items.properties)
 }
-
-it('is off on stable and on in Owl', () => {
-  expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(false)
-  expect(owlFeaturesForTrack('owl')['cross-machine-work']).toBe(true)
-})
 
 it.each([[undefined], [false]] as const)('samples nothing and answers the facts alone when the Owl answer is %s', async enabled => {
   const prime = vi.spyOn(HostFactsSource.prototype, 'primeLoad')

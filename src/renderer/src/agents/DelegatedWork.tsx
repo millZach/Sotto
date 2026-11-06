@@ -3,7 +3,9 @@ import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, Shi
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
-import { PROVIDER_LABELS, type AgentModel, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, type AgentModel, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { allowedProviders } from '../../../shared/dynamicThreads'
+import { useOptionalApp } from '../state/AppContext'
 import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationCheckReply, type DelegationChoice, type DelegationView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
@@ -34,6 +36,10 @@ export interface DelegationWorld {
   readonly chosenWords?: (chosen: DelegationChoice) => string
   /** Stops a worker's turn, from its row's menu (ADR-0191). */
   readonly stop?: (threadId: string) => void
+  /** What a Dynamic thread's worker on `current` may be given to from its row: ready models on the allowed list, but its own. */
+  readonly giveChoices?: (current: string) => readonly { readonly id: string; readonly name: string; readonly provider: ProviderId }[]
+  /** Give it to another model… (ADR-0191): moves a worker's piece to a model, answering why nothing was started, or null. */
+  readonly give?: (delegationId: string, modelId: string) => Promise<string | null>
   readonly open: (threadId: string) => void
   /** False where the page holds its clock still (a capture run): a wait in progress keeps the time it was drawn with. */
   readonly liveClock: boolean
@@ -70,6 +76,23 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
   const delegating = crossMachine ? from?.thread.id : undefined
   const readReply = typeof window === 'undefined' ? undefined : window.sotto?.delegations?.checkReply
   const checkReply = useMemo(() => delegating !== undefined && readReply ? (delegation: string) => readReply({ threadId: delegating, delegation }) : undefined, [delegating, readReply])
+  // Give it to another model… on an overseer's worker rows (ADR-0191), only for a Dynamic thread on this computer, from the
+  // models its allowed list lets it use.
+  const dynamicThreads = useOwlFeature('dynamic-threads')
+  const dynamicSettings = useOptionalApp()?.settings?.dynamicThreads
+  const giveBridge = typeof window === 'undefined' ? undefined : window.sotto?.delegations?.give
+  const overseerId = dynamicThreads && from?.thread.dynamic === true && from.thread.remoteHost !== true ? from.thread.id : undefined
+  const overseerProvider = from?.thread.providerId
+  const give = useMemo(() => overseerId !== undefined && giveBridge ? async (delegation: string, model: string): Promise<string | null> => {
+    const answer = await giveBridge({ threadId: overseerId, delegation, model }).catch(() => null)
+    return answer === null ? t`Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece.` : answer.status === 'ok' ? null : answer.message
+  } : undefined, [overseerId, giveBridge, t])
+  const giveChoices = useMemo(() => {
+    if (give === undefined || dynamicSettings === undefined) return undefined
+    const allowed = allowedProviders(dynamicSettings, overseerProvider)
+    const ready = models.filter(model => model.ready && model.providerId !== undefined && allowed.has(model.providerId))
+    return (current: string) => ready.filter(model => model.id !== current).map(model => ({ id: model.id, name: model.name, provider: model.providerId! }))
+  }, [give, dynamicSettings, overseerProvider, models])
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
@@ -81,8 +104,8 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
       }, liveClock: now === undefined, now,
       machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? t`this computer` : listed.name },
       ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}),
-      ...(checkReply ? { checkReply } : {}) }
-  }, [threads, models, connections, command, now, awayName, awayConnected, lastReadAt, checkReply, t])
+      ...(checkReply ? { checkReply } : {}), ...(give && giveChoices ? { give, giveChoices } : {}) }
+  }, [threads, models, connections, command, now, awayName, awayConnected, lastReadAt, checkReply, give, giveChoices, t])
 }
 /** The transcript's world for its rows, and its check reply tray, one open at a time (#1312). */
 export function DelegationWorldProvider({ world, children }: { readonly world: DelegationWorld; readonly children: ReactNode }): ReactNode {
@@ -142,6 +165,9 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const lineId = useId(), metaId = useId()
   const rowItem = useRef<HTMLLIElement>(null), more = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<RowMenuPlace | null>(null)
+  // Give it to another model… turns the menu into the models it may go to; what stopped a move is said on the row.
+  const [picking, setPicking] = useState(false)
+  const [notGiven, setNotGiven] = useState<string | null>(null)
   // A check says Check, and once answered quotes its reply (#1312), only where Work across machines is on.
   const checks = useOwlFeature('cross-machine-work')
   const dynamicThreads = useOwlFeature('dynamic-threads')
@@ -180,6 +206,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const chosen = overseen?.chosen ? world.chosenWords?.(overseen.chosen) : undefined
   const replacedTitle = overseen?.replacedThread === undefined ? undefined : world.thread(overseen.replacedThread)?.title
   const working = thread !== undefined && isThreadTurnRunning(thread)
+  const giveChoices = overseen?.chosen && world.give ? world.giveChoices?.(overseen.chosen.model) : undefined
   return <li ref={rowItem} className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} data-check={check ? '' : undefined} data-tray-open={trayOpen || undefined} aria-label={label}>
     <Glyph size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
@@ -194,9 +221,14 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
       {overseen && thread ? <button ref={more} type="button" className="delegated-work__more tt-focusable" aria-haspopup="menu" aria-expanded={menu !== null} aria-label={t`Actions for ${threadTitle}`}
         onClick={() => setMenu(current => current === null ? 'beside' : null)}><MoreHorizontal size={14} aria-hidden="true" /></button> : null}
     </span>
-    {menu !== null && thread ? <RowMenu label={t`Actions for ${threadTitle}`} anchor={() => rowItem.current} place={menu} onClose={restore => { setMenu(null); if (restore) more.current?.focus() }}
-      groups={[[{ id: 'open', label: t`Open this thread`, run: () => world.open(thread.id) },
-        { id: 'stop', label: t`Stop this worker`, disabled: !working, ...working ? {} : { hint: t`It isn't working now.` }, run: () => world.stop?.(thread.id) }]]} /> : null}
+    {menu !== null && thread ? <RowMenu key={picking ? 'give' : 'actions'} label={picking ? t`Give ${threadTitle} to` : t`Actions for ${threadTitle}`} anchor={() => rowItem.current} place={menu}
+      onClose={restore => { setMenu(null); setPicking(false); if (restore) more.current?.focus() }}
+      groups={picking && overseen && giveChoices ? [giveChoices.map(choice => ({ id: choice.id, label: choice.name, icon: <ProviderMark provider={choice.provider} name={PROVIDER_LABELS[choice.provider]} size={14} />,
+        run: () => { setNotGiven(null); void world.give!(overseen.id, choice.id).then(setNotGiven) } }))]
+        : [[{ id: 'open', label: t`Open this thread`, run: () => world.open(thread.id) },
+          ...giveChoices ? [{ id: 'give', label: t`Give it to another model…`, disabled: giveChoices.length === 0,
+            ...giveChoices.length ? {} : { hint: t`No other ready model is on the list in Settings.` }, run: () => { setPicking(true); setMenu('beside') } }] : [],
+          { id: 'stop', label: t`Stop this worker`, disabled: !working, ...working ? {} : { hint: t`It isn't working now.` }, run: () => world.stop?.(thread.id) }]]} /> : null}
     {reply}
     <p id={metaId} className="delegated-work__meta">
       {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{chosen ?? PROVIDER_LABELS[provider]}</span>{shownMachine ? <span aria-hidden="true">·</span> : null}</> : null}
@@ -204,7 +236,9 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
       <span className="tt-visually-hidden">, {state.word}.</span>
     </p>
     <RowLine view={view} state={state.id} id={lineId} world={world} request={request} />
-    {overseen?.why ? <p className="delegated-work__why tt-paragraph"><span className="delegated-work__why-word"><Trans comment="Before the reason a Dynamic thread's model chose this model for this piece, in its own words.">Why:</Trans></span> {overseen.why}</p> : null}
+    {overseen?.byUser ? <p className="delegated-work__why tt-paragraph"><span className="delegated-work__why-word"><Trans comment="Before the line saying the user, not the overseer, gave this piece to this model.">You:</Trans></span> <Trans>You chose this.</Trans></p>
+      : overseen?.why ? <p className="delegated-work__why tt-paragraph"><span className="delegated-work__why-word"><Trans comment="Before the reason a Dynamic thread's model chose this model for this piece, in its own words.">Why:</Trans></span> {overseen.why}</p> : null}
+    {notGiven ? <p className="delegated-work__why tt-paragraph" role="alert">{notGiven}</p> : null}
     {overseen?.effortHeld ? <p className="delegated-work__why tt-paragraph"><Trans>Its effort was held to the most you allow in Settings.</Trans></p> : null}
     {overseen?.replaces ? <p className="delegated-work__why tt-paragraph">{replacedTitle ? <Trans>It took over from {replacedTitle}.</Trans> : <Trans>It took over from an earlier worker.</Trans>}</p> : null}
     {held ? <p className="delegated-work__held tt-paragraph"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}

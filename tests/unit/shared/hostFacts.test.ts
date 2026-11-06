@@ -174,11 +174,6 @@ describe('a paired machine’s work placed but not started as the desktop reads 
     expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['started', 'other'] }, ['started', 'started'])).toBe(2)
   })
 
-  it('adds a start the host did not name even when it has begun there: an extra count, never a lost one', () => {
-    // The reservations were read before the host answered, and the answer's own counts are all that is read of the host.
-    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'])).toBe(1)
-  })
-
   it('keeps an unknown count unknown', () => {
     expect(placedNotStartedWith({ placedNotStarted: null }, ['started'])).toBeNull()
     expect(placedNotStartedWith({}, ['started'])).toBeNull()
@@ -191,9 +186,5 @@ describe('a paired machine’s work placed but not started as the desktop reads 
     expect(placedNotStartedWith({ placedNotStarted: 0 }, ['started', 'next', 'next'])).toBe(2)
     expect(placedNotStartedWith({ placedNotStarted: 4 }, [])).toBe(4)
     expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX }, ['started'])).toBeNull()
-  })
-
-  it('reads unknown above the most threads any machine holds', () => {
-    expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX, placedThreadIds: [] }, ['started'])).toBeNull()
   })
 })

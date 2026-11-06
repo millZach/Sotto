@@ -35,15 +35,6 @@ it('shows a failed local host save beside the switch and clears it on retry', as
   await waitFor(() => expect(within(container.querySelector('.hosts-local')!).queryByRole('alert')).toBeNull())
 })
 
-it('keeps the local host switch, and no longer offers Save, Connect, Disconnect or Use this host', async () => {
-  const { bridge } = fixture(), change = vi.fn(async () => true), user = userEvent.setup()
-  render(<HostsSettings localHostEnabled onLocalHostChange={change} bridge={bridge} />)
-  await screen.findByRole('region', { name: 'Build box' })
-  for (const name of ['Use this host', 'Use this computer', 'Connect', 'Disconnect', 'Save host']) expect(screen.queryByRole('button', { name })).toBeNull()
-  await user.click(screen.getByRole('switch', { name: 'Run the local host' }))
-  expect(change).toHaveBeenCalledWith(false)
-})
-
 it('reads a row the way the prototype does and switches a host off and on', async () => {
   const { bridge, command, push } = fixture([host({ target: 'forge', name: 'forge' })]), user = userEvent.setup()
   settings(bridge)
@@ -99,14 +90,6 @@ it('says before Add host is pressed that it turns on Tailscale Serve on the host
   const sentence = within(dialog).getByText(/^Sotto turns on Tailscale Serve on the host, on your tailnet only/u)
   // A keyboard or screen reader user meets it on the press itself.
   expect(within(dialog).getByRole('button', { name: 'Add host' })).toHaveAccessibleDescription(sentence.textContent!)
-})
-
-it('sets the row’s connection apart from how the host is, and says so for a host on the tailnet', async () => {
-  const { bridge } = fixture([host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })])
-  settings(bridge)
-  const row = await screen.findByRole('region', { name: 'forge' })
-  expect(row.querySelector('.hosts-row__via')?.getAttribute('data-via')).toBe('tailnet')
-  expect(row.querySelector('.hosts-row__via')?.textContent).toBe('Tailnet')
 })
 
 it('says on Rename that how Sotto connects does not change', async () => {

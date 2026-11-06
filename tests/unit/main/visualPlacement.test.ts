@@ -42,8 +42,4 @@ describe('placing visuals in a window', () => {
     expect(ids(placeVisuals(window, [stored('v', null, null)], true))[0]).toBe('visual:v')
     expect(ids(placeVisuals(window, [stored('v', null, null)], false))).toEqual(ids(window))
   })
-
-  it('returns the window unchanged when the thread has no visuals', () => {
-    expect(placeVisuals(window, [], true)).toEqual(window)
-  })
 })

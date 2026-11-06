@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BabysitStart, BabysitListing } from '../../../src/main/agents/babysitting'
-import { BABYSITTING_SWITCHED_OFF, PULL_REQUEST_MCP_SERVER, PullRequestToolServer, pullRequestToolDefinitions, type PullRequestToolHandlers } from '../../../src/main/agents/pullRequestTools'
+import { BABYSITTING_SWITCHED_OFF, PullRequestToolServer, type PullRequestToolHandlers } from '../../../src/main/agents/pullRequestTools'
 import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 import { deferred } from '../../fixtures/deferred'
 
@@ -52,14 +52,6 @@ function harness(options: { branch?: string; linked?: string[]; admits?: boolean
 }
 
 describe('the pull request tools', () => {
-  it('tells the agent to use them instead of polling gh or sleeping, by their full names', () => {
-    const babysit = pullRequestToolDefinitions.find(tool => tool.name === 'babysit_pull_request')!
-    expect(babysit.description).toContain('instead of polling gh, sleeping')
-    expect(babysit.description).toContain('then end your turn')
-    expect(pullRequestToolDefinitions.map(tool => tool.name)).toEqual(['babysit_pull_request', 'stop_babysitting', 'list_babysitting'])
-    expect(PULL_REQUEST_MCP_SERVER).toBe('sotto_pull_requests')
-  })
-
   it('babysits the branch\'s own pull request when none is named, and says so when Sotto knows none', async () => {
     const h = harness({ branch: url(5) })
     expect(await h.call('babysit_pull_request')).toEqual({ error: false, text: expect.stringContaining('Sotto is babysitting pull request #5 for this thread.') })

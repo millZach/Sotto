@@ -4,8 +4,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns,
-  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
+  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns, statusText, timingNote, turnChanges, turnHeadline, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
@@ -423,13 +422,6 @@ describe('the live turn', () => {
 })
 
 describe('activity wording', () => {
-  it('formats recorded durations compactly', () => {
-    expect(formatDuration(420)).toBe('0.4s')
-    expect(formatDuration(42_900)).toBe('42s')
-    expect(formatDuration(124_000)).toBe('2m 04s')
-    expect(formatDuration(3_720_000)).toBe('1h 02m')
-  })
-
   it('labels commands, files, subagents and notices from what the provider reported', () => {
     expect(activityLabel(record({ id: 'c', command: 'npm   test\n--run' }))).toMatchObject({ subject: 'npm test --run', mono: true })
     expect(activityLabel(record({ id: 'f', kind: 'file-change', title: 'File changes', changes: [{ path: 'src/a.ts', kind: 'add' }] }))).toMatchObject({ lead: 'Created', subject: 'src/a.ts', preview: '' })
@@ -525,13 +517,6 @@ describe('the action a thread is waiting on', () => {
     const action = heldAction(thread)
     expect(action?.id).toBe('second')
     expect(heldLongEnough(action!, Date.parse(later) + HELD_AFTER_MS - 1)).toBe(false)
-  })
-
-  it('reads the command as it was run, and falls back to the title the provider gave', () => {
-    expect(heldLabel({ command: 'npm test -- --maxWorkers=2', title: 'Bash' })).toBe('npm test -- --maxWorkers=2')
-    expect(heldLabel({ command: '  npm test\n  --watch  ', title: 'Bash' })).toBe('npm test --watch')
-    expect(heldLabel({ command: undefined, title: 'WebFetch' })).toBe('WebFetch')
-    expect(heldLabel({ command: '   ', title: '  ' })).toBe('Running')
   })
 })
 

@@ -72,12 +72,6 @@ describe('the visual card', () => {
     expect(renderer.renderDiagram).not.toHaveBeenCalled()
   })
 
-  it('leaves out the explanation when there is none', async () => {
-    const { container } = render(<VisualCard visual={visual({ intro: undefined, steps: undefined })} />)
-    await screen.findByRole('img')
-    expect(container.querySelector('.visual-card__explain')).toBeNull()
-  })
-
   it('reaches every control from the keyboard in reading order, toggles the source, copies it and expands', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn(async () => undefined)

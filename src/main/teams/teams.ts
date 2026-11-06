@@ -8,8 +8,9 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cleanTeamAnswer, plainTeamAnswer, teamAnswerPrompt, teamDesk, teamSummary } from './teamAnswers'
 import { startTeamListener, type TeamListener } from './teamListener'
 import {
-  formatTeamCode, parseTeamCode, teamAddressSchema, teamAgainAnswerSchema, teamAskAnswerSchema, teamAskToolInputSchema, teamDeskAnswerSchema, teamDeskReadSchema, teamName, teammateMessageSchema, teamRedeemAnswerSchema, TEAM_ANSWERS_PER_BURST,
+  formatTeamCode, parseTeamCode, teamAddressSchema, teamAgainAnswerSchema, teamAskAnswerSchema, teamAskToolInputSchema, teamCheckAnswerSchema, teamDeskAnswerSchema, teamDeskReadSchema, teamName, teammateMessageSchema, teamRedeemAnswerSchema, TEAM_ANSWERS_PER_BURST,
   TEAM_ANSWERS_PER_DAY, TEAM_BODY_BYTES_MAX, TEAM_BURST_MS, TEAM_CODE_LIFETIME_MS, TEAM_CODE_TRIES, TEAM_DESK_BYTES_MAX, TEAM_DESK_READS_KEPT, TEAM_DESK_READS_PER_BURST, TEAM_LINK_LIFETIME_MS, TEAM_MESSAGES_KEPT, TEAM_RELISTEN_MS, TEAM_RENEW_WINDOW_MS, TEAM_ROUTE, TEAM_SERVE_PORTS,
+  TEAM_CHECK_BACK_MS, TEAM_CHECKS_PER_BURST, TEAM_SHARE_URL, type TeamReach, type TeamsSetup,
   type TeamAsk, type TeamDesk, type TeamFacts, type TeamLinkView, type TeammateMessage, type TeamProjectFact, type TeamRefusal, type TeamsCommand, type TeamsCommandResult, type TeamsProblem, type TeamsState, type TeamWire,
 } from '../../shared/teams'
 
@@ -18,6 +19,8 @@ const linkSchema = z.object({
   createdAt: z.iso.datetime(), expiresAt: z.iso.datetime(), lastUsedAt: z.iso.datetime().nullable(),
   wantedAgainAt: z.iso.datetime().nullable(), theyWantedAgainAt: z.iso.datetime().nullable(),
   day: z.string().max(16), answersToday: z.number().int().nonnegative(), refusedToday: z.number().int().nonnegative(), recentAnswers: z.array(z.number()).max(TEAM_ANSWERS_PER_BURST),
+  /** The last check, both ways (ADR-0193). It holds no words. */
+  reach: z.object({ at: z.iso.datetime(), toThem: z.boolean(), fromThem: z.boolean().nullable(), tooOld: z.literal(true).optional() }).strict().nullable().default(null),
 }).strict()
 type Link = z.infer<typeof linkSchema>
 const fileSchema = z.object({
@@ -33,7 +36,7 @@ const emptyFile = (): TeamsFile => ({ version: 1, ownName: '', leftOut: [], link
 
 /** What this logs: stable event names only, never a code, a token or anyone's words. */
 export type TeamEvent = 'teams-start-failed' | 'team-code-made' | 'team-code-ended' | 'team-linked' | 'team-link-failed' | 'team-link-again-failed' | 'team-ask-refused' | 'team-ask-answered' | 'team-ask-failed' | 'team-desk-read' | 'team-desk-refused' | 'team-desk-failed'
-  | 'team-listening' | 'team-unserve-failed' | 'team-links-save-failed'
+  | 'team-check-answered' | 'team-check-refused' | 'team-checked' | 'team-check-failed' | 'team-listening' | 'team-unserve-failed' | 'team-links-save-failed'
 
 /** The Tailscale command as this needs it; the same one phone access runs. */
 export interface TeamTailscale {
@@ -70,6 +73,8 @@ export interface TeamServiceOptions {
 const ASK_TIMEOUT_MS = 150_000
 const SEND_TIMEOUT_MS = 20_000
 const slot = (linkId: string): string => `team-link:${linkId}`
+/** A MagicDNS name's tailnet: everything after the machine's own label, such as `tail1234.ts.net`. */
+const tailnetOf = (dnsName: string): string => dnsName.split('.').slice(1).join('.')
 const dayOf = (at: number): string => new Date(at).toLocaleDateString('en-CA')
 const refuse = (code: string, message: string) => ({ status: 'refused' as const, code, message })
 const REFUSED_ASK: Readonly<Record<string, string>> = {
@@ -105,6 +110,14 @@ export class TeamService {
   private readonly desks = new Map<string, { readonly desk: TeamDesk; readonly at: string }>()
   /** When each link last read this computer's desk, for the cap. Apart from the list of reads, which other links can push things off. */
   private readonly recentDeskReads = new Map<string, readonly number[]>()
+  /** When each link last checked this computer, for the cap (ADR-0193). */
+  private readonly recentChecks = new Map<string, readonly number[]>()
+  /** The check each link has on its way, which a second press shares, so an older answer never lands over a newer one. */
+  private readonly checking = new Map<string, Promise<TeamsCommandResult>>()
+  /** This computer's own Tailscale as setup's steps last read it. */
+  private setup: TeamsSetup | null = null
+  /** This computer's tailnet name, the last time Tailscale gave it, to tell a teammate on another tailnet. */
+  private ownDnsName: string | undefined
   /** The asks each user message has spent, by message, newest last (ADR-0187, decision 5). */
   private readonly spent = new Map<string, Set<string>>()
   /** Watcher reads only what was on screen before the user's current message went (ADR-0187, decision 4). */
@@ -140,7 +153,7 @@ export class TeamService {
     return { ownName: this.file.ownName || this.options.hostname(), listening: this.address !== undefined, code: code ? { text: code.text, expiresAt: code.expiresAt } : null,
       links: this.file.links.map(link => this.view(link)), messages: this.file.messages,
       projects: this.options.projects().map(project => ({ ...project, leftOut: leftOut.has(project.key) })), problem: this.problem, serveEnableUrl: this.serveEnableUrl,
-      desks: Object.fromEntries(this.desks), deskReads: this.file.deskReads }
+      desks: Object.fromEntries(this.desks), deskReads: this.file.deskReads, setup: this.setup }
   }
   subscribe(listener: (state: TeamsState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
@@ -157,6 +170,9 @@ export class TeamService {
         if (this.serveEnableUrl) await this.options.openExternal(this.serveEnableUrl)
         return { status: 'ok' }
       case 'read-desk': return this.readDesk(command.linkId)
+      case 'check-link': return this.checkLink(command.linkId)
+      case 'read-setup': await this.readSetup(); return { status: 'ok' }
+      case 'open-share-page': await this.options.openExternal(TEAM_SHARE_URL); return { status: 'ok' }
     }
   }
 
@@ -273,11 +289,12 @@ export class TeamService {
     // The token the teammate will use here, made first and taken back if the code fails.
     const mine = await this.pairing.redeem(this.pairing.issuePairingCode().code, code.address)
     const ownName = teamName(name)
+    let linked: Link | undefined
     let refused: string | undefined = t`Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked.`
     try {
       const answer = teamRedeemAnswerSchema.parse(await this.send(code.address, undefined, { command: 'redeem-code', code: code.code, name: ownName, address: this.address, token: mine.token }, SEND_TIMEOUT_MS))
       if (answer.status === 'linked') {
-        await this.addLink({ clientId: mine.clientId, name: answer.name, address: code.address, expiresAt: this.noLaterThanALink(answer.expiresAt), token: answer.token })
+        linked = await this.addLink({ clientId: mine.clientId, name: answer.name, address: code.address, expiresAt: this.noLaterThanALink(answer.expiresAt), token: answer.token })
         this.file.ownName = ownName
         await this.save()
         refused = undefined
@@ -286,6 +303,8 @@ export class TeamService {
     if (refused) { await this.pairing.revoke(mine.clientId).catch(() => undefined); await this.stopListeningIfUnused(); this.publish(); return { status: 'refused', message: refused } }
     this.publish()
     this.options.log?.('team-linked')
+    // Linking proved this computer reaches theirs; the check right after finds out whether theirs reaches this one (ADR-0193).
+    if (linked) void this.checkLink(linked.id)
     return { status: 'ok' }
   }
 
@@ -294,7 +313,7 @@ export class TeamService {
     // Linking again with the same computer replaces the old link rather than leaving two.
     for (const old of this.file.links.filter(link => link.address === input.address)) await this.forget(old)
     const link: Link = { id: randomUUID(), clientId: input.clientId, name: input.name, address: input.address, createdAt: new Date(at).toISOString(), expiresAt: input.expiresAt, lastUsedAt: new Date(at).toISOString(),
-      wantedAgainAt: null, theyWantedAgainAt: null, day: dayOf(at), answersToday: 0, refusedToday: 0, recentAnswers: [] }
+      wantedAgainAt: null, theyWantedAgainAt: null, day: dayOf(at), answersToday: 0, refusedToday: 0, recentAnswers: [], reach: null }
     await this.options.credentials.set(slot(link.id), input.token)
     this.file.links.push(link)
     await this.save()
@@ -307,6 +326,7 @@ export class TeamService {
     this.file.deskReads = this.file.deskReads.filter(item => item.linkId !== link.id)
     this.desks.delete(link.id)
     this.recentDeskReads.delete(link.id)
+    this.recentChecks.delete(link.id)
   }
   private async removeLink(linkId: string): Promise<TeamsCommandResult> {
     const link = this.linkById(linkId)
@@ -368,6 +388,7 @@ export class TeamService {
       case 'ask': return this.answerAsk(link, message.ask, message.words)
       case 'link-again': return this.answerLinkAgain(link)
       case 'read-desk': return this.answerDesk(link)
+      case 'check': return this.answerCheck(link, message.back)
     }
   }
 
@@ -495,6 +516,93 @@ export class TeamService {
     return { status: 'ok' }
   }
 
+  // ---- Checking both ways ----
+
+  /**
+   * A check of this link (ADR-0193). It carries nothing and reads nothing. With `back`, this computer tries to reach the
+   * asker's first and says whether it could, so the asker learns both directions from one press.
+   */
+  private async answerCheck(link: Link, back: boolean): Promise<unknown> {
+    const at = this.now(), iso = new Date(at).toISOString()
+    if (this.expired(link)) { this.options.log?.('team-check-refused'); return { status: 'refused', reason: 'expired' } }
+    link.lastUsedAt = iso
+    const recent = (this.recentChecks.get(link.id) ?? []).filter(item => at - item < TEAM_BURST_MS)
+    if (recent.length >= TEAM_CHECKS_PER_BURST) { this.recentChecks.set(link.id, recent); this.options.log?.('team-check-refused'); return { status: 'refused', reason: 'too-many' } }
+    this.recentChecks.set(link.id, [...recent, at])
+    this.options.log?.('team-check-answered')
+    if (!back) {
+      // Being reached says this direction works, whoever asked for it.
+      if (link.reach) link.reach = { ...link.reach, fromThem: true }
+      void this.save(); this.publish()
+      return { status: 'checked' }
+    }
+    const toThem = await this.reaches(link, TEAM_CHECK_BACK_MS)
+    // Only links still here keep what was found.
+    if (this.linkById(link.id)) { link.reach = { at: new Date(this.now()).toISOString(), toThem, fromThem: true }; void this.save(); this.publish() }
+    return { status: 'checked', reachedYou: toThem }
+  }
+
+  /** Whether this computer reaches the teammate's, with a check that asks for nothing back. */
+  private async reaches(link: Link, timeoutMs: number): Promise<boolean> {
+    try { return teamCheckAnswerSchema.parse(await this.send(link.address, this.token(link), { command: 'check', back: false }, timeoutMs)).status === 'checked' }
+    catch { return false }
+  }
+
+  /**
+   * **Check again**, and the check right after linking: one press, one check each way. A press while a check of the same
+   * link is on its way shares that check rather than racing it to write what was found.
+   */
+  private checkLink(linkId: string): Promise<TeamsCommandResult> {
+    const held = this.checking.get(linkId)
+    if (held) return held
+    const check = this.checkLinkNow(linkId).finally(() => { this.checking.delete(linkId) })
+    this.checking.set(linkId, check)
+    return check
+  }
+  private async checkLinkNow(linkId: string): Promise<TeamsCommandResult> {
+    const link = this.linkById(linkId)
+    if (!link) return { status: 'refused', message: t`That link is gone.` }
+    const name = link.name
+    if (this.expired(link)) return { status: 'refused', message: t`This link has run out, so nothing was checked. Both of you can press Link again to keep it.` }
+    let reach: TeamReach, answer: ReturnType<typeof teamCheckAnswerSchema.parse> | undefined
+    try {
+      answer = teamCheckAnswerSchema.parse(await this.send(link.address, this.token(link), { command: 'check', back: true }, SEND_TIMEOUT_MS))
+    } catch { answer = undefined }
+    const at = new Date(this.now()).toISOString()
+    if (answer?.status === 'refused') {
+      this.options.log?.('team-check-failed')
+      if (answer.reason === 'too-many') return { status: 'refused', message: t`${name}'s computer has answered a lot of checks just now. Try again in a few minutes.` }
+      if (answer.reason === 'expired') return { status: 'refused', message: t`This link has run out, so nothing was checked. Both of you can press Link again to keep it.` }
+      // A Sotto from before checks answers that this is not on its list. It answered, so this way works; the card keeps that it is too old.
+      if (answer.reason === 'not-on-the-list') {
+        if (this.linkById(linkId)) { link.reach = { at, toThem: true, fromThem: null, tooOld: true }; await this.save(); this.publish() }
+        return { status: 'refused', message: t`${name}'s Sotto is too old to check a link. Ask them to update it, then check again. Asks and desks still work.` }
+      }
+      return { status: 'refused', message: t`${name} has removed this link. Make a new code to link again.` }
+    }
+    if (answer) { reach = { at, toThem: true, fromThem: answer.reachedYou ?? null }; link.lastUsedAt = at; this.options.log?.('team-checked') }
+    else { reach = { at, toThem: false, fromThem: null }; this.options.log?.('team-check-failed') }
+    if (!this.linkById(linkId)) return { status: 'ok' }
+    link.reach = reach
+    await this.save()
+    this.publish()
+    return { status: 'ok' }
+  }
+
+  // ---- Setup ----
+
+  /** This computer's own Tailscale, for setup's steps. It asks this computer only and sends nothing (ADR-0193). */
+  private async readSetup(): Promise<void> {
+    const status = await this.options.tailscale.status().catch(() => undefined)
+    if (status?.state === 'running') this.ownDnsName = status.dnsName.toLowerCase()
+    const suffix = this.ownDnsName === undefined ? undefined : tailnetOf(this.ownDnsName)
+    this.setup = status?.state === 'running'
+      // Named as Tailscale's Machines page names it, by its tailnet label, so the steps match what the user sees there.
+      ? { tailscale: 'running', machine: status.dnsName.split('.')[0]!.toLowerCase(), others: (status.others ?? []).map(peer => ({ name: peer.name, otherTailnet: suffix !== undefined && tailnetOf(peer.dnsName.toLowerCase()) !== suffix })) }
+      : { tailscale: status?.state === 'missing' ? 'missing' : 'not-running', machine: null, others: [] }
+    this.publish()
+  }
+
   // ---- Asking ----
 
   private async sendAsk(link: Link, rowId: string, ask: TeamAsk, words: string): Promise<void> {
@@ -574,7 +682,8 @@ export class TeamService {
       this.serveEnableUrl = served.reason === 'not-enabled' ? served.enableUrl ?? null : null
       return fail(served.reason === 'not-enabled' ? 'serve-off' : served.reason === 'denied' ? 'serve-denied' : 'serve-failed')
     }
-    this.address = `https://${status.dnsName.toLowerCase()}:${port}/`
+    this.ownDnsName = status.dnsName.toLowerCase()
+    this.address = `https://${this.ownDnsName}:${port}/`
     this.file.servePort = port; this.file.loopbackPort = this.listener.port
     await this.save()
     this.problem = null
@@ -597,10 +706,11 @@ export class TeamService {
   private expired(link: Link): boolean { return Date.parse(link.expiresAt) <= this.now() }
   private view(link: Link): TeamLinkView {
     const today = link.day === dayOf(this.now()), again = (at: string | null) => at !== null && this.now() - Date.parse(at) <= TEAM_RENEW_WINDOW_MS
-    let machine = link.address
-    try { machine = new URL(link.address).hostname.split('.')[0]! } catch { /* The schema checked it; the whole address is still true. */ }
+    let machine = link.address, host = ''
+    try { host = new URL(link.address).hostname; machine = host.split('.')[0]! } catch { /* The schema checked it; the whole address is still true. */ }
+    const otherTailnet = this.ownDnsName !== undefined && host !== '' && tailnetOf(host) !== tailnetOf(this.ownDnsName)
     return { id: link.id, name: link.name, machine, createdAt: link.createdAt, expiresAt: link.expiresAt, expired: this.expired(link), lastUsedAt: link.lastUsedAt,
-      answersToday: today ? link.answersToday : 0, refusedToday: today ? link.refusedToday : 0, wantedAgain: again(link.wantedAgainAt), theyWantAgain: again(link.theyWantedAgainAt) }
+      answersToday: today ? link.answersToday : 0, refusedToday: today ? link.refusedToday : 0, wantedAgain: again(link.wantedAgainAt), theyWantAgain: again(link.theyWantedAgainAt), reach: link.reach, otherTailnet }
   }
   private save(): Promise<void> {
     // With Keep local history off, a teammate's words stay in memory and go when Sotto quits.

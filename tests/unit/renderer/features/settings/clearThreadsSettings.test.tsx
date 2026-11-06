@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
-import { quietAgo } from '../../../../../src/renderer/src/features/settings/ClearThreadsSettings'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import type { AgentCommand, AgentState } from '../../../../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
@@ -133,13 +132,5 @@ describe('Settings → Threads, Clearing threads', () => {
     await within(dialog).findByRole('list', { name: 'Threads that go' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Clear 2 threads' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted.')
-  })
-})
-
-describe('quietAgo', () => {
-  it('says how long ago in days, then months, then years', () => {
-    const now = Date.parse('2026-10-23T12:00:00Z')
-    const at = (days: number): string => new Date(now - days * DAY).toISOString()
-    expect([0, 1, 41, 59, 63, 400, 900].map(days => quietAgo(at(days), now, 'en'))).toEqual(['today', 'yesterday', '41 days ago', '59 days ago', '2 months ago', '13 months ago', '2 years ago'])
   })
 })

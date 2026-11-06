@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
-import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
@@ -110,7 +110,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
       void stopping.then(() => {
         if (timedOut || processError || code !== 0) {
           const unavailable = (processError as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
-          reject(Object.assign(new Error(unavailable ? 'Git is unavailable. Install Git or explicitly choose a shared working copy.' : timedOut ? 'Git took too long.' : Buffer.concat(errors).toString('utf8').trim() || processError?.message || 'Git could not finish this action.'), { code: (processError as NodeJS.ErrnoException | undefined)?.code ?? code, timedOut }))
+          const stderr = Buffer.concat(errors).toString('utf8').trim()
+          reject(Object.assign(new Error(unavailable ? 'Git is unavailable. Install Git or explicitly choose a shared working copy.' : timedOut ? 'Git took too long.' : stderr || processError?.message || 'Git could not finish this action.'), { code: (processError as NodeJS.ErrnoException | undefined)?.code ?? code, timedOut, stderr }))
         } else accept(Buffer.concat(output).toString('utf8'))
       }, () => reject(new Error('Git took too long and its checkout processes could not be stopped. The folder was kept.')))
     })
@@ -664,22 +665,43 @@ export class ThreadWorktrees {
     // No origin is an answer; Git being unavailable is not, and the message runWorktreeGit gives it must reach the user.
     try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) }
     catch (error) { if (error instanceof Error && /Git is unavailable/u.test(error.message)) throw error; return 'no-origin' }
-    const failure = new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`)
+    const failure = async (stage: 'ls-remote' | 'fetch', error: unknown): Promise<Error> => {
+      const detail = error as { code?: unknown; timedOut?: boolean; stderr?: string }
+      // Keep the latest failure locally, including a collision that a retry recovered from. Never put Git's
+      // stderr in the pane or an operational log; remote URLs can contain credentials, so redact those here too.
+      const stderr = detail.stderr ?? (error instanceof Error ? error.message : String(error))
+      const path = join(this.directory, 'worktree-origin-fetch-failure.json'), temporary = `${path}.${randomUUID()}.tmp`
+      // Different branches can fail together. Replace the diagnostic whole so their writes cannot mix.
+      await writeFile(temporary, JSON.stringify({
+        at: new Date().toISOString(), repositoryRoot, baseBranch, stage, quiet, code: detail.code,
+        timedOut: detail.timedOut === true, stderr: stderr.replace(/\b(?:https?|ssh):\/\/\S+/gu, '[remote URL]').slice(0, 16_384),
+      }) + '\n', { mode: 0o600 }).then(() => rename(temporary, path)).catch(() => rm(temporary, { force: true }).catch(() => undefined))
+      return new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`, { cause: error })
+    }
     // --exit-code answers 2 for a remote that is reachable and has no such branch; anything else is a real failure.
     try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`], { quiet }) }
-    catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw failure }
+    catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw await failure('ls-remote', error) }
     // No FETCH_HEAD, as the background fetch writes none: a fetch typing started must not change what a
     // `git merge FETCH_HEAD` in the project would merge. A Git older than 2.29 does not know the flag.
     const fetch = (): Promise<string> => this.git(repositoryRoot, ['fetch', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [],
       'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], { quiet })
-    try {
-      await fetch().catch((error: unknown) => {
-        if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
-        this.fetchHeadFlag = false
-        return fetch()
-      })
-    } catch { throw failure }
-    return 'fetched'
+    for (let attempt = 0;; attempt++) {
+      try {
+        await fetch().catch((error: unknown) => {
+          if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
+          this.fetchHeadFlag = false
+          return fetch()
+        })
+        return 'fetched'
+      } catch (error) {
+        const reported = await failure('fetch', error)
+        // Background fetches and other Git processes share origin refs across every worktree. If another
+        // fetch moved or still holds this ref, try again; connection/auth failures still stop.
+        const collision = error instanceof Error && error.message.split(/\r?\n/u).some(line =>
+          line.startsWith(`error: cannot lock ref 'refs/remotes/origin/${baseBranch}': `))
+        if (!collision || attempt >= 2) throw reported
+      }
+    }
   }
 
   /**
@@ -1073,6 +1095,8 @@ export class ThreadWorktrees {
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
     const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
     const inspectedSubmoduleDirectories = new Set<string>()
+    /** Each plain nested repository's row and Git directory, whose submodules' history is counted once the walk is done. */
+    const nestedRepositories: Array<{ row: { unpushedCommitCount?: number | undefined }; gitDirectory: string }> = []
     const nestedWorktrees: { path: string; commonDirectory: string }[] = []
     const canonicalRoot = await realpath(path)
     let outsideLink: string | undefined
@@ -1173,7 +1197,9 @@ export class ThreadWorktrees {
               let changeCount = 0
               for (let i = 0; i < records.length; i++) { changeCount++; if (/^[RC]|^.[RC]/u.test(records[i]!)) i++ }
               const repositoryPath = local + '/'
-              repositories.push({ path: repositoryPath, changeCount, ...history, kind })
+              const repository: (typeof repositories)[number] = { path: repositoryPath, changeCount, ...history, kind }
+              repositories.push(repository)
+              if (!submodule && (bare || gitMarker?.isDirectory())) nestedRepositories.push({ row: repository, gitDirectory: bare ? full : join(full, '.git') })
               if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
             }
           }
@@ -1223,6 +1249,26 @@ export class ThreadWorktrees {
       }
     }
     await visit(root, '', undefined)
+    // A nested repository's own submodules keep their history in its Git directory, and a deinitialized
+    // one keeps nothing else, so removal would delete it unseen (#687). It is added to the repository's
+    // row, whose files the walk already counted; history a checkout inside it already counted is skipped.
+    const retainedHistory = async (directory: string): Promise<number> => {
+      if (entryKind(await present(directory)) !== 'directory') return 0
+      if (entryKind(await present(join(directory, 'HEAD'))) === 'file') {
+        const counted = inspectedSubmoduleDirectories.has(pathKey(await waited(realpath(directory))))
+        // Recursive deinit keeps core.worktree pointing at a deleted checkout, so it is overridden.
+        const own = counted ? 0 : Number((await git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
+        return own + await retainedHistory(join(directory, 'modules'))
+      }
+      // A module name with slashes is a folder of folders before its metadata.
+      let count = 0
+      for (const entry of await waited(readdir(directory, { withFileTypes: true }))) if (entry.isDirectory()) count += await retainedHistory(join(directory, entry.name))
+      return count
+    }
+    for (const { row, gitDirectory } of nestedRepositories) {
+      const retained = await retainedHistory(join(gitDirectory, 'modules'))
+      if (retained) row.unpushedCommitCount = (row.unpushedCommitCount ?? 0) + retained
+    }
     // Deinitializing a submodule empties its checkout but keeps its history in this worktree's
     // Git directory. Force removal destroys that metadata too, including recursive submodules.
     const rootMarker = await lstat(join(path, '.git'))

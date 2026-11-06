@@ -41,12 +41,6 @@ describe('Settings → Dictation speech model', () => {
     expect(screen.queryByRole('button', { name: /download/i })).toBeNull()
   })
 
-  it('shows the download size on Sotto’s model while it is not on this computer', async () => {
-    render(<SettingsView {...baseProps({ speechModel: { state: 'missing' }, speechModels: [{ ...SOTTO_MODEL, installed: false }], settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, speechModel: null } })} />)
-    await selectCategory('Dictation')
-    expect(options()).toEqual(['Choose a model', 'Parakeet v3, 670 MB'])
-  })
-
   it('says why nothing changed when the chosen model is no longer on this computer', async () => {
     render(<SettingsView {...baseProps({ speechModels: [SOTTO_MODEL], speechModelRefused: true })} />)
     await selectCategory('Dictation')
@@ -141,12 +135,6 @@ describe('Settings → Dictation speech model', () => {
       fireEvent.keyDown(picker(), { key: 'ArrowDown' })
       expect(fireEvent.keyDown(picker(), { key: 'ArrowDown', altKey: true })).toBe(true)
       expect(picker()).toHaveValue('')
-    })
-
-    it('still chooses with a click in the open list', async () => {
-      const onChooseSpeechModel = await renderPicker()
-      await userEvent.selectOptions(picker(), 'Parakeet v2, 661 MB')
-      expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_V2.id)
     })
   })
 

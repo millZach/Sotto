@@ -5,12 +5,14 @@ import { ProviderUnavailable } from '../../src/main/agents/providerProblem'
 import { ProviderClients, type RunLike } from '../../src/main/agents/providerClients'
 import { installerDetail, installerOutput } from '../../src/main/agents/installerDetail'
 import type { AgentHostSnapshot, ProviderId } from '../../src/shared/agents'
+import type { HostProviderId } from '../../src/shared/hostProviders'
 
 /**
  * forge on September 29, 2026, for the #480 journey (tests/e2e/host-client-updates.spec.ts): Claude Code, Codex and
- * Grok Build installed by mise, signed in and all three behind; Devin not installed. The mise layout is real, in the
+ * Grok Build installed by mise, signed in and all three behind; nothing else installed. The mise layout is real, in the
  * host's throwaway home, so the host reads each client's channel from disk the way it does on forge; only mise, Node
- * and the registry are stood in for. Files in `directory` steer it:
+ * and the registry are stood in for. Every provider a host runs is stood in for too, or the host would start the real
+ * client this computer has on its PATH and list it beside forge's. Files in `directory` steer it:
  *
  * - `codex.fail`: Codex's next upgrade drops its download, once.
  * - `grok.hold`: Grok Build's install step waits until the file is gone, so its second step can be seen.
@@ -34,7 +36,8 @@ class InstalledClient extends E2EAgentHost {
   async clientUpdated(): Promise<void> { this.running = this.disk[this.id]! }
 }
 class NotInstalled extends E2EAgentHost {
-  override async connect(): Promise<AgentHostSnapshot> { throw new ProviderUnavailable('not-installed', 'Install Devin CLI and run devin auth login, then connect again. Your threads and drafts are kept.') }
+  constructor(private readonly instruction: string) { super() }
+  override async connect(): Promise<AgentHostSnapshot> { throw new ProviderUnavailable('not-installed', `${this.instruction}, then connect again. Your threads and drafts are kept.`) }
 }
 
 export function clientUpdateHost(directory: string, home: string) {
@@ -60,10 +63,14 @@ export function clientUpdateHost(directory: string, home: string) {
     grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'), muse: join(home, 'nowhere', 'muse'), opencode: join(home, 'nowhere', 'opencode'), cursor: join(home, 'nowhere', 'cursor'), deepseek: join(home, 'nowhere', 'dsh'),
   }
   const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
+  /** The client a mise argument names: its tool, or an update's `<tool>@<version>`, the version that was published. */
+  const clientNamedBy = (argument: string | undefined) => (Object.keys(TOOLS) as (keyof typeof TOOLS)[]).find(key => argument === TOOLS[key] || argument === `${TOOLS[key]}@${PUBLISHED[key]}`)!
   const run: RunLike = async (_executable, args, _asNode, options) => {
     if (args[0] === 'where') return { ok: true, stdout: join(installs, FOLDERS.grok, INSTALLED.grok) }
-    if (args[0] === 'upgrade') {
-      const id = (Object.keys(TOOLS) as (keyof typeof TOOLS)[]).find(key => TOOLS[key] === args[1])!
+    if (args[0] === 'cache') return { ok: true, stdout: '' }
+    if (args[0] === 'ls-remote') return { ok: true, stdout: PUBLISHED[clientNamedBy(args[1])] }
+    if (args[0] === 'install') {
+      const id = clientNamedBy(args[1])
       // A release less than 24 hours old is held back with exit 0 unless this explicit update removes the delay.
       if (options?.env?.MISE_MINIMUM_RELEASE_AGE !== '0s') {
         return { ok: true, stdout: 'mise All tools are up to date' }
@@ -92,6 +99,7 @@ export function clientUpdateHost(directory: string, home: string) {
     fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[Object.entries(PACKAGES).find(([name]) => url.includes(name))![1]] }), { status: 200 }) })
   return {
     clients, locateClient: async (provider: ProviderId) => where[provider],
-    providers: { claude: new InstalledClient('claude', disk), codex: new InstalledClient('codex', disk), grok: new InstalledClient('grok', disk), devin: new NotInstalled() },
+    providers: { claude: new InstalledClient('claude', disk), codex: new InstalledClient('codex', disk), grok: new InstalledClient('grok', disk),
+      devin: new NotInstalled('Install Devin CLI and run devin auth login'), muse: new NotInstalled('Install Muse'), opencode: new NotInstalled('Install OpenCode'), cursor: new NotInstalled('Install Cursor') } satisfies Record<HostProviderId, E2EAgentHost>,
   }
 }

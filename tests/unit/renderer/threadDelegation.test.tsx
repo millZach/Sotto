@@ -2,19 +2,19 @@ import { readFileSync } from 'node:fs'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentMessage, AgentModel, AgentState, AgentThread } from '../../../src/shared/agents'
+import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
 import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { chosenWords, DelegatedWorkRow, DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
+import { DelegatedWorkRow, DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import { threadOrnamentAllowed } from '../../../src/shared/threadActivity'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
-import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationDuration, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
+import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
-import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
+import { describeThreads, organizeWorkspace, rowStatus, threadDescriber, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { swarmAnglesByLead } from '../../../src/renderer/src/agents/SwarmAngles'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
@@ -67,11 +67,11 @@ function bridge(views: Record<string, DelegationView[]>, received: Record<string
   return { fake, views, change: (threadIds: string[]) => { for (const listener of [...listeners]) listener({ threadIds }) }, listening: () => listeners.size }
 }
 
-function mount(state: AgentState) {
+function mount(state: AgentState, liveClock = false) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   // A layout of its own, so a split one test opens is not the next test's.
-  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} />)
+  render(<ThreadsView now={liveClock ? undefined : NOW} layoutStore={new SplitLayoutStore()} />)
   return live
 }
 const openFolder = (name: RegExp): void => {
@@ -80,13 +80,9 @@ const openFolder = (name: RegExp): void => {
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('delegation words', () => {
-  it('says a wait and an answer in minutes and seconds', () => {
-    expect([0, 12_000, 100_000, 300_000, 3_840_000].map(delegationDuration)).toEqual(['0 s', '12 s', '1 min 40 s', '5 min', '1 h 4 min'])
-  })
-
   it('says how the delegating thread\'s wait went, for each outcome as the prototype words it', () => {
     const started = at(5), now = Date.parse(started) + 72_000
     expect(delegationWaitLine(view({ waiting: true }), now)).toBe('Sotto is starting it and sending the brief.')
@@ -179,7 +175,7 @@ describe('delegation words', () => {
 })
 
 describe('delegated threads in the sidebar', () => {
-  const folderOf = (state: AgentState, query = '', delegation = true) => organizeWorkspace(state, describeThreads(state, NOW), query, null, delegation)
+  const folderOf = (state: AgentState, query = '', delegation = true) => organizeWorkspace(state, describeThreads(state, NOW), query, null, delegation, NOW)
   const ids = (state: AgentState, query = '', delegation = true): string[] => [...folderOf(state, query, delegation).open, ...folderOf(state, query, delegation).settled].flatMap(folder => folder.rows.map(row => row.thread.id))
 
   it('lists no row for a delegated thread at either level while delegation is on, and each as any thread while it is off', () => {
@@ -280,6 +276,111 @@ describe('delegated threads in the sidebar', () => {
     expect(row().waitingIn).toBeUndefined()
   })
 
+  it('keeps an unread finish working while a child works, then shows Just finished when it ends', () => {
+    owl(true)
+    vi.stubGlobal('sotto', { delegations: bridge({}).fake })
+    const state = delegatingState()
+    state.host.threads = state.host.threads.filter(thread => [PARENT, CHILD, GRANDCHILD].includes(thread.id))
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.status = 'idle'; parent.requests = []; parent.finishedUnread = true
+    state.activeThreadId = GRANDCHILD
+    const folder = folderOf(state).open.find(item => item.id === 'workshop')!
+    expect(folder.working).toBe(1)
+    const row = folder.rows.find(item => item.thread.id === PARENT)!
+    expect(row).toMatchObject({ state: 'working', stateLabel: 'Working', workingSince: Date.parse(at(3)), when: '3m 00s', attention: false })
+    expect(row.waitingIn).toBeUndefined()
+    expect(rowStatus(row)).toMatchObject({ text: 'Working', finished: false })
+    const live = mount(state)
+    openFolder(/^workshop \d+ threads?$/u)
+    const button = (): HTMLElement => screen.getByRole('button', { name: 'Visual gate flake' })
+    expect(button().querySelector('.thread-nav__ring')).not.toHaveAttribute('data-unseen')
+    expect(button().querySelector('.thread-nav__status')).toHaveTextContent('Working')
+    expect(button()).not.toHaveTextContent('Just finished')
+    // A closed folder reads the rolled-up count too.
+    fireEvent.click(screen.getByRole('button', { name: /^workshop \d+ threads?$/u }))
+    expect(screen.getByRole('button', { name: /^workshop \d+ threads?$/u }).closest('.thread-folder')).toHaveTextContent('1 working')
+    openFolder(/^workshop \d+ threads?$/u)
+    act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === PARENT ? thread : { ...thread, status: 'idle' }) } }))
+    expect(button().querySelector('.thread-nav__status')).toHaveTextContent('Just finished')
+    expect(button().querySelector('.thread-nav__ring')).toHaveAttribute('data-unseen', 'true')
+    expect(folderOf(live.state).open.find(item => item.id === 'workshop')!.working).toBe(0)
+  })
+
+  it('ticks from the earliest child and recomputes the roll-up without changing the kept parent row', () => {
+    owl(true)
+    vi.stubGlobal('sotto', { delegations: bridge({}).fake })
+    const state = delegatingState()
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.status = 'idle'; parent.requests = []; parent.finishedUnread = true
+    state.activeThreadId = GRANDCHILD
+    const describe = threadDescriber()
+    const original = describe(state, NOW).find(row => row.thread.id === PARENT)!
+    const rolled = (now: number): ThreadRow => organizeWorkspace(state, describe(state, now), '', null, true, now).open
+      .flatMap(folder => folder.rows).find(row => row.thread.id === PARENT)!
+    expect(rolled(NOW).when).toBe('3m 00s')
+    expect(rolled(NOW + 2_000).when).toBe('3m 02s')
+    expect(describe(state, NOW + 2_000).find(row => row.thread.id === PARENT)).toBe(original)
+    expect(original.state).toBe('done')
+    vi.useFakeTimers(); vi.setSystemTime(NOW)
+    const live = mount(state, true)
+    openFolder(/^workshop \d+ threads?$/u)
+    const clock = (): Element => screen.getByRole('button', { name: 'Visual gate flake' }).querySelector('.thread-nav__time')!
+    expect(clock()).toHaveTextContent('3m 00s')
+    act(() => { vi.advanceTimersByTime(2_000) })
+    expect(clock()).toHaveTextContent('3m 02s')
+    // The earlier child ends; the parent's cached own row still has no working clock.
+    act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === CHILD ? { ...thread, status: 'idle' } : thread) } }))
+    expect(clock()).toHaveTextContent('2m 02s')
+    act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === GRANDCHILD ? { ...thread, status: 'idle' } : thread) } }))
+    expect(screen.getByRole('button', { name: 'Visual gate flake' })).toHaveTextContent('Just finished')
+    const stoppedClock = clock().textContent
+    act(() => { vi.advanceTimersByTime(2_000) })
+    expect(clock().textContent).toBe(stoppedClock)
+  })
+
+  it('keeps needs ahead of work, its own working clock ahead of children, and settled rows alone', () => {
+    const state = delegatingState()
+    const thread = (id: string): AgentThread => state.host.threads.find(item => item.id === id)!
+    const parent = thread(PARENT)
+    const row = (): ThreadRow => [...folderOf(state).open, ...folderOf(state).settled].flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
+    // The parent's own permission wins over children working.
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: 'approval' })
+    expect(row().waitingIn).toBeUndefined()
+    parent.requests = []; parent.status = 'idle'
+    thread(CHILD).requests = [{ id: 'review-question', kind: 'question', text: 'Which theme?', options: [] }]
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: 'question', waitingIn: 'Review the gate fix' })
+    parent.requests = [{ id: 'own-permission', kind: 'permission', text: 'Run the command?', options: [] }]
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: 'approval' })
+    expect(row().waitingIn).toBeUndefined()
+    parent.requests = []; thread(CHILD).requests = []; parent.status = 'running'
+    expect(row().workingSince).toBe(describeThreads(state, NOW).find(item => item.thread.id === PARENT)!.workingSince)
+    parent.status = 'idle'
+    for (const id of [PARENT, CHILD, GRANDCHILD]) thread(id).workspaceSettledAt = at(1)
+    expect(row()).toMatchObject({ state: 'done', settledBy: 'thread' })
+    expect(Number.isNaN(row().workingSince)).toBe(true)
+  })
+
+  it('uses Waiting only while every working child is waiting on a command', () => {
+    const state = delegatingState()
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.status = 'idle'; parent.requests = []
+    const child = state.host.threads.find(thread => thread.id === CHILD)!
+    const grandchild = state.host.threads.find(thread => thread.id === GRANDCHILD)!
+    for (const thread of [child, grandchild]) {
+      thread.status = 'idle'
+      thread.backgroundWork = [{ id: 'command', type: 'command', label: 'Build' }]
+    }
+    const row = (): ThreadRow => folderOf(state).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
+    expect(row()).toMatchObject({ state: 'working', stateLabel: 'Waiting', workingSince: Date.parse(at(3)) })
+    grandchild.backgroundWork = [{ id: 'agent', type: 'subagent', label: 'Review' }]
+    expect(row().stateLabel).toBe('Working')
+    // Working wins regardless of which child is read first.
+    child.backgroundWork = grandchild.backgroundWork
+    grandchild.backgroundWork = [{ id: 'command', type: 'command', label: 'Build' }]
+    expect(row().stateLabel).toBe('Working')
+    expect(folderOf(state, '', false).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!.state).toBe('done')
+  })
+
   it('finds no delegated thread by search', () => {
     const state = delegatingState()
     expect(folderOf(state, 'Check the capture').matching).toBe(0)
@@ -294,7 +395,7 @@ describe('delegated threads in the sidebar', () => {
     parent.status = 'idle'
     const thread = (id: string): AgentThread => state.host.threads.find(item => item.id === id)!
     const row = (): ThreadRow => folderOf(state).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
-    expect(row()).toMatchObject({ state: 'done', waitingFor: null })
+    expect(row()).toMatchObject({ state: 'working', waitingFor: null })
     thread(GRANDCHILD).requests = [{ id: 'check-question', kind: 'question', text: 'Which theme?', options: [] }]
     expect(row()).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', attention: true, waitingIn: 'Check the capture' })
     // A permission below outranks a question below.
@@ -412,11 +513,39 @@ describe('delegated work in the delegating thread', () => {
       expect(within(shown).queryByRole('button', { name: /^Actions for / })).toBeNull()
     })
 
-    it('names any speed it was started at', () => {
-      const model = { id: 'sol', name: 'GPT-6.1 Sol', speeds: [{ id: 'fast', name: 'Fast' }] } as unknown as AgentModel
-      expect(chosenWords({ model: 'sol', effort: 'high' }, [model])).toBe('GPT-6.1 Sol, High')
-      expect(chosenWords({ model: 'sol', effort: 'high', speed: 'fast' }, [model])).toBe('GPT-6.1 Sol, High, Fast')
-      expect(chosenWords({ model: 'gone' }, [model])).toBe('gone')
+    it('gives the worker to another model from its menu: the models it may go to, then the move, and a move it could not make said on the row', async () => {
+      owl(true, false, true)
+      const give = vi.fn(async (): Promise<string | null> => 'Grok Build is off the list Dynamic threads may use. Tick it in Settings, under Threads, to give it work. Nothing was started.')
+      const giveChoices = vi.fn(() => [{ id: 'native:claude:model:opus', name: 'Opus 5.5', provider: 'claude' as const }])
+      const threads = [thread(CHILD, 'Review the gate fix'), thread(OLD, 'First review')]
+      const shown = view(worker)
+      render(<DelegationWorldProvider world={{ ...world(vi.fn(), threads), chosenWords: chosen => chosen.model, give, giveChoices }}><ul><DelegatedWorkRow view={shown} /></ul></DelegationWorldProvider>)
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Review the gate fix' }))
+      expect(giveChoices).toHaveBeenCalledWith(worker.chosen.model)
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Give it to another model…' }))
+      const models = await screen.findByRole('menu', { name: 'Give Review the gate fix to' })
+      await waitFor(() => expect(within(models).getByRole('menuitem', { name: 'Opus 5.5' })).toHaveFocus())
+      fireEvent.click(within(models).getByRole('menuitem', { name: 'Opus 5.5' }))
+      expect(give).toHaveBeenCalledWith(shown.id, 'native:claude:model:opus')
+      expect(await screen.findByRole('alert')).toHaveTextContent('Grok Build is off the list')
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+
+    it('offers no move where no other model is on the list, and says why', () => {
+      owl(true, false, true)
+      render(<DelegationWorldProvider world={{ ...world(vi.fn(), [thread(CHILD, 'Review the gate fix')]), chosenWords: chosen => chosen.model, give: vi.fn(), giveChoices: () => [] }}><ul><DelegatedWorkRow view={view(worker)} /></ul></DelegationWorldProvider>)
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Review the gate fix' }))
+      const item = screen.getByRole('menuitem', { name: /Give it to another model…/u })
+      expect(item).toBeDisabled()
+      expect(item).toHaveAttribute('title', 'No other ready model is on the list in Settings.')
+    })
+
+    it('says You chose this on a worker the user gave the piece to', () => {
+      owl(true, false, true)
+      row(view({ ...worker, byUser: true, why: 'The user gave this piece to Opus 5.5.' }))
+      const shown = screen.getByRole('listitem')
+      expect(shown).toHaveTextContent('You: You chose this.')
+      expect(shown).not.toHaveTextContent('Why:')
     })
 
     it('counts workers by provider on the Worked for line only where the Owl feature is on', () => {

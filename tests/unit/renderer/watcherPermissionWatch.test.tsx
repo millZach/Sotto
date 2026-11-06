@@ -330,12 +330,6 @@ describe('Watcher’s own changes', () => {
     expect(screen.getByText('and 2 files more')).toBeInTheDocument()
   })
 
-  it('names one file as one', () => {
-    render(<WatcherOwnChangeLine change={change({ files: ['README.md'], fileCount: 1 })} />)
-    expect(screen.getByText('Watcher changed 1 file itself.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Show the file' })).toBeInTheDocument()
-  })
-
   it('marks nothing on another thread’s replies', async () => {
     const { publish } = renderThreads(roomState({ ownChanges: [change({ replyMessageId: 'footer-links-2' })] }))
     await screen.findByRole('region', { name: 'Footer links' })

@@ -568,6 +568,119 @@ import UIKit
     func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
 
+    /// A reader up among a picture thread's runs stays where they are while the thread works, and the page holds to their
+    /// finger while they drag it. On the phone such a thread threw its reader to another picture and would not let them
+    /// scroll (Zach, November 2026): each update handed every run's grid its steps again, and a grid given them laid its
+    /// unmade rows out afresh, so the page above the reader grew by thousands of points in one frame while its offset
+    /// stood still. No element here would show that, as an offset alone does not, so the app walks the thread itself
+    /// (`Bench.swift`) and reports the page's offset and height each frame and what the screen shows each second; this
+    /// journey reads that report and is the finger. A picture landing adds one row, under 200 points on any phone.
+    func testAPictureThreadStaysStillUnderItsReader() throws {
+        continueAfterFailure = true
+        let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("picture-page-\(UUID().uuidString).json")
+        app.launchEnvironment["SOTTO_BENCH_FILE"] = report.path
+        launch(Self.fixture + ["--ui-pictures", "--bench-threads", "30", "--bench-turns", "4", "--bench-chunks", "1",
+                               "--bench-journey", "pictures", "--bench-pictures", "full", "--bench-row-frames"], opensOnThreads: false)
+        let window = app.windows.firstMatch
+        let size = window.frame.size
+        let read = { () -> [String: Any]? in
+            (try? Data(contentsOf: report)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        }
+        let reached = { (phase: String) -> Bool in
+            let deadline = Date().addingTimeInterval(420)
+            while Date() < deadline {
+                if read()?["phase"] as? String == phase { return true }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return false
+        }
+        guard reached("finger") else { return XCTFail("The journey never reached the finger's turn; it stood at \(read()?["phase"] ?? "no report")") }
+
+        // Three drags up the page and three back as the thread goes on working. The app reads what each did.
+        let distance: CGFloat = 180
+        // Stay in the page's empty margin. A press over reply text can select words and open Add to prompt instead of
+        // scrolling (run 42170206822, attempt 2); then the five remaining drags are compared with six directions.
+        let x = size.width - 8, middle = size.height * 0.45
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let towardEnd = [false, false, false, true, true, true]
+        for down in towardEnd {
+            Thread.sleep(forTimeInterval: 1)
+            let direction: CGFloat = down ? -1 : 1
+            origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2)),
+                       withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+        Thread.sleep(forTimeInterval: 1.2)
+        FileManager.default.createFile(atPath: report.path + ".done", contents: nil)
+        XCTAssertTrue(reached("finished"), "The journey must finish")
+
+        let phases = read()?["phases"] as? [String: [String: Any]] ?? [:]
+        func page(_ phase: String, _ name: String) -> Double { (phases[phase]?["page"] as? [String: Any])?[name] as? Double ?? -1 }
+        func note(_ phase: String, _ name: String) -> Double { phases[phase]?[name] as? Double ?? -1 }
+        for (phase, what) in [("hold-mid", "held still in the thread's middle"), ("working-mid", "held among older runs while the thread works"),
+                              ("working-live", "held inside the growing run while the thread works")] {
+            let pixels = note(phase, "pixelsChangedFromFirstPct"), step = page(phase, "biggestHeightStep"), moved = page(phase, "biggestOffsetStep")
+            let looks = note(phase, "looks")
+            print("[picture page] \(phase): pixels \(pixels)% over \(Int(looks)) looks, height step \(step) offset step \(moved) height changes \(page(phase, "heightChanges"))")
+            XCTAssert(looks >= 3, "A reader \(what) must be looked at; \(Int(looks)) looks were set against the first")
+            XCTAssert((0...5).contains(pixels), "A reader \(what) must see the same screen; \(pixels)% of its pixels changed")
+            XCTAssert((0...200).contains(step), "A reader \(what) must not have the page swing; its height stepped \(step) points in a frame")
+            XCTAssert((0...1).contains(moved), "A reader \(what) must not be moved; the offset stepped \(moved) points in a frame")
+        }
+        let fingerPage = phases["finger"]?["page"] as? [String: Any]
+        let drags = fingerPage?["drags"] as? [[String: Double]] ?? []
+        for big in fingerPage?["swings"] as? [[String: Double]] ?? [] { print("[picture page] finger swing \(big)") }
+        // A drag must move the page its way, and while the finger drags, the row under it must stay under it: a row above
+        // measured late, or the page swinging, would slide it against the finger. How far the page goes is not the measure
+        // (#2211). The scroll view follows from the first touch the main thread hands it, and with the thread working, a
+        // Debug build on a runner sits 200 to 400 ms on a frame, so the page took up drags of 180 points only once the
+        // finger was as much as 57 points along, then followed it to the point. A third of the drag is the least it must follow.
+        XCTAssertEqual(drags.count, towardEnd.count, "Every drag must move the page; it followed \(drags.count) of \(towardEnd.count)")
+        for (drag, down) in zip(drags, towardEnd) {
+            let moved = (drag["moved"] ?? 0) * (down ? 1 : -1)
+            print("[picture page] drag \(down ? "down" : "up") moved \(Int(moved))")
+            XCTAssert(moved > Double(distance) / 3, "A drag of \(Int(distance)) points must move the page its way; it moved \(Int(moved))")
+        }
+        // Each drag frame by frame (`PageWatch.dragFrames`): how far the row under the finger slid against the finger while
+        // it dragged, and how far rows above it changing height moved it in the page. Eight points is the most a drag
+        // slid in thirty; a row measured late or a picture landing above moves one by 120 or more.
+        let watched = fingerPage?["dragFrames"] as? [[[Double]]] ?? []
+        XCTAssertEqual(watched.count, towardEnd.count, "Every drag must be watched frame by frame; \(watched.count) of \(towardEnd.count) were")
+        for (index, frames) in watched.enumerated() {
+            var slid = 0.0, worst = 0.0, above = 0.0, held = 0
+            for (a, b) in zip(frames, frames.dropFirst()) where a[5] >= 0 && b[5] >= 0 {
+                above += b[5] - a[5]
+                // From a frame with the finger on the glass to the next, the lift's included and a coast after it not, as
+                // no finger moves it. A lift late in a busy frame can leave the page coasting 130 points (#2211).
+                guard a[1] == 1, b[1] != 2 else { continue }
+                let slide = (b[5] - a[5]) - (b[2] - a[2]) - (b[4] - a[4])
+                slid += slide; worst = max(worst, abs(slide)); held += 1
+            }
+            print("[picture page] drag \(index + 1) frames: slid \(Int(slid.rounded())) against the finger (worst frame \(Int(worst.rounded()))), "
+                  + "row moved \(Int(above.rounded())) in the page, over \(held) frames")
+            let stayed = held > 0 && abs(slid) <= 40 && worst <= 40
+            XCTAssert(stayed, "Under a dragging finger the page must stay put; over \(held) frames the row under the finger slid "
+                      + "\(Int(slid.rounded())) points against it, \(Int(worst.rounded())) in one frame")
+            if !stayed {
+                for frame in frames {
+                    print("[picture page] drag \(index + 1) frame " + frame.map { String(format: "%.1f", $0) }.joined(separator: " "))
+                }
+            }
+        }
+        let swing = page("finger", "biggestHeightStep")
+        print("[picture page] finger: height step \(swing) height changes \(page("finger", "heightChanges"))")
+        XCTAssert((0...200).contains(swing), "Under a finger the page must not swing; its height stepped \(swing) points in a frame")
+
+        if let data = try? Data(contentsOf: report) {
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "picture-page-report"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        try? FileManager.default.removeItem(at: report)
+        try? FileManager.default.removeItem(atPath: report.path + ".done")
+    }
+
     private func picturesStayAtTheEnd(streaming: Bool) {
         launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
         let thread = row("drives")
@@ -673,8 +786,9 @@ import UIKit
         paste.tap()
     }
 
-    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
-    /// title block and Git chips scroll away with it; messages read as Markdown blocks.
+    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens, and dragging it
+    /// down into the keyboard puts the keyboard away; the title block and Git chips scroll away with it; messages read as
+    /// Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
         launch(Self.fixture)
         let thread = row("iphone")
@@ -700,6 +814,18 @@ import UIKit
         capture("thread-glow-keyboard")
         let opening = text("Review the frosted window branch")
         XCTAssertFalse(opening.exists && opening.isHittable, "The page stays away from the thread's first message")
+        // Put the keyboard away before reading on. With it up, every reading of the squeezed page took seconds, and the
+        // Markdown, table and title checks below took 2 to 7 minutes of a run on CI (November 4, 2026).
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        for _ in 0..<3 where keyboard.exists {
+            let middle = (threadTop + reply.frame.minY) / 2
+            origin.withOffset(CGVector(dx: 8, dy: middle - window.frame.minY))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: 8, dy: window.frame.height - 24)),
+                       withVelocity: .default, thenHoldForDuration: 0)
+            if keyboard.waitForNonExistence(timeout: 5) { break }
+        }
+        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard puts it away")
 
         // The review reads as blocks: headings, separate list items, a code block, and no Markdown marks left over. The
         // whole message is one row of the conversation, so once its heading is on screen every block of it exists.
@@ -745,7 +871,10 @@ import UIKit
 
     /// At the largest text sizes a thread stays inside the screen. On a small iPhone the Git chips wrap onto another line
     /// rather than widen the page, which cut the first letters off every line of the thread (#1848).
-    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() {
+    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() throws {
+        // The narrow phone is where #1848 cut words off; the large phone, which runs at the accessibility sizes, has the
+        // room. The small phone's job checks it (November 4, 2026).
+        try XCTSkipIf(UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory, "The small phone checks this")
         launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         let thread = row("iphone")
         reveal(thread)
@@ -1665,7 +1794,7 @@ import UIKit
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
-        XCTAssertTrue(asking.label.contains("Codex asks before every command, even one that only reads, and before every edit."),
+        XCTAssertTrue(asking.label.contains("Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."),
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)
@@ -2624,7 +2753,10 @@ import UIKit
 
     /// At the accessibility text sizes New thread's title takes its own line, clear of its buttons, and Settings' New
     /// thread defaults put each value under its name rather than cut it in the middle (#1857).
-    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() {
+    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() throws {
+        // The narrow phone is where #1857 cut words off; the large phone, which runs at the accessibility sizes, has the
+        // room. The small phone's job checks it (November 4, 2026).
+        try XCTSkipIf(UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory, "The small phone checks this")
         launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         app.buttons["new-thread"].tap()
         let cancel = app.buttons["Cancel"]
@@ -2661,4 +2793,130 @@ private extension XCUIElement {
         }
         return false
     }
+}
+
+// MARK: - A send keeps the reader at the end
+
+/// What the send journeys write: a line, and words that wrap to three.
+private let sendOneLine = "Please check the wiring notes again."
+private let sendThreeLines = "Please check the wiring notes again, then say which of the panels still needs a second look before the release goes out this week."
+
+extension FocusJourneyTests {
+
+    /// What a send does to a reader at the end of the conversation (Zach, November 4, 2026: "the thread jumps up then back
+    /// down after the send"). The app reads the page's scroll view and the top of its box each frame, as drawn (`SendWatch`),
+    /// from before the press until after the answer has arrived; no element would show it, as a look at the page takes
+    /// longer than the jump lasts. At no frame may the words already on the page move down toward the box: new words push
+    /// them up, and the box going down with the keyboard takes them down with it, but never more than that. Once the answer
+    /// is in, the page's end sits where it sat over the box before the press.
+    private func sendKeepsTheEnd(_ name: String, _ arguments: [String], open: () -> Void, box boxID: String, send sendID: String,
+                                 words: String?, file: StaticString = #filePath, line: UInt = #line) {
+        let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("send-watch-\(UUID().uuidString).json")
+        app.launchEnvironment["SOTTO_SEND_WATCH_FILE"] = report.path
+        launch(arguments, opensOnThreads: !arguments.contains("--ui-watcher"))
+        open()
+        let box = byID(boxID)
+        XCTAssertTrue(box.waitForExistence(timeout: 30), "The box is there", file: file, line: line)
+        if let words {
+            box.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 30), "The box opens the keyboard", file: file, line: line)
+            box.typeText(words)
+        }
+        // Everything the opening and the typing moved has settled.
+        Thread.sleep(forTimeInterval: 2.5)
+        if words != nil {
+            // The simulator can report its keyboard while the box still sits at the foot of the screen, and raise it seconds
+            // later; a press then measures the keyboard coming up rather than the send (run 41979301768). Wait until the box
+            // sits on the keyboard.
+            let keyboard = app.keyboards.firstMatch
+            let deadline = Date().addingTimeInterval(15)
+            func boxOnKeyboard() -> Bool { keyboard.exists && keyboard.frame.minY < app.frame.maxY && box.frame.maxY <= keyboard.frame.minY + 1 }
+            while !boxOnKeyboard() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+            XCTAssertTrue(boxOnKeyboard(), "The box sits on the keyboard before the press", file: file, line: line)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let send = app.buttons[sendID]
+        XCTAssertTrue(send.waitForExistence(timeout: 10) && send.isEnabled, "Send is ready", file: file, line: line)
+        send.tap()
+        let written = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: report.path) }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 60), .completed, "The page's report must be written", file: file, line: line)
+        guard let data = try? Data(contentsOf: report),
+              let whole = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let press = whole["press"] as? Double, let rows = whole["rows"] as? [[Double]], !rows.isEmpty else {
+            return XCTFail("The page's report must be readable", file: file, line: line)
+        }
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "send-watch-" + name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        try? FileManager.default.removeItem(at: report)
+
+        // Where the page's words are drawn against the top of the box: the scroll view's top, less how far it has scrolled,
+        // less the box's top. It grows as the words move down toward the box.
+        func wordsTop(_ row: [Double]) -> Double { row[7] - row[2] - row[8] }
+        // How far the page's end is drawn below the top of the box.
+        func endBelowBox(_ row: [Double]) -> Double { row[7] - row[2] + row[3] - row[8] }
+        guard let before = rows.last(where: { $0[0] < press }) else { return XCTFail("The report must hold frames from before the press", file: file, line: line) }
+        let after = rows.filter { $0[0] >= press }
+        guard let last = after.last else { return XCTFail("The report must hold frames from after the press", file: file, line: line) }
+        var highest = wordsTop(before), back = 0.0, backAt = 0.0, framesBack = 0
+        for row in after {
+            highest = min(highest, wordsTop(row))
+            let moved = wordsTop(row) - highest
+            if moved > 1 { framesBack += 1 }
+            if moved > back { back = moved; backAt = row[0] - press }
+        }
+        let endMoved = endBelowBox(last) - endBelowBox(before)
+        print(String(format: "[send watch] %@: frames %d, words back toward the box %.1f at %.0f ms over %d frames, end %.1f then %.1f, height %.0f to %.0f",
+                     name, after.count, back, backAt * 1000, framesBack, endBelowBox(before), endBelowBox(last), before[3], last[3]))
+        // Every frame where anything moved, and what the page was told, in time order, for the run's log.
+        let marks = (whole["marks"] as? [[String: Any]] ?? []).compactMap { mark -> (Double, String)? in
+            guard let at = mark["t"] as? Double, let words = mark["name"] as? String else { return nil }
+            return (at - press, words)
+        }
+        let happened = Set(marks.map(\.1))
+        XCTAssertTrue(happened.contains("message-joined") && happened.contains("answer"),
+                      "The send must finish while the page is watched: its words join the page and the answer comes", file: file, line: line)
+        var lines: [(Double, String)] = marks.map { ($0.0, "  * " + $0.1) }
+        var previous: [Double]?
+        for row in after {
+            defer { previous = row }
+            if let previous, zip(previous[1...], row[1...]).allSatisfy({ abs($0 - $1) < 0.25 }) { continue }
+            lines.append((row[0] - press, String(format: "offset %.1f drawn %.1f height %.1f view %.1f inset %.1f box %.1f words %.1f end %.1f",
+                                                 row[1], row[2], row[3], row[4], row[5], row[8], wordsTop(row), endBelowBox(row))))
+        }
+        for entry in lines.sorted(by: { $0.0 < $1.0 }).prefix(200) {
+            print(String(format: "[send watch] %@ %6.0f ms %@", name, entry.0 * 1000, entry.1))
+        }
+        XCTAssertLessThanOrEqual(back, 1, String(format: "The words on the page must not move down toward the box during a send: they went %.1f points back, %.0f ms after the press, over %d frames", back, backAt * 1000, framesBack), file: file, line: line)
+        XCTAssertEqual(endMoved, 0, accuracy: 2, String(format: "The page's end must come back to where it sat over the box: %.1f points then, %.1f now", endBelowBox(before), endBelowBox(last)), file: file, line: line)
+    }
+
+    private func sendArguments(_ order: String, draft: Bool = false, extra: [String] = []) -> [String] {
+        Self.fixture + ["--ui-send-order", order, "--ui-can-stop", "--ui-still"] + (draft ? ["--ui-send-draft", sendOneLine] : []) + extra
+    }
+    private func openRow(_ id: String) -> () -> Void {
+        { [self] in
+            let thread = row(id)
+            reveal(thread)
+            thread.tap()
+        }
+    }
+    private func openWatcherPage() -> () -> Void { { [self] in openWatcher() } }
+    private func threadSend(_ name: String, _ id: String, order: String = "message-first", words: String? = sendOneLine, draft: Bool = false, extra: [String] = []) {
+        sendKeepsTheEnd(name, sendArguments(order, draft: draft, extra: extra), open: openRow(id), box: "thread-reply", send: "thread-send", words: words)
+    }
+    private func watcherSend(_ name: String, idle: Bool = false, words: String? = sendOneLine, draft: Bool = false) {
+        let page = ["--ui-watcher", "--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"] + (idle ? ["--ui-send-watcher-idle"] : [])
+        sendKeepsTheEnd(name, sendArguments("message-first", draft: draft, extra: page), open: openWatcherPage(), box: "watcher-reply", send: "watcher-send", words: words)
+    }
+
+    func testSendMediumThreadMessageFirst() { threadSend("medium-message-first", "iphone") }
+    func testSendMediumThreadConfirmFirst() { threadSend("medium-confirm-first", "iphone", order: "confirm-first") }
+    func testSendMediumThreadTogether() { threadSend("medium-together", "iphone", order: "together") }
+    func testSendMediumThreadThreeLines() { threadSend("medium-three-lines", "iphone", words: sendThreeLines) }
+    func testSendMediumThreadNoKeyboard() { threadSend("medium-no-keyboard", "iphone", words: nil, draft: true) }
+    func testSendWatcherIdle() { watcherSend("watcher-idle", idle: true) }
+    func testSendWatcherWorking() { watcherSend("watcher-working") }
+    func testSendWatcherNoKeyboard() { watcherSend("watcher-no-keyboard", idle: true, words: nil, draft: true) }
 }

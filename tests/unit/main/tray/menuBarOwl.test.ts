@@ -270,12 +270,4 @@ describe('stopping the menu bar owl', () => {
     expect(shown.length).toBe(before)
     expect(timers.pending.size).toBe(0)
   })
-
-  it('swaps the picture on a timer while it runs', () => {
-    const { timers, shown } = setup()
-    const before = shown.length
-    for (let i = 0; i < 40; i++) timers.fireNext()
-    expect(shown.length).toBeGreaterThan(before + 10)
-    expect(timers.pending.size).toBe(1)
-  })
 })

@@ -2,11 +2,15 @@ import SwiftUI
 import UIKit
 import SottoCore
 
-/// Pairing until this iPhone holds a computer, then Threads, Computers and Settings.
+/// Pairing until this iPhone holds a computer, then Threads, Computers and Settings. It watches only whether there is a
+/// computer, so the model's other updates don't run it, nor the tabs under it (#2120).
 struct RootView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    @State private var revision = 0
     var body: some View {
         let _ = BenchProbe.body("RootView")
+        let _ = revision
         // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
         GeometryReader { frame in
             let insets = frame.safeAreaInsets
@@ -14,13 +18,94 @@ struct RootView: View {
                 .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
                                                     height: frame.size.height + insets.top + insets.bottom))
         }
+        .modifier(ModelWatch(read: { $0.computers.isEmpty }, revision: $revision))
+    }
+}
+
+/// The model, for a view that reads it without watching it, and watches only what it shows through `ModelWatch`.
+private struct UnwatchedModelKey: EnvironmentKey { static let defaultValue: AppModel? = nil }
+extension EnvironmentValues {
+    var unwatchedModel: AppModel? {
+        get { self[UnwatchedModelKey.self] }
+        set { self[UnwatchedModelKey.self] = newValue }
+    }
+}
+
+/// A view's watch on the model, kept to what it reads. `@EnvironmentObject` runs a view's body on every update to any
+/// thread, a dozen times a second while a reply streams, and in some launches SwiftUI then runs the pages under it too,
+/// past their equality: the held Threads list drew all its rows for nobody to see (#2120). Here `revision`, which the
+/// view's body reads, moves only when `read` gives something new. A small view under it watches the model and compares,
+/// in the same update as the change, so nothing it shows lands later than it did.
+struct ModelWatch<Value: Equatable>: ViewModifier {
+    let read: @MainActor (AppModel) -> Value
+    @Binding var revision: Int
+    func body(content: Content) -> some View {
+        content.background { ModelReading(read: read, changed: { revision &+= 1 }).accessibilityHidden(true) }
+    }
+}
+
+private struct ModelReading<Value: Equatable>: View {
+    @EnvironmentObject var model: AppModel
+    let read: @MainActor (AppModel) -> Value
+    let changed: () -> Void
+    var body: some View {
+        Color.clear.onChange(of: read(model)) { changed() }
+    }
+}
+
+/// The folded shelf shared by Threads and the sidebar. Searching shows its matching rows.
+struct SnoozedSection<Row: View>: View {
+    let groups: FocusThreads
+    @ViewBuilder let row: (HostedThread) -> Row
+    @State private var expanded = false
+    var body: some View {
+        if !groups.snoozed.isEmpty {
+            DisclosureGroup(isExpanded: Binding(get: { expanded || groups.searching }, set: { expanded = $0 })) {
+                ForEach(groups.snoozedProjects) { project in
+                    Text(verbatim: project.title)
+                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.s3)
+                    ForEach(project.rows) { row($0) }
+                }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Text("Snoozed", comment: "The heading over threads put aside until a time.")
+                    Text("\(groups.snoozed.count)")
+                }
+                .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 52)
+            }
+            .padding(.horizontal, Space.s3).padding(.top, Space.s5)
+            .accessibilityIdentifier("snoozed-threads")
+        }
+    }
+}
+
+/// What `MainTabs` reads of the model as it draws: its badges, its tabs and rail, and what opens a page. A read added to
+/// its body joins this, or the tabs don't follow it.
+private struct MainTabsInputs: Equatable {
+    var badge: Int
+    var watcherHostID: String?
+    var watcherTab: WatcherTabState
+    var selected: ThreadRef?
+    var railNested: ThreadRef?
+    var adding: Bool
+    var alertOpened: ThreadRef?
+    var watcherAlertOpened: String?
+    var shareOpened: ShareDestination?
+    @MainActor init(_ model: AppModel) {
+        badge = model.threadsBadge; watcherHostID = model.watcherHostID; watcherTab = model.watcherTab
+        selected = model.selected; railNested = model.railNested; adding = model.adding
+        alertOpened = model.alertOpened; watcherAlertOpened = model.watcherAlertOpened; shareOpened = model.shareOpened
     }
 }
 
 /// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system's tab bar is hidden
 /// for `TabsBar`, which sits on the page with no glass behind it (ADR-0051, amended).
 struct MainTabs: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    /// Moves when what the tabs read of the model changes (`MainTabsInputs`).
+    @State private var revision = 0
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
     @State private var watcherPath = NavigationPath()
@@ -49,10 +134,12 @@ struct MainTabs: View {
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
         let _ = BenchProbe.body("MainTabs")
+        let _ = revision
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
             tabs(duo: duo).environment(\.duoLayout, duo)
         }
+        .modifier(ModelWatch(read: { MainTabsInputs($0) }, revision: $revision))
     }
     /// Which of the iPhone Duo's screens this is (ADR-0151, amended). Its cover screen leaves a strip down its right
     /// edge, under the clock and battery, outside the safe area but inside the window, and unfolded and held sideways
@@ -180,7 +267,7 @@ struct MainTabs: View {
             keyboard = ((note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0) > 120
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard = false }
-        .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
+        .sheet(isPresented: Binding(get: { model.adding }, set: { model.adding = $0 }), onDismiss: { model.closeAdding() }) { AddComputerSheet() }
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
@@ -304,7 +391,7 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).equatable().threadDestination()
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)
@@ -738,6 +825,7 @@ struct ThreadListSections: View, Equatable {
             section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
                 rowView(row, .recent(unread: groups.isUnreadFinish(row)))
             }
+            SnoozedSection(groups: groups) { row in rowView(row, .snoozed) }
         }
         .benchEnvironment("EnvironmentUnderList")
     }
@@ -770,12 +858,12 @@ struct ThreadListSections: View, Equatable {
                 let asking = groups.asking(row)
                 return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)",
                         thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
-                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
+                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "", thread.snoozedUntil ?? "", thread.updatedAt ?? "",
                         asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
                         "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
             }
         }
-        return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)
+        return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent) + rows("snoozed", groups.snoozed)
     }
     @ViewBuilder private func section<Row: View>(_ title: String, _ id: String, _ rows: [HostedThread],
                                                  @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
@@ -807,14 +895,14 @@ struct ListWatch: Equatable {
 extension AppModel {
     /// What the thread list reads from Watcher for these groups' Needs you, Working now and Recent rows.
     func listWatch(_ groups: FocusThreads) -> ListWatch {
-        let rows = groups.questions + groups.working + groups.recent
+        let rows = groups.questions + groups.working + groups.recent + groups.snoozed
         return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { canChangeWatch($0.ref) }.map(\.id)))
     }
     /// What these groups' Working now and Recent rows offer for the shelf, by row ID. A Needs you row offers neither, as
     /// its card never did: settling leaves its question waiting, and the row where it stands.
     func shelfOffers(_ groups: FocusThreads) -> [String: ShelfOffer] {
         var offers: [String: ShelfOffer] = [:]
-        for row in groups.working + groups.recent { offers[row.id] = shelfOffer(row) }
+        for row in groups.working + groups.recent + groups.snoozed { offers[row.id] = shelfOffer(row) }
         return offers
     }
 }
@@ -842,7 +930,7 @@ struct ThreadListHeading: View {
 /// open beside the list. A thread Watcher can keep going offers Watch or Stop watching on a long press.
 struct ThreadListRow: View, Equatable {
     /// Which section it is in; a recent or settled thread that finished while nothing showed it is `unread`.
-    enum Kind: Equatable { case needs, working, recent(unread: Bool) }
+    enum Kind: Equatable { case needs, working, recent(unread: Bool), snoozed }
     let row: HostedThread
     let kind: Kind
     /// The delegated thread whose request a Needs you row stands for, when it isn't the row's own.
@@ -871,6 +959,7 @@ struct ThreadListRow: View, Equatable {
         switch kind {
         case .needs: return .warning
         case .working: return .accent
+        case .snoozed: return .off
         case .recent(let unread): return unread ? .accent : row.failed ? .danger : .off
         }
     }
@@ -885,7 +974,7 @@ struct ThreadListRow: View, Equatable {
                               comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
             }
             return "\(state.words) · \(row.computer)"
-        case .working: return Words.place(row)
+        case .working, .snoozed: return Words.place(row)
         case .recent(let unread):
             if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
             if !row.reachable { return "\(row.status.words) · \(row.computer)" }
@@ -900,6 +989,7 @@ struct ThreadListRow: View, Equatable {
         switch kind {
         case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in line } ?? place)"
         case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
+        case .snoozed: spoken = "\(row.thread.title), \(wakeTime ?? ""), \(place)"
         case .recent(let unread):
             if unread {
                 spoken = String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",
@@ -925,10 +1015,18 @@ struct ThreadListRow: View, Equatable {
             button
         }
     }
+    private var wakeTime: String? {
+        guard case .snoozed = kind, let date = row.thread.snoozedUntil.flatMap(Stamp.date) else { return nil }
+        let when: String
+        if Calendar.current.isDateInToday(date) { when = date.formatted(date: .omitted, time: .shortened) }
+        else if date.timeIntervalSinceNow < 6 * 24 * 60 * 60 { when = date.formatted(.dateTime.weekday(.abbreviated).hour().minute()) }
+        else { when = date.formatted(.dateTime.month(.abbreviated).day().hour().minute()) }
+        return String(localized: "Until \(when)", comment: "%@ is the time a snoozed thread wakes.")
+    }
     private var button: some View {
         // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
-        let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+        let ago = wakeTime ?? Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: tone, breathing: kind == .working).padding(.top, 6)
@@ -959,7 +1057,7 @@ struct ThreadListRow: View, Equatable {
     }
 }
 
-/// Where a thumb has the upright sidebar while it drags it: 0 out of sight, 1 all the way in, nil while nothing holds it.
+    /// Where a thumb has the upright sidebar while it drags it: 0 out of sight, 1 all the way in, nil while nothing holds it.
 /// Only the drawer reads it, so a drag redraws the drawer and nothing else.
 @Observable final class SidebarPull {
     var progress: CGFloat?

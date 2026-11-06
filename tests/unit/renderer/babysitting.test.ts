@@ -1,8 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import {
-  babysitClock, babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting, pullRequestNumbers,
-} from '../../../src/renderer/src/agents/babysitting'
+import { babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting } from '../../../src/renderer/src/agents/babysitting'
 import type { AgentThread } from '../../../src/shared/agents'
 
 /** What the window says about babysitting (ADR-0061, variant C), read from what the host published. */
@@ -65,16 +63,6 @@ describe('where Babysit pull request is offered', () => {
     // A window shown no host list is this computer's own; a paired host it cannot see is not offered it.
     expect(offersBabysitting(undefined, thread('local'))).toBe(true)
     expect(offersBabysitting(undefined, thread('remote', true))).toBe(false)
-  })
-})
-
-describe('the words around it', () => {
-  it('names pull requests the way a reader says them, and a moment as a time or a day and time', () => {
-    expect(pullRequestNumbers([74])).toBe('#74')
-    expect(pullRequestNumbers([74, 76])).toBe('#74 and #76')
-    expect(pullRequestNumbers([74, 76, 78])).toBe('#74, #76 and #78')
-    expect(babysitClock(at(14, 2), NOW)).toBe('2:02 pm')
-    expect(babysitClock('not a time', NOW)).toBe('')
   })
 })
 

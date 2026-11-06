@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_MAX_ATTACHMENT_BYTES, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_WRONG_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type AgentAttachmentHandle, type AgentAttachmentStageRequest } from '../../../src/shared/agents'
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
 import type { ScreenshotReadPort } from '../../../src/renderer/src/agents/threadDraftStore'
-import { handleOf } from '../../fixtures/stagedImages'
+import { handleOf, PIXEL_DATA_URL, PIXEL_PNG } from '../../fixtures/stagedImages'
+import * as stagedImages from '../../../src/renderer/src/agents/stagedImages'
 
 /** Every staging the window asks main for, answered with the handle main would give. */
 let staged: AgentAttachmentStageRequest[] = []
@@ -15,7 +16,7 @@ beforeEach(() => {
     staged.push(request); return { ...handleOf(request.bytes, crypto.randomUUID(), request.name, request.mimeType), ...(request.dimensions ? { dimensions: request.dimensions } : {}) }
   }) } })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 function Harness({ supported = true }: { supported?: boolean }) {
   const [images, setImages] = useState<AgentAttachmentHandle[]>([])
   return <ScreenshotInput target="workshop" attachments={images} onChange={setImages} disabled={false} supported={supported}><textarea aria-label="Prompt" /></ScreenshotInput>
@@ -31,6 +32,37 @@ const port = (overrides: Partial<ScreenshotReadPort> = {}): ScreenshotReadPort =
 const attached = (id: string, bytes: number): AgentAttachmentHandle => ({ id, name: `${id}.png`, mimeType: 'image/png', sizeBytes: bytes, digest: 'a'.repeat(64) })
 
 describe('screenshot attachment input', () => {
+  it('opens full staged images on press in display order, even while disabled, and isolates viewer events', async () => {
+    const thumbnail = 'data:image/png;base64,thumbnail'
+    vi.spyOn(stagedImages, 'useThumbnail').mockReturnValue(thumbnail)
+    const content = vi.fn(async ({ digest }: { digest: string }) => digest === 'missing' ? null : { mimeType: 'image/png', bytes: PIXEL_PNG })
+    vi.stubGlobal('sotto', { agents: { attachmentContent: content } })
+    const ancestorKey = vi.fn(), ancestorPaste = vi.fn(), ancestorDrop = vi.fn()
+    const pointed = { ...attached('pointed', PIXEL_PNG.length), digest: 'pointed', browserFeedback: { label: 'Pointed', comment: '', context: '' } }
+    render(<div onKeyDown={ancestorKey} onPaste={ancestorPaste} onDrop={ancestorDrop}>
+      <ScreenshotInput target="workshop" attachments={[pointed, { ...attached('plain', PIXEL_PNG.length), digest: 'plain' }, { ...attached('missing', 100), digest: 'missing' }]}
+        onChange={() => undefined} disabled supported><textarea aria-label="Prompt" /></ScreenshotInput>
+    </div>)
+    expect(content).not.toHaveBeenCalled()
+    const button = screen.getByRole('button', { name: 'Open pointed.png' })
+    expect(screen.getByRole('button', { name: 'Remove pointed.png' })).toBeDisabled()
+    fireEvent.click(button)
+    const viewer = await screen.findByRole('dialog')
+    expect(viewer.querySelector('.rich-diagram-viewer__image')).toHaveAttribute('src', PIXEL_DATA_URL)
+    expect(content.mock.calls.map(([request]) => request.digest)).toEqual(['plain', 'missing', 'pointed'])
+    expect([...viewer.querySelectorAll('.attachment-viewer__thumb')].map(thumb => thumb.getAttribute('aria-label')))
+      .toEqual(['Show plain.png, 1 of 2', 'Show pointed.png, 2 of 2'])
+    fireEvent.keyDown(viewer, { key: 'ArrowLeft' })
+    fireEvent.paste(viewer, { clipboardData: { items: [] } })
+    fireEvent.drop(viewer, { dataTransfer: { files: [file()] } })
+    expect(ancestorKey).not.toHaveBeenCalled()
+    expect(ancestorPaste).not.toHaveBeenCalled()
+    expect(ancestorDrop).not.toHaveBeenCalled()
+    fireEvent.keyDown(viewer, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(button).toHaveFocus()
+  })
+
   it('stages a screenshot once, for the thread it is attached to, and allows removal before delivery', async () => {
     render(<Harness />)
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [file()] } })
@@ -60,20 +92,15 @@ describe('screenshot attachment input', () => {
     const deck = document.querySelector('.screenshot-deck')!
     expect([...deck.querySelectorAll('figure')].map(figure => figure.title)).toEqual(['one.png', 'two.png'])
     expect(deck.querySelector('.screenshot-deck__count')).toHaveTextContent('2')
-    // Plain images carry no caption; each keeps its own remove button, reached in order.
+    // Plain images carry no caption; each keeps its open and remove buttons, reached in order.
     expect(deck.querySelector('figcaption')).toBeNull()
-    expect([...deck.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Remove one.png', 'Remove two.png'])
+    expect([...deck.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Open one.png', 'Remove one.png', 'Open two.png', 'Remove two.png'])
     const chip = screen.getByText('button · Sign in').closest('figure')!
     expect(deck).not.toContainElement(chip)
     expect(chip).toHaveTextContent('Match the header')
     // The resize badge sits on the picture, and the tile's title says both.
     expect(chip.querySelector('.screenshot-previews__picture .screenshot-previews__resized')).toHaveTextContent('Resized from 3840 x 2160 to 2576 x 1449')
     expect(chip).toHaveAttribute('title', 'button · Sign in\nResized from 3840 by 2160 to 2576 by 1449 pixels')
-  })
-  it('shows one plain image with no count', () => {
-    render(<ScreenshotInput target="workshop" attachments={[attached('one', 100)]} onChange={() => undefined} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>)
-    expect(document.querySelector('.screenshot-deck figure')).toBeInTheDocument()
-    expect(document.querySelector('.screenshot-deck__count')).toBeNull()
   })
   it('accepts pasted screenshot files without inserting clipboard text', async () => {
     render(<Harness />)

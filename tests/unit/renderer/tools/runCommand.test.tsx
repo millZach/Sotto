@@ -9,7 +9,6 @@ import { MessageContent } from '../../../../src/renderer/src/agents/MessageConte
 import { drawerHeight, PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
 import { PaneTerminalChromeStore } from '../../../../src/renderer/src/tools/paneTerminalStore'
 import { RunCommandContext, runInDrawer, type RunCommand } from '../../../../src/renderer/src/tools/runCommand'
-import { middleCut } from '../../../../src/renderer/src/tools/TerminalSurface'
 import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 
 const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirectory: '/work/workshop', workspaceId: 'a'.repeat(64) }
@@ -110,11 +109,6 @@ describe('running a reply\'s command in the drawer (ADR-0139)', () => {
     expect(drawerHeight(400, null).height).toBe(120)
     expect(drawerHeight(0, 250)).toEqual({ height: 250, min: 120, max: 250 })
     expect(drawerHeight(900, null, true).min).toBe(184)
-  })
-
-  it('cuts a long tab name in the middle and keeps the whole of it for screen readers', () => {
-    expect(middleCut('zsh')).toBe('zsh')
-    expect(middleCut('sudo ~/Developer/mac-security-agent/mac/install.sh')).toBe('sudo ~/Deve…stall.sh')
   })
 })
 

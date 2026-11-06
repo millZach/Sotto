@@ -17,7 +17,9 @@ const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'credential', 'check
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
   connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'],
   // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
-  'git-pull-request-action': ['readId'] }
+  'git-pull-request-action': ['readId'],
+  // A thread on another machine cannot be Dynamic (ADR-0191), so only this computer's window starts one.
+  'create-thread': ['dynamic'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
@@ -168,6 +170,9 @@ describe('remote command allow-list', () => {
       'thread-delegations',
       // The prompts above a pane's window, a read for the message scrubber on a listener that offers thread-prompts (ADR-0109).
       'thread-prompts',
+      // Moves this client's own step window back (ADR-0194): a read, which may widen the thread's window as Show earlier
+      // messages does, on a listener that offers step-window.
+      'earlier-steps',
       // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
       'branch-move',
       // A thread moved here from another machine, for a recorded desktop (#1178): the host makes it from the incoming ref a
@@ -378,6 +383,9 @@ describe('remote command allow-list', () => {
       { type: 'create-thread', projectId: 'project', title: 'Auto', modelId: 'codex', runtimeMode: 'auto' },
       { type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: true },
       { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedIgnored: ['.env'] },
+      // Nested work and the ignored items it takes are confirmations of their own (ADR-0041), whatever else the command carries.
+      { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedRepositories: [{ path: 'nested/', changeCount: 1, unpushedCommitCount: 2, kind: 'repository' }] },
+      { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedItems: [{ path: 'build/', fileCount: 3 }] },
       { type: 'restore-thread-branch', threadId: 'thread', withUncommittedChanges: true },
       { type: 'answer', threadId: 'thread', requestId: 'request', answer: 'Allow', approved: true },
       { type: 'save-thread-draft', threadId: 'thread', draftId: 'draft', text: 'Blue', requestId: 'request' },

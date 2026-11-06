@@ -62,10 +62,17 @@ private final class FrameBox {
 /// shows it, and a press opens the thread (ADR-0151, amended October 30, 2026). The unfolded Duo keeps its columns of
 /// cards, answerable in place. The heading, the computer menu and search scroll with the list as one sheet. Focus reads
 /// only host list summaries; opening a thread subscribes to its detail.
-struct ThreadsView: View {
-    @EnvironmentObject var model: AppModel
+struct ThreadsView: View, Equatable {
+    /// The model, watched through `revision` rather than `@EnvironmentObject`, so the page stops watching while it is
+    /// held and nothing in it runs for an update nobody sees (#2120). It catches up as it lets go.
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    @State private var revision = 0
     /// Opens a thread over the page, from the list or once New thread has made it.
     var open: (ThreadRef) -> Void = { _ in }
+    /// The page has no other input, and its caller's `open` always pushes onto the same path, so the tabs drawing again
+    /// never draws it again.
+    static func == (lhs: ThreadsView, rhs: ThreadsView) -> Bool { true }
     @State private var creating = false
     @State private var query = ""
     @State private var settledExpanded = false
@@ -89,6 +96,7 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
+        let _ = revision
         let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
         let groups = shown.groups
         let unsearched = shown.unsearched
@@ -135,6 +143,8 @@ struct ThreadsView: View {
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { held = nil; openForShare(model.shareOpened) }
         .onDisappear { hold() }
+        .onReceive(model.objectWillChange) { _ in if held == nil { revision &+= 1 } }
+        .background { ThreadPageWarmUp() }
         .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
@@ -359,7 +369,7 @@ struct ThreadsView: View {
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
         let watched = model.watchedThreadIDs
-        if needs.isEmpty && working.isEmpty && recent.isEmpty && !shows(shelf, settled: settled, groups) { empty(groups) }
+        if needs.isEmpty && working.isEmpty && recent.isEmpty && groups.snoozed.isEmpty && !shows(shelf, settled: settled, groups) { empty(groups) }
         let needsColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), count: needs.count, light: .warning)
             VStack(spacing: Space.s3) {
@@ -382,6 +392,11 @@ struct ThreadsView: View {
                 SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
                 ThreadRowList(rows: recent, unread: unread, watched: watched)
             }
+            SnoozedSection(groups: groups) { row in
+                ThreadListRow(row: row, kind: .snoozed, watched: watched.contains(row.id), chosen: false,
+                              canWatch: false, shelf: nil, identifier: "snoozed-thread-", open: { open(row.ref) },
+                              setWatched: { _ in }, shelve: { _ in })
+            }
             if shows(shelf, settled: settled, groups) {
                 if groups.searching {
                     SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count + shelf.older.count)
@@ -398,12 +413,12 @@ struct ThreadsView: View {
         if inColumns && duo == .upright {
             // Upright, beside the rail, the width holds two columns (Zach's pick, November 1, 2026): what needs you over
             // what finished, and what works beside them. A column with nothing in it gives its width to the other.
-            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty
+            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty
             HStack(alignment: .top, spacing: Space.s4) {
                 if quiet {
                     VStack(alignment: .leading, spacing: 0) {
                         if !needs.isEmpty { needsColumn }
-                        if !recent.isEmpty || !settled.isEmpty { recentColumn }
+                        if !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty { recentColumn }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -414,7 +429,7 @@ struct ThreadsView: View {
             HStack(alignment: .top, spacing: Space.s4) {
                 if !needs.isEmpty { needsColumn.frame(maxWidth: .infinity, alignment: .leading) }
                 if !working.isEmpty { workingColumn.frame(maxWidth: .infinity, alignment: .leading) }
-                if !recent.isEmpty || shows(shelf, settled: settled, groups) { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
+                if !recent.isEmpty || !groups.snoozed.isEmpty || shows(shelf, settled: settled, groups) { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
             }
         } else {
             if !needs.isEmpty { needsColumn }

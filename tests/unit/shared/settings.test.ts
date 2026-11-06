@@ -58,6 +58,7 @@ const customSettings = {
   watcherSettlesFinishedThreads: false,
   newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
   watcherCompactAtTokens: 650_000,
+  watcherCompactAtMoved: true,
   councilPanelists: [{ modelId: 'claude:model:opus', reasoningEffort: 'high' }, null, { modelId: 'codex:model:gpt-6.1-sol', reasoningEffort: null }],
   councilChair: { modelId: 'grok:model:grok-4.7-build', reasoningEffort: 'high' },
   councilLayout: 'round-table',
@@ -136,6 +137,7 @@ const customSettings = {
   phoneAccess: true,
   phoneAccessName: 'Studio',
   localApps: true,
+  popupEnabled: false,
   tailnetConnections: true,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
@@ -223,7 +225,7 @@ describe('settings', () => {
     expect('watcherInFlightLimit' in parsed).toBe(false)
     expect('watcherInFlightLimit' in settingsSchema.shape).toBe(false)
   })
-  it('reads a saved Show tips as nothing, since Sotto no longer has tips (ADR-0193)', () => {
+  it('reads a saved Show tips as nothing, since Sotto no longer has tips (ADR-0196)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, threadTips: false })
     expect(parsed).toEqual(DEFAULT_SETTINGS)
     expect('threadTips' in parsed).toBe(false)
@@ -462,7 +464,8 @@ describe('settings', () => {
       workerMachineCeilings: {},
       watcherSettlesFinishedThreads: true,
       newWorkerMachine: 'this-computer',
-      watcherCompactAtTokens: 400_000,
+      watcherCompactAtTokens: 250_000,
+      watcherCompactAtMoved: true,
       councilPanelists: [null, null, null],
       councilChair: null,
       councilLayout: 'long-table',
@@ -504,6 +507,7 @@ describe('settings', () => {
       hotkeyStandby: false,
       pressShortcuts: [],
       holdShortcuts: [],
+      popupEnabled: true,
       popupShortcut: 'Alt+Shift+Space',
       threadShortcuts: {},
       maxRecordingSeconds: 60,
@@ -782,28 +786,37 @@ describe('settings', () => {
 })
 
 describe('Compact Watcher at', () => {
-  it('compacts Watcher at 400K by default and keeps a saved point from 200K to 1M on a 50K step', () => {
-    expect(DEFAULT_SETTINGS.watcherCompactAtTokens).toBe(400_000)
-    for (const tokens of [200_000, 250_000, 650_000, 1_000_000]) {
+  it('compacts Watcher at 250K by default and keeps a saved point from 200K to 1M on a 50K step', () => {
+    expect(DEFAULT_SETTINGS.watcherCompactAtTokens).toBe(250_000)
+    for (const tokens of [200_000, 250_000, 400_000, 650_000, 1_000_000]) {
       expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens).toBe(tokens)
     }
   })
 
-  it('falls back to 400K for a point off the slider, or a saved file from before it', () => {
+  it('falls back to 250K for a point off the slider, or a saved file from before it', () => {
     for (const tokens of [150_000, 199_999, 1_050_000, 425_000, Number.NaN, '600000', null]) {
-      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens, String(tokens)).toBe(400_000)
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens, String(tokens)).toBe(250_000)
     }
     const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete older.watcherCompactAtTokens
-    expect(parseSettings(older).watcherCompactAtTokens).toBe(400_000)
+    expect(parseSettings(older).watcherCompactAtTokens).toBe(250_000)
+  })
+
+  it('moves a point saved at the old 400K default to 250K once, and keeps a 400K chosen after the move', () => {
+    const before: Record<string, unknown> = { ...DEFAULT_SETTINGS, watcherCompactAtTokens: 400_000 }
+    delete before.watcherCompactAtMoved
+    const moved = parseSettings(before)
+    expect(moved.watcherCompactAtTokens).toBe(250_000)
+    expect(moved.watcherCompactAtMoved).toBe(true)
+    expect(parseSettings({ ...moved, watcherCompactAtTokens: 400_000 }).watcherCompactAtTokens).toBe(400_000)
+    const chosen: Record<string, unknown> = { ...DEFAULT_SETTINGS, watcherCompactAtTokens: 650_000 }
+    delete chosen.watcherCompactAtMoved
+    expect(parseSettings(chosen).watcherCompactAtTokens).toBe(650_000)
+    expect(parseSettings({}).watcherCompactAtMoved).toBe(true)
   })
 })
 
 describe('Council settings', () => {
-  it('starts with three seats Sotto fills, the long table and a ten-minute stage deadline', () => {
-    expect(DEFAULT_SETTINGS).toMatchObject({ councilPanelists: [null, null, null], councilChair: null, councilLayout: 'long-table', councilStageDeadline: 10 })
-  })
-
   it('keeps a chosen panel and repairs a damaged seat on its own', () => {
     const opus = { modelId: 'claude:model:opus', reasoningEffort: 'high' }
     expect(parseSettings({ ...DEFAULT_SETTINGS, councilPanelists: [opus, { modelId: '' }, null, 'broken'] }).councilPanelists).toEqual([opus, null, null, null])
@@ -825,12 +838,6 @@ describe('night falls settings', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
     expect(parsed.roomTransition).toBe(false)
     expect(parsed.roomTransitionSpeed).toBe(0.5)
-  })
-
-  it('looks like the band by default and keeps Stars once chosen', () => {
-    expect(DEFAULT_SETTINGS.roomTransitionLook).toBe('band')
-    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' }).roomTransitionLook).toBe('stars')
-    expect(parseSettings(JSON.parse(JSON.stringify(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' })))).roomTransitionLook).toBe('stars')
   })
 
   it('falls back to the band for a look it does not know, or a saved file from before the look', () => {

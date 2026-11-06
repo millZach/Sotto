@@ -225,6 +225,7 @@ function raise(thread, kind, text, method, overrides = {}) {
   pending.set(id, { threadId: thread.id, method })
   emit({ id, method, params: { ...params, ...overrides } })
 }
+let hung = false
 createInterface({ input: process.stdin }).on('line', line => withState(() => {
   const message = JSON.parse(line)
   if (!message.method) {
@@ -243,6 +244,13 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   const { id, method, params = {} } = message
   if (method === 'initialized') { record(message); return }
   const script = read('script.json', {})
+  // `hangOn` names a request this app-server takes and then answers nothing more, that one included, as a hung one
+  // would. It is recorded as crashed, so the app-server Sotto starts next reads a turn it was running back interrupted.
+  if (hung) { record(message); return }
+  if (script.hangOn === method) {
+    record(message); hung = true
+    state.crashed = [...state.crashed ?? [], process.pid]; save(); return
+  }
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const holdReply = script.holdReply === method
@@ -264,6 +272,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
     return
   }
+  if (method === 'windowsSandbox/readiness' && script.windowsReadiness) { reply({ status: script.windowsReadiness }); return }
   if (method === 'command/exec') {
     served(method)
     if (!process.argv.includes('windows.sandbox="unelevated"') || params.sandboxPolicy?.type !== 'readOnly' || script.watcherSandbox === 'setup-failed') {
@@ -279,6 +288,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     return
   }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
+  if (method === 'hooks/list' && script.judgeHooks !== undefined) { reply({ data: params.cwds.map(cwd => ({ cwd, hooks: script.judgeHooks, errors: [], warnings: [] })) }); return }
   const effective = script.effectiveConfig ?? {}
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
@@ -532,6 +542,15 @@ function control(action) {
   else if (action.type === 'native-message') {
     thread.turns.at(-1).items.push({ type: 'userMessage', id: randomUUID(), content: [{ type: 'text', text: action.text }] })
     save()
+  }
+  // A picture Codex generated in the newest turn. Its item keeps the picture's bytes, as Codex 0.166.0's does, so a
+  // whole read hands every one of them back again in its one line.
+  else if (action.type === 'picture') {
+    const turn = thread.turns.at(-1)
+    const item = { type: 'imageGeneration', id: randomUUID(), status: 'completed', revisedPrompt: action.text ?? 'A picture',
+      result: Buffer.alloc(action.bytes ?? 1024, 7).toString('base64'), savedPath: action.savedPath ?? null }
+    turn.items.push(item); save()
+    notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
   }
   else if (action.type === 'notify-burst') {
     process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join(''))

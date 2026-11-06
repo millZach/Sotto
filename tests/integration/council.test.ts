@@ -4,7 +4,7 @@
 // the fairness check to a draft for the thread. Only Synthetic words are used.
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { BranchBundles } from '../../src/main/agents/branchBundles'
@@ -37,7 +37,8 @@ async function fixture(options: { readonly control?: (control: CouncilServiceOpt
     bundles: new BranchBundles({ stagingDirectory: join(f.root, 'council-staging'), recordsPath: join(f.root, 'council-staging', 'records.json') }) })
   let council = make()
   await council.recover()
-  cleanups.push(async () => { council.close() })
+  const stop = async () => { await council.close(); await council.settled() }
+  cleanups.push(stop)
   const view = (): CouncilView => council.views()[0]!
   const seat = (name: string): string => view().seats.find(item => item.seat === name)!.thread
   /** Waits until a seat's thread has been sent a prompt that says `words`, and answers it. */
@@ -50,7 +51,7 @@ async function fixture(options: { readonly control?: (control: CouncilServiceOpt
     await f.endTurn(thread, reply)
   }
   /** The Council alone stops and starts again over its record; `between` runs while it is stopped. */
-  const restart = async (between?: () => Promise<void>) => { council.close(); await between?.(); council = make(); await council.recover() }
+  const restart = async (between?: () => Promise<void>) => { await stop(); await between?.(); council = make(); await council.recover() }
   return { ...f, origin, folder, view, seat, answer, restart, clock, get council() { return council } }
 }
 
@@ -60,6 +61,60 @@ const answerReply = (letter: string, cite: boolean): string => [`Synthetic answe
   fence('council-answer', `answer: Synthetic answer ${letter}`, cite ? `finding: ${letter}1 | observed | store.ts:1 | The store is read once` : `finding: ${letter}1 | judgement | Synthetic claim`)].join('\n')
 // A reviewer gives every finding it was handed a verdict: each answer here has one finding, named after its letter.
 const reviewReply = (order: string): string => fence('council-review', `ranking: ${order}`, `findings: ${order.split(' > ').map(letter => `${letter}1 confirmed`).join(', ')}`, 'answer: same')
+
+it.each(['auto', 'full-access'] as const)('starts Council seats at the origin permission %s or the closest safer mode', async runtimeMode => {
+  const f = await fixture()
+  f.workspace.adapters.claude.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+  f.workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits']
+  f.workspace.adapters.grok.state.models[0]!.providerModes = [
+    { id: 'ask', name: 'Ask', allows: 'nothing' }, { id: 'code', name: 'Code', allows: 'edits' }, { id: 'all', name: 'All', allows: 'everything' },
+  ]
+  for (const provider of ['claude', 'codex', 'grok'] as const) await f.control.commandShell({ type: 'refresh', provider })
+  f.native(f.origin).runtimeMode = runtimeMode
+  await f.emit(f.origin)
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.origin)?.runtimeMode).toBe(runtimeMode)
+  // The same permission applies in a live folder without a Council snapshot.
+  if (runtimeMode === 'auto') await rm(join(f.folder, '.git'), { recursive: true })
+  expect(await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic permission question?',
+    panelists: [{ modelId: f.model('codex').id, reasoningEffort: null }, { modelId: f.model('grok').id, reasoningEffort: null }],
+    chair: { modelId: f.model('claude').id, reasoningEffort: null } })).toMatchObject({ ok: true })
+  if (runtimeMode === 'auto') expect(f.view().snapshot).toBeUndefined()
+  await f.answer('chair', 'Don\'t answer it', framing.replace(/angle: C.*\n/u, ''))
+  await vi.waitFor(() => {
+    for (const [name, permission] of [
+      ['chair', { runtimeMode }], ['A', { runtimeMode: 'auto-accept-edits' }], ['B', { providerMode: runtimeMode === 'auto' ? 'code' : 'all' }],
+    ] as const) {
+      const binding = f.workspace.registry.byThread(f.seat(name))
+      expect(binding).toBeDefined()
+      expect(f.adapterOf(f.seat(name)).commands.find(command => command.type === 'create-thread' && command.threadId === binding!.sessionId)).toMatchObject(permission)
+    }
+  }, { timeout: 20_000 })
+})
+
+it('keeps a shared provider mode and maps its allowance to other Council seats', async () => {
+  const f = await fixture()
+  f.workspace.adapters.claude.state.models[0]!.providerModes = [{ id: 'code', name: 'Code', allows: 'edits' }]
+  f.workspace.adapters.grok.state.models[0]!.providerModes = [
+    { id: 'ask', name: 'Ask', allows: 'nothing' }, { id: 'edit', name: 'Edit', allows: 'edits' }, { id: 'all', name: 'All', allows: 'everything' },
+  ]
+  for (const provider of ['claude', 'grok'] as const) await f.control.commandShell({ type: 'refresh', provider })
+  f.native(f.origin).providerMode = 'code'
+  await f.emit(f.origin)
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.origin)?.providerMode).toBe('code')
+  expect(await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic provider permission question?',
+    panelists: [{ modelId: f.model('codex').id, reasoningEffort: null }, { modelId: f.model('grok').id, reasoningEffort: null }],
+    chair: { modelId: f.model('claude').id, reasoningEffort: null } })).toMatchObject({ ok: true })
+  await f.answer('chair', 'Don\'t answer it', framing.replace(/angle: C.*\n/u, ''))
+  await vi.waitFor(() => {
+    for (const [name, permission] of [
+      ['chair', { providerMode: 'code' }], ['A', { runtimeMode: 'auto-accept-edits' }], ['B', { providerMode: 'edit' }],
+    ] as const) {
+      const binding = f.workspace.registry.byThread(f.seat(name))
+      expect(binding).toBeDefined()
+      expect(f.adapterOf(f.seat(name)).commands.find(command => command.type === 'create-thread' && command.threadId === binding!.sessionId)).toMatchObject(permission)
+    }
+  }, { timeout: 20_000 })
+})
 
 it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it was, and drafts the verdict once the fairness check allows it', async () => {
   const f = await fixture()
@@ -166,6 +221,32 @@ it('asks once for a missing result block, and goes on with a stage only once a f
   // With one answer left there is no review: the chair is asked for the verdict at once.
   await f.answer('chair', 'rests on one answer', 'Synthetic verdict on one answer.')
   await vi.waitFor(() => expect(f.view().rounds[0]).toMatchObject({ stage: 'fairness', leftOut: ['B'] }), { timeout: 20_000 })
+})
+
+it('closes without waiting for a prompt its provider is still taking, and settles once that prompt\'s final record is saved', async () => {
+  const sending = deferred(), release = deferred()
+  const f = await fixture({ control: control => new Proxy(control, { get: (target, key) => {
+    if (key !== 'commandFromCouncil') { const value = Reflect.get(target, key) as unknown; return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value }
+    return async (command: Parameters<typeof control.commandFromCouncil>[0], guard: Parameters<typeof control.commandFromCouncil>[1]) => {
+      const result = await target.commandFromCouncil(command, guard)
+      if (command.type === 'manual-send') { sending.resolve(); await release.promise }
+      return result
+    }
+  } }) })
+  cleanups.push(async () => { release.resolve() })
+  await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic question?', panelists: [{ modelId: f.model('codex').id, reasoningEffort: 'high' },
+    { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
+  await sending.promise
+  await f.council.close()
+  let settled = false
+  const settling = f.council.settled().then(() => { settled = true })
+  // Let what has already finished clear; only the explicitly held send should keep it open.
+  await new Promise<void>(resolve => setImmediate(resolve))
+  expect(settled).toBe(false)
+  release.resolve()
+  await settling
+  const saved = JSON.parse(await readFile(join(f.root, 'councils.json'), 'utf8')) as { councils: { turns: { delivery: string }[] }[] }
+  expect(saved.councils[0]!.turns[0]!.delivery).toBe('accepted')
 })
 
 it('never sends again a prompt Sotto had not seen arrive before it restarted', async () => {
@@ -308,9 +389,13 @@ it('records a snapshot removed only once Git no longer lists it, tries again at 
   // At the limit, a settled Council whose snapshot is gone makes room; open ones never do.
   const file = join(f.root, 'councils.json')
   type Saved = { councils: { id: string; settledAt?: string; snapshot: { removedAt?: string } }[] }
-  const saved = JSON.parse(await readFile(file, 'utf8')) as Saved
+  let saved: Saved
   const open = (index: number) => { const copy = structuredClone(saved.councils[0]!); copy.id = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`; delete copy.settledAt; delete copy.snapshot.removedAt; return copy }
-  await f.restart(async () => { await writeFile(file, JSON.stringify({ ...saved, councils: Array.from({ length: 200 }, (_, index) => open(index + 1)) })) })
+  await f.restart(async () => {
+    // The view marks removal before its save completes. Read the durable record only once the Council has stopped and settled.
+    saved = JSON.parse(await readFile(file, 'utf8')) as Saved
+    await writeFile(file, JSON.stringify({ ...saved, councils: Array.from({ length: 200 }, (_, index) => open(index + 1)) }))
+  })
   const start = () => f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic question?', panelists: [{ modelId: f.model('codex').id, reasoningEffort: 'high' },
     { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
   expect(await start()).toMatchObject({ ok: false })

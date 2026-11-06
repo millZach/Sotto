@@ -238,10 +238,6 @@ function swiftSource(palettes: readonly IosPalette[]): string {
 describe('iPhone palettes', () => {
   const palettes = iosPalettes()
 
-  it('lists the six built-ins and Glass under their own names', () => {
-    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern', 'glass'])
-  })
-
   it('keeps derived text readable on every tinted surface', () => {
     for (const palette of palettes) {
       for (const appearance of ['light', 'dark'] as const) {

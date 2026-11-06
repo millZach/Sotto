@@ -86,7 +86,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     return control.threadDetail(agentThreadDetailRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_ATTACHMENT_PREVIEW, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main', 'popup'])) throw new Error('AGENT_SENDER_REJECTED')
     return control.attachmentPreview(agentAttachmentPreviewRequestSchema.parse(payload))
   })
   // A tile or the viewer asks for one picture a thread's record names (ADR-0170).
@@ -96,12 +96,12 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   })
   // The composer stages screenshots and reads back a chip's image (ADR-0031).
   ipc.handle(AGENT_ATTACHMENT_STAGE, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main', 'popup'])) throw new Error('AGENT_SENDER_REJECTED')
     if (!control.stageAttachment) throw new Error(t`Screenshots cannot be attached in this window. Nothing was attached.`)
     return control.stageAttachment(agentAttachmentStageRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_ATTACHMENT_CONTENT, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main', 'popup'])) throw new Error('AGENT_SENDER_REJECTED')
     if (!control.attachmentContent) return null
     return control.attachmentContent(agentAttachmentContentRequestSchema.parse(payload))
   })

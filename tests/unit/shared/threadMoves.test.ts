@@ -2,8 +2,7 @@
 // #1178: which threads move to another machine, in plain words, and what the moved thread is told.
 import { describe, expect, it } from 'vitest'
 import type { AgentModel, AgentThread } from '../../../src/shared/agents'
-import { MOVE_HANDOVER_CLOSE, moveFacts, movePermission, movePermissionWords, movePrompt, THREAD_MOVE_WORDS, threadMoveRefusal, type MoveEligibility,
-  type MoveFacts } from '../../../src/shared/threadMoves'
+import { moveFacts, movePermission, movePermissionWords, THREAD_MOVE_WORDS, threadMoveRefusal, type MoveEligibility, type MoveFacts } from '../../../src/shared/threadMoves'
 
 const thread = (patch: Partial<AgentThread> = {}): AgentThread => ({ id: 'source', title: 'WAV preview stall', projectId: 'project', modelId: 'codex:gpt', providerId: 'codex',
   status: 'idle', requests: [], messages: [{ id: 'm1', role: 'user', text: 'Find out why.', createdAt: '2026-10-29T10:00:00.000Z' }],
@@ -95,8 +94,5 @@ describe('the facts block (#1178)', () => {
     expect(text).toContain('- No open pull request is linked to it.')
     expect(text).toContain('- Watcher did not watch it.')
     expect(text).not.toContain('babysitting')
-  })
-  it('puts the facts after the handover and the line that closes it, as one prompt', () => {
-    expect(movePrompt('This is a handover from another Sotto thread.', facts)).toBe(`This is a handover from another Sotto thread.\n\n${MOVE_HANDOVER_CLOSE}\n\n${moveFacts(facts)}`)
   })
 })

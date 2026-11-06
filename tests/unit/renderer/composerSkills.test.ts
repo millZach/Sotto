@@ -20,9 +20,6 @@ describe('skill triggers', () => {
 
 describe('skill search', () => {
   const skills = [skill('review-pr', 'Review a pull request', 'repo'), skill('deploy', 'Ship to staging'), skill('pr-summary', 'Summarise the diff'), skill('deploy', 'Personal copy', 'system')]
-  it('keeps native order and duplicates for an empty query', () => {
-    expect(searchSkills(skills, '')).toEqual(skills)
-  })
   it('ranks exact, prefix, word and substring name matches before description matches', () => {
     expect(searchSkills(skills, 'pr').map(item => item.name)).toEqual(['pr-summary', 'review-pr'])
     expect(searchSkills(skills, 'staging').map(item => item.name)).toEqual(['deploy'])

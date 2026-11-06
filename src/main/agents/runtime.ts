@@ -37,6 +37,7 @@ import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer, type WatcherTeamTools } from './watcherTools'
 import { DelegationService } from './delegation'
+import { DynamicRecord, threadTokensOf } from './dynamicRecord'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { WorkerAdmission } from './workerAdmission'
@@ -94,9 +95,11 @@ type NativeHost = AgentHost & { closed?: () => Promise<void> }
 export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
+  councilEnabled?: boolean
   watcherEnabled?: boolean
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
+  threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
   /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -336,7 +339,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false, undefined, undefined, options.councilEnabled ?? false)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -420,7 +423,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -453,6 +456,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Delegation between threads (ADR-0081): this computer's threads, and a headless host's own threads where its Owl answer
   // turns on Work across machines (#1310), each on its own machine, with its own tool tokens.
   let delegation: DelegationService | undefined
+  /** Its record (ADR-0191 decision 9): Dynamic threads' pieces counted per model, on this computer only. */
+  let dynamicRecord: DynamicRecord | undefined
   let delegationRelay: DesktopDelegationRelay | undefined
   let delegationRemote: DesktopRemoteDelegations | undefined
   const hostDelegation = options.runsAs === 'headless-host' && options.crossMachineEnabled === true ? options.hostDelegation : undefined
@@ -470,7 +475,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // and offered again when Settings change. A headless host's threads start concretely, as their workers do.
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
-  if (options.dynamicThreadsEnabled === true) agentHost.allowDynamicThreads()
+  // Your note is read from Settings each time a Dynamic session starts or a send asks whether it changed (ADR-0191).
+  if (options.dynamicThreadsEnabled === true) agentHost.allowDynamicThreads(() => options.settings().dynamicThreads.note)
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
@@ -544,8 +550,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await delegationRelay.load()
     }
     const relaying = delegationRelay, remote = delegationRemote
+    if (options.dynamicThreadsEnabled === true) { dynamicRecord = new DynamicRecord(directory, () => threadTokensOf(agentControl.watcherSnapshot().threads)); await dynamicRecord.load() }
+    const record = dynamicRecord
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
-      ...options.dynamicThreadsEnabled === true ? { dynamicThreads: () => options.settings().dynamicThreads, providerLimits: async (provider: ProviderId) => agentHost.readProviderQuota?.(provider, true, true) } : {},
+      ...options.dynamicThreadsEnabled === true ? { dynamicThreads: () => options.settings().dynamicThreads, providerLimits: async (provider: ProviderId) => agentHost.readProviderQuota?.(provider, true, true), ...record ? { record } : {} } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)
@@ -888,5 +896,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

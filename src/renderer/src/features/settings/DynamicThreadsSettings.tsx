@@ -1,13 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../../shared/agents'
-import { DYNAMIC_EFFORTS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
+import { DYNAMIC_EFFORTS, DYNAMIC_NOTE_MAX_CHARACTERS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
+import type { DynamicRecordRead } from '../../../../shared/dynamicRecord'
 import type { SettingsPatch } from '../../../../shared/settings'
+import { formatTokenCount } from '../../../../shared/threadUsage'
 import { reportsUsageLimits, type UsageQuotaRead } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { companyWords, firstAllowedProviders } from '../../agents/DynamicSwitch'
 import { effortLabel } from '../../agents/EffortPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
+import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import './dynamicThreads.css'
@@ -17,6 +21,47 @@ function limitWords(quota: UsageQuotaRead | undefined): { readonly label: string
   const window = quota?.status === 'available' ? quota.windows.find(item => item.usedPercent !== undefined) : undefined
   return window ? { label: window.label, used: Math.round(window.usedPercent!) } : undefined
 }
+
+/**
+ * **Its record on this computer** (ADR-0191 decision 9): each model's pieces, finished, moved and tokens, in counts and
+ * no words, read when the card opens; Clear its record empties it. Absent where the window has no reach to it.
+ */
+function ItsRecord(): ReactNode {
+  const { t } = useLingui()
+  const bridge = window.sotto?.dynamicRecord
+  const [read, setRead] = useState<DynamicRecordRead | null>(null)
+  const [said, setSaid] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const headingId = useId()
+  useEffect(() => {
+    let current = true
+    void bridge?.read().then(next => { if (current) setRead(next) }).catch(() => { if (current) setSaid(t`Its record could not be read. Nothing was changed. Open Settings again to try again.`) })
+    return () => { current = false }
+  }, [bridge, t])
+  if (!bridge) return null
+  const rows = read?.models ?? []
+  const clear = (): void => {
+    setClearing(true)
+    void bridge.clear().then(next => { setRead(next); setSaid(t`Its record was cleared. Pieces from now on are counted here.`) })
+      .catch(() => setSaid(t`Its record could not be cleared. Its counts may remain. Try again.`)).finally(() => setClearing(false))
+  }
+  return <section className="dynamic-threads__record" aria-labelledby={headingId} data-setting="dynamic-threads-record">
+    <h3 id={headingId}><Trans>Its record on this computer</Trans></h3>
+    <p className="dynamic-threads__note tt-paragraph"><Trans>Counts only, no words. The overseer reads this when it chooses. Moved means the piece was then given to another model.</Trans></p>
+    {rows.length ? <table className="dynamic-threads__table">
+      <thead><tr><th scope="col"><Trans>Model</Trans></th><th scope="col"><Trans>Pieces</Trans></th><th scope="col"><Trans>Finished</Trans></th><th scope="col"><Trans>Moved</Trans></th><th scope="col"><Trans>Tokens</Trans></th></tr></thead>
+      <tbody>{rows.map(row => <tr key={row.model}>
+        <th scope="row"><span className="dynamic-threads__record-model"><ProviderMark provider={row.provider} name={PROVIDER_LABELS[row.provider]} size={14} />{row.name}</span></th>
+        <td>{row.pieces}</td><td>{row.finished}</td><td>{row.moved}</td><td>{formatTokenCount(row.tokens)}</td>
+      </tr>)}</tbody>
+    </table> : read ? <p className="dynamic-threads__note tt-paragraph"><Trans>Nothing counted yet. Each piece an overseer gives a model is counted here.</Trans></p> : null}
+    <p className="dynamic-threads__note tt-paragraph" role="status">{said}</p>
+    <div><Button variant="secondary" disabled={!rows.length || clearing} onClick={clear}><Trans>Clear its record</Trans></Button></div>
+  </section>
+}
+
+/** How long typing in **Your note** pauses before it saves, as Custom instructions does. */
+const NOTE_SAVE_DELAY_MS = 600
 
 /**
  * Settings › Threads › Dynamic threads (ADR-0191; Owl only): the limits every Dynamic thread on this computer works inside.
@@ -42,12 +87,14 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
   const latest = useRef(settings), saving = useRef(0), held = useRef(settings)
   held.current = settings
   useEffect(() => { if (saving.current === 0) { latest.current = settings; setDraft(settings) } }, [settings])
-  const save = (next: Partial<DynamicThreadSettings>): void => {
+  // `failed` hears a save that did not land before what was saved takes over, so typed words can wait to be tried again.
+  const save = (next: Partial<DynamicThreadSettings>, failed?: () => void): void => {
     const whole = { ...latest.current, ...next }
     latest.current = whole
     setDraft(whole)
     saving.current++
-    void Promise.resolve(onSave({ dynamicThreads: whole })).catch(() => false).then(() => {
+    void Promise.resolve(onSave({ dynamicThreads: whole })).catch(() => false).then(saved => {
+      if (saved === false) failed?.()
       saving.current--
       if (saving.current === 0) { latest.current = held.current; setDraft(held.current) }
     })
@@ -63,13 +110,35 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
     setCount(String(next.data))
     if (next.data !== draft.workersAtOnce) save({ workersAtOnce: next.data })
   }
+  // Your note saves once typing pauses, on leaving the field and when Settings closes, so nothing typed is lost
+  // mid-sentence. A saved value from elsewhere shows only while nothing typed here waits to be saved.
+  const [note, setNote] = useState(draft.note ?? '')
+  const pendingNote = useRef<string | null>(null)
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveRef = useRef(save)
+  saveRef.current = save
+  /** Counts the note's saves sent, so a failed older one never brings back words a newer one replaced. */
+  const noteSends = useRef(0)
+  const flushNote = useCallback(() => {
+    if (noteTimer.current) { clearTimeout(noteTimer.current); noteTimer.current = null }
+    const value = pendingNote.current
+    pendingNote.current = null
+    if (value === null || value === (latest.current.note ?? '')) return
+    // A save that did not land keeps the words waiting for the next pause or leaving the field, but only while it is the
+    // latest sent and nothing newer waits.
+    const sequence = ++noteSends.current
+    saveRef.current({ note: value }, () => { if (sequence === noteSends.current && pendingNote.current === null) pendingNote.current = value })
+  }, [])
+  useEffect(() => { if (pendingNote.current === null) setNote(draft.note ?? '') }, [draft.note])
+  useEffect(() => flushNote, [flushNote])
+  const noteId = useId(), noteAboutId = useId()
   const toggle = (provider: ProviderId, on: boolean): void => {
     const list = new Set(allowed)
     if (on) list.add(provider); else list.delete(provider)
     save({ providers: [...list] })
   }
   return <div className="dynamic-threads" data-setting="dynamic-threads">
-    <p className="dynamic-threads__lead tt-paragraph"><Trans>A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu.</Trans></p>
+    <p className="dynamic-threads__lead tt-paragraph"><Trans>A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread.</Trans></p>
     <fieldset className="dynamic-threads__providers">
       <legend><Trans>What it may use</Trans></legend>
       <p className="dynamic-threads__note tt-paragraph"><Trans>Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it.</Trans></p>
@@ -97,5 +166,20 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
         onChange={event => setCount(event.currentTarget.value)} onBlur={event => commitCount(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter') commitCount(event.currentTarget.value) }} />
     </Field>
+    <div className="dynamic-threads__your-note">
+      <label htmlFor={noteId}><Trans>Your note</Trans></label>
+      <p id={noteAboutId} className="dynamic-threads__note tt-paragraph"><Trans>Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above.</Trans> {plural(DYNAMIC_NOTE_MAX_CHARACTERS, { one: 'Up to # character.', other: 'Up to # characters.' })}</p>
+      <textarea id={noteId} data-setting="dynamic-threads-note" className="tt-input tt-focusable" rows={3} maxLength={DYNAMIC_NOTE_MAX_CHARACTERS} value={note} aria-label={t`Your note to the overseer`} aria-describedby={noteAboutId}
+        placeholder={t`Sol for reviews. Save Opus for the hard debugging.`}
+        onChange={event => {
+          const value = event.currentTarget.value
+          setNote(value)
+          pendingNote.current = value
+          if (noteTimer.current) clearTimeout(noteTimer.current)
+          noteTimer.current = setTimeout(flushNote, NOTE_SAVE_DELAY_MS)
+        }}
+        onBlur={flushNote} />
+    </div>
+    <ItsRecord />
   </div>
 }

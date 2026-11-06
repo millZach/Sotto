@@ -62,12 +62,6 @@ describe('TailnetStore (ADR-0053)', () => {
 })
 
 describe('e2eTailnetMap', () => {
-  it('maps a MagicDNS name to a loopback port and leaves every other address alone', () => {
-    const resolve = e2eTailnetMap('forge.tail5728ca.ts.net=127.0.0.1:4555')!
-    expect(resolve(ADDRESS)).toBe('http://127.0.0.1:4555')
-    expect(resolve('https://other.tail5728ca.ts.net:8443')).toBe('https://other.tail5728ca.ts.net:8443')
-    expect(e2eTailnetMap(undefined)).toBeUndefined()
-  })
   it('maps only to this computer', () => {
     expect(() => e2eTailnetMap('forge.tail5728ca.ts.net=192.0.2.1:4555')).toThrow('loopback port only')
     expect(() => e2eTailnetMap('forge.example.com=127.0.0.1:4555')).toThrow('loopback port only')

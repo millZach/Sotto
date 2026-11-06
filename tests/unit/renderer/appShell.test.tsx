@@ -55,14 +55,6 @@ describe('AppShell', () => {
     })
   })
 
-  it('keeps the onboarding title strip on Linux without controls or a macOS inset', () => {
-    const { container } = render(<AppShell {...chrome} platform="linux" navigation={null}><p>Preparing Sotto...</p></AppShell>)
-    expect(screen.getByRole('banner')).toHaveClass('app-strip')
-    expect(screen.getByRole('banner')).not.toHaveClass('app-strip--mac')
-    expect(container.querySelector('.app-controls')).toBeNull()
-    expect(screen.getByRole('main')).toHaveTextContent('Preparing Sotto...')
-  })
-
   it('maximizes and restores from a keyboard-accessible window control', async () => {
     const onMaximize = vi.fn()
     const { rerender } = render(<AppShell {...chrome} onMaximize={onMaximize} navigation="home"><p /></AppShell>)
@@ -204,12 +196,6 @@ describe('AppShell', () => {
     expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument()
   })
 
-  it('leaves the window controls to macOS in the sidebar layout too', () => {
-    const { container } = render(<AppShell {...chrome} platform="darwin" navigation="home" layout="sidebar" sidebar={<aside />}><p /></AppShell>)
-    expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
-    expect(container.querySelector('.app-room__top')).toBeEmptyDOMElement()
-  })
-
   it('shows the strip and the room but no switch or footer before the management window is ready', () => {
     const { container } = render(<AppShell {...chrome} navigation={null}><p>Preparing Sotto...</p></AppShell>)
     expect(container.querySelector('.app-shell')).toHaveClass('app-shell--bare')
@@ -217,15 +203,6 @@ describe('AppShell', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
     expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
-  })
-
-  it('leaves the window controls to macOS and reserves the traffic-light strip', () => {
-    const { container } = render(<AppShell {...chrome} platform="darwin" navigation="home"><p /></AppShell>)
-    expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /close sotto to tray/i })).not.toBeInTheDocument()
-    expect(container.querySelector('.app-strip')).toHaveClass('app-strip--mac')
-    // No app mark beside the traffic lights: the strip's left end stays empty on macOS.
-    expect(container.querySelector('.app-mark')).toBeNull()
   })
 
   it('maps pages to the room they light', () => {

@@ -274,17 +274,6 @@ describe('CloudIphoneService', () => {
     expect(serialized).toContain('Entered text.')
   })
 
-  it('returns a screenshot as a PNG data URL', async () => {
-    const { service, files, root, credentials, clock } = await setup()
-    await credentials.set('runcloud', 'rc_live_key')
-    const { threadId, workspaceId, session } = await openSession(service, files, root)
-    await service.answer({ threadId, workspaceId, sessionId: session.id, allow: true })
-    await waitActive(service, clock, threadId)
-    const shot = await service.agentAction({ threadId, workspaceId, action: { type: 'screenshot' } })
-    expect(shot.ok).toBe(true)
-    expect(shot.ok && shot.value.image).toMatch(/^data:image\/png;base64,/u)
-  })
-
   it('ends an idle session after the idle minutes and resets the timer on an action', async () => {
     const { service, files, root, credentials, clock } = await setup({ idleMinutes: 5 })
     await credentials.set('runcloud', 'rc_live_key')

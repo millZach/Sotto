@@ -208,14 +208,6 @@ describe('queue presentation', () => {
     expect(within(queue).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
     expect(requests(live, 'queue-followup')).toHaveLength(1)
   })
-
-  it('keeps the user queue available despite retired assignment data', () => {
-    const state = manualState({ running: true })
-
-    state.followups = [followup({ id: ids(1), text: 'Queued before managing' })]
-    mount(state)
-    expect(screen.getByRole('region', { name: 'Queued messages' })).not.toHaveTextContent('Waits while Sotto manages this thread.')
-  })
 })
 
 describe('composer admission', () => {

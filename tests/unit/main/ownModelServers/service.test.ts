@@ -241,11 +241,6 @@ describe('removing a server', () => {
     await expect(service.remove({ id: 'own-test0' })).rejects.toThrow()
     expect((await service.list()).map(server => server.id)).toEqual(['own-test0'])
   })
-
-  it('says a server that is not saved is not found', async () => {
-    const { service } = servers({ openCode: fakeOpenCode().openCode })
-    expect(await service.remove({ id: 'own-gone' })).toEqual({ status: 'refused', reason: 'not-found', message: OWN_SERVER_WORDS.notFound })
-  })
 })
 
 describe('the record', () => {

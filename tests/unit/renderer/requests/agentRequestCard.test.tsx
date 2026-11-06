@@ -10,7 +10,7 @@ import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
 import type { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import type { BrowserBridge, BrowserPage } from '../../../../src/shared/browser'
 import { textLinks } from '../../../../src/renderer/src/agents/requests/LinkedText'
-import { linkPlace, messageLinks } from '../../../../src/renderer/src/agents/requests/messageLinks'
+import { messageLinks } from '../../../../src/renderer/src/agents/requests/messageLinks'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../../../src/main/agents/codexRequests'
 import { grokPending } from '../../../../src/main/agents/grokRequests'
@@ -607,11 +607,6 @@ describe('links from the message before a question', () => {
     expect(messageLinks([said('m1', 'assistant', `See ${review}`), words])).toEqual(['https://example.com/visual'])
     expect(messageLinks([said('m1', 'user', `See ${review}`)])).toEqual([])
     expect(messageLinks([said('m1', 'assistant', 'file:///c/x, mailto:a@b.c and javascript:alert(1)')])).toEqual([])
-  })
-
-  it('names where each link goes by its host, port and path', () => {
-    expect(linkPlace('http://localhost:8075/')).toBe('localhost:8075')
-    expect(linkPlace('https://example.com/a/b?c=d')).toBe('example.com/a/b')
   })
 
   it('shows each link as a row between the question and its choices, and opens it without picking a choice, even while the choices are unavailable', () => {

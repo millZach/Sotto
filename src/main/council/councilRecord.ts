@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { climbRecordSchema } from '../../shared/councilClimb'
+import { councilAskedBySchema } from '../../shared/councilTools'
 import { providerIdSchema } from '../../shared/providerIds'
 import { councilEvidenceSchema, councilLegacySnapshotSchema, councilRoundEvidenceSchema } from '../../shared/councilEvidence'
 import { COUNCIL_KINDS, COUNCIL_STAGES, COUNCIL_TURN_STAGES, councilCitationSchema, type CouncilCitation, type CouncilStage, type CouncilTurnStage } from '../../shared/council'
@@ -135,6 +137,8 @@ export const legacyCouncilFileSchema = z.object({ version: z.literal(1), council
 export const councilRoundSchema = legacyRoundSchema.extend({ evidence: councilRoundEvidenceSchema.optional() })
 export const councilRecordSchema = legacyRecordSchema.extend({
   mode: z.enum(['standard', 'climb']),
+  /** Present when the origin thread's agent asked for it, at the user's request (ADR-0177, November 5, 2026). */
+  askedBy: councilAskedBySchema.optional(),
   evidence: z.array(councilEvidenceSchema),
   rounds: z.array(councilRoundSchema).min(1),
 }).superRefine((record, ctx) => {
@@ -146,10 +150,12 @@ export const councilRecordSchema = legacyRecordSchema.extend({
     }
   }
 })
-export const councilFileSchema = z.object({ version: z.literal(2), councils: z.array(councilRecordSchema).max(200) }).strict()
+// Ordinary Council owns its 200-record retention policy. Climb records must not spend those slots.
+export const councilFileSchema = z.object({ version: z.literal(2), councils: z.array(z.union([councilRecordSchema, climbRecordSchema]))
+  .refine(records => records.filter(record => !('phase' in record)).length <= 200, 'Too many ordinary Councils.') }).strict()
 
 /** A legacy singleton proves only a shared source, never a fresh capture for every past round. */
-export function migrateCouncilFile(input: z.infer<typeof legacyCouncilFileSchema>): CouncilFile {
+export function migrateCouncilFile(input: z.infer<typeof legacyCouncilFileSchema>): { version: 2; councils: CouncilRecord[] } {
   return { version: 2, councils: input.councils.map(record => {
     const source = `${record.id}:legacy`
     return { ...record, mode: 'standard',
@@ -196,5 +202,6 @@ export function savedRecord(record: CouncilRecord, keepWords: boolean): CouncilR
     rounds: record.rounds.map(round => ({ ...without(round, ['question', 'framing', 'crux', 'verdict', 'criteria']),
       objections: round.objections.map(objection => without(objection, ['claim', 'passage', 'reason'])) })),
     turns: record.turns.map(turn => without(turn, ['block', 'summary', 'reason'])),
+    ...record.askedBy ? { askedBy: without(record.askedBy, ['words']) } : {},
   }
 }

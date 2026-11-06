@@ -71,7 +71,7 @@ const idle = { working: () => [], workingNow: () => [], interrupt: async () => u
  */
 async function scene(options: { readonly entry?: string; readonly hostReachesReleases?: boolean; readonly holdFirstDownload?: boolean
   /** Holds every launch script operation over SSH until it settles, so a test decides when SSH carries a step. */
-  readonly beforeSsh?: () => Promise<void> } = {}) {
+  readonly beforeSsh?: (operation: SshHostUpdateOperation) => Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-desktop-self-update-')); roots.push(root)
   const { install, data, sshUsed, opencodeUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   // Tailscale runs on forge, as the end-to-end stand-in reads it; this machine's own is never touched.
@@ -108,7 +108,7 @@ async function scene(options: { readonly entry?: string; readonly hostReachesRel
   /** Every SSH connection the desktop opened, by kind, and every launch script operation it ran over one. */
   const connects: string[] = [], operations: string[] = []
   const overSsh = async (operation: SshHostUpdateOperation, update: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> => {
-    await options.beforeSsh?.()
+    await options.beforeSsh?.(operation)
     if (operation.op === 'update-receive') {
       // The receive script, as SSH runs it: `node -e`, with the archive on stdin.
       const child = spawn(process.execPath, ['-e', RECEIVE_SCRIPT_SOURCE, JSON.stringify({ file: operation.file, size: operation.size, installPath: install, archiveLimit: HOST_ARCHIVE_LIMIT_BYTES })], { windowsHide: true })
@@ -317,7 +317,10 @@ describe('a host update over the tailnet (ADR-0088)', () => {
   })
 
   it('updates over SSH, as before, a host whose hello does not offer the route', async () => {
-    const s = await scene()
+    // The launch script can confirm the restart before Serve carries the new listener.
+    const s: Awaited<ReturnType<typeof scene>> = await scene({ beforeSsh: async operation => {
+      if (operation.op === 'update-restart') s.stand.answer(502)
+    } })
     // The desktop's grant is taken away, so the host offers it no update; a new connect hears that in its hello.
     await deny(s)
     await s.relaunch()
@@ -326,6 +329,9 @@ describe('a host update over the tailnet (ADR-0088)', () => {
     expect(await panel.run()).toMatchObject({ phase: 'done', from: NEW, route: 'host' })
     expect(s.operations).toEqual(['admin update-fetch', 'admin update-install', 'admin update-restart'])
     expect(s.connects).toEqual(['ssh', 'admin'])
+    expect(s.manager.get().hosts[0]).toMatchObject({ phase: 'connecting', via: 'tailnet' })
+    s.stand.answer('proxy')
+    await s.onTailnet()
     expect(s.manager.get().hosts[0]).toMatchObject({ phase: 'connected', via: 'tailnet', version: NEW })
   })
 
@@ -337,6 +343,7 @@ describe('a host update over the tailnet (ADR-0088)', () => {
     expect(await panel.run()).toMatchObject({ phase: 'done', from: NEW, route: 'host' })
     expect(s.operations).toEqual(['admin update-fetch', 'admin update-install', 'admin update-restart'])
     expect(s.connects).toEqual(['ssh', 'admin'])
+    await s.onTailnet()
     expect(s.manager.get().hosts[0]).toMatchObject({ phase: 'connected', via: 'tailnet', version: NEW })
   })
 })

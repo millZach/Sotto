@@ -98,27 +98,6 @@ describe('WindowManager cursor monitor following', () => {
     expect(widget.setBounds).not.toHaveBeenCalled()
   })
 
-  it('resumes following after drag end', async () => {
-    const adapter = createMutableTwoDisplayAdapter()
-    const { manager, windows } = createHarness({ display: adapter.display })
-    await manager.showWidget()
-    const widget = windows[0]!
-    reportWidgetDrag(manager, 'start')
-    adapter.cursor.current = { x: 1_700, y: 970 }
-    reportWidgetDrag(manager, 'end')
-    widget.setBounds.mockClear()
-    adapter.getCursorScreenPoint.mockClear()
-    adapter.getDisplayNearestPoint.mockClear()
-
-    vi.advanceTimersByTime(100)
-
-    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
-    expect(widget.setBounds).toHaveBeenCalledWith(
-      { x: 1_476, y: 908, width: 248, height: 76 },
-      false,
-    )
-  })
-
   it('expands a vertical idle drag to the active footprint without releasing drag ownership', async () => {
     const adapter = createMutableTwoDisplayAdapter()
     const { manager, windows } = createHarness({

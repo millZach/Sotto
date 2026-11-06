@@ -58,8 +58,12 @@ export type ProviderProblem = z.infer<typeof providerProblemSchema>
 const providerAccountSchema = z.string().min(1).max(80)
 
 const id = z.string().min(1).max(512)
+/** A digest of a Dynamic thread's **your note**, as a session's record keeps it in place of the words (ADR-0191). */
+const dynamicNoteDigestSchema = z.string().regex(/^[0-9a-f]{16}$/u)
 /** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
+/** How many steers a thread names as not taken (#1408): enough to settle every one an outbox could still hold. */
+export const NOT_TAKEN_MESSAGE_IDS_MAX = 20
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
 /** The longest text a message, a prompt or a follow-up carries. */
@@ -638,6 +642,8 @@ export const agentThreadSchema = z.object({
   hostId: z.uuid().optional(),
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   kind: agentThreadKindSchema.optional(),
+  /** An owned Climb judge. Its provider must never offer tools or inherited customizations. */
+  councilJudge: z.literal(true).optional(),
   /**
    * The thread that delegated work to this one (ADR-0081), by its Sotto thread ID and nothing else. Sotto's record, kept on
    * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
@@ -646,7 +652,8 @@ export const agentThreadSchema = z.object({
   /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
   dynamic: z.literal(true).optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
-  dynamicSession: z.object({ created: z.boolean(), told: z.boolean() }).strict().optional().catch(undefined),
+  dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
+    noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
     synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
@@ -720,6 +727,8 @@ export const agentThreadSchema = z.object({
   scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
+  /** Host-owned snooze (ADR-0175): null when awake, absent on older hosts and stable. */
+  snoozedUntil: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
   nativeSessionStarted: z.boolean().optional(),
   /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
@@ -788,6 +797,11 @@ export const agentThreadSchema = z.object({
   historySaveNotice: z.string().max(600).optional(),
   /** A native request refused because Sotto could not show it; never a pending request or an approval. */
   requestNotice: z.string().max(600).optional(),
+  /**
+   * Sotto's message IDs of the newest steers the provider admitted but never took, because the turn they were sent into
+   * ended first (#1408). Not sent, and never sent again: the coordinator settles each one's delivery from this. Newest last.
+   */
+  notTakenMessageIds: z.array(id).max(NOT_TAKEN_MESSAGE_IDS_MAX).optional().catch(undefined),
   /** Changes only on a confirmed native rewind; cached activity must not cross it. */
   historyEpoch: z.string().optional(),
 })
@@ -821,6 +835,8 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
  * is left waiting to reconcile, so a window may say that nothing changed; the option chips read this exact sentence.
  */
 export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
+/** A steer the provider admitted whose turn ended before taking it (#1408): it was not sent. */
+export const STEER_NOT_TAKEN = 'The turn ended before it took this steer, so nothing was sent. Send it again as a new message.'
 /** What main answers when the provider did not say whether it took an action; Sotto keeps it and checks it later. */
 export const PROVIDER_RESULT_UNCONFIRMED = 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.'
 /** What main answers when a folder sent as existing is not there, so nothing was added and no folder was made. */
@@ -1276,6 +1292,11 @@ export const agentThreadDetailSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** True when older messages are still in the thread store; the pane offers Show earlier messages. */
   earlierAvailable: z.boolean().optional(),
+  /**
+   * The steps above a phone's **step window** (ADR-0194), as its host last cut it. Only a client that accepts
+   * `step-window` is sent it; no desktop is.
+   */
+  earlierSteps: z.number().int().nonnegative().optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
@@ -1313,6 +1334,9 @@ export const agentThreadDetailDeltaSchema = z.object({
 export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
+
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
@@ -1476,6 +1500,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */
+    dynamic: z.literal(true).optional(),
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
     /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */
@@ -1581,6 +1607,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
       || value.fastMode !== undefined || value.speed !== undefined, 'Choose a thread setting to change.'),
+  z.object({ type: z.literal('snooze-thread'), threadId: id, until: z.string().datetime().nullable() }).strict(),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client

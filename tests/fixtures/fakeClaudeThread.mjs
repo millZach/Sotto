@@ -35,11 +35,13 @@ const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
 // Every thread process appends Sotto's question guidance; only Watcher's appends Watcher's prompt as well.
 const watcher = args.includes('--append-system-prompt') && value('--append-system-prompt').includes("You are Sotto's Watcher.")
-const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
+const mcpInput = value('--mcp-config')
+const mcpConfig = args.includes('--mcp-config') ? JSON.parse(mcpInput.startsWith('{') ? mcpInput : readFileSync(mcpInput, 'utf8')) : { mcpServers: {} }
+const councilJudge = args.includes('--safe-mode') && value('--tools') === '' && args.includes('--strict-mcp-config') && value('--setting-sources') === '' && Object.keys(mcpConfig.mcpServers).length === 0
 const position = args.indexOf('--allowedTools')
 const following = position < 0 ? [] : args.slice(position + 1)
 const allowance = following.slice(0, following.findIndex(argument => argument.startsWith('--')) < 0 ? following.length : following.findIndex(argument => argument.startsWith('--')))
-if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'manual', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
+if (!metadata && !councilJudge && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'manual', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
 // Both permission flags or none of the surface: the real CLI treats --permission-prompts host as
 // permission to ask and --permission-prompt-tool stdio as the thing that makes this process the asker.
 // Dropping the second is silent there, so it is loud here.
@@ -259,7 +261,7 @@ lines.on('line', async line => {
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
         if (!script.fail && !metadata && !script.omitInit) {
           const init = { type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
-            tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
+            tools: args.includes('--tools') && args[args.indexOf('--tools') + 1] === '' ? [] : ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
             mcp_servers: Object.keys(mcpConfig.mcpServers).map(name => ({ name, status: 'connected' })),
             permissionMode: settings.mode, model: settings.model, slash_commands: [], agents: [], skills: [], plugins: [], ...script.initReport }
           if (script.initAtTurn) deferredInit = init
@@ -349,6 +351,10 @@ lines.on('line', async line => {
       for (const state of ['queued', 'started']) output({ type: 'command_lifecycle', command_uuid: initScript.foreignLifecycle ? randomUUID() : frame.uuid, state, uuid: randomUUID(), session_id: session })
     }
     if (deferredInit) { output(deferredInit); deferredInit = undefined }
+    // initialize-script.json `holdAfterInit`: the model's first step takes a while to come back after the turn's init, as a
+    // real reply's does. It is a tool call that writes `tool-ran`, and runs once the file the value names exists, so a test
+    // can let it run only after it has seen what Sotto did with the init.
+    if (initScript.holdAfterInit) { await released(initScript.holdAfterInit); writeFileSync(join(root, 'tool-ran'), session) }
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
     const scriptPath = join(root, 'script.json')

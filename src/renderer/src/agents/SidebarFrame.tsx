@@ -83,7 +83,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
  * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
- * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
+ * page draws. The sidebar foot and Watcher's footer both draw this one; the foot draws it `iconOnly`, its
  * lit tile showing no name, so every tile there carries its name as a tooltip.
  */
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
@@ -126,7 +126,7 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 
 /**
  * The way off the page as one row of icons: the room switch, a hairline, the other pages as icon links, then the update
- * control. The sidebar's foot draws it, and so does Watcher's header, which has no sidebar (ADR-0152).
+ * control. The sidebar's foot draws it, and so does Watcher's footer, which has no sidebar (ADR-0152).
  */
 export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl, focusName }: {
   readonly className: string
@@ -214,6 +214,43 @@ function tabStops(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]')]
     .filter(item => item.tabIndex >= 0 && !(item as HTMLButtonElement).disabled && item.closest('[hidden], [inert]') === null
       && (typeof item.checkVisibility !== 'function' || item.checkVisibility()))
+}
+
+/** How wide the collapsed rail stands: Owl's is 64px, room for a project's name over its tray (Zach's pick C, ADR-0146, November 5, 2026). */
+export function railWidth(mac: boolean, railOn: boolean): number {
+  return mac ? 80 : railOn ? 64 : 52
+}
+
+/**
+ * The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. Without `onExpand` it
+ * has no Expand: Watcher's room in a narrow window, where no sidebar can open over it. Under the sidebar open over the
+ * thread (`over`) it keeps its place, out of reach, and leaves the toast and the foot to the open sidebar.
+ */
+export function SidebarRail({ platform, onExpand, toggle, children, toast, foot, chord, narrow = false, over = false }: {
+  readonly platform: SottoPlatform | undefined
+  readonly onExpand?: (() => void) | undefined
+  readonly toggle?: React.RefObject<HTMLButtonElement | null>
+  readonly children?: ReactNode
+  readonly toast?: ReactNode
+  readonly foot?: ReactNode
+  /** The keys that show or hide the sidebar, where they are free (`useSidebarChord`). */
+  readonly chord?: { readonly label: ThreadChordLabel } | undefined
+  readonly narrow?: boolean
+  readonly over?: boolean
+}): ReactNode {
+  const { t } = useLingui()
+  const railOn = useOwlFeature('sidebar-rail')
+  const watcherOn = useWatcherEnabled()
+  const expand = t`Expand sidebar`
+  return <div className="thread-nav__rail" data-owl={railOn || undefined} inert={over}>
+    {platform === 'darwin' ? null : <SottoMark className="thread-nav__glyph" />}
+    {onExpand === undefined ? null : <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={expand} title={chord === undefined ? expand : `${expand} ${chord.label.suffix}`}
+      aria-keyshortcuts={chord?.label.keys} aria-haspopup={narrow ? 'dialog' : undefined} aria-expanded={narrow ? over : undefined} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>}
+    {railOn && watcherOn ? <RailWatcher /> : null}
+    <div className="thread-nav__rail-list">{children}</div>
+    {over ? null : toast}
+    {over ? null : foot ?? <SidebarFoot />}
+  </div>
 }
 
 /** The handle on a sidebar's right edge: drag it, or focus it and use the arrow keys. Double-click resets the width. */
@@ -364,11 +401,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   }
   const chordTitle = (name: string): string => chord === undefined ? name : `${name} ${chord.label.suffix}`
   const railOn = useOwlFeature('sidebar-rail')
-  const watcherOn = useWatcherEnabled()
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
-  // Owl's rail is 64px, room for a project's name over its tray (Zach's pick C, ADR-0146, November 5, 2026).
   return <aside ref={aside} className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? (mac ? 80 : railOn ? 64 : 52) : size.width }}>
+    data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? railWidth(mac, railOn) : size.width }}>
     {/* A press beside the sidebar over the thread puts it away, and the thread under it has not moved. */}
     {over ? <div className="thread-nav__scrim" aria-hidden="true" onMouseDown={event => event.preventDefault()} onClick={closeOver} /> : null}
     <div ref={panel} className="thread-nav__expanded" hidden={!open} onKeyDown={overKeys}
@@ -395,16 +430,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {open ? toast : null}
     {open ? foot ?? <SidebarFoot /> : null}
     </div>
-    {/* Under the sidebar over the thread the rail keeps its place, out of reach, so nothing beside it moves. */}
-    {size.collapsed ? <div className="thread-nav__rail" data-owl={railOn || undefined} inert={over}>
-      {mac ? null : <SottoMark className="thread-nav__glyph" />}
-      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={chordTitle(t`Expand sidebar`)}
-        aria-keyshortcuts={chord?.label.keys} aria-haspopup={size.narrow ? 'dialog' : undefined} aria-expanded={size.narrow ? over : undefined} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
-      {railOn && watcherOn ? <RailWatcher /> : null}
-      <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
-      {over ? null : toast}
-      {over ? null : foot ?? <SidebarFoot />}
-    </div> : <SidebarResize size={size} onResizing={setResizing} />}
+    {size.collapsed ? <SidebarRail platform={platform ?? app?.platform} toggle={toggle} onExpand={() => size.collapse(false)} toast={toast} foot={foot} chord={chord} narrow={size.narrow} over={over}>
+      {collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}
+    </SidebarRail> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }
 

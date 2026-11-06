@@ -23,16 +23,6 @@ describe('composer option chips', () => {
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled()
   })
 
-  it('shows the model with its provider mark, the effort and the permissions as three chips', () => {
-    mount()
-    const model = screen.getByRole('combobox', { name: 'Thread model' })
-    expect(model).toHaveTextContent('Claude Code model')
-    expect(model.querySelector('svg.provider-mark[data-provider="claude"]')).not.toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('High')
-    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toHaveTextContent('Auto')
-    expect(screen.queryByRole('listbox')).toBeNull()
-  })
-
   it('gives permissions a shield for a narrow composer and keeps its value in the chip for assistive technology (ADR-0113)', () => {
     mount()
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
@@ -396,7 +386,7 @@ describe('a pending setting', () => {
 // carry a line each. The lines say what Codex 0.166.0 does under the mapping in `codex.ts` (ADR-0005, November 4, 2026).
 describe('Codex’s permission menu', () => {
   const CODEX_LINES = {
-    'approval-required': 'Codex asks before every command, even one that only reads, and before every edit.',
+    'approval-required': 'Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads.',
     'auto-accept-edits': 'Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.',
     auto: 'As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.',
     'full-access': 'Codex runs any command and edits any file without asking, anywhere on this computer and online.',

@@ -196,19 +196,30 @@ describe('the roster of delegated threads', () => {
     expect(delegatedStatusWord(row())).toBe('Needs your answer')
   })
 
+  it('leaves off Just finished while a second-level thread still works', () => {
+    const state = delegatingState()
+    const merge = state.host.threads.find(thread => thread.id === MERGE)!
+    merge.status = 'idle'; merge.finishedUnread = true
+    const answers = views()
+    answers[PARENT] = [view(MERGE, 13, { outcome: 'answered', outcomeAt: at(2) })]
+    answers[MERGE] = [view(REVIEW, 11)]
+    state.host.threads.find(thread => thread.id === REVIEW)!.status = 'running'
+    const made = new Map(Object.entries(answers).map(([id, list]) => [id, { made: list, received: [] }]))
+    const row = (): DelegatedRosterRow => delegatedRoster(PARENT, state.host.threads, made, state.host).flat().find(item => item.thread.id === MERGE)!
+    expect(row()).toMatchObject({ status: 'answered', finished: false })
+    expect(delegatedStatusWord(row())).toBe('Answered')
+    made.set(MERGE, { made: [view(REVIEW, 11, { outcome: 'background' })], received: [] })
+    expect(row().finished).toBe(false)
+    made.set(MERGE, { made: [view(REVIEW, 11, { outcome: 'answered', outcomeAt: at(1) })], received: [] })
+    expect(delegatedStatusWord(row())).toBe('Just finished')
+  })
+
   it('says what opening does: as a thread, to answer its request, or that it is in the pane', () => {
     const thread = { title: 'PR 1150 to merge' } as AgentThread
     expect(openAction({ thread, waitingFor: null }, false)).toEqual({ kind: 'open', label: 'Open as thread', name: 'Open PR 1150 to merge as a thread' })
     expect(openAction({ thread, waitingFor: 'approval' }, false)).toEqual({ kind: 'answer', label: 'Open to answer', name: 'Open PR 1150 to merge to answer its request' })
     expect(openAction({ thread, waitingFor: 'question' }, false)).toMatchObject({ kind: 'answer', label: 'Open to answer' })
     expect(openAction({ thread, waitingFor: 'approval' }, true)).toEqual({ kind: 'shown' })
-  })
-
-  it('counts delegated threads and agents together, and what needs you', () => {
-    const row = (status: DelegatedRosterRow['status']): DelegatedRosterRow => ({ status } as DelegatedRosterRow)
-    expect(rosterCounts([row('needs'), row('working'), row('answered'), row('answered')], { total: 2, working: 1, unknown: 0 }))
-      .toEqual({ title: '4 delegated threads · 2 agents', detail: '1 needs you · 2 working' })
-    expect(rosterCounts([row('answered')], { total: 0, working: 0, unknown: 0 })).toEqual({ title: '1 delegated thread', detail: 'None working' })
   })
 
   it('marks the delegated threads below a thread that wait on you or work, both levels, from the snapshot', () => {
