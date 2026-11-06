@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type CommandPart, type WorkingNow,
+  activityLeadKind, quickStep, spokenActivity, stepDescription, stepPurpose, summaryBody, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -290,7 +290,8 @@ function missingAgentOutput(record: AgentActivity): boolean {
 }
 
 function hasDetails(record: AgentActivity): boolean {
-  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated || record.cut)
+  const text = record.kind === 'reasoning' ? summaryBody(record) : record.text
+  return Boolean(record.command || record.cwd || record.output || record.error || text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated || record.cut)
     || missingAgentOutput(record)
 }
 
@@ -362,7 +363,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const cwd = record.cwd && (folder === undefined || folderKey(folder) !== folderKey(record.cwd)) ? record.cwd : undefined
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
-  const text = parsed ? inputDetail(record) : record.text
+  // A reasoning summary's heading is its row's words, so what it opens is the rest.
+  const text = parsed ? inputDetail(record) : record.kind === 'reasoning' ? summaryBody(record) : record.text
   const json = parsed && record.kind !== 'command'
   // Cut input matters only where the row shows it: a command shows its description and an edit its diff instead.
   const cutText = cut !== undefined && textShown
@@ -413,29 +415,6 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
 }
 
 /**
- * A folded row's command, which gives way where it says least on a row too narrow for it whole (`commandCut`), so its verb and
- * the file it acts on stay readable. The parts are spans in one left-to-right isolate, so a right-to-left interface keeps the
- * command's direction (ADR-0123); the folders are laid out right to left so they lose their start, and the left-to-right mark
- * keeps their last separator on their right. A file after the first is one span with its folders, which goes whole once its
- * name has given way, so no ellipsis stands beside another.
- */
-function RowCommand({ command, className }: { readonly command: string; readonly className: string }): ReactNode {
-  const parts = commandCut(command)
-  if (parts === null) return <span className={className} dir="ltr">{command}</span>
-  const piece = (part: CommandPart, key: number): ReactNode =>
-    <span key={key} className={`thread-activity__command-${part.role}`}>{part.role === 'folders' ? `${part.text}\u200e` : part.text}</span>
-  // What stands before a later file, its folders and its name are one span.
-  const pieces: ReactNode[] = []
-  for (let index = 0; index < parts.length; index++) {
-    const part = parts[index]!
-    if (part.role !== 'between') { pieces.push(piece(part, index)); continue }
-    pieces.push(<span key={index} className="thread-activity__command-more">{parts.slice(index, index + 3).map((more, at) => piece(more, index + at))}</span>)
-    index += 2
-  }
-  return <span className={className} dir="ltr" data-cut="">{pieces}</span>
-}
-
-/**
  * The plan record whose checklist stands above the working line, which the opened steps under that line keep as one
  * step without opening it again, so opening the steps adds what they did and never says the plan twice.
  */
@@ -471,7 +450,8 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   // happened (Zach's pick, ADR-0134's November 6 amendment). Its command shows once the row is open, whole under what it was
   // for, but a script of several lines leaves itself to its block. Folded, the command is still in the row's name and on its
   // tooltip.
-  const purpose = planInView ? '' : stepDescription(record)
+  const folder = useContext(ThreadFolderContext)
+  const purpose = planInView ? '' : stepPurpose(record, folder)
   const script = record.command?.trim().includes('\n') === true
   const status = planInView ? '' : statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
@@ -485,7 +465,9 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   // A row's time shows only when it says something, open or folded: a step under a second leaves it to the row's name.
   const brief = quickStep(record)
   const timed = record.status === 'completed' && !brief
-  const spoken = planInView ? label.subject : [purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
+  // A reasoning summary's row shows its heading alone; assistive tech, which does not see its mark, hears what it is first.
+  const kind = record.kind === 'reasoning' && label.subject !== record.title ? record.title : ''
+  const spoken = planInView ? label.subject : [kind, purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = purpose || label.subject
   // Open, a one-line command is said whole in the row, and the way to copy it sits at the end of the command's own line rather
@@ -499,9 +481,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       {purpose ? <>
         <span className="thread-activity__subject">{purpose}</span>
         {open && !script ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : null}
-      </> : !open && record.kind === 'command' && shown.mono && !shown.preview
-        ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
-        : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
+      </> : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>

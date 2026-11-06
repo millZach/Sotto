@@ -5,6 +5,7 @@ import { changeFailed, isTerminalActivity, REASONING_SUMMARY_TITLE, THINKING_TIT
 import { isVisualMessage, type AgentMessage, type AgentRequest, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
+import { commandPurpose } from './commandPurpose'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -424,8 +425,30 @@ export function stepDescription(record: AgentActivity): string {
   return typeof described === 'string' ? oneLine(described) : ''
 }
 
+/**
+ * What a step did, as its row among the opened steps says it: what the provider said a command was for, else, for a command
+ * no provider described, what it did in Sotto's words (`commandPurpose`), so no row is a bare command (ADR-0134, November 6
+ * amendment). `folder` is the thread's own, which a path inside it reads from. Empty for every other kind of step.
+ */
+export function stepPurpose(record: AgentActivity, folder?: string): string {
+  const described = stepDescription(record)
+  if (described || record.kind !== 'command' || !record.command) return described
+  return commandPurpose(innerCommand(record.command), folder)
+}
+
 /** A reasoning summary's own heading, the bold first line Codex starts each one with. Nothing else in it is read. */
 const SUMMARY_HEADING = /^\s*\*\*([^*\n]{1,160})\*\*\s*(?:\n|$)/u
+
+/**
+ * A reasoning summary's text without its heading, which its row already says; the whole text when it has none. Empty when
+ * the heading is all it holds.
+ */
+export function summaryBody(record: Pick<AgentActivity, 'title' | 'text'>): string {
+  const text = record.text ?? ''
+  if (record.title !== REASONING_SUMMARY_TITLE) return text
+  const heading = SUMMARY_HEADING.exec(text)
+  return heading ? text.slice(heading[0].length).trim() : text
+}
 
 /**
  * The heading of the reasoning summary that led to the work running now. Only a summary with nothing finished after it counts,
@@ -473,49 +496,6 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   // A command sits beside the words as itself, in the code face: its mark already says it runs.
   const command = running?.kind === 'command' && running.command ? isolated(innerCommand(running.command)) : ''
   return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', '), ...named }
-}
-
-/**
- * One part of a command cut around the files it names. `verb` is the command itself, its program and a subcommand such as
- * `npm test` or `git diff`, and `args` what follows it before the first file: flags and a pattern. `folders` are a file's
- * folders and `name` its own name, `between` what stands between one file and the next, and `tail` what follows the last file,
- * such as `| head -n 80`.
- */
-export interface CommandPart { readonly text: string; readonly role: 'verb' | 'args' | 'folders' | 'name' | 'between' | 'tail' }
-
-/** The program and, when the next word is a plain word rather than a flag, a path or a quote, its subcommand. */
-const COMMAND_VERB = /^\s*[^\s"'|<>&;()]+(?:\s+[a-z][\w:.-]*(?=\s|$))?/iu
-
-/** An argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
-const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/gu
-
-/**
- * Where a command among the opened steps gives way when its row has no room for it whole: first in the folders of every file
- * it names, then in what follows the last file, then in the files after the first, then in its flags and pattern, and the
- * first file's name last, never its verb, so the command and the file it acts on stay readable:
- * `npm test -- …threadStore.test.ts …workspace.test.ts`.
- * Null for a command that names no file in a folder, which is cut at its end. The working line's own command is always cut at
- * its end (ADR-0134, November 4 amendment); this is for the rows.
- */
-export function commandCut(command: string): readonly CommandPart[] | null {
-  const text = command.replace(/^\u2068|\u2069$/gu, '')
-  const files = [...text.matchAll(COMMAND_FILE)]
-  if (!files.length) return null
-  const parts: CommandPart[] = []
-  const first = files[0]!
-  const head = text.slice(0, first.index)
-  const verb = COMMAND_VERB.exec(head)?.[0] ?? ''
-  // Flags and a pattern give way at their end; a bare space after the verb is part of it.
-  const args = head.slice(verb.length)
-  if (args.trim()) { if (verb) parts.push({ text: verb, role: 'verb' }); parts.push({ text: args, role: 'args' }) } else if (head) parts.push({ text: head, role: 'verb' })
-  files.forEach((found, index) => {
-    const end = found.index + found[0].length
-    const next = files[index + 1]?.index
-    parts.push({ text: found[1]!, role: 'folders' }, { text: found[2]!, role: 'name' })
-    if (next !== undefined) parts.push({ text: text.slice(end, next), role: 'between' })
-    else if (end < text.length) parts.push({ text: text.slice(end), role: 'tail' })
-  })
-  return parts
 }
 
 /** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
@@ -845,6 +825,9 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
     case 'status':
       return { lead: '', subject: record.title, mono: false, preview: plainLine(record.error ?? record.text) }
     default: {
+      // A reasoning summary reads as what it says, without its title in front: the row's mark already says it is the model's reasoning.
+      const summary = record.kind === 'reasoning' && record.title === REASONING_SUMMARY_TITLE ? plainLine(record.text) : ''
+      if (summary) return { lead: '', subject: summary, mono: false, preview: '' }
       const input = activityInput(record)
       return { lead: '', subject: record.kind === 'tool' ? toolName(record.title) : record.title, mono: false, preview: input ? inputPreview(input) : plainLine(record.text) }
     }

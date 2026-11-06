@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
+import { commandPurpose } from '../../../src/renderer/src/agents/commandPurpose'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns,
+  activityLabel, activityLineCounts, changesLineCounts, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns, stepPurpose,
   statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -426,7 +427,8 @@ describe('activity wording', () => {
     expect(activityLabel(record({ id: 'f', kind: 'file-change', title: 'File changes', changes: [{ path: 'src/a.ts', kind: 'add' }] }))).toMatchObject({ lead: 'Created', subject: 'src/a.ts', preview: '' })
     expect(activityLabel(record({ id: 'f2', kind: 'file-change', title: 'File changes', changes: [{ path: 'a.ts', kind: 'update' }, { path: 'b.ts', kind: 'add' }] }))).toMatchObject({ lead: 'Edited', preview: 'and 1 more file' })
     expect(activityLabel(record({ id: 's', kind: 'subagent', title: 'spawnAgent', agents: [{ id: 'x', status: 'running' }] }))).toMatchObject({ subject: 'Spawn agent', preview: '1 agent' })
-    expect(activityLabel(record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary', text: '\n**Checking tests**\nmore' })).preview).toBe('Checking tests')
+    // A reasoning summary reads as its heading, without "Reasoning summary" run into it.
+    expect(activityLabel(record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary', text: '\n**Checking tests**\nmore' }))).toMatchObject({ subject: 'Checking tests', preview: '' })
     expect(activityLabel(record({ id: 'e', kind: 'status', title: 'Codex is retrying', error: 'Stream closed\ntrace' })).preview).toBe('Stream closed')
     expect(activityLabel(record({ id: 't', kind: 'tool', title: 'fixture / inspect', text: '## Reading `src/a.ts`' })).preview).toBe('Reading src/a.ts')
   })
@@ -571,25 +573,56 @@ describe('file changes that did not go through', () => {
   })
 })
 
-describe('where a folded row’s command gives way', () => {
-  const parts = (command: string): string[][] | undefined => commandCut(command)?.map(part => [part.role, part.text])
+describe('what an undescribed command did, in Sotto’s words', () => {
+  const said = (command: string, folder?: string): string => commandPurpose(command, folder).replace(/[\u2068\u2069]/gu, '')
 
-  it('cuts in the folders of every file it names, keeping the command’s verb and each file’s name', () => {
-    expect(parts('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toEqual([
-      ['verb', 'cat '], ['folders', 'tests/unit/main/'], ['name', 'workspaceControl.test.ts'], ['tail', ' | head -n 80'],
-    ])
-    expect(parts('rg -c "this\\.(a|b)" src/main/agents/control.ts')).toEqual([
-      ['verb', 'rg'], ['args', ' -c "this\\.(a|b)" '], ['folders', 'src/main/agents/'], ['name', 'control.ts'],
-    ])
-    expect(parts('type D:\\Projects\\sotto\\README.md')).toEqual([['verb', 'type '], ['folders', 'D:\\Projects\\sotto\\'], ['name', 'README.md']])
-    // Two files: both lose their folders before the second is cut, so "npm tes…" and "tests/integration/wor…" never show.
-    expect(parts('npm test -- tests/integration/threadStoreWorker.test.ts tests/integration/workspaceStoreWorker.test.ts')).toEqual([
-      ['verb', 'npm test'], ['args', ' -- '], ['folders', 'tests/integration/'], ['name', 'threadStoreWorker.test.ts'],
-      ['between', ' '], ['folders', 'tests/integration/'], ['name', 'workspaceStoreWorker.test.ts'],
-    ])
+  it('reads, searches, lists and counts by the files the command names', () => {
+    expect(said('cat docs/plans/agent-control-split.md')).toBe('Read docs/plans/agent-control-split.md')
+    expect(said('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toBe('Read tests/unit/main/workspaceControl.test.ts')
+    expect(said('head -n 40 src/app.ts')).toBe('Read src/app.ts')
+    expect(said('cat -n src/app.ts')).toBe('Read src/app.ts')
+    expect(said('sed -n 559,640p src/main/agents/control.ts')).toBe('Read src/main/agents/control.ts')
+    expect(said('Get-Content -Path src\\main\\index.ts -TotalCount 50')).toBe('Read src\\main\\index.ts')
+    expect(said('type D:\\Projects\\sotto\\README.md', 'D:\\Projects\\sotto')).toBe('Read README.md')
+    expect(said('cat a.ts b.ts')).toBe('Read 2 files')
+    expect(said('rg -n "patchLength" src/main/audio')).toBe('Search src/main/audio for “patchLength”')
+    // -c counts and takes no value, unlike -C; a pattern with syntax in it is left out.
+    expect(said('rg -c "this\\.(pendingSends|outbox)" src/main/agents/control.ts')).toBe('Search src/main/agents/control.ts')
+    expect(said('rg -l "agentControl\\." src/main src/host | xargs wc -l')).toBe('Search for “agentControl.”')
+    expect(said('rg --files src/renderer')).toBe('Find files in src/renderer')
+    expect(said('ls -la')).toBe('List the folder')
+    expect(said('ls -R src')).toBe('Find files in src')
+    expect(said('find . -name "*.ts"')).toBe('Find files')
+    expect(said('wc -l src/main/agents/control.ts')).toBe('Count the lines in src/main/agents/control.ts')
+    expect(said('wc -l src/main/agents/*.ts src/main/ipc/*.ts | sort -n')).toBe('Count lines')
   })
 
-  it('leaves a command that names no file in a folder to be cut at its end', () => {
-    for (const command of ['npm test', 'rg -n policy src', 'rg -l x src/main src/host', 'cat README.md', 'ls 2>/dev/null', 'node --import=./a/b.mjs run']) expect(commandCut(command), command).toBeNull()
+  it('names tests, scripts, git and file changes, past a change of folder and the shell around it', () => {
+    expect(said('npm test')).toBe('Run the tests')
+    expect(said('cd app && npx vitest run tests/unit/a.test.ts --maxWorkers=1')).toBe('Run the tests in tests/unit/a.test.ts')
+    expect(said('npm test -- tests/integration/a.test.ts tests/integration/b.test.ts')).toBe('Run the tests')
+    expect(said('npm run typecheck')).toBe('Run typecheck')
+    expect(said('pnpm lint')).toBe('Run lint')
+    expect(said('npm ci --ignore-scripts')).toBe('Install packages')
+    expect(said('git status --short')).toBe('Check git status')
+    expect(said('git -C app diff -- src/a.ts')).toBe('Read the changes to src/a.ts')
+    expect(said('git diff --stat origin/main')).toBe('Read the changes')
+    expect(said('git log --oneline -5')).toBe('Read the git history')
+    expect(said('git push origin HEAD')).toBe('Run git push')
+    expect(said("sed -i 's/a/b/' src/a.ts")).toBe('Edit src/a.ts')
+    expect(said("cat <<'EOF' > notes/plan.md # Plan > not a redirect")).toBe('Write notes/plan.md')
+    expect(said('rm -rf dist')).toBe('Remove dist')
+    expect(said('node scripts/build-host.mjs --watch')).toBe('Run build-host.mjs')
+    expect(said('python -m pytest -q')).toBe('Run the tests')
+    // A program it has no other words for runs by its name, never as the bare command.
+    expect(said('docker compose up -d')).toBe('Run docker')
+    expect(said('FORCE_COLOR=0 sudo make install 2>&1')).toBe('Run make')
+  })
+
+  it('leads a row with the provider’s own words when it sent them, and with Sotto’s otherwise', () => {
+    const plain = (record: AgentActivity, folder?: string): string => stepPurpose(record, folder).replace(/[\u2068\u2069]/gu, '')
+    expect(plain(record({ id: 'd', command: 'cat a.ts', text: JSON.stringify({ command: 'cat a.ts', description: 'Read the policy' }) }))).toBe('Read the policy')
+    expect(plain(record({ id: 'c', command: '"C:\\Windows\\powershell.exe" -Command \'Get-Content D:\\work\\a.ts\'' }), 'D:\\work')).toBe('Read a.ts')
+    expect(plain(record({ id: 't', kind: 'tool', title: 'Read', command: 'cat a.ts' }))).toBe('')
   })
 })

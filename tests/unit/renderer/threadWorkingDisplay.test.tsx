@@ -94,7 +94,7 @@ describe('a turn that has reported nothing yet', () => {
     expect(liveRow).toHaveTextContent('Compacting context')
     const steps = within(liveRow).getByRole('button', { name: '1 step' })
     fireEvent.click(steps)
-    expect(within(transcript).getByRole('button', { name: 'npm test, completed in 3.0s' })).toBeVisible()
+    expect(within(transcript).getByRole('button', { name: 'Run the tests, npm test, completed in 3.0s' })).toBeVisible()
     fireEvent.keyDown(steps, { key: 'Escape' })
     expect(steps).toHaveAttribute('aria-expanded', 'false')
   })

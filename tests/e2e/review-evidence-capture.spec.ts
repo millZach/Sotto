@@ -463,7 +463,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       if (!ONLY || ONLY.includes('steps-finished-open')) {
         // The same turn with its failed typecheck pressed open: the command and Copy on one line, then what it printed.
         await opened()
-        const failed = transcript(page).getByRole('button', { name: /^npm run typecheck, Exit 1/u }).first()
+        const failed = transcript(page).getByRole('button', { name: /, npm run typecheck, Exit 1/u }).first()
         await failed.click()
         await expect(failed).toHaveAttribute('aria-expanded', 'true')
         await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
@@ -535,8 +535,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const fold = transcript(page).getByRole('button', { name: /^Worked for.*Ran 3 commands/u }).first()
     if (await fold.getAttribute('aria-expanded') !== 'true') await fold.click()
     await expect(fold).toHaveAttribute('aria-expanded', 'true')
-    await expect(transcript(page).getByRole('button', { name: /^npm test -- tests\/integration\/threadStoreWorker/u })).toBeVisible()
-    const shows = 'A finished turn opened to its steps beside the pull request: a test command too long for its row keeps its verb and both files\' names.'
+    await expect(transcript(page).getByRole('button', { name: /^Run the tests, npm test -- tests\/integration\/threadStoreWorker/u })).toBeVisible()
+    const shows = 'A finished turn opened to its steps beside the pull request: a long test command its provider did not describe reads as Run the tests.'
     await capture.shoot('steps-cut', shows)
     await resizeContentWindowFor(capture.launched, 1280, 800)
     await capture.shoot('steps-cut', shows, '', { modes: ['dark'], size: [1280, 800] })
