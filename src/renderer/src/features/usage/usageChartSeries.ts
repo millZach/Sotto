@@ -221,17 +221,18 @@ export const QUIET_RUN = 5
 export const QUIET_ROOM = 2
 
 /**
- * How the bars of a sparse range are laid out. When only a few days have work, a run of five or more empty days takes
- * the room of two and says how many days it holds, so the days with work get the width rather than a flat line. Every
- * day is still in the chart, in order, and the keyboard and pointer still read each one. `room` is how many days' width
- * the chart spans, and `start` and `width` place each day across it, from 0 to 1.
+ * How the bars of a range are laid out. A run of at least `run` empty days takes the room of two and says how many days
+ * it holds, so the days with work get the width rather than a flat line; a `run` of 0 folds nothing. Every day is still
+ * in the chart, in order, and the keyboard and pointer still read each one. `room` is how many days' width the chart
+ * spans, and `start` and `width` place each day across it, from 0 to 1.
  */
-export function chartStretches(busy: readonly boolean[], fold: boolean): { stretches: ChartStretch[]; room: number; start: number[]; width: number[] } {
+export interface ChartLayout { readonly stretches: ChartStretch[]; readonly room: number; readonly start: number[]; readonly width: number[] }
+export function chartStretches(busy: readonly boolean[], run: number): ChartLayout {
   const stretches: ChartStretch[] = []
   for (let at = 0; at < busy.length;) {
     let end = at
-    while (fold && end < busy.length && !busy[end]) end += 1
-    if (end - at >= QUIET_RUN) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
+    while (run > 0 && end < busy.length && !busy[end]) end += 1
+    if (run > 0 && end - at >= run) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
     stretches.push({ kind: 'day', at }); at += 1
   }
   const room = stretches.reduce((sum, stretch) => sum + (stretch.kind === 'day' ? 1 : QUIET_ROOM), 0)
@@ -244,4 +245,53 @@ export function chartStretches(busy: readonly boolean[], fold: boolean): { stret
     used += QUIET_ROOM
   }
   return { stretches, room, start, width }
+}
+
+/**
+ * How long a run of empty days must be to fold. When only a few days have work, five. Otherwise a run as long as a
+ * quarter of the range, so a range that began before the work did, or a long break in it, gives the busy days its room;
+ * a short gap between busy days stays drawn day by day. A week or less never folds.
+ */
+export function foldRun(count: number, fewBusyDays: boolean): number {
+  if (count <= 7) return 0
+  return fewBusyDays ? QUIET_RUN : Math.max(QUIET_RUN, Math.ceil(count / 4))
+}
+
+/**
+ * The Per day chart's scale: a round top over the tallest day and the gridlines up to it, two or three at a round step
+ * (1, 2, 2.5 or 5 of a power of ten), so the figures beside the chart read as a scale. Prompts are whole, so their step
+ * is too. The top is never under `floor`, so a quiet range does not draw one prompt as a tall bar.
+ */
+export function chartScale(peak: number, floor: number, whole: boolean): { top: number; ticks: number[] } {
+  const want = Math.max(floor, peak, 1)
+  const raw = want / 3
+  const power = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 2, 2.5, 5, 10].map(factor => factor * power).find(value => value >= raw && (!whole || (Number.isInteger(value) && value >= 1))) ?? Math.ceil(raw)
+  const lines = Math.max(1, Math.ceil(want / step - 1e-9))
+  return { top: step * lines, ticks: Array.from({ length: lines }, (_, at) => step * (at + 1)) }
+}
+
+/** The least distance between two dates on the axis, as a share of the plot's width. */
+export const MARK_ROOM = 0.14
+
+/**
+ * Which days the axis names in a range of more than a week: where it starts and ends, the first day after each folded
+ * run, then every week back from the end (every few weeks in a long range), leaving out any that would crowd one
+ * already kept. A week or less names every day.
+ */
+export function axisMarks(count: number, layout: ChartLayout | null): number[] {
+  if (count <= 7) return Array.from({ length: count }, (_, at) => at)
+  const centre = (at: number): number => layout === null ? (at + 0.5) / count : layout.start[at]! + layout.width[at]! / 2
+  const quiet = new Set<number>(), firsts: number[] = []
+  layout?.stretches.forEach((stretch, place) => {
+    if (stretch.kind !== 'quiet') return
+    for (let at = stretch.from; at <= stretch.to; at += 1) quiet.add(at)
+    if (layout.stretches[place + 1]?.kind === 'day') firsts.push(stretch.to + 1)
+  })
+  const step = 7 * Math.max(1, Math.round(count / 35))
+  const weeks: number[] = []
+  for (let at = count - 1 - step; at > 0; at -= step) if (!quiet.has(at)) weeks.push(at)
+  const kept = [0, count - 1]
+  for (const at of [...firsts, ...weeks]) if (!kept.includes(at) && kept.every(other => Math.abs(centre(at) - centre(other)) >= MARK_ROOM)) kept.push(at)
+  return kept.sort((a, b) => a - b)
 }

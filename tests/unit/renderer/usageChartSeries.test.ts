@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, SERIES_SLOTS, assignSlots, chartStretches, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
+  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldRun, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
   type ChartFigure, type SeriesCandidate,
 } from '../../../src/renderer/src/features/usage/usageChartSeries'
 import { activityRow, field, tokens } from '../../fixtures/renderer/usageReads'
@@ -131,7 +131,7 @@ describe('Usage chart series', () => {
 
   it('folds a long run of empty days in a sparse range into the room of two, keeping every day in order', () => {
     const busy = Array.from({ length: 30 }, (_, at) => [25, 26, 28, 29].includes(at))
-    const { stretches, room, start, width } = chartStretches(busy, true)
+    const { stretches, room, start, width } = chartStretches(busy, QUIET_RUN)
     expect(stretches[0]).toEqual({ kind: 'quiet', from: 0, to: 24 })
     // A gap of one day between busy days stays a day of its own.
     expect(stretches.slice(1)).toEqual([25, 26, 27, 28, 29].map(at => ({ kind: 'day', at })))
@@ -141,7 +141,40 @@ describe('Usage chart series', () => {
     expect(width[25]).toBeCloseTo(1 / room)
     expect(start[29]! + width[29]!).toBeCloseTo(1)
     // Not asked to fold, or with no run long enough, each day keeps an equal share.
-    expect(chartStretches(busy, false).room).toBe(30)
-    expect(chartStretches([true, false, false, false, false, true], true).room).toBe(6)
+    expect(chartStretches(busy, 0).room).toBe(30)
+    expect(chartStretches([true, false, false, false, false, true], QUIET_RUN).room).toBe(6)
+  })
+
+  it('folds a busier range only where a run of empty days is a quarter of it, such as the days before the work began', () => {
+    expect(foldRun(7, true)).toBe(0)
+    expect(foldRun(30, true)).toBe(QUIET_RUN)
+    expect(foldRun(30, false)).toBe(8)
+    expect(foldRun(90, false)).toBe(23)
+    // Thirty days, the work in the last fifteen with one- and two-day gaps: the first fifteen fold, the gaps stay days.
+    const busy = Array.from({ length: 30 }, (_, at) => at >= 15 && ![18, 22, 23].includes(at))
+    const { stretches, room } = chartStretches(busy, foldRun(30, false))
+    expect(stretches[0]).toEqual({ kind: 'quiet', from: 0, to: 14 })
+    expect(stretches.slice(1)).toEqual(Array.from({ length: 15 }, (_, offset) => ({ kind: 'day', at: 15 + offset })))
+    expect(room).toBe(QUIET_ROOM + 15)
+  })
+
+  it('scales the chart to a round top with two or three gridlines at a round step', () => {
+    expect(chartScale(28, 10, true)).toEqual({ top: 30, ticks: [10, 20, 30] })
+    expect(chartScale(26 * 1.15, 10, true)).toEqual({ top: 30, ticks: [10, 20, 30] })
+    // A quiet range keeps its floor, and prompts step in whole numbers.
+    expect(chartScale(2, 10, true)).toEqual({ top: 10, ticks: [5, 10] })
+    expect(chartScale(4, 1, true)).toEqual({ top: 4, ticks: [2, 4] })
+    expect(chartScale(1_200_000, 1e5, false)).toEqual({ top: 1_500_000, ticks: [500_000, 1_000_000, 1_500_000] })
+    expect(chartScale(0, 1e5, false)).toEqual({ top: 100_000, ticks: [50_000, 100_000] })
+  })
+
+  it('names where the range starts and ends, where a fold ends and each week back from the end, never two dates crowded together', () => {
+    expect(axisMarks(7, null)).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(axisMarks(30, null)).toEqual([0, 8, 15, 22, 29])
+    const busy = Array.from({ length: 30 }, (_, at) => at >= 15)
+    // Folded: the start, the first day of work, a week before the end and the end; the week inside the fold is not named.
+    expect(axisMarks(30, chartStretches(busy, foldRun(30, false)))).toEqual([0, 15, 22, 29])
+    // A long range steps by several weeks.
+    expect(axisMarks(90, null)).toEqual([0, 26, 47, 68, 89])
   })
 })

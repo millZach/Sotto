@@ -182,7 +182,7 @@
 .usage-about.usage-values-more summary { font-size: var(--tt-type-caption); }
 .usage-about.usage-values-more ul { gap: 4px; margin-top: 8px; font-size: var(--tt-type-caption); line-height: 1.5; }
 
-/* Daily bars and their two gridlines. */
+/* Daily bars and their gridlines: two or three at a round step, and the baseline's 0. */
 /* The scale's figures stand in a gutter of their own, so a tall bar at the end of the range is never cut by one. */
 .usage-chart { --usage-chart-h: clamp(170px, 20cqi, 250px); --usage-scale-gutter: 30px; }
 .usage-chart__plot { position: relative; height: var(--usage-chart-h); margin-top: 22px; margin-right: var(--usage-scale-gutter); border-bottom: 1px solid var(--tt-border); border-radius: var(--tt-radius-mark); cursor: crosshair; outline-offset: 6px; }
@@ -205,7 +205,7 @@
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__label { opacity: .28; }
 /* On lines the day being read says its figure, the day's total, over its highest dot. */
 .usage-chart__label--at { position: absolute; margin: 0 0 12px; transform: translateX(-50%); }
-/* A sparse range folds each long run of empty days into the room of two, marked as a break in the baseline and
+/* A long run of empty days folds into the room of two, marked as a break in the baseline and
    counted over it, so the days with work take the width. A day there that is being read shows as a faint band. */
 .usage-chart__columns[data-folded] > .usage-chart__column { max-width: none; align-items: center; }
 .usage-chart__columns[data-folded] .usage-chart__bar { width: min(100%, 52px); }
@@ -218,6 +218,7 @@
 .usage-chart__quiet::after { right: 2px; }
 .usage-chart__quiet-words { position: absolute; right: 4px; bottom: 10px; left: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; text-align: center; text-wrap: balance; pointer-events: none; }
 .usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
+.usage-chart__grid[data-base] { border-top-color: transparent; }
 .usage-chart__grid span { position: absolute; right: calc(-1 * var(--usage-scale-gutter)); width: calc(var(--usage-scale-gutter) - 6px); bottom: -8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .usage-chart__axis { position: relative; height: 20px; margin-top: 8px; margin-right: var(--usage-scale-gutter); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }

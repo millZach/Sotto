@@ -3,7 +3,7 @@ import { i18n as interfaceI18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
-import { chartStretches, seriesValues, sumFigures, wholeFigure, type ChartFigure, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
+import { axisMarks, chartScale, chartStretches, foldRun, seriesValues, sumFigures, wholeFigure, type ChartFigure, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
 import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
@@ -55,13 +55,6 @@ export function Spark({ values, width = 72, height = 24 }: { readonly values: re
   </svg>
 }
 
-/** A round top for the axis: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 or 10 of a power of ten. */
-function niceMax(value: number): number {
-  const power = 10 ** Math.floor(Math.log10(value))
-  for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (step * power >= value) return step * power
-  return 10 * power
-}
-
 export interface DayValue { readonly day: string; readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown: boolean; readonly tokensPartial: boolean }
 
 /** At most this many days with work, and the chart labels each one's bar, while the index draws no line for them. */
@@ -95,10 +88,11 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const dayTotal = (at: number): number => plan.series.reduce((sum, item) => sum + Math.max(0, item.values[at] ?? 0), 0)
   const busyDays = kind === 'bars' && waiting === undefined ? days.reduce((busy, _, at) => busy + (dayTotal(at) > 0 ? 1 : 0), 0) : 0
   const labelled = busyDays > 0 && busyDays <= FEW_DAYS
-  // In a sparse range a long run of empty days folds into the room of two, so the days with work get the width.
-  const layout = chartStretches(days.map((_, at) => dayTotal(at) > 0), labelled && count > 7)
+  // A long run of empty days folds into the room of two, so the days with work get the width: in a sparse range any run
+  // of five, otherwise one as long as a quarter of the range, such as the days of a range before the work began.
+  const layout = chartStretches(days.map((_, at) => dayTotal(at) > 0), kind === 'bars' && waiting === undefined ? foldRun(count, labelled) : 0)
   const folded = layout.room < count
-  const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, labelled ? plan.peak * 1.15 : plan.peak))
+  const { top, ticks } = chartScale(labelled ? plan.peak * 1.15 : plan.peak, metric === 'prompts' ? 10 : 1e5, metric === 'prompts')
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1
   const radius = count > 60 ? 1 : count > 20 ? 3 : 5
   // A token chart with nothing reported, or a split with no series to draw, says so rather than draw an empty frame.
@@ -119,15 +113,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
     onHover(days[at] ?? null)
   }
   const height = (value: number): string => (Math.max(0, value) / top).toFixed(4)
-  // A folded chart marks where it starts, the first day after each quiet stretch and where it ends, leaving out a mark
-  // that would crowd the one before it.
-  const foldedMarks = (): number[] => {
-    const wanted = [0, ...layout.stretches.flatMap((stretch, place) => stretch.kind === 'quiet' && layout.stretches[place + 1]?.kind === 'day' ? [stretch.to + 1] : []), count - 1]
-    const centre = (at: number): number => layout.start[at]! + layout.width[at]! / 2
-    return wanted.filter((at, place) => place === 0 || at === count - 1 ? true : centre(at) - centre(wanted[place - 1]!) > 0.14 && centre(count - 1) - centre(at) > 0.14)
-      .filter((at, place, kept) => kept.indexOf(at) === place)
-  }
-  const marks = count <= 7 ? days.map((_, at) => at) : folded ? foldedMarks() : [0, Math.round((count - 1) / 2), count - 1]
+  const marks = axisMarks(count, folded ? layout : null)
   let drawing: ReactNode = null
   if (waiting === undefined && kind === 'bars') {
     const column = (day: string, at: number, quiet = false): ReactNode => {
@@ -176,8 +162,8 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
       aria-busy={waiting !== undefined || undefined} data-active={selected !== null || undefined} onPointerMove={point} onPointerLeave={() => onHover(null)} onClick={onPin} onKeyDown={onKey}>
       {drawing}
       {waiting !== undefined ? <div className="usage-chart__none">{waiting}</div> : none !== undefined ? <div className="usage-chart__none">{none}</div> : <>
-        <div className="usage-chart__grid" style={{ top: 0 }}><span>{scale(top)}</span></div>
-        <div className="usage-chart__grid" style={{ top: '50%' }}><span>{scale(top / 2)}</span></div>
+        {ticks.map(value => <div key={value} className="usage-chart__grid" style={{ top: `${(100 - value / top * 100).toFixed(3)}%` }}><span>{scale(value)}</span></div>)}
+        <div className="usage-chart__grid" data-base="" style={{ top: '100%' }}><span>{scale(0)}</span></div>
       </>}
     </div>
     <div className="usage-chart__axis" aria-hidden="true">{marks.map((at, place) => {
