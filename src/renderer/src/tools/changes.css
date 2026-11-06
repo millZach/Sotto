@@ -325,14 +325,14 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    changed nearly all through reads as text with its changes under it, not as ruled paper. */
 .changes-diff__rows[data-reading='document'] {
   --changes-added: transparent; --changes-removed: transparent;
-  --changes-under-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-under-removed: color-mix(in srgb, var(--tt-error-text) 70%, transparent);
+  --changes-under-added: color-mix(in srgb, var(--tt-success) 40%, transparent); --changes-under-removed: color-mix(in srgb, var(--tt-error-text) 45%, transparent);
 }
 .changes-diff__rows[data-reading='document'] .changes-word {
   border-radius: 0; background: none; color: var(--tt-text);
-  text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1px; text-underline-offset: .28em; text-decoration-skip-ink: none;
+  text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1px; text-underline-offset: .32em; text-decoration-skip-ink: none;
 }
 .changes-diff__rows[data-reading='document'] :is([data-kind='remove'] .changes-word, del.changes-word--edit) { text-decoration-color: var(--changes-under-removed); }
-.changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--tt-text-2); text-decoration-line: line-through; }
+.changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--tt-text-muted); text-decoration-line: line-through; }
 /* A paragraph taken out is struck through, as an editor strikes a passage on a page and as the words that went from a
    line read once are: a hairline in the removed role's colour at half strength, so the paragraph still reads, and a
    removal is as plain at a glance as an addition without a wash. The words a removed line changed are struck in the
@@ -350,13 +350,20 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'] del.changes-word--edit { color: var(--tt-text-2); }
 /* A picked line's accent wash would sink the muted ink below 4.5:1, so what a picked line keeps reads in the secondary ink. */
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'][data-kind='context'] { color: var(--tt-text-2); }
-/* A paragraph reworked all through reads as it is now: what it keeps a step quieter, the words that came underlined,
-   and where words went with nothing in their place, a short stroke in the removed role's colour on the underlines'
-   line. It takes no room and stands under the join, never between letters, so it reads as a mark on the text and not
-   as a character in it, as an upright bar did ("(|ADR-0016"). Under the paragraph, Show earlier wording opens what it
-   said before, smaller and quieter, the words that went underlined in the removed role's colour. */
-.changes-gone { position: relative; display: inline-block; width: 0; height: 0; text-decoration: none; vertical-align: baseline; }
-.changes-gone::after { content: ''; position: absolute; top: .3em; left: -.32em; width: .64em; height: 2px; border-radius: var(--tt-radius-mark); background: var(--tt-error-text); }
+/* A paragraph reworked all through reads as it is now, and calm: what it keeps in the muted ink, what it brought in the
+   body's, so the new words stand out by their ink and their underline is only a hairline under them. Where words went
+   with nothing in their place, a small chip holds the removed lines' own minus sign, in the removed role's colour: a
+   mark, not a character of the text, and nothing like a spelling squiggle under a word, as a red stroke on the
+   underlines' line read ("did."). Its tooltip and a screen reader say the words that went. Under the paragraph, Show
+   earlier wording opens what it said before, smaller and quieter, the words that went underlined in the removed role's
+   colour. */
+.changes-diff__rows[data-reading='document'] .changes-line[data-reworked] { color: var(--tt-text-muted); }
+.changes-diff__rows[data-reading='document'] .changes-line[data-reworked][aria-selected='true'] { color: var(--tt-text-2); }
+.changes-gone {
+  display: inline-block; margin: 0 .14em; padding: 0 .32em; border-radius: var(--tt-radius-tag); background: color-mix(in srgb, var(--tt-error) 14%, transparent);
+  color: var(--tt-error-text); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); font-weight: 600; line-height: 1.4; text-decoration: none; vertical-align: .08em;
+}
+.changes-gone::before { content: '\2212'; }
 .changes-earlier { display: block; }
 .changes-earlier__toggle {
   display: inline-flex; align-items: center; gap: 3px; height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px; border: 0; border-radius: var(--tt-radius-control);

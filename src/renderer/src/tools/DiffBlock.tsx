@@ -163,7 +163,7 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
     if (as === 'now') {
       if (came.trim() !== '' || went.trim() === '') return <Fragment key={index}>{side(after, segment.after, paintAfter, false, false)}</Fragment>
       // The line as it is now has none of the space around what went: the mark stands between the words it does have.
-      return <del key={index} className="changes-gone">{spoken(REMOVED_LINE, i18n)}<span className="tt-visually-hidden">{went.trim()}</span></del>
+      return <del key={index} className="changes-gone" title={went.trim()}>{spoken(REMOVED_LINE, i18n)}<span className="tt-visually-hidden">{went.trim()}</span></del>
     }
     // Words that went and words that came, with no space of their own between them, are held a little apart.
     const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
