@@ -27,8 +27,10 @@
   --rich-code-meta: var(--tt-text-muted);
   --rich-code-text: var(--tt-code-text, var(--tt-text));
   --rich-stripe: var(--tt-table-stripe, transparent);
-  /* Inline code: a tint of the ink over whatever it sits on, so it works on the room, in the bubble and in every theme. */
-  --rich-code-chip: color-mix(in oklab, var(--tt-text) 9%, transparent);
+  /* Inline code: a faint tint of the ink over whatever it sits on, so it works on the room, in the bubble and in every
+     theme. The mono face says code; the tint only marks where it starts and ends, so a sentence with several stays one line
+     of reading rather than a row of spots. */
+  --rich-code-chip: color-mix(in oklab, var(--tt-text) 5%, transparent);
   /* How wide a line of prose runs: about 90 characters of Figtree. Code and tables keep the column's whole width. */
   --rich-measure: 42em;
   /* The space after a paragraph, list or quote, and between list items. */
@@ -80,10 +82,11 @@
 .rich-link--inert { color: inherit; text-decoration-style: dotted; text-decoration-color: var(--rich-muted); cursor: help; }
 .rich-link--inert:hover { color: inherit; }
 
-/* Inline code sits in the sentence: the sentence's own ink and weight, a size down because the mono runs wide, on a tint
-   with no outline. A chip that wraps keeps its rounded ends on both lines. */
+/* Inline code sits in the sentence: the sentence's own ink and weight, a size down because the mono's letters stand taller
+   and run wider (a step down, its x-height meets the prose's), on a faint tint with no outline and only a hair of room at
+   its ends, so it does not push the words apart. A chip that wraps keeps its rounded ends on both lines. */
 .rich-message :not(pre) > code {
-  padding: 1px 4px;
+  padding: 0 3px;
   border-radius: var(--tt-radius-tag);
   background: var(--rich-code-chip);
   color: inherit;
