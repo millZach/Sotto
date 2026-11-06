@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -28,7 +28,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherPromptTurn, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
-  type WatcherWaitingOnUser } from '../../shared/watcher'
+  type WatcherStateWaiting, type WatcherWaitingOnUser } from '../../shared/watcher'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -55,7 +55,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { LATER_REQUEST_REACHES, watcherCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
@@ -283,6 +283,8 @@ function cutUtf8(text: string, bytes: number): string {
 const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent. Its conversation is still in Watcher history on the Threads page; put the offer away to start the new Watcher without it.'
 /** How long a replacement gives a tool call under way to end before it goes on without it (#1735). */
 const TOOL_CALL_GRACE_MS = 5_000
+/** The agent's message a waiting question follows, whose links its card shows (#2230): its newest that is not a visual. */
+const cardReply = (thread: Pick<AgentThread, 'messages'>): string => thread.messages.findLast(item => item.role === 'assistant' && !isVisualMessage(item))?.text ?? ''
 /** A card the last Watcher waited on, in its own words, for the handover (#1735). */
 function watcherCardWords(request: AgentThread['requests'][number]): string {
   const asked = request.questions?.map(question => question.question).filter(Boolean).join(' ')
@@ -1126,6 +1128,14 @@ export class WatcherService implements WatcherControlHooks {
       const index = this.hosts.index(snapshot)
       const thread = index ? index.thread(event.target) : snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
       if (!thread) return undefined
+      // A question waiting on the user: what it asks, its choices and its prototype, in the worker's words (#2230).
+      if (event.kind === 'needs-user') {
+        const holder = event.delegatedThreadId === undefined ? thread : index ? index.thread({ hostId: event.target.hostId, threadId: event.delegatedThreadId })
+          : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
+        const words = holder?.requests.find(item => item.id === event.requestCardId)
+        const asks = words && watcherWaitingCardWords(words, cardReply(holder!))
+        return asks ? watcherCardLine(asks) : undefined
+      }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
@@ -2305,6 +2315,17 @@ export class WatcherService implements WatcherControlHooks {
     })) as WatcherRoomState['receipts']
     this.roomReceipted = { operations, hostId, reports, receipts, pending }
     return receipts
+  }
+  /**
+   * A waitingOnUser row with its question card's own words (#2230), read from the owning host's thread as read_state
+   * pages it, so the room, which builds the list on every update, never reads a card's words.
+   */
+  private withCardWords(row: WatcherWaitingOnUser): WatcherStateWaiting {
+    if (row.waitsFor !== 'question' || row.requestCardId === undefined) return row
+    const threadId = row.delegatedThreadId ?? row.target.threadId
+    const thread = row.target.hostId === this.hostId() ? this.localThread(threadId) : this.owningThread(row.target.hostId, threadId)
+    const request = thread?.requests.find(item => item.id === row.requestCardId), asks = request && watcherWaitingCardWords(request, cardReply(thread!))
+    return asks ? { ...row, asks } : row
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
   private watching(threads: WatcherRoomState['watchedThreads']): WatcherStateThread[] { return this.watchedState(threads, false).watching }
@@ -4221,7 +4242,7 @@ export class WatcherService implements WatcherControlHooks {
         if (page.nextCursor === null) this.stateOwed = false
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settleWithoutAsking: this.settlesWithoutAsking(),
-          waitingOnUser: shown.flatMap(row => row.waiting ?? []), kept, staleNotes,
+          waitingOnUser: shown.flatMap(row => row.waiting ? [this.withCardWords(row.waiting)] : []), kept, staleNotes,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt() }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
