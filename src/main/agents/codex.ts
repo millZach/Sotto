@@ -215,7 +215,17 @@ function settingsHold(alias: Alias): boolean {
 class SettingsUnconfirmed extends Error {
   constructor() { super('Codex did not confirm this thread’s settings. Choose the thread settings again before sending.') }
 }
+/**
+ * Codex 0.165 and newer refuse `untrusted` in config with this sentence, which Codex 0.167.0's app-server sends back as an
+ * invalid request ("failed to load configuration: …") when a request's own config carries it (#2185). A Codex that
+ * refused it on a request's `approvalPolicy` too would be expected to say the same.
+ */
+const UNTRUSTED_REFUSAL = 'approval_policy = "untrusted" is no longer supported'
+/** What the user is told when that Codex refuses Ask for approval on a request (#2185). */
+export const ASK_FOR_APPROVAL_REFUSED = 'This version of Codex refuses Ask for approval, so nothing ran. Choose another permission mode.'
 class Rejected extends Error {
+  /** Codex refused the `untrusted` approval policy (#2185); whether Sotto sent it is the caller's to know. */
+  readonly untrustedRefused: boolean
   readonly unmaterializedThreadId: string | undefined
   readonly missingThreadId: string | undefined
   /**
@@ -244,6 +254,7 @@ class Rejected extends Error {
     this.archivedThreadId = error.success ? /^session (\S+) is archived\b/.exec(error.data.message)?.[1] : undefined
     this.missingLineageId = error.success ? /^invalid paginated history lineage for (\S+): missing source rollout$/.exec(error.data.message)?.[1] : undefined
     this.unknownTurnId = error.success ? /^turn not found: (\S+)$/.exec(error.data.message)?.[1] : undefined
+    this.untrustedRefused = error.success && error.data.message.includes(UNTRUSTED_REFUSAL)
     if (this.missingThreadId) this.message = 'Codex could not find this thread’s saved session. Create a new thread to continue.'
     if (this.missingLineageId) this.message = FORKED_THREAD_SOURCE_MISSING
   }
@@ -262,7 +273,7 @@ const turnKey = (id: string, nativeId: string): string => `${id}\n${nativeId}`
 type ModelList = AgentHostSnapshot['models']
 
 /** What happened to Sotto's own Codex role files (#1042), as stable event names; never a path, a model or Codex's words. */
-export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unreadable' | CodexRoleFilesEvent
+export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unreadable' | 'codex-untrusted-refused' | CodexRoleFilesEvent
 
 export interface CodexAppServerHostOptions {
   /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
@@ -506,6 +517,11 @@ export class CodexAppServerHost implements AgentHost {
   /** Threads whose app-server is an outdated process (CONTEXT.md): each stops as soon as its thread is not busy. */
   private readonly outdated = new Set<string>()
   private outdatedTimer: ReturnType<typeof setImmediate> | undefined
+  /**
+   * The Codex version that refused Ask for approval on a request (#2185). While that version runs, every model offers
+   * the mode as refused rather than choosable, and a request for it is refused here before it is sent.
+   */
+  private untrustedRefusedBy: string | undefined
   private watcher: CodexSessionLogWatcher | undefined
   private readonly pendingLogMessages = new Map<string, AgentMessage[]>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
@@ -682,6 +698,25 @@ export class CodexAppServerHost implements AgentHost {
       if (error instanceof WatcherProfileRefusal) throw error
       throw new Error('Codex could not refresh its tools. Nothing was sent. Try again, or reconnect Codex if it keeps happening.', { cause: error })
     }
+  }
+  /** Whether the running Codex refused Ask for approval (#2185). */
+  private refusesAskForApproval(): boolean { return this.untrustedRefusedBy !== undefined && this.untrustedRefusedBy === this.state.version }
+  /** `models` as the running Codex takes them: Ask for approval moved from offered to refused once it refused it. */
+  private offeredModes(models: ModelList): ModelList {
+    if (!this.refusesAskForApproval()) return models
+    return models.map(model => model.runtimeModes?.includes('approval-required')
+      ? { ...model, runtimeModes: model.runtimeModes.filter(mode => mode !== 'approval-required'), refusedRuntimeModes: ['approval-required' as const] } : model)
+  }
+  /**
+   * Whether `command` makes Codex take `untrusted` (#2185): a new thread or a change to Ask for approval, or anything
+   * else on a thread already on it, which resumes the thread or starts its turn with it. A Climb judge never asks.
+   */
+  private sendsUntrusted(command: AgentHostCommand): boolean {
+    if (command.type === 'create-thread') return !command.councilJudge && command.runtimeMode === 'approval-required'
+    if (!('threadId' in command)) return false
+    const alias = this.aliases[command.threadId]
+    if (!alias || alias.councilJudge) return false
+    return (command.type === 'configure-thread' ? command.runtimeMode ?? alias.runtimeMode : alias.runtimeMode) === 'approval-required'
   }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
   private spawnServer(executable: string, judge?: CodexJudge): CodexProcess {
@@ -939,7 +974,7 @@ export class CodexAppServerHost implements AgentHost {
     // The old one finishes any read it was asked for first; it never holds a turn.
     if (previous) this.endServer(previous, 'whenIdle')
     this.state.version = probed.version || this.state.version
-    if (probed.models) this.state.models = probed.models
+    if (probed.models) this.state.models = this.offeredModes(probed.models)
     this.skillsRevision++; this.loadedSkillCwds.clear()
     for (const id of this.runtimes.keys()) this.outdated.add(id)
     this.emit()
@@ -1018,7 +1053,7 @@ export class CodexAppServerHost implements AgentHost {
       // has been found missing from a client that starts, so a host's tile never calls Codex too old.
       const probed = await this.probe(provider)
       this.state.version = probed.version
-      this.state.models = probed.models ?? []
+      this.state.models = this.offeredModes(probed.models ?? [])
       if (probed.models) delete this.state.error
       else this.state.error = 'Codex models could not be listed. Check Codex and reconnect.'
       if (!current()) throw new Error('Codex disconnected while connecting.')
@@ -1918,6 +1953,9 @@ export class CodexAppServerHost implements AgentHost {
       const projects = [...this.state.projects.filter(p => p.id !== project.id), project]
       await this.projectStore.write(projects); this.state.projects = projects; this.emit(); return { accepted: true }
     }
+    // A Codex that refused Ask for approval refuses it again, so the request is not sent (#2185).
+    if ((command.type === 'create-thread' || command.type === 'configure-thread' || command.type === 'send') && this.refusesAskForApproval()
+      && this.sendsUntrusted(command)) throw new Error(ASK_FOR_APPROVAL_REFUSED)
     try {
       if (command.type === 'create-thread') {
         if (this.aliases[command.threadId]) return { accepted: true }
@@ -2203,7 +2241,16 @@ export class CodexAppServerHost implements AgentHost {
       return { accepted: true }
     } catch (error) {
       if (command.type === 'create-thread' && command.councilJudge) { this.creating.delete(command.threadId); await this.closeCouncilJudge(command.threadId) }
-      if (error instanceof Uncertain) return { accepted: false, uncertain: true }; throw error
+      if (error instanceof Uncertain) return { accepted: false, uncertain: true }
+      // Codex refused the `untrusted` Sotto sent: Ask for approval is off for this Codex until another version runs (#2185).
+      if (error instanceof Rejected && error.untrustedRefused && this.sendsUntrusted(command)) {
+        error.message = ASK_FOR_APPROVAL_REFUSED
+        if (!this.refusesAskForApproval()) {
+          this.untrustedRefusedBy = this.state.version; this.state.models = this.offeredModes(this.state.models)
+          this.options.logEvent?.('codex-untrusted-refused'); this.emit()
+        }
+      }
+      throw error
     }
     finally { this.scheduleOutdatedStop() }
   }

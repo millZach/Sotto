@@ -2709,8 +2709,8 @@ msgid "Code from the {sourceName} page"
 msgstr "Code from the {sourceName} page"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Codex asks before every command, even one that only reads, and before every edit."
-msgstr "Codex asks before every command, even one that only reads, and before every edit."
+msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
+msgstr "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
@@ -9387,6 +9387,11 @@ msgstr "This turn"
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr "This turn runs on {now}. The next turn starts on {next}."
+
+#. {provider} is a provider's name, such as Codex.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This version of {provider} refuses this mode, so it is off. Choose another."
+msgstr "This version of {provider} refuses this mode, so it is off. Choose another."
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Lock, Shield, Zap } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
+import { agentRuntimeModeSchema, hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import { fitSpeed } from '../../../shared/workerRoles'
 import { ULTRACODE } from '../../../shared/ultracode'
@@ -66,7 +66,8 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
 /**
  * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
  * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
- * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks; Allow edits is
+ * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks unless the user's
+ * own Codex rules allow it (#2185); Allow edits is
  * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
  * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
  * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
@@ -75,7 +76,7 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
 export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string {
   if (mode === 'full-access' && computer) return t({ message: `Codex runs any command and edits any file without asking, anywhere on ${computer} and online.`, comment: '{computer} is the name of the computer the thread runs on, such as forge.' })
   switch (mode) {
-    case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
+    case 'approval-required': return t`Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads.`
     case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
     case 'auto': return t`As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.`
     case 'full-access': return t`Codex runs any command and edits any file without asking, anywhere on this computer and online.`
@@ -138,14 +139,21 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   }
   const modes = model?.runtimeModes ?? []
   if (modes.length === 0) return []
+  // A mode the provider refused stays in its place, unchoosable, with the reason in place of its line (#2185).
+  const refused = model?.refusedRuntimeModes ?? []
   const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
-    : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
-  return [...lead, ...modes.map(mode => {
+    : modes.includes(runtimeMode) || refused.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
+  const listed = refused.length === 0 ? modes : agentRuntimeModeSchema.options.filter(mode => modes.includes(mode) || refused.includes(mode))
+  return [...lead, ...listed.map(mode => {
+    if (refused.includes(mode)) return { id: mode, label: RUNTIME_LABELS[mode], disabled: true, description: refusedModeLine(model?.provider ?? t`The provider`), translated: true }
     const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
       : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
+/** Why a permission mode the provider refused cannot be chosen (#2185). */
+export const refusedModeLine = (provider: string): string =>
+  t({ message: `This version of ${provider} refuses this mode, so it is off. Choose another.`, comment: '{provider} is a provider\'s name, such as Codex.' })
 /** The provider mode a thread is on, or the one it starts on when none has been chosen: the first offered. */
 export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>
   providerMode ?? model?.providerModes?.[0]?.id

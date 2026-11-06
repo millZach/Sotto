@@ -353,6 +353,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
+   * Modes the provider refused on a request, left out of `runtimeModes` and shown unavailable with the reason. Only a
+   * Codex that refuses Ask for approval sets it (#2185, ADR-0005), until another version of Codex runs.
+   */
+  refusedRuntimeModes: z.array(agentRuntimeModeSchema).optional(),
+  /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
    * The first is the one a thread starts on when none is chosen, so it is what every control shows unchosen.
    */

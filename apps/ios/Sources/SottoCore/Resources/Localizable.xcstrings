@@ -33893,194 +33893,194 @@
         }
       }
     },
-    "Codex asks before every command, even one that only reads, and before every edit." : {
+    "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads." : {
       "comment" : "What a Codex thread does under Ask before actions.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يسأل Codex قبل كل أمر، حتى الأمر الذي يقرأ فقط، وقبل كل تعديل."
+            "value" : "يسأل Codex قبل كل تعديل، وقبل كل أمر لا تسمح به قواعد Codex لديك مسبقًا، حتى الأمر الذي يقرأ فقط."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex প্রতিটি কমান্ডের আগে জিজ্ঞাসা করে, এমনকি যেটি শুধু পড়ে সেটির আগেও, আর প্রতিটি সম্পাদনার আগে।"
+            "value" : "Codex প্রতিটি সম্পাদনার আগে জিজ্ঞাসা করে, আর এমন প্রতিটি কমান্ডের আগেও যা আপনার Codex নিয়ম আগে থেকে অনুমতি দেয় না, এমনকি যেটি শুধু পড়ে সেটির আগেও।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex se ptá před každým příkazem, i takovým, který jen čte, a před každou úpravou."
+            "value" : "Codex se ptá před každou úpravou a před každým příkazem, který vaše pravidla Codexu ještě nepovolují, i takovým, který jen čte."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex spørger før hver kommando, også en der kun læser, og før hver redigering."
+            "value" : "Codex spørger før hver redigering og før hver kommando, som dine Codex-regler ikke allerede tillader, også en der kun læser."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex fragt vor jedem Befehl, auch einem, der nur liest, und vor jeder Bearbeitung."
+            "value" : "Codex fragt vor jeder Bearbeitung und vor jedem Befehl, den deine Codex-Regeln nicht schon erlauben, auch vor einem, der nur liest."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Το Codex ρωτά πριν από κάθε εντολή, ακόμη και μία που μόνο διαβάζει, και πριν από κάθε επεξεργασία."
+            "value" : "Το Codex ρωτά πριν από κάθε επεξεργασία και πριν από κάθε εντολή που δεν επιτρέπουν ήδη οι κανόνες σας του Codex, ακόμη και μία που μόνο διαβάζει."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex asks before every command, even one that only reads, and before every edit."
+            "value" : "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+            "value" : "Codex pregunta antes de cada edición y antes de cada comando que tus reglas de Codex no permitan ya, incluso uno que solo lee."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+            "value" : "Codex pregunta antes de cada edición y antes de cada comando que tus reglas de Codex no permitan ya, incluso uno que solo lee."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+            "value" : "Codex pregunta antes de cada edición y antes de cada comando que tus reglas de Codex no permitan ya, incluso uno que solo lee."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex kysyy ennen jokaista komentoa, myös pelkästään lukevaa, ja ennen jokaista muokkausta."
+            "value" : "Codex kysyy ennen jokaista muokkausta ja ennen jokaista komentoa, jota Codex-sääntösi eivät jo salli, myös pelkästään lukevaa."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex demande avant chaque commande, même une commande qui ne fait que lire, et avant chaque modification."
+            "value" : "Codex demande avant chaque modification et avant chaque commande que vos règles Codex n’autorisent pas déjà, même une commande qui ne fait que lire."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex हर कमांड से पहले पूछता है, उस कमांड से भी जो सिर्फ़ पढ़ती है, और हर एडिट से पहले।"
+            "value" : "Codex हर एडिट से पहले पूछता है, और हर उस कमांड से पहले जिसकी आपके Codex नियम पहले से अनुमति नहीं देते, उस कमांड से भी जो सिर्फ़ पढ़ती है।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A Codex minden parancs előtt kérdez, még az olyan előtt is, amely csak olvas, és minden szerkesztés előtt."
+            "value" : "A Codex minden szerkesztés előtt kérdez, és minden olyan parancs előtt, amelyet a Codex-szabályaid még nem engedélyeznek, még az olyan előtt is, amely csak olvas."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex chiede prima di ogni comando, anche di uno che si limita a leggere, e prima di ogni modifica."
+            "value" : "Codex chiede prima di ogni modifica e prima di ogni comando che le tue regole di Codex non consentono già, anche di uno che si limita a leggere."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex は、読み取るだけのコマンドも含めてすべてのコマンドの前と、すべての編集の前に確認します。"
+            "value" : "Codex は、すべての編集の前と、Codex のルールでまだ許可されていないすべてのコマンドの前に確認します。読み取るだけのコマンドも含みます。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex प्रत्येक कमांडआधी विचारतो, फक्त वाचणाऱ्या कमांडआधीही, आणि प्रत्येक एडिटआधी."
+            "value" : "Codex प्रत्येक एडिटआधी विचारतो, आणि तुमचे Codex नियम आधीच परवानगी देत नाहीत अशा प्रत्येक कमांडआधी, फक्त वाचणाऱ्या कमांडआधीही."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex spør før hver kommando, også en som bare leser, og før hver endring."
+            "value" : "Codex spør før hver endring og før hver kommando Codex-reglene dine ikke allerede tillater, også en som bare leser."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex vraagt het vóór elke opdracht, ook een die alleen leest, en vóór elke bewerking."
+            "value" : "Codex vraagt het vóór elke bewerking en vóór elke opdracht die je Codex-regels nog niet toestaan, ook een die alleen leest."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex pyta przed każdym poleceniem, nawet takim, które tylko czyta, i przed każdą edycją."
+            "value" : "Codex pyta przed każdą edycją i przed każdym poleceniem, na które Twoje reguły Codexa jeszcze nie pozwalają, nawet takim, które tylko czyta."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Codex pergunta antes de cada comando, mesmo um que só lê, e antes de cada edição."
+            "value" : "O Codex pergunta antes de cada edição e antes de cada comando que suas regras do Codex ainda não permitem, mesmo um que só lê."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Codex pergunta antes de cada comando, mesmo um que apenas lê, e antes de cada edição."
+            "value" : "O Codex pergunta antes de cada edição e antes de cada comando que as suas regras do Codex ainda não permitem, mesmo um que apenas lê."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex întreabă înainte de fiecare comandă, chiar și una care doar citește, și înainte de fiecare editare."
+            "value" : "Codex întreabă înainte de fiecare editare și înainte de fiecare comandă pe care regulile tale Codex nu o permit deja, chiar și una care doar citește."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex frågar före varje kommando, även ett som bara läser, och före varje ändring."
+            "value" : "Codex frågar före varje ändring och före varje kommando som dina Codex-regler inte redan tillåter, även ett som bara läser."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "படிக்க மட்டுமே செய்யும் கட்டளை உட்பட ஒவ்வொரு கட்டளைக்கும் முன்பும், ஒவ்வொரு திருத்தத்துக்கும் முன்பும் Codex கேட்கும்."
+            "value" : "ஒவ்வொரு திருத்தத்துக்கும் முன்பும், உங்கள் Codex விதிகள் ஏற்கெனவே அனுமதிக்காத ஒவ்வொரு கட்டளைக்கும் முன்பும் Codex கேட்கும், படிக்க மட்டுமே செய்யும் கட்டளை உட்பட."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "చదవడం మాత్రమే చేసే కమాండ్‌తో సహా ప్రతి కమాండ్‌కు ముందు, ప్రతి సవరణకు ముందు Codex అడుగుతుంది."
+            "value" : "ప్రతి సవరణకు ముందు, మీ Codex నియమాలు ఇప్పటికే అనుమతించని ప్రతి కమాండ్‌కు ముందు Codex అడుగుతుంది, చదవడం మాత్రమే చేసే కమాండ్‌తో సహా."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex, yalnızca okuyan bir komut bile olsa her komuttan ve her düzenlemeden önce sorar."
+            "value" : "Codex her düzenlemeden önce ve Codex kurallarınızın henüz izin vermediği her komuttan önce sorar, yalnızca okuyan bir komut olsa bile."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex питає перед кожною командою, навіть такою, що лише читає, і перед кожним редагуванням."
+            "value" : "Codex питає перед кожним редагуванням і перед кожною командою, яку ваші правила Codex ще не дозволяють, навіть такою, що лише читає."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex ہر کمانڈ سے پہلے پوچھتا ہے، اس کمانڈ سے بھی جو صرف پڑھتی ہے، اور ہر ترمیم سے پہلے۔"
+            "value" : "Codex ہر ترمیم سے پہلے پوچھتا ہے، اور ہر اس کمانڈ سے پہلے جس کی آپ کے Codex قواعد پہلے سے اجازت نہیں دیتے، اس کمانڈ سے بھی جو صرف پڑھتی ہے۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex 在每条命令之前都会询问，即使命令只是读取，也会在每次编辑之前询问。"
+            "value" : "Codex 会在每次编辑之前询问，也会在你的 Codex 规则尚未允许的每条命令之前询问，即使命令只是读取。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex 在每個命令之前都會詢問，即使命令只是讀取，也會在每次編輯之前詢問。"
+            "value" : "Codex 會在每次編輯之前詢問，也會在你的 Codex 規則尚未允許的每個命令之前詢問，即使命令只是讀取。"
           }
         }
       }
