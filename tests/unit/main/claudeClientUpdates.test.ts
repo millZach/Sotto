@@ -1,8 +1,17 @@
 // @vitest-environment node
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+
+// A home folder of the test's own, so the developer's ~/.local/bin/claude (a mise link on forge) cannot decide the channel.
+vi.mock('node:os', async importOriginal => {
+  const os = await importOriginal<typeof import('node:os')>()
+  const { mkdtempSync } = await import('node:fs'), { join: joined } = await import('node:path')
+  const home = mkdtempSync(joined(os.tmpdir(), 'sotto-claude-home-'))
+  return { ...os, homedir: () => home }
+})
+afterAll(() => rm(homedir(), { recursive: true, force: true }))
 import { claudeManagedFolder, claudeReleaseChannel, ProviderClients, type RunLike } from '../../../src/main/agents/providerClients'
 import { root } from '../../fixtures/providerClientInstallFixture'
 

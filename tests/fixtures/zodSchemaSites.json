@@ -159,6 +159,12 @@
       "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
     }
   },
+  "src/shared/boundedRecord.ts": {
+    "boundedRecord": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope, at load; a call to it inside a function is counted at the caller."
+    }
+  },
   "src/shared/files.ts": {
     "filesResultSchema": {
       "count": 1,

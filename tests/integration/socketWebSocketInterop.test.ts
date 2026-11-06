@@ -61,6 +61,28 @@ it('says hello, runs a command and receives a pushed event over Node’s own Web
   const pushed = await next(message => message.event === 'shell' && (message.state as { configuration?: { enabled?: boolean } }).configuration?.enabled === false)
   expect(pushed).toMatchObject({ v: 1, event: 'shell', eventPage: expect.any(Object) })
 
+  // Compressed shell pushes may still be on their way. Node's WebSocket inflates a compressed message off the loop, and
+  // its socket's close handler does not wait for its parser: when the host's Close reply and end of stream arrive behind
+  // a message it is still inflating, it reports 1006 although the Close frame arrived (#1467). So the close code is
+  // checked below, on a socket with nothing in flight.
   socket.close(1000, 'done')
-  expect((await closed).code).toBe(1000)
+  await closed
+})
+
+it('finishes the closing handshake with Node’s WebSocket', async () => {
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'WebSocket interop')
+  const opened = await fetch(`http://127.0.0.1:${server.descriptor.port}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${paired.token}` } })
+  const { session } = await opened.json() as { session: string }
+  const socket = new (WebSocket as unknown as NodeWebSocket)(`ws://127.0.0.1:${server.descriptor.port}/v1/socket`, { headers: { Authorization: `Bearer ${session}` } })
+  const messages: unknown[] = []
+  socket.addEventListener('message', event => messages.push(event.data))
+  const closed = new Promise<CloseEvent>(resolve => socket.addEventListener('close', resolve))
+  await new Promise<void>((resolve, reject) => { socket.addEventListener('open', () => resolve()); socket.addEventListener('error', () => reject(new Error('The socket did not open.'))) })
+  expect(socket.extensions).toContain('permessage-deflate')
+
+  // A socket that has not said hello is sent nothing, so the Close reply is the only frame the host writes to it.
+  socket.close(1000, 'done')
+  const event = await closed
+  expect(messages).toEqual([])
+  expect({ code: event.code, reason: event.reason, wasClean: event.wasClean }).toEqual({ code: 1000, reason: 'done', wasClean: true })
 })

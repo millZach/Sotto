@@ -52,6 +52,56 @@ describe('Watcher\'s reads of watched pull requests', () => {
     expect(f.seen(1)).toMatchObject({ checks: 'failed' })
   })
 
+  it('never says checks passed before the checks the rules require have, and says which running checks hold a merge (#2116)', async () => {
+    // #2083 on November 3: a minute after the push GitHub listed only another workflow's skipped check.
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'iPhone benchmarks', state: 'SKIPPED' }], requiredChecks: ['Gates (Windows)', 'Package result'] }
+    const f = harness([pull], [url(1)])
+    await f.pass()
+    expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 2, optional: 0 } })
+    // The first job alone, passed: still not CI that ran.
+    pull.checks = [{ name: 'iPhone benchmarks', state: 'SKIPPED' }, { name: 'Changed areas', state: 'SUCCESS' }, { name: 'Gates (Windows)', state: 'QUEUED', required: true }]
+    await f.pass()
+    expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 2, optional: 0 } })
+    // #1994 on November 1: the required checks passed while an optional iPhone job still ran. That is a pass, and the
+    // news says the running check holds no merge.
+    pull.checks = [{ name: 'Gates (Windows)', state: 'SUCCESS', required: true }, { name: 'Package result', state: 'SUCCESS', required: true },
+      { name: 'Native iOS client (macOS)', state: 'IN_PROGRESS' }]
+    await f.pass()
+    expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: true, pendingChecks: { required: 0, optional: 1 } })
+    const store = new WatcherEvidenceStore()
+    store.pullRequest(centerTarget, f.seen(1)!)
+    const thread = { pullRequests: [{ url: url(1), number: 1, title: 'x', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: '2026-10-26T12:00:00Z' }] }
+    expect(watcherPullRequestWords(store.attentionByPullRequest(centerTarget), thread, store.read(centerTarget), store.pendingChecks(centerTarget)))
+      .toMatch(/^Pull request #1: its required checks passed on its newest commit; 1 optional check is still running, which no merge waits on; Bug Bot /u)
+    // A stacked pull request whose base has no rules: one skipped check alone passes nothing (#2077).
+    const stacked: ScriptedPull = { number: 2, base: 'feat/other', checks: [{ name: 'Changed areas', state: 'SKIPPED' }] }
+    const g = harness([stacked], [url(2)])
+    await g.pass()
+    expect(g.seen(2)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 0, optional: 0 } })
+    // Rules that require nothing: every running check is optional.
+    stacked.checks = [{ name: 'Changed areas', state: 'SUCCESS' }, { name: 'Tests', state: 'IN_PROGRESS' }]
+    await g.pass()
+    expect(g.seen(2)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 0, optional: 1 } })
+  })
+
+  it('knows no pass where it cannot read which checks are required, and counts another app\'s check of a required name as optional (#2116)', async () => {
+    // The sign-in cannot read the rules and GitHub flags nothing: the first job passing is no pass, and nothing is counted.
+    const unread: ScriptedPull = { number: 1, rulesUnreadable: true, checks: [{ name: 'Changed areas', state: 'SUCCESS' }] }
+    const f = harness([unread], [url(1)])
+    await f.pass()
+    expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false })
+    expect(f.seen(1)).not.toHaveProperty('pendingChecks')
+    // Nor do GitHub's flags make a pass without the rules: they mark only the required checks that exist.
+    const flagged = harness([{ number: 3, rulesUnreadable: true, checks: [{ name: 'Gates (Windows)', state: 'SUCCESS', required: true }] }], [url(3)])
+    await flagged.pass()
+    expect(flagged.seen(3)).toMatchObject({ checks: 'pending', requiredPassed: false })
+    // The required build passed; another app's build of the same name, not flagged, still runs and holds no merge.
+    const twin: ScriptedPull = { number: 2, requiredChecks: ['build'], checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'build', status: true, state: 'PENDING' }] }
+    const g = harness([twin], [url(2)])
+    await g.pass()
+    expect(g.seen(2)).toMatchObject({ requiredPassed: true, pendingChecks: { required: 0, optional: 1 } })
+  })
+
   it('tells Watcher of checks passing, the required checks passing, a conflict, remarks moving and a merge', async () => {
     const pull: ScriptedPull = { number: 1, checks: [{ name: 'build', state: 'IN_PROGRESS', required: true }], requiredChecks: ['build'] }
     const f = harness([pull], [url(1)])

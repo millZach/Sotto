@@ -53,6 +53,33 @@ private struct ModelReading<Value: Equatable>: View {
     }
 }
 
+/// The folded shelf shared by Threads and the sidebar. Searching shows its matching rows.
+struct SnoozedSection<Row: View>: View {
+    let groups: FocusThreads
+    @ViewBuilder let row: (HostedThread) -> Row
+    @State private var expanded = false
+    var body: some View {
+        if !groups.snoozed.isEmpty {
+            DisclosureGroup(isExpanded: Binding(get: { expanded || groups.searching }, set: { expanded = $0 })) {
+                ForEach(groups.snoozedProjects) { project in
+                    Text(verbatim: project.title)
+                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.s3)
+                    ForEach(project.rows) { row($0) }
+                }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Text("Snoozed", comment: "The heading over threads put aside until a time.")
+                    Text("\(groups.snoozed.count)")
+                }
+                .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 52)
+            }
+            .padding(.horizontal, Space.s3).padding(.top, Space.s5)
+            .accessibilityIdentifier("snoozed-threads")
+        }
+    }
+}
+
 /// What `MainTabs` reads of the model as it draws: its badges, its tabs and rail, and what opens a page. A read added to
 /// its body joins this, or the tabs don't follow it.
 private struct MainTabsInputs: Equatable {
@@ -798,6 +825,7 @@ struct ThreadListSections: View, Equatable {
             section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
                 rowView(row, .recent(unread: groups.isUnreadFinish(row)))
             }
+            SnoozedSection(groups: groups) { row in rowView(row, .snoozed) }
         }
         .benchEnvironment("EnvironmentUnderList")
     }
@@ -830,12 +858,12 @@ struct ThreadListSections: View, Equatable {
                 let asking = groups.asking(row)
                 return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)",
                         thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
-                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
+                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "", thread.snoozedUntil ?? "", thread.updatedAt ?? "",
                         asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
                         "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
             }
         }
-        return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)
+        return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent) + rows("snoozed", groups.snoozed)
     }
     @ViewBuilder private func section<Row: View>(_ title: String, _ id: String, _ rows: [HostedThread],
                                                  @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
@@ -867,14 +895,14 @@ struct ListWatch: Equatable {
 extension AppModel {
     /// What the thread list reads from Watcher for these groups' Needs you, Working now and Recent rows.
     func listWatch(_ groups: FocusThreads) -> ListWatch {
-        let rows = groups.questions + groups.working + groups.recent
+        let rows = groups.questions + groups.working + groups.recent + groups.snoozed
         return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { canChangeWatch($0.ref) }.map(\.id)))
     }
     /// What these groups' Working now and Recent rows offer for the shelf, by row ID. A Needs you row offers neither, as
     /// its card never did: settling leaves its question waiting, and the row where it stands.
     func shelfOffers(_ groups: FocusThreads) -> [String: ShelfOffer] {
         var offers: [String: ShelfOffer] = [:]
-        for row in groups.working + groups.recent { offers[row.id] = shelfOffer(row) }
+        for row in groups.working + groups.recent + groups.snoozed { offers[row.id] = shelfOffer(row) }
         return offers
     }
 }
@@ -902,7 +930,7 @@ struct ThreadListHeading: View {
 /// open beside the list. A thread Watcher can keep going offers Watch or Stop watching on a long press.
 struct ThreadListRow: View, Equatable {
     /// Which section it is in; a recent or settled thread that finished while nothing showed it is `unread`.
-    enum Kind: Equatable { case needs, working, recent(unread: Bool) }
+    enum Kind: Equatable { case needs, working, recent(unread: Bool), snoozed }
     let row: HostedThread
     let kind: Kind
     /// The delegated thread whose request a Needs you row stands for, when it isn't the row's own.
@@ -931,6 +959,7 @@ struct ThreadListRow: View, Equatable {
         switch kind {
         case .needs: return .warning
         case .working: return .accent
+        case .snoozed: return .off
         case .recent(let unread): return unread ? .accent : row.failed ? .danger : .off
         }
     }
@@ -945,7 +974,7 @@ struct ThreadListRow: View, Equatable {
                               comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
             }
             return "\(state.words) · \(row.computer)"
-        case .working: return Words.place(row)
+        case .working, .snoozed: return Words.place(row)
         case .recent(let unread):
             if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
             if !row.reachable { return "\(row.status.words) · \(row.computer)" }
@@ -960,6 +989,7 @@ struct ThreadListRow: View, Equatable {
         switch kind {
         case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in line } ?? place)"
         case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
+        case .snoozed: spoken = "\(row.thread.title), \(wakeTime ?? ""), \(place)"
         case .recent(let unread):
             if unread {
                 spoken = String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",
@@ -985,10 +1015,18 @@ struct ThreadListRow: View, Equatable {
             button
         }
     }
+    private var wakeTime: String? {
+        guard case .snoozed = kind, let date = row.thread.snoozedUntil.flatMap(Stamp.date) else { return nil }
+        let when: String
+        if Calendar.current.isDateInToday(date) { when = date.formatted(date: .omitted, time: .shortened) }
+        else if date.timeIntervalSinceNow < 6 * 24 * 60 * 60 { when = date.formatted(.dateTime.weekday(.abbreviated).hour().minute()) }
+        else { when = date.formatted(.dateTime.month(.abbreviated).day().hour().minute()) }
+        return String(localized: "Until \(when)", comment: "%@ is the time a snoozed thread wakes.")
+    }
     private var button: some View {
         // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
-        let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+        let ago = wakeTime ?? Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: tone, breathing: kind == .working).padding(.top, 6)
@@ -1019,7 +1057,7 @@ struct ThreadListRow: View, Equatable {
     }
 }
 
-/// Where a thumb has the upright sidebar while it drags it: 0 out of sight, 1 all the way in, nil while nothing holds it.
+    /// Where a thumb has the upright sidebar while it drags it: 0 out of sight, 1 all the way in, nil while nothing holds it.
 /// Only the drawer reads it, so a drag redraws the drawer and nothing else.
 @Observable final class SidebarPull {
     var progress: CGFloat?

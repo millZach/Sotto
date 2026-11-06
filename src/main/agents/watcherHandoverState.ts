@@ -44,7 +44,7 @@ const PENDING: Record<WatcherHandoverStateInput['pending'][number]['state'], str
   queued: 'queued behind its turn', dispatching: 'sending now', uncertain: 'not confirmed yet',
 }
 const ACTION: Record<WatcherHandoverStateInput['pending'][number]['action'], string> = { start: 'A start of', send: 'A send to', stop: 'A stop of', settle: 'A settle of' }
-const WAITS_FOR: Record<WatcherWaitingOnUser['waitsFor'], string> = { question: 'a question', permission: 'a permission', 'prototype-review': 'a prototype to review' }
+const WAITS_FOR: Record<WatcherWaitingOnUser['waitsFor'], string> = { question: 'a question', permission: 'a permission' }
 
 /** One list, at most `most` rows, then `more` for the rest, which says how many there are and where to read them. */
 function list(heading: string, rows: readonly string[], more: (rest: number) => string = rest => `And ${rest} more.`, most = ROWS_MAX): string[] {

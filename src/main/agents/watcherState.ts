@@ -2,7 +2,8 @@ import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_KEPT_CLOSED_MAX, WATCHER_KEPT_CLOSED_MS, WATCHER_KEPT_LISTS, watcherKeptLegacySchema, watcherKeptOpenMax, watcherKeptRecordSchema,
-  type WatcherKeepStateInput, type WatcherKeptItem, type WatcherKeptList, type WatcherKeptRecord, type WatcherKeptState } from '../../shared/watcher'
+  type WatcherKeepStateInput, type WatcherKeptChange, type WatcherKeptItem, type WatcherKeptList, type WatcherKeptRecord, type WatcherKeptState } from '../../shared/watcher'
+import { keptChanges } from './watcherStateChanges'
 import type { WatcherRoomState } from '../../shared/watcherRoom'
 
 const nothingKept = (): WatcherKeptRecord => ({ decisions: [], rules: [], issues: [], updatedAt: null, nextId: 1 })
@@ -162,16 +163,20 @@ export class WatcherStateStore {
     this.shown = { record: this.kept, until: nextClearing(this.kept, now), state }
     return state
   }
-  /** Applies keep_state's change (`applyKeep`), or keeps nothing and says why. */
-  keep(input: WatcherKeepStateInput, now: string): Promise<WatcherKeptState | WatcherKeepRefusal> {
+  /**
+   * Applies keep_state's change (`applyKeep`), or keeps nothing and says why. Gives what is kept now and, in the same turn,
+   * which lines the call changed (#2231), the only part keep_state gives back.
+   */
+  keep(input: WatcherKeepStateInput, now: string): Promise<{ state: WatcherKeptState; changed: WatcherKeptChange[] } | WatcherKeepRefusal> {
     return this.inTurn(async () => {
       await this.ensureRead()
       const next = applyKeep(this.kept, input, now)
       if (!('nextId' in next)) return next
       if (this.historyEnabled()) await this.store.write(next)
       else await this.removeSaved()
+      const at = Date.parse(now), before = keptAsShown(this.kept, at)
       this.kept = next
-      return this.read()
+      return { state: this.read(), changed: keptChanges(before, keptAsShown(next, at)) }
     })
   }
   /** Keep local history changed: turned off, nothing kept stays on disk; turned on, what is kept now is saved. */
@@ -187,12 +192,9 @@ export class WatcherStateStore {
 type WatchedThread = WatcherRoomState['watchedThreads'][number]
 /** What a watched thread waits on, in Sotto's words, from its own facts: never anything it said. */
 export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected' | 'settled' | 'backgroundWorkCount' | 'paused'>
-  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[]
-    readonly prototypeReady?: boolean }): string {
+  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[] }): string {
   if (thread.waitsOn.some(card => card.kind === 'permission')) return 'The user’s answer to its permission request.'
   if (thread.waitsOn.length) return 'The user’s answer to its question.'
-  // A prototype waiting for review is the user's to open, as a card is theirs to answer (ADR-0108).
-  if (thread.prototypeReady) return 'The user’s review of the prototype it made. Only the user can review it.'
   // A thread it delegated to is its to see through (#1190), so that thread's card is what it waits on too.
   if (thread.delegatedWaitsOn?.some(card => card.kind === 'permission')) return 'The user’s answer to a permission request in a thread it delegated to.'
   if (thread.delegatedWaitsOn?.length) return 'The user’s answer to a question in a thread it delegated to.'

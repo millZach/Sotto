@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, type Dirent } from 'node:fs'
 import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -15,11 +15,84 @@ export interface GitRepositoryOptions {
 
 /** Fixture commands ignore machine config; local config also protects Git run by the service under test. */
 export function runFixtureGit(cwd: string, ...args: string[]): string {
-  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null' }
+  // Git's own trace goes to its stderr, which is read only when the command fails: it says whether Git started, how
+  // far it got and whether it ended itself. On the Windows runner fixture commands have exited 1 with nothing on
+  // stderr (#1002), which the trace tells apart from Git refusing on its own. It is set after the inherited
+  // variables so an inherited value cannot turn it off, and the performance format is used because it gives each
+  // line the depth of the Git that wrote it, which tells the launched Git's exit apart from a child Git's.
+  const env: NodeJS.ProcessEnv = { ...fixtureGitEnvironment(), GIT_TRACE2_PERF: '2' }
+  try { return execFileSync('git', args, { cwd, env, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  catch (error) { throw describeFixtureGitFailure(error, cwd, args, env) }
+}
+
+function fixtureGitEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null' }
   for (const key of Object.keys(env)) {
-    if (/^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_COUNT|CONFIG_KEY_\d+|CONFIG_VALUE_\d+|CONFIG_PARAMETERS)$/u.test(key)) delete env[key as keyof typeof env]
+    if (/^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_COUNT|CONFIG_KEY_\d+|CONFIG_VALUE_\d+|CONFIG_PARAMETERS)$/u.test(key)) delete env[key]
   }
-  return execFileSync('git', args, { cwd, env, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  return env
+}
+
+/**
+ * Rewrites a failed fixture command's message so the failure names its cause: how it ended, Git's trace and stderr,
+ * which GIT_* variables it saw, any lock files in the repository and what `git status` says there now. The error keeps
+ * its own status, signal and output for callers that read them.
+ */
+function describeFixtureGitFailure(error: unknown, cwd: string, args: readonly string[], env: NodeJS.ProcessEnv): unknown {
+  if (!(error instanceof Error)) return error
+  const failed = error as Error & { status?: number | null; signal?: NodeJS.Signals | null; stdout?: string; stderr?: string; code?: string }
+  const stderr = (failed.stderr ?? '').trim()
+  // Node reports a launch failure (ENOENT, E2BIG) with a null status and no signal, keeping the cause in `code`.
+  const notStarted = failed.status == null && !failed.signal && typeof failed.code === 'string'
+  const ended = notStarted ? `could not start (${failed.code})`
+    : failed.signal ? `was ended by ${failed.signal}` : `exited ${failed.status ?? 'without a status'}`
+  const trace = notStarted ? 'Git never ran.'
+    : !stderr ? 'Git wrote nothing, not even its trace, so it ended before it started or was ended from outside.'
+    : launchedGitReportedExit(stderr) ? 'Git reported its own exit.' : 'Git never reported its own exit, so something outside it ended it.'
+  const lines = [
+    `Fixture command \`git ${args.join(' ')}\` in ${cwd} ${ended}. ${trace}`,
+    `stdout: ${(failed.stdout ?? '').trim() || '(empty)'}`,
+    `stderr and trace:\n${stderr || '(empty)'}`,
+    `GIT_* variables: ${Object.keys(env).filter(key => key.startsWith('GIT_')).sort().join(', ')}`,
+    `lock files: ${lockFiles(cwd).join(', ') || 'none'}`,
+    `git status: ${fixtureGitStatus(cwd, env)}`,
+  ]
+  failed.message = lines.join('\n')
+  return failed
+}
+
+/**
+ * The trace's exit line is written by Git as it ends itself; a trace without one was cut off from outside. Child Git
+ * processes write to the same trace one level deeper, so only an exit at the depth of the first `start` counts.
+ */
+function launchedGitReportedExit(trace: string): boolean {
+  const depth = /(?:^|\| )d(\d+) \|[^|\n]*\| start +\|/mu.exec(trace)?.[1]
+  return depth !== undefined && new RegExp(`(?:^|\\| )d${depth} \\|[^|\\n]*\\| exit +\\|`, 'mu').test(trace)
+}
+
+function lockFiles(cwd: string): string[] {
+  const found: string[] = []
+  const visit = (folder: string, depth: number): void => {
+    let entries: Dirent[]
+    try { entries = readdirSync(folder, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      const path = join(folder, entry.name)
+      if (entry.isDirectory() && depth < 3 && entry.name !== 'objects') visit(path, depth + 1)
+      else if (entry.name.endsWith('.lock')) found.push(relative(cwd, path))
+    }
+  }
+  for (const git of [join(cwd, '.git'), cwd]) if (existsSync(join(git, 'HEAD'))) { visit(git, 0); break }
+  return found
+}
+
+function fixtureGitStatus(cwd: string, env: NodeJS.ProcessEnv): string {
+  try {
+    const status = execFileSync('git', ['status', '--porcelain=v2', '--branch', '--untracked-files=all'], { cwd, env, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    return status ? `\n${status}` : '(clean)'
+  } catch (statusError) {
+    const failed = statusError as { status?: number | null; signal?: string | null; stderr?: string; message?: string }
+    return `could not read it (${failed.signal ?? `exit ${failed.status ?? '?'}`}): ${(failed.stderr ?? failed.message ?? '').trim()}`
+  }
 }
 
 async function configure(directory: string, options: GitRepositoryOptions, bare = false): Promise<void> {

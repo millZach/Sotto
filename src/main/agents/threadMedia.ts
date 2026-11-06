@@ -70,7 +70,8 @@ export function picturesIn(content: unknown): CapturedPicture[] {
     const source = typeof part.source === 'object' && part.source !== null ? part.source as Record<string, unknown> : undefined
     const data = source ? source.type === 'base64' ? source.data : undefined : part.data
     const mimeType = source ? source.media_type : part.mimeType ?? part.mime_type
-    if (typeof data === 'string' && typeof mimeType === 'string') found.push({ data, mimeType })
+    // A picture whose bytes an oversized Codex line left out (`OversizedLine`) is no picture.
+    if (typeof data === 'string' && data && typeof mimeType === 'string') found.push({ data, mimeType })
     if (found.length === MAX_ACTIVITY_MEDIA) break
   }
   return found

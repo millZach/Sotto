@@ -302,11 +302,15 @@ describe('Watcher own changes', () => {
     expect(WATCHER_SYSTEM_PROMPT).toContain('Never try to answer')
   })
 
-  it('keeps every ask in front of the user until it is answered, and has ship decisions raised as cards', () => {
-    expect(WATCHER_SYSTEM_PROMPT).toContain('names, under Needs you, each thing waitingOnUser lists, every time, until the user answers it')
-    expect(WATCHER_SYSTEM_PROMPT).toContain('Never write Needs you: nothing while it lists anything.')
+  it('leaves the list of what waits on the user to Sotto, never calls it empty, and has ship decisions raised as cards', () => {
+    expect(WATCHER_SYSTEM_PROMPT).toContain('Sotto shows the user everything waitingOnUser lists, so do not repeat that list in your replies.')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('when news first brings it, when the user asks what waits on them, or when your reply is about it')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('Never tell the user that nothing waits on them.')
+    expect(WATCHER_SYSTEM_PROMPT).not.toContain('every time, until the user answers it')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('carry the ask in your replies until the card is up')
     expect(WATCHER_SYSTEM_PROMPT).toContain('send the thread back to ask it as a question card with its choices')
     expect(questionInstructions('AskUserQuestion', false)).toContain('A decision that holds up shipping, such as whether to ship, which take to keep or whether to approve an ADR change, is such a question: ask it there with its choices')
+    expect(questionInstructions('AskUserQuestion', false)).toContain('When a prototype or mock-up needs the user to look at it or pick between its variants, ask that as a question too')
   })
 
   it.each([

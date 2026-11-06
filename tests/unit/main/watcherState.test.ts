@@ -32,18 +32,18 @@ it('adds, edits and drops one line at a time by its ID, leaving every other line
   const store = new WatcherStateStore(await folder(), () => true, () => Date.parse(LATER))
   await store.keep({ add: [{ list: 'decisions', text: 'Merge #1490 once CI is green?' }, { list: 'issues', text: '#1501 widget flicker' }] }, AT)
   const added = await store.keep({ add: [{ list: 'decisions', text: 'Which icon for the tray?' }] }, LATER)
-  if (!('decisions' in added)) throw new Error('refused')
-  expect(added.decisions).toEqual([{ id: 'd1', text: 'Merge #1490 once CI is green?', touchedAt: AT }, { id: 'd3', text: 'Which icon for the tray?', touchedAt: LATER }])
-  expect(added.issues).toEqual([{ id: 'i2', text: '#1501 widget flicker', touchedAt: AT }])
+  if (!('state' in added)) throw new Error('refused')
+  expect(added.state.decisions).toEqual([{ id: 'd1', text: 'Merge #1490 once CI is green?', touchedAt: AT }, { id: 'd3', text: 'Which icon for the tray?', touchedAt: LATER }])
+  expect(added.state.issues).toEqual([{ id: 'i2', text: '#1501 widget flicker', touchedAt: AT }])
   // Adding the same words again, as a retry does, touches that line and adds none.
   const again = await store.keep({ add: [{ list: 'decisions', text: 'Which icon for the tray?' }], edit: [{ id: 'd1', text: 'Merge #1490 after #1509?' }], drop: ['i2'] }, LATER)
-  if (!('decisions' in again)) throw new Error('refused')
-  expect(again.decisions).toEqual([{ id: 'd1', text: 'Merge #1490 after #1509?', touchedAt: LATER }, { id: 'd3', text: 'Which icon for the tray?', touchedAt: LATER }])
-  expect(again.issues).toEqual([])
+  if (!('state' in again)) throw new Error('refused')
+  expect(again.state.decisions).toEqual([{ id: 'd1', text: 'Merge #1490 after #1509?', touchedAt: LATER }, { id: 'd3', text: 'Which icon for the tray?', touchedAt: LATER }])
+  expect(again.state.issues).toEqual([])
   // A line's ID is never given again, even once its line is gone.
   const next = await store.keep({ add: [{ list: 'issues', text: '#1502 tray icon blurry' }] }, LATER)
-  if (!('issues' in next)) throw new Error('refused')
-  expect(next.issues).toEqual([{ id: 'i4', text: '#1502 tray icon blurry', touchedAt: LATER }])
+  if (!('state' in next)) throw new Error('refused')
+  expect(next.state.issues).toEqual([{ id: 'i4', text: '#1502 tray icon blurry', touchedAt: LATER }])
 })
 
 it('closes a line with how it ended, keeps it out of the count, and clears it about a day later', async () => {
@@ -51,11 +51,11 @@ it('closes a line with how it ended, keeps it out of the count, and clears it ab
   const directory = await folder(), store = new WatcherStateStore(directory, () => true, () => clock)
   await store.keep({ issues: ['#1490 composer drops pasted images', '#1501 widget flicker'] }, AT)
   const closed = await store.keep({ close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] }, AT)
-  if (!('issues' in closed)) throw new Error('refused')
-  expect(closed.issues).toEqual([{ id: 'i1', text: '#1490 composer drops pasted images', touchedAt: AT, closedAt: AT, closedNote: 'done: #1490 fixed by #1509' },
+  if (!('state' in closed)) throw new Error('refused')
+  expect(closed.state.issues).toEqual([{ id: 'i1', text: '#1490 composer drops pasted images', touchedAt: AT, closedAt: AT, closedNote: 'done: #1490 fixed by #1509' },
     { id: 'i2', text: '#1501 widget flicker', touchedAt: AT }])
   // Closing it again, as a retry does, changes nothing.
-  expect(await store.keep({ close: [{ id: 'i1' }] }, LATER)).toMatchObject({ issues: closed.issues })
+  expect(await store.keep({ close: [{ id: 'i1' }] }, LATER)).toMatchObject({ state: { issues: closed.state.issues }, changed: [] })
   // An edit of a closed line is refused: it is done.
   expect(await store.keep({ edit: [{ id: 'i1', text: 'Reopened' }] }, LATER)).toMatchObject({ code: 'INVALID_INPUT' })
   clock = Date.parse(AT) + 23 * HOUR
@@ -79,9 +79,9 @@ it('refuses to add past a full list, and keeps nothing rather than drop a line t
   expect(words(store.read()).decisions).toEqual(full)
   // A closed line no longer counts, so closing one makes room.
   const room = await store.keep({ close: [{ id: 'd2', note: 'done' }], add: [{ list: 'decisions', text: 'One more question' }] }, AT)
-  if (!('decisions' in room)) throw new Error('refused')
-  expect(room.decisions.filter(line => line.closedAt === undefined)).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
-  expect(room.decisions.at(-1)).toMatchObject({ text: 'One more question' })
+  if (!('state' in room)) throw new Error('refused')
+  expect(room.state.decisions.filter(line => line.closedAt === undefined)).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
+  expect(room.state.decisions.at(-1)).toMatchObject({ text: 'One more question' })
 })
 
 // #2236: the rules are the user's, so their list holds more, and a full one never asks Watcher to drop one to make room.
@@ -112,8 +112,8 @@ it('keeps a whole list as before, where unchanged words keep their line and clos
   await store.keep({ decisions: ['Merge #1186?', 'Which icon?'] }, AT)
   await store.keep({ close: [{ id: 'd2', note: 'Zach picked the owl' }] }, AT)
   const replaced = await store.keep({ decisions: ['Merge #1186?', 'Ship 0.2 on Friday?'] }, LATER)
-  if (!('decisions' in replaced)) throw new Error('refused')
-  expect(replaced.decisions).toEqual([{ id: 'd1', text: 'Merge #1186?', touchedAt: AT }, { id: 'd3', text: 'Ship 0.2 on Friday?', touchedAt: LATER },
+  if (!('state' in replaced)) throw new Error('refused')
+  expect(replaced.state.decisions).toEqual([{ id: 'd1', text: 'Merge #1186?', touchedAt: AT }, { id: 'd3', text: 'Ship 0.2 on Friday?', touchedAt: LATER },
     { id: 'd2', text: 'Which icon?', touchedAt: AT, closedAt: AT, closedNote: 'Zach picked the owl' }])
 })
 
@@ -125,8 +125,8 @@ it('reads the lists an earlier build saved, giving each line an ID touched when 
     rules: [{ id: 'r2', text: 'Suites run in CI.', touchedAt: '2026-10-19T10:00:00.000Z' }],
     issues: [{ id: 'i3', text: '#1189', touchedAt: '2026-10-19T10:00:00.000Z' }], updatedAt: '2026-10-19T10:00:00.000Z' })
   const next = await store.keep({ add: [{ list: 'issues', text: '#1490' }] }, AT)
-  if (!('issues' in next)) throw new Error('refused')
-  expect(next.issues.map(line => line.id)).toEqual(['i3', 'i4'])
+  if (!('state' in next)) throw new Error('refused')
+  expect(next.state.issues.map(line => line.id)).toEqual(['i3', 'i4'])
 })
 
 it('removes the kept words, their recovery copies and temporary writes as soon as history is turned off', async () => {
@@ -166,8 +166,8 @@ it('refuses rather than keep over saved lists it could not read at start, and re
   await rm(file, { recursive: true })
   await writeFile(file, JSON.stringify({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: [], updatedAt: null }))
   const kept = await store.keep({ issues: ['#1189'] }, '2026-10-19T10:00:00.000Z')
-  if (!('issues' in kept)) throw new Error('refused')
-  expect(words(kept)).toEqual({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: ['#1189'] })
+  if (!('state' in kept)) throw new Error('refused')
+  expect(words(kept.state)).toEqual({ decisions: ['Merge #1186?'], rules: ['Suites run in CI.'], issues: ['#1189'] })
 })
 
 it('writes nothing over saved lists it could not read when a settings save runs the privacy cleanup', async () => {
