@@ -16,6 +16,37 @@ type LastRead = Map<string, AgentModel[]>
 const wrapped = new WeakMap<AgentWireBridge, AgentBridge>()
 
 /**
+ * The thread revision each broadcast and command receipt this page put back crossed under, by the state it became (#306).
+ * Main numbers a broadcast's changed thread records and a receipt's from one counter, a broadcast as it is sent and a
+ * receipt as the router builds it, so a receipt numbered above a broadcast was built after that broadcast was sent and
+ * holds at least what it held. `AgentContext` reads this to keep a reply that a broadcast reached the window ahead of. Held beside
+ * the state rather than in it, so state sharing still finds an unchanged broadcast unchanged. A state put back from a
+ * whole thread list, or read through `get()`, has none.
+ */
+const threadRevisions = new WeakMap<AgentState, number>()
+
+/** The thread revision `state` crossed under, when the page put it back from a broadcast or a receipt that carried one. */
+export function threadRevisionOf(state: AgentState): number | undefined { return threadRevisions.get(state) }
+
+/**
+ * Where each whole read through `get()` and each command's reply stands in the order this page asked main for them (#306).
+ * Main answers a read at once and builds a command's reply only once the command has run, both in the order they were
+ * asked, so a reply to a command asked after a read holds at least what the read held. A read carries no thread revision,
+ * and this is how `AgentContext` orders a reply against a recovery read that landed while the command ran.
+ */
+const askedAt = new WeakMap<AgentState, number>()
+
+/** Where `state`, a whole read or a command's reply, was asked for among this page's reads and commands. */
+export function askedAtOf(state: AgentState): number | undefined { return askedAt.get(state) }
+
+/** `state`, noted as crossing under the revision of `wire`'s thread records when they carried one. */
+function numbered(state: AgentState, wire: unknown): AgentState {
+  const revision = typeof wire === 'object' && wire !== null && !Array.isArray(wire) ? (wire as { revision?: unknown }).revision : undefined
+  if (typeof revision === 'number') threadRevisions.set(state, revision)
+  return state
+}
+
+/**
  * Puts a model catalog main left out back before any consumer reads the state: one the `AGENT_STATE`
  * broadcast omitted because this window was already sent it (issue #286, ADR-0028), and every one a command
  * receipt names by catalog revision (issue #323). Reassembly lives here, in the page, not in the preload:
@@ -43,8 +74,12 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   if (existing) return existing
   const catalogs: CatalogCache = new Map()
   const lastRead: LastRead = new Map()
+  // Reads and commands counted in the order the page asks for them.
+  let asked = 0
   const get = async (): Promise<AgentState> => {
+    const at = ++asked
     const full = await bridge.get()
+    askedAt.set(full, at)
     lastRead.set(hostCatalogKey(full.host.hostId), full.host.models)
     for (const client of full.host.clientHosts ?? []) {
       lastRead.set(clientCatalogKey(client.hostId), client.models)
@@ -69,7 +104,12 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     get,
     onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
     // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
-    command: async request => putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request))),
+    command: async request => {
+      const at = ++asked
+      const state = await putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)))
+      askedAt.set(state, at)
+      return state
+    },
   }
   wrapped.set(bridge, result)
   return result
@@ -210,7 +250,7 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : await held()?.peekOnArrival(wire, OVERTAKEN_REPLY_WAIT_MS)
     const receipt: AgentCommandReceipt = { ...reply, host: { ...reply.host, threads: threads ?? [] } }
     const assembled = assembleState(catalogs, receipt, { newer: true })
-    if (assembled !== undefined && threads !== undefined) return assembled
+    if (assembled !== undefined && threads !== undefined) return numbered(assembled, wire)
     // A catalog or the threads this window cannot put back: a reply whose broadcast did not arrive in time, or one measured
     // from a broadcast this window never held. The whole state answers, and the next broadcast lists every
     // thread record.
@@ -224,7 +264,7 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     // With a fallback that always answers, every catalog resolves. Threads no recovery answered for are the whole list the
     // window was last broadcast, never the changed records alone: the next broadcast carries the change.
     const state = assembleState(catalogs, receipt, { newer: true, fallback })!
-    return threads !== undefined ? state : { ...state, host: { ...state.host, threads: recovered?.host.threads ?? held()?.current() ?? (Array.isArray(wire) ? wire : wire.changed) } }
+    return numbered(threads !== undefined ? state : { ...state, host: { ...state.host, threads: recovered?.host.threads ?? held()?.current() ?? (Array.isArray(wire) ? wire : wire.changed) } }, wire)
   }
 }
 
@@ -305,7 +345,7 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
     // Both are looked at before either is found missing, so what the broadcast carried is kept either way.
     const list = applyThreads(raw)
     const assembled = assembleState(catalogs, raw ?? incoming)
-    if (assembled !== undefined && list !== undefined) { listener({ ...assembled, host: { ...assembled.host, threads: list } }); return }
+    if (assembled !== undefined && list !== undefined) { listener(numbered({ ...assembled, host: { ...assembled.host, threads: list } }, raw!.host.threads)); return }
     // This window cannot name every catalog the broadcast referred to, or cannot apply its threads: a fresh
     // window, a reload, or a broadcast it never received. `get()` always answers in full, so recovering there
     // restores what the broadcast could not carry, tagged with the revision that sent us looking so an

@@ -2709,7 +2709,7 @@ msgid "Code from the {sourceName} page"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Codex asks before every command, even one that only reads, and before every edit."
+msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx

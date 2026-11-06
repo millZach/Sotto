@@ -88,10 +88,11 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   // The window's Watcher room, as main wires it on Owl: it copies the room state for each Watcher publication.
   const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
-  const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
+  // Made before the router, as main makes it, so each command reply is numbered as it is built (#306).
+  const broadcaster = new AgentStateBroadcaster()
+  const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { replyBuilt: broadcaster.replyBuilt, watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
     detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
-  const broadcaster = new AgentStateBroadcaster()
   const statePublisher = coalesceAgentStatePublishes(next => { broadcaster.send(next, () => true) })
   const detailPublisher = coalesceAgentThreadDetailPublishes(() => undefined, { beforeOpening: () => statePublisher.flush() })
   const offState = router.subscribe(next => statePublisher.publish(next))
