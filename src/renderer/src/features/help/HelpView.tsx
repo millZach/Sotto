@@ -94,7 +94,8 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
       <ul className="help-topic__list">
         <li><Trans><b>Parakeet Ultra</b>, by Moondream. Setup suggests it.</Trans></li>
         <li><Trans><b>Parakeet v3</b> or <b>v2</b>, by NVIDIA.</Trans></li>
-        {mac ? <li><Trans><b>Core ML models</b> that FluidAudio keeps, on an Apple silicon Mac.</Trans></li> : null}
+        {/* Shown on every Mac, so it names where it holds: Core ML models run only on Apple silicon (ADR-0094). */}
+        {mac ? <li><Trans>On a Mac with Apple silicon, the <b>Core ML models</b> that FluidAudio keeps.</Trans></li> : null}
       </ul>
       <p className="tt-paragraph"><Trans>Each Parakeet model is downloaded once, about 670 MB, when you choose it. Settings shows whether the chosen one is ready.</Trans></p>
     </> },

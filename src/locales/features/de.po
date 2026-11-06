@@ -989,10 +989,6 @@ msgid "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts we
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "<0>Core ML models</0> that FluidAudio keeps, on an Apple silicon Mac."
-msgstr ""
-
-#: src/renderer/src/features/help/HelpView.tsx
 msgid "<0>Parakeet Ultra</0>, by Moondream. Setup suggests it."
 msgstr ""
 
@@ -4186,6 +4182,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "On a Mac with Apple silicon, the <0>Core ML models</0> that FluidAudio keeps."
 msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx

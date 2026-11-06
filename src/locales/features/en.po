@@ -989,10 +989,6 @@ msgid "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts we
 msgstr "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts were in Sotto."
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "<0>Core ML models</0> that FluidAudio keeps, on an Apple silicon Mac."
-msgstr "<0>Core ML models</0> that FluidAudio keeps, on an Apple silicon Mac."
-
-#: src/renderer/src/features/help/HelpView.tsx
 msgid "<0>Parakeet Ultra</0>, by Moondream. Setup suggests it."
 msgstr "<0>Parakeet Ultra</0>, by Moondream. Setup suggests it."
 
@@ -4187,6 +4183,10 @@ msgstr "On {modelName}, with your own {accountProvider} account."
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
 msgstr "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "On a Mac with Apple silicon, the <0>Core ML models</0> that FluidAudio keeps."
+msgstr "On a Mac with Apple silicon, the <0>Core ML models</0> that FluidAudio keeps."
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "Once per start, for each account signed in. It links one person’s computers."
