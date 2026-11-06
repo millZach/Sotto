@@ -683,6 +683,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await page.waitForTimeout(900)
       await capture.shoot('changes-sideways', 'threadStore.ts after a press on the tab at the end of line 18, which runs past the panel: the file scrolled sideways to that line\'s end, its numbers and signs held at the left.')
       await file.locator('.changes-diff__body').evaluate(body => { body.scrollLeft = 0 })
+      // The tab and the arrow keys add to free scrolling, never replace it: a sideways wheel still moves the file.
+      await page.mouse.move(runsOn.x - 200, runsOn.y + runsOn.height / 2)
+      await page.mouse.wheel(240, 0)
+      await expect.poll(() => file.locator('.changes-diff__body').evaluate(body => body.scrollLeft), { timeout: 5_000 }).toBeGreaterThan(0)
+      await file.locator('.changes-diff__body').evaluate(body => { body.scrollLeft = 0 })
     }
     // Code wraps hardest where the panel is narrowest.
     for (const size of SMALLER_SIZES) {
