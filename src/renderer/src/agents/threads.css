@@ -257,12 +257,6 @@
    is most of that space, so a little more than it is enough: the gap before a turn stays about half again the gap under a
    message, and a long thread of short exchanges is not padded out. */
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 16px; }
-/* Each turn after the first starts under a hairline across the column, in the space already kept before its message: a long
-   thread of short exchanges reads as turns without growing. The reply that ends a turn draws it, 6px under its copy room,
-   clear of that control's focus ring and nearer the message it heads. It is the reply's to paint, since a long thread's rows
-   paint only inside their own box. Lines that divide rather than enclose stay hairlines (ADR-0110). */
-.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user']) { overflow-clip-margin: 8px; }
-.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user'])::after { content: ''; position: absolute; right: 0; bottom: -7px; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }
 /* Show all under a diff the transcript cut short is the secondary button (.tt-button, ADR-0110 decision 2): the surface
    inside an edge in the field-border role, on the line that says how much shows, so the box ends close under its last line
    and clear of the composer. */
@@ -280,6 +274,25 @@
    thread. Watcher's conversation draws its turns the same way (ADR-0134). The pointer and the keyboard bring it up as they
    bring up every line. */
 .thread-pane .thread-work[data-moment]:not([data-expanded]) > .thread-work__summary:not(:hover, :active, :focus-visible) { color: var(--tt-text-muted); }
+/* A quick turn, under fifteen seconds with one step or none, keeps its closed Worked for line's room but shows nothing there
+   until the pointer is over the turn (its message, the line or the reply under it) or the keyboard reaches the line, so a
+   long thread of short exchanges reads as messages and replies. The line is still a button in the tab order with its name,
+   and what the turn changed still shows beside it. No rule parts the turns: the bubble alone says where one starts (Zach's
+   pick C, "quiet turns", November 6 2026, ADR-0134). Watcher's conversation draws its turns the same way. Under reduced
+   motion the line comes and goes at once, by the global rule. */
+.thread-pane .thread-work[data-quiet]:not([data-expanded]) > .thread-work__summary { opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-pane .thread-work[data-quiet]:is(:hover, :focus-within) > .thread-work__summary,
+.thread-pane .thread-message[data-role='user']:hover + .thread-work[data-quiet] > .thread-work__summary,
+.thread-pane .thread-work[data-quiet]:has(+ .thread-message:hover) > .thread-work__summary { opacity: 1; }
+/* In Watcher's conversation the closed line keeps the rule under it, so the rule comes and goes with the line rather than
+   standing alone over the reply. */
+.watcher-pane .thread-work[data-quiet]:not([data-expanded]) { border-bottom-color: transparent; transition: border-color 120ms ease; }
+.watcher-pane .thread-work[data-quiet]:is(:hover, :focus-within),
+.watcher-pane .thread-message[data-role='user']:hover + .thread-work[data-quiet],
+.watcher-pane .thread-work[data-quiet]:has(+ .thread-message:hover) { border-bottom-color: var(--threads-field-border); }
+/* A long thread's rows paint only inside their own box, and the line's press reaches 6px past the box's left edge, so its
+   focus ring (3px, 2px out) is let paint past it on every side: the keyboard is how a quick turn's line is found. */
+.thread-transcript__content > .thread-work { overflow-clip-margin: 12px; }
 /* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
 .thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + :is(.thread-work, .thread-activity, .thread-activity-live, .thread-browser-lines, .thread-delivery, .thread-lifted, .continue-now, .delegated-work, .delegated-work-still) { margin-top: 0; }
 /* Watcher's conversation keeps the look it had, but for the sent message's form above: its room is the owner's, and it

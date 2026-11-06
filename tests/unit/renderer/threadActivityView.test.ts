@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
+  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns,
   statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -43,6 +43,18 @@ describe('a finished turn\'s record', () => {
     // With no record of how long it ran, the turn is timed from its message to its last reply or record.
     expect(onlyAMoment(undefined, at, ['2026-09-12T10:00:04.000Z'], [thought])).toBe(true)
     expect(onlyAMoment(undefined, undefined, [], [thought])).toBe(false)
+  })
+
+  it('tells a quick turn of one step or none from one that took its time, took more steps or did not finish', () => {
+    expect(quietTurn(turn({ durationMs: 3_000 }), at, [], 1)).toBe(true)
+    expect(quietTurn(turn({ durationMs: 14_999 }), at, [], 0)).toBe(true)
+    expect(quietTurn(turn({ durationMs: 15_000 }), at, [], 1)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000 }), at, [], 2)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000, status: 'failed' }), at, [], 1)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000, status: 'interrupted' }), at, [], 0)).toBe(false)
+    // With no record of how long it ran, the turn is timed from its message to its last reply or record.
+    expect(quietTurn(undefined, at, ['2026-09-12T10:00:04.000Z'], 1)).toBe(true)
+    expect(quietTurn(undefined, undefined, [], 0)).toBe(false)
   })
 
   it('leaves out thinking and files, and says nothing of a failed step', () => {

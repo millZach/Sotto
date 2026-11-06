@@ -1197,6 +1197,17 @@ export function onlyAMoment(turn: AgentActivity | undefined, startedAt: string |
   return took !== undefined && took < MOMENT_MS && records.every(record => !isStep(record) || record.kind === 'reasoning')
 }
 
+/**
+ * Whether a finished turn was quick: it ended as it should, in under fifteen seconds, with one step or none. Its closed
+ * Worked for line then keeps its room but shows nothing until the pointer is over the turn or the keyboard reaches it
+ * (Zach's pick C, November 6 2026, ADR-0134). Arguments as `workHeadline` takes them, and how many steps the line counts.
+ */
+export function quietTurn(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[], steps: number): boolean {
+  if ((turn?.status ?? 'completed') !== 'completed' || steps > 1) return false
+  const took = workDuration(turn, startedAt, moments)
+  return took !== undefined && took < MOMENT_MS
+}
+
 function workDuration(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[]): number | undefined {
   const start = startedAt ? Date.parse(startedAt) : Number.NaN
   const end = Math.max(...moments.map(moment => moment ? Date.parse(moment) : Number.NaN).filter(Number.isFinite))

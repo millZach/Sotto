@@ -495,31 +495,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const ask = transcript(page).locator('.thread-message[data-role="user"]').filter({ hasText: 'Wait, which one was cut 3?' }).first()
     const line = transcript(page).locator('.thread-message[data-role="user"]:has-text("Wait, which one was cut 3?") + .thread-work[data-quiet]').first()
     await expect(line).toHaveCount(1)
-    // TEMP-MEASURE begin
-    console.log('TEMP-MEASURE', JSON.stringify(await transcript(page).evaluate(log => {
-      const content = log.querySelector('.thread-transcript__content') as HTMLElement
-      const force = document.createElement('style'); force.textContent = '[role="log"] * { content-visibility: visible !important; }'
-      document.head.append(force)
-      const after = content.getBoundingClientRect().height
-      const before = document.createElement('style')
-      before.textContent = ".thread-pane .thread-work[data-quiet] > .thread-work__summary { opacity: 1 !important; } .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user']) { overflow-clip-margin: 8px; } .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user'])::after { content: ''; position: absolute; right: 0; bottom: -7px; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }"
-      document.head.append(before)
-      const was = content.getBoundingClientRect().height
-      const rules = [...content.querySelectorAll(':scope > .thread-message:not([data-role="user"])')].filter(el => getComputedStyle(el, '::after').content === '""').length
-      before.remove()
-      const rulesNow = [...content.querySelectorAll(':scope > .thread-message:not([data-role="user"])')].filter(el => getComputedStyle(el, '::after').content === '""').length
-      const quiet = content.querySelectorAll('.thread-work[data-quiet]').length
-      const lines = content.querySelectorAll('.thread-work').length
-      const hidden = [...content.querySelectorAll('.thread-work[data-quiet] > .thread-work__summary')].filter(el => getComputedStyle(el).opacity === '0').length
-      const names = [...content.querySelectorAll('.thread-work[data-quiet] > .thread-work__summary')].map(el => el.textContent)
-      force.remove()
-      return { before: was, after, rulesBefore: rules, rulesNow, lines, quiet, hidden, names, messages: content.querySelectorAll('.thread-message').length }
-    })))
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    console.log('TEMP-MEASURE reduced', await line.locator('.thread-work__summary').evaluate(el => getComputedStyle(el).transitionDuration))
-    await page.emulateMedia({ reducedMotion: 'no-preference' })
-    console.log('TEMP-MEASURE motion', await line.locator('.thread-work__summary').evaluate(el => getComputedStyle(el).transitionDuration + ' ' + getComputedStyle(el).transitionProperty))
-    // TEMP-MEASURE end
     const centre = (): Promise<void> => ask.evaluate(element => element.scrollIntoView({ block: 'center' }))
     // Neither a resize nor a switch of look keeps the pointer's hover, so the pointer comes to the bubble after both.
     const point = async (): Promise<void> => {

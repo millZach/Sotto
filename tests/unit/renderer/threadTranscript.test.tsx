@@ -175,6 +175,31 @@ describe('a pane holding the last turns of a long thread', () => {
   })
 })
 
+describe('a quick turn’s Worked for line (quiet turns, ADR-0134)', () => {
+  const clock = (second: number): string => `2026-11-06T09:00:${String(second).padStart(2, '0')}.000Z`
+  const messages: AgentMessage[] = [
+    { id: 'u0', role: 'user', text: 'Which one was cut 3?', createdAt: clock(0) },
+    { id: 'a0', role: 'assistant', text: 'The request policy.', createdAt: clock(3) },
+    { id: 'u1', role: 'user', text: 'Run the tests.', createdAt: clock(10) },
+    { id: 'a1', role: 'assistant', text: 'They pass.', createdAt: clock(40) },
+  ]
+  const activities: AgentActivity[] = [
+    { id: 'turn-u0', turnId: 'u0', afterMessageId: 'u0', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', durationMs: 3_000 },
+    { id: 'r0', turnId: 'u0', afterMessageId: 'u0', sequence: 1, kind: 'tool', status: 'completed', title: 'Read' },
+    { id: 'turn-u1', turnId: 'u1', afterMessageId: 'u1', sequence: 2, kind: 'turn', status: 'completed', title: 'Turn', durationMs: 30_000 },
+    { id: 'c1', turnId: 'u1', afterMessageId: 'u1', sequence: 3, kind: 'command', status: 'completed', title: 'Bash', command: 'npm test' },
+  ]
+  const finished: ActivityContext = { liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }
+
+  it('marks a turn under fifteen seconds with one step as quiet, keeps its line a named button, and leaves a longer turn alone', () => {
+    render(<MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, activities)} context={finished} />)
+    const [quick, slow] = screen.getAllByRole('region', { name: /Worked for/u })
+    expect(quick).toHaveAttribute('data-quiet')
+    expect(slow).not.toHaveAttribute('data-quiet')
+    expect(screen.getByRole('button', { name: 'Worked for 3.0s · 1 step · Used Read' })).toBeInTheDocument()
+  })
+})
+
 describe('questions a folded reply asked (#1019)', () => {
   const clock = (minute: number): string => `2026-10-14T10:${String(minute).padStart(2, '0')}:00.000Z`
   const asking = 'Three investigators are tracing it. **Should Overview follow ADR-0078, or show every computer?** I will keep going meanwhile.'
