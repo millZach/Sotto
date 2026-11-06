@@ -99,17 +99,41 @@ describe('independent Git repository fixtures', () => {
     const quiet = (() => { try { made.git('diff', '--quiet'); return undefined } catch (error) { return error as Error & { status?: number } } })()
     expect(quiet?.status).toBe(1)
     expect(quiet?.message).toContain(`Fixture command \`git diff --quiet\` in ${made.repo} exited 1. Git reported its own exit.`)
-    expect(quiet?.message).toMatch(/stderr and trace:\n[\s\S]*\bstart git diff --quiet\n[\s\S]*\bexit elapsed:[\d.]+ code:1\n/u)
+    expect(quiet?.message).toMatch(/stderr and trace:\n[\s\S]*\| d0 \|[^\n]*\| start +\|[^\n]*git diff --quiet\n[\s\S]*\| d0 \|[^\n]*\| exit +\|[^\n]*code:1\n/u)
     expect(quiet?.message).toMatch(/GIT_\* variables: .*GIT_CONFIG_NOSYSTEM/u)
     expect(quiet?.message).toContain(`lock files: ${join('.git', 'index.lock')}`)
     expect(quiet?.message).toMatch(/git status: \n# branch\.oid [0-9a-f]{40}\n# branch\.head main\n1 \.M .* tracked\.txt/u)
   })
 
-  it.skipIf(process.platform === 'win32')('says when Git was ended from outside before it could report its exit', async () => {
+  it.skipIf(process.platform === 'win32')('says when Git was ended from outside before it could report its exit, even after a child Git reported its own', async () => {
     const made = await ownedGitRepository()
     owned.push(made)
     // A shell alias that kills the Git running it stands in for a process ended from outside, as taskkill /F would.
-    const killed = (() => { try { made.git('-c', 'alias.vanish=!kill -9 $PPID', 'vanish'); return undefined } catch (error) { return error as Error } })()
+    // The child Git it runs first writes its own exit to the same trace, one level deeper.
+    const killed = (() => { try { made.git('-c', 'alias.vanish=!git --version; kill -9 $PPID', 'vanish'); return undefined } catch (error) { return error as Error } })()
+    expect(killed?.message).toMatch(/\| d1 \|[^\n]*\| exit +\|/u)
     expect(killed?.message).toMatch(/was ended by SIGKILL\. Git never reported its own exit, so something outside it ended it\./u)
+  })
+
+  it('keeps Git\'s trace on when the inherited environment turns it off', async () => {
+    const made = await ownedGitRepository()
+    owned.push(made)
+    await writeFile(join(made.repo, 'tracked.txt'), 'changed\n')
+    vi.stubEnv('GIT_TRACE2', '0')
+    vi.stubEnv('GIT_TRACE2_PERF', '0')
+    const quiet = (() => { try { made.git('diff', '--quiet'); return undefined } catch (error) { return error as Error & { status?: number } } })()
+    expect(quiet?.status).toBe(1)
+    expect(quiet?.message).toContain('exited 1. Git reported its own exit.')
+    expect(quiet?.message).toMatch(/GIT_\* variables: .*GIT_TRACE2_PERF/u)
+  })
+
+  it('names the launch error when Git could not start', async () => {
+    const made = await ownedGitRepository()
+    owned.push(made)
+    vi.stubEnv('PATH', join(made.root, 'no-git-here'))
+    vi.stubEnv('Path', join(made.root, 'no-git-here'))
+    const missing = (() => { try { made.git('status'); return undefined } catch (error) { return error as Error & { code?: string } } })()
+    expect(missing?.code).toBe('ENOENT')
+    expect(missing?.message).toContain(`Fixture command \`git status\` in ${made.repo} could not start (ENOENT). Git never ran.`)
   })
 })

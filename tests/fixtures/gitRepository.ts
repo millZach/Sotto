@@ -15,11 +15,13 @@ export interface GitRepositoryOptions {
 
 /** Fixture commands ignore machine config; local config also protects Git run by the service under test. */
 export function runFixtureGit(cwd: string, ...args: string[]): string {
-  const env = fixtureGitEnvironment()
   // Git's own trace goes to its stderr, which is read only when the command fails: it says whether Git started, how
   // far it got and whether it ended itself. On the Windows runner fixture commands have exited 1 with nothing on
-  // stderr (#1002), which the trace tells apart from Git refusing on its own.
-  try { return execFileSync('git', args, { cwd, env: { GIT_TRACE2: '2', ...env }, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  // stderr (#1002), which the trace tells apart from Git refusing on its own. It is set after the inherited
+  // variables so an inherited value cannot turn it off, and the performance format is used because it gives each
+  // line the depth of the Git that wrote it, which tells the launched Git's exit apart from a child Git's.
+  const env: NodeJS.ProcessEnv = { ...fixtureGitEnvironment(), GIT_TRACE2_PERF: '2' }
+  try { return execFileSync('git', args, { cwd, env, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
   catch (error) { throw describeFixtureGitFailure(error, cwd, args, env) }
 }
 
@@ -40,11 +42,13 @@ function describeFixtureGitFailure(error: unknown, cwd: string, args: readonly s
   if (!(error instanceof Error)) return error
   const failed = error as Error & { status?: number | null; signal?: NodeJS.Signals | null; stdout?: string; stderr?: string; code?: string }
   const stderr = (failed.stderr ?? '').trim()
-  const ended = failed.code && failed.status === undefined ? `could not start (${failed.code})`
+  // Node reports a launch failure (ENOENT, E2BIG) with a null status and no signal, keeping the cause in `code`.
+  const notStarted = failed.status == null && !failed.signal && typeof failed.code === 'string'
+  const ended = notStarted ? `could not start (${failed.code})`
     : failed.signal ? `was ended by ${failed.signal}` : `exited ${failed.status ?? 'without a status'}`
-  // The trace's exit line is written by Git as it ends itself; a trace without one was cut off from outside.
-  const trace = !stderr ? 'Git wrote nothing, not even its trace, so it ended before it started or was ended from outside.'
-    : /\bexit elapsed:/u.test(stderr) ? 'Git reported its own exit.' : 'Git never reported its own exit, so something outside it ended it.'
+  const trace = notStarted ? 'Git never ran.'
+    : !stderr ? 'Git wrote nothing, not even its trace, so it ended before it started or was ended from outside.'
+    : launchedGitReportedExit(stderr) ? 'Git reported its own exit.' : 'Git never reported its own exit, so something outside it ended it.'
   const lines = [
     `Fixture command \`git ${args.join(' ')}\` in ${cwd} ${ended}. ${trace}`,
     `stdout: ${(failed.stdout ?? '').trim() || '(empty)'}`,
@@ -55,6 +59,15 @@ function describeFixtureGitFailure(error: unknown, cwd: string, args: readonly s
   ]
   failed.message = lines.join('\n')
   return failed
+}
+
+/**
+ * The trace's exit line is written by Git as it ends itself; a trace without one was cut off from outside. Child Git
+ * processes write to the same trace one level deeper, so only an exit at the depth of the first `start` counts.
+ */
+function launchedGitReportedExit(trace: string): boolean {
+  const depth = /(?:^|\| )d(\d+) \|[^|\n]*\| start +\|/mu.exec(trace)?.[1]
+  return depth !== undefined && new RegExp(`(?:^|\\| )d${depth} \\|[^|\\n]*\\| exit +\\|`, 'mu').test(trace)
 }
 
 function lockFiles(cwd: string): string[] {
