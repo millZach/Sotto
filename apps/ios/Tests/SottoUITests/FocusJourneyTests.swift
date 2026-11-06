@@ -1957,24 +1957,28 @@ import UIKit
         XCTAssertFalse(sol.exists || opus.exists || legacy.exists, "Closed providers show none of their models")
         capture("settings-sheet-closed-dark")
 
-        codex.tap()
+        // Each press goes through `press`, which presses again only while the row still reads Closed: twice on CI the
+        // simulator dropped the press on Claude, on target and seconds after the sheet had settled, and Claude stayed
+        // closed (#1320).
+        let closed: (XCUIElement) -> () -> Bool = { row in { (row.value as? String) == "Closed" } }
+        press(codex, until: NSPredicate { _, _ in sol.exists }, untouched: closed(codex))
         XCTAssertTrue(sol.waitForExistence(timeout: 5), "A press opens a provider")
         XCTAssertEqual(codex.value as? String, "Open")
-        claude.tap()
+        press(claude, until: NSPredicate { _, _ in opus.exists }, untouched: closed(claude))
         XCTAssertTrue(opus.waitForExistence(timeout: 5), "A press on another opens it")
         XCTAssertTrue(waitUntilGone(sol), "and closes the first: one open at a time")
         XCTAssertEqual(codex.value as? String, "Closed")
         XCTAssertEqual(claude.value as? String, "Open")
         XCTAssertTrue(legacy.exists, "Its older models wait under Legacy")
         XCTAssertFalse(opus5.exists, "closed")
-        legacy.tap()
+        press(legacy, until: NSPredicate { _, _ in opus5.exists }, untouched: closed(legacy))
         XCTAssertTrue(opus5.waitForExistence(timeout: 5), "Legacy opens inside its provider")
         XCTAssertEqual(legacy.value as? String, "Open")
         capture("settings-sheet-legacy-dark")
-        codex.tap()
+        press(codex, until: NSPredicate { _, _ in !opus5.exists && !opus.exists }, untouched: closed(codex))
         XCTAssertTrue(waitUntilGone(opus5), "Opening another provider closes Legacy with its own")
         XCTAssertTrue(waitUntilGone(opus))
-        claude.tap()
+        press(claude, until: NSPredicate { _, _ in opus.exists }, untouched: closed(claude))
         XCTAssertTrue(opus.waitForExistence(timeout: 5))
         XCTAssertFalse(opus5.exists, "and Legacy opens closed again")
 
