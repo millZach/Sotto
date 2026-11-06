@@ -7,7 +7,7 @@ import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/cod
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
 import { shownLineCount } from '../state/interfaceNumbers'
 import type { DiffLine } from './changesStore'
-import { changeGlimpses, decorateDiff, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
+import { decorateDiff, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
 import './changes.css'
 
 /** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
@@ -138,14 +138,12 @@ const ADDED_LINE: DiffLine = { kind: 'add', text: '', oldLine: null, newLine: nu
 
 /**
  * A prose line and what it became, read once (wordSegments): the words both keep, then at each change the words it
- * took out, struck through, and the words it put in, underlined. Every character of both lines is drawn, in order, and
- * a screen reader hears which words went and which came.
+ * took out, struck through, and the words it put in, underlined, each pair once and in its place. Every character of
+ * both lines is drawn, in order, and a screen reader hears which words went and which came. A reworked line
+ * (DiffDecoration.reworked) reads the same way, with its whole earlier wording under it (EarlierWording).
  *
- * `as` picks a side for a line reworked all through (DiffDecoration.reworked), where struck and new words would
- * alternate down the whole paragraph. `now` draws the line as it is now: the words that came underlined, and where
- * words went with nothing in their place, a thin mark a screen reader hears as those words. `earlier` draws the line as
- * it was, the words that went underlined in the removed role's colour. A line rewritten (DiffDecoration.rewritten)
- * leaves its words unmarked on both sides, which the stylesheet reads from its row.
+ * `as` picks one side. `now` draws a line rewritten whole (DiffDecoration.rewritten) as it is now, with no word marks,
+ * which the stylesheet reads from its row. `earlier` draws the line as it was, the words that went in the removed ink.
  *
  * Drawn on its line, rather than as its earlier wording, every changed word is a span of its own, so the line's edge
  * lights beside each line of the paragraph a change reaches.
@@ -168,13 +166,9 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
   }
   return segments.map((segment, index) => {
     if (segment.kind === 'kept') return <PaintedText key={index} text={after.slice(segment.after.start, segment.after.end)} paint={paintWithin(paintAfter, segment.after)} />
-    const went = before.slice(segment.before.start, segment.before.end), came = after.slice(segment.after.start, segment.after.end)
     if (as === 'earlier') return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}</Fragment>
-    if (as === 'now') {
-      if (came.trim() !== '' || went.trim() === '') return <Fragment key={index}>{side(after, segment.after, paintAfter, false, false)}</Fragment>
-      // The line as it is now has none of the space around what went: the mark stands between the words it does have.
-      return <Fragment key={index}><span className="changes-w" aria-hidden="true" /><del className="changes-gone" title={went.trim()}>{spoken(REMOVED_LINE, i18n)}<span className="tt-visually-hidden">{went.trim()}</span></del></Fragment>
-    }
+    if (as === 'now') return <Fragment key={index}>{side(after, segment.after, paintAfter, false, false)}</Fragment>
+    const went = before.slice(segment.before.start, segment.before.end), came = after.slice(segment.after.start, segment.after.end)
     // Words that went and words that came, with no space of their own between them, are held a little apart.
     const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
     return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}{side(after, segment.after, paintAfter, false, abut)}</Fragment>
@@ -182,10 +176,9 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
 }
 
 /**
- * Under a reworked line read as it is now, what it said before, shut until asked for. Shut, it still shows what changed
- * (changeGlimpses): at each change where words went, those words struck beside the words that came in their place, as
- * many as fit in about a line, each ended on a whole word, so what changed is in sight without a press. The press
- * opens the whole of what it said. A press here only opens or shuts it: it never picks the line it sits in.
+ * Under a reworked line, what it said before, whole, shut until asked for. The line above already shows each change in
+ * its place, so this is for reading the earlier paragraph through. A press here only opens or shuts it: it never picks
+ * the line it sits in.
  */
 export function EarlierWording({ before, after, segments, paintBefore, paintAfter, focusable = true }: {
   readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
@@ -195,22 +188,11 @@ export function EarlierWording({ before, after, segments, paintBefore, paintAfte
 }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
-  const glimpse = useMemo(() => open ? null : changeGlimpses(before, after, segments), [after, before, open, segments])
-  const show = t`Show earlier wording`
-  const words = (text: string, range: TextRange, paint: LinePaint | undefined): ReactNode => <PaintedText text={text.slice(range.start, range.end)} paint={paintWithin(paint, range)} />
   return <span className="changes-earlier">
     <button type="button" className="changes-earlier__toggle tt-focusable" aria-expanded={open} tabIndex={focusable ? 0 : -1}
-      aria-label={glimpse === null ? undefined : show} title={glimpse === null ? undefined : show} data-glimpse={glimpse === null ? undefined : ''}
       onClick={event => { event.stopPropagation(); setOpen(shown => !shown) }}>
       <ChevronRight size={12} aria-hidden="true" />
-      {open ? t`Hide earlier wording` : glimpse === null ? show : <span className="changes-glimpses">
-        {glimpse.glimpses.map((part, index) => <span key={index} className="changes-glimpse">
-          {part.lead ? <span className="changes-glimpse__lead">{words(after, part.lead, paintAfter)} </span> : null}
-          <del className="changes-glimpse__went">{words(before, part.went, paintBefore)}{part.wentCut ? '…' : null}</del>
-          {part.came ? <> <ins className="changes-glimpse__came">{words(after, part.came, paintAfter)}{part.cameCut ? '…' : null}</ins></> : null}
-        </span>)}
-        {glimpse.more ? <span className="changes-glimpse changes-glimpse--more">…</span> : null}
-      </span>}
+      {open ? t`Hide earlier wording` : t`Show earlier wording`}
     </button>
     {open ? <span className="changes-earlier__text"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="earlier" /></span> : null}
   </span>
@@ -261,17 +243,17 @@ function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; re
   </div>
 }
 
-/** A document's line and what it became, as one line (EditedText), or as it is now with its earlier wording under it. */
+/** A document's line and what it became, as one line (EditedText), a reworked one with its earlier wording under it. */
 function EditedLine({ before, after, segments, decoration, numbers }: {
   readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbers: boolean
 }): ReactNode {
   const paintBefore = decoration.paint.get(before), paintAfter = decoration.paint.get(after)
-  const reworked = decoration.reworked.has(before)
-  return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={decoration.rewritten.has(before) || undefined}>
+  const reworked = decoration.reworked.has(before), rewritten = decoration.rewritten.has(before)
+  return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={rewritten || undefined}>
     {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
     <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
-      <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={reworked ? 'now' : undefined} />
+      <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={rewritten ? 'now' : undefined} />
       {reworked ? <EarlierWording before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} /> : null}
     </span>
   </div>

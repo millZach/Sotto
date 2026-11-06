@@ -836,13 +836,13 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const before = row.old!, after = row.next!
     const number = after.newLine ?? before.oldLine
     const paintBefore = decoration?.paint.get(before), paintAfter = decoration?.paint.get(after)
-    // A line reworked all through reads as it is now, with what it said before under it, shut until asked for.
-    const reworked = decoration?.reworked.has(before) ?? false
-    return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={decoration?.rewritten.has(before) || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
+    // A reworked line has what it said before under it, whole, shut until asked for; one rewritten whole reads as it is now.
+    const reworked = decoration?.reworked.has(before) ?? false, rewritten = decoration?.rewritten.has(before) ?? false
+    return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={rewritten || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
-        <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={reworked ? 'now' : undefined} />
+        <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as={rewritten ? 'now' : undefined} />
         {reworked ? <EarlierWording before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} focusable={current} /> : null}
       </span>
     </div>

@@ -40,30 +40,38 @@ describe('DiffBlock', () => {
     expect(edited.querySelector('.changes-line__number')!.textContent).toBe('4')
   })
 
-  it('reads a reworked paragraph as it is now, with its earlier wording one press away', () => {
+  it('reads a reworked paragraph once, each change in its place, with its whole earlier wording one press away', () => {
     const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
     const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
     const container = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md')
     const row = container.querySelector('.changes-line[data-kind="edited"]')!
     expect(row.getAttribute('data-reworked')).toBe('true')
-    // The words that came show; the words that went wait under the toggle, and nothing is struck through the paragraph.
-    expect(row.querySelector('ins')!.textContent).toBe('Added: store worker runs them between its writes')
-    expect(row.querySelector('del.changes-word--edit')).toBeNull()
+    expect(row.getAttribute('data-rewritten')).toBeNull()
+    // In the paragraph, at each change, the words that went struck before the words that came, each pair once.
+    const text = row.querySelector('.changes-line__text')!
+    const marks = [...text.querySelectorAll(':scope > del, :scope > ins')].map(mark => mark.textContent)
+    expect(marks.slice(0, 4)).toEqual(['Removed: worker thread runs them on a connection of its own', 'Added: store worker runs them between its writes', 'Removed: no save', 'Added: nothing'])
+    // Shut, the line under it only says what a press does; nothing of the paragraph shows twice.
     const toggle = row.querySelector<HTMLButtonElement>('.changes-earlier__toggle')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    // Shut, it shows what changed, the words that went struck beside the words that came, and says what a press does.
-    expect(toggle.getAttribute('aria-label')).toBe('Show earlier wording')
-    const first = toggle.querySelector('.changes-glimpse')!
-    expect(first.querySelector('.changes-glimpse__lead')!.textContent).toBe('The ')
-    expect(first.querySelector('del')!.textContent).toBe('worker thread runs them on a connection of its own')
-    expect(first.querySelector('ins')!.textContent).toBe('store worker runs them between its writes')
+    expect(toggle.textContent).toBe('Show earlier wording')
+    expect(row.querySelector('.changes-earlier__text')).toBeNull()
     fireEvent.click(toggle)
-    expect(toggle.getAttribute('aria-label')).toBeNull()
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(toggle.textContent).toBe('Hide earlier wording')
     const earlier = row.querySelector('.changes-earlier__text')!
     expect(earlier.textContent!.replace(/Removed: /gu, '')).toBe(before)
     expect(earlier.querySelector('del')!.textContent).toBe('Removed: worker thread runs them on a connection of its own')
+  })
+
+  it('reads a long paragraph rewritten whole as it is now, with no word marks, and its earlier wording a press away', () => {
+    const before = 'The worker thread that will make every write to the event store and run its log checkpoints, confirming each posted write back to main. It is planned, not built: until it is, the store confirms on main.'
+    const after = 'Store worker thread making each write the event store holds, and its checkpoints too. Its commit shows before its confirmation arrives, so the overlay leaves out what main already holds, and closing waits a minute at most.'
+    const row = draw(`@@ -1 +1 @@\n-${before}\n+${after}\n`, 'CONTEXT.md').querySelector('.changes-line[data-kind="edited"]')!
+    expect(row.getAttribute('data-rewritten')).toBe('true')
+    expect(row.querySelector('.changes-line__text > del')).toBeNull()
+    expect(row.querySelector('.changes-line__text > ins')!.textContent).toBe(`Added: ${after}`)
+    expect(row.querySelector('.changes-earlier__toggle')!.textContent).toBe('Show earlier wording')
   })
 
   it('leaves code as the line that went above the line that came', () => {

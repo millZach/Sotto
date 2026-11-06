@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changeGlimpses, changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, editWeight, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, editWeight, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -249,44 +249,16 @@ describe('decorateDiff', () => {
     expect(editWeight(before, after, wordSegments(before, after)!)).toBe('reworked')
   })
 
-  it('reads a line that changed more than it kept as it is now, with no word marks', () => {
+  it('reads a line that changed more than it kept once too, each change in its place, its earlier wording a press away', () => {
     const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
     const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
     const segments = wordSegments(before, after)!
-    expect(editWeight(before, after, segments)).toBe('rewritten')
+    expect(editWeight(before, after, segments)).toBe('reworked')
     const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
     const decoration = decorateDiff(lines, { reading: 'document' })
+    expect(decoration.inline.get(lines[1]!)).toEqual(segments)
     expect(decoration.reworked.has(lines[1]!)).toBe(true)
-    expect(decoration.rewritten.has(lines[1]!)).toBe(true)
-  })
-
-  it('glimpses a reworked line\'s changes as the words that went beside the words that came, as many as fit', () => {
-    const before = '**Log checkpoint.** SQLite folding the log into `threads.sqlite`. A worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one. A save can still wait for one: once the log holds 16 MB the worker\'s RESTART takes the write lock.'
-    const after = '**Log checkpoint.** SQLite folding the log into `threads.sqlite`. The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one. As the only writer it waits for no save: once the log holds 16 MB its RESTART waits a moment for main\'s reads to move off the log.'
-    const glimpse = changeGlimpses(before, after, wordSegments(before, after)!)!
-    const read = glimpse.glimpses.map(part => [part.lead ? after.slice(part.lead.start, part.lead.end) : null, before.slice(part.went.start, part.went.end), part.came ? after.slice(part.came.start, part.came.end) : null])
-    // A change that starts a sentence leads with none of the one before it; a short one keeps two words of its place.
-    expect(read[0]).toEqual([null, 'A worker thread runs them on a connection of its own', 'The store worker runs them between its writes'])
-    expect(read[1]).toEqual(['finished, so', 'no save', 'nothing'])
-    expect(glimpse.more).toBe(true)
-  })
-
-  it('ends a long side on a whole word, shows a whole rewrite\'s earlier start alone, and has none when nothing went', () => {
-    const lead = 'One write to the event store, as main hands it over. '
-    const before = `${lead}Today the store confirms it.`, after = `${lead}An answer posted on its own, and a history-publishing host's write, hold the thread's next write the same way. The store confirms it.`
-    const [part] = changeGlimpses(before, after, wordSegments(before, after)!)!.glimpses
-    expect(before.slice(part!.went.start, part!.went.end)).toBe('Today the')
-    expect(after.slice(part!.came!.start, part!.came!.end)).toBe('An answer posted on its own, and a history-publishing')
-    expect(part!.cameCut).toBe(true)
-    const old = 'The worker thread that will make every write to the event store and run its log checkpoints, confirming each posted write back to main, which then only reads.'
-    const whole = changeGlimpses(old, 'Something else entirely.', [{ kind: 'changed', before: { start: 0, end: old.length }, after: { start: 0, end: 24 } }])!
-    expect(whole.glimpses).toHaveLength(1)
-    expect(whole.glimpses[0]!.came).toBeNull()
-    expect(whole.glimpses[0]!.wentCut).toBe(true)
-    expect(old[whole.glimpses[0]!.went.end]).toBe(' ')
-    const grown = 'Every write goes this way. Until a write is confirmed, main holds it.'
-    const longer = `${grown} An answer posted on its own waits the same way.`
-    expect(changeGlimpses(grown, longer, wordSegments(grown, longer)!)).toBeNull()
+    expect(decoration.rewritten.has(lines[1]!)).toBe(false)
   })
 
   it('reads a long paragraph rewritten whole once, as it is now, and leaves a short one above what it became', () => {

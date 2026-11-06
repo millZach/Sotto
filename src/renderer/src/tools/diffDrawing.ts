@@ -26,17 +26,11 @@ const REWRITTEN_SHARE = 0.68
 /**
  * A prose line is a light edit, read once with what went struck through before what came, only while it changed in
  * this many places at most and no change on either side runs past LIGHT_EDIT_RUN letters, about eight words. Any more
- * and the struck and new words would run on for lines: the line was reworked, and reads as it is now, with its earlier
- * wording one press away (DiffDecoration.reworked).
+ * and it was reworked: it reads once the same way, and its earlier wording, whole, is one press away
+ * (DiffDecoration.reworked).
  */
 const LIGHT_EDIT_CHANGES = 2
 const LIGHT_EDIT_RUN = 48
-/**
- * A reworked line with this share of it changed or more, on average across its two sides, has more new than a reader
- * can follow word by word: marks on its words would run down most of its lines. It reads as it is now with no word
- * marks at all (DiffDecoration.rewritten), and so does a long line rewritten whole.
- */
-const REWRITTEN_NOW_SHARE = 0.4
 /** A line rewritten whole that runs past this many letters on either side reads as it is now; a shorter one stands above what it became. */
 const LONG_REWRITE = 160
 /** The most of a diff read to guess its language when nothing names the file. */
@@ -77,13 +71,13 @@ export interface DiffDecoration {
    */
   readonly inline: ReadonlyMap<DiffLine, readonly WordSegment[]>
   /**
-   * The removed lines among `inline` that were reworked rather than edited: their line reads as it is now, the words
-   * that came marked and a mark where words went, and the earlier wording stays one press away.
+   * The removed lines among `inline` that were reworked rather than edited: they read once as an edited line does, at
+   * each change what went struck before what came, and the whole earlier wording stays one press away.
    */
   readonly reworked: ReadonlySet<DiffLine>
   /**
-   * The removed lines among `reworked` that changed more than they kept, or were rewritten whole and are long: they read
-   * as they are now with no word marks, only the margin beside the lines that changed, on both sides of the press.
+   * The removed lines among `reworked` rewritten whole and long, with no words kept to read a change against: they read
+   * as they are now with no word marks, only the margin beside them, and what they said is the press's.
    */
   readonly rewritten: ReadonlySet<DiffLine>
 }
@@ -384,97 +378,18 @@ export function wordSegments(before: string, after: string): WordSegment[] | nul
 }
 
 /**
- * How a line read once (wordSegments) reads: `edited`, a light edit read with what went struck through; `reworked`,
- * changed in more places or at more length, read as it is now with its new words marked; `rewritten`, changed more
- * than it kept, read as it is now with no word marks.
+ * How a line read once (wordSegments) reads: `edited`, a light edit, whose struck and new words a reader takes in at
+ * once; `reworked`, changed in more places or at more length, which reads the same way with its whole earlier wording
+ * one press away.
  */
-export function editWeight(before: string, after: string, segments: readonly WordSegment[]): 'edited' | 'reworked' | 'rewritten' {
-  let changes = 0, changedA = 0, changedB = 0, longest = 0
+export function editWeight(before: string, after: string, segments: readonly WordSegment[]): 'edited' | 'reworked' {
+  let changes = 0, longest = 0
   for (const segment of segments) {
     if (segment.kind !== 'changed') continue
     changes++
-    const went = inkLength(before.slice(segment.before.start, segment.before.end)), came = inkLength(after.slice(segment.after.start, segment.after.end))
-    changedA += went; changedB += came
-    longest = Math.max(longest, went, came)
+    longest = Math.max(longest, inkLength(before.slice(segment.before.start, segment.before.end)), inkLength(after.slice(segment.after.start, segment.after.end)))
   }
-  if (changes <= LIGHT_EDIT_CHANGES && longest <= LIGHT_EDIT_RUN) return 'edited'
-  return (changedA / Math.max(inkLength(before), 1) + changedB / Math.max(inkLength(after), 1)) / 2 >= REWRITTEN_NOW_SHARE ? 'rewritten' : 'reworked'
-}
-
-/** How many letters of one side of a change a glimpse shows before it stops at a word and says there is more. */
-const GLIMPSE_SIDE = 56
-/** How many letters the glimpses under one shut earlier wording show together: a line of the panel at 1600, or a little more. */
-const GLIMPSE_BUDGET = 132
-/** The kept words just before a change a glimpse shows, two at most, so a short change has its place. */
-const GLIMPSE_LEAD = /(?:\S+\s+)?\S+$/u
-/** Words that end a sentence, a close of quote or Markdown's mark after the stop included. */
-const SENTENCE_END = /[.!?:;]["'”’)\]*_`]*$/u
-
-/**
- * One change of a reworked line as its shut earlier wording shows it (changeGlimpses): the last few words both sides
- * keep before it, then the words that went and the words that came in their place, each ended on a whole word.
- * `lead` and `came` are ranges into the line after, `went` into the line before; `wentCut` and `cameCut` say a side
- * goes on past what is shown.
- */
-export interface ChangeGlimpse {
-  readonly lead: TextRange | null
-  readonly went: TextRange
-  readonly came: TextRange | null
-  readonly wentCut: boolean
-  readonly cameCut: boolean
-}
-
-/** The range without the space at its edges. */
-function trimmed(text: string, range: TextRange): TextRange {
-  const slice = text.slice(range.start, range.end)
-  const start = range.start + slice.length - slice.trimStart().length
-  return { start, end: Math.max(start, range.start + slice.trimEnd().length) }
-}
-
-/** The range cut to `most` letters at most, at the end of a word, so no word is ever cut through. */
-function wholeWords(text: string, range: TextRange, most: number): { readonly range: TextRange; readonly cut: boolean } {
-  if (range.end - range.start <= most) return { range, cut: false }
-  const space = text.lastIndexOf(' ', range.start + most)
-  const end = space > range.start ? space : text.indexOf(' ', range.start + most)
-  if (end < 0 || end >= range.end) return { range, cut: false }
-  // A word that ends on a comma or a stop is still a whole word; the mark stays out of the cut so "…" follows a word.
-  return { range: { start: range.start, end: range.start + text.slice(range.start, end).replace(/[\s,;:]+$/u, '').length }, cut: true }
-}
-
-/**
- * What a reworked line's shut earlier wording shows of it: its changes where words went, in order, each the words that
- * went struck beside the words that came in their place, as many as fit in about a line of the panel. So what changed
- * is in sight without a press, and the press opens the whole of what it said. A change that only added words is left
- * out, since the line as it is now shows its words. A line rewritten whole shows the start of what it said, alone,
- * since the paragraph over it is what came. `more` says changes are left out. Null when no words went, only new ones
- * came: the earlier wording is then the paragraph without them, and a glimpse of it says nothing.
- */
-export function changeGlimpses(before: string, after: string, segments: readonly WordSegment[]): { readonly glimpses: readonly ChangeGlimpse[]; readonly more: boolean } | null {
-  const whole = !segments.some(segment => segment.kind === 'kept' && after.slice(segment.after.start, segment.after.end).trim() !== '')
-  const glimpses: ChangeGlimpse[] = []
-  let used = 0, more = false
-  for (const [index, segment] of segments.entries()) {
-    if (segment.kind !== 'changed') continue
-    const wentWords = trimmed(before, segment.before)
-    if (wentWords.end <= wentWords.start) continue
-    const went = wholeWords(before, wentWords, whole ? GLIMPSE_BUDGET : GLIMPSE_SIDE)
-    const cameWords = whole ? null : trimmed(after, segment.after)
-    const came = cameWords && cameWords.end > cameWords.start ? wholeWords(after, cameWords, GLIMPSE_SIDE) : null
-    const previous = segments[index - 1]
-    let lead: TextRange | null = null
-    if (previous?.kind === 'kept') {
-      const kept = trimmed(after, previous.after)
-      const shown = GLIMPSE_LEAD.exec(after.slice(kept.start, kept.end))
-      // A change that starts inside a word ("(" then a name) has no word of its own before it to lead with, and one that
-      // starts a sentence needs none: the end of the last sentence would only read as part of it.
-      if (shown && /\s$/u.test(after.slice(previous.after.start, previous.after.end)) && !SENTENCE_END.test(shown[0])) lead = { start: kept.end - shown[0].length, end: kept.end }
-    }
-    const size = (lead ? lead.end - lead.start + 1 : 0) + went.range.end - went.range.start + (came ? came.range.end - came.range.start + 1 : 0)
-    if (glimpses.length > 0 && used + size > GLIMPSE_BUDGET) { more = true; break }
-    glimpses.push({ lead, went: went.range, came: came?.range ?? null, wentCut: went.cut, cameCut: came?.cut ?? false })
-    used += size
-  }
-  return glimpses.length === 0 ? null : { glimpses, more }
+  return changes <= LIGHT_EDIT_CHANGES && longest <= LIGHT_EDIT_RUN ? 'edited' : 'reworked'
 }
 
 function wordSet(text: string): ReadonlySet<string> {
@@ -747,9 +662,7 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
       reworked.add(before); rewritten.add(before)
     } else if (segments) {
       inline.set(before, segments)
-      const weight = editWeight(before.text, after.text, segments)
-      if (weight !== 'edited') reworked.add(before)
-      if (weight === 'rewritten') rewritten.add(before)
+      if (editWeight(before.text, after.text, segments) === 'reworked') reworked.add(before)
       const changed = segments.filter(segment => segment.kind === 'changed')
       // Read once, the pair is one line, so a cut on either side shows the marks of both.
       if (changeCutsMarks(paint.get(before)?.tokens, changed.map(segment => segment.before)) || changeCutsMarks(paint.get(after)?.tokens, changed.map(segment => segment.after))) {

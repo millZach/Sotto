@@ -401,17 +401,11 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-reading='document'] :is(.changes-line, .changes-split__row)[aria-selected='true'] .changes-word { background: none; }
 /* A picked line's accent wash would sink the muted ink below 4.5:1, so what a picked line keeps reads in the secondary ink. */
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'][data-kind='context'] { color: var(--tt-text-2); }
-/* A paragraph reworked all through reads as it is now, in the body's ink like any line there now, its new words
-   underlined. Where words went with nothing in their place, a small chip holds the removed lines' own minus sign, in
-   the removed role's colour: a mark, not a character of the text, and nothing like a spelling squiggle under a word.
-   Its tooltip and a screen reader say the words that went. Under the paragraph one quiet line of what it said before,
-   from where words first went, opens to the whole of it, smaller and quieter, the words that went in the removed ink.
-   A paragraph that changed more than it kept, or was rewritten whole, has more new than a reader follows word by word:
-   underlines would run down most of its lines. It reads as it is now with no word marks, on both sides of the press,
-   and its edge says which of its lines changed. */
+/* A paragraph reworked all through reads as an edited one does, once and at body size: at each change, in its place,
+   the words that went struck before the words that came, each pair once. Under it, Show earlier wording opens the
+   whole of what it said, to read it through. A long paragraph rewritten whole has no words kept to read a change
+   against: it reads as it is now with no word marks, on both sides of the press, and its edge says it changed. */
 .changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-word { text-decoration-line: none; }
-.changes-line[data-rewritten] .changes-gone { width: 0; margin: 0; padding: 0; background: none; }
-.changes-line[data-rewritten] .changes-gone::before { content: none; }
 .changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-earlier__text del.changes-word--edit { color: inherit; text-decoration-line: none; }
 /* An edited paragraph's edge lights beside each of its lines a change reaches, as an editor marks a changed line in the
    margin, and rests faint beside the lines it kept: on a long paragraph the eye finds the changed lines before it reads
@@ -423,43 +417,24 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
   content: ''; position: absolute; left: 0; width: 2px; height: 1lh; background: var(--changes-modified); pointer-events: none;
 }
 .changes-line[data-kind='edited']:is([aria-selected='true'], [data-noted]) .changes-w::before { content: none; }
-.changes-gone {
-  display: inline-block; margin: 0 .14em; padding: 0 .32em; border-radius: var(--tt-radius-tag); background: color-mix(in srgb, var(--tt-error) 14%, transparent);
-  color: var(--tt-error-text); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); font-weight: 600; line-height: 1.4; text-decoration: none; vertical-align: .08em;
-}
-.changes-gone::before { content: '\2212'; }
 .changes-earlier { display: block; }
 .changes-earlier__toggle {
   display: flex; align-items: center; gap: 3px; width: fit-content; max-width: calc(100% + 6px); height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px;
   border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); line-height: 1;
   text-align: left; transition: background-color 120ms ease, color 120ms ease;
 }
-/* Shut, the toggle shows what changed (changeGlimpses in diffDrawing.ts): at each change where words went, the words
-   that went, struck in the removed ink, beside the words that came, underlined as they are in the paragraph, each
-   ended on a whole word, in about a line. A change stands whole: one that has no room moves to the next line, and a
-   third line never shows. Kept words before a change, which say where it is, stay in the muted ink. A press opens the
-   whole of what it said. */
-.changes-earlier__toggle[data-glimpse] { align-items: flex-start; height: auto; min-height: 24px; padding-block: 4px; line-height: 1.5; }
-.changes-earlier__toggle[data-glimpse] > svg { margin-top: calc((1lh - 12px) / 2); }
-.changes-glimpses { display: block; min-width: 0; max-height: 2lh; margin-left: 2px; overflow: hidden; }
-.changes-glimpse { display: inline-block; max-width: 100%; margin-right: 1.25em; white-space: normal; }
-.changes-glimpse__went, .changes-glimpse__went .diff-md-code {
-  color: var(--changes-ink-removed); text-decoration-line: line-through; text-decoration-color: color-mix(in srgb, var(--changes-ink-removed) 65%, transparent); text-decoration-thickness: 1px; text-decoration-skip-ink: none;
-}
-.changes-glimpse__came { color: var(--tt-text-2); text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1px; text-underline-offset: .28em; text-decoration-skip-ink: none; }
-.changes-earlier__toggle:hover .changes-glimpse__came { color: var(--tt-text); }
-.changes-diff__rows[data-reading='document'] .changes-line__text .changes-glimpses .diff-md-strong { font-weight: inherit; }
-.changes-diff__rows[data-reading='document'] .changes-line__text .changes-glimpses .diff-md-code { font-size: inherit; }
 .changes-earlier__toggle > svg { flex: none; transition: transform 120ms ease; }
 .changes-earlier__toggle[aria-expanded='true'] > svg { transform: rotate(90deg); }
 .changes-earlier__toggle:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
 .changes-earlier__toggle:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { .changes-earlier__toggle, .changes-earlier__toggle > svg { transition: none; } }
+/* Opened, the paragraph as it was, indented on a hairline and a step quieter than the paragraph over it, at its size,
+   so it reads through as easily. The paragraph above already strikes what went, so here those words carry no stroke
+   to read through, only the removed ink, a little warmer than the words they sat among. */
 .changes-earlier__text {
-  display: block; margin: 2px 0 6px; padding-left: 10px; box-shadow: inset 1px 0 0 var(--tt-hairline);
-  color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.6;
+  display: block; margin: 2px 0 6px; padding-left: 10px; box-shadow: inset 1px 0 0 var(--tt-hairline); color: var(--tt-text-2);
 }
-.changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { color: var(--changes-ink-removed); text-decoration-line: none; }
+.changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { text-decoration-line: none; }
 .changes-line[aria-selected='true'] :is(.changes-earlier__text, .changes-earlier__toggle) { color: var(--tt-text-2); }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired] { background: none; }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] + .changes-line[data-paired][data-kind='add'] { margin-top: 4px; }
