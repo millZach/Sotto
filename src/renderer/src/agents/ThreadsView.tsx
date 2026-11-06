@@ -181,7 +181,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const dynamicThreads = useOwlFeature('dynamic-threads')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
   // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
-  const snoozes = useThreadSnoozes()
+  const snoozes = useThreadSnoozes(state?.host.threads)
   useWakeWhenNeeded(rows, snoozes)
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const originalStored = useSplitLayout(layoutStore)

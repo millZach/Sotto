@@ -369,7 +369,7 @@ struct ThreadsView: View, Equatable {
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
         let watched = model.watchedThreadIDs
-        if needs.isEmpty && working.isEmpty && recent.isEmpty && !shows(shelf, settled: settled, groups) { empty(groups) }
+        if needs.isEmpty && working.isEmpty && recent.isEmpty && groups.snoozed.isEmpty && !shows(shelf, settled: settled, groups) { empty(groups) }
         let needsColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), count: needs.count, light: .warning)
             VStack(spacing: Space.s3) {
@@ -392,6 +392,11 @@ struct ThreadsView: View, Equatable {
                 SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
                 ThreadRowList(rows: recent, unread: unread, watched: watched)
             }
+            SnoozedSection(groups: groups) { row in
+                ThreadListRow(row: row, kind: .snoozed, watched: watched.contains(row.id), chosen: false,
+                              canWatch: false, shelf: nil, identifier: "snoozed-thread-", open: { open(row.ref) },
+                              setWatched: { _ in }, shelve: { _ in })
+            }
             if shows(shelf, settled: settled, groups) {
                 if groups.searching {
                     SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count + shelf.older.count)
@@ -408,12 +413,12 @@ struct ThreadsView: View, Equatable {
         if inColumns && duo == .upright {
             // Upright, beside the rail, the width holds two columns (Zach's pick, November 1, 2026): what needs you over
             // what finished, and what works beside them. A column with nothing in it gives its width to the other.
-            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty
+            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty
             HStack(alignment: .top, spacing: Space.s4) {
                 if quiet {
                     VStack(alignment: .leading, spacing: 0) {
                         if !needs.isEmpty { needsColumn }
-                        if !recent.isEmpty || !settled.isEmpty { recentColumn }
+                        if !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty { recentColumn }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -424,7 +429,7 @@ struct ThreadsView: View, Equatable {
             HStack(alignment: .top, spacing: Space.s4) {
                 if !needs.isEmpty { needsColumn.frame(maxWidth: .infinity, alignment: .leading) }
                 if !working.isEmpty { workingColumn.frame(maxWidth: .infinity, alignment: .leading) }
-                if !recent.isEmpty || shows(shelf, settled: settled, groups) { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
+                if !recent.isEmpty || !groups.snoozed.isEmpty || shows(shelf, settled: settled, groups) { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
             }
         } else {
             if !needs.isEmpty { needsColumn }

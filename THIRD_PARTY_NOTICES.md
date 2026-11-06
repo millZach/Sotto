@@ -41,7 +41,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `use-sync-external-store` | `1.7.0` | MIT | Meta Platforms, Inc. and affiliates |
 | `@lingui/core` | `6.10.1` | MIT | Tomáš Ehrlich; Crowdin |
 | `@lingui/react` | `6.10.1` | MIT | Tomáš Ehrlich; Crowdin |
-| `zod` | `4.4.3` | MIT | Colin McDonnell |
+| `zod` | `4.6.7` | MIT | Colin McDonnell |
 | `@anthropic-ai/claude-agent-sdk` | `0.3.270` | SEE LICENSE IN README.md | Anthropic PBC |
 | `@xterm/xterm` | `6.0.0` | MIT | The xterm.js authors; SourceLair Private Company; Christopher Jeffrey |
 | `@xterm/addon-fit` | `0.11.0` | MIT | The xterm.js authors |

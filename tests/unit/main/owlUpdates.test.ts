@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NsisUpdater } from 'electron-updater'
 
-import { createElectronUpdaterAdapter } from '../../../src/main/updates/electronUpdaterAdapter'
+import { createElectronUpdaterAdapter, STAGING_ID_FILE, STAGING_ID_HEADER } from '../../../src/main/updates/electronUpdaterAdapter'
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -15,10 +15,12 @@ const newer = '0.1.37-owl.20261011.10'
 
 /** Real AppUpdater, provider factory, GitHub Atom selection and semver gate; only HTTP is scripted. */
 async function fixture(version: string, tags: string[], manifests: Record<string, string | { version: string; tag: string }> = {}, missingOwl = false,
-  platform: 'win32' | 'darwin' = 'win32') {
+  platform: 'win32' | 'darwin' = 'win32', leftoverId?: string) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-owl-update-'))
   directories.push(directory)
+  if (leftoverId !== undefined) await writeFile(join(directory, STAGING_ID_FILE), leftoverId)
   const requests: string[] = []
+  const headers: Record<string, unknown>[] = []
   const updater = new NsisUpdater(null, {
     version, name: 'Sotto', isPackaged: true, userDataPath: directory, baseCachePath: directory,
     appUpdateConfigPath: join(directory, 'app-update.yml'), whenReady: async () => undefined,
@@ -26,8 +28,9 @@ async function fixture(version: string, tags: string[], manifests: Record<string
   })
   // The provider names its channel file for this platform, regardless of the test host: owl.yml on Windows,
   // owl-mac.yml on a Mac. Only the provider is exercised; the Mac's Squirrel install needs a real app.
-  Object.assign(updater, { _testOnlyOptions: { platform }, httpExecutor: { request: async (options: { path: string }) => {
+  Object.assign(updater, { _testOnlyOptions: { platform }, httpExecutor: { request: async (options: { path: string; headers?: Record<string, unknown> }) => {
     requests.push(options.path)
+    headers.push({ ...options.headers })
     if (options.path.endsWith('.atom')) return `<feed>${tags.map(tag => `<entry><title>Sotto ${tag}</title><link href="https://github.com/millZach/Sotto-releases/releases/tag/v${tag}"/><content>Release</content></entry>`).join('')}</feed>`
     if (options.path.endsWith('/latest')) return JSON.stringify({ tag_name: 'v0.1.37' })
     const match = /\/download\/v([^/]+)\/(owl|latest)(-mac)?\.yml$/u.exec(options.path)
@@ -40,7 +43,11 @@ async function fixture(version: string, tags: string[], manifests: Record<string
   if (!version.includes('-owl.')) updater.setFeedURL({ provider: 'github', owner: 'millZach', repo: 'Sotto-releases' })
   const offers: unknown[] = []
   adapter.subscribe(event => { if (event.type === 'available') offers.push(event.version) })
-  return { updater, adapter, offers, requests }
+  return { updater, adapter, offers, requests, headers, directory }
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(() => true, () => false)
 }
 
 describe('Owl GitHub updates', () => {
@@ -128,5 +135,21 @@ describe('Owl GitHub updates', () => {
     await expect(f.adapter.check()).rejects.toThrow('inconsistent update information')
     expect(f.offers).toEqual([])
     await expect(f.adapter.download()).rejects.toThrow('Please check update first')
+  })
+
+  it.each(['0.1.36', current])('sends GitHub no install ID and keeps none on disk (%s)', async version => {
+    const f = await fixture(version, version === current ? [newer] : ['0.1.37'])
+    await f.adapter.check()
+    expect(f.offers).toHaveLength(1)
+    expect(f.headers.length).toBeGreaterThan(0)
+    for (const sent of f.headers) expect(Object.keys(sent).map(name => name.toLowerCase())).not.toContain(STAGING_ID_HEADER)
+    expect(await exists(join(f.directory, STAGING_ID_FILE))).toBe(false)
+  })
+
+  it('removes the install ID an earlier Sotto left behind', async () => {
+    const f = await fixture('0.1.36', ['0.1.37'], {}, false, 'win32', '6b3f6d2c-1d0e-4c4f-9b8a-2f1e0d9c8b7a')
+    await f.adapter.check()
+    expect(await exists(join(f.directory, STAGING_ID_FILE))).toBe(false)
+    expect(f.headers.flatMap(sent => Object.values(sent))).not.toContain('6b3f6d2c-1d0e-4c4f-9b8a-2f1e0d9c8b7a')
   })
 })

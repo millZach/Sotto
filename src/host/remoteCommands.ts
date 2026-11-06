@@ -77,6 +77,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
   // Don't restart takes back a restart Sotto scheduled (ADR-0144): it sends and grants nothing, so pairing is enough.
   'cancel-restart': ['threadId'],
+  'snooze-thread': ['threadId', 'until'],
   // Speed changes a thread's speed and price, as a model does, and answers no permission (ADR-0143).
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode', 'fastMode', 'speed'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
@@ -149,7 +150,10 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
     // Every new thread would start on it, so it is at least the grant one thread's own would be.
     case 'configure': return command.patch.newThreadRuntimeMode != null && command.patch.newThreadRuntimeMode !== 'approval-required'
     case 'restore-thread-branch': return command.withUncommittedChanges === true
+    // Ignored items, their files and nested repositories are each the user's confirmation that work goes with the folder
+    // (ADR-0041). Each is gated on its own, rather than through the workspace's rule that nested work is also ignored.
     case 'reclaim-thread-worktree': return command.withUncommittedChanges === true || Boolean(command.confirmedIgnored?.length)
+      || Boolean(command.confirmedItems?.length) || Boolean(command.confirmedRepositories?.length)
     case 'delete-thread': return true
     default: return false
   }

@@ -38,3 +38,16 @@ Watcher kept telling Zach "nothing needs you" while a prototype sat waiting for 
 - Watcher and the Overview count a waiting prototype as needing Zach. Watcher can no longer say nothing needs him while one waits.
 - Sotto checks a loopback address with one GET when a page is found, from the host that runs the thread. It contacts no new host.
 - The iPhone does not show the held card, because the host holds it. It shows a link-missing question as an ordinary one and has no prototype-ready mark yet. Both are in a follow-up issue.
+
+## Amendment: a prototype never needs the user on its own (November 6, 2026)
+
+Zach reviews prototypes through the question that links them. Once he had answered it, the prototype's own row still said it needed him, which was annoying. On November 6, 2026, on a question card, he chose **Remove the row**: a prototype never gets its own Needs you row, and the question card that links it is what asks him.
+
+This replaces "Watcher's needs-you line names the thread with 'prototype to review', and the Overview puts it under Needs you" and the `prototype-ready` news in the decision above, and the first consequence about Watcher and the Overview counting a waiting prototype. It also amends ADR-0073's October 24, 2026 amendment, whose `waitingOnUser` listed each prototype waiting for review.
+
+- **Needs you leaves it out.** The Overview's Needs you group and the needs-you count and list under Watcher's header hold questions, permissions and failed turns; Watcher's owl glow and the owl tile's **Waiting on you** list hold questions and permissions. None of them counts a prototype. A **Prototype ready** thread is there only while a question card in it waits.
+- **Watcher is not told of it.** `waitingOnUser` has no `prototype-review` item, a watched thread's waits-on sentence never names a prototype, `list_threads` and `read_thread` carry no `prototypeReady`, and there is no `prototype-ready` or `prototype-closed` news. A question card that links a prototype is `needs-user` news like any other, with its page names in its words (#2230).
+- **The mark stays.** The coordinator still marks the thread **Prototype ready** as above: the sidebar row says so, the pane shows **Prototype ready for review** with its **Open the prototype** rows, the page route serves its pages, and opening one or replying clears it. Checked prototype questions and sending a question back are unchanged.
+- **Workers ask with a card.** Sotto's instructions to every thread now say that a prototype or mock-up the user must look at, or pick between, is asked as a question with the page's file path or loopback address in it, so the card links the page. Watcher sends a thread back to raise a card when its reply asks the user to pick a prototype variant without one, as it does for any decision.
+
+Consequence: a prototype named only in a reply, with no question, no longer reaches Zach through Needs you or Watcher. He finds it on the thread's row and in its pane.

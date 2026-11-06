@@ -248,7 +248,7 @@ final class ThreadSettingsTests: XCTestCase {
     /// caption while it leaves Allow actions says its reviewer answers; other agents keep the general lines.
     func testACodexThreadsPermissionLinesSayWhatCodexDoes() {
         XCTAssertEqual(ThreadSettingWords.permissionLine("approval-required", provider: "Codex", providerID: "codex", computer: "Laptop"),
-                       "Codex asks before every command, even one that only reads, and before every edit.")
+                       "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads.")
         XCTAssertEqual(ThreadSettingWords.permissionLine("auto-accept-edits", provider: "Codex", providerID: "codex", computer: "Laptop"),
                        "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.")
         XCTAssertEqual(ThreadSettingWords.permissionLine("auto", provider: "Codex", providerID: "codex", computer: "Laptop"),

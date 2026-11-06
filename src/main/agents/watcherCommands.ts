@@ -28,6 +28,10 @@ export interface WatcherControlHooks {
    * answer did not go.
    */
   requestAnswering?(threadId: string, requestId: string, by: 'user' | 'sotto'): () => void
+  /** Whether an answer names a card of Watcher's own question (#2228), which no provider holds. */
+  ownQuestion?(threadId: string, requestId: string): boolean
+  /** The user's answer on such a card, from this window or a phone: null when it went, else what to tell the user. */
+  answerOwnQuestion?(threadId: string, answer: Extract<AgentCommand, { type: 'answer' }>): Promise<string | null>
   beforeDispatch(command: AgentHostCommand, draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand
   /** A provider accepted the persisted action, or could have written it. Never called for an unsaved intent. */
   dispatched?(command: AgentHostCommand): void

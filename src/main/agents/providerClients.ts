@@ -160,14 +160,26 @@ async function npmPackageFolder(packageName: string, executable: string, environ
   const linked = real !== undefined && dirname(real) !== await realpath(bin).catch(() => bin)
   const grokVersionLink = packageName === CLIENT_PACKAGES.grok && real !== undefined && !linked
     && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase() && GROK_VERSIONED.test(basename(real))
-  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...environment ? npmGlobalRoots(environment) : []]
+  const globalRoots = environment ? npmGlobalRoots(environment) : []
+  // Windows has no link to resolve, so a root claims a binary outside the package only where npm puts its launcher, directly
+  // in the root's prefix (`%APPDATA%\npm\claude.cmd`): a native Claude Code in `~\.local\bin` is not an old copy's in
+  // `%APPDATA%\npm\node_modules`, nor one in a prefix of `~`, `~\.local` or `~\lib`. Grok Build is the exception, because its
+  // npm install script copies grok.exe to `~\.grok\bin` (ADR-0042).
+  const grokCopy = packageName === CLIENT_PACKAGES.grok && bin.toLowerCase() === grokBin(environment ?? {}).toLowerCase()
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...ownPrefix, ...globalRoots]
   for (const root of roots) {
     const folder = join(root, ...names)
     const mustResolve = real !== undefined && inside <= 0 && ((ownPrefix.includes(root) && !grokVersionLink) || linked)
     if (mustResolve && !within(real, await realpath(folder).catch(() => folder))) continue
+    if (platform === 'win32' && inside <= 0 && !grokCopy && !npmLauncherOf(folder, packageName, bin)) continue
     try { await access(join(folder, 'package.json'), constants.F_OK); return folder } catch { /* Try the next global layout. */ }
   }
   return undefined
+}
+/** True when `bin` is where npm on Windows puts a global package's launchers: the package's prefix itself. */
+function npmLauncherOf(folder: string, packageName: string, bin: string): boolean {
+  const prefix = npmPrefixOf(folder, packageName, 'win32')
+  return prefix !== undefined && prefix.toLowerCase() === bin.toLowerCase()
 }
 /**
  * The prefix npm installed a global package under: `<prefix>/lib/node_modules/<package>`, or on Windows

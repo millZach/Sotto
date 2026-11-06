@@ -1097,7 +1097,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, councilEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
@@ -1184,7 +1184,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Which delegated threads elsewhere the window's Settles settled, for their Restores, after a restart too (#1316 part 3).
   const cascadedSettles = crossMachineEnabled ? new CascadedSettles(userDataPath) : undefined
   await cascadedSettles?.load()
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  // What crosses to the main window, made before the router so each command reply is numbered as the router builds it (#306).
+  const agentStateBroadcaster = new AgentStateBroadcaster()
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { replyBuilt: agentStateBroadcaster.replyBuilt, watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
     // What the user's Stop on a thread here left on other machines, which the window says once the cancels answer (#1316 part 3).
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
@@ -1499,7 +1501,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
 
   // Only the threads the main window has declared viewed receive their messages.
-  const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
     hostRouter.scheduleRequestDraftReconcile(requestDrafts)
@@ -2792,7 +2793,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         if (nativeFixtureRoot && process.env['SOTTO_E2E_CERTIFIED_DETAIL_OBSERVATION'] === '1') {
           // The native test observes the real private tracker, never a renderer copy or a fixture
           // certificate. No production accessor or diagnostic channel is introduced.
-          const tracked = (agentControl as unknown as { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> }).certifiedDetailRevisions
+          const tracked = (agentControl as unknown as { revisions: { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> } }).revisions.certifiedDetailRevisions
           let ownedThreads = 0, reusedRecords = 0
           for (const [threadId, detail] of tracked) {
             if (isImmutableActivities(detail.activities)) ownedThreads++

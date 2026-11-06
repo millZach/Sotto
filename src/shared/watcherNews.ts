@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { TELL_WATCHER_WORDS_BYTES_MAX } from './tellWatcher'
+import { WATCHER_QUESTION_LABEL_MAX, WATCHER_QUESTION_WORDS_MAX } from './watcherQuestions'
 import { watcherThreadTargetSchema } from './watcher'
 
 /** How long news that needs an answer at once waits for more: a question, a permission request or a failure. */
@@ -13,7 +14,7 @@ export const WATCHER_BATCH_MAX_MS = 5_000
 export const WATCHER_ORDINARY_BATCH_MS = 20_000
 export const WATCHER_ORDINARY_BATCH_MAX_MS = 60_000
 /** The kinds that keep the short batch: the user's answer, a failure, a send that may not have gone or a thread's own message. */
-export const WATCHER_URGENT_KINDS: ReadonlySet<string> = new Set(['needs-user', 'turn-failed', 'taken-over', 'delivery-changed', 'thread-told'])
+export const WATCHER_URGENT_KINDS: ReadonlySet<string> = new Set(['needs-user', 'turn-failed', 'taken-over', 'delivery-changed', 'thread-told', 'user-answered'])
 /** How much of a finished turn's reply its news carries (#1190), so Watcher need not read the thread for it. */
 export const WATCHER_NEWS_REPLY_CHARS = 500
 export const WATCHER_NEWS_BYTES_MAX = 16 * 1_024
@@ -24,11 +25,11 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * card, which Watcher's pane shows under the wake-up's reply as well (ADR-0073), and never through Watcher.
  * `work-settled` comes once per turn that finished with background work or monitoring still running, when that reaches zero.
  * `delegatedThreadId` names the thread a watched thread delegated to whose request card this is: Watcher watches the
- * delegating thread, and hears of the card as that thread's news (#1190). `prototype-ready` comes once for each prototype
- * waiting for the user's review (ADR-0108), named by its question (`requestCardId`) or by the reply that named its page
- * (`messageId`); like all news it answers and approves nothing. `request-closed` and `prototype-closed` come once when a card or
- * prototype Watcher was told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
- * user answer that card. They carry none of the answer, and approve nothing. `threads-restarted` comes once for each thread
+ * delegating thread, and hears of the card as that thread's news (#1190). A prototype has no news of its own (ADR-0108,
+ * November 6, 2026): the question card that links it is `needs-user`. `request-closed` comes once when a card Watcher was
+ * told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
+ * user answer that card, or `endedWithoutAnswer` when it did not and the thread's turn had ended too (#2230). They carry
+ * none of the answer, and approve nothing. `threads-restarted` comes once for each thread
  * Sotto restarted when the usage limit that stopped it reset (ADR-0144), `restartedBy` naming that provider, watched or not:
  * a thread no request watches carries `WATCHER_UNWATCHED_REQUEST_ID`, which no request has. It approves nothing either.
  * `thread-moved` comes once for each move the user made of a thread to another machine (#1178) as it ends, watched or not:
@@ -40,16 +41,19 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * as Sotto's record has it. `opened` says that message names Watcher and Sotto opened the request `requestId` names for
  * this one turn, to start threads and send and nothing else; otherwise the news grants nothing. These words are the only
  * ones an event keeps, so a restart cannot lose a message the thread was told got through.
+ * `user-answered` comes once for each answer the user gave on a card of Watcher's own question (#2228, ADR-0073, amendment
+ * of November 5, 2026): `answered` carries the question and the user's choice, which are theirs, under the thread a settle
+ * question names, or Watcher's own thread. It is saved with the told words, since nothing else holds the choice for Watcher.
  */
 export const watcherEventSchema = z.object({
-  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
-    'request-closed', 'prototype-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told']),
+  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled',
+    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'user-answered']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
-  observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
+  observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
   revision: z.string().max(512).optional(), operationId: z.uuid().optional(),
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),
-  delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
+  delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(), endedWithoutAnswer: z.literal(true).optional(),
   swarm: z.object({ id: z.uuid(), count: z.number().int().positive(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative() }).strict().optional(),
   restartedBy: z.string().min(1).max(64).optional(),
   /**
@@ -60,6 +64,8 @@ export const watcherEventSchema = z.object({
   moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),
   told: z.object({ words: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX), userWords: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX).optional(),
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),
+  answered: z.object({ questionId: z.uuid(), question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX), choice: z.string().min(1).max(WATCHER_QUESTION_LABEL_MAX),
+    settle: z.literal(true).optional() }).strict().optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

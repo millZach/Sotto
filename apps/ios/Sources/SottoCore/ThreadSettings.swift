@@ -228,7 +228,7 @@ public enum ThreadSettingWords {
     /// behaviour under the mapping in the desktop's `codex.ts`; Full access names the computer, since this is an iPhone.
     public static func codexPermissionLine(_ mode: String, computer: String) -> String? {
         switch mode {
-        case "approval-required": return String(localized: "Codex asks before every command, even one that only reads, and before every edit.", bundle: .module, comment: "What a Codex thread does under Ask before actions.")
+        case "approval-required": return String(localized: "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads.", bundle: .module, comment: "What a Codex thread does under Ask before actions.")
         case "auto-accept-edits": return String(localized: "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.", bundle: .module, comment: "What a Codex thread does under Allow edits.")
         case "auto": return String(localized: "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.", bundle: .module, comment: "What a Codex thread does under Allow actions. Allow edits is the name of another permission mode.")
         case "full-access": return String(localized: "Codex runs any command and edits any file without asking, anywhere on \(computer) and online.", bundle: .module, comment: "What a Codex thread does under Full access. %@ is the computer's name.")

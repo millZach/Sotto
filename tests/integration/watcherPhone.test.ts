@@ -19,6 +19,7 @@ import { rawPeer } from '../fixtures/rawHostPeer'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
+import { watcherQuestionRequestId, WATCHER_QUESTION_FIELD } from '../../src/shared/watcherQuestions'
 
 const GIB = 1024 ** 3
 /** This computer as its host facts read it: busy, with memory to spare (#1032). */
@@ -259,6 +260,25 @@ it('projects grouped replies with one row per thread and keeps remote owning car
   expect(f.phone.state(true).needsYou).toMatchObject([{ target: remoteTarget, provider: 'claude', mayAnswer: false }])
   const shell = await peer.call('local-list', { op: 'shell' })
   expect((shell.result as { host: { threads: { id: string }[] } }).host.threads.some(row => row.id === remoteTarget.threadId)).toBe(false)
+})
+
+it('shows Watcher’s own question as a card on the phone and takes its answer as the user’s, under the answers grant', async () => {
+  // #2228: the card the phone already draws for Watcher's thread, with no request of a provider's behind it.
+  const f = await fixture(), peer = await f.pair()
+  const asked = await f.watcher.ask(f.target.threadId, { question: 'Run Owl build’s CI again?', options: [{ label: 'Run it again' }, { label: 'Leave it failed' }] }) as { questionId: string }
+  const requestId = watcherQuestionRequestId(asked.questionId)
+  expect(f.phone.state(false).needsYou).toEqual([expect.objectContaining({ target: f.target, mayAnswer: false,
+    request: expect.objectContaining({ id: requestId, kind: 'question', questions: [expect.objectContaining({ options: [expect.objectContaining({ label: 'Run it again' }), expect.objectContaining({ label: 'Leave it failed' })] })] }) })])
+  const answer = { op: 'watcher-phone-answer', request: { target: f.target, command: { type: 'answer', threadId: f.target.threadId, requestId,
+    answer: 'Run it again', questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: ['choice-1'] } } } } }
+  expect(await peer.call('not-granted', answer)).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(f.watcher.state().questions![0]).toMatchObject({ state: 'open' })
+  f.canAnswer(true)
+  expect(await peer.call('granted', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.watcher.state().questions![0]).toMatchObject({ state: 'answered', choice: 'Run it again' })
+  expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'answer')).toHaveLength(0)
+  expect(f.phone.state(true).needsYou).toEqual([])
+  expect(await peer.call('again', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
 })
 
 it('projects worker cards inside Watcher and routes the user answer to the worker under a freshly checked answers grant without takeover', async () => {

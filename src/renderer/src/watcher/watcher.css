@@ -344,16 +344,11 @@
 /* Open to answer sits over the row's own press, so it is the one that answers there. */
 .watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: var(--tt-radius-control); background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: var(--tt-type-caption); font-weight: 500; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-answer:hover { border-color: var(--watcher-needs-ink); background: var(--tt-warning-surface); }
-/* Why a prototype could not open (ADR-0108), on a line of its own under Open the prototype. */
-.watcher-row__failure { flex-basis: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-/* A prototype to review: the page's quiet glyph in the accent before its words. */
-.watcher-row__status > svg { display: inline-block; margin-right: 5px; vertical-align: -2px; color: var(--tt-accent-text); }
 
 /* Rings, after the sidebar's: the Overview adds failed, ready, landing and quiet. */
 .watcher-row__ring { display: block; width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
 .watcher-row__ring[data-tone='needs'] { border: 2px solid var(--threads-attention); }
 .watcher-row__ring[data-tone='failed'] { border: 2px solid var(--tt-error); }
-.watcher-row__ring[data-tone='prototype'] { border: 2px solid var(--tt-accent); }
 .watcher-row__ring:is([data-tone='ready'], [data-tone='landing']) { border: 0; background: var(--tt-success); }
 .watcher-row__ring[data-tone='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
 .watcher-row__ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }
@@ -520,6 +515,17 @@
 .watcher-ask-receipt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .watcher-ask-receipt__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .watcher-ask-receipt > .watcher-ask__open { margin-left: 0; }
+/* ---------- Watcher's own question (#2228, Zach's pick A, November 5, 2026) ---------- */
+/* A card where Watcher asked, shaped like a watched thread's card here, that never holds Watcher. Its row in the
+   needs-you list says Watcher asks, and a quiet mark over the conversation's top edge brings it back while it is
+   scrolled out of view. */
+.watcher-glance__why[data-own] { color: var(--watcher-needs-ink); }
+.watcher-question-mark { position: relative; z-index: 5; flex: none; height: 0; }
+.watcher-question-mark__chip { position: absolute; top: 8px; left: 50%; display: inline-flex; align-items: center; gap: 7px; max-width: calc(100% - 32px);
+  padding: 4px 12px; border: 0; border-radius: var(--tt-radius-inset); background: var(--tt-overlay); color: var(--tt-text-2); font: inherit;
+  font-size: var(--tt-type-caption); line-height: 18px; white-space: nowrap; transform: translateX(-50%); box-shadow: 0 0 0 1px var(--tt-hairline), var(--tt-shadow-sm); }
+.watcher-question-mark__chip:hover { color: var(--tt-text); }
+.watcher-question-mark__chip > .watcher-row__ring { width: 8px; height: 8px; }
 
 /* ---------- Stop all ---------- */
 /* At the end of Watcher's header, only while threads Watcher started are running: a quiet pill like
