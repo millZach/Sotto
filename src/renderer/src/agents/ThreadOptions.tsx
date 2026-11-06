@@ -66,7 +66,8 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
 /**
  * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
  * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
- * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks; Allow edits is
+ * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks unless the user's
+ * own Codex rules allow it (#2185); Allow edits is
  * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
  * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
  * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
@@ -75,7 +76,7 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
 export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string {
   if (mode === 'full-access' && computer) return t({ message: `Codex runs any command and edits any file without asking, anywhere on ${computer} and online.`, comment: '{computer} is the name of the computer the thread runs on, such as forge.' })
   switch (mode) {
-    case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
+    case 'approval-required': return t`Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads.`
     case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
     case 'auto': return t`As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.`
     case 'full-access': return t`Codex runs any command and edits any file without asking, anywhere on this computer and online.`

@@ -31,3 +31,31 @@ export function sameSnapshot(first: unknown, second: unknown): boolean {
   for (const key of Object.keys(right)) if (right[key] !== undefined) fields--
   return fields === 0
 }
+
+/**
+ * Whether `JSON.stringify` writes the two as the same text: `sameSnapshot` with the fields in the same order. A field set to
+ * `undefined` is left out, as `JSON.stringify` leaves it out. Anything it is unsure of compares different, which only costs
+ * serializing again. Used where the workspace keeps a thread's saved text across a read that changed nothing (#1332).
+ */
+export function sameJsonText(first: unknown, second: unknown): boolean {
+  if (first === second) return true
+  if (typeof first === 'number' && typeof second === 'number') return !Number.isFinite(first) && !Number.isFinite(second)
+  if (typeof first !== 'object' || typeof second !== 'object' || first === null || second === null) return false
+  if (Array.isArray(first)) {
+    if (!Array.isArray(second) || first.length !== second.length) return false
+    for (let index = 0; index < first.length; index++) if (!sameJsonText(first[index], second[index])) return false
+    return true
+  }
+  if (Array.isArray(second)) return false
+  const left = first as Record<string, unknown>, right = second as Record<string, unknown>
+  const leftKeys = Object.keys(left), rightKeys = Object.keys(right)
+  let at = 0
+  for (const key of leftKeys) {
+    if (left[key] === undefined) continue
+    while (at < rightKeys.length && right[rightKeys[at]!] === undefined) at++
+    if (rightKeys[at] !== key || !sameJsonText(left[key], right[key])) return false
+    at++
+  }
+  while (at < rightKeys.length && right[rightKeys[at]!] === undefined) at++
+  return at === rightKeys.length
+}
