@@ -125,72 +125,72 @@
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .pane-menu__list.thread-snooze { display: flex; align-items: center; gap: 8px; width: 320px; max-width: calc(100vw - 16px); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; scroll-padding-block: 44px 7px; }
-/* Where the list is cut by the foot under it, it passes under a band of the sidebar that ends in a hairline, so a cut row
-   reads as one scrolled away and never as one drawn half. The band is a sticky strip with its own place in the flow, so at
-   the list's end it is only space: the hairline shows only while there is more of the list that way. It spans the sidebar's
-   width, as the foot's own rule does. The band at the top is the same space under Needs you and the search, with no rule of
-   its own: a folder's head draws the edge there. */
-.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; }
-.thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; border: 0 solid transparent; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; }
+/* The list's edges are solid and soft, and every row stays drawn as it passes them, so there is never a gap under a head
+   and never a row sliced by a hard line. The list passes under a stuck folder head at the top, and at the foot under a band
+   of the sidebar that ends in a hairline, as a table's rows pass under its header. Each edge is solid in every theme, and
+   on Glass it lies on the room's own layers (below), so no row reads through it. Under the head's hairline, and over the
+   foot's, the edge melts into the list over a short soft edge, so a row there fades into the edge rather than being cut
+   through its letters: what shows is a row going under, never half a row drawn flat. The foot's band is a sticky strip
+   with its own place in the flow, so at the list's end it is only space, and its hairline and soft edge show only while
+   there is more of the list that way. It spans the sidebar's width, as the foot's own rule does. The band at the top is
+   the same space under Needs you and the search, with no rule of its own: a folder's head draws the edge there. Nothing
+   moves, fades or snaps with the scroll, so a scroll the app or the user sets stays where it was set (ADR-0167), and the
+   list's scroll padding brings a row the keys reach in clear of both soft edges. */
+.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; --list-soft-edge: 12px; --list-edge-fill: var(--threads-sidebar); scroll-padding-block: calc(36px + var(--list-soft-edge)) calc(8px + var(--list-soft-edge)); }
+/* Glass's sidebar is a tint over the room, so an edge drawn in the tint let the rows passing under it read through. An edge
+   there lies on the room's own layers under the tint: the window's material is the operating system's and cannot be
+   painted, so over it the room's tint lies on the solid overlay surface, and in-app glass's backdrop, which stays where it
+   is as the page scrolls, is painted fixed so it matches the sidebar beside it. */
+:root[data-glass] .thread-nav[data-mode] .thread-nav__scroll { --list-edge-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)), var(--tt-surface-overlay); --list-edge-fill: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--list-edge-under); }
+:root[data-glass='in-app'] .thread-nav[data-mode] .thread-nav__scroll { --list-edge-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed; }
+.thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; background: var(--threads-sidebar); pointer-events: none; }
 .thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; }
-.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 6px; border-top-width: 1px; }
-@container scroll-state(scrollable: bottom) { .thread-nav[data-mode] .thread-nav__scroll::after { border-top-color: var(--tt-hairline); } }
+/* The foot's band: a soft edge, the hairline and 6px of the sidebar, its soft edge reaching up over the list's last pixels. */
+.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: calc(var(--list-soft-edge) + 7px); margin-top: calc(-1 * var(--list-soft-edge)); -webkit-mask: linear-gradient(transparent var(--list-soft-edge), currentColor 0); mask: linear-gradient(transparent var(--list-soft-edge), currentColor 0); }
+@container scroll-state(scrollable: bottom) {
+  .thread-nav[data-mode] .thread-nav__scroll::after { background: linear-gradient(var(--tt-hairline), var(--tt-hairline)) 0 var(--list-soft-edge) / 100% 1px no-repeat, var(--list-edge-fill); -webkit-mask: linear-gradient(transparent, currentColor var(--list-soft-edge)); mask: linear-gradient(transparent, currentColor var(--list-soft-edge)); }
+}
 /* A scrolled list keeps the name of the project its rows belong to: each open folder's head stays under the band while its
-   rows pass beneath it, and once stuck it ends in the hairline, so the list under Needs you always starts at a named folder
-   and a row cut there reads as one scrolled under its project's name, as a sidebar's sections do, never as empty space or a
-   row drawn half. A head sticks only inside its own folder, so the next one pushes it on, and a closed folder's head scrolls
-   as a row does. Nothing moves, fades or snaps: a scroll the app or the user sets stays where it was set, so a held gap
-   (ADR-0167) holds, and the list's scroll padding keeps a row the keyboard reaches clear of the stuck head. Its sidebar
-   reaches up to the band, and its hover keeps the sidebar under the wash, so no row shows through either. */
+   rows pass beneath it, and once stuck it ends in the hairline and the soft edge under it, so the list under Needs you
+   always starts at a named folder with its rows going under it, as a sidebar's sections do. A head sticks only inside its
+   own folder, so the next one pushes it on, and a closed folder's head scrolls as a row does. Its sidebar reaches up to the
+   band, and its hover keeps the sidebar under the wash, so no row shows through either. */
 .thread-nav[data-mode] .thread-folder__head { position: sticky; top: 6px; z-index: 1; background-color: var(--threads-sidebar); box-shadow: 0 -6px 0 var(--threads-sidebar); container-type: scroll-state; }
 .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--threads-sidebar); }
-/* Glass's sidebar is a tint over the room, so a head stuck in that tint let the rows passing under it read through its
-   name. Once stuck, the head's toggle, which spans it, lies on the room's own layers under the tint: the window's
-   material is the operating system's and cannot be painted, so over it the room's tint lies on the solid overlay
-   surface, and in-app glass's backdrop, which stays where it is as the page scrolls, is painted fixed so it matches the
-   sidebar beside it. At rest a head is drawn as before. It sticks at the list's very top, with no band above it, since
-   the band can only be drawn in the tint. */
-:root[data-glass] .thread-nav[data-mode] .thread-folder__head { --folder-head-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)), var(--tt-surface-overlay); top: 0; box-shadow: none; }
-:root[data-glass='in-app'] .thread-nav[data-mode] .thread-folder__head { --folder-head-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed; }
+/* On Glass, once stuck, the head's toggle, which spans it, lies on the room's own layers as the edges do. At rest a head is
+   drawn as before. It sticks at the list's very top, with no band above it, since the band can only be drawn in the tint. */
+:root[data-glass] .thread-nav[data-mode] .thread-folder__head { top: 0; box-shadow: none; }
 @container scroll-state(stuck: top) {
-  :root[data-glass] .thread-nav[data-mode] .thread-folder__toggle { background: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--folder-head-under); }
-  :root[data-glass] .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) > .thread-folder__toggle { background: linear-gradient(var(--threads-hover), var(--threads-hover)), linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--folder-head-under); }
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__toggle { background: var(--list-edge-fill); }
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) > .thread-folder__toggle { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--list-edge-fill); }
 }
 .thread-nav[data-mode] .thread-folder__toggle::after { content: ''; position: absolute; top: 100%; right: -4px; left: -4px; height: 1px; background: transparent; pointer-events: none; }
-@container scroll-state(stuck: top) { .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); } }
-/* The list's edges cut only space, at any scroll: never half a row, never a line without its name, never a head cut
-   through. A row leaves whole as its top goes under the stuck folder head, and comes in whole from under the foot's band,
-   each over the few pixels of its own padding, before an edge reaches its letters; so under the head there is a whole row
-   or up to a row's height of the sidebar, and above the foot the same. A head the next folder pushes on leaves whole as it
-   starts to move, and the Settled and Snoozed shelves leave at the band under Needs you as rows do at the head. The edge at
-   the top is the band, the head and its hairline (35px; on Glass, where the head sticks at the very top, 29px), and at the
-   foot the band and its hairline (7px). A row resting just under the head, as the first row does, stays whole. Only how a
-   row is drawn follows the scroll: nothing moves or snaps, so a scroll the app or the user sets stays where it was set
-   (ADR-0167), and the list's scroll padding brings a row the keys reach in clear of both edges, so it is never faded. A row
-   that has left takes no presses. The two fades are two registered numbers multiplied, so the top's and the foot's never
-   undo each other. */
+/* The head's soft edge, under its hairline: the edge's own fill, melting into the rows going under it. */
+.thread-nav[data-mode] .thread-folder__toggle::before { content: ''; position: absolute; top: calc(100% + 1px); right: -4px; left: -4px; height: var(--list-soft-edge); background: var(--list-edge-fill); -webkit-mask: linear-gradient(currentColor, transparent); mask: linear-gradient(currentColor, transparent); pointer-events: none; visibility: hidden; }
+@container scroll-state(stuck: top) {
+  .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); }
+  .thread-nav[data-mode] .thread-folder__toggle::before { visibility: visible; }
+}
+/* A row of two lines fades as it goes under the head, to a quarter by the time its name is under and to nothing as it
+   leaves, so its second line never stands out alone under the head without its name, and nor is there a gap where it was:
+   what is left of it is a faint row going under, and the soft edge takes most of that. A head the next folder pushes
+   on leaves whole as it starts to move, rather than being cut through under the band, and the Settled and Snoozed shelves,
+   which have no head over them, leave whole at the band. Only how they are drawn follows the scroll, and one that has left
+   takes no presses. */
 @property --list-leave { syntax: '<number>'; inherits: false; initial-value: 1; }
-@property --list-arrive { syntax: '<number>'; inherits: false; initial-value: 1; }
 @supports (animation-timeline: view()) {
-  .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 35px; --folder-head-push: 30px; --list-foot-edge: 7px; }
+  .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 35px; --folder-head-push: 30px; }
   :root[data-glass] .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 29px; --folder-head-push: 24px; }
-  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-folder__rows > li, .thread-folder__main, .thread-nav__shelf > .thread-nav__settled, .thread-nav__empty) {
-    container-name: thread-edge; opacity: calc(var(--list-leave) * var(--list-arrive));
-    animation: thread-nav-leave linear both, thread-nav-arrive linear both;
-    animation-timeline: view(block var(--folder-head-edge) var(--list-foot-edge));
-    animation-range: exit 3px exit 6px, entry calc(100% - 6px) entry calc(100% - 3px);
-  }
-  /* A shelf has no head over it, only the band. */
-  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__shelf > .thread-nav__settled, .thread-nav__empty) { animation-timeline: view(block 6px var(--list-foot-edge)); animation-range: exit 1px exit 4px, entry calc(100% - 4px) entry calc(100% - 1px); }
-  /* A head is pushed on once its folder's end reaches it, so its folder is its clock: it leaves as it starts to move. */
+  .thread-nav[data-mode] .thread-nav__scroll .thread-folder__rows > .thread-nav__row--details:not([data-steps-back]) { container-name: thread-edge; opacity: var(--list-leave); animation: thread-nav-row-leave linear both; animation-timeline: view(block var(--folder-head-edge) 0px); animation-range: exit 0% exit 100%; }
+  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__shelf > .thread-nav__settled, .thread-nav__empty) { container-name: thread-edge; opacity: var(--list-leave); animation: thread-nav-leave linear both; animation-timeline: view(block 6px 0px); animation-range: exit 1px exit 4px; }
+  /* A head is pushed on once its folder's end reaches it, so its folder is its clock. */
   .thread-nav[data-mode] .thread-nav__scroll .thread-folder { view-timeline: --thread-folder block; view-timeline-inset: var(--folder-head-push) 0px; }
   .thread-nav[data-mode] .thread-nav__scroll .thread-folder__head { container-name: thread-edge; opacity: var(--list-leave); animation: thread-nav-leave linear both; animation-timeline: --thread-folder; animation-range: exit calc(100% - 3px) exit 100%; }
   @container thread-edge style(--list-leave: 0) { .thread-nav[data-mode] .thread-nav__scroll * { pointer-events: none; } }
-  @container thread-edge style(--list-arrive: 0) { .thread-nav[data-mode] .thread-nav__scroll * { pointer-events: none; } }
 }
 @keyframes thread-nav-leave { to { --list-leave: 0; } }
-@keyframes thread-nav-arrive { from { --list-arrive: 0; } }
+@keyframes thread-nav-row-leave { 50% { --list-leave: .25; } to { --list-leave: 0; } }
 
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
