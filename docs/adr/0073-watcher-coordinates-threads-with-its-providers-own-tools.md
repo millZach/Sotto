@@ -868,3 +868,14 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: Watcher's state tools give what changed (#2231)
+
+Every tool result stays in Watcher's conversation and is read again with each later call, and reading it back was 65% of what Watcher cost over October 14 to November 5. `keep_state` gave back the whole kept state, about 20 KB, every time: 7.9 MB over 545 calls. `read_state` was 20 to 29 KB a call, much of it kept lines Watcher had read the turn before.
+
+- **keep_state gives its change.** It gives each line it added, with its words and new ID, edited, touched, closed or removed, and how many open and closed lines each list holds. It never gives the whole state; `read_state` does. A typical result is under 500 bytes.
+- **read_state can leave out closed lines.** `openOnly: true` leaves out kept lines already closed.
+- **read_state can give what changed.** Its final page gives a `changeCursor`. A later read that passes it as `changedSince` gives only the watched threads, merge queue items, waitingOnUser items, kept lines and stale flags that are new or differ since that read, counts what it left out, and names what that read gave that is gone. With nothing changed it is under 500 bytes. Sotto holds the last eight reads in memory, as digests, and never saves them. A cursor it no longer holds gives the whole state with `sinceUnknown: true`, and so does any cursor while Watcher owes its state after a compaction or in a new conversation, since the read it names is no longer in Watcher's context.
+- **The whole state is still read from the store.** A read with neither option is as before, and the room and a new Watcher's handover read the kept lines from the store, never from a tool result.
+
+Left for later: a change cursor for `list_threads`. Its rows page, take filters and come from paired hosts' own answers, so it is not the small change these two were.

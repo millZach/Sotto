@@ -14,7 +14,7 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -2340,7 +2340,10 @@ it('keeps the decisions, rules and issues Watcher gives, list by list, and reads
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const kept = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
   if (kept.status !== 'ok') throw new Error('keep refused')
-  expect([texts(kept.kept.decisions), texts(kept.kept.rules), texts(kept.kept.issues)]).toEqual([['Merge #1186 once CI is green?'], ['Full test suites run in CI, not on the laptop.'], []])
+  // keep_state gives back only what it changed (#2231); read_state gives the whole state.
+  expect(kept).toEqual({ status: 'ok', changed: [{ list: 'decisions', id: 'd1', change: 'added', text: 'Merge #1186 once CI is green?' },
+    { list: 'rules', id: 'r2', change: 'added', text: 'Full test suites run in CI, not on the laptop.' }],
+  counts: { decisions: { open: 1, closed: 0 }, rules: { open: 1, closed: 0 }, issues: { open: 0, closed: 0 } } })
   // A list left out stays as it was.
   await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
@@ -2515,18 +2518,78 @@ it('changes kept lines one at a time through keep_state, and refuses plainly whe
   const first = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { add: [{ list: 'issues', text: '#1490 composer drops pasted images' },
     { list: 'issues', text: '#1501 widget flicker' }] }))
   if (first.status !== 'ok') throw new Error('keep refused')
-  expect(first.kept.issues.map(line => [line.id, line.text])).toEqual([['i1', '#1490 composer drops pasted images'], ['i2', '#1501 widget flicker']])
+  expect(first.changed.map(line => [line.id, line.change, line.text])).toEqual([['i1', 'added', '#1490 composer drops pasted images'], ['i2', 'added', '#1501 widget flicker']])
   const closed = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] }))
   if (closed.status !== 'ok') throw new Error('keep refused')
-  expect(closed.kept.issues[0]).toMatchObject({ id: 'i1', closedNote: 'done: #1490 fixed by #1509', closedAt: expect.any(String) })
+  expect(closed).toMatchObject({ changed: [{ list: 'issues', id: 'i1', change: 'closed' }], counts: { issues: { open: 1, closed: 1 } } })
   // read_state gives the closed line until it clears, and flags no closed line.
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
   expect(read.kept.issues.map(line => line.id)).toEqual(['i1', 'i2'])
+  expect(read.kept.issues[0]).toMatchObject({ closedNote: 'done: #1490 fixed by #1509', closedAt: expect.any(String) })
+  // openOnly leaves the closed line out.
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true }))
+  if (open.status !== 'ok') throw new Error('read refused')
+  expect(open.kept.issues.map(line => line.id)).toEqual(['i2'])
   await f.call('keep_state', { decisions: Array.from({ length: 30 }, (_, at) => `Open question ${at + 1}`) })
   expect(await f.call('keep_state', { add: [{ list: 'decisions', text: 'One more question' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
     message: expect.stringContaining('Close the lines that are done or drop ones no longer needed') })
   expect(await f.call('keep_state', { edit: [{ id: 'r7', text: 'Nothing' }] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+})
+
+// #2231: every result stays in Watcher's conversation, so keep_state gives only its change and a repeat read_state only what changed.
+it('gives a keep_state change in under 1 KB, and a repeat read_state with nothing changed in under 2 KB', async () => {
+  const f = await fixture(), threads: WatcherThreadTarget[] = []
+  for (let at = 0; at < 4; at++) {
+    const started = await f.call('start_thread', f.start())
+    if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+    threads.push(started.target)
+  }
+  // A state as full as the audit found it: every rule the list holds, near the longest a line may be, decisions and issues.
+  const long = (kind: string, at: number) => `${kind} ${at + 1}: ${'synthetic words the user said about how threads start, merge and get checked, '.repeat(4)}`.slice(0, 280).trim()
+  await f.call('keep_state', { rules: Array.from({ length: WATCHER_KEPT_ITEMS_MAX }, (_, at) => long('Rule', at)),
+    decisions: Array.from({ length: 12 }, (_, at) => long('Decision', at)), issues: Array.from({ length: 25 }, (_, at) => long('Issue', at)) })
+  await f.call('keep_state', { close: Array.from({ length: 10 }, (_, at) => ({ id: `i${WATCHER_KEPT_ITEMS_MAX + 12 + at + 1}`, note: `done: #${2_000 + at} merged` })) })
+  const size = (result: unknown) => Buffer.byteLength(JSON.stringify(result))
+  const added = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { add: [{ list: 'decisions', text: long('Decision', 12) }] }))
+  expect(added).toMatchObject({ status: 'ok', changed: [{ list: 'decisions', id: 'd68', change: 'added' }], counts: { rules: { open: WATCHER_KEPT_ITEMS_MAX, closed: 0 }, issues: { open: 15, closed: 10 } } })
+  expect(size(added)).toBeLessThan(1_024)
+  const closed = await f.call('keep_state', { close: [{ id: 'd68', note: 'done: the user chose the first' }] })
+  expect(size(closed)).toBeLessThan(1_024)
+
+  const whole = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (whole.status !== 'ok' || !whole.changeCursor) throw new Error('read refused')
+  expect(size(whole)).toBeGreaterThan(15_000)
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: whole.changeCursor }))
+  if (open.status !== 'ok' || !open.changeCursor) throw new Error('read refused')
+  // Only the closed lines left: openOnly names them gone, and gives nothing else again.
+  expect(open).toMatchObject({ watching: [], mergeQueue: [], waitingOnUser: [], staleNotes: [], kept: { decisions: [], rules: [], issues: [] },
+    gone: { kept: [...Array.from({ length: 10 }, (_, at) => `i${WATCHER_KEPT_ITEMS_MAX + 12 + at + 1}`), 'd68'].sort() } })
+  expect(open.unchanged).toMatchObject({ watching: threads.length, kept: WATCHER_KEPT_ITEMS_MAX + 12 + 15 })
+  const again = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: open.changeCursor }))
+  if (again.status !== 'ok' || !again.changeCursor) throw new Error('read refused')
+  expect(again).toMatchObject({ watching: [], kept: { decisions: [], rules: [], issues: [] } })
+  expect(again.gone).toEqual({})
+  expect(size(again)).toBeLessThan(2_048)
+
+  // One line edited: the next read gives that line and nothing else of the kept state.
+  await f.call('keep_state', { edit: [{ id: 'r13', text: 'Rule 1, as the user changed it.' }] })
+  const edited = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: again.changeCursor }))
+  if (edited.status !== 'ok') throw new Error('read refused')
+  expect(edited.kept).toEqual({ decisions: [], rules: [expect.objectContaining({ id: 'r13', text: 'Rule 1, as the user changed it.' })], issues: [], updatedAt: expect.any(String) })
+
+  // A cursor Sotto does not hold gives the whole state, and so does any cursor once Watcher's conversation was compacted.
+  const unknown = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: randomUUID() }))
+  if (unknown.status !== 'ok' || !unknown.changeCursor) throw new Error('read refused')
+  expect(unknown).toMatchObject({ sinceUnknown: true })
+  expect(unknown.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
+  expect(unknown.watching).toHaveLength(threads.length)
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  const compacted = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: unknown.changeCursor }))
+  if (compacted.status !== 'ok') throw new Error('read refused')
+  expect(compacted).toMatchObject({ sinceUnknown: true })
+  expect(compacted.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
+  expect(f.service.stateNote()).toBeUndefined()
 })
 
 it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {

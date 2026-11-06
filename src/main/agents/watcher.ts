@@ -48,6 +48,7 @@ import { GitHubRateLimited, retryWords } from './github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
 import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, STEER_TURN_CHANGED, steerFallbackNote, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
+import { keptCounts, openKept, WatcherStateChanges, type WatcherStateLists } from './watcherStateChanges'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { followupDigest } from './followups'
@@ -575,6 +576,9 @@ export class WatcherService implements WatcherControlHooks {
   private readonly endedPending = new WeakMap<object, ReadonlySet<string>>()
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
+  /** A paged read_state's first page, by its page revision: what its final page's changeCursor remembers (#2231). */
+  private readonly stateReads = new Map<string, { lists: WatcherStateLists; since: boolean }>()
+  private readonly stateChanges = new WatcherStateChanges()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
   /** The last read_thread result Watcher was given of each thread, by Watcher conversation and target, and when (#1552). In memory only. */
   private readonly readsGiven = new Map<string, { digest: string; at: string }>()
@@ -4199,30 +4203,47 @@ export class WatcherService implements WatcherControlHooks {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now, so nothing was kept and nothing kept was lost. Try again.', true))
         if ('code' in kept) refuse(kept.code, kept.message)
-        return { status: 'ok', kept }
+        // Only what this call changed (#2231): the whole state is read_state's to give.
+        return { status: 'ok', changed: kept.changed, counts: keptCounts(kept.state) }
       }
       if (name === 'read_state') {
-        const kept = await this.kept.current()
+        const all = await this.kept.current()
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, first = !input.cursor || input.cursor === 'restart'
+        const kept = input.openOnly ? openKept(all) : all
         // Computed from current records at each first page (#1274), never kept as notes. The watched threads and the
         // merge queue are read once, at the first page, and paged together, a hundred of each to a page; a later page reads
         // on from what the first one found.
         const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
-        const { threads, waiting, watching, mergeQueue: queue } = live
-        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length) },
-          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
-        const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
-        const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
+        const staleNotes = this.staleNotes(all, first ? live.threads : this.watching(this.state().watchedThreads))
         // Only the final page completes recovery: a partial read or an expired cursor leaves the reminder. Look first,
         // so a reminder owed but not yet noticed is not raised again after the final page.
         this.lookAtState()
+        // changedSince (#2231): compared at the first page with the read it names, so the pages carry only what changed.
+        // While the reminder is owed, after a compaction or in a new conversation, the earlier read is no longer in
+        // Watcher's context, whatever cursor it carried over, so the read gives the whole state.
+        const lists: WatcherStateLists = { watching: live.watching, mergeQueue: live.mergeQueue, waitingOnUser: live.waiting, kept, staleNotes }
+        const since = first && input.changedSince !== undefined && !this.stateOwed ? this.stateChanges.since(input.changedSince, lists) : undefined
+        const { watching, mergeQueue: queue, waitingOnUser: waiting } = since?.lists ?? lists
+        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length) },
+          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
+        const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
+        if (first) this.stateReads.set(page.revision, { lists, since: since !== undefined })
+        const read = this.stateReads.get(page.revision)
+        // A later page of a changedSince read leaves out the kept lines and stale flags its first page already gave.
+        const later = !first && read?.since
         if (page.nextCursor === null) this.stateOwed = false
+        const changeCursor = page.nextCursor === null && read ? this.stateChanges.remember(read.lists) : undefined
+        if (page.nextCursor === null) this.stateReads.delete(page.revision)
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settleWithoutAsking: this.settlesWithoutAsking(),
-          waitingOnUser: shown.flatMap(row => row.waiting ?? []), kept, staleNotes,
-          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt() }
+          waitingOnUser: shown.flatMap(row => row.waiting ?? []),
+          kept: later ? { decisions: [], rules: [], issues: [], updatedAt: kept.updatedAt } : since?.lists.kept ?? kept,
+          staleNotes: later ? [] : since?.lists.staleNotes ?? staleNotes,
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt(),
+          ...changeCursor ? { changeCursor } : {}, ...since ? { unchanged: since.unchanged, gone: since.gone } : {},
+          ...first && input.changedSince !== undefined && !since ? { sinceUnknown: true as const } : {} }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
@@ -5876,6 +5897,7 @@ ${operation.draftId}`)
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)
     while (this.pages.size > 16) this.pages.delete(this.pages.keys().next().value!)
     for (const [id, choice] of this.copyChoices) if (!this.pages.has(choice.snapshotId)) this.copyChoices.delete(id)
+    for (const revision of this.stateReads.keys()) if (!this.pages.has(revision)) this.stateReads.delete(revision)
   }
   private page(kind: string, rows: unknown[], cursor: string | undefined, limit: number): { rows: unknown[]; revision: string; nextCursor: string | null } {
     this.prunePages()
