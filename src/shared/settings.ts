@@ -230,7 +230,7 @@ export interface AppSettings {
   councilPanelists: (CouncilSeatChoice | null)[]
   /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0177). */
   councilChair: CouncilSeatChoice | null
-  /** How the Council's chamber is laid out (ADR-0177 decision 6), the same setting its Layout menu changes. */
+  /** How the Council's chamber is laid out (ADR-0177 decision 6), chosen in Settings → Council. */
   councilLayout: CouncilLayout
   /** How long, in minutes, a Council stage waits for a thread before its row offers Retry, Use another model and Go on without it. */
   councilStageDeadline: number
