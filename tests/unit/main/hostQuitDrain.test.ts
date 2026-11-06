@@ -128,3 +128,15 @@ it('starts urgent Linux cleanup when shutdown arrives during phone-first ordinar
   expect(local.close).toHaveBeenCalledOnce()
   expect(cloud.close).toHaveBeenCalledOnce()
 })
+
+it('closes the runtime while a Council send is on its way, since only that close ends a send no provider answers', async () => {
+  const app = Object.assign(new EventEmitter(), {
+    quit: vi.fn(() => app.emit('before-quit', { preventDefault: vi.fn() })), exit: vi.fn(),
+  })
+  const send = deferred()
+  const localRuntime = { close: vi.fn(async () => { send.resolve() }) }
+  registerHostQuitDrain(app, { localRuntime, council: { close: async () => undefined, settled: () => send.promise } }, vi.fn(), vi.fn(), 'win32', new EventEmitter())
+  app.quit()
+  await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(2))
+  expect(app.exit).not.toHaveBeenCalled()
+})

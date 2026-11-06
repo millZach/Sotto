@@ -5916,6 +5916,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private dynamicSessionTold(threadId: string, session: DynamicSession): void {
     this.touched(this.thread(threadId)).dynamicSession = session
     this.dirty = true; this.writeSoon()
+    // The provider's echo may already have been published before the send returned.
+    this.publish()
   }
   private requireCreation(provider?: ProviderId): void {
     const status = this.state.snapshot.providers?.find(item => item.id === provider)
