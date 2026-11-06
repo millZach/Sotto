@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -49,10 +49,13 @@ describe('assertTreeUnchanged', () => {
   it('passes an untouched tree and names what changed in one line otherwise', () => {
     root = mkdtempSync(join(tmpdir(), 'tree-stamps-'))
     for (const name of ['a', 'b', 'c']) writeFileSync(join(root, name), name)
+    // Creating d can fall in the same directory timestamp tick, especially on Windows.
+    utimesSync(root, 1, 1)
     const before = snapshotTree(root)
     expect(() => assertTreeUnchanged(root, before)).not.toThrow()
     writeFileSync(join(root, 'a'), 'changed')
     writeFileSync(join(root, 'd'), 'new')
+    utimesSync(root, 2, 2)
     expect(() => assertTreeUnchanged(root, before)).toThrow(`${root} changed: 3 paths differ, first ${root}, ${join(root, 'a')}, ${join(root, 'd')}`)
   })
 })
