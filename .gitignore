@@ -945,3 +945,19 @@ artifacts/watcher-bottom-navigation/*
 
 !artifacts/watcher-bottom-navigation/collapsed-mac-820.png
 !artifacts/watcher-bottom-navigation/collapsed-windows-820.png
+
+# Watcher minimum-window header verification: keep only the cited frames.
+artifacts/watcher-header-820/*
+!artifacts/watcher-header-820/before-dark-en.png
+!artifacts/watcher-header-820/before-dark-en-XA.png
+!artifacts/watcher-header-820/before-light-en.png
+!artifacts/watcher-header-820/before-light-en-XA.png
+!artifacts/watcher-header-820/after-dark-en.png
+!artifacts/watcher-header-820/after-dark-en-XA.png
+!artifacts/watcher-header-820/after-light-en.png
+!artifacts/watcher-header-820/after-light-en-XA.png
+!artifacts/watcher-header-820/before-mac-full-820.png
+!artifacts/watcher-header-820/before-mac-beside-820.png
+!artifacts/watcher-header-820/after-mac-full-820.png
+!artifacts/watcher-header-820/after-mac-beside-820.png
+!artifacts/watcher-header-820/wide-headers.png

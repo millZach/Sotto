@@ -14,7 +14,6 @@ import { clearCouncilDraft, openCouncilDraft, readCouncilDraft } from '../../../
 // The Council's own page is tested in councilChamber.test.tsx; here it only has to say which thread it stands for.
 vi.mock('../../../../src/renderer/src/features/council/CouncilView', () => ({
   CouncilView: ({ thread }: { readonly thread?: string }) => <p>The Council of {thread}</p>,
-  CouncilLayoutMenu: () => null,
 }))
 vi.mock('../../../../src/renderer/src/features/council/useCouncils', () => ({ useCouncilEnabled: () => true }))
 

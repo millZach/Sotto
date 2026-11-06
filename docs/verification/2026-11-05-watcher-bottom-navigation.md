@@ -13,6 +13,7 @@ A scratch Vite page rendered the real Watcher and Threads components, styles, fo
 - At 820×560 with Memory on and the default 260px sidebar width, the update button wraps onto a second line in both rooms with identical button rectangles.
 - 72 collapsed layouts matched every visible footer control rectangle against Threads and restored the saved width/focus on expansion. A further 24 checks at 820×560 covered both themes, all three platforms, full/beside and Memory on/off after removing the duplicate macOS traffic-light inset; no clipping, header overlap, footer overlap or page errors.
 - Visually inspected the collapsed macOS/Windows beside layouts at 820×560, plus the 820px Windows/macOS full and beside layouts in light/dark, and the 1280px and 1600px light layouts. Reduced motion was enabled throughout.
+- After integrating PR #2249, repeated 24 expanded and 24 collapsed layouts at 820×560 across all three platforms and both themes. Every expanded header stayed 44px; footer rectangles still matched Threads, with no clipping, overlap or page errors. Rechecked the macOS/Windows renders visually; typecheck and lint passed again.
 
 ## Frames
 
@@ -29,4 +30,4 @@ A scratch Vite page rendered the real Watcher and Threads components, styles, fo
 
 The e2e steps retain header clipping, overlap, Teams and focus assertions, update navigation selectors to the footer, and compare footer rectangles against Threads in both expanded and collapsed layouts. The collapsed regression also opens a beside pane at all three window sizes and checks expansion and focus. They now expect the footer after the conversation/composer in Tab order and a one-row header. No e2e, full test suite, design capture/verify or native app launch ran locally. GitHub CI provides the native desktop checks.
 
-ADR-0152 is amended because its previous decision placed these controls after All threads. ADR-0158's keyboard behavior is unchanged. The clipping protections from PR #2249 are retained; its navigation-driven second row and 800/1000px label thresholds are superseded by the one-row rules above.
+ADR-0152 is amended because its previous decision placed these controls after All threads. ADR-0158's keyboard behavior is unchanged. PR #2249 was integrated from `origin/main` at `493a8e1a0`. Its whole-title, no-wrap and Teams clipping protections are retained; its navigation-driven second row and 800/1000px label thresholds are superseded by the one-row rules above. Both header-height assertions expect 44px, and `NAME_FROM` and `CAPTURE_100` remain 600px.

@@ -26,8 +26,8 @@ function setup(options: { state?: PopupShortcutState; result?: PopupShortcutResu
     onOpened: () => () => undefined,
   }
   ;(window as { sotto?: unknown }).sotto = { popup, suspendDictationShortcuts: vi.fn(async () => ({ ok: true as const })) }
-  const settings = { popupShortcut: options.chord === undefined ? 'Alt+Shift+Space' : options.chord, hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [] as string[], holdShortcuts: [] as string[] }
-  render(<PopupShortcutSetting settings={settings} platform="win32" />)
+  const settings = { popupEnabled: true, popupShortcut: options.chord === undefined ? 'Alt+Shift+Space' : options.chord, hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [] as string[], holdShortcuts: [] as string[] }
+  render(<PopupShortcutSetting settings={settings} platform="win32" onSave={vi.fn()} />)
   return { popup, user: userEvent.setup() }
 }
 
