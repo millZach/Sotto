@@ -259,6 +259,28 @@ same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Cod
 and printed no sandbox warning, and under `read-only` the write was denied. That PC sets `[windows] sandbox =
 "elevated"` in Codex's own config; a PC without it was not checked, and the menu claims nothing about one.
 
+## Amendment: `untrusted` only on requests (November 5, 2026, #2185)
+
+Codex 0.165 and newer refuse `approval_policy = "untrusted"` in a config layer: `config.toml`, a profile or a `-c`
+override stops Codex with "approval_policy = \"untrusted\" is no longer supported; remove this setting". A Windows check
+for #2161 hit it through `codex exec -c`. The same value is still taken as a request override: read in Codex 0.167.0's
+source (`core/src/config/mod.rs`), the refusal checks only the configured value, and `thread/start`,
+`thread/settings/update` and `turn/start` carry an override, which Codex still enforces as before (every command it has
+no rule for asks, and so does every patch). Ask for approval keeps the mapping above, and its line stays true.
+
+Sotto sends `untrusted` nowhere else. The app-server's `-c` arguments, side calls and the Council judge use
+`on-request` or `never`. The role files written for an Ask for approval thread's workers still carry
+`approval_policy = "untrusted"`, but Codex 0.165 to 0.167 read only a role's model, effort, speed, instructions and
+narrowing feature switches from that file, and a worker keeps its parent thread's policy; the line is harmless and
+unread.
+
+`tests/integration/codexApprovalPolicyLive.test.ts` (`SOTTO_CODEX_POLICY_LIVE=1`, no model turn, a throwaway
+`CODEX_HOME`) checks that a Codex still takes each mode on `thread/start` and `thread/settings/update`. It passed on
+0.167.0. If a later Codex refuses `untrusted` on requests too, there is no value that keeps this mode's meaning:
+`on-request` with a read-only sandbox asks before every edit and escalation but runs a command that only reads without
+asking, and the granular policy only switches kinds of asking off. That would change what Ask for approval says, and is
+the user's call then.
+
 ## Amendment: a secret answer is masked and never saved (November 4, 2026, #2153)
 
 Codex marks a `request_user_input` question `isSecret` when it wants the answer masked: its own client shows `*` while
