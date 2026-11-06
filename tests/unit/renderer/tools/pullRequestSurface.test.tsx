@@ -1001,7 +1001,7 @@ describe('the drill-in under the merge checklist', () => {
     await opened()
     expect(peeks()[1]).toContain('d.ts')
   })
-  it('fits the peeks again when the window changes size with a fold open, as if every fold were closed', async () => {
+  it('holds the peeks through a resize while a fold is open, and fits them again once every fold is closed', async () => {
     // As above: 400 pixels, 60 more for each peek and 10 for each file a peek lists.
     let room = 1000
     const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
@@ -1017,15 +1017,15 @@ describe('the drill-in under the merge checklist', () => {
     const filesPeek = (): string => document.querySelector('.pr-surface__peek[data-of="files"]')?.textContent ?? ''
     expect(filesPeek()).toContain('d.ts')
     fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
-    // Open, the count holds while the window stays as it was.
-    act(() => { for (const callback of resized) callback() })
-    expect(filesPeek()).toContain('d.ts')
-    // Shrunk with Checks open: the files' peek goes, since the surface would scroll with Checks closed.
+    // Shrunk with Checks open: the counts hold (ADR-0027, November 5), so the heads above the open fold do not move.
     room = 530
     act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toContain('d.ts')
+    // Closed again, the peeks fit the smaller window: the files' peek goes.
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    act(() => { for (const callback of resized) callback() })
     expect(filesPeek()).toBe('')
-    expect(screen.getByRole('button', { name: 'Description' }).querySelector('.pr-surface__fold-preview[data-whole]')).not.toBeNull()
-    // Grown again, it comes back.
+    // Grown with every fold closed, it comes back.
     room = 1000
     act(() => { for (const callback of resized) callback() })
     expect(filesPeek()).toContain('d.ts')
