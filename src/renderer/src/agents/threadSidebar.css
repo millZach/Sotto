@@ -159,36 +159,38 @@
 }
 .thread-nav[data-mode] .thread-folder__toggle::after { content: ''; position: absolute; top: 100%; right: -4px; left: -4px; height: 1px; background: transparent; pointer-events: none; }
 @container scroll-state(stuck: top) { .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); } }
-/* What passes under a stuck head never peeks out under its hairline cut through its letters ("Done 7:11 am" under
-   "workshop"). Each line of a row lets the room through as its top reaches the head's edge, gone within the 3px of leading
-   above its letters, so the edge cuts only space: under the head there is a whole line, or a line's height of the sidebar.
-   A row's name and ring go together, as do its words, mark and clock, and its branch line on its own; the folder's checkout
-   line and the preview's foot are one line each. The edge is the head's own (the band, the head and its hairline; on Glass
-   the head and its hairline), and a line resting just below it, as the first row does, stays whole. Only how a line is
-   drawn follows the scroll: nothing moves or snaps, so a scroll the app or the user sets stays where it was set (ADR-0167),
-   and a row the keys reach comes into view below the head by the list's scroll padding, so it is never faded. */
+/* The list's edges cut only space, at any scroll: never half a row, never a line without its name, never a head cut
+   through. A row leaves whole as its top goes under the stuck folder head, and comes in whole from under the foot's band,
+   each over the few pixels of its own padding, before an edge reaches its letters; so under the head there is a whole row
+   or up to a row's height of the sidebar, and above the foot the same. A head the next folder pushes on leaves whole as it
+   starts to move, and the Settled and Snoozed shelves leave at the band under Needs you as rows do at the head. The edge at
+   the top is the band, the head and its hairline (35px; on Glass, where the head sticks at the very top, 29px), and at the
+   foot the band and its hairline (7px). A row resting just under the head, as the first row does, stays whole. Only how a
+   row is drawn follows the scroll: nothing moves or snaps, so a scroll the app or the user sets stays where it was set
+   (ADR-0167), and the list's scroll padding brings a row the keys reach in clear of both edges, so it is never faded. A row
+   that has left takes no presses. The two fades are two registered numbers multiplied, so the top's and the foot's never
+   undo each other. */
+@property --list-leave { syntax: '<number>'; inherits: false; initial-value: 1; }
+@property --list-arrive { syntax: '<number>'; inherits: false; initial-value: 1; }
 @supports (animation-timeline: view()) {
-  .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 35px; }
-  :root[data-glass] .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 29px; }
-  .thread-nav[data-mode] .thread-folder__rows .thread-nav__row { timeline-scope: --thread-row-name, --thread-row-words; }
-  .thread-nav[data-mode] .thread-folder__rows .thread-nav__title { view-timeline: --thread-row-name block; view-timeline-inset: var(--folder-head-edge) 0px; }
-  .thread-nav[data-mode] .thread-folder__rows .thread-nav__standing { view-timeline: --thread-row-words block; view-timeline-inset: var(--folder-head-edge) 0px; }
-  .thread-nav[data-mode] .thread-folder__rows :is(.thread-nav__title, .thread-nav__ring, .thread-nav__standing, .thread-nav__provider, .thread-nav__time, .thread-nav__branch),
-  .thread-nav[data-mode] :is(.thread-folder__main, .thread-folder__preview-foot) { animation: thread-nav-under-head linear both; animation-range: exit 0px exit 3px; }
-  .thread-nav[data-mode] .thread-folder__rows :is(.thread-nav__title, .thread-nav__ring) { animation-timeline: --thread-row-name; }
-  .thread-nav[data-mode] .thread-folder__rows :is(.thread-nav__standing, .thread-nav__provider, .thread-nav__time) { animation-timeline: --thread-row-words; }
-  .thread-nav[data-mode] :is(.thread-folder__rows .thread-nav__branch, .thread-folder__main, .thread-folder__preview-foot) { animation-timeline: view(block var(--folder-head-edge) 0px); }
-  /* The row's shortcuts stand over its clock and have their own fade on hover, so they leave with the words by hiding. */
-  .thread-nav[data-mode] .thread-folder__rows .thread-nav__row-actions { animation: thread-nav-under-head-hide linear both; animation-timeline: --thread-row-words; animation-range: exit 0px exit 3px; }
-  /* A working ring keeps turning as it leaves with its name. */
-  @media (prefers-reduced-motion: no-preference) {
-    :root:not([data-reduced-motion='on']) .thread-nav[data-mode] .thread-folder__rows .thread-nav__ring[data-state='working']:not([data-disconnected], [data-unseen]) {
-      animation: thread-ring 1.5s linear infinite, thread-nav-under-head linear both; animation-timeline: auto, --thread-row-name; animation-range: normal, exit 0px exit 3px;
-    }
+  .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 35px; --folder-head-push: 30px; --list-foot-edge: 7px; }
+  :root[data-glass] .thread-nav[data-mode] .thread-nav__scroll { --folder-head-edge: 29px; --folder-head-push: 24px; }
+  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-folder__rows > li, .thread-folder__main, .thread-nav__shelf > .thread-nav__settled, .thread-nav__empty) {
+    container-name: thread-edge; opacity: calc(var(--list-leave) * var(--list-arrive));
+    animation: thread-nav-leave linear both, thread-nav-arrive linear both;
+    animation-timeline: view(block var(--folder-head-edge) var(--list-foot-edge));
+    animation-range: exit 3px exit 6px, entry calc(100% - 6px) entry calc(100% - 3px);
   }
+  /* A shelf has no head over it, only the band. */
+  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__shelf > .thread-nav__settled, .thread-nav__empty) { animation-timeline: view(block 6px var(--list-foot-edge)); animation-range: exit 1px exit 4px, entry calc(100% - 4px) entry calc(100% - 1px); }
+  /* A head is pushed on once its folder's end reaches it, so its folder is its clock: it leaves as it starts to move. */
+  .thread-nav[data-mode] .thread-nav__scroll .thread-folder { view-timeline: --thread-folder block; view-timeline-inset: var(--folder-head-push) 0px; }
+  .thread-nav[data-mode] .thread-nav__scroll .thread-folder__head { container-name: thread-edge; opacity: var(--list-leave); animation: thread-nav-leave linear both; animation-timeline: --thread-folder; animation-range: exit calc(100% - 3px) exit 100%; }
+  @container thread-edge style(--list-leave: 0) { .thread-nav[data-mode] .thread-nav__scroll * { pointer-events: none; } }
+  @container thread-edge style(--list-arrive: 0) { .thread-nav[data-mode] .thread-nav__scroll * { pointer-events: none; } }
 }
-@keyframes thread-nav-under-head { from { opacity: 1; } to { opacity: 0; } }
-@keyframes thread-nav-under-head-hide { from { visibility: visible; } to { visibility: hidden; } }
+@keyframes thread-nav-leave { to { --list-leave: 0; } }
+@keyframes thread-nav-arrive { from { --list-arrive: 0; } }
 
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -422,10 +424,6 @@
 .thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__time { display: none; }
 .thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__ring { display: none; }
 .thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__provider { display: flex; grid-area: 1 / 1; align-self: center; }
-/* Its time and shortcuts share the name's line, so they leave under a stuck folder head with the name. */
-@supports (animation-timeline: view()) {
-  .thread-nav[data-mode] .thread-folder__rows .thread-nav__row--details[data-steps-back] :is(.thread-nav__provider, .thread-nav__time, .thread-nav__row-actions) { animation-timeline: --thread-row-name; }
-}
 .thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
 .thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; transition: background-color 160ms ease; }
 .thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }

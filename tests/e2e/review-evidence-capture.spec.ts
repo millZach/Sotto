@@ -1173,7 +1173,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
         list.scrollTop += box.getBoundingClientRect().bottom - list.getBoundingClientRect().top - (edge - 1) + by
       }, { folder, by })
     }
-    await capture.shoot('stuck-head-push', 'The sidebar scrolled so the sotto folder\'s last row is gone under its head and sotto-site pushes the head 14px up.', '', { before: pushed('sotto', 14), keepSidebarScroll: true })
+    await capture.shoot('stuck-head-push', 'The sidebar scrolled so the workshop folder\'s last row is gone under its head and sotto pushes the head 14px up.', '', { before: pushed('workshop', 14), keepSidebarScroll: true })
     // And the foot: a row whose bottom is `by` pixels under the band over the sidebar's foot.
     const footCut = (title: string, by: number) => async (): Promise<void> => {
       await page.mouse.move(0, 0)
