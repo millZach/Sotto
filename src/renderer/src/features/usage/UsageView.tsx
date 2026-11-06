@@ -295,7 +295,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       </div>
       <p className="usage-subtitle tt-paragraph"><Trans>Your subscriptions, and the work on each computer, in Sotto and outside it.</Trans></p>
       {noUsageYet ? null : <div className="usage-bar">
-        <div ref={tabs} className="usage-tabs" role="tablist" aria-label={t`Usage views`}>{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
+        <div ref={tabs} className="usage-seg" role="tablist" aria-label={t`Usage views`}>{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
           id={`${id}-${value}`} aria-controls={`${id}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
           onClick={() => setTab(value)} onKeyDown={event => onTabKey(event, index)}>{i18n._(TAB_NAMES[value])}</button>)}</div>
         <div className="usage-filters">
