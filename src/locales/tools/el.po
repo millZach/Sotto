@@ -1815,10 +1815,6 @@ msgstr ""
 msgid "Hide Council"
 msgstr ""
 
-#: src/renderer/src/tools/DiffBlock.tsx
-msgid "Hide earlier wording"
-msgstr ""
-
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Hide phone"
 msgstr ""
@@ -3298,10 +3294,6 @@ msgstr ""
 #. {checks} says how its checks stand, as in Checks passed.
 #: src/renderer/src/tools/OpenPullRequests.tsx
 msgid "Show draft #{number}: {title}. {checks}. {added} added, {removed} removed"
-msgstr ""
-
-#: src/renderer/src/tools/DiffBlock.tsx
-msgid "Show earlier wording"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
