@@ -119,6 +119,33 @@ describe('the Council tab’s reads', () => {
   })
 })
 
+describe('the quiet Council record', () => {
+  it.each([
+    { status: 'working', layout: 'long-table', verdict: false, showSeats: false },
+    { status: 'waiting', layout: 'long-table', verdict: false, showSeats: false },
+    { status: 'done', layout: 'long-table', verdict: true, showSeats: true },
+    { status: 'done', layout: 'half-circle', verdict: true, showSeats: false },
+    { status: 'stopped', layout: 'long-table', verdict: false, showSeats: true },
+    { status: 'settled', layout: 'long-table', verdict: false, showSeats: true },
+  ] as const)('keeps seat names only when plates are absent: $status, $layout', async ({ status, layout, verdict, showSeats }) => {
+    withLayout()
+    provide()
+    vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, councilLayout: layout } } as unknown as AppContextValue)
+    const record = councilFixture({
+      stage: status === 'done' ? 'done' : 'framing', rows: [row('chair', 'framing', 'working')],
+      ...(verdict ? { verdict: { text: 'Keep the files.', counts: { answered: 3, rankings: [], findings: [], supports: [], favourites: [], changed: [], partial: false }, objections: [], fairnessDone: true } } : {}),
+    }, { status })
+    const { container } = render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    await screen.findByRole('heading', { name: 'Move history into node:sqlite now?' })
+    expect(container.querySelector('.council-entry__seats') !== null).toBe(showSeats)
+    expect(container.querySelector('.council-entry__head')).not.toHaveTextContent('From ')
+    expect(container.querySelector('.council-entry__head')).not.toHaveTextContent(/Working|Waiting on you|Done/u)
+    expect(container).not.toHaveTextContent('Working in a snapshot')
+    expect(screen.getByRole('textbox', { name: 'Question' })).not.toHaveAttribute('placeholder')
+    expect(screen.getByRole('textbox', { name: 'Question' })).not.toHaveAttribute('aria-describedby')
+  })
+})
+
 describe('the Council belongs to its origin thread', () => {
   const models: AgentState['host']['models'] = [{ id: 'claude:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }]
   it.each(['working', 'waiting', 'done', 'stopped', 'settled'] as const)('keeps another thread’s %s Council out of the list and chamber, including after an update', async status => {
@@ -148,7 +175,11 @@ describe('the Council belongs to its origin thread', () => {
     const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
     await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'A’s unsent question')
     await userEvent.click(screen.getByRole('radio', { name: '5' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    const origin = screen.getByRole('button', { name: 'Ask from another thread. Now Thread A' })
+    await userEvent.click(origin)
+    await userEvent.keyboard('{Escape}')
+    expect(origin).toHaveFocus()
+    await userEvent.click(origin)
     await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
     const saved = heldCouncilForm('thread-a')
     rerender(<CouncilView thread="thread-b" bridge={bridge} />)
@@ -193,7 +224,7 @@ describe('the Council belongs to its origin thread', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
     expect(await screen.findByText('A’s saved Climb')).toBeInTheDocument()
     await userEvent.type(screen.getByRole('textbox', { name: 'Goal' }), 'A’s unsent goal')
-    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Ask from another thread\. Now /u }))
     await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
     expect(screen.queryByText('B’s Climb is running')).toBeNull()
     expect(screen.getByRole('textbox', { name: 'Goal' })).toHaveValue('A’s unsent goal')

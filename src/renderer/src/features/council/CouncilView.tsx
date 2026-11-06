@@ -87,8 +87,9 @@ function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilVi
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(mode === 'climb' ? climbPanel : seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
+  const shownCouncil = chamberCouncil(ownCouncils, question.trim() !== '' || panel !== null)
   return <div className="council-view" data-layout={layout}>
-    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : chamberCouncil(ownCouncils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : shownCouncil} askSeats={seats} layout={layout} />
     {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
     {mode === 'ask' && bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
     <div className="council-scroll"><div className="council-page">
@@ -99,7 +100,8 @@ function ThreadCouncilView({ thread, bridge = window.sotto?.council }: CouncilVi
         onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
       {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
       {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
-      <div className="council-list">{(ownCouncils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      <div className="council-list">{(ownCouncils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!}
+        showSeats={shownCouncil?.id !== council.id || (layout === 'long-table' && council.rounds.at(-1)?.verdict != null)} />)}</div>
       </>}
     </div></div>
   </div>
@@ -125,7 +127,7 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
 
 /**
  * The thread a Council question comes from: the thread the user was on when they opened the Council, shown as one line.
- * Change opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
+ * Its title opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
  */
 export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
   readonly chosen: string; readonly onChoose: (id: string) => void }): ReactNode {
@@ -133,7 +135,7 @@ export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const change = useRef<HTMLButtonElement>(null)
-  const listId = useId(), labelId = useId()
+  const listId = useId()
   const projectTitle = (thread: AgentThread): string => projects.find(project => project.id === thread.projectId)?.title ?? ''
   const thread = threads.find(item => item.id === chosen)
   const close = (): void => { setOpen(false); setQuery(''); change.current?.focus() }
@@ -141,15 +143,14 @@ export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly
   const hits = threads.filter(item => !words || `${item.title} ${projectTitle(item)}`.toLocaleLowerCase().includes(words))
   const groups = [...new Set(hits.map(item => item.projectId))]
   const choose = (id: string): void => { onChoose(id); close() }
-  return <div className="council-field council-field--from">
-    <span id={labelId}>{t({ message: 'From', comment: 'The thread a Council question comes from' })}</span>
+  return <div className="council-field">
     <div className="council-origin">
       {thread ? <><ProviderMark provider={thread.providerId} name={thread.title} size={14} />
-        <span className="council-origin__title">{thread.title}</span>
-        <span className="council-origin__project">{projectTitle(thread)}</span></>
+        {threads.length > 1 ? <button ref={change} type="button" className="council-origin__title council-origin__change tt-focusable"
+          aria-label={t`Ask from another thread. Now ${thread.title}`} aria-expanded={open} aria-controls={open ? listId : undefined}
+          onClick={() => open ? close() : setOpen(true)}>{thread.title}</button>
+          : <span className="council-origin__title">{thread.title}</span>}</>
         : <span className="council-origin__title">{t`No open thread on this computer`}</span>}
-      {threads.length > 1 ? <button ref={change} type="button" className="council-origin__change tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
-        onClick={() => open ? close() : setOpen(true)}>{open ? t({ message: 'Done', comment: 'Closes the list of threads a Council question can come from' }) : t({ message: 'Change', comment: 'Opens the list of threads a Council question can come from' })}</button> : null}
     </div>
     {open && threads.length > 1 ? <div id={listId} className="council-origin__list" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
       <input className="tt-input tt-focusable council-origin__search" autoFocus value={query} aria-label={t`Find a thread`} placeholder={t`Find a thread`}
@@ -170,12 +171,12 @@ export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly
 function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined
   readonly onOrigin: (origin: string) => void; readonly panel: CouncilPanel
   readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
-  const { t, i18n } = useLingui()
+  const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const state = agents?.state
   const settings = app?.settings
-  const questionId = useId(), estimateId = useId()
+  const questionId = useId()
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   const local = state?.connections?.find(connection => connection.kind === 'local')?.hostId
   const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => councilAskable(thread, local))
@@ -195,12 +196,7 @@ function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, o
   if (!state || !settings) return <p className="council-notice tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Preparing the Council…`}</p>
   const seats = councilSeatsInForce(seatsPanel.panelists, seatsPanel.chair, catalog)
   const ready = councilSeatsReady(seats)
-  const providers = [...new Set([...seats.panelists, seats.chair].flatMap(seat => seat?.provider ? [PROVIDER_LABELS[seat.provider]] : []))]
-  const providerList = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(providers)
-  const threadCount = seats.panelists.length + 1
-  const minutes = settings.councilStageDeadline
   const reads = estimate && 'words' in estimate ? estimate : null
-  const messages = reads?.messages ?? 0, words = (reads?.words ?? 0).toLocaleString(i18n.locale), parts = reads?.parts ?? 1
   // About four characters a token. A seat's model is warned of only when a thread on it reported a smaller context window.
   const tokens = Math.ceil((reads?.characters ?? 0) / 4)
   const windows = new Map<string, number>()
@@ -209,7 +205,7 @@ function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, o
     if (window && window > (windows.get(thread.modelId) ?? 0)) windows.set(thread.modelId, window)
   }
   const small = reads ? [...seats.panelists.map((seat, index) => ({ seat, who: COUNCIL_LETTERS[index]! })), { seat: seats.chair, who: t`Chair` }]
-    .flatMap(({ seat, who }) => { const window = seat ? windows.get(seat.modelId) : undefined; return seat && window && window < tokens ? [{ who, model: seat.model?.name ?? seat.modelId, window }] : [] }) : []
+    .flatMap(({ seat, who }) => { const window = seat ? windows.get(seat.modelId) : undefined; return seat && window && window < tokens ? [{ who, model: seat.model?.name ?? seat.modelId }] : [] }) : []
   const ask = async (): Promise<void> => {
     if (!ready || !question.trim() || !shownOrigin || busy) return
     setBusy(true); setMessage(null)
@@ -222,19 +218,13 @@ function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, o
   return <section className="council-ask" aria-labelledby={questionId}>
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
     <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={id => { setOrigin(id); onOrigin(id) }} />
-    <label className="council-field"><span>{t({ message: 'Question', comment: 'The question put to the Council' })}</span>
-      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-describedby={estimateId}
+    <div className="council-field">
+      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-label={t({ message: 'Question', comment: 'The question put to the Council' })}
         onChange={event => setQuestion(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void ask() } }} />
-    </label>
-    <p id={estimateId} className="council-ask__estimate tt-paragraph">
-      {reads && providers.length ? parts > 1
-        ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, in ${parts} parts before the question. A stage waits up to ${minutes} minutes for a thread.`
-        : t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, with the question. A stage waits up to ${minutes} minutes for a thread.`
-        : t`Starts ${threadCount} threads. A stage waits up to ${minutes} minutes for a thread.`}
-    </p>
-    {small.map(({ who, model, window }) => <p key={who} className="council-notice tt-paragraph">
-      {t`${who}’s model, ${model}, holds about ${window.toLocaleString(i18n.locale)} tokens, and the conversation is about ${tokens.toLocaleString(i18n.locale)}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread.`}</p>)}
+    </div>
+    {small.map(({ who, model }) => <p key={who} className="council-notice tt-paragraph">
+      {t`${who}’s model, ${model}, holds less than this conversation and may lose its start.`}</p>)}
     {estimate && 'unavailable' in estimate ? <p className="council-notice tt-paragraph">{estimate.unavailable}</p> : null}
     <div className="council-ask__actions">
       <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!ready || !question.trim() || !shownOrigin || busy} onClick={() => void ask()}>
@@ -251,12 +241,11 @@ function useWords() {
     stage: (stage: CouncilTurnStage): string => ({ history: t`Reading the conversation`, framing: t`Framing`, answer: t`Answer`, review: t`Review`, crux: t`Crux check`, verdict: t`Verdict`, fairness: t`Fairness check`,
       amend: t`Answer to objections` })[stage],
     action: (action: CouncilRowAction): string => ({ retry: t`Retry`, replace: t`Use another model`, skip: t`Go on without it` })[action],
-    status: (status: CouncilRecord['status']): string => ({ working: t`Working`, waiting: t`Waiting on you`, done: t`Done`, stopped: t`Stopped`, settled: t`Settled` })[status],
     seat: (seat: string): string => seat === COUNCIL_CHAIR ? t`Chair` : seat,
   }
 }
 
-function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; readonly bridge: CouncilBridge }): ReactNode {
+function CouncilEntry({ council, bridge, showSeats }: { readonly council: CouncilRecord; readonly bridge: CouncilBridge; readonly showSeats: boolean }): ReactNode {
   const { t } = useLingui()
   const words = useWords()
   const [notice, setNotice] = useState<string | null>(null)
@@ -270,28 +259,20 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
   const open = council.status !== 'settled'
   const running = council.status === 'working' || council.status === 'waiting'
   const seatNames = council.seats.map(seat => `${words.seat(seat.seat)}: ${seat.modelName}${seat.provider ? ` (${PROVIDER_LABELS[seat.provider]})` : ''}`).join(' · ')
-  const snapshot = council.snapshot, parts = council.history.parts
-  const branch = snapshot?.branch, commit = snapshot?.commit.slice(0, 8), untracked = snapshot?.untracked ?? 0
   return <article className="council-entry" aria-labelledby={headingId} data-status={council.status}>
     <header className="council-entry__head">
       <div className="council-entry__title">
         <h2 id={headingId}>{first.question ?? t`A question whose words are not kept`}</h2>
-        <p className="council-entry__meta tt-paragraph">{t`From ${council.origin.title}`} · {words.status(council.status)}</p>
       </div>
       <div className="council-entry__actions">
+        {council.status === 'stopped' || council.status === 'settled' ? <span className="council-entry__meta">{council.status === 'stopped' ? t`Stopped` : t`Settled`}</span> : null}
         {running ? <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'stop', council: council.id })}>{t`Stop`}</button> : null}
         {open && !running ? <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'settle', council: council.id })}>{t`Settle`}</button> : null}
       </div>
     </header>
     <AskedByLine askedBy={council.askedBy} />
-    <p className="council-entry__seats tt-paragraph">{seatNames}</p>
-    <p className="council-entry__meta tt-paragraph">
-      {!snapshot ? t`Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite.`
-        : snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
-        : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes and ${untracked} untracked files.`
-        : t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes.`}
-      {council.history.parts > 1 ? ` ${t`The conversation is too long for one prompt, so each thread reads all of it in ${parts} parts first.`}` : ''}
-    </p>
+    {showSeats ? <p className="council-entry__seats tt-paragraph">{seatNames}</p> : null}
+    {!council.snapshot ? <p className="council-entry__meta tt-paragraph">{t`Not a Git repository, so Sotto can’t check cited lines.`}</p> : null}
     {council.stoppedBecause === 'words-lost' ? <p className="council-notice tt-paragraph">{t`Sotto restarted while Keep local history was off, so this Council’s words are gone and it cannot go on.`}</p> : null}
     {council.rounds.map(round => <RoundRecord key={round.index} council={council} round={round} run={run} />)}
     {notice ? <p className="council-notice tt-paragraph" role="status">{notice}</p> : null}
@@ -328,27 +309,21 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
   const names: Record<CouncilKind, string> = { decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` }
   const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => names[kind]))
   const reason = framing.research.reason
-  // Without a snapshot, outside Git, the panelists work in the thread's own folder.
-  const research = council.snapshot
-    ? framing.research.needed
-      ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
-      : t`No outside research: the panelists work from the snapshot and the conversation.`
-    : framing.research.needed
-      ? reason ? t`The panelists research outside the thread's folder with their own tools: ${reason}` : t`The panelists research outside the thread's folder with their own tools.`
-      : t`No outside research: the panelists work from the thread's folder and the conversation.`
+  const research = framing.research.needed
+    ? reason ? t`Outside research: ${reason}` : t`Outside research.`
+    : t`No outside research.`
   return <div className="council-framing">
     <p className="tt-paragraph">{framing.fallback ? t`The chair’s framing could not be read, so the panel answers the question alone, as ${kinds}.` : t`Framed as ${kinds}.`}</p>
-    {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question`
-      : criterion.source === 'user' ? t`set by you` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul> : null}
-    <p className="tt-paragraph">{research}{framing.research.byUser ? <span className="council-muted"> {t`You set this.`}</span> : null}</p>
+    {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id}{criterion.source === 'assumed' ? <span className="council-muted"> ({t`assumed`})</span> : null}: {criterion.text}</li>)}</ul> : null}
+    <p className="tt-paragraph">{research}</p>
     {round.reframable ? <div className="council-framing__change">
-      <label className="council-field council-field--inline" htmlFor={kindId}><span>{t`Kind`}</span>
+      <label className="council-field council-field--inline" htmlFor={kindId}><span>{t`Answer again as`}</span>
         <select id={kindId} className="tt-input tt-focusable" value={first}
           onChange={event => { const kind = event.currentTarget.value as CouncilKind; choose(second && second !== kind ? [kind, second] : [kind]) }}>
           {COUNCIL_KINDS.map(kind => <option key={kind} value={kind}>{names[kind]}</option>)}
         </select>
       </label>
-      <label className="council-field council-field--inline" htmlFor={secondId}><span>{t`Second kind`}</span>
+      <label className="council-field council-field--inline" htmlFor={secondId}><span>{t`Also answer again as`}</span>
         <select id={secondId} className="tt-input tt-focusable" value={second ?? ''}
           onChange={event => { const kind = event.currentTarget.value as CouncilKind | ''; choose(kind ? [first, kind] : [first]) }}>
           <option value="">{t({ message: 'None', comment: 'No second kind for a Council question' })}</option>
@@ -356,10 +331,9 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
         </select>
       </label>
       <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
-        {framing.research.needed ? t`Answer without outside research` : council.snapshot ? t`Research outside the snapshot` : t`Research outside the thread's folder`}</button>
+        {framing.research.needed ? t`Answer again without outside research` : t`Answer again with outside research`}</button>
       <CriteriaEditor key={framing.criteria.map(criterion => criterion.text).join('\n')} criteria={framing.criteria.map(criterion => criterion.text)}
         onChange={criteria => void run({ type: 'reframe', council: council.id, criteria })} />
-      <p className="council-muted tt-paragraph">{t`Changing the kind, the research or the criteria asks every panelist to answer again.`}</p>
     </div> : null}
   </div>
 }
@@ -408,7 +382,7 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
       {row.result === 'unavailable' ? <span className="council-muted"> · {t`no result`}</span> : null}</span>
     {row.summary && row.stage !== 'framing' ? <span className="council-row__summary">{row.summary}</span> : null}
     {checked.length ? <span className="council-row__summary council-muted">{checked.join('; ')}</span> : null}
-    {row.sources?.length ? <span className="council-row__summary council-muted">{t`Sources, which reviewers open since Sotto checks only a link’s shape:`} {row.sources.map((source, index) => <React.Fragment key={source.finding}>
+    {row.sources?.length ? <span className="council-row__summary council-muted">{t`Sources:`} {row.sources.map((source, index) => <React.Fragment key={source.finding}>
       {index ? '; ' : ''}{source.finding} <span className="council-source">{source.url}</span></React.Fragment>)}</span> : null}
     <span className="council-row__actions">
       <button type="button" className="council-link tt-focusable" onClick={openThread}>{t`Open thread`}</button>
@@ -466,7 +440,6 @@ function Verdict({ council, round }: { readonly council: CouncilRecord; readonly
     {verdict.text === null ? <p className="council-muted tt-paragraph">{t`The verdict’s words are not kept while Keep local history is off.`}</p>
       : <div className="council-verdict__text">{verdict.text}</div>}
     <Counts counts={verdict.counts} />
-    {council.seats.filter(seat => seat.role === 'panelist').length === 2 ? <p className="council-muted tt-paragraph">{t`The Council had two panelists, so nothing is counted.`}</p> : null}
     {verdict.objections.map(objection => <blockquote key={objection.seat} className="council-objection">
       <p className="tt-paragraph">{t`${objection.seat} says this passage misstates it: “${objection.passage}”`}</p>
       <p className="council-muted tt-paragraph">{objection.answer === 'amended' ? t`The chair amended it.` : objection.answer === 'stands' ? t`The chair let it stand: ${objection.reason ?? ''}` : t`The chair has not answered it.`}</p>
@@ -482,13 +455,12 @@ function Verdict({ council, round }: { readonly council: CouncilRecord; readonly
 function FollowUp({ council, run }: { readonly council: CouncilRecord; readonly run: (command: CouncilCommand) => Promise<void> }): ReactNode {
   const { t } = useLingui()
   const [question, setQuestion] = useState('')
-  const id = useId()
   const ask = (): void => { if (question.trim()) { void run({ type: 'follow-up', council: council.id, question: question.trim() }); setQuestion('') } }
   return <div className="council-follow-up">
-    <label className="council-field" htmlFor={id}><span>{t`Ask a follow-up`}</span>
-      <textarea id={id} className="tt-input tt-focusable" rows={2} value={question} onChange={event => setQuestion(event.currentTarget.value)}
+    <div className="council-field">
+      <textarea aria-label={t`Ask a follow-up`} className="tt-input tt-focusable" rows={2} value={question} onChange={event => setQuestion(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); ask() } }} />
-    </label>
+    </div>
     <div className="council-ask__actions"><button type="button" className="tt-button tt-focusable" disabled={!question.trim()} onClick={ask}>{t`Ask a follow-up`}</button></div>
   </div>
 }

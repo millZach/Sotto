@@ -95,7 +95,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
   return <section className="climb-panel">
     <OriginPicker threads={threads} projects={state?.host.projects ?? []} chosen={chosen?.id ?? ''} onChoose={setOrigin} />
     {!current || current.phase === 'approval' ? <>
-      <div className="climb-heading"><h3>{current ? t`Chair’s proposal` : t`Set up a Climb`}</h3><span>{t`Before round 0`}</span></div>
+      <div className="climb-heading"><h3>{current ? t`Chair’s proposal` : t`Set up a Climb`}</h3></div>
       {current?.askedBy ? <AskedByLine askedBy={{ provider: current.askedBy.provider, words: current.askedBy.words ?? null }} /> : null}
       <fieldset disabled={!editable || busy} className="climb-fields">
         <section className="climb-card"><h4>{t`Goal`} <Help label={t`About the goal`}>{t`Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged.`}</Help></h4>
@@ -130,7 +130,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
           </div></details>)}
           <button type="button" onClick={() => update({ criteria: [...spec.criteria, { ...criterion(), id: `criterion_${spec.criteria.length + 1}`, name: t`New criterion` }] })}>{t`Add criterion`}</button>
         </section>
-        <section className="climb-card"><h4>{t`Builder`}</h4><p>{chosen?.title}</p><label>{t`Context for the setup chair (optional)`}<textarea disabled={!!current} value={context} onChange={event => setContext(event.target.value)} /></label></section>
+        <section className="climb-card"><h4>{t`Builder`}</h4><label>{t`Context for the setup chair (optional)`}<textarea disabled={!!current} value={context} onChange={event => setContext(event.target.value)} /></label></section>
         <section className="climb-card"><h4>{t`Limits`} <Help label={t`About stop rules`}>{t`Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap.`}</Help></h4>
           <Limit label={t`Attempts`} value={spec.attempts} steps={attemptSteps} onChange={attempts => update({ attempts })} /><Limit label={t`Model turns`} value={spec.modelTurns} steps={turnSteps} onChange={modelTurns => update({ modelTurns })} />
         </section>

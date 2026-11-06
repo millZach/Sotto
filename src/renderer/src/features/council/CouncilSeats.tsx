@@ -1,6 +1,6 @@
 import React, { type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentModel } from '../../../../shared/agents'
+import { type AgentModel } from '../../../../shared/agents'
 import { COUNCIL_PANELISTS_MAX, COUNCIL_PANELISTS_MIN, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatNotes, councilSeatsInForce, type CouncilSeatChoice, type CouncilSeatInForce,
   type CouncilSeatNote } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
@@ -20,26 +20,19 @@ export function useSeatName(): (seat: number | 'chair', inSentence?: boolean) =>
 }
 
 /** What the page says about the seats (ADR-0177 decision 7), in a sentence each. */
-export function useSeatNotes(): (notes: readonly CouncilSeatNote[], seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }) => string[] {
-  const { t, i18n } = useLingui()
+export function useSeatNotes(): (notes: readonly CouncilSeatNote[]) => string[] {
+  const { t } = useLingui()
   const named = useSeatName()
-  return (notes, seats) => {
+  return notes => {
     // With no provider connected every seat is empty: one sentence says so.
     if (notes.length > 0 && notes.every(note => note.kind === 'no-seat')) return [t`No provider is connected. Connect one in Settings, under Providers.`]
-    return notes.map(note => sentence(note, seats))
-  }
-  function sentence(note: CouncilSeatNote, seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }): string {
-    if (note.kind === 'same-model') {
-      const names = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(note.seats.map((seat, index) => index === 0 && seat === 'chair' ? named(seat) : named(seat, true)))
-      return t`${names} hold the same model. A second copy adds less than a different model.`
-    }
-    const name = named(note.seat, true)
-    const Name = named(note.seat)
-    const seat = note.seat === 'chair' ? seats.chair : seats.panelists[note.seat]
-    const provider = seat?.provider ? PROVIDER_LABELS[seat.provider] : ''
-    if (note.kind === 'no-seat') return t`No connected provider can fill the seat of ${name}. Connect one in Settings, under Providers.`
-    if (note.kind === 'not-ready') return t`The provider of ${name} is not connected. Choose another model, or connect it in Settings, under Providers.`
-    return t`${Name} runs on ${provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked.`
+    return notes.map(note => {
+      const name = named(note.seat, true)
+      const Name = named(note.seat)
+      if (note.kind === 'no-seat') return t`No connected provider can fill the seat of ${name}. Connect one in Settings, under Providers.`
+      if (note.kind === 'not-ready') return t`The provider of ${name} is not connected. Choose another model, or connect it in Settings, under Providers.`
+      return t`${Name} runs in the cloud, so its claims about the code will be unchecked.`
+    })
   }
 }
 
@@ -59,7 +52,7 @@ export function CouncilSeats({ panel, catalog, onChange, setting }: {
   const named = useSeatName()
   const sentences = useSeatNotes()
   const seats = councilSeatsInForce(panel.panelists, panel.chair, catalog)
-  const notes = sentences(councilSeatNotes(seats), seats)
+  const notes = sentences(councilSeatNotes(seats))
   const choose = (inForce: CouncilSeatInForce | undefined, modelId: string): CouncilSeatChoice => {
     const id = chosenModelId(catalog, modelId, inForce?.modelId ?? '')
     return { modelId: id, reasoningEffort: councilEffort(inForce?.reasoningEffort ?? COUNCIL_SEAT_EFFORT, resolveModel(catalog, id)) }

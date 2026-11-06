@@ -114,7 +114,7 @@ for (const part of ['asked', 'not-asked', 'climb'] as const) test(TITLES[part], 
     // Asked: the agent asks the Council, and its pane opens the Council's tab with who asked.
     await newThread()
     await send(ASKED)
-    const asked = page.getByText(new RegExp(`Asked by ${originLabel} in this thread, because you said`, 'u'))
+    const asked = page.getByText(new RegExp(`Asked by ${originLabel}:`, 'u'))
     await expect.poll(councils, { timeout: 300_000, intervals: [2_000] }).toBe(1)
     let opened = true
     try { await expect(asked).toBeVisible({ timeout: 30_000 }) } catch {
@@ -191,7 +191,7 @@ for (const part of ['asked', 'not-asked', 'climb'] as const) test(TITLES[part], 
     await send(CLIMB)
     await expect.poll(async () => (await climbs()).length, { timeout: 300_000, intervals: [2_000] }).toBe(1)
     const builder = (await state()).id
-    await expect(page.getByText(/Asked by Claude Code in this thread, because you said/u)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/Asked by Claude Code:/u)).toBeVisible({ timeout: 30_000 })
     await expect.poll(async () => (await climbs())[0]?.phase, { timeout: 15 * 60_000, intervals: [5_000] }).toBe('approval')
     expect((await climbs())[0]!.rounds).toHaveLength(0)
     const approve = page.getByRole('button', { name: 'Approve & start round 0' })

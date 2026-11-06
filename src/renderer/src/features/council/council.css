@@ -42,15 +42,11 @@
 .council-field { display: grid; gap: 5px; min-width: 0; }
 .council-field > span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .council-field > :is(select, textarea) { width: 100%; min-width: 0; }
-/* From sits on the line of the thread it names, to leave the drawer's height to the question. */
-.council-field--from { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; }
-.council-field--from > .council-origin__list { grid-column: 1 / -1; }
-/* The thread a question comes from: one line, the field's height; Change opens the list under it. */
-.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 4px 0 11px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); }
+/* The thread title opens the origin picker, in the same place in the Tab order. */
+.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 11px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); }
 .council-origin .provider-mark, .council-origin__row .provider-mark { flex: none; color: var(--tt-text-muted); }
 .council-origin__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.council-origin__project { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.council-origin__change { flex: none; padding: 4px 8px; border: 0; border-radius: var(--tt-radius-row); background: none; color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-small); }
+.council-origin__change { align-self: stretch; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: none; color: inherit; font: inherit; text-align: left; }
 .council-origin__change:hover { background: var(--tt-hover); }
 .council-origin__list { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); }
 .council-origin__search { width: 100%; min-width: 0; }
@@ -61,7 +57,6 @@
 .council-origin__row[aria-current] { background: var(--tt-hover-strong); }
 .council-origin__empty { margin: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .council-ask__question { min-height: 56px; resize: vertical; }
-.council-ask__estimate { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-ask__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .council-notice { margin: 0; color: var(--tt-warning-text); font-size: var(--tt-type-small); line-height: 1.5; }
 
@@ -92,21 +87,21 @@
 /* Each Council: its question and where it stands, its seats, then each round's rows, verdict and follow-up. */
 .council-list { display: grid; gap: 16px; }
 .council-entry { display: grid; gap: 8px; min-width: 0; padding: 16px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
-.council-entry__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
-.council-entry__title { display: grid; gap: 2px; min-width: 0; }
+.council-entry__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.council-entry__title { flex: 1; min-width: 0; }
 .council-entry__title h2 { margin: 0; color: var(--tt-text); font-size: var(--tt-type-reading); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .council-entry__meta, .council-entry__seats, .council-entry__asked { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-entry__seats { color: var(--tt-text-2); }
 .council-entry__asked { overflow-wrap: anywhere; }
-.council-entry__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.council-round { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.council-entry__actions { display: flex; flex: none; align-items: center; gap: 8px; white-space: nowrap; }
+.council-round { display: grid; gap: 8px; }
+.council-round + .council-round { padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
 .council-round__question { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .council-framing { color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-framing p { margin: 0; }
 .council-framing ul { margin: 4px 0 0; padding-left: 18px; }
 .council-framing { display: grid; gap: 6px; }
 .council-framing__change { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
-.council-framing__change > p { flex-basis: 100%; margin: 0; }
 .council-field--inline { min-width: 180px; }
 .council-source { overflow-wrap: anywhere; }
 .council-criteria { display: grid; flex-basis: 100%; gap: 8px; }
