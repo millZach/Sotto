@@ -9,7 +9,7 @@ import { queueHold } from '../../src/main/agents/watcherSendHolds'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
-import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import { isWatcherNews, watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
@@ -114,7 +114,8 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(await f.tools.mcpServer(result.target.threadId)).toBeUndefined()
   expect(await f.tools.mcpServer(f.id)).toMatchObject({ name: 'sotto_threads' })
-  expect(f.tools.definitions.map(item => item.name).sort()).toEqual(Object.keys(watcherToolSchemas).sort())
+  // Sotto's own question card (#2228) joins the shared tools; it asks a paired host nothing, so it is not among them.
+  expect(f.tools.definitions.map(item => item.name).sort()).toEqual([...Object.keys(watcherToolSchemas), 'ask_user'].sort())
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
 })
 
@@ -1213,6 +1214,9 @@ const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined
   const item = queued(f).find(candidate => candidate.threadId === f.id && candidate.wakeUp)
   return item && (watcherWakeUpNote(item.news ?? []) ?? '')
 }
+/** Whether Watcher's waiting wake-up holds evidence news: its line is only what changed, which the note works out as it goes (#2232). */
+const waitingEvidence = (f: Awaited<ReturnType<typeof fixture>>): boolean => queued(f).some(candidate => candidate.threadId === f.id && candidate.wakeUp
+  && (candidate.news ?? []).some(item => isWatcherNews(item) && item.events.some(event => event.kind === 'evidence-changed')))
 
 it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
@@ -1237,6 +1241,8 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   await vi.waitFor(() => expect(master().some(command => command.type === 'send' && command.watcherNews?.includes(expected))).toBe(true))
   const sent = master().find(command => command.type === 'send' && command.watcherNews?.includes(expected))!
   expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
+  // A question's news says what it asks, in the worker's words, worked out as it goes and saved nowhere (#2230).
+  if (kind === 'question') expect(sent.type === 'send' && sent.watcherNews).toContain('Its question, in the worker\'s words: "private_worker_question_82ac".')
   // Sent, Watcher's conversation shows neither the message nor the news.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
@@ -1526,7 +1532,7 @@ it('never sends a thread’s own facts alone after a pull request’s wake-up th
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
   const moves = async (count: number) => {
@@ -1577,7 +1583,7 @@ it('loses no news that came while a wake-up was sent when saving its acknowledge
   await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp && item.status === 'dispatching')).toBe(false))
   await f.finish(f.id)
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 20_000 })
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))).toBe(true), { timeout: 20_000 })
 }, 40_000)
 
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
@@ -2288,13 +2294,13 @@ it('tells pull request news again when the thread’s own facts change while its
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const entered = deferred<void>(), release = deferred<void>()
   f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))
   try {
     const finishing = f.finish(f.id)
     await entered.promise
@@ -2314,7 +2320,7 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const { read } = pullRequestNews(f, started.target.threadId)
   f.service.pullRequestObserved(read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!, news = waitingNews(f)
   const ids = f.control.watcherRecord().wakeEventIds
@@ -2348,7 +2354,7 @@ it('keeps the decisions, rules and issues Watcher gives, list by list, and reads
   await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.compactAtTokens).toBe(400_000)
+  expect(read.compactAtTokens).toBe(250_000)
   expect([texts(read.kept.decisions), texts(read.kept.rules), texts(read.kept.issues)]).toEqual([['Merge #1186 once CI is green?'],
     ['Full test suites run in CI, not on the laptop.'], ['#1189 Watcher: auto-compact its conversation']])
   expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
@@ -2440,15 +2446,18 @@ it('works out what waits on the user from live data at each read: open cards, a 
   })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual([
+  const listed = [
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
     { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-below', delegatedThreadId: 'synthetic-delegated-below' },
     { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
-  ])
-  expect(JSON.stringify(read)).not.toContain('synthetic private')
-  // The owl panel reads the same live list (Zach's pick A).
-  expect(f.service.state().state?.waitingOnUser).toEqual(read.waitingOnUser)
+  ]
+  // A question card's own words come with its row, read only (#2230); a permission request's never do.
+  expect(read.waitingOnUser).toEqual([{ ...listed[0], asks: { question: 'synthetic private question', choices: [] } }, listed[1],
+    { ...listed[2], asks: { question: 'synthetic private question below', choices: [] } }, listed[3]])
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+  // The owl panel reads the same live list (Zach's pick A), which carries no card's words.
+  expect(f.service.state().state?.waitingOnUser).toEqual(listed)
   // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
   open = false
   const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
@@ -2477,7 +2486,7 @@ it('lists a card once when the thread holding it is watched and a watched thread
   ]
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual(expected)
+  expect(read.waitingOnUser).toEqual([expected[0], { ...expected[1], asks: { question: 'synthetic', choices: [] } }])
   expect(f.service.state().state?.waitingOnUser).toEqual(expected)
 })
 
@@ -2643,11 +2652,11 @@ it('saves none of Watcher’s kept words with Keep local history off', async () 
   expect(saved).not.toContain('synthetic_private_rule_51c2')
 })
 
-it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
+it('compacts Watcher once its conversation passes 250K tokens while it rests, and tells it to read its state after', async () => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
   let watcher: Partial<AgentThread> = { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
-    usage: { contextUsed: 400_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+    usage: { contextUsed: 250_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
   vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
     const snapshot = real()
     return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
@@ -2663,9 +2672,9 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   await nudge()
   // At the point, not past it.
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
-  expect(f.service.state().context).toMatchObject({ tokens: 400_000, compactAt: 400_000, canCompact: true, compacting: false })
+  expect(f.service.state().context).toMatchObject({ tokens: 250_000, compactAt: 250_000, canCompact: true, compacting: false })
   // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
-  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
+  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 262_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
   await nudge()
   expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
   watcher = { ...watcher, status: 'idle' }

@@ -13,6 +13,7 @@ import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
 import { isWatchedRow, takesPartInActiveRequest, watcherTakeovers, type WatcherRoomState, type WatcherSetPermissionRequest, type WatcherTakeover, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 import type { WatcherOperation, WatcherRequest } from '../../shared/watcher'
+import { watcherQuestionRequest } from '../../shared/watcherQuestions'
 
 /** The phone page's receipt and takeover caps: the newest of each, as protocol version 1 carries them. */
 const PHONE_RECEIPTS_MAX = 500
@@ -173,6 +174,10 @@ export class WatcherPhoneService {
             cwd: request.context.cwd, summary: request.context.summary, summaryAsk: request.context.summaryAsk, action: request.context.action, target: request.context.target, details: request.context.details } } : {}), ...(request.delivery ? { delivery: request.delivery } : {}) },
         connected, mayAnswer: mayAnswer && connected && target.hostId === snapshot.hostId }))
     })
+    // Watcher's own questions (#2228), as the ordinary card the phone already answers: its answer reaches Watcher's service.
+    const watcher = own ? thread(own.target) : undefined
+    const asked = own ? (room.questions ?? []).filter(question => question.state === 'open').map(question => ({ target: own.target, title: watcher?.title ?? 'Watcher',
+      provider: watcher?.providerId ?? null, request: watcherQuestionRequest(question), connected: true, mayAnswer: mayAnswer && own.target.hostId === snapshot.hostId })) : []
     return watcherPhoneStateSchema.parse({ hostId: this.control.hostId()!, current: room.current && room.currentOptions ? {
       target: room.current.target, provider: room.current.provider, modelId: room.currentOptions.modelId,
       reasoningEffort: room.currentOptions.reasoningEffort, runtimeMode: room.currentOptions.runtimeMode,
@@ -186,7 +191,7 @@ export class WatcherPhoneService {
     // negotiated Watcher management shows neither, and an older one draws them as "3 of 8 watched" and how many more
     // can start. It is sent the highest limit it accepts and the true count up to one below it, so its meter stays right
     // for seven or fewer and never says Watcher starts nothing new.
-    receiptGroups, watchedThreads, needsYou, inFlight: Math.min(starts, WATCHER_PHONE_LEGACY_LIMIT - 1), inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT,
+    receiptGroups, watchedThreads, needsYou: [...needsYou, ...asked], inFlight: Math.min(starts, WATCHER_PHONE_LEGACY_LIMIT - 1), inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT,
     takeovers: this.takeovers(room, snapshot),
     // What goes next, after Watcher's turn: the user's own follow-ups, read from the queue without copying it (#1229).
     ...(steer ? { followups: (current ? this.control.watcherFollowups(current.id) : []).slice(0, WATCHER_PHONE_FOLLOWUPS_MAX)

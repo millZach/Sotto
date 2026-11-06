@@ -285,6 +285,20 @@ export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
+/**
+ * A waiting question card's own words, for Watcher to say what it asks (#2230): the question, the header first where it
+ * has one, up to eight choices, how many more choices and questions it has, the names of the prototype pages Sotto found
+ * for it, and up to three web links the card shows. The worker's words, read only; read_state and question news carry
+ * them, worked out live and never saved.
+ */
+// Cut by characters where they are made, so these bounds are in UTF-16 units with room for any character.
+export const watcherCardWordsSchema = z.object({ question: z.string().min(1).max(1_200), choices: z.array(z.string().max(400)).max(8),
+  moreChoices: z.number().int().positive().optional(), moreQuestions: z.number().int().positive().optional(),
+  prototype: z.array(z.string().max(800)).max(3).optional(), links: z.array(z.string().max(500)).max(3).optional() }).strict()
+export type WatcherCardWords = z.infer<typeof watcherCardWordsSchema>
+/** A waitingOnUser row as read_state gives it: a question card's row carries `asks`, its own words (#2230). */
+export const watcherStateWaitingSchema = watcherWaitingOnUserSchema.extend({ asks: watcherCardWordsSchema.optional() }).strict()
+export type WatcherStateWaiting = z.infer<typeof watcherStateWaitingSchema>
 /** What waits on the user, a hundred to a page with the watched threads. */
 export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
@@ -443,7 +457,7 @@ export const watcherToolSchemas = {
     // asking: off, Watcher asks on a card before each settle.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
-      waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
+      waitingOnUser: z.array(watcherStateWaitingSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
       staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
       // On the final page: pass it as changedSince to read only what changed after this read.
       changeCursor: cursor.optional(),

@@ -598,7 +598,9 @@ import UIKit
 
         // Three drags up the page and three back as the thread goes on working. The app reads what each did.
         let distance: CGFloat = 180
-        let x = size.width - 32, middle = size.height * 0.45
+        // Stay in the page's empty margin. A press over reply text can select words and open Add to prompt instead of
+        // scrolling (run 42170206822, attempt 2); then the five remaining drags are compared with six directions.
+        let x = size.width - 8, middle = size.height * 0.45
         let origin = window.coordinate(withNormalizedOffset: .zero)
         let towardEnd = [false, false, false, true, true, true]
         for down in towardEnd {

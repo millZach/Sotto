@@ -235,6 +235,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let earlierAvailable: Bool?; public let archivedAt: String?; public let summary: Summary?
     public let workspaceSettledAt: String?; public let settledAt: String?; public let settledOverride: String?
     public let backgroundWork: [BackgroundWork]?; public let compaction: Compaction?
+    /// The host's shared snooze, absent on older hosts and stable (ADR-0175).
+    public var snoozedUntil: String? = nil
+    public var updatedAt: String? = nil
     /// The computer's word that the thread finished while nothing showed it and has not been opened since, on
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil
@@ -390,6 +393,9 @@ public struct ModelMoved: Decodable, Equatable, Sendable {
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?
+    /// The steps above this phone's step window, as its computer last cut it (ADR-0194). Computers without `step-window`
+    /// never send it.
+    public var earlierSteps: Int? = nil
 }
 /// Provider-reported work beside a thread's messages. Observational only: nothing here is an answer or a grant.
 /// `kind` and `status` stay strings so a kind this build does not know still shows, by its title.
