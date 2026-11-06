@@ -13,6 +13,7 @@ import type { CouncilOpen, CouncilView } from '../../src/shared/council'
 import { COUNCIL_VERDICT_NOTE } from '../../src/shared/councilTools'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture } from '../fixtures/delegationFixture'
+import { deferred } from '../fixtures/deferred'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -76,6 +77,14 @@ async function fixture() {
 
 it('starts a Council from the user\'s own request with the Settings panel, opens its pane, and sends the verdict back once', async () => {
   const f = await fixture()
+  const delivered = deferred(), release = deferred()
+  const commandFromCouncil = f.control.commandFromCouncil.bind(f.control)
+  const send = vi.spyOn(f.control, 'commandFromCouncil').mockImplementation(async (command, guard) => {
+    const result = await commandFromCouncil(command, guard)
+    if (command.type === 'manual-send' && command.threadId === f.origin) { delivered.resolve(); await release.promise }
+    return result
+  })
+  cleanups.push(async () => { release.resolve(); send.mockRestore() })
   await f.say(f.origin, 'Synthetic: have the council review the store before I merge.')
   const result = await f.tools.call(f.origin, 'ask_council', { question: 'Synthetic question: is the store safe to merge?' })
   const started = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>
@@ -103,9 +112,13 @@ it('starts a Council from the user\'s own request with the Settings panel, opens
   expect(sent.text.startsWith('[Sotto Council]')).toBe(true)
   expect(sent.text).toContain(COUNCIL_VERDICT_NOTE)
   expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.origin)!.wakeUpMessageIds).toContain(sent.id)
+  await delivered.promise
   await f.endTurn(f.origin, 'Synthetic: the Council says it is safe.')
+  // The provider can echo and answer before its send call returns to Council.
+  expect(await f.call(f.origin, 'read_council', { council: f.view().id })).toMatchObject({ status: 'verdict', delivery: 'dispatching' })
+  release.resolve()
+  await vi.waitFor(async () => expect(await f.call(f.origin, 'read_council', { council: f.view().id })).toMatchObject({ status: 'verdict', delivery: 'sent' }), { timeout: 20_000 })
   expect(f.native(f.origin).messages.filter(message => message.text.includes('Synthetic verdict: safe to merge.') && message.role === 'user')).toHaveLength(1)
-  expect(await f.call(f.origin, 'read_council', { council: f.view().id })).toMatchObject({ status: 'verdict', delivery: 'sent' })
   // A turn the verdict began is not the user's: it cannot ask the Council again.
   expect((await f.tools.call(f.origin, 'ask_council', { question: 'Synthetic follow-up' })).isError).toBe(true)
 }, 120_000)
