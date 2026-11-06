@@ -295,8 +295,10 @@ describe('which channel owns an install', () => {
     await mkdir(folder, { recursive: true }); await writeFile(join(folder, 'package.json'), '{}')
     await mkdir(join(local, 'bin')); await writeFile(join(local, 'bin', 'claude'), '#!/bin/bash\nexec elsewhere "$@"\n')
     expect(await detectClientChannel('claude', join(local, 'bin', 'claude'), {})).toBe('unknown')
-    // Windows npm writes a launcher beside the package rather than linking it, so there it still counts.
-    expect(await detectClientChannel('claude', join(local, 'bin', 'claude'), {}, 'win32')).toBe('npm')
+    // Windows npm writes a launcher rather than linking it, and writes it in the prefix: `local/lib` for a package in
+    // `local/lib/node_modules`. So there the launcher counts and the script in `local/bin` still does not (#1920).
+    expect(await detectClientChannel('claude', join(local, 'lib', 'claude.cmd'), {}, 'win32')).toBe('npm')
+    expect(await detectClientChannel('claude', join(local, 'bin', 'claude'), {}, 'win32')).toBe('unknown')
   })
 
   it('leaves a client it cannot place without a command to press', async () => {
