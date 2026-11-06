@@ -80,6 +80,7 @@ import { BRING_BACK_UNSUPPORTED } from '../../shared/bringChangesBack'
 import { RequestWaits } from './requestWaits'
 import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
+import { ThreadSnoozes } from './threadSnoozes'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
@@ -299,6 +300,7 @@ const savedSchema = z.object({
   deliveries: z.array(agentDeliverySchema).default([]),
   /** The threads that finished while no client showed them, oldest first (ADR-0046). */
   finishedUnread: z.array(z.string()).default([]),
+  threadSnoozes: z.record(z.string(), z.string().datetime()).default({}),
   /** The prototypes the user opened a page of, or answered the question after, by thread and source, oldest first (ADR-0108). */
   prototypesCleared: z.array(z.object({ threadId: z.string(), source: z.string() })).default([]),
   /** When prototype-ready marks began on this computer, in milliseconds: older replies earn none (ADR-0108). */
@@ -1139,6 +1141,8 @@ export class AgentControl {
   private viewedThreadIds: readonly string[] = []
   /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0155). */
   private readonly madeThisRun = new Map<string, number>()
+  /** Shared snooze deadlines, gated by the host’s Owl answer (ADR-0175). */
+  private readonly threadSnoozes: ThreadSnoozes
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
@@ -1234,6 +1238,7 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
     dynamicThreadsEnabled?: boolean
+    threadSnoozeEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -1315,6 +1320,9 @@ export class AgentControl {
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.watcherArchive = dependencies.watcherEnabled === true ? new WatcherArchive(dependencies.directory, () => dependencies.historyEnabled?.() !== false) : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
+    this.threadSnoozes = new ThreadSnoozes(dependencies.threadSnoozeEnabled === true, id => this.marksMoved.add(id), () => {
+      this.publish(); this.persistAfterSnapshots()
+    })
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
     this.requestWaits = new RequestWaits()
@@ -1415,11 +1423,12 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, threadSnoozes, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
     // Fences set before the record was read (the move's own record is read first) stand beside those it kept.
     for (const fence of moveFences ?? []) if (!this.moveFences.has(fence.threadId)) this.moveFences.set(fence.threadId, fence.words)
     this.moveFencesRead = true
+    this.threadSnoozes.restore(threadSnoozes)
     this.finishedUnread.restore(finishedUnread)
     this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
@@ -2751,6 +2760,7 @@ export class AgentControl {
       outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       obsoleteDrafts: this.state.obsoleteDrafts ?? [],
       finishedUnread: this.finishedUnread.saved(),
+      threadSnoozes: this.threadSnoozes.saved(),
       prototypesCleared: this.prototypeReady.saved(),
       prototypesSince: this.prototypeReady.since(),
       prototypesMarked: this.prototypeReady.marked(),
@@ -3760,8 +3770,9 @@ export class AgentControl {
     restart.onMoved = id => { this.marksMoved.add(id) }
     restart.onChanged = () => { if (!this.disposed) this.publish() }
   }
-  /** The thread with its scheduled restart while one stands (ADR-0144); as it is while the feature is off. */
-  private restartMark<T extends AgentThread>(thread: T): T { return this.limitRestart ? this.limitRestart.publish(thread) : thread }
+  get supportsThreadSnooze(): boolean { return this.threadSnoozes.enabled }
+  /** The thread with its shared snooze and scheduled restart while their features are on. */
+  private restartMark<T extends AgentThread>(thread: T): T { return this.threadSnoozes.publish(this.limitRestart ? this.limitRestart.publish(thread) : thread) }
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
   /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
   cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
@@ -4147,6 +4158,15 @@ export class AgentControl {
         this.broadcastDetail()
       }
       return Promise.resolve(this.reply())
+    }
+    if (command.type === 'snooze-thread') {
+      if (!this.threadSnoozes.enabled) return Promise.resolve({ ...this.reply(), error: 'Snooze is available in Sotto Owl. Nothing changed.' })
+      const thread = this.threadById(command.threadId)
+      if (!thread || !this.threadAvailable(thread.id)) return Promise.resolve({ ...this.reply(), error: 'That thread is unavailable. Nothing changed.' })
+      this.threadSnoozes.set(thread.id, command.until)
+      this.threadSnoozes.track(this.state.host.threads, id => this.threadById(id), settledIn(this.state.host), value => this.failuresSeen.publish(value))
+      this.publish()
+      return this.persist().then(() => this.reply())
     }
     if (command.type === 'save-thread-draft') {
       try {
@@ -6399,6 +6419,7 @@ export class AgentControl {
     // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
     if (changed) this.finishedUnread.trackChanged(snapshot, changed.threads, changed.gone); else this.finishedUnread.track(snapshot)
     const failuresChanged = changed ? this.failuresSeen.trackChanged(snapshot, changed.threads, changed.gone) : this.failuresSeen.track(snapshot)
+    const snoozesChanged = this.threadSnoozes.track(changed?.threads ?? snapshot.threads, id => this.threadById(id), settledIn(snapshot), thread => this.failuresSeen.publish(thread))
     // A turn stopped at a usage limit is recorded for its restart, from the threads the change named (ADR-0144).
     if (this.limitRestart) { if (changed) this.limitRestart.track(snapshot, changed.threads, changed.gone); else this.limitRestart.trackAll(snapshot) }
     this.scheduleProviderReconnects()
@@ -6412,7 +6433,7 @@ export class AgentControl {
         // the live host instead, so a failed reconnect never empties the histories it holds.
         void this.commandShell(this.automaticConnect()).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...this.state.host, connected: false }) })
       }, 5000)
-      if (failuresChanged) this.persistAfterSnapshots()
+      if (failuresChanged || snoozesChanged) this.persistAfterSnapshots()
       this.publish(); return
     }
     if (this.reconnect) clearTimeout(this.reconnect)
@@ -6543,6 +6564,7 @@ export class AgentControl {
     await this.dependencies.turns?.drain()
   }
   dispose(): void {
+    this.threadSnoozes.dispose()
     this.disposed = true
     this.commandSummaries?.close()
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.

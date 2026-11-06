@@ -333,7 +333,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const sottoVersion = options.sottoVersion ?? packageVersion
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
-  const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+  const features = HOST_FEATURES.filter(feature => (feature !== 'thread-snooze' || service.supportsThreadSnooze === true)
+    && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
     && (feature !== 'watcher-phone-machines' || service.watcherPhone?.offersMachines === true)
