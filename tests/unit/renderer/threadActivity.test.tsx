@@ -155,7 +155,13 @@ describe('settled activity in the transcript', () => {
     expect(row.querySelector('[title="Reported by Codex"]')).toHaveTextContent(/^4\.2s$/u)
     expect(row.querySelector('.tt-visually-hidden')).toHaveTextContent('Reported by Codex')
     expect(row).toHaveAccessibleDescription('Reported by Codex')
-    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.textContent || button.getAttribute('aria-label'))).toEqual(['Copy output code', 'Copy command'])
+    // Copy command sits at the end of the command's own line, the row's next control, and what came back keeps its own Copy.
+    const copy = row.closest('li')!.querySelector(':scope > .thread-activity__copy-command button')!
+    expect(copy).toHaveAccessibleName('Copy command')
+    expect(row.querySelector('.thread-activity__copy-slot')).not.toBeNull()
+    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['Copy output code'])
+    await user.tab()
+    expect(copy).toHaveFocus()
 
     await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' }))
     expect(within(transcript).getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: old.*Added: new/u)
@@ -173,7 +179,7 @@ describe('settled activity in the transcript', () => {
     await user.click(row)
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
     expect(within(details).getByLabelText('command code block')).toHaveTextContent('cd app npm ci')
-    expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
+    expect(within(transcript).queryByRole('button', { name: 'Copy command' })).toBeNull()
   })
 
   it('leads a described command’s row with what it was for, and shows a quick step’s time neither folded nor open', async () => {
@@ -193,7 +199,9 @@ describe('settled activity in the transcript', () => {
     const command = row.querySelector('.thread-activity__command')!
     expect(command.textContent!.replace(/‎/gu, '')).toBe('cat src/policy.ts')
     expect(command).toHaveAttribute('data-cut')
-    expect([...command.children].map(part => part.textContent!.replace(/‎/gu, ''))).toEqual(['cat ', 'src/', 'policy.ts'])
+    expect([...command.children].map(part => [part.className.replace('thread-activity__command-', ''), part.textContent!.replace(/‎/gu, '')])).toEqual([
+      ['verb', 'cat '], ['folders', 'src/'], ['name', 'policy.ts'],
+    ])
     // Under a second the folded row shows no time; a slow step keeps its own.
     expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
     expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
@@ -209,7 +217,8 @@ describe('settled activity in the transcript', () => {
     expect(within(details).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
     // It ran in the thread's own folder, however that folder is spelt, so the body does not name it.
     expect(details).not.toHaveTextContent(/\bIn\b/u)
-    expect(within(details).getByRole('button', { name: 'Copy command' })).toBeVisible()
+    expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
+    expect(row.closest('li')!.querySelector(':scope > .thread-activity__copy-command')).toContainElement(within(transcript).getByRole('button', { name: 'Copy command' }))
   })
 
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
@@ -219,7 +228,7 @@ describe('settled activity in the transcript', () => {
     await user.click(work)
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     await user.click(row)
-    const copy = within(document.getElementById(row.getAttribute('aria-controls')!)!).getAllByRole('button', { name: /^Copy/ })[0]!
+    const copy = within(transcript).getByRole('button', { name: 'Copy command' })
     copy.focus()
     await user.keyboard('{Escape}')
     expect(row).toHaveAttribute('aria-expanded', 'false')

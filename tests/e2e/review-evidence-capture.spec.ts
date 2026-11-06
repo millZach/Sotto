@@ -407,7 +407,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await scrollTranscript(capture.page, 'top-of-turn')
     await capture.shoot('thread-idle', 'A finished thread read from the top of its turn: "What do you think of this repository?", the folded Worked for line, and a reply with headings, lists, inline code and a code block.')
   } },
-  { name: 'thread-long', covers: ['steps-finished'], run: async capture => {
+  { name: 'thread-long', covers: ['steps-finished', 'steps-finished-open'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     // A long thread opens on its newest turns; the reader's own presses bring the rest in.
@@ -426,7 +426,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('thread-long', shows, differs, { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    if (!ONLY || ONLY.includes('steps-finished')) {
+    if (!ONLY || ONLY.includes('steps-finished') || ONLY.includes('steps-finished-open')) {
       // A finished turn opened to its steps, the first with four commands: quick reads, a slow test run and a typecheck that failed.
       const fold = transcript(page).getByRole('button', { name: /^Worked for.*Ran 4 commands/u }).first()
       const opened = async (): Promise<void> => {
@@ -442,12 +442,54 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await opened()
       await capture.shoot('steps-finished', finishedShows, differs, { modes: ['dark'], size: [820, 560] })
       await resizeContentWindowFor(capture.launched, 1600, 1000)
+      if (!ONLY || ONLY.includes('steps-finished-open')) {
+        // The same turn with its failed typecheck pressed open: the command and Copy on one line, then what it printed.
+        await opened()
+        const failed = transcript(page).getByRole('button', { name: /^npm run typecheck, Exit 1/u }).first()
+        await failed.click()
+        await expect(failed).toHaveAttribute('aria-expanded', 'true')
+        await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+        const openShows = 'The same finished turn with its failed typecheck pressed open: the command whole with Copy at the end of its line, then what it printed.'
+        await capture.shoot('steps-finished-open', openShows, differs)
+        await resizeContentWindowFor(capture.launched, 1280, 800)
+        await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+        await capture.shoot('steps-finished-open', openShows, differs, { modes: ['dark'], size: [1280, 800] })
+        await resizeContentWindowFor(capture.launched, 820, 560)
+        await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+        await capture.shoot('steps-finished-open', openShows, differs, { modes: ['dark'], size: [820, 560] })
+        await resizeContentWindowFor(capture.launched, 1600, 1000)
+        await failed.click()
+        await expect(failed).toHaveAttribute('aria-expanded', 'false')
+      }
       // Folded again, so the states after this start as the user left a turn's steps before it.
       await fold.click()
       await expect(fold).toHaveAttribute('aria-expanded', 'false')
       // And read from the middle again, where thread-long leaves this thread for the states that open it later.
       await scrollTranscript(page, 'middle')
     }
+  } },
+  { name: 'steps-cut', covers: ['steps-cut'], run: async capture => {
+    // A finished turn's rows beside the pull request, where the transcript is narrow and a long test command has to give way.
+    const { page } = capture
+    await openThread(page, 'Thread store on a worker')
+    await toolsTab(page, 'Pull request')
+    const fold = transcript(page).getByRole('button', { name: /^Worked for.*Ran 3 commands/u }).first()
+    if (await fold.getAttribute('aria-expanded') !== 'true') await fold.click()
+    await expect(fold).toHaveAttribute('aria-expanded', 'true')
+    await expect(transcript(page).getByRole('button', { name: /^npm test -- tests\/integration\/threadStoreWorker/u })).toBeVisible()
+    const shows = 'A finished turn opened to its steps beside the pull request: a test command too long for its row keeps its verb and both files\' names.'
+    await capture.shoot('steps-cut', shows)
+    await resizeContentWindowFor(capture.launched, 1280, 800)
+    await capture.shoot('steps-cut', shows, '', { modes: ['dark'], size: [1280, 800] })
+    // At the minimum window Tools would cover the thread, so the rows are read without it, at the window's own width.
+    await closeTools(page)
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+    await capture.shoot('steps-cut', shows, '', { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await fold.click()
+    await expect(fold).toHaveAttribute('aria-expanded', 'false')
+    await closeTools(page)
   } },
   { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture

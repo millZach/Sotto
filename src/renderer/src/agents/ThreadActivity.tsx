@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type CommandCut, type WorkingNow,
+  activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type CommandPart, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -331,15 +331,15 @@ const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly r
   </ol>
 })
 
-/** The open row says a one-line command whole, and this copies it, since a row's words cannot be selected. */
+/** The open row says a one-line command whole, and this copies it from the end of the command's line, since a row's words cannot be selected. */
 function CopyCommand({ command }: { readonly command: string }): ReactNode {
   const { t } = useLingui()
   const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
   const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
+  const name = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
   return <span className="thread-activity__copy-command">
-    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} onClick={copy}>
-      {outcome === 'copied' ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
-      <span>{t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })}</span>
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={name} onClick={copy}>
+      {outcome === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
     </button>
     <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
   </span>
@@ -368,15 +368,14 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const cutText = cut !== undefined && textShown
   // The open row reads a one-line command whole, so it is said there once; a script of several lines keeps its block.
   const script = record.command !== undefined && record.command.trim().includes('\n')
-  const ran = record.command && !script ? record.command : ''
   const said = cutText ? record.kind === 'reasoning' || !json
     ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
     : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
     : text ? record.kind === 'reasoning'
       ? <MessageContent text={text} />
       : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null
-  // What ran and what it was for are the open row's; the body leads with what came back, then where it ran when that was
-  // somewhere else, and the way to copy the command: each said once. A command whose input is not the provider's
+  // What ran and what it was for are the open row's, with the way to copy the command at the end of its line; the body leads
+  // with what came back, then where it ran when that was somewhere else: each said once. A command whose input is not the provider's
   // description keeps those words here, first.
   const described = record.command !== undefined && stepDescription(record) !== ''
   return <div className="thread-activity__details">
@@ -407,29 +406,33 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
       ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
       : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
-    {cwd || ran ? <p className="thread-activity__fact thread-activity__where tt-paragraph">
-      {cwd ? <span><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></span> : null}
-      {ran ? <CopyCommand command={ran} /> : null}
-    </p> : null}
+    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
   </div>
 }
 
 /**
- * A folded row's command, which gives way in the folders of the file it names before anything else, so its pattern, the
- * file's own name and what follows stay readable on a row too narrow for it whole. The parts are spans in one left-to-right
- * isolate, so a right-to-left interface keeps the command's direction (ADR-0123); the folders are laid out right to left so
- * they lose their start, and the left-to-right mark keeps their last separator on their right.
+ * A folded row's command, which gives way where it says least on a row too narrow for it whole (`commandCut`), so its verb and
+ * the file it acts on stay readable. The parts are spans in one left-to-right isolate, so a right-to-left interface keeps the
+ * command's direction (ADR-0123); the folders are laid out right to left so they lose their start, and the left-to-right mark
+ * keeps their last separator on their right. A file after the first is one span with its folders, which goes whole once its
+ * name has given way, so no ellipsis stands beside another.
  */
 function RowCommand({ command, className }: { readonly command: string; readonly className: string }): ReactNode {
-  const cut: CommandCut | null = commandCut(command)
-  if (cut === null) return <span className={className} dir="ltr">{command}</span>
-  return <span className={className} dir="ltr" data-cut="">
-    <span className="thread-activity__command-before">{cut.before}</span>
-    <span className="thread-activity__command-folders">{`${cut.folders}\u200e`}</span>
-    <span className="thread-activity__command-rest">{cut.rest}</span>
-  </span>
+  const parts = commandCut(command)
+  if (parts === null) return <span className={className} dir="ltr">{command}</span>
+  const piece = (part: CommandPart, key: number): ReactNode =>
+    <span key={key} className={`thread-activity__command-${part.role}`}>{part.role === 'folders' ? `${part.text}\u200e` : part.text}</span>
+  // What stands before a later file, its folders and its name are one span.
+  const pieces: ReactNode[] = []
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!
+    if (part.role !== 'between') { pieces.push(piece(part, index)); continue }
+    pieces.push(<span key={index} className="thread-activity__command-more">{parts.slice(index, index + 3).map((more, at) => piece(more, index + at))}</span>)
+    index += 2
+  }
+  return <span className={className} dir="ltr" data-cut="">{pieces}</span>
 }
 
 /**
@@ -484,15 +487,20 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const spoken = planInView ? label.subject : [purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = purpose || label.subject
+  // Open, a one-line command is said whole in the row, and the way to copy it sits at the end of the command's own line rather
+  // than on a line of its own: the slot holds its place there, and the button, which cannot sit inside the row's own button,
+  // is drawn over it.
+  const copied = open && record.kind === 'command' && record.command && !script ? record.command : ''
+  const copySlot = copied ? <span className="thread-activity__copy-slot" aria-hidden="true" /> : null
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
       {purpose ? <>
         <span className="thread-activity__subject">{purpose}</span>
-        {open && script ? null : open ? <span className="thread-activity__command" dir="ltr">{shown.subject}</span> : <RowCommand command={shown.subject} className="thread-activity__command" />}
+        {open && script ? null : open ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : <RowCommand command={shown.subject} className="thread-activity__command" />}
       </> : !open && record.kind === 'command' && shown.mono && !shown.preview
         ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
-        : <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />}
+        : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
@@ -513,6 +521,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
         aria-describedby={timing ? timingId : undefined}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
+    {copied ? <CopyCommand command={copied} /> : null}
     <Fold open={open}><div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
       {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>

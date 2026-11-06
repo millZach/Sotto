@@ -560,12 +560,21 @@ describe('file changes that did not go through', () => {
 })
 
 describe('where a folded row’s command gives way', () => {
-  it('cuts in the folders of the first file it names, keeping the command, its pattern, the file and what follows', () => {
-    expect(commandCut('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toEqual({
-      before: 'cat ', folders: 'tests/unit/main/', rest: 'workspaceControl.test.ts | head -n 80',
-    })
-    expect(commandCut('rg -c "this\\.(a|b)" src/main/agents/control.ts')).toEqual({ before: 'rg -c "this\\.(a|b)" ', folders: 'src/main/agents/', rest: 'control.ts' })
-    expect(commandCut('type D:\\Projects\\sotto\\README.md')).toEqual({ before: 'type ', folders: 'D:\\Projects\\sotto\\', rest: 'README.md' })
+  const parts = (command: string): string[][] | undefined => commandCut(command)?.map(part => [part.role, part.text])
+
+  it('cuts in the folders of every file it names, keeping the command’s verb and each file’s name', () => {
+    expect(parts('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toEqual([
+      ['verb', 'cat '], ['folders', 'tests/unit/main/'], ['name', 'workspaceControl.test.ts'], ['tail', ' | head -n 80'],
+    ])
+    expect(parts('rg -c "this\\.(a|b)" src/main/agents/control.ts')).toEqual([
+      ['verb', 'rg'], ['args', ' -c "this\\.(a|b)" '], ['folders', 'src/main/agents/'], ['name', 'control.ts'],
+    ])
+    expect(parts('type D:\\Projects\\sotto\\README.md')).toEqual([['verb', 'type '], ['folders', 'D:\\Projects\\sotto\\'], ['name', 'README.md']])
+    // Two files: both lose their folders before the second is cut, so "npm tes…" and "tests/integration/wor…" never show.
+    expect(parts('npm test -- tests/integration/threadStoreWorker.test.ts tests/integration/workspaceStoreWorker.test.ts')).toEqual([
+      ['verb', 'npm test'], ['args', ' -- '], ['folders', 'tests/integration/'], ['name', 'threadStoreWorker.test.ts'],
+      ['between', ' '], ['folders', 'tests/integration/'], ['name', 'workspaceStoreWorker.test.ts'],
+    ])
   })
 
   it('leaves a command that names no file in a folder to be cut at its end', () => {

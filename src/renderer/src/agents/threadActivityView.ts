@@ -475,23 +475,47 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', '), ...named }
 }
 
-/** A command cut around the file it names: what comes before the file, the file's folders, and its name with the rest. */
-export interface CommandCut { readonly before: string; readonly folders: string; readonly rest: string }
+/**
+ * One part of a command cut around the files it names. `verb` is the command itself, its program and a subcommand such as
+ * `npm test` or `git diff`, and `args` what follows it before the first file: flags and a pattern. `folders` are a file's
+ * folders and `name` its own name, `between` what stands between one file and the next, and `tail` what follows the last file,
+ * such as `| head -n 80`.
+ */
+export interface CommandPart { readonly text: string; readonly role: 'verb' | 'args' | 'folders' | 'name' | 'between' | 'tail' }
 
-/** The first argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
-const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/u
+/** The program and, when the next word is a plain word rather than a flag, a path or a quote, its subcommand. */
+const COMMAND_VERB = /^\s*[^\s"'|<>&;()]+(?:\s+[a-z][\w:.-]*(?=\s|$))?/iu
+
+/** An argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
+const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/gu
 
 /**
- * Where a command among the opened steps gives way when its row has no room for it whole: in the folders of the first file
- * it names, so the command, its pattern, the file's own name and what follows stay readable ("rg -c "this\.(a|b)"
- * …control.ts"). Null for a command that names no file in a folder, which is cut at its end. The working line's own
- * command is always cut at its end (ADR-0134, November 4 amendment); this is for the rows.
+ * Where a command among the opened steps gives way when its row has no room for it whole: first in the folders of every file
+ * it names, then in what follows the last file, then in the files after the first, then in its flags and pattern, and the
+ * first file's name last, never its verb, so the command and the file it acts on stay readable:
+ * `npm test -- …threadStore.test.ts …workspace.test.ts`.
+ * Null for a command that names no file in a folder, which is cut at its end. The working line's own command is always cut at
+ * its end (ADR-0134, November 4 amendment); this is for the rows.
  */
-export function commandCut(command: string): CommandCut | null {
+export function commandCut(command: string): readonly CommandPart[] | null {
   const text = command.replace(/^\u2068|\u2069$/gu, '')
-  const found = COMMAND_FILE.exec(text)
-  if (found === null) return null
-  return { before: text.slice(0, found.index), folders: found[1]!, rest: text.slice(found.index + found[1]!.length) }
+  const files = [...text.matchAll(COMMAND_FILE)]
+  if (!files.length) return null
+  const parts: CommandPart[] = []
+  const first = files[0]!
+  const head = text.slice(0, first.index)
+  const verb = COMMAND_VERB.exec(head)?.[0] ?? ''
+  // Flags and a pattern give way at their end; a bare space after the verb is part of it.
+  const args = head.slice(verb.length)
+  if (args.trim()) { if (verb) parts.push({ text: verb, role: 'verb' }); parts.push({ text: args, role: 'args' }) } else if (head) parts.push({ text: head, role: 'verb' })
+  files.forEach((found, index) => {
+    const end = found.index + found[0].length
+    const next = files[index + 1]?.index
+    parts.push({ text: found[1]!, role: 'folders' }, { text: found[2]!, role: 'name' })
+    if (next !== undefined) parts.push({ text: text.slice(end, next), role: 'between' })
+    else if (end < text.length) parts.push({ text: text.slice(end), role: 'tail' })
+  })
+  return parts
 }
 
 /** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
