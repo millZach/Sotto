@@ -122,6 +122,10 @@
 .thread-pane:not(.watcher-pane) .thread-message .rich-heading--1 { font-size: var(--tt-type-figure); }
 .thread-pane:not(.watcher-pane) .thread-message .rich-heading--2 { font-size: var(--tt-type-heading); }
 .thread-pane:not(.watcher-pane) .thread-message :is(.rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6) { font-size: var(--tt-type-lead); }
+/* A reply that opens on a heading keeps its name and time apart from it: the label's 6px alone set "Claude 11:09 am"
+   tighter on the heading than one paragraph sits on the next, so the heading read as the label's. The label stands
+   a paragraph's space above it; the margin meets the label's own 6px, so it is the whole gap. */
+.thread-pane:not(.watcher-pane) .thread-message > .rich-message > .rich-heading:first-child { margin-top: 16px; }
 .thread-pane:not(.watcher-pane) .thread-message .rich-message :not(pre) > code { font-size: var(--tt-type-body); }
 .thread-pane:not(.watcher-pane) .thread-message .rich-heading--1 > code { font-size: var(--tt-type-heading); }
 .thread-pane:not(.watcher-pane) .thread-message .rich-heading--2 > code { font-size: var(--tt-type-lead); }
