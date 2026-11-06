@@ -44,18 +44,6 @@
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(h2, .thread-workspace__title > .provider-mark, .branch-toolbar__pr > svg) { color: var(--tt-text-muted); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > :is(.pane-action, .pane-menu > .pane-action):not([aria-pressed='true'], [aria-expanded='true']) { color: color-mix(in srgb, var(--tt-text-muted) 82%, transparent); }
 
-/* And it stops saying where its thread works: the project, the working copy, the pull request and the branch leave its
-   header while the focus is in the other pane, so across the top only the focused pane says where it works, and each pane
-   says its name. Its controls all stay (ADR-0182 decision 3). Nothing moves: the parts keep their room, a Settled or
-   disconnected tag and a working copy that is being set up or failed stay, and the pointer over that header, or the keys
-   in it, bring the rest back, so every press there is still one press away. The parts are the same ones that already give
-   way whole in a narrow pane (ADR-0182, November 4 amendment), and Tools and the Git action still say them all. */
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head .thread-workspace__where :is(.thread-workspace__crumb > span:first-child, .thread-workspace__crumb > .working-copy, .thread-workspace__branches) { transition: opacity 120ms ease; }
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__where:not(:has([aria-expanded='true'])) :is(.thread-workspace__crumb > span:first-child, .thread-workspace__crumb > .working-copy:not([data-status='pending'], [data-status='error']), .thread-workspace__branches) { opacity: 0; }
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__where:not(:has([aria-expanded='true'])) .thread-workspace__crumb::before { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .threads-view .thread-pane .thread-workspace__where * { transition: none; } }
-:root[data-reduced-motion='on'] .threads-view .thread-pane .thread-workspace__where * { transition: none; }
-
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
 .threads-view .thread-panes__divider[data-axis='rows'] { cursor: row-resize; }
