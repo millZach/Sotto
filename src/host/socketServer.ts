@@ -41,6 +41,7 @@ import { HttpBudgets } from './httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
+import { isWatcherQuestionRequest } from '../shared/watcherQuestions'
 import { visibleWatcherState } from '../shared/watcherVisibility'
 import type { WatcherPhoneCurrent, WatcherPhoneOpen, WatcherPhoneState } from '../shared/watcherPhone'
 import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../shared/watcherRoom'
@@ -1134,7 +1135,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     const recorded = !UNRECEIPTED.has(input.type)
     if (recorded && !receipts.makeRoom()) throw new Refusal('busy')
-    if (input.type === 'answer') {
+    // A card of Watcher's own question (#2228) is no request of its thread's: the page's needs-you list above holds it.
+    if (input.type === 'answer' && !(ownCard && isWatcherQuestionRequest(input.requestId))) {
       const thread = service.shell().host.threads.find(thread => thread.id === input.threadId)
       if (!thread?.requests.some(item => item.id === input.requestId && !item.delivery)) throw new Refusal('stale_request')
     }

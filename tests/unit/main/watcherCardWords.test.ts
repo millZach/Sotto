@@ -1,0 +1,53 @@
+import { expect, it } from 'vitest'
+import { watcherCardLine, watcherNewsText, watcherWaitingCardWords } from '../../../src/main/agents/watcherNews'
+import type { WatcherEvent } from '../../../src/shared/watcherNews'
+import { watcherCardWordsSchema } from '../../../src/shared/watcher'
+import type { AgentRequest } from '../../../src/shared/agents'
+
+// #2230: Watcher guessed what cards asked. A waiting question's own words go with its row and its news, read only.
+const page = (name: string) => ({ token: 'a'.repeat(32), kind: 'file' as const, name, start: name })
+const choice = (label: string) => ({ id: label, label })
+
+it('gives a question card\'s headline, choices and prototype pages, never a page\'s token or a permission\'s words (#2230)', () => {
+  const asked: AgentRequest = { id: 'card', kind: 'question', text: 'fallback', options: [], pages: [page('docs/prototypes/rail.html')],
+    questions: [{ id: 'q1', header: 'Rail', question: 'Which rail do you want?', options: [choice('A, tinted'), choice('B, plain')], multiSelect: false, allowFreeText: true },
+      { id: 'q2', question: 'Ship it?', options: [], multiSelect: false, allowFreeText: true }] }
+  const words = watcherWaitingCardWords(asked)!
+  expect(words).toEqual({ question: 'Rail: Which rail do you want?', choices: ['A, tinted', 'B, plain'], moreQuestions: 1, prototype: ['docs/prototypes/rail.html'] })
+  expect(watcherCardWordsSchema.parse(words)).toEqual(words)
+  expect(watcherCardLine(words)).toBe('Its question, in the worker\'s words: "Rail: Which rail do you want?". Its choices: "A, tinted", "B, plain". The card asks 1 more question. Its prototype: "docs/prototypes/rail.html".')
+  expect(watcherCardLine(words)).not.toContain('a'.repeat(32))
+  // A plain question gives its text and options.
+  expect(watcherWaitingCardWords({ kind: 'question', text: 'Merge now?', options: [choice('Merge'), choice('Wait')] })).toEqual({ question: 'Merge now?', choices: ['Merge', 'Wait'] })
+  // A permission request's words can carry a command's arguments, so none go.
+  expect(watcherWaitingCardWords({ kind: 'permission', text: 'GH_TOKEN=secret gh pr merge', options: [] })).toBeUndefined()
+})
+
+it('keeps a card\'s words short: the question, eight choices and how many more (#2230)', () => {
+  const long = '🦉'.repeat(400)
+  const words = watcherWaitingCardWords({ kind: 'question', text: long, options: Array.from({ length: 11 }, (_, n) => choice(`${n} ${'x'.repeat(200)}`)) })!
+  expect([...words.question]).toHaveLength(300)
+  expect(words.choices).toHaveLength(8)
+  expect(words.choices.every(label => [...label].length <= 100)).toBe(true)
+  expect(words.moreChoices).toBe(3)
+  expect(watcherCardWordsSchema.safeParse(words).success).toBe(true)
+  expect(watcherCardLine(words)).toContain(', and 3 more.')
+})
+
+it('gives the web links the card shows: in its words and in the agent\'s message it follows (#2230)', () => {
+  const words = watcherWaitingCardWords({ kind: 'question', text: 'Pick one at https://forge.example.ts.net/proto/index.html.', options: [] },
+    'Both takes are up: http://localhost:5173/rail and https://forge.example.ts.net/proto/index.html')!
+  expect(words.links).toEqual(['https://forge.example.ts.net/proto/index.html', 'http://localhost:5173/rail'])
+  expect(watcherCardLine(words)).toContain('Its links: https://forge.example.ts.net/proto/index.html, http://localhost:5173/rail.')
+})
+
+it('lets every reply\'s words give way before a waiting question\'s in a crowded note (#2230)', () => {
+  const hostId = '6f1c2a5e-8d3b-4c7a-9e21-0b5d7f3a1c42', requestId = '3b9e7d21-4a6c-4f8e-b1d2-7c5a9e0f3b18', at = '2026-11-05T12:00:00.000Z'
+  const target = (n: number) => ({ hostId, threadId: `thread-${n}` })
+  const finished = Array.from({ length: 30 }, (_, n): WatcherEvent => ({ id: `f${n}`, kind: 'turn-finished', requestId, target: target(n), generation: 1, observedAt: at, turnId: `t${n}` }))
+  const asked = Array.from({ length: 12 }, (_, n): WatcherEvent => ({ id: `q${n}`, kind: 'needs-user', requestId, target: target(100 + n), generation: 1, observedAt: at, requestCardId: `c${n}`, requestCardKind: 'question' }))
+  const text = watcherNewsText({ source: 'watcher', watcher: { hostId, threadId: 'watcher' }, omitted: 0, events: [...asked, ...finished] },
+    event => event.kind === 'needs-user' ? `Its question, in the worker's words: "Which take for ${event.requestCardId}?".` : `Its whole reply, in the worker's words: "${'x'.repeat(480)}".`)
+  for (let n = 0; n < 12; n++) expect(text).toContain(`Which take for c${n}?`)
+  expect(text).not.toContain('omitted')
+})

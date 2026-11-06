@@ -919,6 +919,15 @@ export class AgentControl {
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard, userAnswer: true })
     return this.commandShell(parsed, client, decisionId)
   }
+  /**
+   * An answer on a card of Watcher's own question (#2228): Watcher's service takes it, as the user's own choice, and no
+   * provider hears it. A phone needs its answers grant, as for any card.
+   */
+  private async answerWatcherQuestion(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity): Promise<AgentState> {
+    try { this.watcherOrigins.get(command)?.guard(); this.guardClientGrant(client) } catch (error) { return { ...this.reply(), error: error instanceof Error ? error.message : UNPAIRED_CLIENT_ERROR } }
+    const error = await this.watcherHooks!.answerOwnQuestion!(command.threadId, command).catch(() => 'Sotto could not take this answer. Nothing was sent. Answer it again.')
+    return { ...this.reply(), error }
+  }
   /** User-requested setup only, never exposed as a tool. */
   commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void, keptSpeed?: true): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
@@ -3983,6 +3992,7 @@ export class AgentControl {
   }
   private admitCommandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     if (this.disposed) return Promise.resolve({ ...this.reply(), error: 'Sotto is stopping. Restart it before sending another command.' })
+    if (command.type === 'answer' && this.watcherHooks?.ownQuestion?.(command.threadId, command.requestId)) return this.answerWatcherQuestion(command, client)
     const explicitThreadId = 'threadId' in command ? command.threadId : command.type === 'send' ? command.draft?.threadId : undefined
     const implicitThreadId = ['send', 'compose', 'cancel-draft'].includes(command.type)
       ? client.transport === 'socket' ? client.selectedThreadId : this.state.draftThreadId ?? this.state.activeThreadId : undefined

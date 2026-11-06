@@ -200,8 +200,13 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
   if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
   return steps
 }
-/** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
+/**
+ * Appended to Claude Code's own system prompt on every thread process but Watcher's (ADR-0080). Watcher asks with Sotto's
+ * `ask_user` instead, which never holds its turn, and its process is launched with AskUserQuestion closed (#2228).
+ */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
+/** Watcher's question tool is Sotto's own (#2228): AskUserQuestion held Watcher's turn until the user answered. */
+const WATCHER_CLOSED_TOOLS = ['--disallowedTools', APPROVAL_SURFACE_TOOL]
 /**
  * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
  * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
@@ -1645,10 +1650,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const overseer = profile || alias.councilJudge ? undefined : this.workerRoles?.overseer?.(id)
     const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
-    const questions = this.options.markdownLinks === true ? `${CLAUDE_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : CLAUDE_QUESTIONS
-    const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    const asks = profile ? undefined : CLAUDE_QUESTIONS
+    const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')
+    // The flag takes a list, so another option follows it.
+    const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), ...(profile ? WATCHER_CLOSED_TOOLS : []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
+      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
     let runtime: Runtime
@@ -1901,7 +1908,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (alias.councilJudge && (!Array.isArray(frame.tools) || frame.tools.length !== 0)) {
         thread.status = 'error'; this.changed(id); void this.stopRuntime(id, runtime); this.emit(); return
       }
-      if (!alias.councilJudge) this.checkApprovalSurface(frame)
+      // Watcher's process has AskUserQuestion closed (#2228), so its tool list cannot say whether the surface was refused.
+      if (!alias.councilJudge && !runtime.watcher) this.checkApprovalSurface(frame)
       this.queries.add(id)
     }
     const hook = frame.type === 'control_request' ? object(frame.request) : undefined

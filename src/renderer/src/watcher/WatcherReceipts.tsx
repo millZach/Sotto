@@ -15,6 +15,8 @@ import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
 import { WatcherMoveCards, WatcherMoveProposals } from './MoveThreads'
+import { WatcherQuestionCards } from './WatcherQuestions'
+import type { WatcherQuestion } from '../../../shared/watcherQuestions'
 import type { ByMessage, ByOperation } from './watcherConversationWork'
 import { t } from '@lingui/core/macro'
 
@@ -55,6 +57,8 @@ export interface WatcherConversation {
   readonly moves?: ReadonlyMap<string, readonly ThreadMoveCard[]> | undefined
   /** Watcher's proposals from the user's words (#1178 part 3), after the turn that made each: only while Work across machines is on. */
   readonly proposals?: ReadonlyMap<string, readonly ThreadMoveProposal[]> | undefined
+  /** Watcher's own questions (#2228), under the last message shown from before Watcher asked. */
+  readonly questions?: ReadonlyMap<string, readonly WatcherQuestion[]> | undefined
   /** A teammate's messages (ADR-0187), under the message each came after: only while Teams is on. */
   readonly teammates?: ReadonlyMap<string, readonly TeammateMessage[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
@@ -71,9 +75,9 @@ export const WatcherConversationContext = createContext<WatcherConversation | nu
  */
 export function useRepliesKeptInView(): Pick<ReadonlySet<string>, 'has'> | null {
   const conversation = useContext(WatcherConversationContext)
-  const receipts = conversation?.receipts, asks = conversation?.asks
+  const receipts = conversation?.receipts, asks = conversation?.asks, questions = conversation?.questions
   // A look-up rather than a set of every reply: a conversation shown far back holds the read back's cards too (#1759).
-  return useMemo(() => receipts === undefined ? null : { has: (id: string) => receipts.has(id) || asks?.has(id) === true }, [receipts, asks])
+  return useMemo(() => receipts === undefined ? null : { has: (id: string) => receipts.has(id) || asks?.has(id) === true || questions?.has(id) === true }, [receipts, asks, questions])
 }
 
 // Each lead comes before the thread's name on a receipt card, in its own place: "Sent to", then the name.
@@ -169,8 +173,8 @@ function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; 
 }
 
 /**
- * What follows a message in Watcher's own pane: its receipt cards, then the cards of the requests its wake-up said wait
- * on the user, then any takeover line, then Watcher's proposals and the moves confirmed in its turn. Nothing anywhere else.
+ * What follows a message in Watcher's own pane: its receipt cards, then Watcher's own questions, then the cards of the
+ * requests its wake-up said wait on the user, then any takeover line, then Watcher's proposals and the moves confirmed in its turn. Nothing anywhere else.
  */
 export function WatcherAfterMessage({ message }: { readonly message: AgentMessage }): ReactNode {
   const conversation = useContext(WatcherConversationContext)
@@ -181,9 +185,11 @@ export function WatcherAfterMessage({ message }: { readonly message: AgentMessag
   const moves = conversation.moves?.get(message.id)
   const proposals = conversation.proposals?.get(message.id)
   const teammates = conversation.teammates?.get(message.id)
-  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined && proposals === undefined && teammates === undefined) return null
+  const questions = conversation.questions?.get(message.id)
+  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined && proposals === undefined && teammates === undefined && questions === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
+    {questions?.length ? <WatcherQuestionCards questions={questions} /> : null}
     {asks?.length ? <WatcherAsks asks={asks} describe={conversation.describe} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
     {proposals?.length ? <WatcherMoveProposals proposals={proposals} threads={conversation} /> : null}

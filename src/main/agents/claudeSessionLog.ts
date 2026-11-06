@@ -112,9 +112,10 @@ export function claudeReadBack<T extends { readonly attachments?: RecordedAttach
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
-  // Claude Code files its own turns, such as a finished background task, as user entries with an origin; a typed prompt has none.
+  // Claude Code files its own turns, such as a finished background task, as user entries with an origin. A typed
+  // prompt has none, or `human` when it was typed into the interactive CLI (Claude Code 2.1.277 and later).
   const origin = object(frame.origin)?.kind
-  if (origin !== undefined && origin !== 'user') return false
+  if (origin !== undefined && origin !== 'user' && origin !== 'human') return false
   const content = object(frame.message)?.content
   if (Array.isArray(content) && content.some(block => object(block)?.type === 'tool_result')) return false
   // The native local-command envelope is operational metadata, not a prompt or takeover.
