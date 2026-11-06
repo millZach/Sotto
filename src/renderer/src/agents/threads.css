@@ -247,13 +247,16 @@
    moves when it shows. The bubble's hover reaches down over the gap, so the pointer can travel to the control. A long
    thread's rows paint inside their own box, so this one's paint reaches the gap and the control's focus ring. A wake-up
    or a brief keeps its control inside the corner, and Watcher's conversation keeps its own look. The rows that tuck up
-   under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them. */
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 30px; padding-bottom: 12px; overflow-clip-margin: 36px; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 30px; }
+   under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them.
+   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not. */
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 26px; padding-bottom: 12px; overflow-clip-margin: 36px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 26px; }
 /* A message the user sent opens a turn, so the space before it is the widest in the conversation: a reader sees where one
-   exchange ends and the next begins, while the message, its Worked for line and its reply stay close. */
-.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 24px; }
+   exchange ends and the next begins, while the message, its Worked for line and its reply stay close. The reply's copy room
+   is most of that space, so a little more than it is enough: the gap before a turn stays about half again the gap under a
+   message, and a long thread of short exchanges is not padded out. */
+.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 16px; }
 /* Inside the turn the Worked for line is a caption: its press is a row a little taller than its words, not a full control row. */
 .thread-pane:not(.watcher-pane) .thread-work > :is(.thread-work__summary, .thread-changes > .thread-changes__summary) { min-height: 26px; }
 /* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
