@@ -11,15 +11,15 @@ import { fitSpeed } from '../../../shared/workerRoles'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
-import { claimRoomFocus } from '../components/AppShell'
+import { claimRoomFocus, handRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
 import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
-import { WayOffThePage } from '../agents/SidebarFrame'
-import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
+import { SidebarFoot, SidebarRail } from '../agents/SidebarFrame'
+import { useSidebarSize } from '../agents/sidebarSize'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
 import { draftEffortScore, suggestedEffortIndex } from '../agents/effortSuggestion'
@@ -91,8 +91,6 @@ interface HeaderParts {
   readonly onToggleList: () => void
   /** Stop all, at the header's end, while threads Watcher started are running. */
   readonly stopAll: ReactNode
-  /** The update control's status and press, for the way off the page; none where the app does not update itself. */
-  readonly update: UpdateControlProps | null
   /** The Watcher and Teams tabs, while Teams is on (ADR-0186). */
   readonly tabs?: ReactNode
 }
@@ -119,24 +117,14 @@ function RoomTabs({ tab, onTab, moved }: { readonly tab: RoomTab; readonly onTab
 }
 
 /**
- * Watcher's way off the page, right after All threads where its tabs were (Zach's pick on October 27, 2026, drawn by
- * him): the row the sidebar's foot draws. The room switch, a hairline, the other pages as icon links (Usage behind its
- * Owl feature, Memory while memory is on, Settings and Help) and the update control, each a press of its own with its
- * name on hover and to assistive technology. It replaced the More menu that held the pages and the update.
- */
-function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
-  return <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages"
-    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} />
-}
-
-/**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
- * All threads, which opens the Overview over the room, then the way off the page; once Watcher runs, Stop all at its
- * end. Watcher's room is its conversation alone (Zach, October 27, 2026), so the header holds no tabs. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
+ * All threads, which opens the Overview over the room; once Watcher runs, Stop all at its
+ * end. With Teams on, Watcher and Teams tabs follow the name (ADR-0186). Once Watcher runs the tile is also a button
+ * for Watcher's context and state (#1189). On macOS no
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, tabs }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
@@ -153,7 +141,6 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
         <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
-      <WatcherWayOut update={update} />
     </div>
     <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}</div>
   </header>
@@ -516,17 +503,15 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
 /**
  * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto tile and its night sky
  * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
- * its own real pane, the Overview over the room on All threads, and the room switch and a More menu at the header's end.
+ * its own real pane, the Overview over the room on All threads, and the shared navigation at the bottom left.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
  * Threads or Shift with a press, which go there on purpose; Watcher itself is in neither the Overview nor Threads.
  * An ASCII night is drawn in its side margins, with Watcher's owl and a thread owl for each watched thread
  * (`WatcherNightScene`).
  */
-export function WatcherView({ now: fixedNow, update = null }: {
+export function WatcherView({ now: fixedNow }: {
   /** A fixed clock for captures; the rows' times then hold still, and so does the night scene, every owl sitting. */
   readonly now?: number | undefined
-  /** The update control's status and press for the header's More menu; null on Linux, which has no in-app updater. */
-  readonly update?: UpdateControlProps | null
 }): ReactNode {
   const { t } = useLingui()
   const agents = useAgents()
@@ -536,6 +521,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const state = agents.state
   const command = agents.command
   const mac = app?.platform === 'darwin'
+  const sidebar = useSidebarSize()
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
   const continued = useContinueEnabled()
@@ -581,7 +567,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
     return () => observer.disconnect()
   }, [])
 
-  // A switch press hands focus to the header switch's lit owl. Arriving any other way, focus goes to Watcher's composer.
+  // A switch press hands focus to the footer switch's lit owl. Arriving any other way, focus goes to Watcher's composer.
   useLayoutEffect(() => {
     if (claimRoomFocus('watcher')) return
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
@@ -724,7 +710,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
-      stopAll={stopAll} update={update} tabs={tabs} />
+      stopAll={stopAll} tabs={tabs} />
     {needs.length > 0 || asked.length > 0 || crossMachine ? <div className="watcher-status">
       {needs.length > 0 || asked.length > 0 ? <WatcherGlance entries={needs} questions={asked} onQuestion={focusWatcherQuestion} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
       {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
@@ -761,7 +747,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.collapsed || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -785,8 +771,11 @@ export function WatcherView({ now: fixedNow, update = null }: {
         </div>
       </div>
     </section>
+    <div className={`watcher-foot${sidebar.collapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.collapsed ? (mac ? 80 : 52) : sidebar.width }}>
+      {sidebar.collapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.collapse(false) }} /> : <SidebarFoot />}
+    </div>
     <PageWindowControls />
-    {/* The room has no sidebar, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
+    {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked></LinkedFileRouteContext.Provider>

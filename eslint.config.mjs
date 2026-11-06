@@ -4,8 +4,10 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-bottom-navigation/**',
       'artifacts/watcher-top-lines/**',
       'artifacts/watcher-own-question/**',
+      'artifacts/watcher-header-820/**',
       'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
