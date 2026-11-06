@@ -132,8 +132,12 @@
 .changes-jump__place { flex: none; margin-left: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .changes-file__head > .changes-jump__place + .files-icon { margin-left: auto; }
 
-/* A file's whole name, on as many lines as it takes: it wraps where its words join, and anywhere at all only if one word is wider than the row. */
-.changes-name { flex: 1 1 auto; min-width: 0; padding-top: 1px; line-height: 1.35; overflow-wrap: anywhere; }
+/* A file's name on one row, so the list keeps one rhythm down its length. With no room it gives up letters from its
+   middle (nameParts in ChangesSurface.tsx): the part before its last words takes the ellipsis, and its last words and
+   ending stay whole, so two names that start alike still read apart. */
+.changes-name { display: flex; flex: 1 1 auto; min-width: 0; padding-top: 1px; line-height: 1.35; white-space: nowrap; }
+.changes-name__head { flex: 0 1 auto; min-width: 1ch; overflow: hidden; text-overflow: ellipsis; }
+.changes-name__tail { flex: none; }
 
 .changes-file { border-bottom: 1px solid var(--tt-hairline); }
 .changes-file__head {
@@ -550,9 +554,12 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-tree__none { margin: 0; padding: 6px 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .changes-tree__list { position: relative; display: flex; flex: 1; flex-direction: column; gap: 1px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-tree__group { flex: none; }
-/* A folder heads its files: set heavier than they are, in the secondary ink, with more room above it than between its
-   files, so the groups part down a long list without a rule or an indent. */
-.changes-tree__folder { overflow: hidden; padding: 12px 6px 3px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+/* A folder heads its files as a project heads its threads in the sidebar: a folder mark where its files have their
+   status letter, then its path set heavier than their names, with more room above it than between its files, so the
+   groups part down a long list without a rule or an indent. The path is cut from its start, so its last folder stays. */
+.changes-tree__folder { display: flex; align-items: center; gap: 4px; padding: 12px 6px 3px 4px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.changes-tree__folder > svg { flex: none; width: 20px; color: var(--tt-text-muted); }
+.changes-tree__path { min-width: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .changes-tree__group:first-child > .changes-tree__folder { padding-top: 4px; }
 .changes-tree__item { display: flex; align-items: flex-start; gap: 4px; min-width: 0; min-height: 28px; padding: 4px 6px 4px 4px; border-radius: var(--tt-radius-control); color: var(--tt-text-2); font-size: var(--tt-type-small); user-select: none; }
 .changes-tree__item:hover { background: var(--tools-hover); color: var(--tt-text); }

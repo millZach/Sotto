@@ -344,7 +344,7 @@ describe('Changes as T3’s diff', () => {
     await waitFor(() => expect(review).not.toHaveAttribute('data-tree-over'))
   })
 
-  it('filters a long tree, and keeps a long name whole so like names read apart', async () => {
+  it('filters a long tree, and keeps a long name on one row with its ending whole, so like names read apart', async () => {
     const user = userEvent.setup()
     const many = Array.from({ length: 9 }, (_, index) => reviewFile(`src/walCheckpointWorkerPart${index}.ts`, 'modified', { kind: 'text', patch: PATCH }))
     setup(fakeGit({ files: many }))
@@ -354,8 +354,9 @@ describe('Changes as T3’s diff', () => {
     expect(within(tree).getAllByRole('option')).toHaveLength(9)
     const name = tree.querySelector('.changes-name')!
     expect(name).toHaveTextContent('walCheckpointWorkerPart0.ts')
-    // It may break where its words join, and its ending stays with the last of them.
-    expect(name.querySelectorAll('wbr')).toHaveLength(3)
+    // Short of room it gives up letters from its middle: its last words and ending are never cut.
+    expect(name.querySelector('.changes-name__tail')).toHaveTextContent('WorkerPart0.ts')
+    expect(name.querySelector('.changes-name__head')).toHaveTextContent('walCheckpoint')
     await user.type(within(panel()).getByRole('searchbox', { name: 'Filter files' }), 'part3')
     expect(within(tree).getAllByRole('option')).toHaveLength(1)
     await user.clear(within(panel()).getByRole('searchbox', { name: 'Filter files' }))

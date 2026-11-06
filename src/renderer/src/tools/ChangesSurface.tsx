@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { i18n, type I18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Copy, ListTree, MessageSquare, RotateCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Copy, Folder, ListTree, MessageSquare, RotateCw } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
@@ -328,12 +328,28 @@ function FileJump({ files, current, onShow, allFiles }: {
   </>
 }
 
-/** Where a file's name may break: before a capital that ends a lower-case run, after a hyphen or underscore, or before any dot but the last, so `.ts` never sits alone. */
+/** Where a file's name joins its words: before a capital that ends a lower-case run, after a hyphen or underscore, or before any dot but the last, so `.ts` never sits alone. */
 const NAME_BREAK = /(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=[^.])(?=\.[^.]*\.)|(?<=[-_])/gu
 
-/** A file's whole name, which wraps at its word joins rather than losing letters, so two long names that start alike read apart. */
+/**
+ * A file's name in two parts, for a row that cuts it in the middle: its last words and ending, never cut, and what
+ * comes before them. `walCheckpointWorker.ts` keeps `CheckpointWorker.ts`, so it still reads apart from
+ * `walCheckpointer.ts`, and an ADR keeps the words its name ends on.
+ */
+export function nameParts(name: string): { readonly head: string; readonly tail: string } {
+  const parts = name.split(NAME_BREAK)
+  let tail = ''
+  while (parts.length > 1 && tail.length < NAME_TAIL) tail = parts.pop()! + tail
+  return tail.length < NAME_TAIL || parts.length === 0 ? { head: '', tail: name } : { head: parts.join(''), tail }
+}
+
+/**
+ * A file's name on one row, so a long one never breaks the run of the list. A name with room reads whole; one without
+ * gives up letters from its middle, never its end, and its row's tooltip and name say it whole.
+ */
 function FileName({ name }: { readonly name: string }): ReactNode {
-  return <span className="changes-name">{name.split(NAME_BREAK).map((part, index) => <Fragment key={index}>{index > 0 ? <wbr /> : null}{part}</Fragment>)}</span>
+  const { head, tail } = nameParts(name)
+  return <span className="changes-name">{head ? <span className="changes-name__head">{head}</span> : null}<span className="changes-name__tail">{tail}</span></span>
 }
 
 /**
@@ -347,6 +363,8 @@ function ScopePicker({ changes, turns: offersTurns, onChange }: { readonly chang
   return <label className="changes-scope">
     <span className="tt-visually-hidden">{t`Diff scope`}</span>
     <select className="changes-scope__select tt-focusable" value={value} onChange={event => {
+/** The fewest letters a cut name keeps at its end. */
+const NAME_TAIL = 10
       const next = event.target.value
       onChange(next === 'working' ? { kind: 'working' } : next === 'branch' ? { kind: 'branch', base: null } : next === 'latest' ? { kind: 'turn', checkpointId: null } : { kind: 'turn', checkpointId: next.slice('turn:'.length) })
     }}>
@@ -1012,7 +1030,7 @@ function ChangesTree({ files, current: inView, over, toggleButton, onLeave, onCl
     <div ref={list} className="changes-tree__list" role="listbox" aria-label={t`Files in this comparison`} onKeyDown={move}>
       {order.length === 0 ? <p className="changes-tree__none">{t`No files match.`}</p> : null}
       {groups.map(([folder, items]) => <div key={folder} role="group" aria-label={folder || t`Working folder`} className="changes-tree__group">
-        {folder ? <div className="changes-tree__folder" aria-hidden="true"><bdi>{folder}</bdi></div> : null}
+        {folder ? <div className="changes-tree__folder" aria-hidden="true"><Folder size={13} /><span className="changes-tree__path"><bdi>{folder}</bdi></span></div> : null}
         {items.map(file => {
           const status = CHANGE_STATUS[file.status]
           const { name } = splitPath(file.path)
