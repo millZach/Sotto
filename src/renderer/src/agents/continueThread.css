@@ -15,10 +15,10 @@
 .continue-chip[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; }
 .continue-chip small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .continue-chip > svg { flex: none; }
-.continue-chip .provider-mark[data-provider='codex'], .continue-note .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.continue-chip .provider-mark[data-provider='claude'], .continue-note .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.continue-chip .provider-mark[data-provider='grok'], .continue-note .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
-.continue-chip .provider-mark[data-provider='devin'], .continue-note .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.continue-chip .provider-mark[data-provider='codex'], .continue-note .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex-mark); }
+.continue-chip .provider-mark[data-provider='claude'], .continue-note .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude-mark); }
+.continue-chip .provider-mark[data-provider='grok'], .continue-note .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok-mark); }
+.continue-chip .provider-mark[data-provider='devin'], .continue-note .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin-mark); }
 .continue-chip[aria-disabled='true'] .provider-mark { color: inherit; }
 
 /* Over the composer, as Watcher's handover offer is: what sending does, where the new thread works, what it carries. */

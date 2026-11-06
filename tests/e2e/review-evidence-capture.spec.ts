@@ -1077,6 +1077,23 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.keyboard.press('Escape')
     await openThreads(page)
   } },
+  // Asked for by name only: a model menu outside the composer, Settings → Threads' Thread model, open on its provider rail.
+  { name: 'model-menu', covers: [], run: async capture => {
+    const { page } = capture
+    await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await expect(page.locator('.settings-scroll')).toBeVisible()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
+    const chip = page.getByRole('combobox', { name: 'Thread model', exact: true })
+    const menu = page.getByRole('dialog', { name: 'Choose model', exact: true })
+    const open = async (): Promise<void> => {
+      if (!await menu.isVisible()) await chip.click()
+      await expect(menu.getByRole('tablist', { name: 'Model providers', exact: true })).toBeVisible()
+    }
+    await capture.shoot('model-menu', 'Settings → Threads with the Thread model menu open on its provider rail.', '', { before: open })
+    if (await menu.isVisible()) await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await openThreads(page)
+  } },
   // Asked for by name only: the header's lists open, over what stands beside them, and a control in it holding focus.
   { name: 'header-press', covers: [], run: async capture => {
     const { page } = capture
@@ -1508,7 +1525,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows']
+const BY_NAME_ONLY = ['shell-check', 'model-menu', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {
