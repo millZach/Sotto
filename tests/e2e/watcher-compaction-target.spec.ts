@@ -1,6 +1,6 @@
 /**
  * Compact Watcher at, in Settings under Watcher, on the Owl track (Zach's pick C, October 24, 2026): a bar that is
- * Watcher's conversation and a line on it where Watcher compacts, 200k to 1M on a 50k step, 400k by default. It sits
+ * Watcher's conversation and a line on it where Watcher compacts, 200k to 1M on a 50k step, 250k by default (#2233). It sits
  * under its own Compaction heading after Watched threads, works from the keyboard, saves when it is let go, and nothing
  * clips at any size, in dark or light. Watcher's room is a seeded stand-in, as in watcher-night-scene.spec.ts, so the bar
  * shows a conversation of 312k.
@@ -47,7 +47,7 @@ async function seedRoom(page: Page): Promise<void> {
   await page.reload()
 }
 
-test('Compact Watcher at is a slider on Watcher’s conversation, 400k by default, that saves from the keyboard', async () => {
+test('Compact Watcher at is a slider on Watcher’s conversation, 250k by default, that saves from the keyboard', async () => {
   test.setTimeout(180_000)
   let launched: LaunchedSotto | undefined
   try {
@@ -64,9 +64,9 @@ test('Compact Watcher at is a slider on Watcher’s conversation, 400k by defaul
       const order = await panel.evaluate(element => [...element.querySelectorAll('h3')].map(heading => heading.textContent?.trim()))
       expect(order.slice(0, 2)).toEqual(['Watched threads', 'Compaction'])
       const slider = panel.getByRole('slider', { name: 'Compact Watcher at' })
-      await expect(slider).toHaveValue('400000')
-      await expect(slider).toHaveAttribute('aria-valuetext', '400k tokens')
-      expect(await saved(page)).toBe(400_000)
+      await expect(slider).toHaveValue('250000')
+      await expect(slider).toHaveAttribute('aria-valuetext', '250k tokens')
+      expect(await saved(page)).toBe(250_000)
       await expect(panel.getByText('Watcher is at 312k.', { exact: true })).toBeVisible()
 
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
@@ -91,7 +91,7 @@ test('Compact Watcher at is a slider on Watcher’s conversation, 400k by defaul
       await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
       await resizeWindow(launched, 1280, 800)
       await slider.focus()
-      for (let step = 0; step < 4; step++) await page.keyboard.press('ArrowLeft')
+      await page.keyboard.press('ArrowLeft')
       await expect(slider).toHaveValue('200000')
       await expect.poll(() => saved(page)).toBe(200_000)
       await expect(panel.getByText('Watcher is at 312k: it compacts at its next rest.', { exact: true })).toBeVisible()
