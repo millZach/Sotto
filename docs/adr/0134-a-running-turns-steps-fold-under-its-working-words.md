@@ -4,7 +4,7 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
-Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). Amended November 5, 2026, by his pick of B, "as long as that reply closes out the last step": a closing reply written after the turn's steps stands under the line (see "the closing reply under the line" at the end). Amended November 5, 2026, by his pick of B: the light is a band about ten letters wide that crosses the words, not a share of the line (see "the light passes as a band" at the end). His picks of October 24 and 26 stay in the record below.
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). Amended November 5, 2026, by his pick of B, "as long as that reply closes out the last step": a closing reply written after the turn's steps stands under the line (see "the closing reply under the line" at the end). Amended November 5, 2026, by his pick of B: the light is a band about ten letters wide that crosses the words, not a share of the line (see "the light passes as a band" at the end). Amended November 5, 2026, by his pick of B: while the steps are open, the line leaves the running step to its row and carries his words (see "the open steps name the running step" at the end). His picks of October 24 and 26 stay in the record below.
 
 ## Context
 
@@ -136,3 +136,13 @@ Zach chose this: on November 5 he compared two lights for the working line in th
 **What stays.** The colour is `--tt-working-light` as the October 25 amendment has it, the cycle is the same 4.2 seconds with the crossing in 72% of it and then a rest, and there is no halo. Reduced motion and **Last seen working** are unchanged.
 
 **What it costs.** The band crosses the line and its own width in the same time, where A's crossed twice the line's width, so on a long line it moves more slowly than before.
+
+## November 5, 2026 amendment: the open steps name the running step
+
+Zach chose this: on November 5 he compared two answers for the working line while a running turn's steps are open, in the design pass's prototype `sotto-council/prototypes/line-open/`, kept outside the repository, and picked B (`d5caf931a`). A was the line as his November 4 and November 5 picks left it, naming the running step whether its steps were open or folded, so with them open the step was said twice, on the line and on the newest row under it.
+
+**Open.** While the steps are open, the line carries the Spaceballs words with the light, at once on the press, and the running step is named once, on its row, the newest of them. A request waiting on the user ("Waiting for your permission") and "Writing a reply" stay on the line, since they have no row.
+
+**Folded.** Folding the steps brings the step back to the line at once, as the November 4 and November 5 amendments have it.
+
+**What stays.** The button keeps its name, and its description still reads the step, the command included. The line is still the turn's one line, and the newest six rows show with **Show earlier** for the rest.
