@@ -3537,7 +3537,14 @@ struct RequestSheet: View {
                 skipLine(current)
                 HStack(spacing: Space.s2) {
                     Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true))
-                    Button("Send answer") { sendAnswer(current) }
+                    // Every question skipped sends a skip, so the button says so (ADR-0135).
+                    Group {
+                        if let questions = current.questions, !questions.isEmpty, questions.allSatisfy(isSkipped) {
+                            if questions.count > 1 { Button("Skip all") { sendAnswer(current) } } else { Button("Skip") { sendAnswer(current) } }
+                        } else {
+                            Button("Send answer") { sendAnswer(current) }
+                        }
+                    }
                         .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
                         .disabled(!model.canAnswer(current, at: place) || !ready(current))
                         .accessibilityIdentifier("request-send-answer")

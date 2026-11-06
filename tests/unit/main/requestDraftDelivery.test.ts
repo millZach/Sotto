@@ -70,6 +70,20 @@ it('binds a held answer with a question skipped on its own only to the answer th
   expect((await disk()).drafts[0]?.decisionId).toBe('skipped')
 })
 
+it('keeps a skipped secret question’s mark when it binds a held answer (ADR-0135)', async () => {
+  const secret = questions.map(question => ({ ...question, skippable: true as const, ...(question.id === 'notes' ? { secret: true as const } : {}) }))
+  const secretTarget = { ...target, questions: secret }
+  const state: RequestDraftOwnerState = { connected: true, ready: true, requests: [{ ...request, questions: secret }] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start()
+  await service.save(draft({ target: secretTarget, held: true, selections: { choice: { optionIds: ['coast'], other: true, text: 'A quiet beach' },
+    notes: { optionIds: [], other: false, text: '', skipped: true } } }))
+  await service.bindDecision(secretTarget, 'written', { choice: submittedAnswers.choice, notes: { optionIds: [], text: 'fake-secret' } })
+  expect((await disk()).drafts[0]).not.toHaveProperty('decisionId')
+  await service.bindDecision(secretTarget, 'skipped', { choice: submittedAnswers.choice, notes: { optionIds: [], skipped: true } })
+  expect((await disk()).drafts[0]?.decisionId).toBe('skipped')
+})
+
 it('preserves a final queued edit to a redefined form and rejects stale discard without mutating either form', async () => {
   let state: RequestDraftOwnerState | undefined = { connected: true, ready: true, requests: [request] }
   const service = new RequestDraftService(directory, () => state, async () => {})

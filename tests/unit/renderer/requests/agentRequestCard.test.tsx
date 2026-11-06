@@ -864,6 +864,25 @@ describe('skipping one question of several', () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', questionAnswers: { 'q-db': { optionIds: ['lite'] }, 'q-feat': { optionIds: [], skipped: true }, 'q-name': { optionIds: [], skipped: true } } })
   })
 
+  it('takes a question left unfinished with Skip the rest, and hands focus on to sending', async () => {
+    const { user } = setup(several())
+    await user.click(screen.getByRole('radio', { name: /Postgres/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'Auth' }))
+    await user.click(screen.getByRole('button', { name: 'Skip the rest' }))
+    expect(screen.getAllByText('Skipped.')).toHaveLength(1)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send answers' })).toHaveFocus())
+    cleanup()
+    const second = setup(several())
+    await second.user.click(screen.getByRole('radio', { name: /Postgres/ }))
+    await second.user.click(screen.getByRole('button', { name: 'Skip the rest' }))
+    expect(screen.getAllByText('Skipped.')).toHaveLength(2)
+  })
+
+  it('keeps each Skip still while the card cannot be answered', () => {
+    setup(several(), { blocked: 'Sotto is reconnecting.' })
+    expect(screen.getByRole('button', { name: 'Skip this question: Which features?' })).toBeDisabled()
+  })
+
   it('sends the card’s own skip once every question is skipped one at a time', async () => {
     const { user, onSubmit } = setup(several())
     for (const name of ['Which database?', 'Which features?', 'Name the service']) await user.click(screen.getByRole('button', { name: `Skip this question: ${name}` }))

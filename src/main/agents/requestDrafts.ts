@@ -411,7 +411,7 @@ export class RequestDraftService {
       // the choices on a secret question, still tie it to this attempt.
       const secret = new Set(previous.target.questions.filter(question => question.secret === true).map(question => question.id))
       const canonical = (value: AgentQuestionAnswers): string => JSON.stringify(Object.entries(value)
-        .filter(([id, answer]) => !secret.has(id) || answer.optionIds.length > 0)
+        .filter(([id, answer]) => !secret.has(id) || answer.optionIds.length > 0 || answer.skipped === true)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([id, answer]) => [id, [...answer.optionIds].sort(), secret.has(id) ? '' : answer.text ?? '', answer.skipped === true]))
       if (canonical(submitted) !== canonical(answers)) return

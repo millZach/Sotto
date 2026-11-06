@@ -135,7 +135,8 @@ public enum Commands {
             result["approved"] = .bool(option.kind.hasPrefix("allow-"))
             result["answer"] = .string(option.label)
         } else if let questions = current.questions, !questions.isEmpty {
-            guard Set(answers.keys).isSubset(of: Set(questions.map(\.id))) else { throw ClientError.invalidRequest }
+            guard Set(answers.keys).isSubset(of: Set(questions.map(\.id))),
+                  answers.values.allSatisfy({ $0.skipped != true || ($0.optionIds.isEmpty && ($0.text ?? "").isEmpty) }) else { throw ClientError.invalidRequest }
             // Every question skipped where the provider takes a skip of the whole request: that skip, as the computer
             // knows it (ADR-0135).
             if current.skippable == true, questions.allSatisfy({ answers[$0.id]?.skipped == true }) {

@@ -78,7 +78,12 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   useEffect(() => secretIds !== '[]' ? store.holdSecrets(entryOwner, request.id, JSON.parse(secretIds) as string[]) : undefined, [store, entryOwner, request.id, secretIds])
   const imagesKey = `${entryOwner}\n${request.id}`
   const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
-  const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }
+  const setImages = (next: AgentAttachmentHandle[]): void => {
+    if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey)
+    showImages(next)
+    // Images answer the question they go in, so one the user had skipped is theirs to answer again (ADR-0176).
+    if (next.length && carrier && isSkipped(entry.selections[carrier.id])) store.select(entryOwner, request.id, carrier.id, EMPTY_SELECTION)
+  }
   // Send waits for images still being added, counted outside the card so leaving the thread and coming back still
   // waits; any that finish once the card is gone are kept for its return, unless the answer has gone.
   const [staging, setStaging] = useState(() => (cardStaging.get(imagesKey) ?? 0) > 0)
@@ -131,8 +136,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   const skippedCount = questions.filter(question => question.skippable === true && isSkipped(entry.selections[question.id])).length
   const allSkipped = everySkipped(questions, entry.selections) && images.length === 0
   const skipAll = mode === 'structured' ? skipAllAnswer(request) : null
-  const rest = questions.filter(question => skipsEachQuestion(questions, question) && !isSkipped(entry.selections[question.id])
-    && answerProgress(question, entry.selections[question.id]) === 'empty')
+  // The question images go in is answered by them, so it is not skipped while they are there (ADR-0176).
+  const skipsOwn = (question: StructuredQuestion): boolean => skipsEachQuestion(questions, question) && !(images.length > 0 && question.id === carrier?.id)
+  const rest = questions.filter(question => skipsOwn(question) && !isSkipped(entry.selections[question.id])
+    && answerProgress(question, entry.selections[question.id]) !== 'complete')
   const skipRest = rest.length > 0 && questions.some(question => answerProgress(question, entry.selections[question.id]) === 'complete')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
   // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
@@ -158,7 +165,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
     providerId={providerId}
     linkMissing={index === 0 && request.linkMissing === true}
     selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
-    skippable={skipsEachQuestion(questions, question)}
+    skippable={skipsOwn(question)}
     onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
     data-placement={docked ? 'composer' : undefined} data-collapsed={docked && collapsed || undefined}
@@ -218,7 +225,12 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
             : skipping ? t`Choose an answer, or skip` : remaining === 0 && skippedCount > 0 && !allSkipped ? t`Ready to send · ${{ skipped: shownCount(skippedCount) }} skipped`
               : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
           {skipRest ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'}
-            onClick={() => { for (const question of rest) store.select(entryOwner, request.id, question.id, SKIPPED_SELECTION) }}>{t({ message: 'Skip the rest', comment: 'Skips every question on the card not yet answered.' })}</Button> : null}
+            onClick={event => {
+              const form = event.currentTarget.closest('form')
+              for (const question of rest) store.select(entryOwner, request.id, question.id, SKIPPED_SELECTION)
+              // The button leaves with the questions it skipped, so focus goes on to sending.
+              requestAnimationFrame(() => form?.querySelector<HTMLButtonElement>('button[type="submit"]')?.focus())
+            }}>{t({ message: 'Skip the rest', comment: 'Skips every question on the card not yet answered.' })}</Button> : null}
           {/* Any question its provider lets the user decline offers Skip, unless the send button already skips (ADR-0135). */}
           {skipAll && !skipping && !allSkipped ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'} aria-pressed={entry.choice === 'skip' || undefined}
             onClick={() => send('skip', skipAll)}>{plural(questionCount, { one: 'Skip question', other: 'Skip questions' })}</Button> : null}
@@ -448,7 +460,8 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   const skipped = skippable && isSkipped(selection)
   const legend = <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
     {optional && !skipped ? <span className="agent-request__optional"><Trans comment="Marks a question that need not be answered.">Optional</Trans></span> : null}
-    {skippable && !skipped ? <button type="button" className="agent-request__skip tt-focusable" aria-label={t`Skip this question: ${prompt}`}
+    {/* A first legend's controls are not disabled with their fieldset, so Skip says so itself. */}
+    {skippable && !skipped ? <button type="button" className="agent-request__skip tt-focusable" disabled={disabled} aria-label={t`Skip this question: ${prompt}`}
       onClick={() => { onChange(SKIPPED_SELECTION); requestAnimationFrame(() => field.current?.querySelector<HTMLButtonElement>('.agent-request__clear')?.focus()) }}>{t({ message: 'Skip', comment: 'Skips one question on a card of several.' })}</button> : null}</legend>
   // A skipped question folds to one line saying the agent decides, with a way back to answering it (Zach's pick, November 6, 2026).
   if (skipped) {
