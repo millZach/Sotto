@@ -1,0 +1,175 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. How a long iPhone thread opens and reaches its earlier history (Nov 5 2026).
+     Options switched with ?variant= today|A|B|C. The thread is the design-loop thread's shape on forge, counted, none of its words. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: earlier history on iPhone</title>
+<style>
+@font-face { font-family: Figtree; src: url(Figtree.ttf); font-weight: 400; }
+@font-face { font-family: Figtree; src: url(Figtree-SemiBold.ttf); font-weight: 600; }
+:root {
+  --canvas: oklch(0.19 0.009 256); --surface: oklch(0.235 0.01 255); --raised: oklch(0.263 0.011 254);
+  --ink: oklch(0.985 0.003 255); --muted: oklch(0.86 0.012 255); --accent: oklch(0.8 0.12 235);
+  --onaccent: oklch(0.2 0.04 250); --bubble: oklch(0.296 0.035 252); --hair: oklch(0.985 0.003 255 / 0.1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: oklch(0.13 0.006 256); color: var(--ink); font-family: Figtree, system-ui, sans-serif; }
+body { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 10px 90px; }
+.intro { max-width: 430px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.intro b { color: var(--ink); font-weight: 600; }
+.phone { width: min(390px, 100vw - 20px); height: min(760px, 100dvh - 150px); min-height: 480px; border-radius: 36px; background: var(--canvas);
+  position: relative; overflow: hidden; box-shadow: 0 0 0 8px #050608, 0 0 0 9px #2a2d33; }
+.bar-top { position: absolute; top: 0; left: 0; right: 0; height: 52px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 600; z-index: 3; background: linear-gradient(var(--canvas) 70%, transparent); }
+.bar-top .back { position: absolute; left: 16px; color: var(--accent); font-weight: 400; font-size: 26px; }
+.scroll { position: absolute; inset: 0; overflow-y: auto; overflow-anchor: none; padding: 60px 16px 90px; -webkit-overflow-scrolling: touch; }
+.col { display: flex; flex-direction: column; gap: 18px; }
+.mine { align-self: flex-end; margin-left: 48px; font-size: 15px; line-height: 1.38; padding: 11px 15px; background: var(--bubble); border-radius: 20px 20px 6px 20px; }
+.agent { font-size: 15px; line-height: 1.38; }
+.who { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.run { font-size: 13.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.run::before { content: "›"; color: var(--muted); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tile { aspect-ratio: 16/10; border-radius: 10px; background: linear-gradient(135deg, oklch(0.32 0.03 230), oklch(0.27 0.02 250)); }
+.pill { align-self: center; font: 600 13.5px Figtree, sans-serif; border: 0; border-radius: 999px; padding: 8px 16px; background: var(--raised); color: var(--ink); cursor: pointer; }
+.pill small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.loading { align-self: center; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid oklch(0.86 0.012 255 / .25); border-top-color: var(--muted); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.cut { align-self: center; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--hair); padding-top: 8px; width: 100%; text-align: center; }
+.dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px 22px; z-index: 4; background: linear-gradient(transparent, var(--canvas) 30%); }
+.box { background: var(--raised); border-radius: 22px; padding: 12px 16px; font-size: 15px; color: oklch(0.84 0.012 255 / .7); }
+.readout { width: min(390px, 100vw - 20px); background: var(--surface); border-radius: 14px; padding: 10px 14px; font-size: 13.5px; line-height: 1.45; color: var(--muted); }
+.readout b { color: var(--ink); font-size: 20px; font-weight: 600; }
+.desc { width: min(390px, 100vw - 20px); font-size: 13.5px; line-height: 1.45; color: var(--muted); }
+.desc h2 { font-size: 16px; color: var(--ink); margin: 0 0 4px; font-weight: 600; }
+.switch { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: #f4f1ea; color: #1b1b1b;
+  border-radius: 999px; padding: 6px 8px; box-shadow: 0 8px 30px #000a; z-index: 10; font: 600 14px Figtree, sans-serif; }
+.switch button { font: 600 14px Figtree, sans-serif; border: 0; border-radius: 999px; background: #1b1b1b; color: #f4f1ea; padding: 7px 13px; cursor: pointer; }
+.switch .label { min-width: 150px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="intro"><b>Prototype, throwaway.</b> A long picture thread: 15 turns, but its last five turns hold 2,000 steps and 680 pictures.
+  The phone already opens the newest 10 turns, as the computer does. Here that is every step. Scroll up in the phone to reach earlier history.
+  The box under it counts what the computer has sent so far, from the real thread's measured sizes. Pictures are fetched only as they scroll in, about 250 KB each, and aren't counted here.</div>
+<div class="phone">
+  <div class="bar-top"><span class="back">‹</span>Design loop</div>
+  <div class="scroll" id="scroll"><div class="col" id="col"></div></div>
+  <div class="dock"><div class="box">Reply</div></div>
+</div>
+<div class="readout">Sent when it opened: <b id="open">—</b><br>Sent so far: <span id="sofar">—</span> · steps on the page: <span id="steps">—</span></div>
+<div class="desc"><h2 id="vname"></h2><div id="vdesc"></div></div>
+<div class="switch"><button id="prev" aria-label="Previous option">←</button><span class="label" id="label"></span><button id="next" aria-label="Next option">→</button></div>
+<script>
+// Turns oldest first: user words, replies, and runs as [steps, pictures]. Counts from the real thread (turns 6-15 of 15).
+const TURNS = [
+  { n: 6, replies: 30, runs: [] }, { n: 7, replies: 25, runs: [] }, { n: 8, replies: 3, runs: [] }, { n: 9, replies: 6, runs: [] }, { n: 10, replies: 3, runs: [] },
+  { n: 11, replies: 18, runs: [[120, 48], [200, 70], [180, 61], [160, 52], [190, 66], [166, 54]] },
+  { n: 12, replies: 10, runs: [[140, 40], [130, 38], [150, 46], [122, 36]] },
+  { n: 13, replies: 1, runs: [[3, 0]] },
+  { n: 14, replies: 4, runs: [[100, 40], [90, 36], [98, 40]] },
+  { n: 15, replies: 5, runs: [[60, 20], [91, 33]] },
+];
+const MSG_KB = 0.3, STEP_KB = 0.49; // measured: 106 KB of messages for 351, about 0.49 KB per step summary
+const VARIANTS = {
+  today: { name: 'Today: the newest 10 turns, whole',
+    desc: 'What the phone does now. Every step of the newest ten turns comes at once, so this thread sends about 1.1 MB before you see anything. Show earlier messages at the top adds 20 more turns.' },
+  A: { name: 'A: Newest 3 turns, tap for more',
+    desc: 'Opens on the newest three turns. Show earlier messages at the top adds three more each tap. Simple and predictable, but a single long turn still comes whole: here turn 11 alone is about 500 KB.' },
+  B: { name: 'B: Newest 200 steps, tap for more',
+    desc: 'Opens on the newest 200 steps, with every message between them. Where a turn is cut, a line says how many earlier steps it has, and Show earlier at the top adds 200 more. A long turn is paged too.' },
+  C: { name: 'C: Newest 200 steps, more as you scroll up',
+    desc: 'The same as B, but nearing the top loads the next 200 by itself, with a small Loading line. The page keeps your place as rows arrive above.' },
+};
+const ORDER = ['today', 'A', 'B', 'C'];
+const params = new URLSearchParams(location.search);
+let variant = ORDER.includes(params.get('variant')) ? params.get('variant') : 'B';
+
+// The thread as a flat list of items, oldest first, each with its weight in KB and steps.
+function items() {
+  const out = [];
+  for (const t of TURNS) {
+    out.push({ kind: 'mine', turn: t.n, kb: MSG_KB, text: `Turn ${t.n}: keep going with the next pass, and show me the pages.` });
+    const parts = Math.max(t.runs.length, 1);
+    for (let r = 0; r < parts; r++) {
+      const per = Math.ceil(t.replies / parts);
+      for (let i = 0; i < per; i++) out.push({ kind: 'agent', turn: t.n, kb: MSG_KB, who: r === 0 && i === 0, text: 'The page at this width keeps its rhythm, and the next pass tightens the spacing of the list.' });
+      if (t.runs[r]) { const [s, p] = t.runs[r]; out.push({ kind: 'run', turn: t.n, steps: s, pics: p, kb: s * STEP_KB }); }
+    }
+  }
+  return out;
+}
+const ALL = items();
+let from = 0, sent = 0, openKB = 0, loading = false;
+
+function firstWindow() {
+  if (variant === 'today' || variant === 'A') {
+    const turns = variant === 'today' ? 10 : 3;
+    const users = ALL.map((x, i) => x.kind === 'mine' ? i : -1).filter(i => i >= 0);
+    return users[Math.max(0, users.length - turns)];
+  }
+  return stepsBack(ALL.length, 200);
+}
+// The index where `count` more steps above `end` begin; a run is split where the budget runs out.
+function stepsBack(end, count) {
+  let left = count, i = end;
+  while (i > 0 && left > 0) { i--; if (ALL[i].kind === 'run') left -= ALL[i].steps; }
+  return i;
+}
+function more() {
+  if (from <= 0) return;
+  let next;
+  if (variant === 'today') { const users = ALL.map((x, i) => x.kind === 'mine' && i < from ? i : -1).filter(i => i >= 0); next = users[Math.max(0, users.length - 20)] ?? 0; }
+  else if (variant === 'A') { const users = ALL.map((x, i) => x.kind === 'mine' && i < from ? i : -1).filter(i => i >= 0); next = users[Math.max(0, users.length - 3)] ?? 0; }
+  else next = stepsBack(from, 200);
+  for (let i = next; i < from; i++) sent += ALL[i].kb;
+  from = next;
+}
+function draw(keep) {
+  const scroll = document.getElementById('scroll'), col = document.getElementById('col');
+  const anchor = keep ? col.querySelector('[data-i]') : null;
+  const anchorTop = anchor ? anchor.getBoundingClientRect().top : 0, anchorIndex = anchor?.dataset.i;
+  col.innerHTML = '';
+  if (from > 0) {
+    if (variant === 'C') { const l = document.createElement('div'); l.className = 'loading'; l.innerHTML = loading ? '<span class="spin"></span>Loading earlier messages…' : 'Earlier messages load as you scroll up'; col.append(l); }
+    else { const b = document.createElement('button'); b.className = 'pill'; const above = ALL.slice(0, from).filter(x => x.kind === 'run').reduce((s, x) => s + x.steps, 0);
+      b.innerHTML = 'Show earlier messages' + (variant === 'B' && above ? `<small>${above.toLocaleString()} earlier steps</small>` : '');
+      b.onclick = () => { more(); draw(true); }; col.append(b); }
+  }
+  let stepsShown = 0;
+  for (let i = from; i < ALL.length; i++) {
+    const x = ALL[i]; const el = document.createElement('div'); el.dataset.i = i;
+    if (x.kind === 'mine') { el.className = 'mine'; el.textContent = x.text; }
+    else if (x.kind === 'agent') { el.className = 'agent'; el.innerHTML = (x.who ? '<div class="who">Claude</div>' : '') + x.text; }
+    else { stepsShown += x.steps; el.innerHTML = `<div class="run">Ran ${x.steps} steps</div>`; const g = document.createElement('div'); g.className = 'tiles'; g.style.marginTop = '8px';
+      for (let p = 0; p < x.pics; p++) { const t = document.createElement('div'); t.className = 'tile'; g.append(t); } el.append(g); }
+    col.append(el);
+  }
+  if (anchor) { const again = col.querySelector(`[data-i="${anchorIndex}"]`); if (again) scroll.scrollTop += again.getBoundingClientRect().top - anchorTop; }
+  document.getElementById('open').textContent = fmt(openKB);
+  document.getElementById('sofar').textContent = fmt(sent);
+  document.getElementById('steps').textContent = stepsShown.toLocaleString() + ' of 2,000';
+}
+const fmt = kb => kb >= 1000 ? (kb / 1000).toFixed(2) + ' MB' : Math.round(kb) + ' KB';
+function start() {
+  from = firstWindow(); sent = 0; for (let i = from; i < ALL.length; i++) sent += ALL[i].kb; openKB = sent; loading = false;
+  document.getElementById('vname').textContent = VARIANTS[variant].name; document.getElementById('vdesc').textContent = VARIANTS[variant].desc;
+  document.getElementById('label').textContent = variant === 'today' ? 'Today' : 'Option ' + variant;
+  draw(false); const s = document.getElementById('scroll'); s.scrollTop = s.scrollHeight;
+  history.replaceState(null, '', '?variant=' + variant);
+}
+document.getElementById('scroll').addEventListener('scroll', e => {
+  if (variant !== 'C' || loading || from <= 0 || e.target.scrollTop > 900) return;
+  loading = true; draw(true);
+  setTimeout(() => { more(); loading = false; draw(true); }, 450);
+});
+const step = d => { variant = ORDER[(ORDER.indexOf(variant) + d + ORDER.length) % ORDER.length]; start(); };
+document.getElementById('prev').onclick = () => step(-1); document.getElementById('next').onclick = () => step(1);
+addEventListener('keydown', e => { if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+start();
+</script>
+</body>
+</html>
