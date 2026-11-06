@@ -59,9 +59,19 @@
 .thread-nav__attention-dismiss:hover:not([aria-disabled='true']) { background: var(--tt-hover); }
 .thread-nav__attention-dismiss:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); }
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
+/* A card in the sidebar is one step off the sidebar, as a card on the room is one step off the room (ADR-0110 decision 1).
+   By night the raised surface already is. By day the card's recipe, the canvas with a little of the text, lands within a
+   shade of the sidebar, which is itself a step off the canvas, so Needs you's edge was all but gone; there the card is
+   the sidebar with a little of the text, and the selected row is the accent surface mixed into that card. Glass keeps
+   its own translucent card. */
+.thread-nav { --threads-card: var(--tt-card); --threads-card-selected: var(--tt-card-selected); }
+:root[data-theme='light']:not([data-glass]) .thread-nav {
+  --threads-card: color-mix(in oklab, var(--tt-text) 6%, var(--threads-sidebar));
+  --threads-card-selected: color-mix(in oklab, var(--tt-accent-surface) 65%, var(--threads-card));
+}
 /* Needs you (ADR-0135): under the search, one entry per thread that needs the user. A filled card like every
    container (ADR-0110); need is said by each entry's ring and status words, never by an outline or a capsule. */
-.needs-you { flex: none; margin: 0 8px 4px; padding: 3px 7px 2px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
+.needs-you { flex: none; margin: 0 8px 4px; padding: 3px 7px 2px; border-radius: var(--tt-radius-row); background: var(--threads-card); color: var(--tt-text); }
 .needs-you__head { display: flex; align-items: center; gap: 6px; min-height: 22px; }
 .needs-you__heading { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
 .needs-you__count { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -220,7 +230,7 @@
 /* By day the selected row's tint sat barely off the sidebar under a pale teal edge, so it read washed rather than chosen.
    It wears the selected card itself (ADR-0110 decision 1: a selected card or item wears --tt-card-selected), with no edge:
    a filled item, as every selected card is. */
-:root[data-theme='light'] .thread-nav__row[data-current] { background: var(--tt-card-selected); border-color: transparent; }
+:root[data-theme='light'] .thread-nav__row[data-current] { background: var(--threads-card-selected); border-color: transparent; }
 /* Hidden actions take no pointer; shown, they take their own width so the row button (and a click on
    its centre) never lies under them. */
 .thread-nav__row-actions { position: absolute; top: 1px; right: 0; pointer-events: none; }
