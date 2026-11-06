@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { keyListenerWin32Invocation } from '../../src/main/hotkeys/keyListenerWin32'
+import { keyListenerWin32Invocation, powerShellSingleQuoted } from '../../src/main/hotkeys/keyListenerWin32'
 
 const CS_PATH = join(__dirname, '../../native/key-listener/win32.cs')
 const LIVE = process.env.SOTTO_KEY_LISTENER_LIVE === '1'
@@ -20,9 +20,8 @@ const COMPILE_MS = 180_000
 
 // Compiles win32.cs with the Add-Type the app runs, to an assembly the timed starts load instead.
 function compileHelper(outputPath: string): Promise<void> {
-  const quote = (value: string): string => `'${value.replace(/'/g, "''")}'`
   // Progress records would otherwise reach stderr as CLIXML and hide a compile error.
-  const script = `$ProgressPreference = 'SilentlyContinue'; Add-Type -LiteralPath ${quote(CS_PATH)} -OutputAssembly ${quote(outputPath)} -OutputType Library`
+  const script = `$ProgressPreference = 'SilentlyContinue'; Add-Type -LiteralPath ${powerShellSingleQuoted(CS_PATH)} -OutputAssembly ${powerShellSingleQuoted(outputPath)} -OutputType Library`
   return new Promise((resolve, reject) => {
     execFile(
       'powershell.exe',
