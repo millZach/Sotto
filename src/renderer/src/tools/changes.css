@@ -6,12 +6,14 @@
 .changes-surface { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .changes-surface > * { flex: none; }
 
-/* The line of chrome: scope, counts, then the surface's own actions. It and the bar under it read as one head, so no rule parts them. */
-.tools-panel .changes-summary { gap: 6px; padding-left: 8px; border-bottom-color: transparent; }
+/* One band over the lines, in two rows with no rule between them. The line of chrome says what is compared, as one
+   phrase ("Branch changes against origin/main"), then the surface's own actions. The bar under it says what that comes
+   to and how it is read. Positioned over the bar, so the base's list opens over everything under it. */
+.tools-panel .changes-summary { position: relative; z-index: 4; gap: 6px; padding-left: 8px; border-bottom-color: transparent; }
 .tools-panel .changes-summary__git { display: contents; }
-/* The scope and its counts wrap inside a one-line box, so counts without room drop out whole instead of clipping.
-   The select is as wide as the scope it shows, not its longest option. */
-.changes-lead { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; height: 30px; overflow: hidden; }
+/* The select is as wide as the scope it shows, not its longest option. */
+.changes-lead { display: flex; flex: 0 1 auto; align-items: center; gap: 2px; min-width: 0; }
+.changes-lead__fact { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .changes-scope { position: relative; display: inline-flex; flex: none; align-items: center; max-width: 100%; }
 .changes-scope__select {
   field-sizing: content; min-width: 0; max-width: 100%; height: 30px; padding: 0 26px 0 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent;
@@ -23,18 +25,14 @@
 .changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
 .changes-scope__chevron { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
 .changes-counts { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* What the totals leave out, beside them. It is the first thing to go when the line has no room: their tooltip still says it. */
+/* What the totals leave out, beside them. It is the first thing to go when the bar has no room: their tooltip still says it. */
 .changes-whitespace { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
-/* A narrow panel gives its height to the lines. The totals stay beside the scope, where the line of chrome has room for
-   them, and the whitespace note goes to their tooltip. The bar under it is one row: the base, whose button says in
-   full what is compared, then the way through the files with All files as its icon, and View at the far end. */
+/* A narrow panel gives its height to the lines: the whitespace note goes to the totals' tooltip, the base loses its
+   "against", whose button still says in full what is compared, and the bar is one tight row. */
 @container tools-body (max-width: 479px) {
-  .changes-whitespace--chrome { display: none; }
-  .changes-bar { gap: 2px; padding-left: 6px; }
-  .changes-bar .changes-base { flex: 0 1 auto; }
-  .changes-bar .changes-base__against { display: none; }
-  .changes-bar .changes-base__trigger { max-width: 100%; }
-  .changes-jump__all-text { display: none; }
+  .changes-whitespace { display: none; }
+  .changes-bar { gap: 2px; padding-left: 10px; }
+  .changes-base__against { display: none; }
   .changes-jump__all { padding: 0 6px; }
 }
 .changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
@@ -43,9 +41,10 @@
 /* The bar under it: what is compared on the left, how it is drawn on the right. It wraps before anything clips. */
 .changes-bar {
   position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px;
-  min-height: 38px; padding: 3px 6px 3px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-small);
+  min-height: 36px; padding: 2px 6px 2px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-small);
 }
-.changes-bar__fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
+/* The totals and their note wrap inside a one-line box, so a note without room drops out whole instead of clipping. */
+.changes-bar__sum { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; height: 28px; overflow: hidden; }
 .changes-bar__view { display: flex; flex: none; align-items: center; gap: 4px; margin-left: auto; }
 /* A control of the bar says its word. Only Collapse all drops to its icon, and only in a panel too narrow to hold every word
    and the branch. */
@@ -59,21 +58,13 @@
 .changes-bar__word:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .changes-bar__word:disabled { color: var(--tt-text-muted); opacity: .6; }
 @container tools-body (max-width: 559px) { .changes-bar__word-text { display: none; } }
-/* Where the tree is shut, All files joins the bar, and below 720px Collapse all gives up its word for it so the branch
-   stays whole beside the base. */
-@container tools-body (max-width: 719px) { .changes-bar__view:has(.changes-jump__all) .changes-bar__word-text { display: none; } }
 
-/* Branch changes: the branch, an arrow, and the base as the button that opens the list. */
-.changes-base { display: flex; flex: 1 1 150px; align-items: center; gap: 4px; min-width: 0; }
-.changes-base__against { display: none; flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-@container tools-body (max-width: 559px) {
-  .changes-base__head, .changes-base__arrow { display: none; }
-  .changes-base__against { display: inline; }
-}
-.changes-base__head { flex: 0 1 auto; min-width: 3ch; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
-.changes-base__arrow { flex: none; color: var(--tt-text-muted); }
+/* Branch changes, then "against" and the base as the button that opens the list. The branch compared is the panel's
+   foot's, and the button's name and tooltip, so the line does not say it twice. */
+.changes-base { display: flex; flex: 0 1 auto; align-items: center; gap: 2px; min-width: 0; }
+.changes-base__against { flex: none; padding-left: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .changes-base__trigger {
-  display: inline-flex; flex: none; align-items: center; gap: 4px; min-width: 0; max-width: 70%; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-control);
+  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 4px; min-width: 0; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text); font: inherit; font-family: var(--tt-font-mono); font-size: var(--tt-type-caption);
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -136,7 +127,11 @@
 
 /* From file to file, in the bar. */
 .changes-bar__jump { display: contents; }
-.changes-jump__place { flex: none; margin: 0 2px 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.changes-jump__place, .changes-jump__all-place { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.changes-jump__place { margin: 0 2px 0 4px; }
+.changes-jump__all:hover .changes-jump__all-place, .changes-jump__all[aria-expanded='true'] .changes-jump__all-place { color: var(--tt-text); }
+/* Where the tree is shut the place is All files' own words, so it is not said again beside it. */
+@container tools-body (max-width: 819px) { .changes-jump__place[data-beside] { display: none; } }
 
 /* A file's whole name, on as many lines as it takes: it wraps where its words join, and anywhere at all only if one word is wider than the row. */
 .changes-name { flex: 1 1 auto; min-width: 0; padding-top: 1px; line-height: 1.35; overflow-wrap: anywhere; }
@@ -239,7 +234,9 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line[aria-selected='true'][data-kind='edited'] .changes-line__sign { color: var(--tt-text); }
 .changes-line[aria-selected='true'][data-kind='edited'] del.changes-word--edit { background: var(--changes-word-picked-removed); }
 .changes-line[aria-selected='true'][data-kind='edited'] ins.changes-word--edit { background: var(--changes-word-picked-added); }
-/* A hunk's head is a quiet divider, one line at any width: where the part starts, then the section around it. */
+/* A hunk's head is a quiet divider, one line at any width: the section around the part, when it names a place. The
+   line it starts on is the gutter's first number under it. With no section it is a hairline and a gap, and the
+   first part of a file has none at all. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .changes-line[data-kind='hunk'] .changes-line__text { display: flex; gap: 10px; min-width: 0; overflow: hidden; white-space: nowrap; }

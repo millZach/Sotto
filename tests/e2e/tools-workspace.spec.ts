@@ -164,8 +164,8 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
         await page.keyboard.press('Escape')
       }
       await viewOption('File tree')
-      // A panel this narrow opens the tree over the lines, from All files.
-      await panel.getByRole('button', { name: 'All files', exact: true }).click()
+      // A panel this narrow opens the tree over the lines, from the place in the bar, which is All files there.
+      await panel.getByRole('button', { name: /^All files, \d+ of 3$/u }).click()
       const tree = panel.getByRole('listbox', { name: 'Files in this comparison' })
       await expect(tree.getByRole('option')).toHaveCount(3)
       const blockAtTop = (path: string) => panel.evaluate((element, path) => {

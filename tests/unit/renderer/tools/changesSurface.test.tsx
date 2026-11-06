@@ -104,9 +104,10 @@ describe('Changes as T3’s diff', () => {
     expect(git.bridge.review).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, scope: { kind: 'working' }, ignoreWhitespace: false })
     expect(within(panel()).getByRole('combobox', { name: 'Diff scope' })).toHaveValue('working')
     // Header counts are the sum of every file's; a binary file counts nothing.
-    expect(panel().querySelector('.changes-summary .changes-counts--chrome')).toHaveTextContent('+2 −1')
-    // They are said once: the view bar under them does not repeat them, even in a narrow panel.
-    expect(panel().querySelector('.changes-bar .changes-counts')).toBeNull()
+    expect(panel().querySelector('.changes-bar .changes-counts--total')).toHaveTextContent('+2 −1')
+    // They are said once: the line of chrome over them says what is compared, and does not repeat them.
+    expect(panel().querySelector('.changes-summary .changes-counts')).toBeNull()
+    expect(panel().querySelector('.changes-summary .changes-lead__fact')).toHaveTextContent('Against HEAD')
     expect([...panel().querySelectorAll('.changes-file')].map(item => item.getAttribute('data-file-path'))).toEqual(['docs/new.md', 'logo.png', 'src/app.ts'])
     expect(within(block('src/app.ts')).getByRole('img', { name: 'Modified' })).toHaveTextContent('M')
     expect(within(block('logo.png')).getByText('Binary file: no text diff.')).toBeInTheDocument()
@@ -301,26 +302,28 @@ describe('Changes as T3’s diff', () => {
     const user = userEvent.setup()
     setup(fakeGit({ files: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 2957, 1230)] }))
     await within(panel()).findByRole('group', { name: 'src/app.ts' })
-    const totals = panel().querySelector<HTMLElement>('.changes-counts--chrome')!
+    const totals = panel().querySelector<HTMLElement>('.changes-counts--total')!
     expect(totals).toHaveTextContent('+2,957 −1,230')
     expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2,957 −1,230')
     expect(totals.title).toBe('2,957 lines added, 1,230 removed')
     expect(panel().querySelector('.changes-whitespace')).toBeNull()
     await pressView(user, 'Hide whitespace changes')
-    expect(panel().querySelector('.changes-whitespace--chrome')).toHaveTextContent('without whitespace')
-    expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
+    expect(panel().querySelector('.changes-bar .changes-whitespace')).toHaveTextContent('without whitespace')
+    expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
     await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
-    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))
+    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))
   })
 
   it('opens the tree over the lines from All files, and it goes on a pick, on Escape or when focus leaves', async () => {
     const user = userEvent.setup()
     setup()
     await within(panel()).findByText(diffLine('export const ready = true'))
-    expect(within(panel()).queryByRole('button', { name: 'All files' })).toBeNull()
+    expect(within(panel()).queryByRole('button', { name: /^All files/u })).toBeNull()
     await pressView(user, 'File tree')
     const review = panel().querySelector('.changes-review')!
-    const allFiles = within(panel()).getByRole('button', { name: 'All files' })
+    // The place is the button: it says which file is in view, and opens them all.
+    const allFiles = within(panel()).getByRole('button', { name: 'All files, 1 of 3' })
+    expect(allFiles).toHaveTextContent('1 of 3')
     expect(review).not.toHaveAttribute('data-tree-over')
     await user.click(allFiles)
     expect(review).toHaveAttribute('data-tree-over')

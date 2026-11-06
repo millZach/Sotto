@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ArrowRight, Check, ChevronDown, Cloud } from 'lucide-react'
+import { Check, ChevronDown, Cloud } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { GitRef, GitRefsPage, GitRefsRequest } from '../../../shared/gitRefs'
 
@@ -38,8 +38,8 @@ export function choiceValue(choice: BaseChoice, selected: string | null): string
 }
 
 /**
- * The base Branch changes compares against, T3's comparison target: the branch it compares, an arrow, and the
- * base as a button that opens the list. The list starts with **Automatic** (the base Sotto works out), then each
+ * The base Branch changes compares against, T3's comparison target: after the scope on Changes' line of chrome,
+ * "against" and the base as a button that opens the list. The list starts with **Automatic** (the base Sotto works out), then each
  * branch with a **Use remote version** switch where both a local and a remote copy exist and a mark where only the
  * remote one does.
  */
@@ -97,10 +97,8 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
     items[next]?.focus()
   }
   return <div className="changes-base">
-    <span className="changes-base__head" title={head}><bdi>{head}</bdi></span>
-    <ArrowRight size={13} aria-hidden="true" className="changes-base__arrow" />
-    {/* A panel with no room for the branch's name, which the panel's foot already says, keeps what it is compared with. */}
-    <span className="changes-base__against" aria-hidden="true">{t({ message: 'Against', comment: 'Before the base branch a branch is compared with, as in "Against origin/main".' })}</span>
+    {/* The branch compared is the panel's foot's, and the button's name and tooltip, so the line does not say it twice. */}
+    <span className="changes-base__against" aria-hidden="true">{t({ message: 'against', comment: 'After the scope of Changes and before the base branch it compares with, as in "Branch changes against origin/main".' })}</span>
     <button ref={trigger} type="button" className="changes-base__trigger tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       aria-label={selected === null
         ? t({ message: `Change the base. Comparing ${head} with ${shownBase}, chosen automatically`, comment: '{head} and {shownBase} are branch names.' })

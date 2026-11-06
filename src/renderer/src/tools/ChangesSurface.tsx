@@ -110,13 +110,16 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   const reveal = bridge?.reveal ? (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus(t`Could not open the folder`) }) } : undefined
   const setScope = (scope: ChangesScope): void => store.setScope(bridge, threadId, scope)
 
+  // One band over the lines. Its line of chrome says what is compared, as one phrase: the scope, then the base it is
+  // compared against or when its turn began. The bar under it says what that comes to and how it is read: the totals,
+  // where the reader is among the files, and the view.
   return <div className="changes-surface">
     <div className="changes-summary tools-chrome">
-      {/* The scope keeps its words; the counts beside it show whole or drop to a line the lead never shows. */}
       <span className="changes-lead">
         <ScopePicker changes={changes} turns={bridge?.checkpoints !== undefined} onChange={setScope} />
-        {files.length > 0 ? <Totals {...totals} place="chrome" hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} /> : null}
-        {files.length > 0 && view.ignoreWhitespace ? <WhitespaceNote place="chrome" /> : null}
+        {changes.scope.kind === 'branch'
+          ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
+          : <span className="changes-lead__fact">{changes.scope.kind === 'working' ? t`Against HEAD` : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
       </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
@@ -126,9 +129,11 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
     </div>
     <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} />
     <div className="changes-bar">
-      {changes.scope.kind === 'branch'
-        ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
-        : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? t`Against HEAD` : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
+      {/* The totals keep their place; what they leave out shows beside them or drops to a line the sum never shows. */}
+      <span className="changes-bar__sum">
+        {files.length > 0 ? <Totals {...totals} hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} /> : null}
+        {files.length > 0 && view.ignoreWhitespace ? <WhitespaceNote /> : null}
+      </span>
       <div className="changes-bar__view" role="group" aria-label={t`Diff view`}>
         <span ref={setJumpSlot} className="changes-bar__jump" />
         <button type="button" className="changes-bar__word tt-focusable" disabled={files.length === 0}
@@ -153,12 +158,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   </div>
 }
 
-/**
- * The comparison's `+adds −dels`. It sits on the line of chrome; in a narrow panel the chrome has no room beside
- * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
- */
-function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }: {
-  readonly additions: number; readonly deletions: number; readonly place: 'chrome'; readonly hidesWhitespace: boolean
+/** The comparison's `+adds −dels`, at the head of the bar under the line of chrome. */
+function Totals({ additions, deletions, hidesWhitespace, againstGitHub }: {
+  readonly additions: number; readonly deletions: number; readonly hidesWhitespace: boolean
   /** A branch's totals are the ones a reader holds up against its pull request. */
   readonly againstGitHub: boolean
 }): ReactNode {
@@ -167,7 +169,7 @@ function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }:
   const words = !hidesWhitespace ? plural(additions, { other: `${added} lines added, ${removed} removed` })
     : againstGitHub ? i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher.`, comment: '{added} and {removed} are counts of lines.' }))
       : i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes.`, comment: '{added} and {removed} are counts of lines.' }))
-  return <span className={`changes-counts changes-counts--${place}`} title={words}>
+  return <span className="changes-counts changes-counts--total" title={words}>
     <span aria-hidden="true"><span className="changes-counts__add">+{added}</span> <span className="changes-counts__remove">−{removed}</span></span>
     <span className="tt-visually-hidden">{words}</span>
   </span>
@@ -177,10 +179,10 @@ function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }:
  * Says beside the totals what they leave out, so a branch's totals reading lower than its pull request's has its reason
  * in sight: Hide whitespace changes leaves whitespace-only lines out of the counts as well as the lines.
  */
-function WhitespaceNote({ place }: { readonly place: 'chrome' }): ReactNode {
+function WhitespaceNote(): ReactNode {
   const { t } = useLingui()
   // The totals' own words already say it to a screen reader.
-  return <span className={`changes-whitespace changes-whitespace--${place}`} aria-hidden="true">{t({ message: 'without whitespace', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.' })}</span>
+  return <span className="changes-whitespace" aria-hidden="true">{t({ message: 'without whitespace', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.' })}</span>
 }
 
 function turnWhen(createdAt: string): string {
@@ -299,7 +301,8 @@ function holdAtTop(scroller: HTMLElement, block: HTMLElement, instant: boolean, 
 
 /**
  * Where the reader is among the files, and the previous and next one. It sits in the bar, so it costs the lines no height.
- * In a panel too narrow for the tree beside the lines, All files opens the tree over them.
+ * In a panel too narrow for the tree beside the lines, the place itself is All files and opens the tree over them, so
+ * the bar says where the reader is once rather than beside a second control; beside the tree it is only words.
  */
 function FileJump({ files, current, onShow, allFiles }: {
   readonly files: readonly GitReviewFile[]; readonly current: string | null; readonly onShow: (path: string) => void
@@ -312,9 +315,9 @@ function FileJump({ files, current, onShow, allFiles }: {
   const place = (index + 1).toLocaleString(), total = files.length.toLocaleString()
   return <>
     {allFiles ? <button ref={allFiles.button} type="button" className="changes-bar__word changes-jump__all tt-focusable" aria-expanded={allFiles.open} title={t`Show every file in this comparison`} onClick={allFiles.onPress}
-      aria-label={t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}>
-      <ListTree size={15} aria-hidden="true" /><span className="changes-jump__all-text" aria-hidden="true">{t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}</span></button> : null}
-    <span className="changes-jump__place">{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span>
+      aria-label={t({ message: `All files, ${place} of ${total}`, comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".' })}>
+      <ListTree size={15} aria-hidden="true" /><span className="changes-jump__all-place" aria-hidden="true">{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span></button> : null}
+    <span className="changes-jump__place" data-beside={allFiles ? '' : undefined}>{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!previous} aria-label={t`Previous file`} title={previous ? t({ message: `Previous file: ${previous.path}`, comment: '{previous.path} is a file\'s path.' }) : t`Previous file`} onClick={() => { if (previous) onShow(previous.path) }}><ChevronUp size={15} aria-hidden="true" /></button>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!next} aria-label={t`Next file`} title={next ? t({ message: `Next file: ${next.path}`, comment: '{next.path} is a file\'s path.' }) : t`Next file`} onClick={() => { if (next) onShow(next.path) }}><ChevronDown size={15} aria-hidden="true" /></button>
   </>
