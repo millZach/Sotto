@@ -2082,7 +2082,15 @@ for (const answer of ['accepted', 'uncertain'] as const) {
 it('lets go of a timed-out start’s moved branch once the paired machine shows it never had the start (#1033)', async () => {
   const f = await fromBranch()
   const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
-  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string> }
+  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string>; reconcileRemote(hostId: string): Promise<void> }
+  const allowRemoval = deferred(), forgotten = deferred(), release = deferred()
+  const branchMove = f.socket.branchMove.bind(f.socket)
+  vi.spyOn(f.socket, 'branchMove').mockImplementation(async request => {
+    if (request.action === 'forget') await allowRemoval.promise
+    const result = await branchMove(request)
+    if (request.action === 'forget') { forgotten.resolve(); await release.promise }
+    return result
+  })
   // The request for the start times out before it reaches the paired machine, which so never makes the thread.
   vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async () => { throw Object.assign(new Error('synthetic-timeout'), { timedOut: true }) })
   try {
@@ -2090,9 +2098,16 @@ it('lets go of a timed-out start’s moved branch once the paired machine shows 
     expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
     expect(watcher.timedOutStarts.size).toBe(1)
     expect(await refs()).not.toBe('')
-    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+    const reconciled = watcher.reconcileRemote(f.pairing.hostId)
+    allowRemoval.resolve()
+    await forgotten.promise
+    // Git has removed the ref, but its RPC reply has not arrived: local bookkeeping is still pending.
+    expect(await refs()).toBe('')
+    expect(watcher.lostStartMoves.size).toBe(1)
+    release.resolve()
+    await reconciled
     expect(watcher.lostStartMoves.size).toBe(0)
-  } finally { vi.restoreAllMocks() }
+  } finally { allowRemoval.resolve(); release.resolve(); vi.restoreAllMocks() }
 }, 60_000)
 
 it('keeps a lost start’s moved branch for the next reconcile when this computer has no host ID for a moment (#1033)', async () => {
