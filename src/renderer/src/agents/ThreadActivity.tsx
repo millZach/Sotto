@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
+  activityLeadKind, quickStep, spokenActivity, stepDescription, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -369,10 +369,12 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     : text ? record.kind === 'reasoning'
       ? <MessageContent text={text} />
       : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null
-  // What ran comes first, with what it was for, then where it ran, then what came back: each said once.
+  // What ran and what it was for are the open row's; the body adds where it ran, then what came back: each said once.
+  // A command whose input is not the provider's description keeps those words here, first.
+  const described = record.command !== undefined && stepDescription(record) !== ''
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
-    {record.command ? said : null}
+    {record.command && !described ? said : null}
     {script ? <MessageContent text={fenced(record.command!, 'command')} /> : null}
     {cwd || ran ? <p className="thread-activity__fact thread-activity__where tt-paragraph">
       {cwd ? <span><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></span> : null}
@@ -433,6 +435,11 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const base = planInView ? { lead: '', subject: t({ message: 'Updated the plan', comment: 'A running turn\'s plan among its opened steps; the plan itself stands above the working line.' }), mono: false, preview: '' } : activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
+  // A command its provider described reads as what it was for, with the command beside it, as the working line does: the
+  // rows scan as what happened, and the command is still there, in the code face. Open, the command stands whole under
+  // what it was for, but a script of several lines leaves itself to its block.
+  const purpose = planInView ? '' : stepDescription(record)
+  const script = record.command?.trim().includes('\n') === true
   const status = planInView ? '' : statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running' && !planInView
@@ -441,27 +448,33 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const timing = open ? timingNote(record, provider) : ''
   const timingId = useId()
   const quiet = quietUnknown && record.status === 'unknown'
-  const spoken = planInView ? label.subject : [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
+  // A folded row's time shows only when it says something: a step under a second leaves it to the open row and its name.
+  const brief = !open && quickStep(record)
+  const spoken = planInView ? label.subject : [purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
-  const subject = label.subject
+  const subject = purpose || label.subject
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
-    <span className="thread-activity__label">
-      <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />
+    <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
+      {purpose ? <>
+        <span className="thread-activity__subject">{purpose}</span>
+        {open && script ? null : <span className="thread-activity__command" dir="ltr">{shown.subject}</span>}
+      </> : <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
       {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
       <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
-      {running ? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" /> : null}
-      {quiet ? null : status}
+      {quiet || brief ? null : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
       {timing && status && !quiet ? <span className="thread-activity__timing-gap" aria-hidden="true">·</span> : null}
       {timing ? <span id={timingId} className="thread-activity__timing">{timing}</span> : null}
     </span>
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>
+  // The step running now stands out from the finished ones, as the plan's item in progress does: its mark in the accent.
   return <li className="thread-activity__row" data-kind={record.kind} data-status={record.status} data-open={open || undefined}
+    data-now={running && connected ? '' : undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     {expandable
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}

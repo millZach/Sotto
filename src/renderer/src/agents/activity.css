@@ -81,10 +81,23 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity__lead { color: var(--tt-text-muted); }
 .thread-activity__subject { color: var(--tt-text-2); }
-.thread-activity__subject--mono { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+.thread-activity__subject--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .thread-activity__preview { color: var(--tt-text-muted); }
+/* A command its provider described: what it was for leads, and the command sits beside it, smaller and quieter in the code
+   face, as beside the working line. What it was for keeps its room and the command takes what is left, up to about forty
+   letters, cut at its end, so the rows end raggedly as a list does rather than filling out to the times like a table. */
+.thread-activity__label[data-purpose] { display: flex; align-items: baseline; gap: 14px; }
+.thread-activity__label[data-purpose] > * { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Any shrink would cut what the step was for by an ellipsis, so only the command gives way, down to nothing on a narrow row. */
+.thread-activity__label[data-purpose] > .thread-activity__subject { flex-shrink: 0; max-width: 100%; }
+.thread-activity__label[data-purpose] > .thread-activity__command { max-width: 40ch; }
+.thread-activity__command { color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+/* The rows read like the plan's checklist: finished steps in the second ink, and the step running now in full ink a weight
+   up with its mark in the accent, the way the plan marks its item in progress. Its clock stays quiet beside it. */
+.thread-activity__row[data-now] > .thread-activity__toggle { color: var(--tt-text); }
+.thread-activity__row[data-now] > .thread-activity__toggle > .thread-activity__icon { color: var(--tt-activity); }
+.thread-activity__row[data-now] > .thread-activity__toggle .thread-activity__subject { color: var(--tt-text); font-weight: 500; }
 .thread-activity__meta { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.thread-activity__meta[data-status='running'][data-connected] { color: var(--tt-activity); }
 .thread-activity__meta[data-status='failed'] { color: var(--tt-error); }
 .thread-activity__row[data-status='failed'] .thread-activity__icon { color: var(--tt-error); }
 .thread-activity__clock { font-variant-numeric: tabular-nums; }
@@ -93,6 +106,11 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label { padding-block: 3px; white-space: normal; overflow-wrap: anywhere; }
 .thread-activity__row[data-open] > .thread-activity__toggle > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
 .thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__meta { min-height: 25px; }
+/* Open, what a described command was for reads whole, and the command stands whole under it in the second ink, so what ran
+   reads before what came back. */
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] { flex-direction: column; align-items: stretch; gap: 2px; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] > * { max-width: none; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.thread-activity__row[data-open] > .thread-activity__toggle .thread-activity__command { color: var(--tt-text-2); }
 /* Where the time came from, beside the time, in the quiet ink whatever the row's outcome. */
 .thread-activity__timing, .thread-activity__timing-gap { color: var(--tt-text-muted); }
 
@@ -108,7 +126,11 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details { display: grid; gap: 8px; margin: 2px 0 12px 30px; min-width: 0; }
 .thread-activity__details .rich-message { font-size: var(--tt-type-body); line-height: 1.6; }
 .thread-activity__details .rich-code { margin: 0; }
+/* What came back is a well with no outline, as every container is (ADR-0110), so it reads as the step's evidence rather than
+   another box, and a long one holds twelve lines in view and scrolls for the rest. */
+.thread-activity__details .rich-code[data-language='output'] { border-color: transparent; }
 .thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); }
+.thread-activity__details .rich-code[data-language='output'] .rich-code__scroll { max-height: calc(12lh + 18px); }
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
 .thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }

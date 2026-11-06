@@ -409,8 +409,11 @@ export interface WorkingNow {
   readonly spoken: string
 }
 
-/** What a command is for, in the provider's words: Claude sends a `description` with every shell command it runs. */
-function stepDescription(record: AgentActivity): string {
+/**
+ * What a command is for, in the provider's words: Claude sends a `description` with every shell command it runs. The working
+ * line leads with it, and so does the command's row among the opened steps, with the command beside it.
+ */
+export function stepDescription(record: AgentActivity): string {
   if (record.kind !== 'command') return ''
   const described = activityInput(record)?.description
   return typeof described === 'string' ? oneLine(described) : ''
@@ -555,6 +558,16 @@ function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' |
   const start = record.startedAt ? Date.parse(record.startedAt) : Number.NaN
   const end = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : undefined
+}
+
+/** Under a second a step's time says nothing at a glance, so a folded row leaves it to the open one. */
+const QUICK_STEP_MS = 1_000
+
+/** A finished step that took under a second, by the time its provider or Sotto recorded. */
+export function quickStep(record: AgentActivity): boolean {
+  if (record.status !== 'completed') return false
+  const duration = recordDuration(record)
+  return duration !== undefined && duration < QUICK_STEP_MS
 }
 
 /**

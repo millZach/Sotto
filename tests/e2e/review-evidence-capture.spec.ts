@@ -407,7 +407,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await scrollTranscript(capture.page, 'top-of-turn')
     await capture.shoot('thread-idle', 'A finished thread read from the top of its turn: "What do you think of this repository?", the folded Worked for line, and a reply with headings, lists, inline code and a code block.')
   } },
-  { name: 'thread-long', covers: [], run: async capture => {
+  { name: 'thread-long', covers: ['steps-finished'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     // A long thread opens on its newest turns; the reader's own presses bring the rest in.
@@ -426,6 +426,26 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('thread-long', shows, differs, { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
+    if (!ONLY || ONLY.includes('steps-finished')) {
+      // A finished turn opened to its steps, the first with four commands: quick reads, a slow test run and a typecheck that failed.
+      const fold = transcript(page).getByRole('button', { name: /^Worked for.*Ran 4 commands/u }).first()
+      const opened = async (): Promise<void> => {
+        await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+        await expect(fold).toHaveAttribute('aria-expanded', 'true')
+        await fold.evaluate(element => element.scrollIntoView({ block: 'start' }))
+      }
+      await fold.click()
+      await opened()
+      const finishedShows = 'A finished turn in the long thread opened to its steps: quick reads, a slow test run and a typecheck that failed.'
+      await capture.shoot('steps-finished', finishedShows, differs)
+      await resizeContentWindowFor(capture.launched, 820, 560)
+      await opened()
+      await capture.shoot('steps-finished', finishedShows, differs, { modes: ['dark'], size: [820, 560] })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+      // Folded again, so the states after this start as the user left a turn's steps before it.
+      await fold.click()
+      await expect(fold).toHaveAttribute('aria-expanded', 'false')
+    }
   } },
   { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
@@ -553,7 +573,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       if (!folded) await line.click()
       await scrollTranscript(page, 'bottom')
       await line.click()
-      await focusedPane(page).getByRole('button', { name: /^cat src\/main\/agents\/publishWindows\.ts, /u }).click()
+      await focusedPane(page).getByRole('button', { name: /^Read the publish windows module, cat src\/main\/agents\/publishWindows\.ts, /u }).click()
       await expect(focusedPane(page).getByText('export interface PublishWindow')).toBeVisible()
       // The press can take the reader off the end, so the composer slims; it is not done moving when its animations are.
       let lastTop = Number.NaN
@@ -1131,6 +1151,29 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await shoot('stuck-head-name', 'Its name under the head at a narrower window.', 'Fix the socket host flake', 14, ['dark'], [1280, 800])
     await shoot('stuck-head-working', 'A working row, "Plan the split", with its name under the head.', 'Plan the split', 14)
     await shoot('stuck-head-current', 'The open thread\'s row, "Write the split plan down", with its name under the head.', 'Write the split plan down', 14)
+    // The list scrolled so the next folder has pushed a stuck head `by` pixels up, the moment a head was once drawn cut
+    // through under Needs you.
+    const pushed = (folder: string, by: number) => async (): Promise<void> => {
+      await page.mouse.move(0, 0)
+      await page.evaluate(({ folder, by }) => {
+        const list = document.querySelector<HTMLElement>('.thread-nav__scroll')!
+        const box = [...list.querySelectorAll<HTMLElement>('.thread-folder')].find(item => item.querySelector('.thread-folder__title')?.textContent === folder)!
+        const edge = Number.parseFloat(getComputedStyle(list).getPropertyValue('--folder-head-edge')) || 35
+        list.scrollTop += box.getBoundingClientRect().bottom - list.getBoundingClientRect().top - (edge - 1) + by
+      }, { folder, by })
+    }
+    await capture.shoot('stuck-head-push', 'The sidebar scrolled so the sotto folder\'s last row is gone under its head and sotto-site pushes the head 14px up.', '', { before: pushed('sotto', 14), keepSidebarScroll: true })
+    // And the foot: a row whose bottom is `by` pixels under the band over the sidebar's foot.
+    const footCut = (title: string, by: number) => async (): Promise<void> => {
+      await page.mouse.move(0, 0)
+      await page.evaluate(({ title, by }) => {
+        const list = document.querySelector<HTMLElement>('.thread-nav__scroll')!
+        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__title')?.textContent === title)!
+        list.scrollTop += row.getBoundingClientRect().bottom - (list.getBoundingClientRect().bottom - 7) - by
+      }, { title, by })
+    }
+    await capture.shoot('list-foot-name', 'The sidebar scrolled so "Weekly note", a working row, has its second line under the band over the foot.', '', { before: footCut('Weekly note', 20), keepSidebarScroll: true })
+    await capture.shoot('list-foot-padding', 'The same row with only its bottom padding under the band.', '', { modes: ['dark'], before: footCut('Weekly note', 2), keepSidebarScroll: true })
     for (const theme of ['glass', 'clay'] as const) {
       await setAppearance(page, { appearance: 'dark', lightTheme: theme, darkTheme: theme }, 'dark')
       const name = theme === 'glass' ? 'Glass' : 'Clay'

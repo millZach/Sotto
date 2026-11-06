@@ -175,6 +175,32 @@ describe('settled activity in the transcript', () => {
     expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
   })
 
+  it('leads a described command’s row with what it was for, and leaves a quick step’s time to the open row', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'read', command: 'cat src/policy.ts', durationMs: 40, output: 'export class RequestPolicy {}',
+        text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }) }),
+      activity({ id: 'test', command: 'npm test', durationMs: 6_100, output: 'PASS' }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    // What it was for comes first, the command beside it in the code face; its name says both, and its time.
+    const row = within(transcript).getByRole('button', { name: 'Read the request policy, cat src/policy.ts, completed in 0.0s' })
+    expect(row.querySelector('.thread-activity__subject')).toHaveTextContent('Read the request policy')
+    expect(row.querySelector('.thread-activity__command')).toHaveTextContent('cat src/policy.ts')
+    // Under a second the folded row shows no time; a slow step keeps its own.
+    expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
+    expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
+    await user.click(row)
+    // Open, the row says what it was for and the command whole, with the time and where it came from; the body says neither again.
+    expect(row).toHaveTextContent(/Read the request policy.*cat src\/policy\.ts.*0\.0s.*Reported by Codex/u)
+    const details = document.getElementById(row.getAttribute('aria-controls')!)!
+    expect(details).not.toHaveTextContent('Read the request policy')
+    expect(within(details).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
+    expect(within(details).getByRole('button', { name: 'Copy command' })).toBeVisible()
+  })
+
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
     const user = userEvent.setup()
     const { transcript } = mount(stateWith({ activities: settled() }))
@@ -223,6 +249,9 @@ describe('the running turn', () => {
     const steps = document.getElementById(line.getAttribute('aria-controls')!)!
     const test = within(steps).getByRole('button', { name: 'npm test, Running' })
     expect(test).toHaveTextContent('Running 8s')
+    // The step running now is marked as the plan marks its item in progress, and no other row is.
+    expect(steps.querySelectorAll('.thread-activity__row[data-now]')).toHaveLength(1)
+    expect(test.closest('.thread-activity__row')).toHaveAttribute('data-now')
     expect(within(steps).getByRole('button', { name: 'npm ci, completed in 9.0s' })).toBeVisible()
     act(() => { vi.advanceTimersByTime(1_000) })
     expect(test).toHaveTextContent('Running 9s')
