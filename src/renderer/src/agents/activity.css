@@ -172,15 +172,6 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity-live__mark { flex: none; }
 .thread-activity-live__detail { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity-live__detail[data-code] { font-family: var(--tt-font-mono); }
-/* A command too long for the line gives way in the folders of the file it names, from their start, rather than at its
-   end, so the file being read stays in view: "cat …/main/workspaceControl.test.ts | head -n 80". The folders go first and
-   keep a sliver for the ellipsis; only then is the rest cut at its end. What comes before the file keeps its words, up to
-   half the line. A command that names no file is cut at its end. The folders' weight is large enough that the rest gives
-   up nothing until they are at their sliver, since any shrink at all would draw an ellipsis. */
-.thread-activity-live__detail[data-cut] { display: flex; direction: ltr; unicode-bidi: isolate; }
-.thread-activity-live__detail[data-cut] > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
-.thread-activity-live__detail[data-cut] > .thread-activity-live__command-before { flex-shrink: 0; max-width: 50%; }
-.thread-activity-live__detail[data-cut] > .thread-activity-live__command-folders { flex-shrink: 100000; min-width: 1ch; direction: rtl; }
 .thread-activity-live__step:has(> .thread-activity-live__detail:empty) { display: none; }
 @container (max-width: 560px) {
   .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }

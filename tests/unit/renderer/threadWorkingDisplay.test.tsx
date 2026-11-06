@@ -222,7 +222,7 @@ describe('what the working line names', () => {
 
 describe('what the working line says the work is for', () => {
   const waiting = (): AgentActivity[] => [lifecycle({ status: 'running', startedAt: iso(-12_000), timingSource: 'observed' })]
-  const unmarked = (text: string | null | undefined): string => (text ?? '').replace(/[⁨⁩‎]/gu, '')
+  const unmarked = (text: string | null | undefined): string => (text ?? '').replace(/[⁨⁩]/gu, '')
   const shown = (...steps: readonly AgentActivity[]) => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [...waiting(), ...steps] }))
     const row = within(transcript).getByTestId('thread-activity-live')
@@ -241,9 +241,6 @@ describe('what the working line says the work is for', () => {
     expect(words).toBe('Read the request policy')
     expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
     expect(detail).toHaveAttribute('data-code')
-    // It names a file in a folder, so a line too narrow for it gives way in the folders and the file stays in view.
-    expect(detail).toHaveAttribute('data-cut')
-    expect(unmarked(detail.querySelector('.thread-activity-live__command-folders')?.textContent)).toBe('src/')
     expect(detail.closest('[aria-hidden="true"]')).not.toBeNull()
     expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
   })

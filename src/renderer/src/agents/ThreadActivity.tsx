@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, commandCut, spokenActivity, type ActivityLabel, type ActivityLeadKind, type CommandCut, type WorkingNow,
+  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -207,23 +207,11 @@ function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | nu
   node.dataset.word = words
   // What is running for those words sits beside them, still and smaller; the light crosses only the words.
   if (detail) {
-    const cut = now?.code === true ? commandCut(now.detail) : null
-    if (cut) detail.replaceChildren(...commandParts(cut).map(([className, text]) => Object.assign(document.createElement('span'), { className, textContent: text })))
-    else detail.textContent = now?.detail ?? ''
+    detail.textContent = now?.detail ?? ''
     detail.toggleAttribute('data-code', now?.code === true)
-    detail.toggleAttribute('data-cut', cut !== null)
   }
   if (!stillMotion()) for (const part of [node, detail?.parentElement]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
 }
-
-/**
- * A command cut around its file, as the spans the line draws: the folders give way first, from their start, so a long
- * command beside the words keeps the file it reads and what follows. The left-to-right mark keeps the last separator on
- * the right of the folders, which are laid out right to left so that they lose their start.
- */
-const commandParts = (cut: CommandCut): ReadonlyArray<readonly [string, string]> => [
-  ['thread-activity-live__command-before', cut.before], ['thread-activity-live__command-folders', `${cut.folders}\u200e`], ['thread-activity-live__command-rest', cut.rest],
-]
 
 /** The step beside the words carries its row's mark from the opened steps, so it reads as the step and not as more of the sentence. */
 const stepMark = (step: WorkingNow['step']): LucideIcon => step === undefined || step === 'reply' ? MessageSquareText : ICONS[step]
@@ -243,7 +231,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null)
   const detailRef = useRef<HTMLSpanElement>(null)
   // The first words only: from here the effects write them, so a redraw of the line never undoes it.
-  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true, cut: now?.code === true ? commandCut(now.detail) : null }))
+  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true }))
   // The step's mark is the one part React draws, and only when the step on the line changes.
   const [step, setStep] = useState(now?.step)
   const key = workingKey(now)
@@ -285,9 +273,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
     <span ref={ref} className="thread-activity-live__word" data-word={first.words} aria-hidden="true">{first.words}</span>
     <span className="thread-activity-live__step" aria-hidden="true">
       <Mark className="thread-activity-live__mark" size={13} strokeWidth={1.8} aria-hidden="true" />
-      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined} data-cut={first.cut ? '' : undefined}>
-        {first.cut ? commandParts(first.cut).map(([className, text]) => <span key={className} className={className}>{text}</span>) : first.detail}
-      </span>
+      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined}>{first.detail}</span>
     </span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </span>

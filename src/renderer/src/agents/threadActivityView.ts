@@ -466,24 +466,6 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', ') }
 }
 
-/** A command cut around the file it names: what comes before the file, the file's folders, and its name with the rest. */
-export interface CommandCut { readonly before: string; readonly folders: string; readonly rest: string }
-
-/** The first argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
-const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/u
-
-/**
- * Where a command beside the working line's words gives way when it is too long for the line: in the folders of the
- * first file it names, so the command, the file's own name and what follows stay readable ("cat …/main/control.ts |
- * head -n 80"). Null for a command that names no file in a folder, which is cut at its end.
- */
-export function commandCut(command: string): CommandCut | null {
-  const text = command.replace(/^⁨|⁩$/gu, '')
-  const found = COMMAND_FILE.exec(text)
-  if (found === null) return null
-  return { before: text.slice(0, found.index), folders: found[1]!, rest: text.slice(found.index + found[1]!.length) }
-}
-
 /** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
 export const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
 
