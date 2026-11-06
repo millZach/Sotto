@@ -14,7 +14,7 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { WATCHER_KEPT_ITEMS_MAX, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -2599,6 +2599,22 @@ it('gives a keep_state change in under 1 KB, and a repeat read_state with nothin
   expect(compacted).toMatchObject({ sinceUnknown: true })
   expect(compacted.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
   expect(f.service.stateNote()).toBeUndefined()
+})
+
+
+// #2236: the rules list holds WATCHER_KEPT_RULES_MAX, and a whole read with every rule at its longest stays readable.
+it('keeps every rule the rules list holds, and reads them all back in one result well under what providers save to files', async () => {
+  const f = await fixture()
+  for (let at = 0; at < 4; at++) await f.call('start_thread', f.start())
+  const long = (kind: string, at: number) => `${kind} ${at + 1}: ${'synthetic words the user said about how threads start, merge and get checked, '.repeat(4)}`.slice(0, 280).trim()
+  expect(await f.call('keep_state', { rules: Array.from({ length: WATCHER_KEPT_RULES_MAX }, (_, at) => long('Rule', at)),
+    decisions: Array.from({ length: 12 }, (_, at) => long('Decision', at)), issues: Array.from({ length: 25 }, (_, at) => long('Issue', at)) })).toMatchObject({ status: 'ok' })
+  expect(await f.call('keep_state', { add: [{ list: 'rules', text: 'One rule past the list.' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
+    message: expect.stringContaining('do not drop, merge or close one to make room') })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.kept.rules).toHaveLength(WATCHER_KEPT_RULES_MAX)
+  expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(40_000)
 })
 
 it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {

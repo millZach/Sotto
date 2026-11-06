@@ -205,10 +205,16 @@ export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it 
  * and what each waits on from its own records. read_state gives the whole of it back.
  *
  * Each kept line has an ID, so Watcher adds, edits, closes or drops one line at a time (October 24, 2026). A list holds
- * WATCHER_KEPT_ITEMS_MAX open lines; adding past that is refused, never made room for. A closed line says how it ended
+ * WATCHER_KEPT_ITEMS_MAX open lines, and rules WATCHER_KEPT_RULES_MAX (#2236); adding past that is refused, never made room for. A closed line says how it ended
  * and stays, out of that count, until Sotto clears it WATCHER_KEPT_CLOSED_MS after it was closed.
  */
 export const WATCHER_KEPT_ITEMS_MAX = 30
+/**
+ * The open lines the rules list holds (#2236): the standing rules the user gave, which Watcher must never drop or merge
+ * to make room. At 30 Zach's rules filled the list two or three times a session. Twice that keeps a whole read_state
+ * near 35 KB with every rule at its longest, well short of the 73 KB results that providers saved to files.
+ */
+export const WATCHER_KEPT_RULES_MAX = 60
 export const WATCHER_KEPT_ITEM_MAX = 300
 /** Closed lines a list keeps until they clear; past this the oldest closed clear at once. */
 export const WATCHER_KEPT_CLOSED_MAX = 30
@@ -218,6 +224,8 @@ export const WATCHER_KEPT_CLOSED_MS = 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_UNTOUCHED_MS = 3 * 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_LISTS = ['decisions', 'rules', 'issues'] as const
 export type WatcherKeptList = typeof WATCHER_KEPT_LISTS[number]
+/** How many open lines a list holds: the rules list its own larger number, the others WATCHER_KEPT_ITEMS_MAX. */
+export const watcherKeptOpenMax = (list: WatcherKeptList): number => list === 'rules' ? WATCHER_KEPT_RULES_MAX : WATCHER_KEPT_ITEMS_MAX
 const keptText = z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)
 /** A line's ID: its list's letter and a number Sotto gives it, as `d3`, `r1` or `i12`. Never given twice. */
 const keptId = z.string().regex(/^[dri][1-9]\d{0,8}$/u)
@@ -226,7 +234,8 @@ export const watcherKeptItemSchema = z.object({ id: keptId, text: keptText, touc
   closedAt: time.optional(), closedNote: keptText.optional() }).strict()
 export type WatcherKeptItem = z.infer<typeof watcherKeptItemSchema>
 const keptLines = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX)
-export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptLines, issues: keptLines, updatedAt: time.nullable() }).strict()
+const keptRules = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX)
+export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptRules, issues: keptLines, updatedAt: time.nullable() }).strict()
 export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
 /** What `watcher-state.json` holds: the lists and the next line number. */
 export const watcherKeptRecordSchema = watcherKeptStateSchema.extend({ nextId: z.number().int().positive().max(999_999_999) }).strict()
@@ -235,11 +244,12 @@ export type WatcherKeptRecord = z.infer<typeof watcherKeptRecordSchema>
 export const watcherKeptLegacySchema = z.object({ decisions: z.array(keptText).max(20), rules: z.array(keptText).max(20),
   issues: z.array(keptText).max(20), updatedAt: time.nullable() }).strict()
 const keptWords = z.array(keptText).max(WATCHER_KEPT_ITEMS_MAX)
+const ruleWords = z.array(keptText).max(WATCHER_KEPT_RULES_MAX)
 /**
  * keep_state's input. A list given whole replaces that list's open lines, as before line IDs: a line whose words are
  * unchanged keeps its ID and when it was touched. `add`, `edit`, `close` and `drop` change one line each, by its ID.
  */
-export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: keptWords.optional(), issues: keptWords.optional(),
+export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: ruleWords.optional(), issues: keptWords.optional(),
   add: z.array(z.object({ list: z.enum(WATCHER_KEPT_LISTS), text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   edit: z.array(z.object({ id: keptId, text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   close: z.array(z.object({ id: keptId, note: keptText.optional() }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
@@ -440,7 +450,7 @@ export const watcherToolSchemas = {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
     input: watcherKeepStateInputSchema,
     // Only the lines this call changed and how many each list holds (#2231): read_state gives the whole state.
-    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX) * WATCHER_KEPT_LISTS.length * 2),
+    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX * WATCHER_KEPT_LISTS.length) * 2),
       counts: watcherKeptCountsSchema }),
   },
   read_state: {
@@ -453,7 +463,7 @@ export const watcherToolSchemas = {
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherStateWaitingSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX), contextTokens: counter.nullable(), compactAtTokens: counter,
       // On the final page: pass it as changedSince to read only what changed after this read.
       changeCursor: cursor.optional(),
       // A changedSince read Sotto still held the cursor of: what it left out as unchanged, and what is no longer there.
