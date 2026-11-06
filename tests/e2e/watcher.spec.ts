@@ -1444,7 +1444,7 @@ test.describe("Watcher's room on the built app", () => {
         // The night scene lays its owls out again a moment after the window resizes, so bounds are read once it has.
         const line = page.getByRole('group', { name: 'Machines and what works on each' })
         const wide = line.locator('.watcher-machines__wide')
-        await expect(wide).toHaveText(/^This computer \d+ working·forge 0 working, 1 starting, busy·studio 0 working, load unknown·lab not connected$/u)
+        await expect(wide).toHaveText(/^This computer \d+ workingforge 0 working, 1 starting, busystudio 0 working, load unknownlab not connected$/u)
         await expect(page.locator('.receipt-card__placement')).toHaveText(['Forge, where new workers start, is not connected, so this one started on This computer.'])
         for (const [width, height] of SIZES) {
           await resizeContentWindow(launched, width, height)
@@ -1501,7 +1501,7 @@ test.describe("Watcher's room on the built app", () => {
         await expect(beside(page)).toBeVisible()
         const narrow = line.locator('.watcher-machines__narrow')
         await expect(narrow).toBeVisible()
-        await expect(narrow).toHaveText('forge 0 working, busy·studio 0 working, load unknown·lab not connected·1 more')
+        await expect(narrow).toHaveText('forge 0 working, busystudio 0 working, load unknownlab not connected1 more')
         await settle(page)
         await expect.poll(() => pageBoundProblems(page), { message: 'the short line at 820x560' }).toEqual([])
         await captureInto(machinesEvidence, launched, `machines-narrow-${appearance}-820x560.png`)
@@ -1604,7 +1604,7 @@ test.describe("Watcher's room on the built app", () => {
         await resizeContentWindow(launched, 1280, 800)
         await openRoom(page)
         const wide = page.getByRole('group', { name: 'Machines and what works on each' }).locator('.watcher-machines__wide')
-        await expect(wide).toHaveText(/·forge 0 working, 2 checks waiting$/u)
+        await expect(wide).toHaveText(/^This computer \d+ workingforge 0 working, 2 checks waiting$/u)
         for (const [width, height] of [[1280, 800], [820, 560]] as const) {
           await resizeContentWindow(launched, width, height)
           await settle(page)
