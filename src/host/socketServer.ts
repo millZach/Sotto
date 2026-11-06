@@ -1808,21 +1808,27 @@ export async function startSocketServer(options: SocketServerOptions) {
   const onMessage = (peer: Peer, text: string): void => {
     let raw: unknown
     try { raw = JSON.parse(text) } catch { peer.frames.close(); return }
+    const now = Date.now()
+    // The message budget is spent before the request is checked against the protocol, so a client sending more than its
+    // budget is closed without the host checking what it sent (#2273). An unreadable request still spends it, so a client
+    // cannot loop on one for free. Only an event page is paced instead, and its request is small enough to check first.
+    const spendMessage = (): boolean => {
+      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
+      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return false }
+      return true
+    }
+    const eventPage = typeof raw === 'object' && raw !== null && (raw as { op?: unknown }).op === 'events'
+    if (!eventPage && !spendMessage()) return
+    if (peer.inFlight >= 32) { peer.frames.close(); return }
     const parsed = hostRequestSchema.safeParse(raw)
     const envelope = parsed.success ? parsed.data : hostRequestEnvelopeSchema.safeParse(raw).data
     if (!envelope) { peer.frames.close(); return }
-    const now = Date.now()
-    // An unreadable request still spends the message budget, so a client cannot loop on one for free.
     let wait = 0
-    if (parsed.success && parsed.data.op === 'events') {
+    if (eventPage && parsed.success) {
       if (now >= peer.pageWindow + 1000) { peer.pageWindow = now; peer.pages = 0 }
       if (peer.pages >= EVENT_PAGES_PER_SECOND) { peer.pageWindow += 1000; peer.pages = 0 }
       peer.pages++; wait = peer.pageWindow - now
-    } else {
-      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
-      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return }
-    }
-    if (peer.inFlight >= 32) { peer.frames.close(); return }
+    } else if (eventPage && !spendMessage()) return
     // A request from this session that the host cannot read, such as a client of a newer Sotto version
     // sending an operation or field this one does not know, is refused by its id rather than by closing
     // the socket: the client can then say what happened instead of reconnecting into the same refusal.

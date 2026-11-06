@@ -35,7 +35,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   // The interface language (ADR-0123), compiled into main and both windows.
   packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
-  packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
+  packageComponent('zod', '4.6.7', 'MIT', 'Colin McDonnell'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
   packageComponent('@xterm/addon-fit', '0.11.0', 'MIT', 'The xterm.js authors'),

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { boundedRecord } from './boundedRecord'
 
 /**
  * Signing Sotto's OpenCode in to a model source (#1104, ADR-0087): the OpenCode tile's Model sources block and its Add a
@@ -71,7 +72,7 @@ export const modelSourcesSchema = z.discriminatedUnion('status', [
 ])
 export type ModelSources = z.infer<typeof modelSourcesSchema>
 
-const answerSchema = z.record(z.string().min(1).max(64), z.string().max(400)).refine(value => Object.keys(value).length <= 8)
+const answerSchema = boundedRecord(z.string().min(1).max(64), z.string().max(400), 8)
 export const signInKeyRequestSchema = z.object({ sourceId, key: z.string().min(1).max(OPENCODE_KEY_MAX), answer: answerSchema.optional() }).strict()
 export type SignInKeyRequest = z.infer<typeof signInKeyRequestSchema>
 export const signInMethodRequestSchema = z.object({ sourceId, methodId, answer: answerSchema.optional() }).strict()

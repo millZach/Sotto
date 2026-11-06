@@ -18,8 +18,10 @@ export const watcherHostControlSchema = z.object({ master: watcherHostScopeSchem
     z.object({ name: z.literal('stop_thread'), input: watcherToolSchemas.stop_thread.input }).strict(),
     z.object({ name: z.literal('settle_thread'), input: watcherToolSchemas.settle_thread.input }).strict(),
   ]) }).strict()
+/** At most this many standing watches on one host in a read: one a thread, far above the owner's scale (#2273). */
+export const WATCHER_STANDING_WATCHES_MAX = 10_000
 export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
-  standingWatches: z.array(watcherStandingWatchSchema).optional(),
+  standingWatches: z.array(watcherStandingWatchSchema).max(WATCHER_STANDING_WATCHES_MAX).optional(),
   stoppedRequests: z.array(z.object({ request: watcherRequestSchema.pick({ id: true, watcher: true, rootUserMessageId: true, createdAt: true }), ceiling: agentRuntimeModeSchema }).strict()).max(1_000).optional(),
   call: z.discriminatedUnion('name', [
     z.object({ name: z.literal('list_threads'), input: watcherToolSchemas.list_threads.input }).strict(),

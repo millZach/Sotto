@@ -5,7 +5,7 @@ import { request as httpRequest, type Server } from 'node:http'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { PairedClients } from '../../src/main/agents/pairing'
 import type { HostService } from '../../src/main/agents/hostService'
 
@@ -21,6 +21,7 @@ import { SocketFrames } from '../../src/host/socketFrames'
 import { phonesOff, startSocketServer } from '../../src/host/socketServer'
 import { CommandReceipts } from '../../src/host/commandReceipts'
 import type { AgentCommand } from '../../src/shared/agents'
+import { hostRequestSchema } from '../../src/shared/hostProtocol'
 import { rawPeer } from '../fixtures/rawHostPeer'
 
 let directory: string | undefined
@@ -120,6 +121,11 @@ async function pairedClient(name: string) {
   const pairing = new PairedClients(directory); await pairing.load()
   const paired = await pairing.redeem(pairing.issuePairingCode().code, name)
   return { pairing, paired }
+}
+type Issue = { readonly errors?: readonly (readonly Issue[])[] }
+/** Every issue a parse made, including those under a union's branches. */
+function issueCount(issues: readonly Issue[]): number {
+  return issues.reduce((count, issue) => count + 1 + (issue.errors ?? []).reduce((inner, branch) => inner + issueCount(branch), 0), 0)
 }
 /** What the listener answers a socket upgrade with, when it refuses one. */
 function upgradeStatus(port: number, session: string): Promise<number | 'upgraded'> {
@@ -448,4 +454,39 @@ it('serves a question’s page by its token alone, whatever origin asks, and not
   expect((await fetch(`${base}/page/${'q'.repeat(32)}/greeting.html`)).status).toBe(404)
   // The token opens its page and nothing of the listener's own.
   expect((await fetch(`${base}/v1/session`, { method: 'POST', headers: origin })).status).toBe(401)
+})
+
+it('refuses a command carrying millions of confirmations by its id, without checking each one, and keeps the socket (#2273)', async () => {
+  const { pairing, paired } = await pairedClient('Sotto desktop')
+  const { service, commands } = recordingService()
+  listener = await startSocketServer({ service, pairing })
+  const peer = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const checked = vi.spyOn(hostRequestSchema, 'safeParse')
+  onTestFinished(() => checked.mockRestore())
+  // About 4 MB on the wire, inside the frame cap: two million entries where the schema allows a thousand.
+  const flood = new Array(2_000_000).fill(0)
+  const refused = await peer.call('flood', { op: 'command', command: { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedRepositories: flood } })
+  expect(refused).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // A few issues for the oversized list and the union branches it does not match, not one for each of its entries.
+  const result = checked.mock.results.find(item => item.type === 'return' && !(item.value as { success: boolean }).success)
+  expect(issueCount((result!.value as { error: { issues: Issue[] } }).error.issues)).toBeLessThan(100)
+  expect(commands).toEqual([])
+  expect(await peer.call('after', { op: 'hello' })).toMatchObject({ ok: true })
+})
+
+it('spends the message budget before it checks a request against the protocol (#2273)', async () => {
+  const { pairing, paired } = await pairedClient('Sotto desktop')
+  const { service } = recordingService()
+  listener = await startSocketServer({ service, pairing })
+  const session = pairing.signSession(paired.clientId)
+  const peer = await connected(listener.descriptor.port, session)
+  const closed = new Promise<void>(resolve => peer.frames.onClose(resolve))
+  const checked = vi.spyOn(hostRequestSchema, 'safeParse')
+  onTestFinished(() => checked.mockRestore())
+  // A burst past a second's budget of requests this host cannot read, each refused by its id and none left in flight.
+  for (let index = 0; index < 150; index++) peer.frames.send({ v: 1, id: `burst-${index}`, session, op: 'not-an-operation' })
+  await closed
+  // The hundred the budget allows are checked; the one past it closes the socket unchecked.
+  expect(checked).toHaveBeenCalledTimes(100)
+  expect(peer.messages.filter(message => (message.error as { code?: string } | undefined)?.code === 'invalid_request')).toHaveLength(100)
 })
