@@ -54,7 +54,7 @@ export function PageSidebar({ now: fixedNow }: {
   const swarms = useOwlFeature('worker-swarms')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
   // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
-  const snoozes = useThreadSnoozes()
+  const snoozes = useThreadSnoozes(state?.host.threads)
   useWakeWhenNeeded(rows, snoozes)
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const navigate = app?.actions.navigate

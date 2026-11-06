@@ -24,6 +24,13 @@ export function unreadableRequest(provider: string): string {
 
 /** Validate against the original native request, never against renderer-provided choices. */
 /** What a provider that takes words with a declined question is told when the user skips it (ADR-0135, October 27, 2026). */
+/**
+ * What Muse is told when Watcher asks with its own question tool, which would hold Watcher's turn until the user answered
+ * (#2228). The question reaches no one and nothing is answered for the user: the tool is closed to Watcher, as Claude
+ * Code's and Codex's are at launch, and Watcher asks again with Sotto's ask_user. Grok Build's and Cursor's cancels carry
+ * no words.
+ */
+export const WATCHER_QUESTION_TOOL_CLOSED = 'This question tool is closed to Watcher, so the question reached no one and nothing was answered. Ask the user with ask_user on sotto_threads instead: it shows them a card and returns at once.'
 export const QUESTION_SKIPPED = 'The user skipped this question. Proceed using your own judgement.'
 export function questionValues(request: AgentRequest, supplied: AgentQuestionAnswers): Record<string, string[]> {
   const questions = request.questions ?? []

@@ -725,6 +725,8 @@ export const agentThreadSchema = z.object({
   scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
+  /** Host-owned snooze (ADR-0175): null when awake, absent on older hosts and stable. */
+  snoozedUntil: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
   nativeSessionStarted: z.boolean().optional(),
   /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
@@ -1324,6 +1326,9 @@ export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaS
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
 
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
+
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
  * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
@@ -1593,6 +1598,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
       || value.fastMode !== undefined || value.speed !== undefined, 'Choose a thread setting to change.'),
+  z.object({ type: z.literal('snooze-thread'), threadId: id, until: z.string().datetime().nullable() }).strict(),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client

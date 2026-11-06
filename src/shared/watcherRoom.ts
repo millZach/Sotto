@@ -4,6 +4,7 @@ import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema
 import { workerPlacementReceiptSchema } from './workerMachine'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
+import { WATCHER_QUESTIONS_KEPT, watcherQuestionSchema } from './watcherQuestions'
 import { agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
 import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
 
@@ -129,6 +130,12 @@ export const watcherRoomStateSchema = z.object({
    * user's own answer from that card. A wake-up outside the window main holds places nothing.
    */
   asks: z.array(watcherAskSchema.extend({ messageId: z.string(), wakeUpMessageId: z.string() }).strict()).optional(),
+  /**
+   * The current Watcher's own questions (#2228), open and answered, oldest first: each is a card in its conversation after
+   * the turn that asked, which never holds Watcher's turn, and once answered one line with the user's choice. Absent while
+   * Watcher has asked nothing, and from older hosts.
+   */
+  questions: z.array(watcherQuestionSchema).max(WATCHER_QUESTIONS_KEPT).optional(),
   /**
    * The archived work Watcher's conversation, shown back past what the record keeps, read back from Watcher's archive
    * (#1759): its receipts, where each goes, its requests and where this run placed its starts. Kept apart from the
