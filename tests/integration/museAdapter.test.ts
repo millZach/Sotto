@@ -2,11 +2,12 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
 import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { followupStoreOf } from '../fixtures/followupQueue'
 import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 import { STEER_NOT_TAKEN } from '../../src/shared/agents'
 
@@ -622,6 +623,71 @@ it('settles a steer left unconfirmed once its turn ends without taking it, live 
       expect((await thread(f, id)).messages.map(message => message.id)).not.toContain('held')
     } finally { await f.cleanup() }
   }
+})
+
+it('settles on resume a steer saved before steers named their turn, and one sent to a copy, but not one the copy inherited (#1408)', async () => {
+  for (const saved of ['without its turn', 'on a copy'] as const) {
+    const opened = await open(), id = opened.id
+    let f = opened.f
+    try {
+      await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+      await f.script({ dropSteer: 'hold' })
+      await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'held', text: 'Also check the tests' }))
+        .resolves.toEqual({ accepted: false, uncertain: true })
+      await f.script({ suppressTurnCompleted: true })
+      await f.driver.completeTurn(id, 'Done without the steer')
+      f = await f.driver.restart()
+      // What an older Sotto saved, or a thread that moved onto a copy before this steer and kept one from before it.
+      const file = join(f.root, 'muse-threads.json'), aliases = JSON.parse(await readFile(file, 'utf8'))
+      const alias = aliases[id], held = alias.origins.find((origin: { messageId: string }) => origin.messageId === 'held')
+      if (saved === 'without its turn') delete held.steerTurnId
+      else {
+        alias.forkedMessages = ['an-item-the-copy-rebuilt']
+        alias.origins.unshift({ ...held, messageId: 'inherited', commandId: randomUUID(), nativeCommandId: randomUUID(), inherited: true })
+      }
+      await writeFile(file, JSON.stringify(aliases))
+      f.host.observeThreads?.([id]); await f.host.connect()
+      await expect.poll(async () => (await thread(f, id))?.notTakenMessageIds).toEqual(['held'])
+      expect((await thread(f, id)).messages.map(message => message.id)).not.toContain('held')
+    } finally { await f.cleanup() }
+  }
+})
+
+it('puts a queued steer back when its turn ends while the queue is still saving that the steer is uncertain (#1408)', async () => {
+  const f = await museFixture()
+  const stack = await agentControlFixture({ host: f.host, credentialOptions: { mode: 'unavailable' }, reasoner: {} })
+  const { control } = stack
+  const ownThread = () => control.get().host.threads.find(candidate => candidate.id === id)
+  const requests = async (method: string) => (await f.driver.requests()).filter(record => record.method === method)
+  let id = ''
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Muse thread' })
+    await control.start(); await control.command({ type: 'connect' })
+    expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'First' })).error).toBeNull()
+    await expect.poll(() => ownThread()?.status).toBe('running')
+    expect((await control.command({ type: 'queue-followup', threadId: id, draftId: randomUUID(), text: 'The queued steer' })).error).toBeNull()
+    // The turn ends, and the coordinator hears so, before the queue has saved that the steer is uncertain.
+    const store = followupStoreOf(control), settle = store.settle.bind(store)
+    let shownWhileSaving: string | undefined
+    vi.spyOn(store, 'settle').mockImplementation(async (itemId, status, error) => {
+      if (status === 'uncertain' && shownWhileSaving === undefined) {
+        await f.driver.completeTurn(id, 'Done without the steer')
+        await expect.poll(() => ownThread()?.notTakenMessageIds?.length).toBe(1)
+        shownWhileSaving = control.get().followups?.[0]?.status
+      }
+      return settle(itemId, status, error)
+    })
+    await f.script({ dropSteer: 'hold' })
+    await control.command({ type: 'steer-followup', threadId: id, itemId: control.get().followups![0]!.id })
+    expect(shownWhileSaving).toBe('dispatching')
+    await expect.poll(async () => (await requests('turn/start')).length).toBe(2)
+    expect(JSON.stringify((await requests('turn/start'))[1]?.params)).toContain('The queued steer')
+    await expect.poll(() => control.get().followups).toEqual([])
+    expect((await requests('turn/steer')).length).toBe(1)
+  } finally { await stack.dispose(); await f.cleanup() }
 })
 
 it('refuses a client Sotto cannot drive: an older one, and another MSP version', async () => {

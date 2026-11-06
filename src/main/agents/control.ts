@@ -4774,13 +4774,16 @@ export class AgentControl {
     } catch (error) {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
       // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead.
-      if (!accepted && !this.outbox.some(entry => entry.id === item.commandId) && (error instanceof Error && error.message === STEER_NOT_TAKEN
-        || this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!))) {
-        this.requeueNotTaken(item.id)
+      const notTaken = (): boolean => !this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
+        && !this.outbox.some(entry => entry.id === item.commandId) && this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!) === true
+      if (!accepted && !this.outbox.some(entry => entry.id === item.commandId) && (error instanceof Error && error.message === STEER_NOT_TAKEN || notTaken())) {
+        this.requeueNotTaken(item.id, item.commandId!)
         return
       }
-      await this.followupStore.settle(item.id, accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed',
-        error instanceof Error ? error.message : 'Could not steer this message.')
+      const status = accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed'
+      await this.followupStore.settle(item.id, status, error instanceof Error ? error.message : 'Could not steer this message.')
+      // Its turn may have ended while that was saved, when the queue still showed it dispatching: settled now, it goes next.
+      if (status === 'uncertain' && notTaken()) { this.requeueNotTaken(item.id, item.commandId!); return }
       throw error
     } finally { this.syncFollowups(); this.publish() }
   }
@@ -6485,13 +6488,15 @@ export class AgentControl {
       try { this.dependencies.usage?.discardPrompt(item.threadId, item.messageId) }
       catch { /* Only usage metadata is affected. */ }
     }
-    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id && followup.status === 'uncertain')
-    if (queued) { this.requeueNotTaken(queued.id); return }
+    // One still dispatching is its steer's to settle, once the queue has saved what that steer last heard (`steerFollowup`).
+    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
+    if (queued?.status === 'uncertain') this.requeueNotTaken(queued.id, item.id)
+    if (queued) return
     if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
   }
-  /** A queued message whose steer was not taken goes back to the head of its queue (#1408). */
-  private requeueNotTaken(id: string): void {
-    void this.followupStore.requeueAtHead(id)
+  /** A queued message whose steer `commandId` was not taken goes back to the head of its queue (#1408), once. */
+  private requeueNotTaken(id: string, commandId: string): void {
+    void this.followupStore.requeueAtHead(id, commandId)
       .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
       .finally(() => { this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }

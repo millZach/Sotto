@@ -81,6 +81,8 @@ const originSchema = z.object({
   steerTurnId: z.string().optional(),
   /** A steer whose turn ended without taking it. Muse refuses it then, so it was not sent and is never sent again. */
   notTaken: z.literal(true).optional(),
+  /** Unsettled when the thread moved onto a copy: the copy's rebuilt history can neither confirm it nor prove it absent. */
+  inherited: z.literal(true).optional(),
 })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
@@ -96,11 +98,11 @@ const aliasSchema = z.object({
   forkedMessages: z.array(z.string()).optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
-/** The newest steers Muse did not take, by Sotto message ID, as the thread publishes them for the coordinator (#1408). */
-function notTakenOf(alias: Alias): Pick<AgentThread, 'notTakenMessageIds'> {
-  const ids = alias.origins.filter(origin => origin.notTaken).slice(-NOT_TAKEN_MESSAGE_IDS_MAX).map(origin => origin.messageId)
-  return ids.length ? { notTakenMessageIds: ids } : {}
-}
+/**
+ * The turn under which an origin saved without one waits in `unsettledSteers`: a steer from before steers recorded their
+ * turn, or a send, which a whole history of a session with no running turn settles (#1408).
+ */
+const UNKNOWN_TURN = ''
 const initializeSchema = z.looseObject({
   serverInfo: z.looseObject({ name: z.string(), version: z.string().min(1).max(64) }),
   schema: z.looseObject({ version: z.number() }),
@@ -517,6 +519,14 @@ export class MuseMspHost implements AgentHost {
   private readonly requestReads = new Map<string, { count: number }>()
   private requestRevision = 0
   private readonly deliveries = new Map<string, { threadId: string; resolve(): void; reject(error: Error): void }>()
+  /**
+   * Each thread's origins neither confirmed nor settled, by the turn they went into (#1408). Filled when a steer is
+   * recorded and from the saved threads on connect, emptied as each is confirmed or settled, so a turn's end looks only
+   * at its own steers, never at the thread's history.
+   */
+  private readonly unsettledSteers = new Map<string, Map<string, Set<Origin>>>()
+  /** Each thread's newest steers Muse did not take, as it publishes them (`notTakenMessageIds`), newest last. */
+  private readonly notTakenIds = new Map<string, string[]>()
   private readonly activePrompts = new Set<string>()
   /**
    * How many times Muse has said each thread's session changed model. Muse's own word is newer than an answer to a
@@ -669,6 +679,7 @@ export class MuseMspHost implements AgentHost {
     this.modelWants.delete(id)
     this.activeTurns.delete(id)
     this.turnTimes.delete(id)
+    this.unsettledSteers.delete(id); this.notTakenIds.delete(id)
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
     for (const [messageId, delivery] of [...this.deliveries]) {
       if (delivery.threadId !== id) continue
@@ -691,7 +702,7 @@ export class MuseMspHost implements AgentHost {
       ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}),
       status: alias.museSessionId ? settledStatus(alias) : 'error',
       messages: [], requests: [], manualCompactionSupported: true,
-      ...notTakenOf(alias),
+      ...(this.notTakenIds.get(id) ? { notTakenMessageIds: this.notTakenIds.get(id) } : {}),
     })
     this.changed(id)
     return this.threads.get(id)!
@@ -862,6 +873,7 @@ export class MuseMspHost implements AgentHost {
     const readAliases = await this.aliasStore.read()
     for (const id of this.forgottenAliasIds) delete readAliases[id]
     this.aliases = readAliases; this.aliasesLoaded = true; this.state.projects = await this.projectStore.read()
+    this.indexSteers()
     this.threads.clear(); this.threadChanges.markAll(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
     this.executable = executable
@@ -1131,7 +1143,7 @@ export class MuseMspHost implements AgentHost {
         if (this.processes.get(id) !== entry) return
         this.assertGeneration(generation)
       }
-      if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, alias, resumed) }
+      if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, resumed) }
       this.settleEndedTurn(id, resumed.session)
       await this.persist()
       // Requests Muse still holds open are shown again, except one an uncertain answer may have settled.
@@ -1337,7 +1349,7 @@ export class MuseMspHost implements AgentHost {
         ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
       }
       this.log.add(id, message)
-      if (origin && !origin.confirmed) { origin.confirmed = true; void this.persist().catch(() => undefined) }
+      if (origin && !origin.confirmed) { origin.confirmed = true; this.untrackSteer(id, origin); void this.persist().catch(() => undefined) }
       if (origin) this.deliveries.get(origin.messageId)?.resolve()
       if (!museTerminal(merged.status) || this.activeTurns.has(id)) {
         thread.status = 'running'
@@ -1448,6 +1460,9 @@ export class MuseMspHost implements AgentHost {
         if (thread) { thread.requests = []; this.changed(id) }
         alias.museSessionId = forked.session.sessionId
         alias.forkedMessages = items.filter(item => item.kind === 'userMessage' || item.kind === 'agentMessage').map(item => item.itemId)
+        // Steers still unsettled stay so: the copy's history can say nothing of them. Those sent to the copy settle as usual.
+        for (const origins of this.unsettledSteers.get(id)?.values() ?? []) for (const origin of origins) origin.inherited = true
+        this.unsettledSteers.delete(id)
         delete alias.forkCommandId; delete alias.endedTurn
         moved = true
         await this.persist()
@@ -1509,7 +1524,7 @@ export class MuseMspHost implements AgentHost {
         ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
     }
     this.markTurn(id, outcome, messageId, error)
-    this.settleSteers(id, ended => ended === turnId)
+    this.settleSteers(id, [turnId])
   }
   /**
    * Steers whose turn has ended without Muse taking them, which `ended` names by their turn (#1408). Muse admits a steer
@@ -1517,16 +1532,22 @@ export class MuseMspHost implements AgentHost {
    * ever comes for it. Each is marked not taken, saved, and published on the thread for the coordinator, and a send
    * still waiting for it is told. One Muse took was confirmed by its user message, which always comes before its turn ends.
    */
-  private settleSteers(id: string, ended: (turnId: string) => boolean): void {
-    const alias = this.aliases[id]; if (!alias) return
-    let settled = false
-    for (const origin of alias.origins) {
-      if (!origin.steerTurnId || origin.confirmed || origin.notTaken || !ended(origin.steerTurnId)) continue
-      origin.notTaken = true; settled = true
-      this.deliveries.get(origin.messageId)?.reject(new Error(STEER_NOT_TAKEN))
+  private settleSteers(id: string, ended: Iterable<string>): void {
+    const pending = this.unsettledSteers.get(id); if (!pending || !this.aliases[id]) return
+    const settled: string[] = []
+    for (const turnId of ended) {
+      const origins = pending.get(turnId); if (!origins) continue
+      pending.delete(turnId)
+      for (const origin of origins) {
+        origin.notTaken = true; settled.push(origin.messageId)
+        this.deliveries.get(origin.messageId)?.reject(new Error(STEER_NOT_TAKEN))
+      }
     }
-    if (!settled) return
-    Object.assign(this.thread(id), notTakenOf(alias))
+    if (!pending.size) this.unsettledSteers.delete(id)
+    if (!settled.length) return
+    const ids = [...this.notTakenIds.get(id) ?? [], ...settled].slice(-NOT_TAKEN_MESSAGE_IDS_MAX)
+    this.notTakenIds.set(id, ids)
+    this.thread(id).notTakenMessageIds = ids
     this.changed(id)
     void this.persist().catch(() => undefined)
   }
@@ -1919,7 +1940,8 @@ export class MuseMspHost implements AgentHost {
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
           const previous = alias.origins.find(origin => origin.messageId === command.messageId || origin.commandId === command.commandId)
-          if (previous?.notTaken) throw new Error(STEER_NOT_TAKEN)
+          // A send saved without its turn may be marked so too; it keeps its old answer.
+          if (previous?.notTaken && command.type === 'steer') throw new Error(STEER_NOT_TAKEN)
           if (previous) return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
           const active = this.activeTurns.get(command.threadId)
           if (command.type === 'send' && (this.activePrompts.has(command.threadId) || active || thread.status === 'running')) throw new Error('Muse is already running a prompt in this thread.')
@@ -1977,6 +1999,7 @@ export class MuseMspHost implements AgentHost {
           const instructing = watcherProfile !== undefined && command.type === 'send' && !entry.instructed
           if (instructing) parts.unshift({ type: 'text', text: museWatcherInstructions(watcherProfile.instructions) })
           alias.origins.push(origin)
+          if (origin.steerTurnId) this.trackSteer(command.threadId, origin)
           this.activePrompts.add(command.threadId)
           release()
           try {
@@ -1985,7 +2008,7 @@ export class MuseMspHost implements AgentHost {
             if (generation !== this.generation || !this.state.connected || !this.loaded.has(command.threadId)) throw new Error('The Muse prompt was cancelled before dispatch.')
             watcherGuard?.()
           } catch (error) {
-            alias.origins = alias.origins.filter(item => item !== origin); this.activePrompts.delete(command.threadId); await this.persist()
+            alias.origins = alias.origins.filter(item => item !== origin); this.untrackSteer(command.threadId, origin); this.activePrompts.delete(command.threadId); await this.persist()
             throw error
           }
           let timer: ReturnType<typeof setTimeout> | undefined
@@ -2018,12 +2041,12 @@ export class MuseMspHost implements AgentHost {
               this.changed(command.threadId)
             }
             // Its user message would have come before its turn's end, which came first: the turn did not take it.
-            else if (generation === this.generation && this.processes.get(command.threadId) === entry) this.settleSteers(command.threadId, turnId => turnId === active!.turnId)
+            else if (generation === this.generation && this.processes.get(command.threadId) === entry) this.settleSteers(command.threadId, [active!.turnId])
           } catch (error) {
             clearTimeout(timer); this.deliveries.delete(command.messageId)
             this.activePrompts.delete(command.threadId)
             if (error instanceof MuseRejected) {
-              alias.origins = alias.origins.filter(item => item !== origin); await this.persist()
+              alias.origins = alias.origins.filter(item => item !== origin); this.untrackSteer(command.threadId, origin); await this.persist()
               throw new Error(command.type === 'steer' ? 'Muse could not steer this turn. Nothing was sent; queue it as a follow-up instead.' : 'Muse rejected this prompt. Nothing was sent. Review the thread before retrying.', { cause: error })
             }
             throw error
@@ -2159,7 +2182,7 @@ export class MuseMspHost implements AgentHost {
       await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
       if (generation !== this.generation || this.processes.get(id) !== entry) return
     }
-    if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, alias, resumed) }
+    if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, resumed) }
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)
     try {
@@ -2180,13 +2203,45 @@ export class MuseMspHost implements AgentHost {
   }
   /**
    * A resume settles the steers whose turn it shows over (#1408), read after its history, which confirmed every steer Muse
-   * took. Only a whole history proves a steer absent: one served in part, or rebuilt for a copy, settles nothing.
+   * took. Only a whole history proves a steer absent: one served in part settles nothing. One saved without its turn
+   * settles only when no turn is running. Steers inherited from a copy are not waiting here (`moveToCopy`).
    */
-  private settleResumedSteers(id: string, alias: Alias, resumed: z.infer<typeof sessionResumeSchema>): void {
-    const { history } = resumed
+  private settleResumedSteers(id: string, resumed: z.infer<typeof sessionResumeSchema>): void {
+    const pending = this.unsettledSteers.get(id); if (!pending) return
+    const { history } = resumed, active = resumed.session.activeTurnId
     const items = history.items ?? history.snapshot?.state.items ?? []
-    if (alias.forkedMessages?.length || history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return
-    this.settleSteers(id, turnId => turnId !== resumed.session.activeTurnId)
+    if (history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return
+    this.settleSteers(id, [...pending.keys()].filter(turnId => turnId !== active && (turnId !== UNKNOWN_TURN || !active)))
+  }
+  /**
+   * Rebuilds `unsettledSteers` and `notTakenIds` from the saved threads; on connect only, never on the update path. An
+   * unconfirmed origin saved without its turn waits under `UNKNOWN_TURN`, except on a thread moved onto a copy, where
+   * nothing says whether it came before the copy.
+   */
+  private indexSteers(): void {
+    this.unsettledSteers.clear(); this.notTakenIds.clear()
+    for (const [id, alias] of Object.entries(this.aliases)) {
+      const notTaken: string[] = []
+      for (const origin of alias.origins) {
+        if (origin.notTaken) notTaken.push(origin.messageId)
+        else if (!origin.confirmed && !origin.inherited && (origin.steerTurnId || !alias.forkedMessages?.length)) this.trackSteer(id, origin)
+      }
+      if (notTaken.length) this.notTakenIds.set(id, notTaken.slice(-NOT_TAKEN_MESSAGE_IDS_MAX))
+    }
+  }
+  private trackSteer(id: string, origin: Origin): void {
+    const turnId = origin.steerTurnId ?? UNKNOWN_TURN
+    let turns = this.unsettledSteers.get(id)
+    if (!turns) this.unsettledSteers.set(id, turns = new Map())
+    let origins = turns.get(turnId)
+    if (!origins) turns.set(turnId, origins = new Set())
+    origins.add(origin)
+  }
+  private untrackSteer(id: string, origin: Origin): void {
+    const turnId = origin.steerTurnId ?? UNKNOWN_TURN, turns = this.unsettledSteers.get(id), origins = turns?.get(turnId)
+    if (!origins?.delete(origin)) return
+    if (!origins.size) turns!.delete(turnId)
+    if (!turns!.size) this.unsettledSteers.delete(id)
   }
   /** A resume can prove that work ended even when the stream lost its terminal event; its outcome remains unknown. */
   private reconcileLiveSession(id: string, session: MuseSession): void {

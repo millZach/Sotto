@@ -549,12 +549,13 @@ export class FollowupStore {
   }
   /**
    * A message whose steer its turn ended without taking (#1408) goes back to the head of its thread's queue, behind only a
-   * leading resume note, ready to go as the next message. Its next claim gives it a new command, so nothing is sent twice.
+   * leading resume note, ready to go as the next message. Only while it still holds `commandId`, the steer that was not
+   * taken: its next claim gives it a new command, so a second word of the same steer moves nothing and nothing is sent twice.
    */
-  requeueAtHead(id: string): Promise<void> {
+  requeueAtHead(id: string, commandId: string): Promise<void> {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
-      if (!item || item.status === 'queued') return false
+      if (!item || item.commandId !== commandId || item.status !== 'dispatching' && item.status !== 'uncertain') return false
       state.items = state.items.filter(candidate => candidate !== item)
       const head = state.items.findIndex(candidate => candidate.threadId === item.threadId && !leadsQueue(candidate, item.threadId))
       Object.assign(item, { status: 'queued', updatedAt: new Date().toISOString() })
