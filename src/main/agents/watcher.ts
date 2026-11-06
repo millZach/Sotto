@@ -2392,7 +2392,8 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * The watched threads and what each waits on, in Sotto's words (#1189), and what waits on the user among them, worked
    * out live (October 24, 2026): each open question or permission card, the thread's own or one in a thread below it that
-   * it delegated to, as many levels as delegation goes, as its news tells them, and each prototype waiting for review.
+   * it delegated to, as many levels as delegation goes, as its news tells them. A prototype is not one on its own
+   * (ADR-0108, November 6, 2026): the question card that links it is.
    * Watcher kept these in its notes and went on saying they waited after the user had answered; now it reads them here.
    * One walk gives both, so the room, which asks on every update, reads no thread more than `watching` always did.
    */
@@ -2423,13 +2424,11 @@ export class WatcherService implements WatcherControlHooks {
       const here = target.hostId === hostId ? owned : undefined
       const work = here ? watcherBackgroundWorkCount(here) : thread.backgroundWorkCount
       // Its sentence reads this computer's threads alone, as it always has; a paired host's cards come from its room input.
-      watching.push({ target, title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn: here ? delegated.flatMap(child => child.requests) : [],
-        prototypeReady: here?.prototypeReady !== undefined }) })
+      watching.push({ target, title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn: here ? delegated.flatMap(child => child.requests) : [] }) })
       const card = (request: { id: string; kind: 'question' | 'permission' }, delegatedThreadId?: string): WatcherWaitingOnUser =>
         ({ target, title, waitsFor: request.kind, requestCardId: request.id, ...delegatedThreadId === undefined ? {} : { delegatedThreadId } })
       waiting.push(...(owned?.requests ?? thread.waitsOn).map(request => card(request)),
-        ...delegated.flatMap(child => child.requests.map(request => card(request, child.id))),
-        ...owned?.prototypeReady ? [{ target, title, waitsFor: 'prototype-review' as const }] : [])
+        ...delegated.flatMap(child => child.requests.map(request => card(request, child.id))))
     }
     return { watching, waiting: onceEach(waiting) }
   }
@@ -5948,7 +5947,7 @@ ${operation.draftId}`)
     const watched = this.wakes.watchedKeys()
     const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
     const slim = watcherSlimRead(name, input, result, target => watched.has(key(target)), { turnFailed: target => thread(target)?.lastTurn?.status === 'failed',
-      prototypeReady: target => thread(target)?.prototypeReady !== undefined, endedBefore: target => this.endedRead.get(this.readSlot(target)) })
+      endedBefore: target => this.endedRead.get(this.readSlot(target)) })
     // What this read gives as merged or closed, so the next leaves those out once this one is given (#1147). A refusal says nothing.
     if (name === 'read_thread' && typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'ok' && typeof slim === 'object' && slim !== null)
       this.endedPending.set(slim, watcherEndedPullRequests((result as { evidence: WatcherEvidence[] }).evidence))

@@ -49,7 +49,6 @@ function waitingWords(item: RoomKept['waitingOnUser'][number]): string {
   switch (item.waitsFor) {
     case 'question': return delegated ? i18n._(msg`Question in a thread it delegated to`) : i18n._(msg({ message: 'Question', comment: 'What a thread waits on the user for, in Watcher’s state' }))
     case 'permission': return delegated ? i18n._(msg`Permission request in a thread it delegated to`) : i18n._(msg`Permission request`)
-    default: return delegated ? i18n._(msg`Prototype to review in a thread it delegated to`) : i18n._(msg`Prototype to review`)
   }
 }
 

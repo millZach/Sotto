@@ -125,9 +125,7 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
   userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean(),
   // The desktop's alone (#1191): whether Watcher watches the thread, as a slim row says. A paired host never sends it.
-  watched: z.boolean().optional(),
-  // The desktop's alone too (ADR-0108): a prototype the thread made waits for the user's review, from the thread itself.
-  prototypeReady: z.literal(true).optional() }).strict()
+  watched: z.boolean().optional() }).strict()
 /**
  * A pull request as a slim read gives it (#1191): its number, or its address when that has none, and what it says now,
  * instead of every evidence fact. A fact GitHub has not been read for is left out rather than guessed, and approval,
@@ -144,8 +142,6 @@ const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().
   // Why it needs the user or is not watched, said only when true: its newest turn failed, its user took it over, or its
   // automation was stopped.
   turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
-  // A prototype the thread made waits for the user's review (ADR-0108): only the user can open it.
-  prototypeReady: z.literal(true).optional(),
   protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50),
   // Open pull requests only (#1147): how many of the thread's others are merged or closed, said only when there are any.
   mergedPullRequests: counter.optional(), closedPullRequests: counter.optional() }).strict()
@@ -267,10 +263,11 @@ export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTarge
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
- * permission card, on the thread or on a thread it delegated to (`delegatedThreadId`), or a prototype waiting for review.
+ * permission card, on the thread or on a thread it delegated to (`delegatedThreadId`). A prototype is not one on its own
+ * (ADR-0108, November 6, 2026): the question card that links it is.
  */
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
-  waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
+  waitsFor: z.enum(['question', 'permission']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
 /**
  * A waiting question card's own words, for Watcher to say what it asks (#2230): the question, the header first where it
@@ -329,8 +326,6 @@ export const watcherToolSchemas = {
       evidence: watcherDetailSchema.optional() }).strict(),
     output: boundedRead(result({ target: watcherThreadTargetSchema, messages: z.array(z.object({ id, position: counter, role: z.enum(['user', 'assistant']),
       text: utf8(WATCHER_READ_BYTES_MAX), createdAt: time }).strict()).max(WATCHER_MESSAGES_MAX), waitsOn: z.array(pending).max(100),
-      // The desktop's alone, from the thread itself (ADR-0108): a prototype it made waits for the user's review.
-      prototypeReady: z.literal(true).optional(),
       activities: z.array(z.object({ id, kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status', 'compaction']),
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
       evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),

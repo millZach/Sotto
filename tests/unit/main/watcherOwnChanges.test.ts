@@ -310,6 +310,7 @@ describe('Watcher own changes', () => {
     expect(WATCHER_SYSTEM_PROMPT).toContain('carry the ask in your replies until the card is up')
     expect(WATCHER_SYSTEM_PROMPT).toContain('send the thread back to ask it as a question card with its choices')
     expect(questionInstructions('AskUserQuestion', false)).toContain('A decision that holds up shipping, such as whether to ship, which take to keep or whether to approve an ADR change, is such a question: ask it there with its choices')
+    expect(questionInstructions('AskUserQuestion', false)).toContain('When a prototype or mock-up needs the user to look at it or pick between its variants, ask that as a question too')
   })
 
   it.each([
