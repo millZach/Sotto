@@ -1515,6 +1515,11 @@ msgstr ""
 msgid "Drag to resize · Double-click to reset to half"
 msgstr ""
 
+#. Before one line of what a reworked paragraph said before it changed, under the paragraph in Changes; a press shows all of it.
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Earlier"
+msgstr ""
+
 #. An element of a web page, chosen to give feedback on.
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Element"
