@@ -450,7 +450,8 @@ already shared one counter in `ThreadRecordsBroadcast` (October 30 amendment), b
 encoded, a few microtasks after it was built, and a broadcast sent in between could hold a newer state under a lower
 number. The router now tells the broadcaster each state it builds to answer a command (`replyBuilt`), and the reply takes
 the next revision then. The revision is held beside the reply, by its `host`, which the router's top-level additions leave
-in place: one counter step and one weak entry per reply, nothing read from or copied out of the state. A broadcast is
+in place: one counter step and one weak entry per reply, nothing read from or copied out of the state. An answer that
+remakes its `host` after it is built, as clearing threads does when it drops their history, is numbered once remade. A broadcast is
 still numbered as it is sent. That is never too early: the broadcast a command sets off holds at least the state its
 reply was built from, because only the newest state waits out a publish window. Nothing on the wire changed.
 
@@ -458,7 +459,9 @@ reply was built from, because only the newest state waits out a publish window. 
 state it puts back crossed under, beside the state rather than in it, so state sharing still finds an unchanged broadcast
 unchanged (`threadRevisionOf`). `AgentContext` keeps the revision of the last broadcast that arrived or reply that landed,
 and commits a reply when its revision is higher, after the held shell, as it commits any reply. A reply a newer broadcast
-passed is still dropped, and the held shell commits in its place. Both commit inside `flushSync`, so React has drawn them
+passed is still dropped, and the newer state commits in its place: the held shell, or, when a thread's detail or its
+frame already handed that shell to a transition, the newest shell received, urgently, since a queued transition is not
+drawn yet. Both commit inside `flushSync`, so React has drawn them
 by the time the command's promise resolves and a caller that reads the state or the page in its continuation finds the
 command's effect. A draft save's reply stays a transition: the composer does not watch it land. A reply or broadcast with
 no thread revision (a page with no subscription yet, a recovery read through `AGENT_GET`, a test bridge) is ordered as

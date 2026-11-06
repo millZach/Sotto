@@ -16,6 +16,7 @@ import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
 
 import { LocalHostService } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
+import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -91,6 +92,8 @@ describe('a command reply numbered as it is built (#306)', () => {
   it.each<[string, AgentCommand]>([
     ['a command that publishes', { type: 'select-thread', threadId: 'workshop' }],
     ['a command answered without publishing', { type: 'refresh-thread-worktree', threadId: 'workshop', background: true }],
+    // Clearing answers without the threads' history, which gives the answer a `host` of its own after it is built.
+    ['clearing threads', { type: 'clear-threads', olderThanDays: 0, threadIds: ['workshop'] }],
   ])('tells the broadcaster of the very reply the window is sent before it is encoded, for %s', async (_name, command) => {
     const built = new WeakSet<object>()
     const numbered: boolean[] = []
@@ -102,5 +105,20 @@ describe('a command reply numbered as it is built (#306)', () => {
     disposables.push(f.router.subscribe(() => undefined))
     await f.send(command)
     expect(numbered).toEqual([true])
+  })
+
+  it('keeps the revision a clearing answer took when it was built, behind a broadcast sent before it is encoded', async () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const revisions: { reply?: number; broadcast?: number } = {}
+    const f = await fixture({ replyBuilt: broadcaster.replyBuilt, encoders: { ...receiptEncoders(broadcaster),
+      encodeReceipt: state => {
+        // A newer state goes out between the answer's build and its encoding.
+        broadcaster.send({ ...state, host: { ...state.host } }, payload => { revisions.broadcast = payload.host.threads.revision; return true })
+        revisions.reply = broadcaster.encodeChangedThreadRecordsReceipt(state).host.threads.revision
+        return broadcaster.encodeReceipt(state)
+      } } })
+    disposables.push(f.router.subscribe(() => undefined))
+    await f.send({ type: 'clear-threads', olderThanDays: 0, threadIds: ['workshop'] })
+    expect(revisions.reply).toBeLessThan(revisions.broadcast!)
   })
 })

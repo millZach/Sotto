@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
-import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentModel, type AgentState, type AgentThread, type AgentWireBridge } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetailUpdate, type AgentWireBridge } from '../../../src/shared/agents'
 
 const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -37,6 +37,7 @@ function wire(state: AgentState, threads: { revision: number; base: number | nul
 /** The preload's bridge as the page meets it: broadcasts handed in by the test, a command answered with changed thread records. */
 function page(initial: AgentState) {
   let broadcast: ((raw: unknown) => void) | null = null
+  let detail: ((update: AgentThreadDetailUpdate) => void) | null = null
   const withChanges = vi.fn()
   const bridge = {
     get: vi.fn(async () => initial),
@@ -44,9 +45,10 @@ function page(initial: AgentState) {
     commandWithChangedThreadRecords: withChanges,
     onState: (listener: (raw: unknown) => void) => { broadcast = listener; return () => { broadcast = null } },
     threadDetail: vi.fn(async () => null),
-    onThreadDetail: () => () => undefined,
+    onThreadDetail: (listener: (update: AgentThreadDetailUpdate) => void) => { detail = listener; return () => { detail = null } },
   } as unknown as AgentWireBridge
-  return { bridge: wrapAgentBridge(bridge), withChanges, emit: (raw: unknown) => broadcast?.(raw) }
+  return { bridge: wrapAgentBridge(bridge), withChanges, emit: (raw: unknown) => broadcast?.(raw),
+    emitDetail: (update: AgentThreadDetailUpdate) => detail?.(update) }
 }
 
 /**
@@ -92,6 +94,22 @@ describe('a command reply a broadcast reached the window ahead of (#306)', () =>
       const reply = wire(replied, { revision: 2, base: 1, changed: [replied.host.threads[0]!] })
       // Main sent a newer broadcast after it encoded the reply, and it crossed first.
       emit(wire(later, { revision: 3, base: 1, changed: [later.host.threads[0]!] }))
+      return reply
+    })
+    const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })
+      .then(() => result.current.state?.host.threads[0]!.title))
+    expect(seen).toBe('Later')
+  })
+
+  it('draws a newer broadcast a thread detail already handed to a transition when it drops the older reply', async () => {
+    const { result, withChanges, emit, emitDetail } = await connect()
+    const replied = fullState([thread('workshop', 'Replied'), thread('docs')])
+    const later = fullState([thread('workshop', 'Later'), thread('docs')])
+    withChanges.mockImplementation(async () => {
+      const reply = wire(replied, { revision: 2, base: 1, changed: [replied.host.threads[0]!] })
+      emit(wire(later, { revision: 3, base: 1, changed: [later.host.threads[0]!] }))
+      // The detail that follows the broadcast commits it as a transition, so no shell is held when the reply arrives.
+      emitDetail({ threadId: 'workshop', revision: 1, messages: [] })
       return reply
     })
     const seen = await outsideAct(() => result.current.command({ type: 'select-thread', threadId: 'workshop' })

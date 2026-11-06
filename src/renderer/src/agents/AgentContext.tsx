@@ -70,8 +70,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
     /** The threads the last commit held, by ID in order, and whether a state arrived while hidden that is not committed yet. */
     committedThreads: '', committedHistory: undefined as boolean | undefined, heldWhileHidden: false,
-    /** Each state received, numbered in the order it arrived, and the newest the draft store has been handed. */
-    received: 0, draftsFed: 0,
+    /** Each state received, numbered in the order it arrived, the newest the draft store has been handed, and the newest drawn. */
+    received: 0, draftsFed: 0, drawn: 0,
   }), [bridge])
   /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
   const draftsRef = useRef<ThreadDraftStore | null>(null)
@@ -276,8 +276,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           const current = revision !== undefined && session.newest !== undefined ? revision > session.newest : version === session.observed
           if (!PREVIEW_COMMANDS.has(request.type)) {
             const land = (): void => {
+              const held = detail.pendingShell !== null
               commitPendingShell({ urgent })
               if (current) { receiveState(next, { urgent }); if (revision !== undefined) session.newest = revision }
+              // A newer shell a thread's detail or its frame already handed to a transition is received but not drawn, and
+              // the dropped reply schedules nothing of its own, so that shell commits urgently here in the reply's place.
+              else if (urgent && !held && detail.shell !== null && detail.drawn < detail.received) receiveState(detail.shell, { urgent })
             }
             // A caller that reads the state or the page once the command answers finds what it committed drawn, not only
             // queued (#306): the reply, or the newer state that landed in its place, commits before the answer goes back.
@@ -393,6 +397,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // says nothing about what is on disk now.
   // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
   const committedAt = snapshot?.session === session ? snapshot.received : 0
+  useLayoutEffect(() => { detail.drawn = committedAt }, [committedAt, detail])
   useLayoutEffect(() => {
     if (shownState === null || shownState.stale === true || committedAt < detail.draftsFed) return
     detail.draftsFed = committedAt
