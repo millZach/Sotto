@@ -3,7 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 import { withCliPath } from './cliLookup'
-import { stopProcessTree } from './gitLauncher'
+import { runToExit, stopProcessTree } from './gitLauncher'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}
@@ -28,12 +28,15 @@ export class ClaudeProtocol {
   private readonly writes = new Set<(error: Error) => void>()
   private ended = false
   private stopping = false
+  private exited = false
+  private readonly exit: Promise<void>
   readonly closed: Promise<void>
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeout: number,
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
     // Off Windows the CLI leads its own process group, so `halt` can end what a wrapper script started as well (#657).
     this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe', detached: process.platform !== 'win32' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); resolve(); if (!this.stopping) onExit() }))
+    this.exit = new Promise(resolve => this.child.once('exit', () => { this.exited = true; resolve() }))
     // Let final output drain, then release handles a descendant may still hold.
     this.child.once('exit', () => {
       const timer = setTimeout(() => { this.child.stdout.destroy(); this.child.stderr.destroy() }, OUTPUT_DRAIN_GRACE_MS)
@@ -123,6 +126,7 @@ export class ClaudeProtocol {
    */
   async halt(): Promise<boolean> {
     this.stopping = true
+    if (process.platform === 'win32') return this.haltTree()
     try {
       this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`)
       this.child.stdin.end()
@@ -131,6 +135,28 @@ export class ClaudeProtocol {
     if (pid === undefined) return true
     try { await stopProcessTree(pid); return true }
     catch { try { this.child.kill('SIGKILL') } catch { /* Gone. */ } return false }
+  }
+  /**
+   * `halt` on Windows. `taskkill /T` finds the tree through the CLI's own process, so it runs while the CLI is alive and its
+   * input is closed only after: closed first, a CLI that ends on closed input leaves taskkill nothing to find and its
+   * children out of reach. Confirmed once taskkill reports every process in the tree ended and the CLI's exit is seen; a
+   * CLI that had already exited, or a taskkill that failed, leaves the tree unknown.
+   */
+  private async haltTree(): Promise<boolean> {
+    const end = (): void => { try { this.child.stdin.end() } catch { /* Its input is already closed. */ } }
+    try { this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`) } catch { /* Its input is already closed. */ }
+    const pid = this.child.pid
+    if (pid === undefined) { end(); return true }
+    if (this.exited) { end(); return false }
+    let killed = true
+    try { await runToExit('taskkill', ['/pid', String(pid), '/T', '/F']) } catch { killed = false }
+    end()
+    if (!killed) { try { this.child.kill('SIGKILL') } catch { /* Gone. */ } return false }
+    // taskkill /F has ended each process when it reports success; the CLI's exit is how Node sees its own child go.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const seen = await Promise.race([this.exit.then(() => true), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5_000) })])
+    clearTimeout(timer)
+    return seen
   }
   private abort(): void { this.fail(); this.child.kill() }
   private fail(): void {
