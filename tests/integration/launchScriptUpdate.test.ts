@@ -39,8 +39,8 @@ async function fixture() {
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
 
-function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>): Promise<Outcome> {
-  const child = launchScriptChild({ ...configuration, ...operation }, undefined, child => children.push(child))
+function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>, prelude?: string): Promise<Outcome> {
+  const child = launchScriptChild({ ...configuration, ...operation }, undefined, child => children.push(child), prelude)
   return collect(child)
 }
 /** The receive script as the probe runs it: `node -e`, with the archive on stdin. */
@@ -199,6 +199,11 @@ describe('a restart a host asked for over its own socket (ADR-0088)', () => {
   const statusOf = (configuration: Configuration): Promise<unknown> =>
     readFile(join(configuration.dataDirectory, 'host-update-status.json'), 'utf8').then(text => JSON.parse(text) as unknown, () => null)
   const resultFileOf = (configuration: Configuration): string => join(configuration.dataDirectory, 'host-update-status.json')
+  /** A prelude that refuses the first-th to last-th renames onto target, as Windows refuses one while another process has it open. */
+  const refuseRenames = (target: string, first: number, lastRefused: number): string =>
+    `'use strict';\nconst refusedFs = require('node:fs/promises'), refusedRename = refusedFs.rename; let refusedCalls = 0;\n`
+    + `refusedFs.rename = async (from, to) => { if (String(to) === ${JSON.stringify(target)} && ++refusedCalls >= ${first} && refusedCalls <= ${lastRefused})`
+    + ` throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' }); return refusedRename(from, to); };\n`
   async function installNew(configuration: Configuration, entry: string): Promise<void> {
     const archive = tarGz(hostRelease(NEW, entry))
     expect(last(await receive(configuration, FILE, archive))).toMatchObject({ type: 'update-received' })
@@ -285,17 +290,26 @@ describe('a restart a host asked for over its own socket (ADR-0088)', () => {
     await writeFile(`${resultFile}.${ATTEMPT}.answered`, '')
     // The claim lands; the rename that records how it ended is then refused a few times, as Windows refuses one while
     // another process has the file open.
-    const refused = `'use strict';\nconst refusedFs = require('node:fs/promises'), refusedRename = refusedFs.rename; let refusedCalls = 0;\n`
-      + `refusedFs.rename = async (from, to) => { if (String(to) === ${JSON.stringify(resultFile)} && ++refusedCalls > 1 && refusedCalls <= 4)`
-      + ` throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' }); return refusedRename(from, to); };\n`
-    const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...configuration, op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT })], { shell: false, windowsHide: true })
-    children.push(child)
-    child.stdin.end(refused + LAUNCH_SCRIPT_SOURCE)
-    const restarted = last(await collect(child))
+    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }, refuseRenames(resultFile, 2, 4)))
     hosts.push((await descriptor(configuration)).pid)
     expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
     // Left restarting by a process that has gone, the host could only have read it as an update lost.
     expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })
+  })
+
+  it('does not try its claim again when it is refused, since the host that asked may already have answered that it was not sent', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    await installNew(configuration, await fakeHost())
+    const resultFile = resultFileOf(configuration)
+    await writeFile(`${resultFile}.${ATTEMPT}.answered`, '')
+    // The claim's status write is refused once, near the host's deadline. A claim that landed a moment later would stop a
+    // host that had already told its desktop the restart was not sent.
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }, refuseRenames(resultFile, 1, 1)))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(alive(old.pid as number)).toBe(true)
+    expect(await pointer(configuration)).toBeNull()
+    // What it records after agrees with what the host answered.
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } })
   })
 
   it('reads its configuration as its last argument when it runs as a file, as it does in a transient unit', async () => {
