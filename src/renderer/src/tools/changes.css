@@ -563,7 +563,10 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-tree__none { margin: 0; padding: 6px 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .changes-tree__list { position: relative; display: flex; flex: 1; flex-direction: column; gap: 1px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-tree__group { flex: none; }
-.changes-tree__folder { overflow: hidden; padding: 6px 6px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+/* A folder heads its files: set heavier than they are, in the secondary ink, with more room above it than between its
+   files, so the groups part down a long list without a rule or an indent. */
+.changes-tree__folder { overflow: hidden; padding: 12px 6px 3px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.changes-tree__group:first-child > .changes-tree__folder { padding-top: 4px; }
 .changes-tree__item { display: flex; align-items: flex-start; gap: 4px; min-width: 0; min-height: 28px; padding: 4px 6px 4px 4px; border-radius: var(--tt-radius-control); color: var(--tt-text-2); font-size: var(--tt-type-small); user-select: none; }
 .changes-tree__item:hover { background: var(--tools-hover); color: var(--tt-text); }
 .changes-tree__item[aria-current] { background: var(--tt-selected); color: var(--tt-text); }
