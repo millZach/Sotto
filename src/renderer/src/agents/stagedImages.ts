@@ -13,8 +13,8 @@ const THUMBNAIL_CACHE_CHARACTERS = 8 * 1024 * 1024
 /** `size` is the data URL's length once it is made; 0 while it is being made. */
 const thumbnails = new Map<string, { readonly source: Promise<string | null>; size: number }>()
 
-/** Only the staging calls are used, which cross the bridge as they are. */
-function agents(): AgentWireBridge | undefined { return window.sotto?.agents }
+/** Only the staging calls are used, which cross the bridge as they are. The popup has them on its own bridge. */
+function agents(): Pick<AgentWireBridge, 'stageAttachment' | 'attachmentContent'> | undefined { return window.sotto?.agents ?? window.sottoPopup }
 
 /** Drops the least recently used thumbnails until the cache is within both bounds. The newest is always kept. */
 function evict(): void {

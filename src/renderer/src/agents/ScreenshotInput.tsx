@@ -147,7 +147,7 @@ function addAnyFailed(item: Incoming, remaining: number, first: boolean, cause: 
  * With `attach-any-file` on (ADR-0131), any file joins it too: images as before, every other file staged with its
  * bytes as they are and shown as a pill under the images.
  */
-export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, answering = false, replyBox = true, children, reads }: {
+export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, answering = false, replyBox = true, children, reads, errorScope }: {
   /** The thread the draft belongs to, or null for the coordinator's composer. */
   readonly target: string | null
   readonly attachments: readonly AgentAttachmentHandle[]
@@ -165,6 +165,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   readonly children: ReactNode
   /** Reads that may outlive this input, as when the user moves to another thread while screenshots are read. */
   readonly reads?: ScreenshotReadPort
+  /** A change of this clears a refusal showing, as a change of target does. */
+  readonly errorScope?: unknown
 }): ReactNode {
   // Subscribes, so the words drawn here follow a change of interface language.
   useInterfaceLanguageState()
@@ -184,6 +186,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const pending = reads?.pending ?? false
   const busy = readingHere || pending
   const [error, setError] = useState<string | null>(null)
+  // A box that stays mounted across targets, as the popup's does, or across showings, does not keep what the last one was told.
+  useEffect(() => setError(null), [target, errorScope])
   const [viewer, setViewer] = useState<{ images: ViewerImage[]; startId: string; anchor: HTMLButtonElement } | null>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)

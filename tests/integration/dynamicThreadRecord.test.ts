@@ -2,7 +2,7 @@
 // ADR-0191: Dynamic is a mark Sotto keeps on a thread at rest. Setting it asks no provider, and a provider's own updates and
 // a restart keep it. With the Owl feature off, nothing sets it and a saved mark stays whole.
 import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { WorkerRoles } from '../../src/main/agents/subagentRoles'
 import { OVERSEER_NOTE_OFF, overseerInstructions, overseerNoteChanged, overseerNoteOn } from '../../src/shared/dynamicThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -145,6 +145,10 @@ it('tells an overseer your note as it starts, once more after it changes or is c
 
 it('tells a thread that began ordinary by a note when it turns Dynamic later', async () => {
   const f = await fixture(), id = await f.thread('codex')
+  // Publish the provider's echo before its send returns, with no trailing batch to hide a missing publication.
+  const host = f.workspace.host as unknown as { publishSoon(): void; publish(): void }
+  const publication = vi.spyOn(host, 'publishSoon').mockImplementation(() => host.publish())
+  cleanups.push(async () => { publication.mockRestore() })
   const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send').map(command => (command as { overseerNote?: string }).overseerNote)
   expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
   expect(sends()).toEqual([undefined])

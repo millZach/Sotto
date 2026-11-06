@@ -3768,6 +3768,10 @@ msgstr ""
 msgid "Off, open Sotto from the Dock."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
 msgstr ""
@@ -6824,6 +6828,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Use the Git setting (On)"
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Use the popup"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
-import type { AgentMessage, AgentProject, AgentState, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
+import type { AgentMessage, AgentProject, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
+import { isThreadClosed, isUnsentThread, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 /** Who the popup is talking to (ADR-0181): a thread, or Watcher while Watcher is on. */
 export type PopupTarget = 'thread' | 'watcher'
@@ -62,11 +63,14 @@ export function slashCommandOf(input: string, commands: readonly SlashCommand[])
   return commands.find(command => command === name) ?? null
 }
 
+const PRIMARY_KEYS: Readonly<Record<string, PopupKeyAction>> = { o: 'open', 1: 'ask-watcher', 2: 'ask-thread', k: 'choose-thread', n: 'new-thread' }
+
 export type PopupKeyAction = 'send' | 'newline' | 'run-command' | 'complete' | 'menu-next' | 'menu-previous' | 'stop' | 'close-menu' | 'hide' | 'open'
+  | 'ask-watcher' | 'ask-thread' | 'choose-thread' | 'new-thread'
 
 export interface PopupKeyContext {
   readonly platform: SottoPlatform
-  /** The slash menu is showing. */
+  /** The slash menu or the list of threads is showing, and the arrows and Return are its. */
   readonly menu: boolean
   /** A thread turn runs, so Escape stops it. Watcher's turn is not stopped from here. */
   readonly canStop: boolean
@@ -75,12 +79,17 @@ export interface PopupKeyContext {
 /**
  * What a key in the prompt does (ADR-0181): Return sends and Shift+Return (or Option/Alt+Return) is a new line; with the
  * slash menu open, Return runs the command, Tab completes it and the arrows move. Escape closes the menu, then stops a
- * running thread turn, then hides the popup. Command+O on a Mac, Ctrl+O elsewhere, opens it in the main window.
+ * running thread turn, then hides the popup. With Command on a Mac and Ctrl elsewhere, O opens it in the main window, 1
+ * asks Watcher, 2 asks the thread, K lists the threads and N starts a new one. They hold only while the popup has the
+ * keyboard, so none takes a chord from another app; the card leaves any the dictation hotkey holds to dictation.
  */
 export function popupKeyAction(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'metaKey' | 'ctrlKey' | 'isComposing'>, context: PopupKeyContext): PopupKeyAction | null {
   if (event.isComposing) return null
   const primary = context.platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
-  if (primary && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'o') return 'open'
+  if (primary && !event.altKey && !event.shiftKey) {
+    const chord = PRIMARY_KEYS[event.key.toLowerCase()]
+    if (chord) return chord
+  }
   if (event.key === 'Escape') return context.menu ? 'close-menu' : context.canStop ? 'stop' : 'hide'
   if (context.menu && !event.shiftKey && !event.altKey) {
     if (event.key === 'ArrowDown') return 'menu-next'
@@ -124,4 +133,43 @@ export function shownMessages(messages: readonly AgentMessage[]): readonly Agent
 export function popupProject(shell: Pick<AgentState, 'activeProjectId'> & { readonly host: Pick<AgentState['host'], 'projects'> }, projectId: string | null): AgentProject | null {
   const open = shell.host.projects.filter(project => !project.workspaceSettledAt)
   return open.find(project => project.id === projectId) ?? open.find(project => project.id === shell.activeProjectId) ?? open[0] ?? null
+}
+
+/**
+ * Where the newest exchange starts in what the card shows: the last prompt, or the third message from the end when more
+ * came after it, as a run of Watcher's reports does. The card opens as tall as this and older messages are a scroll up.
+ */
+export function newestExchangeStart(messages: readonly Pick<AgentMessage, 'role'>[]): number {
+  return Math.max(messages.findLastIndex(message => message.role === 'user'), messages.length - 3, 0)
+}
+
+const CLOSING_LINE = /^\*\*[^*\n]{1,24}:\*\*\s/u
+
+/**
+ * A reply's words and the "**Label:** words" lines that close it, such as Next, Needs you and TLDR, which the card sets up
+ * as one block. Only whole paragraphs at the very end count, so a label in the middle of a reply stays where it is.
+ */
+export function splitClosingLines(text: string): { readonly body: string; readonly closing: string } {
+  const paragraphs = text.trimEnd().split(/\n[ \t]*\n/u)
+  let start = paragraphs.length
+  while (start > 0 && CLOSING_LINE.test(paragraphs[start - 1]!) && !paragraphs[start - 1]!.includes('\n')) start--
+  if (start === paragraphs.length) return { body: text, closing: '' }
+  return { body: paragraphs.slice(0, start).join('\n\n'), closing: paragraphs.slice(start).join('\n\n') }
+}
+
+/** How many threads the list offers. */
+export const POPUP_THREADS_LISTED = 5
+
+/**
+ * The threads the list offers, newest first: open ones the sidebar would show at its top level. Never Watcher's own, one
+ * nothing was sent to yet, one that lives under the thread that delegated to it, or one in a settled project. Read on a
+ * press, so copying is fine.
+ */
+export function recentThreads(threads: readonly AgentThread[], projects: readonly AgentProject[]): readonly AgentThread[] {
+  const at = (thread: AgentThread): number => Date.parse(thread.summary?.lastMessageAt ?? thread.updatedAt ?? '') || 0
+  return threads.filter(thread => {
+    const project = projects.find(item => item.id === thread.projectId)
+    return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.delegatedBy === undefined
+      && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, project) && !isUnsentThread(thread, project)
+  }).toSorted((one, other) => at(other) - at(one)).slice(0, POPUP_THREADS_LISTED)
 }

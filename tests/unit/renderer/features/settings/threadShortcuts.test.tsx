@@ -23,6 +23,7 @@ function setup(options: { choices?: ThreadShortcutChoices; saved?: boolean; hotk
   ;(window as { sotto?: unknown }).sotto = { suspendDictationShortcuts: vi.fn(async () => ({ ok: true as const })) }
   const onUpdateSettings = vi.fn(async () => options.saved ?? true)
   const settings = {
+    popupEnabled: true,
     hotkey: options.hotkey ?? 'CommandOrControl+Shift+Space',
     pressShortcuts: [] as string[],
     holdShortcuts: [] as string[],

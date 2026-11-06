@@ -2103,6 +2103,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       if (menuBarIconShown(platform, owlFeatures, settings) === (nativeTray !== null)) menuBarOwl?.applySettings(settings)
       else await showMenuBarIcon(settings)
       popup?.settingsChanged(settings)
+      if (settings.popupEnabled !== previous.popupEnabled) trayController.update(currentTrayState)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
         trayController.update(currentTrayState)
@@ -2215,7 +2216,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
-    ...(popup !== null ? { showPopup: () => popup?.show() } : {}),
+    ...(popup !== null ? { showPopup: () => popup?.show(), popupOn: () => popup?.enabled() ?? false } : {}),
     toggleDictation,
     dictationOn: () => dictationActive,
     setAutoPaste(enabled): void {

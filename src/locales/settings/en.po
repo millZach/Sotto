@@ -3768,6 +3768,10 @@ msgstr "Off, one theme paints light and dark."
 msgid "Off, open Sotto from the Dock."
 msgstr "Off, open Sotto from the Dock."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
+msgstr "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
 msgstr "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
@@ -6825,6 +6829,11 @@ msgstr "Use the Git setting (Off)"
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Use the Git setting (On)"
 msgstr "Use the Git setting (On)"
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Use the popup"
+msgstr "Use the popup"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store."
