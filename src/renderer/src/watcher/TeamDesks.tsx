@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
-import { teamMergeOrder, type TeamChecks, type TeamDesk, type TeamLinkView, type TeamMergeOrderRow, type TeamsBridge, type TeamsState } from '../../../shared/teams'
-import { whenOf } from './teamsState'
+import { teamMergeOrder, TEAM_DESK_REFRESH_MS, type TeamChecks, type TeamDesk, type TeamLinkView, type TeamMergeOrderRow, type TeamsBridge, type TeamsState } from '../../../shared/teams'
+import { deskTriedAt, setDeskTriedAt, whenOf } from './teamsState'
 
 /** How often the user's own desk catches up while it is open. It reads this computer's records and sends nothing. */
 const OWN_DESK_REFRESH_MS = 15_000
@@ -44,20 +44,28 @@ function MergeOrder({ rows, name, read }: { readonly rows: readonly TeamMergeOrd
   const projects = new Set(rows.map(row => row.project)).size
   const own = rows.map(row => `#${row.number}`).join(', ')
   return <section className="teams-order" aria-label={t`Merge order`}>
-    <div className="teams-order__top"><strong>{t`Merge order`}</strong>
-      <span className="teams-muted">{read ? t`Advice, worked out here: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share.`
+    <div className="teams-order__top"><h3 className="teams-section__title">{t`Merge order`}</h3>
+      <span className="teams-muted">{read ? t`Advice from both desks: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share.`
         : rows.length ? t`Needs ${name}'s desk first. Your own, for now: ${own}.` : t`Needs ${name}'s desk first.`}</span></div>
-    {read && rows.length ? <ol className="teams-order__list">{rows.map((row, index) => <li key={index} title={row.title}>
-      <b>{index + 1}</b> {projects > 1 && row.project ? `${row.project} ` : ''}#{row.number} <span className="teams-muted">{whose(row)} · {words.standing(row)}</span></li>)}</ol>
+    {read && rows.length ? <ol className="teams-order__list">{rows.map((row, index) => <li key={index} data-checks={row.draft ? 'draft' : row.checks}>
+      <b>{index + 1}</b><span className="teams-order__what">{projects > 1 && row.project ? `${row.project} ` : ''}#{row.number} {row.title} <span className="teams-muted">· {whose(row)}</span></span>
+      <span className="teams-order__checks">{words.standing(row)}</span></li>)}</ol>
       : read ? <p className="teams-muted">{t`Neither of you has an open pull request here.`}</p> : null}
   </section>
 }
 
-/** Two desks: yours beside a teammate's (ADR-0189). Opening them sends nothing; only Get reads, once, on a press. */
+/**
+ * Two desks: yours beside a teammate's (ADR-0189), in Watcher's column with no ground of their own (Zach's pick, November 5,
+ * 2026). While they are on screen, the teammate's desk is read on opening when the last read is older than two minutes, then
+ * every two minutes, and never while the window is hidden (ADR-0193). Leaving stops it.
+ */
 export function TeamDesks({ link, state, bridge, onClose }: { readonly link: TeamLinkView; readonly state: TeamsState; readonly bridge: TeamsBridge; readonly onClose: () => void }): ReactNode {
   const { t } = useLingui()
   const [own, setOwn] = useState<TeamDesk | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), back = useRef<HTMLButtonElement>(null)
   const name = link.name, held = state.desks[link.id], when = held ? whenOf(held.at, Date.now()) : '', leftOut = state.projects.some(project => project.leftOut)
+  // When the desk was last read, or last tried: a computer that does not answer is tried again in two minutes, not sooner.
+  const heldAt = useRef(held?.at), reading = useRef(false)
+  heldAt.current = held?.at
   useEffect(() => { back.current?.focus() }, [])
   useEffect(() => {
     let live = true
@@ -66,12 +74,22 @@ export function TeamDesks({ link, state, bridge, onClose }: { readonly link: Tea
     const timer = setInterval(read, OWN_DESK_REFRESH_MS)
     return () => { live = false; clearInterval(timer) }
   }, [bridge])
-  const get = (): void => {
-    if (busy) return
-    setBusy(true); setError(null)
-    void bridge.command({ type: 'read-desk', linkId: link.id }).then(result => { if (result.status === 'refused') setError(result.message) })
-      .catch(() => setError(t`Sotto could not do that. Nothing changed. Try again.`)).finally(() => setBusy(false))
+  const get = (pressed: boolean): void => {
+    if (reading.current) return
+    reading.current = true; setDeskTriedAt(link.id, Date.now()); setBusy(true)
+    if (pressed) setError(null)
+    void bridge.command({ type: 'read-desk', linkId: link.id }).then(result => { setError(result.status === 'refused' ? result.message : null) })
+      .catch(() => setError(t`Sotto could not do that. Nothing changed. Try again.`)).finally(() => { reading.current = false; setBusy(false) })
   }
+  useEffect(() => {
+    const stale = (): boolean => Date.now() - Math.max(deskTriedAt(link.id), heldAt.current === undefined ? 0 : Date.parse(heldAt.current)) >= TEAM_DESK_REFRESH_MS
+    const shown = (): boolean => document.visibilityState === 'visible'
+    if (shown() && stale()) get(false)
+    const timer = setInterval(() => { if (shown() && stale()) get(false) }, TEAM_DESK_REFRESH_MS / 4)
+    const visible = (): void => { if (shown() && stale()) get(false) }
+    document.addEventListener('visibilitychange', visible)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
+  }, [link.id, bridge])
   const noDesk: TeamDesk = { threads: [], more: 0 }
   const rows = teamMergeOrder(own ?? noDesk, held?.desk ?? noDesk)
   return <div className="teams-desks" role="group" aria-label={t`Two desks with ${name}`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose() } }}>
@@ -79,10 +97,11 @@ export function TeamDesks({ link, state, bridge, onClose }: { readonly link: Tea
       <Button ref={back} variant="ghost" aria-label={t`Back to Teams`} onClick={onClose}>← {t`Teams`}</Button>
       <h2 className="teams-desks__title">{t`You and ${name}`}</h2>
       <span className="teams-desks__grow" />
-      {held ? <span className="teams-muted">{t`As of ${when}`}</span> : null}
+      <span className="teams-muted teams-desks__when" role="status">{busy ? t`Getting ${name}'s desk…` : held ? t`As of ${when}, again every 2 minutes while open` : ''}</span>
       {/* Not disabled while it reads: that would drop keyboard focus, and Escape with it. */}
-      <Button variant="primary" aria-busy={busy} onClick={get}>{busy ? t`Getting…` : held ? t`Get it again` : t`Get ${name}'s desk`}</Button>
+      <Button variant="secondary" aria-busy={busy} onClick={() => get(true)}>{held ? t`Update now` : t`Get ${name}'s desk`}</Button>
     </div>
+    {error ? <p className="agent-error teams-desk__error" role="alert">{error}</p> : null}
     <MergeOrder rows={rows} name={name} read={held !== undefined} />
     <div className="teams-desks__columns">
       <section className="teams-desk" aria-label={t`Your desk`}>
@@ -92,11 +111,10 @@ export function TeamDesks({ link, state, bridge, onClose }: { readonly link: Tea
       </section>
       <section className="teams-desk" aria-label={t`${name}'s desk`}>
         <h3 className="teams-desk__head">{t`${name}'s`} {held ? <span className="teams-muted">{t`As of ${when}`}</span> : null}</h3>
-        {error ? <p className="agent-error teams-desk__error" role="alert">{error}</p> : null}
         {held ? held.desk.threads.length ? <DeskThreads desk={held.desk} /> : <p className="teams-desk__empty teams-muted">{t`${name} has no threads to show.`}</p>
-          : error ? null : <p className="teams-desk__empty teams-muted">{t`Nothing from ${name} yet. Get ${name}'s desk asks their computer once.`}</p>}
+          : <p className="teams-desk__empty teams-muted">{busy ? t`Getting ${name}'s desk…` : t`Nothing from ${name} yet.`}</p>}
       </section>
     </div>
-    <p className="teams-muted">{t`Asks still go through Watcher. ${name}'s Teams tab lists each time you read their desk, and their left-out projects never come.`}</p>
+    <p className="teams-muted teams-desks__fine">{t`Asks still go through Watcher. ${name}'s Teams tab lists the reads, and their left-out projects never come. Leave and come back: the desks stay open.`}</p>
   </div>
 }

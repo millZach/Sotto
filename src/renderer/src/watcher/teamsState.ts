@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { localeFormatter } from '../agents/localeFormat'
 import type { TeammateMessage, TeamsBridge, TeamsState } from '../../../shared/teams'
 import { useOwlFeature } from '../state/owlFeature'
@@ -41,3 +41,23 @@ export function placeTeammateMessages(messages: readonly TeammateMessage[] | und
   }
   return placed.size ? placed : undefined
 }
+
+/**
+ * Which link's two desks are open, kept while Sotto runs so going to Watcher and back finds them as they were (Zach's
+ * feedback, November 5, 2026). It lives outside the Teams tab, which unmounts when the room shows Watcher.
+ */
+let openDesks: string | null = null
+const openDesksListeners = new Set<() => void>()
+export function setOpenDesks(linkId: string | null): void {
+  if (openDesks === linkId) return
+  openDesks = linkId
+  for (const listener of openDesksListeners) listener()
+}
+export function useOpenDesks(): string | null {
+  return useSyncExternalStore(listener => { openDesksListeners.add(listener); return () => { openDesksListeners.delete(listener) } }, () => openDesks)
+}
+
+/** When each link's desk was last tried, kept while Sotto runs, so going to Watcher and back does not try a silent computer sooner (ADR-0193). */
+const deskTried = new Map<string, number>()
+export const deskTriedAt = (linkId: string): number => deskTried.get(linkId) ?? 0
+export function setDeskTriedAt(linkId: string, at: number): void { deskTried.set(linkId, at) }
