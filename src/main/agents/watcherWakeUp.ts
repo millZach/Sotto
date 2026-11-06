@@ -685,22 +685,7 @@ export class WatcherWakeUp {
   settled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
     if (!this.started || this.closed) return
     if (outcome !== 'told') for (const event of events) this.rememberPending.delete(event.id)
-    for (const event of events) {
-      if (outcome === 'told' && event.kind === 'evidence-changed') this.restoredUnread.delete(targetKey(event.target))
-      const carried = this.carriedAttention.get(event.id)
-      this.carriedAttention.delete(event.id)
-      // A send whose result is unknown went out with these facts, so the same facts are no news again: a pull request
-      // that merged is not told once more each time (#1263). Failed checks are, since a failure must not be lost.
-      const told = outcome === 'told' ? carried : outcome === 'unknown' && carried ? new Set([...carried].filter(fact => !this.failedFact(event.target, fact))) : undefined
-      if (!told) continue
-      // A wake-up carries what holds as it goes, so a merge told before it, whose pull request has gone from the thread for
-      // now, is kept (#1495): no more of them than a thread can link and its branch's own, the oldest going first, so
-      // never one the wake-up carried.
-      const key = targetKey(event.target), kept = new Set([...[...this.toldAttention.get(key) ?? []].filter(fact => isMergeFact(fact) && !told.has(fact)), ...told])
-      for (const fact of [...kept].filter(isMergeFact).slice(0, -(GIT_PULL_REQUEST_LINKS_MAX + 1))) kept.delete(fact)
-      this.toldAttention.delete(key); this.toldAttention.set(key, kept)
-      while (this.toldAttention.size > 2_000) this.toldAttention.delete(this.toldAttention.keys().next().value!)
-    }
+    this.noteToldAttention(events, outcome)
     // A held busy finish that earned its retry by ripening or by its thread moving on was not in this wake-up; one that
     // missed used that retry up, so the finish earns it again, within the same bound on tries (#1190).
     if (outcome !== 'told' && this.misses + 1 < WAKE_UP_TRIES) {
@@ -720,6 +705,62 @@ export class WatcherWakeUp {
     if (outcome === 'unknown') { this.forget(events); this.observe(); return }
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
     this.batch()
+  }
+  /** What a send that carried these events tells of their pull requests' facts, by how it settled. */
+  private noteToldAttention(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
+    for (const event of events) {
+      if (outcome === 'told' && event.kind === 'evidence-changed') this.restoredUnread.delete(targetKey(event.target))
+      const carried = this.carriedAttention.get(event.id)
+      this.carriedAttention.delete(event.id)
+      // A send whose result is unknown went out with these facts, so the same facts are no news again: a pull request
+      // that merged is not told once more each time (#1263). Failed checks are, since a failure must not be lost.
+      const told = outcome === 'told' ? carried : outcome === 'unknown' && carried ? new Set([...carried].filter(fact => !this.failedFact(event.target, fact))) : undefined
+      if (!told) continue
+      // A wake-up carries what holds as it goes, so a merge told before it, whose pull request has gone from the thread for
+      // now, is kept (#1495): no more of them than a thread can link and its branch's own, the oldest going first, so
+      // never one the wake-up carried.
+      const key = targetKey(event.target), kept = new Set([...[...this.toldAttention.get(key) ?? []].filter(fact => isMergeFact(fact) && !told.has(fact)), ...told])
+      for (const fact of [...kept].filter(isMergeFact).slice(0, -(GIT_PULL_REQUEST_LINKS_MAX + 1))) kept.delete(fact)
+      this.toldAttention.delete(key); this.toldAttention.set(key, kept)
+      while (this.toldAttention.size > 2_000) this.toldAttention.delete(this.toldAttention.keys().next().value!)
+    }
+  }
+  /**
+   * The news that rides, for a message the user sends Watcher (#2226): the user's own message is a wake too, so it carries
+   * what waits that wakes no one, and no wake-up carries that again. A thread with news that wakes Watcher keeps its riding
+   * news for that wake-up, and so does one whose turn end waits for its Git read; a finish waiting on its work is not news
+   * that rides. `told` records what went as told once the provider has the message, or may have it; `back` puts it back to
+   * wait, as it was, when the message never went.
+   */
+  takeRiding(watcher: WatcherThreadTarget): { readonly news: WatcherNews; told(): void; back(): void } | undefined {
+    if (!this.started || this.closed) return undefined
+    return this.withPassReads(() => {
+      const due = this.stillDue(this.pending), held = this.heldForGitRead()
+      const waking = new Set(due.filter(event => this.attends(event)).map(event => targetKey(event.target)))
+      const riding = due.filter(event => !this.attends(event) && !busyFinish(event) && !waking.has(targetKey(event.target)) && !this.waitsForGitRead(event, held))
+      if (!riding.length) return undefined
+      const news = foldWatcherNews(undefined, { source: 'watcher', watcher, events: riding, omitted: 0 })
+      const events = news.events, ids = new Set(events.map(event => event.id))
+      // Only what the news names leaves the wait: what its limits left out goes with the next news instead.
+      this.pending = due.filter(event => !ids.has(event.id))
+      for (const event of events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
+      while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
+      let settled = false
+      return { news: { ...news, omitted: 0 },
+        told: () => {
+          if (settled || this.closed) return
+          settled = true
+          this.noteToldAttention(events, 'told')
+          void this.options.remember(events.map(event => event.id)).catch(() => undefined)
+        },
+        back: () => {
+          if (settled || this.closed) return
+          settled = true
+          for (const event of events) { this.carriedAttention.delete(event.id); if (event.kind === 'evidence-changed') this.toldLocal.delete(targetKey(event.target)) }
+          this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
+          this.batch()
+        } }
+    })
   }
   /**
    * News that went back unsent waits again, ahead of what came since, which wins where both say the same. Evidence whose

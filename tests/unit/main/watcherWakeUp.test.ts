@@ -1816,6 +1816,44 @@ it('puts what wakes Watcher ahead of news that rides, and keeps what one wake-up
   expect(told.size).toBe(60)
 })
 
+describe('news that rides with the user’s own message to Watcher (#2226)', () => {
+  const waitingComments = async (f: ReturnType<typeof fixture>) => {
+    f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+    for (const remarks of ['comments:1', 'comments:2']) f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', remarks })
+    await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered).toEqual([])
+  }
+
+  it('takes what waits, tells it once the message went, and no wake-up carries it again', async () => {
+    const f = fixture()
+    await waitingComments(f)
+    const riding = f.wakes.takeRiding(centerTarget)!
+    expect(kinds(riding.news)).toEqual(['evidence-changed'])
+    expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
+    expect(f.wakes.takeRiding(centerTarget)).toBeUndefined()
+    riding.told()
+    expect(f.wakes.untoldAttention(centerTarget).size).toBe(0)
+    finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.map(kinds)).toEqual([['turn-finished']])
+  })
+
+  it('puts it back when the message never went, so it rides with the next wake-up', async () => {
+    const f = fixture()
+    await waitingComments(f)
+    f.wakes.takeRiding(centerTarget)!.back()
+    finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.map(news => kinds(news)?.sort())).toEqual([['evidence-changed', 'turn-finished']])
+    expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
+  })
+
+  it('leaves a thread’s riding news for its own news that wakes Watcher, and takes nothing that wakes it', async () => {
+    const f = fixture()
+    await waitingComments(f)
+    f.thread.requests.push(question()); f.wakes.observe()
+    expect(f.wakes.takeRiding(centerTarget)).toBeUndefined()
+  })
+})
+
 it('tells Watcher of a receipt only when it says something a tool’s answer did not', async () => {
   const f = fixture(), operation = f.record.operations[0]!
   operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_BUSY'
@@ -1919,7 +1957,7 @@ it('tells Watcher to end its turn while a watched thread works rather than readi
 
 it('tells Watcher what wakes it, and that news which needs nothing of it ends its turn with no reply (#2226)', () => {
   expect(WATCHER_SYSTEM_PROMPT).toContain('Sotto wakes you with news only for what may need you: a question or permission card')
-  expect(WATCHER_SYSTEM_PROMPT).toContain('such as a pull request\'s reviews, comments, approval, conflict or close, a card or prototype closing, swarm progress, a restart or a move, comes with that news rather than by itself.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('such as a pull request\'s reviews, comments, approval, conflict or close, a card or prototype closing, swarm progress, a restart or a move, comes with that news, or in the note with the user\'s next message to you, rather than by itself.')
   expect(WATCHER_SYSTEM_PROMPT).toContain('When news needs nothing from you, no start, send, steer, settle or word to the user, end your turn with no reply at all.')
 })
 
