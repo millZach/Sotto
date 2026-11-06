@@ -331,7 +331,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
           await appearance(page, mode)
           const contrast = await chromeContrast(panel)
           expect(contrast.lowest, `${width}x${height} ${panelWidth} ${mode} chrome contrast, lowest on ${contrast.name}`).toBeGreaterThanOrEqual(4.5)
-          // Below a 1400px window the rail shows its symbols alone and its words are only for a screen reader.
+          // The rail shows its symbols alone at every width and its words are only for a screen reader.
           expect(await rail.evaluate(element => [...element.querySelectorAll<HTMLElement>('.tools-rail__word')].filter(word => word.clientWidth > 1 && word.scrollWidth > word.clientWidth).map(word => word.textContent)), 'rail words cut short').toEqual([])
           expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-rail button, .tools-panel__foot button')]
             .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), 'rail and footer controls clipped').toEqual([])

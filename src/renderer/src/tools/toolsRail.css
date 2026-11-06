@@ -1,11 +1,11 @@
-/* The Tools panel as a rail (#235, direction A). The surfaces stand on a 58px strip at the panel's outer edge;
+/* The Tools panel as a rail (#235, direction A). The surfaces stand on a 44px strip of symbols at the panel's outer edge;
    everything else is the work: one line of chrome per surface above it and the working copy as a quiet footer.
    The panel takes the sidebar's tone, so both edges of the workspace read as supporting columns around the
    conversation. Narrow windows overlay the panel instead of shrinking the panes. */
 .tools-panel {
   --tools-bg: var(--tt-sidebar);
   --tools-hover: var(--tt-hover);
-  --tools-rail-width: 58px;
+  --tools-rail-width: 44px;
   /* The pane header's height, so the surface's line of chrome meets it on one hairline. */
   --tools-chrome-height: 44px;
   position: relative; z-index: 5; display: flex; flex: none; width: var(--tools-width, 380px); min-height: 0; height: 100%;
@@ -38,17 +38,17 @@
 /* The rail. It comes first in the reading order and sits last on the page: the window's own controls keep the
    top of it, so the tiles start just under the surface's line of chrome. */
 .tools-rail {
-  order: 2; display: flex; flex: none; flex-direction: column; align-items: center; gap: 8px;
-  width: var(--tools-rail-width); min-height: 0; padding: calc(var(--tools-chrome-height) + 6px) 0 8px;
+  order: 2; display: flex; flex: none; flex-direction: column; align-items: center; gap: 6px;
+  width: var(--tools-rail-width); min-height: 0; padding: calc(var(--tools-chrome-height) + 4px) 0 8px;
   border-left: 1px solid var(--tt-hairline);
 }
 .tools-rail__tabs { display: flex; flex-direction: column; gap: 2px; }
 /* Three groups, parted by air rather than rules: the pages Sotto shows the thread (Browser, iPhone), its working copy
    (Terminal, Files, Changes, PR), and Agents, which always follows the focused thread. The order is unchanged. */
-.tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 10px; }
+.tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 8px; }
 .tools-rail__tab {
-  position: relative; display: grid; place-items: center; align-content: center; gap: 4px; width: 50px; height: 50px; padding: 0;
-  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); font-weight: 500; line-height: 1;
+  position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit;
   transition: background-color 120ms ease, color 120ms ease;
 }
 .tools-rail__tab:hover { background: var(--tools-hover); color: var(--tt-text); }
@@ -56,36 +56,23 @@
 .tools-rail__tab[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); }
 /* The open surface's mark is on the tile's outer side, at the window's edge. It is drawn as a shadow so it adds
    no overflow to the tile. */
-.tools-rail__tab[aria-selected='true']::before { position: absolute; top: 13px; right: 0; bottom: 13px; width: 0; border-radius: var(--tt-radius-mark); box-shadow: 3px 0 0 1px var(--tt-activity); content: ''; }
+.tools-rail__tab[aria-selected='true']::before { position: absolute; top: 9px; right: 0; bottom: 9px; width: 0; border-radius: var(--tt-radius-mark); box-shadow: 3px 0 0 1px var(--tt-activity); content: ''; }
 /* Forced colours drop the shadow and the tile tone, so the open surface takes a system outline instead. */
 @media (forced-colors: active) {
   .tools-rail__tab[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -2px; }
 }
 .tools-rail__icon { flex: none; }
-/* Words keep the app's 12px floor, a touch above the mock-up's 10.5px, and still fit the 50px tile. */
-.tools-rail__word { max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Below a 1400px window every pixel of the panel is the surface's, so the rail keeps its symbols and gives up their words:
-   a 44px strip of 36px tiles, each named in its tooltip and for a screen reader, where it was a 58px strip of worded tiles.
-   The open surface still says its own name on its line of chrome, and the tiles keep their order and dots. It follows the
-   window, never the panel's own width, so dragging the panel's edge moves no tile. */
-@media (max-width: 1399px) {
-  .tools-panel { --tools-rail-width: 44px; }
-  .tools-rail { gap: 6px; padding-top: calc(var(--tools-chrome-height) + 4px); }
-  .tools-rail__tab { width: 36px; height: 36px; }
-  .tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 8px; }
-  .tools-rail__tab[aria-selected='true']::before { top: 9px; bottom: 9px; }
-  .tools-rail__word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .tools-rail__live { top: 4px; right: 4px; }
-  .tools-rail__foot { width: 36px; }
-}
+/* The rail is symbols alone at every width, as the pane header's controls are (ADR-0182): each surface's name is
+   its tooltip and what a screen reader hears, and the open surface says its own name on its line of chrome. */
+.tools-rail__word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Something live on a surface that is not open: its words are the surface's description in the rail. */
-.tools-rail__live { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tools-bg); pointer-events: none; }
+.tools-rail__live { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tools-bg); pointer-events: none; }
 .tools-rail__tab:hover .tools-rail__live { box-shadow: 0 0 0 2px var(--tools-hover); }
 /* A delegated thread waits on you (ADR-0081): the dot takes the attention colour, and stays on the open surface too. */
 .tools-rail__live[data-needs] { background: var(--tt-attention); }
 /* Pin, fill and close sit at the rail's foot, under a short rule. A pressed Pin or Restore takes the tiles' own
    selected tone, so the rail has one look for "on". */
-.tools-rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 40px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
+.tools-rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 36px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
 .tools-panel .tools-rail__foot .files-icon[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
 
 .tools-panel__main { order: 1; position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: tools-body / inline-size; }
