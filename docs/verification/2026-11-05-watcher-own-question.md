@@ -36,7 +36,7 @@ What happens behind a press is checked over real processes rather than in the wi
 
 - No Watcher run on a real provider. The flag is Claude Code's own (`claude --help` lists `--disallowedTools`), but I did not see a live Claude Code Watcher ask through `ask_user`. It is worth one look on Owl: ask Watcher something that needs a decision and see the card arrive while news keeps coming.
 - The iPhone app was not built or run. Its Watcher page draws whatever request cards the computer lists for Watcher's thread, and the integration test drives that path over the socket. No Swift changed.
-- Grok Build, Cursor and Muse keep their own question tools. Watcher's prompt tells it to use `ask_user` instead, but nothing stops a model that ignores it, and such a question still holds Watcher as before.
+- Grok Build, Cursor and Muse were checked on their fake servers only (`tests/integration/watcherOwnTools.test.ts`): a question on Watcher's own thread is cancelled and shows no card. Their cancels were not seen on the real clients.
 
 ## Commands
 

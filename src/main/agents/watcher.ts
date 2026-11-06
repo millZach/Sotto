@@ -55,7 +55,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { carriesWords, LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
@@ -860,7 +860,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
-  privacyChanged(): Promise<void> { this.archivedStops.clear(); return Promise.all([this.kept.privacyChanged(), this.questions.privacyChanged()]).then(() => undefined) }
+  privacyChanged(): Promise<void> { this.archivedStops.clear(); return Promise.all([this.kept.privacyChanged(), this.questions.privacyChanged(), this.toldSaved.privacyChanged()]).then(() => undefined) }
   /** A copy of Watcher's record, for a caller that changes what it reads before saving it. */
   private recordCopy(): WatcherRecord { return this.options.control.watcherRecord() }
   /**
@@ -1113,7 +1113,7 @@ export class WatcherService implements WatcherControlHooks {
     this.wakes.settled(events, outcome)
     // Told, or sent in a way that is never sent twice. Anything else goes again, and stays saved until it does.
     if (outcome === 'told' || outcome === 'unknown') {
-      const told = new Set(events.flatMap(event => event.kind === 'thread-told' || event.kind === 'user-answered' ? [event.id] : []))
+      const told = new Set(events.flatMap(event => carriesWords(event) ? [event.id] : []))
       if (told.size) void this.toldSaved.forget(told).catch(() => undefined)
     }
   }
@@ -1338,7 +1338,7 @@ export class WatcherService implements WatcherControlHooks {
    */
   private async restoreToldNews(): Promise<void> {
     if (this.options.workerHost) return
-    const queued = this.options.control.restoredWatcherEvents().filter(event => event.kind === 'thread-told' || event.kind === 'user-answered'), saved = await this.toldSaved.load()
+    const queued = this.options.control.restoredWatcherEvents().filter(carriesWords), saved = await this.toldSaved.load()
     const told = new Set(this.view().wakeEventIds ?? []), queuedIds = new Set(queued.map(event => event.id))
     this.toldToRetell = saved.filter(event => !queuedIds.has(event.id) && !told.has(event.id))
     // The user's answers to Watcher's own questions open no request, so only a thread's own messages are owed a turn here.

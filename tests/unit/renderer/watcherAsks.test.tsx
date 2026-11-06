@@ -386,6 +386,14 @@ describe('Watcher’s own question in its conversation', () => {
     expect(card).toHaveFocus()
   })
 
+  it('gives every waiting question of Watcher’s its own row, however many wait', async () => {
+    const ids = ['1', '2', '3', '4', '5', '6'].map(n => `${n}f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b`)
+    renderRoom({ ...roomState([]), questions: ids.map((id, index) => asked({ id, question: `Question ${index + 1}?` })) }, carriedOn())
+    await screen.findAllByRole('region', { name: 'Question from Watcher' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Show the \d+ things that need you$/ }))
+    for (const index of [1, 2, 3, 4, 5, 6]) expect(await screen.findByRole('button', { name: `Go to Watcher’s question in this conversation: Question ${index}?` })).toBeInTheDocument()
+  })
+
   it('places each question after the last message shown from before Watcher asked', () => {
     const messages = carriedOn().host.threads.find(thread => thread.id === 'watcher')!.messages
     const placed = placeQuestions(messages, [asked(), asked({ id: '4e2b7d3f-6c8e-4f9a-8b1c-2d3e4f5a6b7c', at: new Date(NOW - 90_000).toISOString() })])

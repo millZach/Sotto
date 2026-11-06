@@ -28,7 +28,7 @@ export function watcherPrototypeFields(source: string): Pick<WatcherEvent, 'requ
  * News that carries words nothing else holds: a thread's own message and the user's answer to Watcher's own question.
  * A takeover never drops it and the limits never leave it out.
  */
-const carriesWords = (event: WatcherEvent): boolean => event.kind === 'thread-told' || event.kind === 'user-answered'
+export const carriesWords = (event: Pick<WatcherEvent, 'kind'>): boolean => event.kind === 'thread-told' || event.kind === 'user-answered'
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))
   for (const event of later) {
@@ -150,9 +150,10 @@ function answeredWords(event: WatcherEvent): string {
 export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet<string> {
   const later = new Set<string>()
   let used = 0
+  // The user's answers to Watcher's own questions wait the same way (#2228): nothing else holds the choice either.
   for (const event of events) {
-    if (event.kind !== 'thread-told') continue
-    const size = Buffer.byteLength(toldWords(event)) + 200
+    if (!carriesWords(event)) continue
+    const size = Buffer.byteLength(event.kind === 'thread-told' ? toldWords(event) : answeredWords(event)) + 200
     if (used > 0 && used + size > WATCHER_NEWS_BYTES_MAX * 3 / 4) later.add(event.id)
     else used += size
   }

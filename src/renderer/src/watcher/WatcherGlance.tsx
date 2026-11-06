@@ -25,7 +25,8 @@ export const goToAskLabel = (title: string, kind: 'question' | 'permission'): st
  * Shift in the Threads room. A name whose request has its card in Watcher's conversation goes to that card instead and
  * focuses it (Zach's pick on October 19, 2026), and opens the thread as before when the card is no longer there. Past
  * five names the rest are counted, and the count opens All threads. Watcher's own questions that wait come first, as
- * "Watcher asks", and go to their cards (#2228). Gone when nothing waits.
+ * "Watcher asks", each with its row since All threads does not list them, and go to their cards (#2228). Gone when
+ * nothing waits.
  */
 export function WatcherGlance({ entries, questions = [], onQuestion, onOpen, onShowAll, inline, onJump, allThreadsOpen }: {
   readonly entries: readonly OverviewEntry[]
@@ -64,9 +65,10 @@ export function WatcherGlance({ entries, questions = [], onQuestion, onOpen, onS
   const waiting = entries.length + questions.length
   if (open && waiting === 0) setOpen(false)
   if (waiting === 0) return null
-  const asks = questions.slice(0, NAMES)
-  const named = entries.slice(0, NAMES - asks.length)
-  const more = waiting - asks.length - named.length
+  // Watcher's own questions are never in All threads, so each has its row and only threads give way to the count.
+  const asks = questions
+  const named = entries.slice(0, Math.max(0, NAMES - asks.length))
+  const more = entries.length - named.length
   return <section ref={section} className="watcher-glance" aria-labelledby={heading} onKeyDown={event => {
     if (event.key === 'Escape' && !event.nativeEvent.isComposing && open) {
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()

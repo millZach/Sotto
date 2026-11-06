@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WatcherQuestions } from '../../../src/main/agents/watcherQuestions'
-import { watcherNewsText } from '../../../src/main/agents/watcherNews'
+import { toldEventsForLater, watcherNewsText } from '../../../src/main/agents/watcherNews'
+import { WatcherToldNews } from '../../../src/main/agents/watcherToldNews'
 import { WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent } from '../../../src/shared/watcherNews'
 import { watcherQuestionChoice, watcherQuestionOf, watcherQuestionRequest, watcherQuestionRequestId, WATCHER_QUESTION_FIELD } from '../../../src/shared/watcherQuestions'
 
@@ -114,5 +115,31 @@ describe('the news of the user’s answer', () => {
     expect(agreed).toContain('They agree to settle this thread: call settle_thread for it now')
     expect(agreed).toContain(`Use requestId ${watch} for this thread.`)
     expect(news([event({ questionId: QUESTION, question: 'Settle Synthetic worker?', choice: 'Keep watching', settle: true }, watch)])).toContain('They want this thread kept')
+  })
+
+  it('keeps answers that would not fit whole in one wake-up for the next, never leaving them out', () => {
+    const many = Array.from({ length: 30 }, (_, index) => event({ questionId: QUESTION, question: `${'A long question. '.repeat(55)}${index}`, choice: 'Run it again' }))
+    const later = toldEventsForLater(many.map((item, index) => ({ ...item, id: `answered-${index}` })))
+    expect(later.size).toBeGreaterThan(0)
+    expect(later.size).toBeLessThan(30)
+    expect(later.has('answered-0')).toBe(false)
+  })
+})
+
+describe('the saved words of news Watcher has not been told', () => {
+  it('leave the disk when Keep local history goes off, and are saved again when it comes back on', async () => {
+    const directory = await folder()
+    let history = true
+    const told = new WatcherToldNews(directory, () => history)
+    await told.load()
+    await told.add({ id: 'answered', kind: 'user-answered', requestId: WATCHER_UNWATCHED_REQUEST_ID, target: worker, generation: 0, observedAt: '2026-11-05T12:00:00.000Z',
+      answered: { questionId: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', question: ASK.question, choice: 'Run it again' } })
+    expect(await readdir(directory)).toContain('watcher-told.json')
+    history = false
+    await told.privacyChanged()
+    expect(await readdir(directory)).not.toContain('watcher-told.json')
+    history = true
+    await told.privacyChanged()
+    expect(await readdir(directory)).toContain('watcher-told.json')
   })
 })

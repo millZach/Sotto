@@ -9,7 +9,7 @@ import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, 
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
-import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, toldEventsForLater, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
+import { carriesWords, eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, toldEventsForLater, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
@@ -692,7 +692,7 @@ export class WatcherWakeUp {
       // Observed afresh, as after a restart, it goes again by itself, a bounded number of times. A sure failure waits for
       // news that needs Watcher, or for Watcher to come to rest.
       // A thread's own message cannot be observed afresh, and its thread was told it got through, so it goes again by itself too.
-      if ((outcome === 'unknown' || events.some(event => event.kind === 'thread-told' || event.kind === 'user-answered')) && this.misses < WAKE_UP_TRIES) this.retries++
+      if ((outcome === 'unknown' || events.some(carriesWords)) && this.misses < WAKE_UP_TRIES) this.retries++
     }
     if (outcome === 'unknown') { this.forget(events); this.observe(); return }
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
@@ -1631,7 +1631,7 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return false
     // A move is news while Watcher is there, whether or not a request watched the thread; a settled one is news too (#1178).
     // So is a thread's own message: the thread was told it got through, watched or not, delegated or not.
-    if (event.kind === 'thread-moved' || event.kind === 'thread-told' || event.kind === 'user-answered') return !!this.record().current
+    if (event.kind === 'thread-moved' || carriesWords(event)) return !!this.record().current
     // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
     if (event.kind === 'threads-restarted') {
       if (!this.record().current) return false
