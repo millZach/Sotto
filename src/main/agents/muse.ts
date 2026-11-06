@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { attachmentReferences, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, NOT_TAKEN_MESSAGE_IDS_MAX, STEER_NOT_TAKEN, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -77,6 +77,10 @@ const attachmentRefSchema = z.object({ id: z.string(), name: z.string(), mimeTyp
 const originSchema = z.object({
   messageId: z.string(), commandId: z.string(), nativeCommandId: z.string(), digest: z.string(),
   createdAt: z.string(), confirmed: z.boolean().default(false), attachments: z.array(attachmentRefSchema).default([]),
+  /** A steer's: the turn it was sent into. Muse's acknowledgement of a steer is admission, not delivery (#1408). */
+  steerTurnId: z.string().optional(),
+  /** A steer whose turn ended without taking it. Muse refuses it then, so it was not sent and is never sent again. */
+  notTaken: z.literal(true).optional(),
 })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
@@ -92,6 +96,11 @@ const aliasSchema = z.object({
   forkedMessages: z.array(z.string()).optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
+/** The newest steers Muse did not take, by Sotto message ID, as the thread publishes them for the coordinator (#1408). */
+function notTakenOf(alias: Alias): Pick<AgentThread, 'notTakenMessageIds'> {
+  const ids = alias.origins.filter(origin => origin.notTaken).slice(-NOT_TAKEN_MESSAGE_IDS_MAX).map(origin => origin.messageId)
+  return ids.length ? { notTakenMessageIds: ids } : {}
+}
 const initializeSchema = z.looseObject({
   serverInfo: z.looseObject({ name: z.string(), version: z.string().min(1).max(64) }),
   schema: z.looseObject({ version: z.number() }),
@@ -121,6 +130,7 @@ const sessionStartSchema = z.looseObject({ session: museSessionSchema, viewCurso
 const sessionReadSchema = z.looseObject({ session: museSessionSchema })
 const historySchema = z.looseObject({
   mode: z.string(), items: z.array(museItemSchema).nullable().default(null),
+  totalItemCount: z.number().optional().catch(undefined), nextCursor: z.string().nullable().optional().catch(undefined),
   snapshot: z.looseObject({ state: z.looseObject({ items: z.array(museItemSchema).default([]) }) }).nullable().default(null),
 })
 const sessionResumeSchema = z.looseObject({
@@ -681,6 +691,7 @@ export class MuseMspHost implements AgentHost {
       ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}),
       status: alias.museSessionId ? settledStatus(alias) : 'error',
       messages: [], requests: [], manualCompactionSupported: true,
+      ...notTakenOf(alias),
     })
     this.changed(id)
     return this.threads.get(id)!
@@ -1120,7 +1131,7 @@ export class MuseMspHost implements AgentHost {
         if (this.processes.get(id) !== entry) return
         this.assertGeneration(generation)
       }
-      if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
+      if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, alias, resumed) }
       this.settleEndedTurn(id, resumed.session)
       await this.persist()
       // Requests Muse still holds open are shown again, except one an uncertain answer may have settled.
@@ -1498,6 +1509,26 @@ export class MuseMspHost implements AgentHost {
         ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
     }
     this.markTurn(id, outcome, messageId, error)
+    this.settleSteers(id, ended => ended === turnId)
+  }
+  /**
+   * Steers whose turn has ended without Muse taking them, which `ended` names by their turn (#1408). Muse admits a steer
+   * before its turn takes it, and refuses one whose turn ends first without saying so on the stream; no user message
+   * ever comes for it. Each is marked not taken, saved, and published on the thread for the coordinator, and a send
+   * still waiting for it is told. One Muse took was confirmed by its user message, which always comes before its turn ends.
+   */
+  private settleSteers(id: string, ended: (turnId: string) => boolean): void {
+    const alias = this.aliases[id]; if (!alias) return
+    let settled = false
+    for (const origin of alias.origins) {
+      if (!origin.steerTurnId || origin.confirmed || origin.notTaken || !ended(origin.steerTurnId)) continue
+      origin.notTaken = true; settled = true
+      this.deliveries.get(origin.messageId)?.reject(new Error(STEER_NOT_TAKEN))
+    }
+    if (!settled) return
+    Object.assign(this.thread(id), notTakenOf(alias))
+    this.changed(id)
+    void this.persist().catch(() => undefined)
   }
   /** One frame from one thread's host. Its session is the only one that host holds, so the owner is its thread. */
   private async frame(frame: MuseFrame, rpc: MuseRpc): Promise<void> {
@@ -1888,6 +1919,7 @@ export class MuseMspHost implements AgentHost {
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
           const previous = alias.origins.find(origin => origin.messageId === command.messageId || origin.commandId === command.commandId)
+          if (previous?.notTaken) throw new Error(STEER_NOT_TAKEN)
           if (previous) return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
           const active = this.activeTurns.get(command.threadId)
           if (command.type === 'send' && (this.activePrompts.has(command.threadId) || active || thread.status === 'running')) throw new Error('Muse is already running a prompt in this thread.')
@@ -1917,6 +1949,7 @@ export class MuseMspHost implements AgentHost {
             messageId: command.messageId, commandId: command.commandId, nativeCommandId: museCommandId(),
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
             attachments: attachmentReferences(attachments),
+            ...(command.type === 'steer' ? { steerTurnId: active!.turnId } : {}),
           }
           const entry = await this.threadProcess(command.threadId)
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
@@ -1977,10 +2010,15 @@ export class MuseMspHost implements AgentHost {
               if (report && times?.turnId === started.turnId) times.report = report
               else if (report) this.turnTimes.set(command.threadId, { turnId: started.turnId, report })
             }
-            thread.status = 'running'
-            thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
-            if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
-            this.changed(command.threadId)
+            // A steer's turn can end before its acknowledgement comes back; the thread is not running again for it.
+            if (command.type === 'send' || this.activeTurns.get(command.threadId)?.turnId === active!.turnId) {
+              thread.status = 'running'
+              thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
+              if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
+              this.changed(command.threadId)
+            }
+            // Its user message would have come before its turn's end, which came first: the turn did not take it.
+            else if (generation === this.generation && this.processes.get(command.threadId) === entry) this.settleSteers(command.threadId, turnId => turnId === active!.turnId)
           } catch (error) {
             clearTimeout(timer); this.deliveries.delete(command.messageId)
             this.activePrompts.delete(command.threadId)
@@ -1991,7 +2029,12 @@ export class MuseMspHost implements AgentHost {
             throw error
           }
           try { await delivery }
-          catch (error) { this.activePrompts.delete(command.threadId); throw error }
+          catch (error) {
+            this.activePrompts.delete(command.threadId)
+            // The coordinator settles a steer not taken as soon as it hears; its saved record says so first.
+            if (error instanceof Error && error.message === STEER_NOT_TAKEN) await this.persist()
+            throw error
+          }
           finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
           markSendStage(command.commandId, 'acknowledged')
           this.reaper.touch(command.threadId)
@@ -2116,7 +2159,7 @@ export class MuseMspHost implements AgentHost {
       await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
       if (generation !== this.generation || this.processes.get(id) !== entry) return
     }
-    if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
+    if (entry.turnRevision === turnRevision) { this.reconcileLiveSession(id, resumed.session); this.settleResumedSteers(id, alias, resumed) }
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)
     try {
@@ -2134,6 +2177,16 @@ export class MuseMspHost implements AgentHost {
       }
       for (const pending of restored) this.present(pending, entry)
     } finally { releaseRead() }
+  }
+  /**
+   * A resume settles the steers whose turn it shows over (#1408), read after its history, which confirmed every steer Muse
+   * took. Only a whole history proves a steer absent: one served in part, or rebuilt for a copy, settles nothing.
+   */
+  private settleResumedSteers(id: string, alias: Alias, resumed: z.infer<typeof sessionResumeSchema>): void {
+    const { history } = resumed
+    const items = history.items ?? history.snapshot?.state.items ?? []
+    if (alias.forkedMessages?.length || history.nextCursor || (history.totalItemCount ?? items.length) > items.length) return
+    this.settleSteers(id, turnId => turnId !== resumed.session.activeTurnId)
   }
   /** A resume can prove that work ended even when the stream lost its terminal event; its outcome remains unknown. */
   private reconcileLiveSession(id: string, session: MuseSession): void {

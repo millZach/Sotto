@@ -5,7 +5,7 @@ import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, s
 import { join } from 'node:path'
 // A scripted `muse serve` (MSP over stdio), in the shape Sotto's Muse adapter speaks. Files in the root
 // steer it, as with the other fakes: `script.json` (cliVersion, schemaVersion, models, delayTurnMs,
-// suppressNotifications), `control.json` (one driver action at a time), `oneshot.json` (side-writing text).
+// suppressNotifications, dropSteer), `control.json` (one driver action at a time), `oneshot.json` (side-writing text).
 // `reportUsage` makes each completed reply a model call that reports `session/tokenUsage` the way Muse 1.4.9 does (turn,
 // prompt tokens and the durable records it was folded from), after which this host's `usage/read` answers its subscription
 // window, as Muse's serve host keeps the last one it saw; `usageChanged` also says so with `usage/changed`. `noUsageRead`
@@ -389,6 +389,16 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (frame.method === 'turn/start' || frame.method === 'turn/steer') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     const steer = frame.method === 'turn/steer'
+    // `dropSteer` admits one steer and never delivers it, as Muse does when the turn ends first (#1408): `end-turn` ends the
+    // turn just after acknowledging, `end-turn-first` just before, and `hold` leaves the turn running for a later end.
+    if (steer && script.dropSteer && session.activeTurnId) {
+      const { dropSteer } = script
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, dropSteer: undefined }))
+      if (dropSteer === 'end-turn-first') endTurn(session)
+      result({ turnId: session.activeTurnId ?? p.expectedTurnId, disposition: 'steered' })
+      if (dropSteer === 'end-turn') setImmediate(() => endTurn(session))
+      return
+    }
     const go = () => {
       const turnId = openTurn(session, p.commandId, textOf(p.input), steer, p.displayText)
       if (auditBroken.has(session.sessionId)) { setImmediate(() => endTurn(session, 'failed', AUDIT_FAILED)); return turnId }

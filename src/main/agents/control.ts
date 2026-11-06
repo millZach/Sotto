@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, STEER_NOT_TAKEN, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
   type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
@@ -4773,6 +4773,12 @@ export class AgentControl {
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
+      // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead.
+      if (!accepted && !this.outbox.some(entry => entry.id === item.commandId) && (error instanceof Error && error.message === STEER_NOT_TAKEN
+        || this.thread(item.threadId).notTakenMessageIds?.includes(item.messageId!))) {
+        this.requeueNotTaken(item.id)
+        return
+      }
       await this.followupStore.settle(item.id, accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed',
         error instanceof Error ? error.message : 'Could not steer this message.')
       throw error
@@ -6423,6 +6429,8 @@ export class AgentControl {
       if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
+      // A steer the provider admitted but whose turn ended first was not sent (#1408): settled as not sent, never resent.
+      if (item.type === 'steer' && !message && item.messageId && thread?.notTakenMessageIds?.includes(item.messageId)) { this.settleSteerNotTaken(item); continue }
       const confirmed = (item.type === 'send' || item.type === 'steer') ? Boolean(message) : item.type === 'create-project'
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
@@ -6465,6 +6473,27 @@ export class AgentControl {
     this.titles.generate()
     this.persistAfterSnapshots()
     this.publish()
+  }
+  /**
+   * Settles an outbox steer its provider says it never took (#1408): the entry goes, the composer's draft reads as not
+   * sent and is kept, and a queued message goes back to the head of its queue, to go as the next message as the queue
+   * would have sent it when the turn ended. Nothing is sent from here.
+   */
+  private settleSteerNotTaken(item: Saved['outbox'][number]): void {
+    this.outbox = this.outbox.filter(o => o.id !== item.id)
+    if (item.threadId && item.messageId && (item.provider === undefined || isUsageProviderId(item.provider))) {
+      try { this.dependencies.usage?.discardPrompt(item.threadId, item.messageId) }
+      catch { /* Only usage metadata is affected. */ }
+    }
+    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id && followup.status === 'uncertain')
+    if (queued) { this.requeueNotTaken(queued.id); return }
+    if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
+  }
+  /** A queued message whose steer was not taken goes back to the head of its queue (#1408). */
+  private requeueNotTaken(id: string): void {
+    void this.followupStore.requeueAtHead(id)
+      .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+      .finally(() => { this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }
   private afterSnapshotsPersistQueued = false
   /**

@@ -8,6 +8,7 @@ import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
+import { STEER_NOT_TAKEN } from '../../src/shared/agents'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
@@ -326,6 +327,59 @@ it('runs a queued follow-up on a reopened thread whose model Muse refuses to set
   } finally { await stack.dispose(); await f.cleanup() }
 })
 
+for (const held of [false, true]) {
+  it(`settles a steer Muse did not take ${held ? 'once its turn ends after the wait' : 'during its wait'}: a queued one goes next, a composer one is not sent (#1408)`, async () => {
+    const f = await museFixture()
+    const stack = await agentControlFixture({ host: f.host, credentialOptions: { mode: 'unavailable' }, reasoner: {} })
+    const { control } = stack
+    const ownThread = () => control.get().host.threads.find(candidate => candidate.id === id)
+    const requests = async (method: string) => (await f.driver.requests()).filter(record => record.method === method)
+    let id = ''
+    try {
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      id = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Muse thread' })
+      await control.start(); await control.command({ type: 'connect' })
+      expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'First' })).error).toBeNull()
+      await expect.poll(() => ownThread()?.status).toBe('running')
+
+      // From the queue: it goes back to the head of the queue and is sent as the next message, once.
+      expect((await control.command({ type: 'queue-followup', threadId: id, draftId: randomUUID(), text: 'The queued steer' })).error).toBeNull()
+      expect((await control.command({ type: 'queue-followup', threadId: id, draftId: randomUUID(), text: 'After it' })).error).toBeNull()
+      await f.script({ dropSteer: held ? 'hold' : 'end-turn' })
+      await control.command({ type: 'steer-followup', threadId: id, itemId: control.get().followups![0]!.id })
+      if (held) {
+        expect(control.get().followups?.[0]).toMatchObject({ text: 'The queued steer', status: 'uncertain' })
+        await f.driver.completeTurn(id, 'Done without the steer')
+      }
+      await expect.poll(async () => (await requests('turn/start')).length).toBe(2)
+      expect(JSON.stringify((await requests('turn/start'))[1]?.params)).toContain('The queued steer')
+      await expect.poll(() => control.get().followups?.map(item => item.text)).toEqual(['After it'])
+      await f.driver.completeTurn(id, 'Second reply')
+      await expect.poll(async () => (await requests('turn/start')).length).toBe(3)
+      expect(JSON.stringify((await requests('turn/start'))[2]?.params)).toContain('After it')
+      await expect.poll(() => ownThread()?.status).toBe('running')
+
+      // From the composer: not sent, its draft kept, and the thread takes the next send.
+      const draftId = randomUUID()
+      await f.script({ dropSteer: held ? 'hold' : 'end-turn' })
+      const steered = await control.command({ type: 'steer', threadId: id, draftId, text: 'The composer steer' })
+      if (held) {
+        expect(steered.error).toBeTruthy()
+        expect(control.get().deliveries?.find(item => item.draftId === draftId)?.status).toBe('uncertain')
+        await f.driver.completeTurn(id, 'Third reply')
+      } else expect(steered.error).toBe(STEER_NOT_TAKEN)
+      await expect.poll(() => control.get().deliveries?.find(item => item.draftId === draftId)?.status).toBe('failed')
+      expect(control.get().threadDrafts?.find(item => item.draftId === draftId)?.text).toBe('The composer steer')
+      await expect.poll(() => ownThread()?.status).toBe('idle')
+      expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Carry on' })).error).toBeNull()
+      expect((await requests('turn/steer')).length).toBe(2)
+      expect(JSON.stringify(await requests('turn/start'))).not.toContain('The composer steer')
+    } finally { await stack.dispose(); await f.cleanup() }
+  })
+}
+
 const open = async () => {
   const f = await museFixture()
   await f.host.connect()
@@ -523,6 +577,51 @@ it('steers a running turn and refuses to steer an idle one', async () => {
       expect.objectContaining({ turnId: 'first', status: 'completed' }),
     ])
   } finally { await f.cleanup() }
+})
+
+it('treats a steer whose turn ended without taking it as not sent, and never sends it again (#1408)', async () => {
+  // Muse acknowledges a steer when it admits it; when the turn ends first it refuses it with nothing on the stream.
+  for (const dropSteer of ['end-turn', 'end-turn-first'] as const) {
+    const { f, id } = await open()
+    try {
+      await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+      await f.script({ dropSteer })
+      const steer = { type: 'steer' as const, threadId: id, commandId: randomUUID(), messageId: 'late', text: 'Also check the tests' }
+      await expect(f.host.execute(steer)).rejects.toThrow(STEER_NOT_TAKEN)
+      const shown = await thread(f, id)
+      expect(shown.notTakenMessageIds).toEqual(['late'])
+      expect(shown.status).toBe('idle')
+      expect(shown.messages.map(message => message.id)).not.toContain('late')
+      // Asked again with the same message, it is refused without reaching Muse.
+      await expect(f.host.execute(steer)).rejects.toThrow(STEER_NOT_TAKEN)
+      expect((await f.driver.requests()).filter(record => record.method === 'turn/steer')).toHaveLength(1)
+      expect(JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8'))[id].origins.find((origin: { messageId: string }) => origin.messageId === 'late'))
+        .toMatchObject({ notTaken: true, confirmed: false })
+    } finally { await f.cleanup() }
+  }
+})
+
+it('settles a steer left unconfirmed once its turn ends without taking it, live and after a restart (#1408)', async () => {
+  // A steer admitted while a long tool call runs outlives the delivery wait; its turn's end settles it later.
+  for (const restart of [false, true]) {
+    const opened = await open(), id = opened.id
+    let f = opened.f
+    try {
+      await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+      await f.script({ dropSteer: 'hold' })
+      await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'held', text: 'Also check the tests' }))
+        .resolves.toEqual({ accepted: false, uncertain: true })
+      expect((await thread(f, id)).notTakenMessageIds).toBeUndefined()
+      if (restart) {
+        // The turn ends while the stream carries no word of it, as when Sotto is closed, and a resume finds it over.
+        await f.script({ suppressTurnCompleted: true })
+        await f.driver.completeTurn(id, 'Done without the steer')
+        f = await f.driver.restart(); f.host.observeThreads?.([id]); await f.host.connect()
+      } else await f.driver.completeTurn(id, 'Done without the steer')
+      await expect.poll(async () => (await thread(f, id))?.notTakenMessageIds).toEqual(['held'])
+      expect((await thread(f, id)).messages.map(message => message.id)).not.toContain('held')
+    } finally { await f.cleanup() }
+  }
 })
 
 it('refuses a client Sotto cannot drive: an older one, and another MSP version', async () => {
