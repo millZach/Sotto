@@ -1794,6 +1794,19 @@ it('lets comments that wait ride with a question that comes in the same pass as 
   expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
 })
 
+it('keeps a card in the note when the riding news before it would fill the note (#2226)', async () => {
+  const f = fixture()
+  const restarted = Array.from({ length: 49 }, (_, n): AgentThread => ({ id: `restarted-${n}`, providerId: 'claude', projectId: 'project', modelId: 'model',
+    title: `Restarted ${n}`, status: 'running', lastTurn: { id: `turn-${n}`, status: 'running' }, messages: [], requests: [] }))
+  f.snapshot.threads.push(...restarted)
+  f.wakes.threadsRestarted('claude', restarted.map(thread => ({ hostId: centerTarget.hostId, threadId: thread.id })))
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  const text = watcherNewsText(f.delivered[0]!)
+  expect(Buffer.byteLength(text)).toBeLessThanOrEqual(16 * 1_024)
+  expect(text).toContain('This thread waits on the user to answer its request')
+})
+
 it('puts what wakes Watcher ahead of news that rides, and keeps what one wake-up has no room for (#2226)', async () => {
   const f = fixture()
   // A usage limit's reset restarts more threads than one wake-up's news names: news that only rides.
@@ -1843,6 +1856,18 @@ describe('news that rides with the user’s own message to Watcher (#2226)', () 
     f.wakes.takeRiding(centerTarget)!.back()
     finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
     expect(f.delivered.map(news => kinds(news)?.sort())).toEqual([['evidence-changed', 'turn-finished']])
+    expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
+  })
+
+  it('makes its pull request news again when it went out of date before the message failed to go', async () => {
+    const f = fixture()
+    await waitingComments(f)
+    const riding = f.wakes.takeRiding(centerTarget)!
+    // A check count moving while the send is tried leaves the taken evidence out of date.
+    f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 2 })
+    riding.back()
+    finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(kinds(f.delivered.at(-1))?.sort()).toEqual(['evidence-changed', 'turn-finished'])
     expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toContain('its comments or reviews changed')
   })
 

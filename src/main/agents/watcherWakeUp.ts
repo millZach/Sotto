@@ -706,6 +706,11 @@ export class WatcherWakeUp {
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
     this.batch()
   }
+  /** A send carries these events: what Watcher would be told of their threads' own and pull requests' facts with them. */
+  private carrying(events: readonly WatcherEvent[]): void {
+    for (const event of events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
+    while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
+  }
   /** What a send that carried these events tells of their pull requests' facts, by how it settled. */
   private noteToldAttention(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
     for (const event of events) {
@@ -743,8 +748,7 @@ export class WatcherWakeUp {
       const events = news.events, ids = new Set(events.map(event => event.id))
       // Only what the news names leaves the wait: what its limits left out goes with the next news instead.
       this.pending = due.filter(event => !ids.has(event.id))
-      for (const event of events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
-      while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
+      this.carrying(events)
       let settled = false
       return { news: { ...news, omitted: 0 },
         told: () => {
@@ -757,7 +761,15 @@ export class WatcherWakeUp {
           if (settled || this.closed) return
           settled = true
           for (const event of events) { this.carriedAttention.delete(event.id); if (event.kind === 'evidence-changed') this.toldLocal.delete(targetKey(event.target)) }
-          this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
+          this.withPassReads(() => {
+            this.pending = this.stillDue(foldWatcherEvents(events, this.pending))
+            // Pull request news that went out of date while the send was tried is made again as its facts stand, so what
+            // they say that was not told still rides.
+            const again = new Map(events.filter(event => event.kind === 'evidence-changed').map(event => [targetKey(event.target), event.target]))
+            for (const [key, target] of again) {
+              if (!this.pending.some(event => event.kind === 'evidence-changed' && targetKey(event.target) === key) && this.ridingUntold(target)) this.evidenceChanged(target, [], false, 'again')
+            }
+          })
           this.batch()
         } }
     })
@@ -1023,12 +1035,15 @@ export class WatcherWakeUp {
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   /**
-   * One wake-up's news of these events. When its limits leave some out, what wakes Watcher goes first, so news that only
-   * rides never crowds it out, and what was left out waits for the next wake-up rather than being lost (#2226); what
-   * folding replaced, as a takeover does, is gone.
+   * One wake-up's news of these events. News that only rides goes last, so the note's size, which gives way from its last
+   * line, never cuts what woke Watcher for it. When the limits on events and threads leave some out, what wakes Watcher
+   * goes first and what was left out waits for the next wake-up rather than being lost (#2226); what folding replaced, as a
+   * takeover does, is gone.
    */
   private newsWithRoom(watcher: WatcherThreadTarget, events: readonly WatcherEvent[]): WatcherNews {
-    const all = foldWatcherEvents([], events)
+    const folded = foldWatcherEvents([], events)
+    const rides = (event: WatcherEvent): boolean => WATCHER_RIDING_KINDS.has(event.kind) || event.kind === 'evidence-changed' && !this.attends(event)
+    const all = [...folded.filter(event => !rides(event)), ...folded.filter(rides)]
     let news = foldWatcherNews(undefined, { source: 'watcher', watcher, events: all, omitted: 0 })
     if (news.events.length === all.length) return news
     const waking = new Set(all.filter(event => this.attends(event)).map(event => event.id))
@@ -1095,8 +1110,7 @@ export class WatcherWakeUp {
             await this.options.deliver(valid)
             if (this.closed) return
             this.consumedRetries = Math.max(this.consumedRetries, retries)
-            for (const event of valid.events) if (event.kind === 'evidence-changed') { this.toldLocalAs(event); this.carriedAttention.set(event.id, this.evidence.attention(event.target)) }
-            while (this.carriedAttention.size > 2_000) this.carriedAttention.delete(this.carriedAttention.keys().next().value!)
+            this.carrying(valid.events)
             for (const event of valid.events) this.rememberPending.add(event.id)
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
