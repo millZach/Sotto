@@ -115,17 +115,17 @@ export function checksAfter(last: ChecksRead | undefined, asked: boolean, detail
  * What one read of an open pull request tells Watcher (#1190): its state, conflict, remarks fingerprint and checks, and
  * whether the checks the base branch requires passed, from the same gate babysitting tells a thread by. Every check has
  * passed only once that gate has (#2116): right after a push GitHub may list a skipped check of another workflow, or the
- * first job alone, before the jobs the rules require exist. Where neither the rules nor GitHub's flags say which checks
- * are required, as when the sign-in cannot read the rules, no pass is known, so none is said. Where they do, it also says
- * how many required checks are still to finish and how many others are still running, so Watcher knows which pending
- * checks hold a merge.
+ * first job alone, before the jobs the rules require exist. Where the sign-in cannot read the rules, no pass is known,
+ * since GitHub flags only the required checks that exist, so none is said. Where it can, it also says how many required
+ * checks are still to finish and how many others are still running, so Watcher knows which pending checks hold a merge.
  */
 export function openPullRequestObservation(fingerprint: PullRequestFingerprint, detail: DetailAnswer | null, now: number,
   previous: PullRequestObservation | undefined, checksAsked: boolean): PullRequestObservation {
   const observation = pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), previous, checksAsked)
   const checks = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? detail.checks : null
   if (!checks) return observation
-  const gate = gateOf(checks, detail!.requiredChecks ?? []), known = detail!.requiredChecks !== null || gate.required
+  // GitHub flags only the required checks that exist, so without the rules the flags never say none is missing.
+  const gate = gateOf(checks, detail!.requiredChecks ?? []), known = detail!.requiredChecks !== null
   const requiredPassed = known && detail!.checksComplete !== false && gate.passed
   return { ...observation, ...observation.checks === 'passed' && !requiredPassed ? { checks: 'pending' as const } : {}, requiredPassed,
     ...known ? { pendingChecks: pendingChecks(checks, gate.required ? gate.names : []) } : {} }

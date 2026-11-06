@@ -91,6 +91,10 @@ describe('Watcher\'s reads of watched pull requests', () => {
     await f.pass()
     expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false })
     expect(f.seen(1)).not.toHaveProperty('pendingChecks')
+    // Nor do GitHub's flags make a pass without the rules: they mark only the required checks that exist.
+    const flagged = harness([{ number: 3, rulesUnreadable: true, checks: [{ name: 'Gates (Windows)', state: 'SUCCESS', required: true }] }], [url(3)])
+    await flagged.pass()
+    expect(flagged.seen(3)).toMatchObject({ checks: 'pending', requiredPassed: false })
     // The required build passed; another app's build of the same name, not flagged, still runs and holds no merge.
     const twin: ScriptedPull = { number: 2, requiredChecks: ['build'], checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'build', status: true, state: 'PENDING' }] }
     const g = harness([twin], [url(2)])
