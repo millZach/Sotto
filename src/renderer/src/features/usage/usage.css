@@ -50,7 +50,17 @@
 .usage-more:hover, .usage-more[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .usage-more:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .usage-subtitle { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.usage-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 18px; }
+/* The page's controls are three kinds, each drawn once: the views as words on the page's hairline, the filters as one
+   filled group above it at the right (under it when the room is narrow), and the chart's own choices on its card. */
+.usage-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin-top: 18px; }
+/* The views: Overview, Subscriptions and Models as words, the open one in the text colour over the accent's 2px line, as
+   a split's thread tabs are, on a hairline that runs the page's width. */
+.usage-tabs { position: relative; display: flex; gap: 24px; }
+.usage-tabs::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100cqi; height: 1px; background: var(--tt-hairline); pointer-events: none; }
+.usage-tabs button { position: relative; z-index: 1; min-height: 40px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 500; white-space: nowrap; transition: color 120ms ease; }
+.usage-tabs button:hover { color: var(--tt-text-2); }
+.usage-tabs button:focus-visible { outline-offset: -2px; }
+.usage-tabs button[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
 .usage-seg { display: inline-flex; padding: 3px; border-radius: var(--tt-radius-control); background: var(--usage-seg); }
 .usage-seg button { height: 30px; padding: 0 14px; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); white-space: nowrap; transition: background-color .15s, color .15s, opacity 120ms ease; }
 .usage-seg button:hover:not(:disabled) { color: var(--tt-text); }
@@ -59,11 +69,15 @@
 .usage-seg button:is([aria-selected='true'], [aria-checked='true']) { background: var(--usage-seg-on); color: var(--tt-text); box-shadow: var(--tt-shadow-sm); }
 .usage-seg--small { padding: 3px; border-radius: var(--tt-radius-control); }
 .usage-seg--small button { height: 24px; min-height: 24px; padding: 0 10px; border-radius: var(--tt-radius-tag); font-size: var(--tt-type-caption); }
-.usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card); color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 6px; }
+/* One group: the filters share a fill, parted by the room's 2px, with the group's corners at its two ends. */
+.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 13px; border: 1px solid transparent; border-radius: 0; background: var(--tt-card); color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .usage-filter:hover, .usage-filter[aria-expanded='true'] { background: color-mix(in srgb, var(--tt-accent-surface) 38%, var(--tt-card)); color: var(--tt-text); }
 .usage-filter:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); }
 .usage-filter svg { color: var(--tt-text-muted); }
+.usage-filter:first-child { border-start-start-radius: var(--tt-radius-control); border-end-start-radius: var(--tt-radius-control); }
+.usage-filter:last-child { border-start-end-radius: var(--tt-radius-control); border-end-end-radius: var(--tt-radius-control); }
+.usage-filter:focus-visible { position: relative; z-index: 1; }
 .usage-dates { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; margin-top: 12px; }
 .usage-dates label { display: flex; align-items: center; gap: 9px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .usage-dates input { min-height: 32px; padding: 4px 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); color-scheme: inherit; }
@@ -167,6 +181,10 @@
 .usage-chart-head h3 { margin: 0; font-size: var(--tt-type-reading); font-weight: 600; letter-spacing: -.1px; }
 .usage-per:not(.usage-stage__sub) { margin-top: 30px; }
 .usage-chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Show and Bars or Lines share one track, parted by a short rule, so the chart has one set of choices. */
+.usage-chart-tools > .usage-seg:has(+ .usage-seg) { border-start-end-radius: 0; border-end-end-radius: 0; }
+.usage-chart-tools > .usage-seg + .usage-seg { margin-left: -8px; padding-left: 0; border-start-start-radius: 0; border-end-start-radius: 0; }
+.usage-chart-tools > .usage-seg + .usage-seg::before { content: ''; align-self: center; width: 1px; height: 14px; margin: 0 3px 0 2px; background: var(--tt-border); }
 .usage-chart-tools__label { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The value list: a grid, so values changing as a day is read never move a name or the chart under it. */
 .usage-values { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 6px 18px; margin: 14px 0 0; padding: 0; list-style: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
