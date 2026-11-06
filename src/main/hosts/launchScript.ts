@@ -84,9 +84,18 @@ const attempt = typeof cfg.attempt === 'string' && /^[a-f0-9]{8,64}$/.test(cfg.a
 const resultFile = attempt && typeof cfg.resultFile === 'string' && path.isAbsolute(cfg.resultFile) && path.dirname(path.resolve(cfg.resultFile)) === data ? path.resolve(cfg.resultFile) : null;
 let claimed = false;
 const resultText = value => JSON.stringify({ v: 1, attempt, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
+// Windows refuses to rename over a file while another process has it open, as the host does each time it reads its outcome;
+// the read takes a moment, so the rename is tried again for up to two seconds. A result that never lands leaves the status
+// restarting with this process gone, which the host can only read as an update lost.
 const writeResult = async value => {
   const temporary = resultFile + '.' + process.pid + '.tmp';
-  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); return true; }
+  try {
+    await fs.writeFile(temporary, resultText(value), { mode: 0o600 });
+    for (let tries = 0; ; tries++) {
+      try { await fs.rename(temporary, resultFile); return true; }
+      catch (error) { if (tries >= 40 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error; await pause(50); }
+    }
+  }
   catch { await fs.rm(temporary, { force: true }).catch(() => undefined); return false; }
 };
 // True only when this process claimed the attempt and the host can read what it claimed with: a restart whose status could
@@ -576,7 +585,7 @@ const removeIfStill = async (folder, matches) => {
     try { await fs.rename(folder, aside); break; }
     catch (error) {
       if (error && error.code === 'ENOENT') return 'gone';
-      if (tries >= 10 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return 'kept';
+      if (tries >= 40 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return 'kept';
       await pause(50);
     }
   }
