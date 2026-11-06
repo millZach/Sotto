@@ -293,7 +293,6 @@ msgid "{passedCount} passed"
 msgstr ""
 
 #. Which file of a comparison is in view, as in "3 of 30".
-#. Which file of a comparison is in view, as in "3 of 30".
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{place} of {total}"
 msgstr ""
@@ -590,6 +589,11 @@ msgstr ""
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "All agents"
+msgstr ""
+
+#. Opens the list of a comparison's files over its lines in Changes, where the panel has no room for it beside them.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "All files"
 msgstr ""
 
 #. Opens the list of a comparison's files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".
@@ -1513,11 +1517,6 @@ msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
 msgid "Drag to resize · Double-click to reset to half"
-msgstr ""
-
-#. Before one line of what a reworked paragraph said before it changed, under the paragraph in Changes; a press shows all of it.
-#: src/renderer/src/tools/DiffBlock.tsx
-msgid "Earlier"
 msgstr ""
 
 #. An element of a web page, chosen to give feedback on.
