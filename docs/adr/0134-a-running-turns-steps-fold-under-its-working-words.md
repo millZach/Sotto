@@ -4,7 +4,7 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
-Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). Amended November 5, 2026, by his pick of B, "as long as that reply closes out the last step": a closing reply written after the turn's steps stands under the line (see "the closing reply under the line" at the end). His picks of October 24 and 26 stay in the record below.
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known; and November 5, 2026, by his pick of B again: what the provider sent the step is for leads, with the step beside it (see the amendments at the end). Amended again on November 5, 2026, by his pick of C: when the agent sent a plan, its checklist stays in view above the line (see "the plan stays in view" at the end). Amended November 5, 2026, by his pick of B, "as long as that reply closes out the last step": a closing reply written after the turn's steps stands under the line (see "the closing reply under the line" at the end). Amended November 5, 2026, by his pick of B: the light is a band about ten letters wide that crosses the words, not a share of the line (see "the light passes as a band" at the end). His picks of October 24 and 26 stay in the record below.
 
 ## Context
 
@@ -124,3 +124,15 @@ Zach chose this: on November 5 he compared two answers for where the reply being
 **When it goes back.** Zach's condition holds it to the closing reply. Once a step, a permission request or a question follows the reply, it is no longer the turn's last word, and it goes back above the line in the order the work happened, with the line and the request's card at the end. A turn with no steps keeps its line at the end, since nothing will fold above its reply, and a reply written before the turn began is not the one being written.
 
 **What stays.** "The working line at the end of the transcript" in the Decision now means the end of the running turn's work. The line's words, light, timing, checklist and press are unchanged.
+
+## November 5, 2026 amendment: the light passes as a band
+
+Zach chose this: on November 5 he compared two lights for the working line in the design pass's prototype `sotto-council/prototypes/light-band/`, kept outside the repository, and picked B (`c8290a063`). A was his October 25 light as it stood: a band that was a share of the line's width with straight edges, drawn over the muted words. Reviewers read a still frame of it as a highlighting bug, since on a long line it lit whole words at full strength ("Read" alone lit in "Read the request policy", "Wai" in "Waiting for your permission") and the lit letters, drawn twice, looked bold.
+
+**The band.** The light is a band about ten letters wide (10.5em) whatever the line's length, with a soft core at full strength and long eased edges, slanted, so in any one frame letters brighten towards the middle and fade on both sides.
+
+**Drawn once.** The muted words fade out where the lit copy fades in, so a lit letter is drawn once, in the light, and keeps the words' weight.
+
+**What stays.** The colour is `--tt-working-light` as the October 25 amendment has it, the cycle is the same 4.2 seconds with the crossing in 72% of it and then a rest, and there is no halo. Reduced motion and **Last seen working** are unchanged.
+
+**What it costs.** The band crosses the line and its own width in the same time, where A's crossed twice the line's width, so on a long line it moves more slowly than before.
