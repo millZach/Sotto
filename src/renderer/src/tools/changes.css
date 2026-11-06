@@ -313,18 +313,17 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 8px 16px 14px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 
 /* Syntax colour supports the change and never speaks over it. Green, red and amber mean added, removed and modified
-   here, so no syntax ink is drawn from them: a string is not amber and a number not red. What colour syntax has is
-   the theme's own hue, near the strength a code block in a message gives it, so a diff scans as easily: keywords and
-   numbers in the theme's action colour at two thirds (a little over half by day, where a changed line's wash is
-   deeper), types in its hover colour at half, and a string a step quieter than the code around it. Each ink mixes
-   toward the body text, as ADR-0024's October 11 amendment has code keywords do. The hue stays in thin letters, so a
-   change's wash, edge and sign are still the strongest colour on a line. Every ink holds 4.5:1 on a changed line's
-   wash too. */
+   here, so no syntax ink is drawn from them: a string is not amber and a number not red. The theme's action colour is
+   green in Fern, amber in Citrine and terracotta in Clay, so syntax takes none of it either and reads by ink and shape
+   alone, from the neutral inks every theme has: a keyword in the secondary ink a step heavier, a number in the
+   secondary ink, a type in the body's ink, a string a step quieter than the code around it, a comment muted and
+   slanted. A change's wash, edge and sign are then the only colour on a line. Every ink holds 4.5:1 on a changed
+   line's wash too. */
 .changes-diff__rows {
-  --changes-code-keyword: light-dark(color-mix(in oklab, var(--tt-primary) 55%, var(--tt-text)), color-mix(in oklab, var(--tt-primary) 68%, var(--tt-text)));
+  --changes-code-keyword: var(--tt-text-2);
   --changes-code-string: color-mix(in oklab, var(--tt-text) 50%, var(--tt-text-muted));
-  --changes-code-number: var(--changes-code-keyword);
-  --changes-code-type: color-mix(in oklab, var(--tt-primary-hover) 50%, var(--tt-text));
+  --changes-code-number: var(--tt-text-2);
+  --changes-code-type: var(--tt-text);
 }
 .changes-diff__rows .hljs-keyword, .changes-diff__rows .hljs-selector-tag, .changes-diff__rows .hljs-built_in, .changes-diff__rows .hljs-literal, .changes-diff__rows .hljs-doctag { color: var(--changes-code-keyword); }
 .changes-diff__rows .hljs-string, .changes-diff__rows .hljs-regexp, .changes-diff__rows .hljs-template-tag, .changes-diff__rows .hljs-attr-value { color: var(--changes-code-string); }
@@ -335,6 +334,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* As in a message's code block, a name being declared is set a step heavier and a comment slanted, so code reads by
    shape as well as by ink. */
 .changes-diff__rows[data-reading='code'] :is(.hljs-title, .hljs-section, .hljs-name) { font-weight: 500; }
+.changes-diff__rows[data-reading='code'] :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-literal) { font-weight: 500; }
 .changes-diff__rows[data-reading='code'] :is(.hljs-comment, .hljs-quote) { font-style: italic; }
 
 /* The words that changed are the loudest thing on the line, so inside them syntax colour and Markdown's faint marks give way. */
