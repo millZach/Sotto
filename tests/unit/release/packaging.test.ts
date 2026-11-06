@@ -135,7 +135,7 @@ describe('release contract', () => {
   })
 
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
-    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', 'sherpa-onnx-node': '1.13.8', zod: '4.4.3' })
+    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', 'sherpa-onnx-node': '1.13.8', zod: '4.6.7' })
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/runtime')).toBe(false)
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')

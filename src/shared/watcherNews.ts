@@ -25,10 +25,9 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * card, which Watcher's pane shows under the wake-up's reply as well (ADR-0073), and never through Watcher.
  * `work-settled` comes once per turn that finished with background work or monitoring still running, when that reaches zero.
  * `delegatedThreadId` names the thread a watched thread delegated to whose request card this is: Watcher watches the
- * delegating thread, and hears of the card as that thread's news (#1190). `prototype-ready` comes once for each prototype
- * waiting for the user's review (ADR-0108), named by its question (`requestCardId`) or by the reply that named its page
- * (`messageId`); like all news it answers and approves nothing. `request-closed` and `prototype-closed` come once when a card or
- * prototype Watcher was told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
+ * delegating thread, and hears of the card as that thread's news (#1190). A prototype has no news of its own (ADR-0108,
+ * November 6, 2026): the question card that links it is `needs-user`. `request-closed` comes once when a card Watcher was
+ * told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
  * user answer that card, or `endedWithoutAnswer` when it did not and the thread's turn had ended too (#2230). They carry
  * none of the answer, and approve nothing. `threads-restarted` comes once for each thread
  * Sotto restarted when the usage limit that stopped it reset (ADR-0144), `restartedBy` naming that provider, watched or not:
@@ -50,10 +49,10 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * question names, or Watcher's own thread. It is saved with the told words, since nothing else holds the choice for Watcher.
  */
 export const watcherEventSchema = z.object({
-  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
-    'request-closed', 'prototype-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'thread-ready', 'user-answered']),
+  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled',
+    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'thread-ready', 'user-answered']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
-  observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
+  observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
   revision: z.string().max(512).optional(), operationId: z.uuid().optional(),
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),

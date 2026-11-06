@@ -36,6 +36,11 @@ function buildWin32KeyTokens(): Record<number, string> {
 // PowerShell also closes a single-quoted string on the typographic single quotes.
 const POWERSHELL_SINGLE_QUOTES = /['‘’‚‛]/g
 
+/** A PowerShell single-quoted string holding `value` as it is, typographic quotes included. */
+export function powerShellSingleQuoted(value: string): string {
+  return `'${value.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'`
+}
+
 export function keyListenerWin32Invocation(
   csPath: string,
   acceptSynthetic: boolean,
@@ -43,7 +48,7 @@ export function keyListenerWin32Invocation(
   if (/[\r\n]/.test(csPath)) {
     throw new Error('The key listener source path cannot contain a line break.')
   }
-  const quotedPath = `'${csPath.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'`
+  const quotedPath = powerShellSingleQuoted(csPath)
   // -LiteralPath, not -Path: Add-Type -Path treats [ and ] in a folder name as wildcards.
   const script = `Add-Type -LiteralPath ${quotedPath}; [SottoKeyListener]::Run(${acceptSynthetic ? '$true' : '$false'})`
   const args = Object.freeze([

@@ -3,27 +3,13 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent,
   type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
-import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
 import type { WatcherCardWords, WatcherEvidence } from '../../shared/watcher'
 import { SETTLE_IT } from '../../shared/watcherQuestions'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
     event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.kind === 'thread-moved' ? event.moveId ?? null : carriesWords(event) ? event.id : event.turnId ?? null])
-}
-/**
- * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits
- * in, or the reply that named its page.
- */
-export function watcherPrototypeSource(event: Pick<WatcherEvent, 'requestCardId' | 'messageId'>): string | undefined {
-  return event.requestCardId !== undefined ? requestSource(event.requestCardId) : event.messageId !== undefined ? replySource(event.messageId) : undefined
-}
-/** What a `prototype-ready` event carries to name a mark's source, or undefined when the source is too long to carry. */
-export function watcherPrototypeFields(source: string): Pick<WatcherEvent, 'requestCardId' | 'messageId'> | undefined {
-  const parsed = parsePrototypeSource(source)
-  if (!parsed || parsed.id.length > 512) return undefined
-  return parsed.kind === 'request' ? { requestCardId: parsed.id } : { messageId: parsed.id }
+      : event.kind === 'thread-moved' ? event.moveId ?? null : carriesWords(event) ? event.id : event.turnId ?? null])
 }
 /**
  * News that carries what nothing else holds: a thread's own message, its READY TO MERGE (#2229) and the user's answer to
@@ -70,8 +56,6 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-re
   quiet: 'No progress was observed for twenty minutes of connected work.',
   'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
-  'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
-  'prototype-closed': 'This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.',
 }
 const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
 /**
