@@ -217,20 +217,20 @@ function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, o
   }
   return <section className="council-ask" aria-labelledby={questionId}>
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
-    <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={id => { setOrigin(id); onOrigin(id) }} />
-    <div className="council-field">
+    <div className="council-composer">
       <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-label={t({ message: 'Question', comment: 'The question put to the Council' })}
         onChange={event => setQuestion(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void ask() } }} />
+      <div className="council-composer__footer">
+        <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={id => { setOrigin(id); onOrigin(id) }} />
+        <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!ready || !question.trim() || !shownOrigin || busy} onClick={() => void ask()}>
+          {busy ? t`Asking the Council…` : t`Ask the Council`}</button>
+      </div>
     </div>
     {small.map(({ who, model }) => <p key={who} className="council-notice tt-paragraph">
       {t`${who}’s model, ${model}, holds less than this conversation and may lose its start.`}</p>)}
     {estimate && 'unavailable' in estimate ? <p className="council-notice tt-paragraph">{estimate.unavailable}</p> : null}
-    <div className="council-ask__actions">
-      <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!ready || !question.trim() || !shownOrigin || busy} onClick={() => void ask()}>
-        {busy ? t`Asking the Council…` : t`Ask the Council`}</button>
-      {message ? <p className="council-notice tt-paragraph" role="status">{message}</p> : null}
-    </div>
+    {message ? <p className="council-notice tt-paragraph" role="status">{message}</p> : null}
   </section>
 }
 
@@ -375,17 +375,20 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
     if (citation.of === 'source') return t`${finding} cites a source though the question needs no research, unchecked`
     return `${citation.path}:${citation.lines} ${({ matches: t`matches`, differs: t`does not match what it quoted`, missing: t`is not in the snapshot`, unchecked: t`unchecked` })[citation.check]}`
   })
+  const stage = row.repair ? t`${words.stage(row.stage)}, asked again` : words.stage(row.stage)
+  const model = seat ? `${who} ${seat.modelName}` : who
   return <li className="council-row" data-state={row.state}>
-    <span className="council-row__stage">{row.repair ? t`${words.stage(row.stage)}, asked again` : words.stage(row.stage)}</span>
-    <span className="council-row__seat">{who}{seat ? <span className="council-muted"> {seat.modelName}</span> : null}</span>
-    <span className="council-row__state">{words.state(row.state)}{row.late ? <span className="council-muted"> · {t`past the stage deadline`}</span> : null}
-      {row.result === 'unavailable' ? <span className="council-muted"> · {t`no result`}</span> : null}</span>
+    <span className="council-row__stage" title={stage}>{stage}</span>
+    <span className="council-row__seat" title={model}>{model}</span>
+    <span className="council-row__state">{words.state(row.state)}</span>
+    <button type="button" className="council-link council-row__open tt-focusable" onClick={openThread}>{t`Open thread`}</button>
+    {row.late ? <span className="council-row__summary">{t`past the stage deadline`}</span> : null}
+    {row.result === 'unavailable' ? <span className="council-row__summary">{t`no result`}</span> : null}
     {row.summary && row.stage !== 'framing' ? <span className="council-row__summary">{row.summary}</span> : null}
     {checked.length ? <span className="council-row__summary council-muted">{checked.join('; ')}</span> : null}
     {row.sources?.length ? <span className="council-row__summary council-muted">{t`Sources:`} {row.sources.map((source, index) => <React.Fragment key={source.finding}>
       {index ? '; ' : ''}{source.finding} <span className="council-source">{source.url}</span></React.Fragment>)}</span> : null}
-    <span className="council-row__actions">
-      <button type="button" className="council-link tt-focusable" onClick={openThread}>{t`Open thread`}</button>
+    {row.actions.length ? <span className="council-row__actions">
       {row.actions.filter(action => action !== 'replace').map(action => <button key={action} type="button" className="council-link tt-focusable"
         onClick={() => void run({ type: action as 'retry' | 'skip', council: council.id, turn: row.turn })}>{words.action(action)}</button>)}
       {row.actions.includes('replace') ? choosing
@@ -396,7 +399,7 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
             void run({ type: 'replace', council: council.id, turn: row.turn, seat: { modelId, reasoningEffort: councilEffort(seat?.effort ?? COUNCIL_SEAT_EFFORT, resolveModel(catalog, modelId)) } })
           }} />
         : <button type="button" className="council-link tt-focusable" onClick={() => setChoosing(true)}>{words.action('replace')}</button> : null}
-    </span>
+    </span> : null}
   </li>
 }
 
@@ -456,11 +459,9 @@ function FollowUp({ council, run }: { readonly council: CouncilRecord; readonly 
   const { t } = useLingui()
   const [question, setQuestion] = useState('')
   const ask = (): void => { if (question.trim()) { void run({ type: 'follow-up', council: council.id, question: question.trim() }); setQuestion('') } }
-  return <div className="council-follow-up">
-    <div className="council-field">
-      <textarea aria-label={t`Ask a follow-up`} className="tt-input tt-focusable" rows={2} value={question} onChange={event => setQuestion(event.currentTarget.value)}
-        onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); ask() } }} />
-    </div>
-    <div className="council-ask__actions"><button type="button" className="tt-button tt-focusable" disabled={!question.trim()} onClick={ask}>{t`Ask a follow-up`}</button></div>
+  return <div className="council-follow-up council-composer">
+    <textarea aria-label={t`Ask a follow-up`} className="tt-input tt-focusable" rows={2} value={question} onChange={event => setQuestion(event.currentTarget.value)}
+      onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); ask() } }} />
+    <div className="council-composer__footer council-composer__footer--follow-up"><button type="button" className="tt-button tt-focusable" disabled={!question.trim()} onClick={ask}>{t`Ask a follow-up`}</button></div>
   </div>
 }

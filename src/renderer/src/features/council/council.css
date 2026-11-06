@@ -38,12 +38,17 @@
 .council-chamber__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
   color: var(--tt-text); background-color: var(--tt-accent-text); font-family: var(--tt-font-mono); }
 
-.council-ask { display: grid; gap: 10px; padding: 12px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.council-ask { display: grid; gap: 10px; }
+.council-composer { display: grid; min-width: 0; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.council-composer > textarea { width: 100%; min-width: 0; min-height: 76px; padding: 12px; border: 0; border-radius: var(--tt-radius-card); background: transparent; resize: vertical; }
+.council-composer__footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 0 10px 10px; }
+.council-composer__footer > .council-field { min-width: 0; }
+.council-composer__footer--follow-up { display: flex; justify-content: flex-end; }
 .council-field { display: grid; gap: 5px; min-width: 0; }
 .council-field > span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .council-field > :is(select, textarea) { width: 100%; min-width: 0; }
-/* The thread title opens the origin picker, in the same place in the Tab order. */
-.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 11px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); }
+/* The thread title opens the origin picker below the question. */
+.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; color: var(--tt-text); }
 .council-origin .provider-mark, .council-origin__row .provider-mark { flex: none; color: var(--tt-text-muted); }
 .council-origin__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .council-origin__change { align-self: stretch; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: none; color: inherit; font: inherit; text-align: left; }
@@ -107,17 +112,22 @@
 .council-criteria { display: grid; flex-basis: 100%; gap: 8px; }
 .council-muted { color: var(--tt-text-muted); }
 
-.council-rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.council-row { display: grid; grid-template-columns: minmax(96px, 150px) minmax(80px, 200px) minmax(90px, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 6px 8px;
-  border-radius: var(--tt-radius-row); color: var(--tt-text); font-size: var(--tt-type-small); }
-.council-row:nth-child(odd) { background: var(--tt-card-inset); }
-.council-row__stage { color: var(--tt-text-2); }
+.council-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.council-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 7em auto; align-items: baseline; gap: 4px 8px; padding: 8px 0;
+  color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.council-row + .council-row { border-top: 1px solid var(--tt-hairline); }
+.council-row:is([data-state='working'], [data-state='waiting']) { color: var(--tt-text); }
+.council-row__stage, .council-row__seat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.council-row__seat { color: var(--tt-text-2); }
+.council-row__state, .council-row__open { white-space: nowrap; }
+.council-row__open { justify-self: end; color: inherit; }
 .council-row__summary { grid-column: 1 / -1; color: var(--tt-text-2); overflow-wrap: anywhere; }
-.council-row__actions { display: flex; flex-wrap: wrap; grid-row: 1; grid-column: 4; justify-content: flex-end; gap: 4px 12px; }
-.council-row:is([data-state='failed'], [data-state='unknown'], [data-state='waiting']) .council-row__state { color: var(--tt-warning-text); }
-@container (max-width: 600px) {
-  .council-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .council-row__actions { grid-row: auto; grid-column: 1 / -1; justify-content: flex-start; }
+.council-row__actions { display: flex; flex-wrap: wrap; grid-column: 1 / -1; gap: 4px 12px; }
+.council-row:is([data-state='failed'], [data-state='unknown']) .council-row__state { color: var(--tt-warning-text); }
+@container (max-width: 380px) {
+  .council-row { grid-template-columns: 6.5em minmax(0, 1fr); }
+  .council-row__state { grid-column: 1; }
+  .council-row__open { grid-column: 2; }
 }
 
 .council-crux { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
@@ -128,7 +138,6 @@
 .council-objection { margin: 0; padding: 6px 10px; border-left: 2px solid var(--tt-field-border); color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-objection p { margin: 0; }
 .council-pending { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.council-follow-up { display: grid; gap: 8px; }
 
 /* Climb stays in the drawer's reading column beside the Council chamber. */
 .climb-mode { display: flex; gap: 4px; border-bottom: 1px solid var(--tt-hairline); padding-bottom: 8px; }

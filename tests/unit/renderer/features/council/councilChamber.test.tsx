@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
@@ -120,6 +120,38 @@ describe('the Council tab’s reads', () => {
 })
 
 describe('the quiet Council record', () => {
+  it('keeps full model names and opens the row’s thread when the model is visually shortened', async () => {
+    withLayout()
+    const { command } = provide()
+    const record = councilFixture({ rows: [row('A', 'answer', 'working'), row('B', 'answer', 'done', { summary: 'Keep the export format.' })] })
+    record.seats = record.seats.map((seat, index) => ({ ...seat, modelName: index === 0 ? 'GLM 5.3 Refuseless' : 'DeepSeek V4.1 Flash 1017 Abliterated' }))
+    const { container } = render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    await screen.findByRole('heading', { name: 'Move history into node:sqlite now?' })
+    const rows = container.querySelectorAll('.council-row')
+    expect(within(rows[0] as HTMLElement).getByTitle('A GLM 5.3 Refuseless')).toHaveTextContent('A GLM 5.3 Refuseless')
+    expect(within(rows[1] as HTMLElement).getByTitle('B DeepSeek V4.1 Flash 1017 Abliterated')).toHaveTextContent('B DeepSeek V4.1 Flash 1017 Abliterated')
+    expect(within(rows[1] as HTMLElement).getByText('Keep the export format.')).toBeInTheDocument()
+    await userEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Open thread' }))
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-b' })
+  })
+
+  it('tabs through the composer in reading order and keeps an Ask error beneath it', async () => {
+    withLayout()
+    provide([{ id: 'thread-a', title: 'Thread A' }, { id: 'thread-b', title: 'Thread B' }], [{ id: 'claude:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }])
+    const error = 'The Council could not start.'
+    const { container } = render(<CouncilView thread="thread-a" bridge={{ read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(async () => ({ ok: false as const, message: error })), onChanged: () => () => undefined }} />)
+    const question = await screen.findByRole('textbox', { name: 'Question' })
+    await userEvent.type(question, 'Which store?')
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Ask from another thread. Now Thread A' })).toHaveFocus()
+    await userEvent.tab()
+    const ask = screen.getByRole('button', { name: 'Ask the Council' })
+    expect(ask).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByText(error)).toBeInTheDocument()
+    expect(container.querySelector('.council-composer')).not.toContainElement(screen.getByText(error))
+  })
+
   it.each([
     { status: 'working', layout: 'long-table', verdict: false, showSeats: false },
     { status: 'waiting', layout: 'long-table', verdict: false, showSeats: false },
