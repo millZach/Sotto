@@ -263,12 +263,13 @@
    paint only inside their own box. Lines that divide rather than enclose stay hairlines (ADR-0110). */
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user']) { overflow-clip-margin: 8px; }
 .thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message:not([data-role='user']):has(+ .thread-message[data-role='user'])::after { content: ''; position: absolute; right: 0; bottom: -7px; left: 0; height: 1px; background: var(--tt-hairline); pointer-events: none; }
-/* Show all under a diff the transcript cut short is a button, the soft square with an edge that every secondary press wears
-   (ADR-0110), on the line that says how much shows, so the box ends close under its last line and clear of the composer. */
+/* Show all under a diff the transcript cut short is the secondary button (.tt-button, ADR-0110 decision 2): the surface
+   inside an edge in the field-border role, on the line that says how much shows, so the box ends close under its last line
+   and clear of the composer. */
 .thread-transcript .changes-block > .changes-diff__more { gap: 10px; padding: 2px 12px 8px; }
 .thread-transcript .changes-block > .changes-diff__more .files-link {
   display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control);
-  background: transparent; color: var(--tt-text-2); font: inherit; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-transcript .changes-block > .changes-diff__more .files-link:hover { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-transcript .changes-block > .changes-diff__more .files-link:active { background: var(--tt-hover); color: var(--tt-text); }
