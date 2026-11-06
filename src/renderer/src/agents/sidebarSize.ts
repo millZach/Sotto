@@ -80,6 +80,8 @@ export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
     width: Math.min(preferred, maximum), maximum,
     /** The rail stands: the user collapsed the sidebar, or the window is narrow. */
     collapsed: collapsed || narrow,
+    /** What the user chose, whatever the window's width: Watcher's room, which has no sidebar to open over, follows only this. */
+    chosenCollapsed: collapsed,
     /** The window is under `NARROW_WINDOW`: the rail stands and Expand opens the sidebar over the thread. */
     narrow,
     /** The sidebar stands open over the thread. Only a narrow window has it. */
@@ -87,6 +89,8 @@ export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
     resize: (width: number): void => save(Math.round(Math.max(MINIMUM, Math.min(maximum, width))), collapsed),
     /** Collapse or Expand: in a narrow window they close and open the sidebar over the thread, and nothing is saved. */
     collapse: (hidden: boolean): void => { if (narrow) setOver(!hidden); else save(chosen, hidden) },
+    /** Collapse or Expand as the user's own choice, saved at any width, for a room with no sidebar to open over. */
+    choose: (hidden: boolean): void => save(chosen, hidden),
     /** Shows or hides the sidebar, as Ctrl+Shift+B does: over the thread in a narrow window, beside it otherwise. */
     toggle: (): void => { if (narrow) setOver(!overOpen); else save(chosen, !collapsed) },
     /** Puts the sidebar over the thread away, as a chosen thread, Escape or a press beside it does. */

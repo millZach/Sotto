@@ -890,6 +890,15 @@ test.describe("Watcher's room on the built app", () => {
         expect(threadsFoot.length).toBeGreaterThanOrEqual(3)
         await page.keyboard.press('ControlOrMeta+2')
         await expect(watcherPane(page)).toBeVisible()
+        // Watcher's room follows only the user's own Collapse, so in a narrow window its row stays at the bottom left
+        // while Threads stands as the rail.
+        if (narrow) {
+          await expect(page.locator('.watcher-foot .thread-nav__rail')).toHaveCount(0)
+          await expect(page.locator('.watcher-foot .thread-nav__foot')).toBeVisible()
+          await roomEdges(page, width, height)
+          await page.keyboard.press('ControlOrMeta+1')
+          continue
+        }
         await expect(page.locator('.watcher-foot .thread-nav__rail')).toBeVisible()
         expect(await footBoxes()).toEqual(threadsFoot)
         await roomEdges(page, width, height)
@@ -898,12 +907,6 @@ test.describe("Watcher's room on the built app", () => {
         await expect(beside(page)).toBeVisible()
         expect(await footBoxes()).toEqual(threadsFoot)
         await roomEdges(page, width, height)
-        // The sidebar opens over a thread only, so in a narrow window Watcher's rail has no Expand.
-        if (narrow) {
-          await expect(page.locator('.watcher-foot').getByRole('button', { name: 'Expand sidebar', exact: true })).toHaveCount(0)
-          await page.keyboard.press('ControlOrMeta+1')
-          continue
-        }
         await page.locator('.watcher-foot').getByRole('button', { name: 'Expand sidebar', exact: true }).click()
         await expect(switchTab(page, 'Watcher')).toBeVisible()
         await expect(switchTab(page, 'Watcher')).toBeFocused()

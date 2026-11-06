@@ -748,7 +748,7 @@ export function WatcherView({ now: fixedNow }: {
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.collapsed || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.chosenCollapsed || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -772,9 +772,10 @@ export function WatcherView({ now: fixedNow }: {
         </div>
       </div>
     </section>
-    <div className={`watcher-foot${sidebar.collapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.collapsed ? railWidth(mac, railOn) : sidebar.width }}>
-      {/* In a narrow window the rail has no Expand here: the sidebar opens only over a thread, and the room has none. */}
-      {sidebar.collapsed ? <SidebarRail platform={app?.platform} onExpand={sidebar.narrow ? undefined : () => { handRoomFocus('watcher'); sidebar.collapse(false) }} /> : <SidebarFoot />}
+    {/* The footer follows only the user's own Collapse: a narrow window stands the Threads sidebar as the rail and opens it
+        over a thread, and this room has no thread to open it over, so its row keeps the bottom left at every width. */}
+    <div className={`watcher-foot${sidebar.chosenCollapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.chosenCollapsed ? railWidth(mac, railOn) : sidebar.width }}>
+      {sidebar.chosenCollapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.choose(false) }} /> : <SidebarFoot />}
     </div>
     <PageWindowControls />
     {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}

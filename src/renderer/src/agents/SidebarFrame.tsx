@@ -222,13 +222,12 @@ export function railWidth(mac: boolean, railOn: boolean): number {
 }
 
 /**
- * The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. Without `onExpand` it
- * has no Expand: Watcher's room in a narrow window, where no sidebar can open over it. Under the sidebar open over the
- * thread (`over`) it keeps its place, out of reach, and leaves the toast and the foot to the open sidebar.
+ * The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. Under the sidebar
+ * open over the thread (`over`) it keeps its place, out of reach, and leaves the toast and the foot to the open sidebar.
  */
 export function SidebarRail({ platform, onExpand, toggle, children, toast, foot, chord, narrow = false, over = false }: {
   readonly platform: SottoPlatform | undefined
-  readonly onExpand?: (() => void) | undefined
+  readonly onExpand: () => void
   readonly toggle?: React.RefObject<HTMLButtonElement | null>
   readonly children?: ReactNode
   readonly toast?: ReactNode
@@ -244,8 +243,8 @@ export function SidebarRail({ platform, onExpand, toggle, children, toast, foot,
   const expand = t`Expand sidebar`
   return <div className="thread-nav__rail" data-owl={railOn || undefined} inert={over}>
     {platform === 'darwin' ? null : <SottoMark className="thread-nav__glyph" />}
-    {onExpand === undefined ? null : <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={expand} title={chord === undefined ? expand : `${expand} ${chord.label.suffix}`}
-      aria-keyshortcuts={chord?.label.keys} aria-haspopup={narrow ? 'dialog' : undefined} aria-expanded={narrow ? over : undefined} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>}
+    <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={expand} title={chord === undefined ? expand : `${expand} ${chord.label.suffix}`}
+      aria-keyshortcuts={chord?.label.keys} aria-haspopup={narrow ? 'dialog' : undefined} aria-expanded={narrow ? over : undefined} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>
     {railOn && watcherOn ? <RailWatcher /> : null}
     <div className="thread-nav__rail-list">{children}</div>
     {over ? null : toast}

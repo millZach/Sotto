@@ -1701,7 +1701,11 @@ test.describe('review evidence', () => {
           await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
           const room = captureFor(launched, repository, out)
           const scene = 'Watcher itself is the stand-in the watcher specs seed, and its scene is held by the design-threads clock with every owl sitting.'
-          if (!ONLY || ONLY.includes('watcher-room')) await room.shoot('watcher-room', 'Watcher\'s room with its night scene, watching four threads, under a short conversation.', scene)
+          if (!ONLY || ONLY.includes('watcher-room')) {
+            // At every size, so the footer's row can be seen at the bottom left at the window's minimum too (ADR-0152).
+            for (const size of [[1600, 1000], ...SMALLER_SIZES] as const) await room.shoot('watcher-room', 'Watcher\'s room with its night scene, watching four threads, under a short conversation.', scene, { size })
+            await resizeContentWindowFor(launched, 1600, 1000)
+          }
           if (!ONLY || ONLY.includes('watcher-quiet')) {
             // The same conversation with the work Watcher did for each answer: a look at both pull requests that took its time,
             // then one quick read of the checks, whose Worked for line keeps its room and shows only under the pointer (Zach's
