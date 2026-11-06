@@ -189,14 +189,26 @@ import UIKit
     /// the tap reports success and the app never sees it (#1320). So when nothing has happened after a first look and
     /// `untouched` says the control still reads as it did before the press, it is pressed once more; `untouched` keeps a
     /// press that only landed late from being undone by the second.
+    ///
+    /// The first wait running out doesn't say the press was lost. Just after a sheet or menu opens, one look at the app can
+    /// take 7 to 30 seconds on CI, so the eight seconds can end inside the one look the wait made (#2107). Pressing again
+    /// then shut the menu the first press had opened, or failed on a control the new sheet now covered (#2090). So before
+    /// pressing again, `done` is looked at once more, and the control must still be there to press, not covered.
     @discardableResult
     private func press(_ control: XCUIElement, until done: NSPredicate, timeout: TimeInterval = 20,
                        untouched: () -> Bool = { true }) -> XCTWaiter.Result {
         control.tap()
         let first = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: min(8, timeout))
-        if first == .completed { return first }
-        if untouched() { control.tap() }
+        if first == .completed || done.evaluate(with: nil) { return .completed }
+        if untouched() && control.exists && control.isHittable { control.tap() }
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: timeout)
+    }
+    /// Presses one of a question's answers and waits for it to read as chosen. The app marks it on its next update, and with
+    /// Watcher writing above the card that update can come after a look made straight after the tap: twice on CI the answer
+    /// read unchosen 0.01 seconds after the app went idle (#1948).
+    private func choose(_ answer: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(press(answer, until: NSPredicate { _, _ in answer.isSelected }), .completed, "The chosen answer is marked",
+                       file: file, line: line)
     }
     /// Generous on purpose: it ends as soon as the element goes, and a loaded CI simulator can take seconds just to look.
     private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 20) -> Bool {
@@ -1046,8 +1058,7 @@ import UIKit
         let option = app.buttons["request-option-j"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
         reveal(option)
-        option.tap()
-        XCTAssertTrue(option.isSelected, "The chosen answer is marked")
+        choose(option)
         XCTAssertTrue(send.isEnabled)
         capture("question-glow-sheet")
         send.tap()
@@ -1563,8 +1574,7 @@ import UIKit
         let choice = app.buttons["A fresh account for each run"]
         revealInWatcher(choice)
         capture("watcher-card-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         let send = app.buttons["watcher-card-send"]
         revealInWatcher(send)
         XCTAssertTrue(send.isEnabled)
@@ -1603,8 +1613,7 @@ import UIKit
         XCTAssertEqual(XCTWaiter.wait(for: [more], timeout: 20), .completed, "Watcher keeps writing")
         stays(choice, "The card's answer")
         capture("watcher-card-held-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         // Send answer sits at the card's foot; the card is kept whole above the box without the reader scrolling to it.
         let send = app.buttons["watcher-card-send"]
         stays(send, "Send answer")
@@ -1663,8 +1672,7 @@ import UIKit
         XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
         stays(choice, "The question's answer, once the permission under it has gone,")
         capture("watcher-two-cards-held-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         let send = app.buttons["watcher-card-send"]
         stays(send, "Send answer")
         send.tap()
