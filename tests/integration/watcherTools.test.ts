@@ -114,7 +114,8 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(await f.tools.mcpServer(result.target.threadId)).toBeUndefined()
   expect(await f.tools.mcpServer(f.id)).toMatchObject({ name: 'sotto_threads' })
-  expect(f.tools.definitions.map(item => item.name).sort()).toEqual(Object.keys(watcherToolSchemas).sort())
+  // Sotto's own question card (#2228) joins the shared tools; it asks a paired host nothing, so it is not among them.
+  expect(f.tools.definitions.map(item => item.name).sort()).toEqual([...Object.keys(watcherToolSchemas), 'ask_user'].sort())
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
 })
 

@@ -65,6 +65,7 @@ import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { TeamsPage } from './TeamsPage'
 import { placeTeammateMessages, useTeamsBridge, useTeamsState } from './teamsState'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
+import { focusWatcherQuestion, placeQuestions, WatcherQuestionMark } from './WatcherQuestions'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { useOrchestratingSpeed, useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
@@ -416,8 +417,11 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const teamsBridge = useTeamsBridge()
   const teamsState = useTeamsState(teamsBridge)
   const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates])
+  // Watcher's own questions (#2228), where Watcher asked: the room hands the same list until one changes.
+  const ownQuestions = room?.state?.questions
+  const questionsPlaced = useMemo(() => ownQuestions?.length ? placeQuestions(messages, ownQuestions) : undefined, [messages, ownQuestions])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
@@ -687,6 +691,10 @@ export function WatcherView({ now: fixedNow }: {
     return found
   }, [placed, shownIds, rowFor])
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
+  // Watcher's own questions that still wait (#2228): they count in Needs you, and the list goes to their cards.
+  const roomQuestions = room?.state?.questions
+  const asked = useMemo(() => (roomQuestions ?? []).filter(question => question.state === 'open'), [roomQuestions])
+  const askedIds = useMemo(() => asked.map(question => question.id), [asked])
 
   // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
   const crossMachine = useOwlFeature('cross-machine-work')
@@ -703,10 +711,11 @@ export function WatcherView({ now: fixedNow }: {
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} tabs={tabs} />
-    {needs.length > 0 || crossMachine ? <div className="watcher-status">
-      {needs.length > 0 ? <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
+    {needs.length > 0 || asked.length > 0 || crossMachine ? <div className="watcher-status">
+      {needs.length > 0 || asked.length > 0 ? <WatcherGlance entries={needs} questions={asked} onQuestion={focusWatcherQuestion} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
       {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
     </div> : null}
+    {askedIds.length > 0 ? <WatcherQuestionMark paneId={WATCHER_PANE_ID} open={askedIds} /> : null}
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>
@@ -730,7 +739,7 @@ export function WatcherView({ now: fixedNow }: {
   // lights it no more than it lights a thread owl.
   // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
   // before a prototype that also waits.
-  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || needs.some(({ facts }) =>
+  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || asked.length > 0 || needs.some(({ facts }) =>
     facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 

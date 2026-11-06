@@ -829,6 +829,9 @@ export class CursorAcpHost implements AgentHost {
     if (connection.watcher) {
       try { await this.launchProfile(id, connection.rpc) } catch { return }
       if (this.connections.get(id) !== connection || connection.closing) return
+      // Watcher's own question tool is closed to it (#2228): it would hold Watcher's turn, so Watcher asks with ask_user.
+      // Cursor's own cancel, which carries no words; Watcher's prompt names ask_user.
+      if (pending.request.kind === 'question') { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     }
     if (this.indexOf(id, alias).wasAnswered(requestId)) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     if (this.pending.size >= 128) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }

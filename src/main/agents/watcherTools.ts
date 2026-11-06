@@ -9,6 +9,7 @@ import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
 import { WATCHER_KEPT_ITEMS_MAX, watcherRefusalSchema } from '../../shared/watcher'
 import { THREAD_MOVE_PROPOSE_TOOL, threadMoveProposeInputSchema, threadMoveProposeOutputSchema } from '../../shared/threadMoves'
 import { TEAM_ASK_TOOL, TEAM_READ_TOOL, teamAskToolInputSchema, teamAskToolOutputSchema, teamReadToolInputSchema, teamReadToolOutputSchema } from '../../shared/teams'
+import { WATCHER_ASK_TOOL, watcherAskInputSchema, watcherAskOutputSchema } from '../../shared/watcherQuestions'
 
 /** Nothing limits how many threads start (#1183); past ten working on this computer the start's result says so. */
 const WORKING_WARNING = `When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says.`
@@ -105,6 +106,17 @@ export const PROPOSE_MOVES_DEFINITION: ThreadToolDefinition = Object.freeze({ na
   description: 'When the user asks you to move threads to another machine, name the threads, by hostId and threadId, and the machine they go to, a host ID from list_machines (This computer’s too). Sotto shows the user the preview as a card in your conversation: what would move now, what asks first and what stays and why, with a box for each thread that can move, ticked, and Move and Not now. It moves nothing: only the user’s press moves a thread, and Sotto then runs each move and reports it on its own card; you hear of each as it ends. Propose only what the user asked for, and do not propose the same threads again while the card waits for the user.',
   inputSchema: z.toJSONSchema(threadMoveProposeInputSchema), outputSchema: z.toJSONSchema(proposeOutput),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } })
+/**
+ * Watcher's own question (#2228, Zach's pick A, November 5, 2026): Sotto's card in Watcher's conversation, which answers at
+ * once so Watcher keeps working. It replaces its provider's own question tool, which held Watcher's turn until the user
+ * answered. Not in `watcherToolSchemas`: it asks a paired host nothing.
+ */
+const askOutput = z.union([watcherAskOutputSchema, watcherRefusalSchema])
+export const ASK_USER_DEFINITION: ThreadToolDefinition = Object.freeze({ name: WATCHER_ASK_TOOL,
+  description: 'Ask the user a question with two to four choices. Sotto shows it as a card in your conversation and answers at once: your turn goes on, and news, sends and everything else keep moving while the card waits. The user\'s answer comes later as news, in their own choice, and only the user answers it. Never use your provider\'s own question tool, which would hold your turn until the user answers. Put what the user must know to answer in the question or your reply. To ask whether to settle a thread, name it in settle and leave out options: Sotto gives it Settle it and Keep watching, and the user\'s Settle it agrees that one settle. Do not ask again while a card waits for the same answer.',
+  inputSchema: z.toJSONSchema(watcherAskInputSchema), outputSchema: z.toJSONSchema(askOutput),
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } })
+
 /** What proposing a move asks of Sotto (`ThreadMoveService`). */
 export interface WatcherMoveProposals { propose(input: unknown): unknown }
 
@@ -145,7 +157,7 @@ export class WatcherToolServer implements WatcherProfileTools {
     this.moves = machines ? options.moves : undefined
     const offered = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
     this.teams = options.teams
-    this.definitions = this.moves || this.teams ? Object.freeze([...offered, ...this.moves ? [PROPOSE_MOVES_DEFINITION] : [], ...this.teams ? TEAM_TOOL_DEFINITIONS : []]) : offered
+    this.definitions = Object.freeze([...offered, ASK_USER_DEFINITION, ...this.moves ? [PROPOSE_MOVES_DEFINITION] : [], ...this.teams ? TEAM_TOOL_DEFINITIONS : []])
     this.instructions = roles || machines || pullRequestNews || options.swarms || this.teams || options.markdownLinks ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms, this.teams !== undefined, options.markdownLinks) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
@@ -162,7 +174,10 @@ export class WatcherToolServer implements WatcherProfileTools {
   async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     let result: unknown
     if (!this.service.isCurrent(threadId)) result = watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools.')
-    else if (name === THREAD_MOVE_PROPOSE_TOOL && this.moves) {
+    else if (name === WATCHER_ASK_TOOL) {
+      // A question asks the user and changes nothing else: its card is up before the call answers, and the answer is news.
+      try { result = askOutput.parse(await this.service.ask(threadId, args)) } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not show this question. Nothing was asked. Ask in your reply instead.', true) }
+    } else if (name === THREAD_MOVE_PROPOSE_TOOL && this.moves) {
       // A proposal moves nothing: it puts a card before the user, whose press alone moves a thread.
       try { result = proposeOutput.parse(this.moves.propose(args)) } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not show this proposal. Nothing was moved.', true) }
     } else if ((name === TEAM_ASK_TOOL || name === TEAM_READ_TOOL) && this.teams) {

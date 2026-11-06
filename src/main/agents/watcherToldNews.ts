@@ -1,3 +1,4 @@
+import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { watcherEventSchema, type WatcherEvent } from '../../shared/watcherNews'
@@ -19,7 +20,7 @@ export class WatcherToldNews {
   private readonly store: AtomicJsonStore<File>
   private events: WatcherEvent[] = []
   private tail: Promise<unknown> = Promise.resolve()
-  constructor(directory: string, private readonly historyEnabled: () => boolean) {
+  constructor(private readonly directory: string, private readonly historyEnabled: () => boolean) {
     this.store = new AtomicJsonStore(join(directory, FILE), input => fileSchema.parse(input), empty)
   }
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
@@ -41,6 +42,22 @@ export class WatcherToldNews {
     return this.inTurn(async () => {
       this.events = [...this.events, event].slice(-KEPT_MAX)
       await this.save()
+    })
+  }
+  /**
+   * Keep local history changed: turned off, nothing of this stays on disk and what waits is held in memory; turned on, it
+   * is saved. Words saved before history went off would otherwise stay in the file until Watcher was told them.
+   */
+  privacyChanged(): Promise<void> {
+    return this.inTurn(async () => {
+      if (this.historyEnabled()) { await this.save(); return }
+      const names = await readdir(this.directory).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[]
+        throw error
+      })
+      await Promise.all(names.filter(name => name === FILE || name.startsWith(`${FILE}.`)).map(name => unlink(join(this.directory, name)).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      })))
     })
   }
   /** Told, or sent in a way that is never sent twice. */

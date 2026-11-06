@@ -103,7 +103,7 @@ it('refuses a settle the user has not agreed to while the setting is off, and ta
   await f.endTurn(target.threadId)
   const refused = await f.settle(requestId, target)
   expect(refused).toMatchObject({ status: 'refused', code: 'ASK_USER_FIRST' })
-  expect(refused.message).toContain('question card')
+  expect(refused.message).toContain('ask_user')
   expect(f.settled(target.threadId)).toBe(false)
   // userAgreed is true or absent: anything else is refused as the schema refuses any wrong argument.
   expect(await f.settle(requestId, target, { userAgreed: false })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
