@@ -117,7 +117,9 @@ export class ClaudeProtocol {
   /**
    * End the CLI now, for a turn that must not act (#657): `stop` lets it finish what it is doing first. The kill reaches
    * the whole tree, so a CLI that a wrapper script runs as its child, without `exec`, ends too: its process group off
-   * Windows, `taskkill /T` on it. Settles true once the tree is seen gone, false when that could not be confirmed.
+   * Windows, `taskkill /T` on it. Settles true once the tree is seen gone, false when that could not be confirmed. A
+   * process that left the tree, as one a wrapper starts with `setsid` does, is not reached, so true means the tree Sotto
+   * started is gone, not that nothing it started lives on.
    */
   async halt(): Promise<boolean> {
     this.stopping = true

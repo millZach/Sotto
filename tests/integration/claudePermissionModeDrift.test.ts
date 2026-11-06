@@ -4,14 +4,15 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { claudeFixture } from '../fixtures/claudeFixture'
 
 // Something between Sotto and Claude Code, such as a wrapper script on PATH or managed settings, can start the CLI in
 // another permission mode than the one Sotto launched it with. Each turn's init frame says which mode runs (#657).
 const fixtures: Awaited<ReturnType<typeof claudeFixture>>[] = []
-afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
+afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.cleanup() })
 /** A thread on `runtimeMode` whose CLI reports `reported` in its turn's init frame, as the real CLI does at a turn's start. */
 async function drifted(runtimeMode: AgentRuntimeMode, reported: string, script: Record<string, unknown> = {}, wrapped = false) {
   // A wrapped CLI runs as the child of a wrapper that does not `exec` it, as a shell script named claude may.
@@ -41,10 +42,12 @@ for (const wrapped of [false, true]) it(`stops a turn before it acts when Claude
   expect(stopped.status).toBe('error')
   expect(stopped.messages.map(message => message.text)).toEqual(['Clean up the build folder'])
   const error = stopped.activities?.find(row => row.kind === 'turn' && row.status === 'failed')?.error
-  expect(error).toContain('Claude Code started in Full access although this thread is set to Auto, so Sotto stopped it before it acted. Nothing ran.')
+  expect(error).toContain('Claude Code started in Full access although this thread is set to Auto. Sotto stopped it as soon as Claude Code reported its mode, before its first reply, so Claude chose no tool for this message. '
+    + 'Anything Claude Code, its startup hooks or a wrapper script did as it started may have run in that mode, so check the project.')
+  expect(error).not.toContain('Nothing ran')
   expect(error).toContain('a wrapper script named claude on your PATH')
-  // The CLI is ended at once rather than left to finish, with whatever started it, and the turn says nothing ran only
-  // once it is gone, so the step its model was about to take never runs.
+  // The CLI is ended at once rather than left to finish, with whatever started it, and the turn fails only once it is
+  // seen gone, so the step its model was about to take never runs.
   expect(alive(await cliPid(f))).toBe(false)
   await writeFile(join(f.root, 'tool-release'), '')
   expect(existsSync(join(f.root, 'tool-ran'))).toBe(false)
@@ -59,9 +62,40 @@ it('names the background work that ended with a stopped CLI, and how to get it b
   await expect.poll(async () => (await thread(f)).lastTurn?.status).toBe('failed')
   const stopped = await thread(f)
   expect(stopped.backgroundWork).toBeUndefined()
-  expect(stopped.activities?.find(row => row.kind === 'turn' && row.status === 'failed')?.error).toBe('Claude Code started in Full access although this thread is set to Auto, so Sotto stopped it before it acted. '
-    + 'Nothing from this message ran, and "Review the diff", started earlier, stopped with it. Something between Sotto and Claude Code changed the mode, such as a wrapper script named claude on your PATH '
+  expect(stopped.activities?.find(row => row.kind === 'turn' && row.status === 'failed')?.error).toBe('Claude Code started in Full access although this thread is set to Auto. Sotto stopped it as soon as Claude Code reported its mode, before its first reply, so Claude chose no tool for this message. '
+    + 'Anything Claude Code, its startup hooks or a wrapper script did as it started may have run in that mode, so check the project. '
+    + '"Review the diff", started earlier, stopped with it. Something between Sotto and Claude Code changed the mode, such as a wrapper script named claude on your PATH '
     + 'or Claude Code’s managed settings. Fix that, then send your message again. Ask Claude to start it again if you still need it.')
+})
+
+it('says Claude Code may still be running when the stop cannot be confirmed, without waiting for a close that never comes', async () => {
+  // A CLI that outlives its kill, as one a wrapper moved out of the tree may: the halt cannot confirm it ended, and the
+  // CLI never closes. The turn still fails with the warning, and the next send waits for the close rather than start a
+  // second CLI beside it.
+  const halt = vi.spyOn(ClaudeProtocol.prototype, 'halt').mockResolvedValue(false)
+  const stop = vi.spyOn(ClaudeProtocol.prototype, 'stop').mockImplementation(() => undefined)
+  const f = await drifted('auto', 'bypassPermissions', { holdAfterInit: 'tool-release' })
+  expect(await send(f, 'Clean up the build folder')).toMatchObject({ accepted: true })
+  await expect.poll(async () => (await thread(f)).lastTurn?.status).toBe('failed')
+  const stopped = await thread(f)
+  expect(halt).toHaveBeenCalledOnce()
+  const pid = await cliPid(f)
+  expect(alive(pid)).toBe(true)
+  expect(stopped.status).toBe('error')
+  expect(stopped.activities?.find(row => row.kind === 'turn' && row.status === 'failed')?.error).toBe('Claude Code started in Full access although this thread is set to Auto. '
+    + 'Sotto tried to stop it as soon as Claude Code reported its mode, but could not confirm that it ended, so Claude Code may still be running in that mode. '
+    + 'End any claude process still running for this project in Task Manager, Activity Monitor or with kill, then check the project for changes. '
+    + 'Something between Sotto and Claude Code changed the mode, such as a wrapper script named claude on your PATH or Claude Code’s managed settings. Fix that, then send your message again.')
+  // The next send is held behind the close: no second CLI starts while the first may still be running.
+  let sent = false
+  const next = send(f, 'Tidy the readme').then(result => { sent = true; return result })
+  await new Promise(resolve => setImmediate(resolve))
+  expect(sent).toBe(false)
+  stop.mockRestore(); halt.mockRestore()
+  process.kill(pid, 'SIGKILL')
+  // Once the first CLI closes, the held send goes on; what it meets then (this fake wrote no session log before the halt)
+  // is not this test's question.
+  await next.catch(() => undefined)
 })
 
 it('fails a /compact that Claude Code starts looser than the thread shows, and the next send goes', async () => {
@@ -70,7 +104,7 @@ it('fails a /compact that Claude Code starts looser than the thread shows, and t
   await expect.poll(async () => (await thread(f)).compaction?.status).toBe('failed')
   const stopped = await thread(f)
   expect(stopped.status).toBe('error')
-  expect(stopped.compaction?.error).toContain('so Sotto stopped it before it acted. Nothing ran.')
+  expect(stopped.compaction?.error).toContain('Sotto stopped it as soon as Claude Code reported its mode, before its first reply')
   expect(alive(await cliPid(f))).toBe(false)
   // Sending again starts a new CLI; with the mode fixed, the turn runs.
   await rm(join(f.root, 'initialize-script.json'))

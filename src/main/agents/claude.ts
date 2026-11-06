@@ -55,6 +55,7 @@ import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
 import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricterModeNote } from './claudePermissionMode'
+import { stoppedWork } from './stoppedWork'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
@@ -118,9 +119,8 @@ const backgroundWorkRunning = (work: readonly AgentBackgroundWork[], action: str
  * account names what ended with it: the user started that work, and it does not come back by itself.
  */
 function workStopped(reason: string, work: readonly { label: string }[], next = 'The provider session starts again with the new settings the next time you use the thread.'): string {
-  const what = work.length === 1 ? `"${work[0]!.label}"` : `${work.length} background tasks`
-  const them = work.length === 1 ? 'it' : 'them'
-  return `${reason}, so Sotto stopped this provider session, and ${what} stopped with it. ${next} Ask Claude to start ${them} again if you still need ${them}.`
+  const { what, again } = stoppedWork(work)
+  return `${reason}, so Sotto stopped this provider session, and ${what} stopped with it. ${next} ${again}`
 }
 type ConfigureCommand = Extract<AgentHostCommand, { type: 'configure-thread' }>
 const SETTINGS_UNCONFIRMED = 'Claude Code did not confirm the settings change'
@@ -630,6 +630,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * exit handler does not see a stop Sotto made, so a caller that may stop work says so itself.
    */
   private async stopRuntime(id: string, runtime: Runtime): Promise<{ label: string }[]> {
+    const { ended, closed } = this.letRuntimeGo(id, runtime)
+    await closed
+    return ended
+  }
+  /**
+   * `stopRuntime` without the wait: the CLI is off the thread and asked to stop at once, and a start that comes in waits
+   * on `closed` all the same, so a caller that must speak before the CLI closes can (#657).
+   */
+  private letRuntimeGo(id: string, runtime: Runtime): { ended: { label: string }[]; closed: Promise<void> } {
     const thread = this.threads.get(id)
     let ended: { label: string }[] = []
     if (this.runtimes.get(id) === runtime) {
@@ -642,8 +651,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     this.closing.set(id, closed)
-    try { await closed } finally { if (this.closing.get(id) === closed) this.closing.delete(id) }
-    return ended
+    return { ended, closed: closed.finally(() => { if (this.closing.get(id) === closed) this.closing.delete(id) }) }
   }
   /**
    * The thread's CLI is ending, by its own exit or by a stop Sotto made. A thinking block it was writing gets nothing
@@ -2691,9 +2699,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private changed(id: string): void { this.threadChanges.mark(id) }
   /**
    * Compare the mode a turn's init frame says Claude Code runs with the one this CLI should run (#657, ADR-0043 amended
-   * November 6, 2026). A wrapper script or managed settings can change it on the way. Looser is stopped here, before the
-   * turn reaches the model, so nothing runs that the user did not choose to let run: the CLI is ended at once, not left to
-   * finish, and the turn fails with words saying so. Stricter goes on, with one note per CLI. Says whether it stopped.
+   * November 6, 2026). A wrapper script or managed settings can change it on the way. Looser is stopped here, as soon as the
+   * frame is read and before the model's first reply reaches Sotto: the CLI is ended at once, not left to finish, and the
+   * turn fails with words saying what Sotto knows. The CLI keeps running after it writes the frame, so what it, its hooks
+   * or a wrapper did meanwhile is not something Sotto can rule out, and the words do not claim it. Stricter goes on, with one note per CLI. Says whether it stopped.
    */
   private checkPermissionMode(id: string, runtime: Runtime, frame: ClaudeFrame): boolean {
     const reported = frame.permissionMode
@@ -2714,16 +2723,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.acknowledgements.get(turn.id)?.()
       this.completedOrigins.add(turn.id)
     }
-    // Ended rather than left to finish, and its whole process tree with it; `stopRuntime` takes it off the thread at once,
-    // so nothing more it says is read, and names the background work that ended with it (ADR-0023).
+    // Ended rather than left to finish, and its whole process tree with it; `letRuntimeGo` takes it off the thread at once,
+    // so nothing more it says is read, and names the background work that ended with it (ADR-0023). The turn settles once
+    // the halt does, not when the CLI closes: a CLI that outlives its kill may never close, and its warning must still
+    // show. The next start still waits for the close, so a second CLI never runs beside it.
     const gone = runtime.protocol.halt()
-    const stopped = this.stopRuntime(id, runtime)
+    const { ended } = this.letRuntimeGo(id, runtime)
     this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id); this.streaming.delete(id)
-    void Promise.all([gone, stopped.catch(() => [])]).then(([confirmed, ended]) => this.settleModeStop(id, runtime, turn, looserModeStopped(shown, reported, { ended, confirmed })))
+    void gone.then(confirmed => this.settleModeStop(id, runtime, turn, looserModeStopped(shown, reported, { ended, confirmed })))
     return true
   }
   /**
-   * Fail what the halted CLI was doing, once its whole tree is gone (ADR-0043 amended November 6, 2026): the running turn,
+   * Fail what the halted CLI was doing, once the halt settles, confirmed or not (ADR-0043 amended November 6, 2026): the running turn,
    * or a /compact, which is not a turn; either way the thread rests on the failure and the next send starts a new CLI.
    */
   private settleModeStop(id: string, runtime: Runtime, turn: AgentThread['lastTurn'], message: string): void {
