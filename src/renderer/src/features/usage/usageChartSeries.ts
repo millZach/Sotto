@@ -248,13 +248,11 @@ export function chartStretches(busy: readonly boolean[], run: number): ChartLayo
 }
 
 /**
- * How long a run of empty days must be to fold. When only a few days have work, five. Otherwise a run as long as a
- * quarter of the range, so a range that began before the work did, or a long break in it, gives the busy days its room;
- * a short gap between busy days stays drawn day by day. A week or less never folds.
+ * How long a run of empty days must be to fold: five when only a few days have work, and otherwise none, so a busier
+ * range is drawn day by day (6d838b400). A week or less never folds.
  */
 export function foldRun(count: number, fewBusyDays: boolean): number {
-  if (count <= 7) return 0
-  return fewBusyDays ? QUIET_RUN : Math.max(QUIET_RUN, Math.ceil(count / 4))
+  return count > 7 && fewBusyDays ? QUIET_RUN : 0
 }
 
 /**

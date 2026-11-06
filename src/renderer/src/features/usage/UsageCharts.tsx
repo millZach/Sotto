@@ -88,8 +88,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const dayTotal = (at: number): number => plan.series.reduce((sum, item) => sum + Math.max(0, item.values[at] ?? 0), 0)
   const busyDays = kind === 'bars' && waiting === undefined ? days.reduce((busy, _, at) => busy + (dayTotal(at) > 0 ? 1 : 0), 0) : 0
   const labelled = busyDays > 0 && busyDays <= FEW_DAYS
-  // A long run of empty days folds into the room of two, so the days with work get the width: in a sparse range any run
-  // of five, otherwise one as long as a quarter of the range, such as the days of a range before the work began.
+  // In a sparse range a run of five empty days or more folds into the room of two, so the days with work get the width.
   const layout = chartStretches(days.map((_, at) => dayTotal(at) > 0), kind === 'bars' && waiting === undefined ? foldRun(count, labelled) : 0)
   const folded = layout.room < count
   const { top, ticks } = chartScale(labelled ? plan.peak * 1.15 : plan.peak, metric === 'prompts' ? 10 : 1e5, metric === 'prompts')

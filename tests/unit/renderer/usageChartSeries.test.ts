@@ -145,17 +145,14 @@ describe('Usage chart series', () => {
     expect(chartStretches([true, false, false, false, false, true], QUIET_RUN).room).toBe(6)
   })
 
-  it('folds a busier range only where a run of empty days is a quarter of it, such as the days before the work began', () => {
+  it('folds only a sparse range longer than a week, and draws a busier one day by day', () => {
     expect(foldRun(7, true)).toBe(0)
     expect(foldRun(30, true)).toBe(QUIET_RUN)
-    expect(foldRun(30, false)).toBe(8)
-    expect(foldRun(90, false)).toBe(23)
-    // Thirty days, the work in the last fifteen with one- and two-day gaps: the first fifteen fold, the gaps stay days.
+    expect(foldRun(30, false)).toBe(0)
+    expect(foldRun(90, false)).toBe(0)
+    // Thirty days with the work in the last fifteen and more than a few busy days: every day keeps its share.
     const busy = Array.from({ length: 30 }, (_, at) => at >= 15 && ![18, 22, 23].includes(at))
-    const { stretches, room } = chartStretches(busy, foldRun(30, false))
-    expect(stretches[0]).toEqual({ kind: 'quiet', from: 0, to: 14 })
-    expect(stretches.slice(1)).toEqual(Array.from({ length: 15 }, (_, offset) => ({ kind: 'day', at: 15 + offset })))
-    expect(room).toBe(QUIET_ROOM + 15)
+    expect(chartStretches(busy, foldRun(30, false)).room).toBe(30)
   })
 
   it('scales the chart to a round top with two or three gridlines at a round step', () => {
@@ -173,7 +170,7 @@ describe('Usage chart series', () => {
     expect(axisMarks(30, null)).toEqual([0, 8, 15, 22, 29])
     const busy = Array.from({ length: 30 }, (_, at) => at >= 15)
     // Folded: the start, the first day of work, a week before the end and the end; the week inside the fold is not named.
-    expect(axisMarks(30, chartStretches(busy, foldRun(30, false)))).toEqual([0, 15, 22, 29])
+    expect(axisMarks(30, chartStretches(busy, QUIET_RUN))).toEqual([0, 15, 22, 29])
     // A long range steps by several weeks.
     expect(axisMarks(90, null)).toEqual([0, 26, 47, 68, 89])
   })
