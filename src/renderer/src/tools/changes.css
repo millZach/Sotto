@@ -191,6 +191,21 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line > .changes-line__text[data-comment] {
   box-sizing: border-box; width: calc(100cqw - var(--changes-number) - 1ch - 26px); white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/* Where an unwrapped line runs on past the edge of its file's view, it fades out at that edge, so a cut line never
+   reads as a whole one ("WalCh"). The line's end (RUNS_ON in ChangesSurface.tsx) is held at the edge while the rest
+   of the line is out of sight, and only while held does it draw: a fade into the line's own colour, its wash, hover or
+   pick over the code background, so nothing but the letters under it changes. A line whose end is in view draws
+   nothing, and a comment, which wraps, has none. */
+:is(.changes-line, .changes-split__cell) { --changes-fill: transparent; --changes-over: transparent; }
+.changes-line__on { display: none; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line__text:not([data-comment]) > .changes-line__on {
+  position: sticky; right: 0; display: inline-block; width: 0; height: 1lh; vertical-align: top; container-type: scroll-state;
+}
+.changes-line__on::before {
+  content: ''; position: absolute; top: 0; right: 0; width: 4ch; height: 100%; visibility: hidden; pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--changes-over) 80%), linear-gradient(to right, transparent, var(--changes-fill) 80%), linear-gradient(to right, transparent, var(--tt-code-bg) 80%);
+}
+@container scroll-state(stuck: right) { .changes-line__on::before { visibility: visible; } }
 /* A short run of code a browser would break at a hyphen or a slash stays whole (codeBreaks in DiffBlock.tsx): a wrapped
    line breaks at a space, and a long run after its dots and commas, before it breaks anywhere at all. */
 .changes-kept { white-space: nowrap; }
@@ -206,9 +221,9 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 }
 /* A whole file added or removed has nothing to compare, and a solid wash over all of it is only tiring: the edge says it. */
 .changes-diff__rows[data-whole] { --changes-added: transparent; --changes-removed: transparent; }
-.changes-line[data-kind='add'], .changes-split__cell[data-kind='add'] { background: var(--changes-added); box-shadow: inset 2px 0 0 var(--changes-edge-added); }
+.changes-line[data-kind='add'], .changes-split__cell[data-kind='add'] { --changes-fill: var(--changes-added); background: var(--changes-added); box-shadow: inset 2px 0 0 var(--changes-edge-added); }
 .changes-line[data-kind='add'] .changes-line__sign, .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
-.changes-line[data-kind='remove'], .changes-split__cell[data-kind='remove'] { background: var(--changes-removed); box-shadow: inset 2px 0 0 var(--changes-edge-removed); }
+.changes-line[data-kind='remove'], .changes-split__cell[data-kind='remove'] { --changes-fill: var(--changes-removed); background: var(--changes-removed); box-shadow: inset 2px 0 0 var(--changes-edge-removed); }
 .changes-line[data-kind='remove'] .changes-line__sign, .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
 .changes-word { border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 [data-kind='add'] .changes-word { background: var(--changes-word-added); color: var(--changes-word-ink-added); }
@@ -238,10 +253,11 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    line it starts on is the gutter's first number under it. With no section it is a hairline and a gap, and the
    first part of a file has none at all. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
+.changes-line[data-kind='hunk']:not(:has(.changes-hunk__section)) { padding-top: 0; padding-bottom: 5px; }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.changes-line[data-kind='hunk']:first-child:not(:has(.changes-hunk__section)) { padding-bottom: 0; }
 .changes-line[data-kind='hunk'] .changes-line__text { display: flex; gap: 10px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .changes-files:not([data-wrap]) .changes-diff__rows[data-reading='code'] .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); }
-.changes-hunk__line { flex: none; font-variant-numeric: tabular-nums; }
 .changes-hunk__section { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
 .changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 8px 16px 14px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
@@ -414,8 +430,8 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
   --changes-picked-remove: color-mix(in oklab, var(--tt-error-text) 40%, var(--tt-text));
 }
 .changes-line[data-position], .changes-split__row[data-position] { cursor: default; scroll-margin-top: 40px; scroll-margin-bottom: 8px; }
-.changes-line[data-position]:hover, .changes-split__row[data-position]:hover > .changes-split__cell { background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); }
-.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true'] > .changes-split__cell { background-image: linear-gradient(var(--changes-picked), var(--changes-picked)); }
+.changes-line[data-position]:hover, .changes-split__row[data-position]:hover > .changes-split__cell { --changes-over: var(--tt-hover); background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); }
+.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true'] > .changes-split__cell { --changes-over: var(--changes-picked); background-image: linear-gradient(var(--changes-picked), var(--changes-picked)); }
 .changes-line[aria-selected='true'], .changes-line[data-noted],
 .changes-split__row[aria-selected='true'] > .changes-split__cell:first-child, .changes-split__row[data-noted] > .changes-split__cell:first-child { box-shadow: inset 3px 0 0 var(--tt-accent); }
 .changes-line[aria-selected='true'] .changes-line__number, .changes-split__row[aria-selected='true'] .changes-line__number { color: var(--tt-text); }

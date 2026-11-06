@@ -7,7 +7,7 @@ import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/cod
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
 import { shownLineCount } from '../state/interfaceNumbers'
 import type { DiffLine } from './changesStore'
-import { decorateDiff, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
+import { decorateDiff, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
 import './changes.css'
 
 /** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
@@ -192,15 +192,20 @@ export function EarlierWording({ before, after, segments, paintBefore, paintAfte
   </span>
 }
 
-/** A hunk's head as a quiet divider: the line it starts on and the section around it, on one line whatever its width. */
-export function HunkHeading({ text }: { readonly text: string }): ReactNode {
+/**
+ * A hunk's head as a quiet divider. The line it starts on is the gutter's first number under it, so only a screen
+ * reader hears it here; what shows is the section around it when that names a place (hunkSection), on one line
+ * whatever its width. With no section the divider is a hairline and a gap.
+ */
+export function HunkHeading({ text, reading }: { readonly text: string; readonly reading: 'code' | 'document' }): ReactNode {
   const { t } = useLingui()
   const heading = hunkHeading(text)
   if (!heading) return text
   const line = heading.line
+  const section = hunkSection(heading, reading)
   return <>
-    <span className="changes-hunk__line">{t({ message: `Line ${line}`, comment: 'Where a part of a diff starts in the file; {line} is a line number.' })}</span>
-    {heading.section ? <span className="changes-hunk__section">{heading.cut ? `${heading.section}…` : heading.section}</span> : null}
+    <span className="changes-hunk__line tt-visually-hidden">{t({ message: `Line ${line}`, comment: 'Where a part of a diff starts in the file; {line} is a line number.' })}</span>
+    {section ? <span className="changes-hunk__section">{heading.cut ? `${section}…` : section}</span> : null}
   </>
 }
 
@@ -228,7 +233,7 @@ function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; re
   return <div className="changes-line" data-kind={line.kind} data-paired={paint?.paired} title={line.kind === 'hunk' ? line.text : undefined}>
     {numbers ? <span className="changes-line__number" aria-hidden="true">{line.newLine ?? line.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-    <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+    <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
   </div>
 }
 

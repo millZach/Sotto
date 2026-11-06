@@ -761,6 +761,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   </div>
 }
 
+/**
+ * The end of a line of code, which says where an unwrapped line runs on past the edge of its file's view. It is held at
+ * that edge while the rest of the line is out of sight, and there the stylesheet fades the line out under it; once the
+ * line's end is in view it sits after its last character and draws nothing. It holds no text, so a copy is unchanged.
+ */
+const RUNS_ON = <span className="changes-line__on" aria-hidden="true" />
+
 const commentTitle = (number: number | null | undefined, words: I18n): string | undefined => number == null ? undefined : words._(msg({ message: `Comment on line ${number}`, comment: '{number} is a line number.' }))
 
 /**
@@ -785,7 +792,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} />{code ? RUNS_ON : null}</>}</span>
     </div>
   }
   const segments = row.old && row.next && row.old !== row.next ? decoration?.inline.get(row.old) : undefined
@@ -811,7 +818,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
       <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} /></span>
+      <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} />{code ? RUNS_ON : null}</span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>

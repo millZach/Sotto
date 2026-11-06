@@ -205,6 +205,29 @@ export function hunkHeading(text: string): { readonly line: number; readonly sec
   return { line: Number(match[1]), section, ...(section && utf8.encode(match[2]!).length >= GIT_SECTION_BYTES ? { cut: true as const } : {}) }
 }
 
+/** A line Git names a hunk by that says nothing of where the hunk is: an import or a re-export near a file's top. */
+const NAMES_NOTHING = /^(?:import|from|export\s*[{*]|#\s*(?:include|import)|using|use|require|package)\b/u
+/** A Markdown heading, the one section a document's hunk can usefully name. */
+const DOCUMENT_HEADING = /^#{1,6}\s+(.*?)(?:\s+#+)?$/u
+
+/**
+ * What a hunk's divider shows of the section Git found above it, or nothing. A document shows only a heading, by its
+ * words: Git otherwise names a hunk by the last paragraph that starts with a letter, a fragment cut mid-sentence. Code
+ * leaves out an import, which names no place in the file. A section Git cut short ends on its last whole word, so the
+ * ellipsis after it never follows half a word.
+ */
+export function hunkSection(heading: { readonly section: string; readonly cut?: true }, reading: 'code' | 'document'): string {
+  let { section } = heading
+  if (reading === 'document') {
+    const title = DOCUMENT_HEADING.exec(section)
+    if (!title) return ''
+    section = title[1]!.trim()
+  } else if (NAMES_NOTHING.test(section)) return ''
+  if (!heading.cut) return section
+  const whole = section.replace(/\S+$/u, '').trimEnd()
+  return whole.length >= section.length / 2 ? whole : section
+}
+
 const WORD = /[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu
 
 const WORDS_IN = /[\p{L}\p{N}_]+/gu

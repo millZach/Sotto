@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, isCommentLine, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -154,6 +154,16 @@ describe('what a diff is', () => {
     expect(hunkHeading(`@@ -15,6 +15,6 @@ ${cut}`)).toEqual({ line: 15, section: cut, cut: true })
     expect(hunkHeading('@@ -15,6 +15,6 @@ export class ThreadStore {')?.cut).toBeUndefined()
     expect(hunkHeading('not a head')).toBeNull()
+  })
+
+  it('shows a hunk section only where it names a place, and cuts it on a whole word', () => {
+    // An import names no place in the file, and a document's hunk is named only by a heading.
+    expect(hunkSection(hunkHeading("@@ -15,6 +15,6 @@ import { a } from './b'")!, 'code')).toBe('')
+    expect(hunkSection(hunkHeading('@@ -267,6 +267,6 @@ export class ThreadStore {')!, 'code')).toBe('export class ThreadStore {')
+    expect(hunkSection(hunkHeading('@@ -335,11 +340,12 @@ Answering a question or permission request')!, 'document')).toBe('')
+    expect(hunkSection(hunkHeading('@@ -7,3 +7,3 @@ ## Open questions ##')!, 'document')).toBe('Open questions')
+    const cut = 'export function readTheWholeThreadFromTheStore(threadId: string, options: ReadOptio'
+    expect(hunkSection(hunkHeading(`@@ -40,6 +40,6 @@ ${cut}`)!, 'code')).toBe('export function readTheWholeThreadFromTheStore(threadId: string, options:')
   })
 })
 
