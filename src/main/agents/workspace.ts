@@ -468,9 +468,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
-    const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
+    // Only a read that knows the required checks tells a pass (#2116). This one does not, so checks it saw all finish are
+    // left to the background read, which does.
+    const summary = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown), checks = summary === 'passed' ? undefined : summary
     this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
-      state: view.state, availability: 'available', checks, ...(checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
+      state: view.state, availability: 'available', ...checks ? { checks } : {}, ...(checks !== undefined && checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
       reviewApproved: view.reviewDecision === 'approved', changesRequested: view.reviewDecision === 'changes_requested', autoMerge: view.autoMerge !== null,
       ...(view.mergeable !== 'unknown' ? { conflicting: view.mergeable === 'conflicting' } : {}) })
   }

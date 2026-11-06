@@ -393,6 +393,9 @@ public struct ModelMoved: Decodable, Equatable, Sendable {
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?
+    /// The steps above this phone's step window, as its computer last cut it (ADR-0194). Computers without `step-window`
+    /// never send it.
+    public var earlierSteps: Int? = nil
 }
 /// Provider-reported work beside a thread's messages. Observational only: nothing here is an answer or a grant.
 /// `kind` and `status` stay strings so a kind this build does not know still shows, by its title.
