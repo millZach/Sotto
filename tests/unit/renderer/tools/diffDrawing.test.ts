@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, isDocumentPath, isReworked, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, editWeight, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -226,20 +226,49 @@ describe('decorateDiff', () => {
   })
 
   it('reads a reworked paragraph once, as it is now, and says it was reworked', () => {
-    const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
-    const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
+    const before = 'Main hands each write to the worker, which commits it and confirms it back, and a read that cannot wait lays the held events over what the store returns, so the publish never waits for the disk.'
+    const after = 'Main posts each write to the store worker, which commits it and confirms it back, and a read that cannot wait lays the held events over what the store returns, so the update path never waits for the disk.'
     const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
     const segments = wordSegments(before, after)!
-    expect(isReworked(before, after, segments)).toBe(true)
+    expect(editWeight(before, after, segments)).toBe('reworked')
     const decoration = decorateDiff(lines, { reading: 'document' })
     expect(decoration.inline.get(lines[1]!)).toEqual(segments)
     expect(decoration.reworked.has(lines[1]!)).toBe(true)
+    expect(decoration.rewritten.has(lines[1]!)).toBe(false)
     expect(decoration.paint.get(lines[1]!)?.paired).toBeUndefined()
   })
 
   it('leaves a line edited in a place or two read once with what went struck through', () => {
     const before = 'Status: an idea. Nothing is scheduled.', after = 'Status: an idea. Five pull requests are scheduled.'
-    expect(isReworked(before, after, wordSegments(before, after)!)).toBe(false)
+    expect(editWeight(before, after, wordSegments(before, after)!)).toBe('edited')
+  })
+
+  it('reads a line as it is now once one change runs longer than a few words, though it changed in one place', () => {
+    const before = 'Every write goes this way. Today the store confirms each write as it makes it.'
+    const after = 'Every write goes this way. An answer posted on its own holds the next write the same way, and the store worker confirms each write as it makes it.'
+    expect(editWeight(before, after, wordSegments(before, after)!)).toBe('reworked')
+  })
+
+  it('reads a line that changed more than it kept as it is now, with no word marks', () => {
+    const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
+    const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
+    const segments = wordSegments(before, after)!
+    expect(editWeight(before, after, segments)).toBe('rewritten')
+    const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
+    const decoration = decorateDiff(lines, { reading: 'document' })
+    expect(decoration.reworked.has(lines[1]!)).toBe(true)
+    expect(decoration.rewritten.has(lines[1]!)).toBe(true)
+  })
+
+  it('reads a long paragraph rewritten whole once, as it is now, and leaves a short one above what it became', () => {
+    const before = 'The worker thread that will make every write to the event store and run its log checkpoints, confirming each posted write back to main. It is planned, not built: until it is, the store confirms on main.'
+    const after = 'Store worker thread making each write the event store holds, and its checkpoints too. Its commit shows before its confirmation arrives, so the overlay leaves out what main already holds, and closing waits a minute at most.'
+    const long = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
+    const decoration = decorateDiff(long, { reading: 'document' })
+    expect(decoration.inline.get(long[1]!)).toEqual([{ kind: 'changed', before: { start: 0, end: before.length }, after: { start: 0, end: after.length } }])
+    expect(decoration.rewritten.has(long[1]!)).toBe(true)
+    const short = fileLines('@@ -1 +1 @@\n-## Open questions\n+## The order\n')
+    expect(decorateDiff(short, { reading: 'document' }).inline.size).toBe(0)
   })
 
   it("reads a document's edited line once with what it became, and leaves code as two lines", () => {

@@ -92,19 +92,24 @@ function broken(text: string, from: number, plan: BreakPlan, key: number): React
   return out
 }
 
+/** Each word in a span of its own, so the margin can mark every line a changed stretch reaches (changes.css). */
+function eachWord(text: string, key: number): ReactNode {
+  return text.split(/(\s+)/u).map((word, index) => word === '' || /^\s+$/u.test(word) ? word : <span key={`${key}-${index}`} className="changes-w">{word}</span>)
+}
+
 /**
  * A line's words with their colours, and the words that changed marked as one phrase each. `code` lets a wrapped line
- * break only where a reader expects (codeBreaks).
+ * break only where a reader expects (codeBreaks); `words` puts each word in a span of its own (eachWord).
  */
-export function PaintedText({ text, paint, code = false }: { readonly text: string; readonly paint: LinePaint | undefined; readonly code?: boolean }): ReactNode {
+export function PaintedText({ text, paint, code = false, words: spanned = false }: { readonly text: string; readonly paint: LinePaint | undefined; readonly code?: boolean; readonly words?: boolean }): ReactNode {
   if (!text) return ' '
   const plan = code ? codeBreaks(text) : null
-  if (!paint?.tokens && !paint?.marks) return plan ? broken(text, 0, plan, 0) : text
+  if (!paint?.tokens && !paint?.marks) return plan ? broken(text, 0, plan, 0) : spanned ? eachWord(text, 0) : text
   const parts = paintedParts(text, paint)
   const out: ReactNode[] = []
   let offset = 0
   const piece = (part: PaintedPart, index: number): ReactNode => {
-    const words = plan ? broken(part.text, offset, plan, index) : part.text
+    const words = plan ? broken(part.text, offset, plan, index) : spanned ? eachWord(part.text, index) : part.text
     offset += part.text.length
     return part.className ? <span key={index} className={part.className}>{words}</span> : <Fragment key={index}>{words}</Fragment>
   }
@@ -139,7 +144,11 @@ const ADDED_LINE: DiffLine = { kind: 'add', text: '', oldLine: null, newLine: nu
  * `as` picks a side for a line reworked all through (DiffDecoration.reworked), where struck and new words would
  * alternate down the whole paragraph. `now` draws the line as it is now: the words that came underlined, and where
  * words went with nothing in their place, a thin mark a screen reader hears as those words. `earlier` draws the line as
- * it was, the words that went underlined in the removed role's colour.
+ * it was, the words that went underlined in the removed role's colour. A line rewritten (DiffDecoration.rewritten)
+ * leaves its words unmarked on both sides, which the stylesheet reads from its row.
+ *
+ * Drawn on its line, rather than as its earlier wording, every changed word is a span of its own, so the line's edge
+ * lights beside each line of the paragraph a change reaches.
  */
 export function EditedText({ before, after, segments, paintBefore, paintAfter, as }: {
   readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
@@ -147,13 +156,14 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
   readonly as?: 'now' | 'earlier' | undefined
 }): ReactNode {
   const { i18n } = useLingui()
+  const marksMargin = as !== 'earlier'
   const side = (line: string, range: TextRange, paint: LinePaint | undefined, removed: boolean, abut: boolean): ReactNode => {
     if (range.end <= range.start) return null
     const [lead, core, trail] = edges(line.slice(range.start, range.end))
     const at = range.start + lead.length
     const Tag = removed ? 'del' : 'ins'
     return <>{lead}<Tag className="changes-word changes-word--edit" data-abut={abut || undefined}>
-      {spoken(removed ? REMOVED_LINE : ADDED_LINE, i18n)}<PaintedText text={core} paint={paintWithin(paint, { start: at, end: at + core.length })} />
+      {spoken(removed ? REMOVED_LINE : ADDED_LINE, i18n)}<PaintedText text={core} paint={paintWithin(paint, { start: at, end: at + core.length })} words={marksMargin} />
     </Tag>{trail}</>
   }
   return segments.map((segment, index) => {
@@ -163,7 +173,7 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
     if (as === 'now') {
       if (came.trim() !== '' || went.trim() === '') return <Fragment key={index}>{side(after, segment.after, paintAfter, false, false)}</Fragment>
       // The line as it is now has none of the space around what went: the mark stands between the words it does have.
-      return <del key={index} className="changes-gone" title={went.trim()}>{spoken(REMOVED_LINE, i18n)}<span className="tt-visually-hidden">{went.trim()}</span></del>
+      return <Fragment key={index}><span className="changes-w" aria-hidden="true" /><del className="changes-gone" title={went.trim()}>{spoken(REMOVED_LINE, i18n)}<span className="tt-visually-hidden">{went.trim()}</span></del></Fragment>
     }
     // Words that went and words that came, with no space of their own between them, are held a little apart.
     const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
@@ -243,7 +253,7 @@ function EditedLine({ before, after, segments, decoration, numbers }: {
 }): ReactNode {
   const paintBefore = decoration.paint.get(before), paintAfter = decoration.paint.get(after)
   const reworked = decoration.reworked.has(before)
-  return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined}>
+  return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={decoration.rewritten.has(before) || undefined}>
     {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
     <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>

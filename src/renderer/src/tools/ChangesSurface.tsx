@@ -827,7 +827,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const paintBefore = decoration?.paint.get(before), paintAfter = decoration?.paint.get(after)
     // A line reworked all through reads as it is now, with what it said before under it, shut until asked for.
     const reworked = decoration?.reworked.has(before) ?? false
-    return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
+    return <div className="changes-line" role="row" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={decoration?.rewritten.has(before) || undefined} data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>

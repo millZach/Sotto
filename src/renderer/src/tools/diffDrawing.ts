@@ -24,12 +24,21 @@ const MIN_LIKENESS = 0.34
 /** When more than this share of both lines changed, the line was rewritten; marking its words would only be noise. */
 const REWRITTEN_SHARE = 0.68
 /**
- * A prose line changed in this many places or more, with more than REWORKED_SHARE of it changed on average, was
- * reworked rather than edited: read once with what went struck through it would alternate struck and new words all
- * through, so it reads as it is now, with its earlier wording one press away (DiffDecoration.reworked).
+ * A prose line is a light edit, read once with what went struck through before what came, only while it changed in
+ * this many places at most and no change on either side runs past LIGHT_EDIT_RUN letters, about eight words. Any more
+ * and the struck and new words would run on for lines: the line was reworked, and reads as it is now, with its earlier
+ * wording one press away (DiffDecoration.reworked).
  */
-const REWORKED_CHANGES = 3
-const REWORKED_SHARE = 0.25
+const LIGHT_EDIT_CHANGES = 2
+const LIGHT_EDIT_RUN = 48
+/**
+ * A reworked line with this share of it changed or more, on average across its two sides, has more new than a reader
+ * can follow word by word: marks on its words would run down most of its lines. It reads as it is now with no word
+ * marks at all (DiffDecoration.rewritten), and so does a long line rewritten whole.
+ */
+const REWRITTEN_NOW_SHARE = 0.4
+/** A line rewritten whole that runs past this many letters on either side reads as it is now; a shorter one stands above what it became. */
+const LONG_REWRITE = 160
 /** The most of a diff read to guess its language when nothing names the file. */
 const GUESS_SAMPLE_CHARS = 1_600
 const GUESSED_LANGUAGES = ['typescript', 'javascript', 'python', 'css', 'scss', 'json', 'bash', 'go', 'rust', 'java', 'cpp', 'csharp', 'xml', 'yaml', 'sql', 'ruby', 'php', 'swift', 'kotlin']
@@ -72,6 +81,11 @@ export interface DiffDecoration {
    * that came marked and a mark where words went, and the earlier wording stays one press away.
    */
   readonly reworked: ReadonlySet<DiffLine>
+  /**
+   * The removed lines among `reworked` that changed more than they kept, or were rewritten whole and are long: they read
+   * as they are now with no word marks, only the margin beside the lines that changed, on both sides of the press.
+   */
+  readonly rewritten: ReadonlySet<DiffLine>
 }
 
 const DOCUMENT_EXTENSIONS = new Set(['md', 'mdx', 'markdown', 'mdown', 'txt', 'text', 'rst', 'adoc', 'asciidoc'])
@@ -369,16 +383,22 @@ export function wordSegments(before: string, after: string): WordSegment[] | nul
   return segments
 }
 
-/** Whether a line read once (wordSegments) was reworked rather than edited: changed in several places, and much of it. */
-export function isReworked(before: string, after: string, segments: readonly WordSegment[]): boolean {
-  let changes = 0, changedA = 0, changedB = 0
+/**
+ * How a line read once (wordSegments) reads: `edited`, a light edit read with what went struck through; `reworked`,
+ * changed in more places or at more length, read as it is now with its new words marked; `rewritten`, changed more
+ * than it kept, read as it is now with no word marks.
+ */
+export function editWeight(before: string, after: string, segments: readonly WordSegment[]): 'edited' | 'reworked' | 'rewritten' {
+  let changes = 0, changedA = 0, changedB = 0, longest = 0
   for (const segment of segments) {
     if (segment.kind !== 'changed') continue
     changes++
-    changedA += inkLength(before.slice(segment.before.start, segment.before.end))
-    changedB += inkLength(after.slice(segment.after.start, segment.after.end))
+    const went = inkLength(before.slice(segment.before.start, segment.before.end)), came = inkLength(after.slice(segment.after.start, segment.after.end))
+    changedA += went; changedB += came
+    longest = Math.max(longest, went, came)
   }
-  return changes >= REWORKED_CHANGES && (changedA / Math.max(inkLength(before), 1) + changedB / Math.max(inkLength(after), 1)) / 2 > REWORKED_SHARE
+  if (changes <= LIGHT_EDIT_CHANGES && longest <= LIGHT_EDIT_RUN) return 'edited'
+  return (changedA / Math.max(inkLength(before), 1) + changedB / Math.max(inkLength(after), 1)) / 2 >= REWRITTEN_NOW_SHARE ? 'rewritten' : 'reworked'
 }
 
 function wordSet(text: string): ReadonlySet<string> {
@@ -622,7 +642,7 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
     }
   } else if (language && highlighter) syntaxPaint(lines, language, highlighter, paint)
   const inline = new Map<DiffLine, readonly WordSegment[]>()
-  const reworked = new Set<DiffLine>()
+  const reworked = new Set<DiffLine>(), rewritten = new Set<DiffLine>()
   const document = reading === 'document'
   // A document's pair drawn one above the other says so, and a line whose change cuts through a mark shows its marks.
   const stacked = (line: DiffLine, changes: readonly TextRange[]): void => {
@@ -644,9 +664,16 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
     if (words?.after.length) paint.set(after, { ...paint.get(after), marks: words.after })
     if (!document) continue
     const segments = words ? wordSegments(before.text, after.text) : null
-    if (segments) {
+    if (!segments && Math.max(inkLength(before.text), inkLength(after.text)) > LONG_REWRITE) {
+      // A long line rewritten whole reads as it is now, its earlier wording one press away, rather than as two long
+      // paragraphs, one of them struck through.
+      inline.set(before, [{ kind: 'changed', before: { start: 0, end: before.text.length }, after: { start: 0, end: after.text.length } }])
+      reworked.add(before); rewritten.add(before)
+    } else if (segments) {
       inline.set(before, segments)
-      if (isReworked(before.text, after.text, segments)) reworked.add(before)
+      const weight = editWeight(before.text, after.text, segments)
+      if (weight !== 'edited') reworked.add(before)
+      if (weight === 'rewritten') rewritten.add(before)
       const changed = segments.filter(segment => segment.kind === 'changed')
       // Read once, the pair is one line, so a cut on either side shows the marks of both.
       if (changeCutsMarks(paint.get(before)?.tokens, changed.map(segment => segment.before)) || changeCutsMarks(paint.get(after)?.tokens, changed.map(segment => segment.after))) {
@@ -659,7 +686,7 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
       stacked(after, words?.after ?? [{ start: 0, end: after.text.length }])
     }
   }
-  return { reading, pairs, paint, inline, reworked }
+  return { reading, pairs, paint, inline, reworked, rewritten }
 }
 
 /** A stretch of a painted line as a line of its own: the colours that fall inside it, counted from its start. */

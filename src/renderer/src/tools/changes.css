@@ -388,6 +388,23 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    colour. */
 .changes-diff__rows[data-reading='document'] .changes-line[data-reworked] { color: var(--tt-text-muted); }
 .changes-diff__rows[data-reading='document'] .changes-line[data-reworked][aria-selected='true'] { color: var(--tt-text-2); }
+/* A paragraph that changed more than it kept, or was rewritten whole, has more new than a reader follows word by word:
+   underlines would run down most of its lines. It reads as it is now with no word marks, on both sides of the press,
+   what it brought in the body's ink and what it kept quieter, and its edge says which of its lines changed. */
+.changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-word { text-decoration-line: none; }
+.changes-line[data-rewritten] .changes-gone { width: 0; margin: 0; padding: 0; background: none; }
+.changes-line[data-rewritten] .changes-gone::before { content: none; }
+.changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-earlier__text del.changes-word--edit { color: inherit; text-decoration-line: none; }
+/* An edited paragraph's edge lights beside each of its lines a change reaches, as an editor marks a changed line in the
+   margin, and rests faint beside the lines it kept: on a long paragraph the eye finds the changed lines before it reads
+   a word. Every changed word is a span of its own (EditedText) whose mark is held to the line's left edge, and so is
+   an empty one where words went with nothing in their place, so that line lights too. A picked line has the accent's edge instead. */
+.changes-diff__rows { --changes-edge-edited-rest: color-mix(in srgb, var(--tt-warning) 22%, transparent); }
+.changes-line[data-kind='edited'] { position: relative; box-shadow: inset 2px 0 0 var(--changes-edge-edited-rest); }
+.changes-line[data-kind='edited'] .changes-w::before {
+  content: ''; position: absolute; left: 0; width: 2px; height: 1lh; background: var(--tt-warning); pointer-events: none;
+}
+.changes-line[data-kind='edited']:is([aria-selected='true'], [data-noted]) .changes-w::before { content: none; }
 .changes-gone {
   display: inline-block; margin: 0 .14em; padding: 0 .32em; border-radius: var(--tt-radius-tag); background: color-mix(in srgb, var(--tt-error) 14%, transparent);
   color: var(--tt-error-text); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); font-weight: 600; line-height: 1.4; text-decoration: none; vertical-align: .08em;
