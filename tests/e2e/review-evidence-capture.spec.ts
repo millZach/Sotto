@@ -1156,7 +1156,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await page.mouse.move(0, 0)
       await page.evaluate(({ title, into }) => {
         const list = document.querySelector<HTMLElement>('.thread-nav__scroll')!
-        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__title')?.textContent === title)!
+        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__item')?.getAttribute('aria-label') === title)!
         const edge = Number.parseFloat(getComputedStyle(list).getPropertyValue('--folder-head-edge')) || 35
         list.scrollTop += row.getBoundingClientRect().top - list.getBoundingClientRect().top - edge + into
       }, { title, into })
@@ -1386,7 +1386,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rows']
+const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {

@@ -26,6 +26,7 @@ import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
 import { useFootFocusName, type FocusName } from './RailFocusName'
 import { useSidebarSize } from './sidebarSize'
+import { useListEndRoom } from './listEndRoom'
 import { chordMatches } from './branchToolbar.logic'
 import { claimedThreadChord, fixedKeyFree, sameThreadKeys, SIDEBAR_TOGGLE_CHORD, threadChordLabel, type ThreadChordLabel } from './threadShortcuts'
 import { chordBelongsElsewhere } from '../tools/changesShortcut'
@@ -298,6 +299,9 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const chord = useSidebarChord()
   const panel = useRef<HTMLDivElement>(null)
   const aside = useRef<HTMLElement>(null)
+  const scroll = useRef<HTMLDivElement>(null)
+  // The list comes to rest on a row's edge, its end too (threadSidebar.css).
+  useListEndRoom(scroll)
   /** Where the focus was when the sidebar opened over the thread, to go back to when it closes. */
   const returnTo = useRef<HTMLElement | null>(null)
   const { narrow, closeOver } = size
@@ -387,7 +391,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {addProject.error ? <p className="thread-nav__error tt-paragraph" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
     {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
-    <div className="thread-nav__scroll">{children}</div>
+    <div ref={scroll} className="thread-nav__scroll">{children}</div>
     {open ? toast : null}
     {open ? foot ?? <SidebarFoot /> : null}
     </div>
