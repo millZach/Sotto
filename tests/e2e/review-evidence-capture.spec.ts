@@ -1317,7 +1317,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('sidebar-rows', 'The same sidebar over the thread at the minimum window.', '', { size: [820, 560], before: over })
     await page.keyboard.press('Escape')
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    const resting = sidebar.locator('.thread-nav__row[data-steps-back]').filter({ hasText: 'Write the split plan down' })
+    // By its button's name: the row's own words are cut at a word's end where the name does not fit.
+    const resting = sidebar.locator('.thread-nav__row[data-steps-back]', { has: page.getByRole('button', { name: 'Write the split plan down', exact: true }) })
     // The shoot brings the open thread's row to the list's middle after this runs, so the list is put there first and the
     // pointer stays on the row it points at.
     const pointAt = async (): Promise<void> => {
