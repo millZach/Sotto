@@ -410,3 +410,27 @@ export function confirmationFor(action: ConfirmedAction, number: number, method:
     case 'close': return { title: t`Close pull request?`, description: t`This closes #${number} without merging it.`, confirm: t`Close pull request`, danger: true }
   }
 }
+
+/** A row of the surface as it is laid out, in the window's pixels: its box, the padding inside it and its line height. */
+export interface FootRow { readonly top: number; readonly bottom: number; readonly padTop: number; readonly padBottom: number; readonly line: number }
+/** The tallest a row is drawn or left out whole; a taller block, a paragraph of the description, gives way a line at a time. */
+const FOOT_ROW_MOST = 96
+/**
+ * Where the surface stops drawing at a foot at `foot`, so the foot never cuts a row's words (`at`), and how far under
+ * that the card it lies on dissolves (`soft`): at the top of the row the foot would cut, dissolving over the row's own
+ * top space; at the top of the line of a tall block the foot is in, dissolving into its leading; or at the foot itself,
+ * where only space is cut. The innermost row the foot crosses decides, so a fold head's peek gives way a row at a time.
+ */
+export function footCut(rows: readonly FootRow[], foot: number): { readonly at: number; readonly soft: number } {
+  let cut: FootRow | undefined
+  for (const row of rows) {
+    if (row.top >= foot - .5 || row.bottom <= foot + .5) continue
+    if (!cut || row.bottom - row.top < cut.bottom - cut.top) cut = row
+  }
+  if (!cut || cut.bottom - cut.padBottom <= foot + .5) return { at: foot, soft: 0 }
+  const first = cut.top + cut.padTop
+  const whole = { at: cut.top, soft: Math.min(foot - cut.top, Math.max(4, Math.min(cut.padTop, 12))) }
+  if (cut.bottom - cut.top <= FOOT_ROW_MOST || cut.line <= 0 || foot - first < cut.line) return whole
+  const at = first + Math.floor((foot - first) / cut.line) * cut.line
+  return { at, soft: Math.min(foot - at, 4) }
+}

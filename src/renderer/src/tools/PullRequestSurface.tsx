@@ -24,6 +24,7 @@ import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, P
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, checksInOrder, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
   mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
+  footCut, type FootRow,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
 import './pullRequestSurface.css'
@@ -204,6 +205,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   const anyOpen = descriptionOpen || checksOpen || filesOpen || linksOpen || openListOpen
   const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, detail)
   const peeking = (peek: Peek): boolean => { const at = peeks.indexOf(peek); return at > -1 && at < peeksShown }
+  useWholeRowFoot(body, detail !== null)
 
   if (!detail) {
     return <div ref={surface} className="pr-surface" aria-busy={loading || busy !== null}>
@@ -468,6 +470,68 @@ function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
   // Last, where there is room to spare once every other peek shows: more of the files, the record of what it changes.
   if ((detail.files?.length ?? 0) > PEEK_ROWS) peeks.push('more-files')
   return peeks
+}
+
+/** What the surface's foot never draws in half: each row, line and press, and each block of the description. */
+const FOOT_ROWS = ['.pr-surface__title', '.pr-surface__heading', '.pr-surface__line', '.pr-surface__hint', '.pr-surface__finished', '.pr-surface__babysit',
+  '.pr-surface__fold-head', '.pr-surface__fold-preview', '.pr-surface__peek-row', '.pr-surface__fold-actions', '.pr-surface__from', '.pr-surface__quiet',
+  '.pr-surface__check-row', '.pr-surface__check-more', '.pr-surface__files-folder', '.pr-surface__file', '.pr-surface__link-open', '.pr-surface__link-add',
+  '.pr-surface__list-tools', '.pr-surface__open-row', '.pr-surface__list-failed', '.pr-surface__none p', '.pr-surface__none-actions',
+  '.pr-surface__description :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, tr)'].join(', ')
+
+/**
+ * The surface ends on a whole row. Where more is below, the foot would cut a row through its words, and a fade there
+ * only greyed them; instead the body stops drawing at the top of the row the foot would cut (a tall paragraph, at its
+ * last whole line), and the card under it dissolves over the row's own top space, so the card reads as going on below
+ * and every row in view reads whole. A docked Merge is a foot too: what passes under it stops above it the same way.
+ * At the end of the surface the foot holds only the body's last space, so nothing stops early. Measured on scroll and
+ * as the body or what it holds changes size, and written straight onto the body's mask, so a scroll renders nothing.
+ * `shown` changes when the body itself does: the surface draws one body for no pull request and another for one.
+ */
+function useWholeRowFoot(body: RefObject<HTMLDivElement | null>, shown: boolean): void {
+  useEffect(() => {
+    const element = body.current
+    if (!element) return
+    let frame = 0
+    const rowsOf = (outside: HTMLElement | null): FootRow[] => {
+      const rows: FootRow[] = []
+      for (const row of element.querySelectorAll<HTMLElement>(FOOT_ROWS)) {
+        if (outside?.contains(row)) continue
+        const box = row.getBoundingClientRect()
+        if (box.height <= 0) continue
+        const style = getComputedStyle(row)
+        const line = parseFloat(style.lineHeight)
+        rows.push({ top: box.top, bottom: box.bottom, padTop: parseFloat(style.paddingTop) || 0, padBottom: parseFloat(style.paddingBottom) || 0,
+          line: Number.isFinite(line) ? line : (parseFloat(style.fontSize) || 0) * 1.2 })
+      }
+      return rows
+    }
+    const set = (name: string, value: string): void => { if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value) }
+    const measure = (): void => {
+      frame = 0
+      const box = element.getBoundingClientRect()
+      if (box.height <= 0) return
+      const px = (y: number): string => `${Math.max(0, Math.round((y - box.top) * 10) / 10)}px`
+      // A docked Merge stuck at the foot: the rows passing under it stop above it, and it is the foot.
+      const dock = element.querySelector<HTMLElement>('.pr-surface__dock')
+      const docked = dock && getComputedStyle(dock).position === 'sticky' ? dock.getBoundingClientRect() : null
+      const stuck = docked !== null && docked.top > box.top && docked.bottom > box.bottom - 2
+      const under = stuck ? footCut(rowsOf(dock), docked.top) : null
+      const foot = stuck ? { at: box.bottom, soft: 0 } : footCut(rowsOf(null), box.bottom)
+      set('--pr-dock-cut', under ? px(under.at) : '0px')
+      set('--pr-dock-cut-end', under ? px(under.at + under.soft) : '0px')
+      set('--pr-dock-top', under && docked ? px(docked.top) : '0px')
+      set('--pr-foot-cut', px(foot.at))
+      set('--pr-foot-cut-end', px(foot.at + foot.soft))
+    }
+    const later = (): void => { if (!frame) frame = requestAnimationFrame(measure) }
+    measure()
+    element.addEventListener('scroll', later, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(later)
+    observer?.observe(element)
+    if (element.firstElementChild) observer?.observe(element.firstElementChild)
+    return () => { element.removeEventListener('scroll', later); observer?.disconnect(); if (frame) cancelAnimationFrame(frame) }
+  }, [body, shown])
 }
 
 /**

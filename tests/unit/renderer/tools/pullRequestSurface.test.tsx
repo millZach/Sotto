@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, footCut, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -1087,5 +1087,22 @@ describe('the drill-in under the merge checklist', () => {
   })
   it('anchors a file on GitHub by the SHA-256 of its path', async () => {
     await expect(fileOnGitHub('https://github.com/o/r/pull/74/?x=1', 'a.txt')).resolves.toBe(`https://github.com/o/r/pull/74/files#diff-${createHash('sha256').update('a.txt').digest('hex')}`)
+  })
+})
+
+describe('the surface\'s foot, which ends on a whole row', () => {
+  const row = (top: number, bottom: number, padTop = 9, padBottom = 9, line = 18) => ({ top, bottom, padTop, padBottom, line })
+  it('stops at the top of the row the foot would cut, dissolving over its top space', () => {
+    expect(footCut([row(700, 756), row(756, 812)], 790)).toEqual({ at: 756, soft: 9 })
+  })
+  it('lets the innermost row decide, so a fold head\'s peek gives way a row at a time', () => {
+    expect(footCut([row(600, 820, 10, 10), row(760, 780, 0, 0), row(783, 803, 0, 0)], 790)).toEqual({ at: 783, soft: 4 })
+  })
+  it('cuts nothing where the foot falls in space: between rows, or in a row\'s bottom padding', () => {
+    expect(footCut([row(700, 756), row(760, 816)], 758)).toEqual({ at: 758, soft: 0 })
+    expect(footCut([row(700, 756)], 750)).toEqual({ at: 750, soft: 0 })
+  })
+  it('gives a tall paragraph way at its last whole line', () => {
+    expect(footCut([row(500, 700, 0, 0, 22)], 620)).toEqual({ at: 610, soft: 4 })
   })
 })

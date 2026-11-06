@@ -25,11 +25,14 @@
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
 .pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent;
-  /* Its foot fades: where more of the surface is below, what reaches the foot fades into the panel, so a fold there reads
-     as one that scrolls on rather than one drawn cut. At the end the foot holds only the body's last space, so nothing
-     fades. A mask and not a painted band, so it shows the panel under it in every theme, Glass's translucent one too. What
-     the keyboard reaches scrolls in above the fade. */
-  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent); scroll-padding-bottom: 24px; }
+  /* It ends on a whole row. Where more is below, it stops drawing at the top of the row its foot would cut, and the card
+     under that row dissolves over the row's own top space, so the card reads as going on below and no row's words are
+     drawn in half; a docked Merge is a foot the same way (useWholeRowFoot measures both). At the end the foot holds only
+     the body's last space, so nothing stops early. A mask and not a painted band, so it shows the panel under it in
+     every theme, Glass's translucent one too. What the keyboard reaches scrolls in clear of the foot. */
+  --pr-dock-cut: 0px; --pr-dock-cut-end: 0px; --pr-dock-top: 0px; --pr-foot-cut: 100%; --pr-foot-cut-end: 100%;
+  mask-image: linear-gradient(to bottom, black var(--pr-dock-cut), transparent var(--pr-dock-cut-end), transparent var(--pr-dock-top), black var(--pr-dock-top),
+    black var(--pr-foot-cut), transparent var(--pr-foot-cut-end)); scroll-padding-bottom: 24px; }
 .pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 
 /* The checklist. */
@@ -76,7 +79,7 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
 .pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
 
-/* Merge stays in reach under the lines while the folds below scroll, above the body's fading foot. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
+/* Merge stays in reach under the lines while the folds below scroll, at the body's foot. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
 .pr-surface__dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
 .pr-surface__dock:has(.pr-surface__merge-go[data-blocked]) { position: static; }
 /* A pull request that has ended leads with that, and its checklist follows. */
