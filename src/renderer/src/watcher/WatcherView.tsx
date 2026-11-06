@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
 import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentSpeed, type AgentState } from '../../../shared/agents'
@@ -19,6 +20,7 @@ import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
+import { useFootFocusName } from '../agents/RailFocusName'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
@@ -38,7 +40,7 @@ import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
-import { isThreadClosed } from '../../../shared/threadActivity'
+import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext, LinkedFileRouteContext, type LinkedFileRoute } from '../tools/webLinks'
 import { linkedFileThread } from '../tools/linkedFile'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
@@ -85,6 +87,8 @@ const WATCHER_PANE_ID = 'watcher-pane'
 interface HeaderParts {
   readonly room: WatcherRoom | null
   readonly count: number
+  /** How many threads have a turn running, on every machine, as the machines line counts them. */
+  readonly working: number
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
@@ -124,8 +128,10 @@ function RoomTabs({ tab, onTab, moved }: { readonly tab: RoomTab; readonly onTab
  * name on hover and to assistive technology. It replaced the More menu that held the pages and the update.
  */
 function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
+  // Each icon says its name and shortcut under the header, to a resting pointer and to the keys, as the sidebar foot's do over it.
+  const focusName = useFootFocusName()
   return <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages"
-    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} />
+    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} focusName={focusName} />
 }
 
 /**
@@ -135,11 +141,13 @@ function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null 
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, working, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
   const mac = useOptionalApp()?.platform === 'darwin'
+  const workingWords = plural(working, { 0: 'None working', other: '# working' })
+  const workingId = useId()
   return <header className="thread-workspace__head watcher-head">
     {started && room !== null ? <WatcherContextTile room={room} />
       : mac ? null
@@ -147,10 +155,12 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       {tabs}
+      {/* What is going on, rather than how many threads there are (the owner's ask on November 6, 2026): how many work now.
+          The total stays in the list it opens, in its name and its filter. */}
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
-        aria-label={t`All threads, ${count}. Show the list`} title={t`All threads`} onClick={onToggleList}>
+        aria-label={t`All threads, ${count}. Show the list`} aria-describedby={workingId} title={t`All threads`} onClick={onToggleList}>
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
-        <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
+        <span id={workingId} className="watcher-head__count" aria-hidden="true">{workingWords}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
       <WatcherWayOut update={update} />
     </div>
@@ -542,6 +552,12 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   const groups = useOverview(state, rows, now, watcherId)
   const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
+  // The threads with a turn running on every machine, counted as the machines line counts them, from the list All threads holds.
+  const working = useMemo(() => {
+    let count = 0
+    for (const group of groups) for (const entry of group.entries) if (isThreadTurnRunning(entry.overview.thread)) count++
+    return count
+  }, [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const view = useRoomView()
   const besideRow = view.besideId !== null && view.besideId !== watcherId ? rowsById.get(view.besideId) : undefined
@@ -715,7 +731,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   </>
   const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
   const header = <>
-    <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
+    <WatcherHeader room={room} count={overviewCount(groups)} working={working} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} update={update} tabs={tabs} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
     {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
@@ -777,6 +793,6 @@ export function WatcherView({ now: fixedNow, update = null }: {
     <PageWindowControls />
     {/* The room has no sidebar, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
-    {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
+    {listOpen ? <WatcherOverviewList groups={groups} total={overviewCount(groups)} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked></LinkedFileRouteContext.Provider>
 }

@@ -17,7 +17,7 @@ import { WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRo
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { WatcherAfterMessage } from '../../../src/renderer/src/watcher/WatcherReceipts'
-import { placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
+import { placeAsks, receiptRow, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
 import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../../../src/renderer/src/agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -334,6 +334,17 @@ describe('what a receipt says was chosen', () => {
     // A title named from a first message keeps its full stop; the line does not say it twice.
     expect(receiptWords('Pick the badge colour.', 'Blue')).toBe('You answered Pick the badge colour: Blue.')
     expect(receiptWords('Pick the badge colour.', undefined)).toBe('Pick the badge colour no longer waits on you.')
+  })
+
+  it('says the answer in one row: who answered which thread, then the one choice, the user’s own words or how many choices', () => {
+    expect(receiptRow('Crash Sim', 'Free real recordings, Engines per vehicle, Crashes, Explosions and fire, Arena background, Record the game’s sound', 6))
+      .toEqual({ lead: 'You answered Crash Sim', detail: '6 choices', answered: true })
+    expect(receiptRow('Visual gate flake', 'Allow once', 1)).toEqual({ lead: 'You answered Visual gate flake', detail: 'Allow once', answered: true })
+    // Sent from a place that did not count the choices: the words, which the row shortens if it must.
+    expect(receiptRow('Footer links', 'Blue', undefined)).toEqual({ lead: 'You answered Footer links', detail: 'Blue', answered: true })
+    expect(receiptRow('Footer links', OWN_WORDS, 1)).toEqual({ lead: 'You answered Footer links', detail: 'in your own words', answered: true })
+    expect(receiptRow('Footer links', null, undefined)).toEqual({ lead: 'You answered Footer links', detail: null, answered: true })
+    expect(receiptRow('Pick the badge colour.', undefined, undefined)).toEqual({ lead: 'Pick the badge colour no longer waits on you', detail: null, answered: false })
   })
 
   it('places each request once, under the newest wake-up that named it', () => {

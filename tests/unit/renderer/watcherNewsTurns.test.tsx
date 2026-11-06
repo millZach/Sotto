@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
+import { closeReplies, MessageList, newSince, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 
 // Watcher's conversation without its news wake-ups, as main presents it (watcherWakeUpsAsShown): each news turn's work
@@ -59,6 +59,10 @@ describe('Watcher’s replies to news', () => {
     const reply = document.querySelector<HTMLElement>('[data-message-id="news-reply-1"]')!
     const press = reply.querySelector('header button')!
     expect(press).toHaveTextContent('After news · 6.1s')
+    // Finished as it should, its work is one quiet mark after the time, named by its words and showing them as its tooltip.
+    expect(press).toHaveAttribute('data-mark')
+    expect(press).toHaveAttribute('title', 'After news · 6.1s')
+    expect(screen.getByRole('button', { name: 'After news · 6.1s' })).toBe(press)
     expect(press).toHaveAttribute('aria-expanded', 'false')
     // Your own two turns keep their lines; the news turns have none.
     expect(screen.getAllByRole('button', { name: /^Worked for/u })).toHaveLength(2)
@@ -93,6 +97,8 @@ describe('Watcher’s replies to news', () => {
     const reply = document.querySelector<HTMLElement>('[data-message-id="news-reply-1"]')!
     expect(reply).toHaveAttribute('data-turn-outcome', 'failed')
     expect(reply.querySelector('header button')).toHaveTextContent('After news · failed after 6.1s')
+    // A turn that failed says so in words, not behind a mark.
+    expect(reply.querySelector('header button')).not.toHaveAttribute('data-mark')
     expect(reply).toHaveTextContent('Watcher’s provider stopped answering.')
   })
 
@@ -302,5 +308,28 @@ describe('an unshown turn in another thread', () => {
     expect(document.querySelector('[data-message-id="news-reply-1"] header button')).toBeNull()
     expect(document.querySelector('[data-turn-id="news-3"]')).toHaveTextContent('Worked for 3.0s')
     expect(inOrder(['It is waiting on', 'Worked for 6.1s', 'got your permission', 'Worked for 3.0s', 'Merge the host-update'])).toBe(true)
+  })
+})
+
+describe('Watcher’s replies close together', () => {
+  const at = (minute: number, second = 0): string => new Date(Date.UTC(2026, 10, 6, 21, minute, second)).toISOString()
+  const reply = (id: string, minute: number, second = 0): AgentMessage => ({ id, role: 'assistant', text: id, createdAt: at(minute, second) })
+  it('marks each reply written within five minutes of the first of its run, and starts a run again after anyone else’s message', () => {
+    const shown = [reply('a', 1), reply('b', 3), reply('c', 5, 59), reply('d', 6, 1), { id: 'you', role: 'user' as const, text: 'Merge it.', createdAt: at(7) }, reply('e', 7, 30)]
+    // c is 4m59s after a, d is past five minutes and heads a run of its own; your message ends the run, so e heads one.
+    expect(closeReplies(shown)).toEqual(['b', 'c'])
+  })
+  it('draws the mark on the replies themselves, which share the header above them in Watcher’s pane', () => {
+    const shown = [reply('a', 1), reply('b', 1, 40)]
+    render(<MessageList messages={shown} provider="Codex" running={false} placement={placeActivities(shown, shown, [])} context={finished} speaker="watcher" />)
+    expect(document.querySelector('[data-message-id="a"]')).not.toHaveAttribute('data-close')
+    expect(document.querySelector('[data-message-id="b"]')).toHaveAttribute('data-close')
+  })
+  it('counts the messages that came after the one the reader last saw at the end', () => {
+    const shown = [reply('a', 1), reply('b', 2), reply('c', 3)]
+    expect(newSince(shown, 'a')).toBe(2)
+    expect(newSince(shown, 'c')).toBe(0)
+    expect(newSince(shown, 'gone')).toBe(0)
+    expect(newSince(shown, undefined)).toBe(0)
   })
 })

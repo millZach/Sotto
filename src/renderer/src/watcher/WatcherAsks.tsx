@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, Laptop, Server } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Laptop, Server } from 'lucide-react'
 import { i18n } from '@lingui/core'
-import { msg } from '@lingui/core/macro'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { AGENT_THREAD_EXCERPT_MAX, type AgentRequest, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -14,7 +14,7 @@ import { ProviderMark } from '../agents/ProviderMark'
 import type { ThreadRow } from '../agents/threadFacts'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import { messageLinks } from '../agents/requests/messageLinks'
-import { answeredChoices, chosenWords, OWN_WORDS, SKIPPED } from '../agents/requests/answeredChoices'
+import { answeredChoices, chosenCount, chosenWords, OWN_WORDS, SKIPPED } from '../agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../agents/requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner, threadRequestSubmit } from '../agents/requests/threadRequests'
 import type { ConversationThread } from './WatcherReceipts'
@@ -81,6 +81,22 @@ export function receiptWords(named: string, words: string | null | undefined): s
 }
 
 /**
+ * The answered line as one row (the owner's ask on November 6, 2026): who answered which thread, then what was chosen when
+ * that is one choice or the user's own words, or how many choices there were. The sentence `receiptWords` says in full
+ * shows on hover or focus, and behind Open in the thread itself. Null `detail` when there is nothing more to say.
+ */
+export function receiptRow(named: string, words: string | null | undefined, count: number | undefined): { readonly lead: string; readonly detail: string | null; readonly answered: boolean } {
+  const title = named.replace(/\.+$/u, '')
+  if (words === undefined) return { lead: i18n._(msg`${title} no longer waits on you`), detail: null, answered: false }
+  if (words === SKIPPED) return { lead: i18n._(msg`You skipped ${title}’s question`), detail: null, answered: true }
+  const lead = i18n._(msg`You answered ${title}`)
+  if (words === null) return { lead, detail: null, answered: true }
+  if (words === OWN_WORDS) return { lead, detail: i18n._(msg`in your own words`), answered: true }
+  if (count !== undefined && count > 1) return { lead, detail: plural(count, { other: '# choices' }), answered: true }
+  return { lead, detail: words, answered: true }
+}
+
+/**
  * The asks under one message of Watcher's conversation (Zach's pick on October 19, 2026, variant B): for each request a
  * wake-up said waited on the user, the thread's own live card while it waits, and once it no longer does, one line in its
  * place. Drawn from the thread's live requests alone, so an answer given anywhere (here, in the thread, on the phone)
@@ -108,13 +124,21 @@ function WatcherAskEntry({ ask, facts, answering, press }: {
   const title = row?.thread.title ?? facts.title ?? t`A thread`
   // Read whatever happens below, so the line follows an answer whose reply came after its request had already left.
   const sent = useSyncExternalStore(answeredChoices.subscribe, () => row === undefined ? undefined : answeredChoices.sent(row.thread.id, ask.requestCardId))
+  const count = useSyncExternalStore(answeredChoices.subscribe, () => row === undefined ? undefined : answeredChoices.choices(row.thread.id, ask.requestCardId))
+  const fullId = useId()
   if (row !== undefined && request !== undefined) return <WatcherAskCard row={row} request={request} facts={facts} answering={answering} press={press} />
   // A thread the window does not hold right now, such as one on a host still joining, has nothing to show or open: the
   // needs-you line still names it while it waits.
   if (row === undefined) return null
-  return <p className="watcher-ask-receipt tt-paragraph" data-ask-request={ask.requestCardId}>
-    <span className="watcher-ask-receipt__words">{receiptWords(title, sent)}</span>
-    <button type="button" className="watcher-ask__open tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={t`Open ${title} beside Watcher`}
+  const shown = receiptRow(title, sent, count)
+  // One row: the check, who answered which thread, what was chosen or how many choices, and Open. The whole sentence is
+  // the row's tooltip and Open's description, so the pointer, the keyboard and a screen reader all reach every choice.
+  return <p className="watcher-ask-receipt tt-paragraph" data-ask-request={ask.requestCardId} data-answered={shown.answered || undefined}>
+    {shown.answered ? <Check className="watcher-ask-receipt__mark" size={14} aria-hidden="true" /> : null}
+    <span className="watcher-ask-receipt__lead">{shown.lead}</span>
+    {shown.detail === null ? null : <span className="watcher-ask-receipt__detail">{shown.detail}</span>}
+    <span id={fullId} className="watcher-ask-receipt__words" role="tooltip">{receiptWords(title, sent)}</span>
+    <button type="button" className="watcher-ask__open tt-focusable" aria-label={t`Open ${title} beside Watcher`} aria-describedby={fullId}
       {...press(row.thread.id)}>{t({ message: 'Open', context: 'Open a thread' })}</button>
   </p>
 }
@@ -140,7 +164,7 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
   // it once main takes the answer. Only a send seen leaving this window counts: a delivery state restored after a
   // reload says nothing of who answered. Whether main took it is noted by whichever card sent it, when main replies.
   useEffect(() => {
-    if (entry.phase === 'sending') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), false)
+    if (entry.phase === 'sending') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), false, chosenCount(request, entry))
   }, [entry, request, thread.id])
   const kind = request.kind === 'permission' ? t({ message: 'permission', comment: 'The kind of request a card in Watcher’s conversation holds' })
     : t({ message: 'question', comment: 'The kind of request a card in Watcher’s conversation holds' })

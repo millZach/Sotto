@@ -1255,7 +1255,7 @@ test.describe("Watcher's room on the built app", () => {
       const newsTurn = (id: string) => pane.locator(`.thread-activity[data-turn-id="${id}"]`)
       const reply = (id: string) => pane.locator(`[data-message-id="${id}"]`)
       // The control that takes the reader to the newest message, named for what it brings.
-      const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages)$/u })
+      const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages|Jump to \d+ new messages?)$/u })
       // Inside your last turn's answer, and higher up in the conversation.
       for (const [answer, paragraph] of [['final-3', 'Answer 3, paragraph 4.'], ['final-1', 'Answer 1, paragraph 4.']] as const) {
         // Each reading has news of its own, since a turn that ended is never reopened.
@@ -2038,11 +2038,14 @@ test.describe("Watcher's room on the built app", () => {
           await openRoom(page)
           await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
           await expect(beside(page)).toBeVisible()
-          await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
+          // Stop all keeps its place once Watcher runs; with nothing of Watcher's running it is there, unavailable (November 6, 2026).
+          await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(1)
+          if (stopAll) await expect(page.locator('.watcher-head .watcher-stop-all__button')).not.toHaveAttribute('aria-disabled')
+          else await expect(page.locator('.watcher-head .watcher-stop-all__button')).toHaveAttribute('aria-disabled', 'true')
           for (const counts of ['seeded', 'three-digit'] as const) {
             // All threads' count is uncapped. The second pass draws it as 100, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
-              for (const count of head.querySelectorAll('.watcher-head__count')) count.textContent = '100'
+              for (const count of head.querySelectorAll('.watcher-head__count')) count.textContent = '100 working'
             })
             for (const [width, height] of counts === 'seeded' ? SIZES : [SIZES[1], SIZES[2]]) {
               await resizeContentWindow(launched, width, height)
