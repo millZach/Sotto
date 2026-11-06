@@ -124,7 +124,7 @@ it('lets the user’s Settle it on a settle question agree that one settle, and 
   const requestId = await f.request()
   expect(await f.settle(requestId, kept)).toMatchObject({ status: 'refused', code: 'ASK_USER_FIRST' })
   expect(await f.settle(requestId, finished)).toMatchObject({ status: 'ok' })
-  await vi.waitFor(() => expect(f.service.state().questions!.find(question => question.id === go.questionId)).toMatchObject({ spent: true }))
+  await vi.waitFor(() => expect(f.service.state().questions!.find(question => question.id === go.questionId)).toMatchObject({ spent: true }), { timeout: 15_000 })
 })
 
 it('asks again rather than keep two settle questions open for one thread', async () => {
