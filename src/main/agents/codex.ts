@@ -73,7 +73,10 @@ const clientInfo = { clientInfo: { name: 'sotto', title: 'Sotto threads', versio
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
 // Codex's previous policy is auto-accept-edits; preserve it for old aliases and
 // creation without an explicit selection. Shapes verified with generated 0.154 schemas.
-function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
+// Codex 0.165 and newer refuse `untrusted` in a config layer (config.toml, `-c`, a profile) but still take it on
+// thread/start, thread/settings/update and turn/start, so Ask for approval goes on requests only (#2185);
+// `codexApprovalPolicyLive.test.ts` checks a new Codex still takes each mode.
+export function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
   if (mode === 'approval-required') return { approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'read-only' }
   if (mode === 'full-access') return { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access' }
   return { approvalPolicy: 'on-request', approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user', sandbox: 'workspace-write' }
