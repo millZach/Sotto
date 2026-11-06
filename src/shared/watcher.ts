@@ -30,6 +30,10 @@ export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse', 
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
+/** The longest reason Watcher may give for starting a thread on the shared checkout (#2235). */
+export const WATCHER_SHARED_REASON_MAX = 300
+/** Sotto's reason when a start has to share its project's folder: there is no Git to make a worktree with. */
+export const WATCHER_NOT_GIT_REASON = 'This project is not a Git repository, so it has no worktree to make. The thread works in the project’s folder.'
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 /** Durable assignment, independent of any one request. Contains no user or provider prose. */
@@ -44,11 +48,12 @@ const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
   z.object({ kind: z.literal('provider'), choiceId: entityId }).strict(),
 ])
-const workingCopy = z.discriminatedUnion('kind', [
+export const watcherWorkingCopySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('shared') }).strict(),
   z.object({ kind: z.literal('new-worktree') }).strict(),
   z.object({ kind: z.literal('existing-worktree'), choiceId: id }).strict(),
 ])
+const workingCopy = watcherWorkingCopySchema
 const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), speed: agentSpeedSchema.nullable().optional(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
 const workerQueue = z.object({ ahead: counter, waiting: counter, note: shortText.min(1) }).strict()
 const workerChoices = choices.pick({ modelId: true, reasoningEffort: true, speed: true, permission: true })
@@ -352,6 +357,9 @@ export const watcherToolSchemas = {
       // checkout behind (#1690). Sotto's, like the move: main sets it when it places the start, and Watcher never names it.
       fromOrigin: z.string().min(1).max(255).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // Why a start runs on the shared checkout (#2235): Watcher's sharedReason, or Sotto's when the project has no Git.
+      // The desktop's alone, and in memory only: a retry after a restart has none.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(),
       queue: workerQueue.optional(),
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).

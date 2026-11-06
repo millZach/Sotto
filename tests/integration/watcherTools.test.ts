@@ -14,7 +14,7 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
+import { WATCHER_NOT_GIT_REASON, watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -1929,7 +1929,7 @@ it.each(['working-copy-as-base', 'base-as-working-copy'])('refuses a %s choice b
   const copy = choices.choices.find(item => item.kind === 'existing-worktree')!, base = choices.baseRefs[0]!
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
-  const input = role === 'working-copy-as-base' ? { ...f.start(), baseRefChoiceId: copy.choiceId }
+  const input = role === 'working-copy-as-base' ? { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: copy.choiceId }
     : { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: base.choiceId } }
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
   expect(f.control.watcherRecord()).toEqual(record)
@@ -1944,10 +1944,43 @@ it('passes a valid branch choice to creation and retains it in the receipt', asy
   if (choices.status !== 'ok' || !('baseRefs' in choices)) throw new Error('copy read refused')
   const base = choices.baseRefs.find(item => item.name === 'main')!
   const create = vi.spyOn(f.control, 'commandFromWatcher')
-  expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: base.choiceId }))
-    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId } })
+  expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: base.choiceId }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId }, sharedReason: 'Synthetic reason the user gave.' })
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', baseBranch: 'main' }), expect.anything())
   create.mockRestore()
+})
+
+// #2235: Watcher's threads start in their own new worktree in a Git project, and the shared checkout needs a reason.
+it('starts a thread in a new worktree in a Git project unless Watcher gives a reason to share the checkout', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const create = vi.spyOn(f.control, 'commandFromWatcher')
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const started = await f.call('start_thread', unnamed)
+  expect(started).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(started).not.toHaveProperty('sharedReason')
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent' }), expect.anything())
+  // Shared without a reason is refused before anything is admitted.
+  const record = f.control.watcherRecord()
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  expect(f.control.watcherRecord()).toEqual(record)
+  // A reason alone starts it on the shared checkout, and the result gives the reason back for Watcher's reply.
+  const reason = 'The user asked for this research thread on the shared checkout.'
+  expect(await f.call('start_thread', { ...unnamed, retryKey: randomUUID(), sharedReason: reason }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: reason })
+  expect(create.mock.calls.filter(([command]) => command.type === 'create-thread').at(-1)?.[0]).toMatchObject({ workingCopy: 'shared' })
+  // A reason beside another working copy explains nothing, so the result leaves it out.
+  const named = await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' }, sharedReason: reason })
+  expect(named).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(named).not.toHaveProperty('sharedReason')
+  create.mockRestore()
+})
+
+it('starts a thread in the folder of a project that is not a Git repository, and says why', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', unnamed)).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: WATCHER_NOT_GIT_REASON })
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
 })
 
 it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
@@ -1963,7 +1996,7 @@ it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after sna
     const record = f.control.watcherRecord(), selected = f.control.shell().activeThreadId
     expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: choice.choiceId } }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
-    expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: first.baseRefs[0]!.choiceId }))
+    expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: first.baseRefs[0]!.choiceId }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
     expect(f.control.watcherRecord()).toEqual(record)
     expect(f.control.shell().activeThreadId).toBe(selected)
