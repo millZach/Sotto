@@ -1,4 +1,5 @@
 import { AskedByLine } from './AskedByLine'
+import { ClimbGrid } from './ClimbGrid'
 import React, { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { useOptionalApp } from '../../state/AppContext'
@@ -96,31 +97,38 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
   const valid = climbSpecSchema.safeParse(spec).success && !!chosen && (!spec.reference || !!referencePreview)
   const changeCriterion = (index: number, patch: Partial<ClimbCriterion>): void => update({ criteria: spec.criteria.map((value, at) => at === index ? { ...value, ...patch } : value) })
   return <section className="climb-panel" onKeyDown={event => {
-    if (event.key !== 'Escape') return
+    if (event.key !== 'Escape' || event.defaultPrevented) return
     const details = (event.target as HTMLElement).closest('details[open]')
-    if (details) { event.stopPropagation(); details.removeAttribute('open'); details.querySelector('summary')?.focus() }
+    if (details) { event.preventDefault(); event.stopPropagation(); details.removeAttribute('open'); details.querySelector('summary')?.focus() }
   }}>
     {!current || current.phase === 'approval' ? <div className="council-ask">
-      <h3 className={current ? 'climb-proposal' : 'tt-visually-hidden'}>{current ? t`Chair’s proposal` : t`Set up a Climb`}</h3>
+      {current ? <h3 className="climb-proposal">{t`Chair’s proposal`}</h3> : null}
       {current?.askedBy ? <AskedByLine askedBy={{ provider: current.askedBy.provider, words: current.askedBy.words ?? null }} /> : null}
       <fieldset disabled={!editable || busy} className="climb-fields">
-        <OriginPicker threads={threads} projects={state?.host.projects ?? []} chosen={chosen?.id ?? ''} onChoose={setOrigin} />
-        <p className="council-ask__estimate">{t`The From thread is the Builder throughout the run.`}</p>
+        <div className="council-composer">
+          <textarea className="tt-input tt-focusable council-ask__question" aria-label={t`Goal`} value={spec.goal} onChange={event => update({ goal: event.target.value })} />
+          {current ? <label className="climb-checkbox"><input className="tt-focusable" type="checkbox" checked={approved} onChange={event => setApproved(event.target.checked)} />{t`Allow fix briefs to this builder within these limits.`}</label> : null}
+          <div className="council-composer__footer">
+            <OriginPicker threads={threads} projects={state?.host.projects ?? []} chosen={chosen?.id ?? ''} onChoose={setOrigin} />
+            {current ? <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!approved || !valid || busy} onClick={() => void call({ type: 'approve', climb: current.id, spec, ...(referencePreview ? { referencePreview: referencePreview.fingerprint } : {}) })}>{t`Approve & start round 0`}</button>
+              : <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!valid || !preview || busy} onClick={() => void call({ type: 'start', origin: chosen!.id, spec, preview: preview!.fingerprint, context, ...(referencePreview ? { referencePreview: referencePreview.fingerprint } : {}) })}>{t`Ask chair for proposal`}</button>}
+          </div>
+        </div>
         <section className="climb-fields">
-          <label className="council-field"><span>{t`Goal`}</span><textarea className="tt-input tt-focusable council-ask__question" aria-label={t`Goal`} value={spec.goal} onChange={event => update({ goal: event.target.value })} /></label>
           <div><button type="button" className="council-link tt-focusable" onClick={() => update({ goal: t`Improve the clarity, hierarchy and usability of the selected design while preserving its purpose.` })}>{t`Use the Design goal`}</button></div>
           <details><summary>{t`Constraints`}</summary><div className="climb-fields"><label className="council-field"><span>{t`Constraints`}</span><textarea className="tt-input tt-focusable" aria-label={t`Constraints`} value={spec.constraints} onChange={event => update({ constraints: event.target.value })} /></label><label className="council-field"><span>{t`Context for the setup chair (optional)`}</span><textarea className="tt-input tt-focusable" disabled={!!current} value={context} onChange={event => setContext(event.target.value)} /></label></div></details>
         </section>
         <section className="council-round"><h4 className="council-round__question">{t`Evidence`}</h4>
           <Source value={spec.source} frozen={!!current} onChange={source => update({ source })} />
           <button type="button" className="tt-button tt-focusable" disabled={!!current} onClick={() => void call({ type: 'preview', source: spec.source })}>{t`Preview capture`}</button>
-          {preview ? <p className="council-ask__estimate">{t`${preview.files} files · ${preview.bytes} bytes`}</p> : null}
+          {preview ? <p className="council-muted tt-paragraph">{t`${preview.files} files · ${preview.bytes} bytes`}</p> : null}
+          <p className="council-muted tt-paragraph">{app?.settings?.historyEnabled === false ? t`History is off. Temporary evidence is written to disk while this Climb runs, then removed at Settle, quit or the next start. Its text and results are not retained.` : t`Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary.`}</p>
           <details><summary>{t`Exclusions and limits`}</summary><p>{t`10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb.`}</p><p>{t`Claude or Codex receives complete text and up to eight images: 400,000 text characters, 10 MiB per image and 50 MiB total. A larger or unsupported selection pauses; nothing is truncated.`}</p>
             <ul>{preview?.excluded.map(item => <li key={item.path}>{item.path} · {item.reason}</li>)}</ul></details>
           <details><summary>{t`Fixed reference (optional)`}</summary><label className="climb-checkbox"><input className="tt-focusable" type="checkbox" checked={!!spec.reference} onChange={event => update({ reference: event.target.checked ? { kind: 'artifacts', items: [] } : undefined })} />{t`Compare with fixed evidence`}</label>
             {spec.reference ? <><Source value={spec.reference} onChange={reference => update({ reference })} /><button type="button" className="tt-button tt-focusable" onClick={() => {
               void bridge.climb?.({ type: 'preview', source: spec.reference! }).then(result => { if (result.preview) setReferencePreview(result.preview); if (!result.ok) setError(result.error ?? t`The reference could not be previewed.`) }, () => setError(t`The reference could not be previewed.`))
-            }}>{t`Preview reference`}</button>{referencePreview ? <p className="council-ask__estimate">{t`${referencePreview.files} reference files · ${referencePreview.bytes} bytes`}</p> : null}</> : null}</details>
+            }}>{t`Preview reference`}</button>{referencePreview ? <p className="council-muted tt-paragraph">{t`${referencePreview.files} reference files · ${referencePreview.bytes} bytes`}</p> : null}</> : null}</details>
         </section>
         <section className="council-round"><h4 className="council-round__question">{t`Target`}</h4>
           {spec.criteria.map((value, index) => <details key={index} open={index === 0}><summary>{value.name}</summary><div className="climb-fields">
@@ -138,9 +146,7 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
           <Limit label={t`Attempts`} value={spec.attempts} steps={attemptSteps} onChange={attempts => update({ attempts })} /><Limit label={t`Model turns`} value={spec.modelTurns} steps={turnSteps} onChange={modelTurns => update({ modelTurns })} />
         </section>
       </fieldset>
-      <p className="council-ask__estimate">{app?.settings?.historyEnabled === false ? t`History is off. Temporary evidence is written to disk while this Climb runs, then removed at Settle, quit or the next start. Its text and results are not retained.` : t`Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary.`}</p>
-      {current ? <div className="council-ask__actions"><label className="climb-checkbox"><input className="tt-focusable" type="checkbox" checked={approved} onChange={event => setApproved(event.target.checked)} />{t`Allow fix briefs to this builder within these limits.`}</label><button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!approved || !valid || busy} onClick={() => void call({ type: 'approve', climb: current.id, spec, ...(referencePreview ? { referencePreview: referencePreview.fingerprint } : {}) })}>{t`Approve & start round 0`}</button></div>
-        : <div className="council-ask__actions"><button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!valid || !preview || busy} onClick={() => void call({ type: 'start', origin: chosen!.id, spec, preview: preview!.fingerprint, context, ...(referencePreview ? { referencePreview: referencePreview.fingerprint } : {}) })}>{t`Ask chair for proposal`}</button></div>}
+
     </div> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {error ? <p className="council-notice" role="alert">{error}</p> : null}
@@ -150,8 +156,6 @@ export function ClimbPanel({ thread, bridge, onPanel, onRecord }: { thread?: str
 function ClimbProgress({ record, busy, call }: { record: ClimbRecord; busy: boolean; call(request: ClimbRequest): Promise<void> }): ReactNode {
   const { t } = useLingui(), [round, setRound] = useState(0), [destination, setDestination] = useState('')
   const planned = record.spec ? climbPlannedTurns(record.spec, record.turns.filter(turn => turn.repair).length) : null
-  const outcome = { queued: t`Queued`, dispatching: t`Sending`, accepted: t`Working`, unconfirmed: t`Unconfirmed`, working: t`Working`, answered: t`Completed`, failed: t`Held` }
-  const roundTurns = (index: number) => record.turns.filter(turn => turn.stage !== 'setup' && turn.round + (turn.stage === 'builder' ? 1 : 0) === index)
   const phases = { setup: t`Preparing proposal`, approval: t`Waiting for approval`, baseline: t`Capturing baseline`, builder: t`Building`, assessment: t`Judging`, paused: t`Held`, done: t`Finished`, stopped: t`Stopped`, settled: t`Settled` }
   return <article className="council-entry">
     <div className="council-entry__head"><div className="council-entry__title"><h2>{phases[record.phase]}</h2><p className="council-entry__meta">{t`${record.completedTurns} / ${planned ?? '∞'} turns`}</p></div>
@@ -161,12 +165,7 @@ function ClimbProgress({ record, busy, call }: { record: ClimbRecord; busy: bool
     </div>
     {record.askedBy ? <AskedByLine askedBy={{ provider: record.askedBy.provider, words: record.askedBy.words ?? null }} /> : null}
     {record.reason ? <p className="council-notice tt-paragraph" role="status">{record.reason}</p> : null}
-    <ol className="council-rows">{record.turns.slice(-5).map(turn => <li className="council-row" data-state={turn.outcome === 'answered' ? 'done' : turn.outcome === 'failed' ? 'failed' : turn.delivery === 'unconfirmed' ? 'unknown' : turn.delivery === 'queued' ? 'queued' : 'working'} key={turn.id}><span>{turn.stage === 'builder' ? t`Builder` : turn.stage === 'setup' ? t`Setup chair` : turn.stage === 'chair' ? t`Chair` : t`Judge ${(turn.seat ?? 0) + 1}`}</span><span className="council-row__state">{outcome[turn.outcome ?? turn.delivery]}</span></li>)}</ol>
-    <details className="council-round"><summary>{t`Turns`}</summary><div className="climb-table"><table><thead><tr><th>{t`Round`}</th><th>{t`Completed / planned`}</th></tr></thead><tbody><tr><td>{t`Setup`}</td><td>{record.turns.filter(turn => turn.stage === 'setup' && turn.outcome).length} / {Math.max(1, record.turns.filter(turn => turn.stage === 'setup').length)}</td></tr>{record.rounds.map(item => <tr key={item.index}><td>{item.index}</td><td>{roundTurns(item.index).filter(turn => turn.outcome).length} / {Math.max(item.index === 0 ? 4 : 5, roundTurns(item.index).length)}</td></tr>)}</tbody></table></div></details>
-    <details className="council-round"><summary>{t`Kept rounds`}</summary>{record.rounds.map(item => <details key={item.index}><summary>{item.index === 0 ? t`Round 0 · Baseline` : t`Round ${item.index}`}{item.targetMet ? ` · ${t`Target met`}` : ''}{item.candidate === record.incumbent ? ` · ${t`Incumbent`}` : ''}</summary>
-      <p>{item.summary}</p><div className="climb-table"><table><thead><tr><th>{t`Judge`}</th><th>{t`Criterion`}</th><th>{t`Exhibit`}</th><th>{t`Score`}</th><th>{t`Evidence`}</th></tr></thead><tbody>{item.judgments.flatMap(judge => judge.result.scores.map(score => <tr key={`${judge.seat}-${score.criterion}-${score.exhibit}`}><td>{judge.seat + 1}</td><td>{record.spec?.criteria.find(criterion => criterion.id === score.criterion)?.name ?? score.criterion}</td><td>{score.exhibit}</td><td>{score.score ?? t`Unmeasurable`}</td><td>{score.reason}<ul>{score.citations.map((citation, index) => <li key={index}>{citation.path}:{citation.start}–{citation.end} · {citation.quote}</li>)}</ul></td></tr>))}</tbody></table></div>
-      <ul>{item.exhibits.map(exhibit => <li key={exhibit.letter}>{exhibit.letter} · {exhibit.evidence === item.baseline ? t`Baseline` : exhibit.evidence === item.reference ? t`Reference` : exhibit.evidence === item.incumbent ? t`Incumbent` : t`Candidate`}</li>)}</ul>
-    </details>)}</details>
+    <ClimbGrid record={record} />
     {record.rounds.length ? <details className="council-round"><summary>{t`Export to a new folder`}</summary><label className="council-field"><span>{t`Round`}</span><select className="tt-input tt-focusable" value={round} onChange={event => setRound(Number(event.target.value))}>{record.rounds.map(item => <option key={item.index} value={item.index}>{item.index}</option>)}</select></label><label className="council-field"><span>{t`New folder path`}</span><input className="tt-input tt-focusable" value={destination} onChange={event => setDestination(event.target.value)} /></label><button type="button" className="tt-button tt-focusable" disabled={!destination || busy} onClick={() => void call({ type: 'export', climb: record.id, round, destination })}>{t`Export round`}</button></details> : null}
   </article>
 }

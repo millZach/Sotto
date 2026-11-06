@@ -131,7 +131,7 @@ describe('Seat grid reading', () => {
 
   it('scrolls an activated reader only when less than three lines are visible; arrows keep the cell visible', async () => {
     const council = councilFixture({ rows: [row('A', 'answer', 'done'), row('C', 'answer', 'working')] })
-    const { container } = render(<div className="council-scroll"><CouncilGrid round={council.rounds[0]!} seats={SEATS}>{cell => <p>{cell.id}</p>}</CouncilGrid></div>)
+    const { container } = render(<div className="council-scroll" style={{ overflowY: 'auto' }}><CouncilGrid round={council.rounds[0]!} seats={SEATS}>{cell => <p>{cell.id}</p>}</CouncilGrid></div>)
     const scroll = container.firstElementChild as HTMLElement
     const reader = screen.getByRole('region', { name: 'Selected turn' })
     vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 450))
@@ -151,6 +151,16 @@ describe('Seat grid reading', () => {
     expect(scroll.scrollTop).toBe(0)
   })
 
+  it('scrolls the outer drawer to the reader in a narrow layout', async () => {
+    const council = councilFixture({ rows: [row('A', 'answer', 'done')] })
+    const { container } = render(<div className="council-view"><div className="council-scroll" style={{ overflowY: 'visible' }}><CouncilGrid round={council.rounds[0]!} seats={SEATS}>{cell => <p>{cell.id}</p>}</CouncilGrid></div></div>)
+    const scroll = container.firstElementChild as HTMLElement
+    vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 450))
+    vi.spyOn(screen.getByRole('region', { name: 'Selected turn' }), 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 410, 600, 900))
+    fireEvent.click(screen.getByRole('button', { name: /Read Answers from A/ }))
+    await waitFor(() => expect(scroll.scrollTop).toBe(410))
+  })
+
   it('keeps repair threads, long words, citations, changed answers and recovery actions in the reader', () => {
     const summary = 'Long summary. '.repeat(142).slice(0, 2000)
     const council = councilFixture({ rows: [row('A', 'review', 'done', { summary, changed: true,
@@ -163,7 +173,7 @@ describe('Seat grid reading', () => {
     expect(reader).toHaveTextContent('Changed its answer')
     expect(reader).toHaveTextContent('Asked again')
     expect(reader).toHaveTextContent('past the stage deadline')
-    expect(reader).toHaveTextContent('no result')
+    expect(reader).toHaveTextContent('No result')
     expect(within(reader).getAllByRole('listitem')).toHaveLength(2)
     expect(within(reader).getAllByRole('button', { name: 'Open thread' })).toHaveLength(2)
     expect(within(reader).getByRole('button', { name: 'Use another model' })).toBeInTheDocument()
@@ -199,7 +209,7 @@ describe('Seat grid reading', () => {
     const framing = screen.getByText('Framed as a decision.')
     expect(framing.closest('details')).not.toHaveAttribute('open')
     fireEvent.click(framing)
-    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'review' } })
+    fireEvent.change(screen.getByLabelText('Answer again as'), { target: { value: 'review' } })
     expect(run).toHaveBeenLastCalledWith({ type: 'reframe', council: council.id, kinds: ['review'] })
     fireEvent.click(screen.getByRole('button', { name: 'Change the criteria' }))
     expect(screen.getByRole('textbox', { name: 'Criteria, one to five, one on each line' })).toHaveValue('Simple')

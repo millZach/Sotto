@@ -19,7 +19,7 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { ULTRACODE, withoutUltracode } from '../../../../shared/ultracode'
 import { AskedByLine } from './AskedByLine'
 import { CouncilGrid } from './CouncilGrid'
-import { groupCellTurns } from './councilGridModel'
+import { groupCellTurns, turnNeedsYou } from './councilGridModel'
 import './council.css'
 
 
@@ -408,16 +408,17 @@ function TurnRecord({ council, row, run }: { readonly council: CouncilRecord; re
   const seat = council.seats.find(item => item.seat === row.seat)
   const openThread = (): void => { void agents?.command({ type: 'select-thread', threadId: row.thread }); app?.actions.navigate('threads') }
   const who = words.seat(row.seat)
+  const noResult = !turnNeedsYou(row) && row.state !== 'working' && (row.result === 'unavailable' || ['failed', 'stopped', 'unknown'].includes(row.state))
   const checked = (row.citations ?? []).map(citation => {
     const finding = citation.finding
     if (citation.of === 'command') return t`${finding} rests on a command, unchecked`
     if (citation.of === 'source') return t`${finding} cites a source though the question needs no research, unchecked`
     return `${citation.path}:${citation.lines} ${({ matches: t`matches`, differs: t`does not match what it quoted`, missing: t`is not in the snapshot`, unchecked: t`unchecked` })[citation.check]}`
   })
-  return <article className="council-turn" data-state={row.state}>
+  return <article className="council-turn" data-state={row.state} data-no-result={noResult || undefined}>
     {row.repair || row.stage === 'history' || row.stage === 'amend' || row.state !== 'done' || row.late || row.result === 'unavailable' ? <header className="council-turn__head">
       {row.repair || row.stage === 'history' || row.stage === 'amend' ? <span className="council-turn__stage">{row.repair ? t`Asked again` : words.stage(row.stage)}</span> : null}
-      <span className="council-turn__state">{[row.state !== 'done' ? words.state(row.state) : '', row.late ? t`past the stage deadline` : '', row.result === 'unavailable' ? t`no result` : ''].filter(Boolean).join(' · ')}</span>
+      <span className="council-turn__state">{[noResult ? t`No result` : row.state !== 'done' ? words.state(row.state) : '', row.late ? t`past the stage deadline` : '', !noResult && row.result === 'unavailable' ? t`No result` : ''].filter(Boolean).join(' · ')}</span>
     </header> : null}
     {row.changed ? <span className="council-turn__changed">{t`Changed its answer`}</span> : null}
     {row.summary && row.stage !== 'framing' ? <p className="council-turn__summary">{row.summary}</p> : null}

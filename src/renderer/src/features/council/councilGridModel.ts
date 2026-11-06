@@ -58,7 +58,7 @@ export function chosenCouncilCell(cells: readonly CouncilCell[], round: CouncilR
 }
 
 /** Left/right follow reading order; up/down stay in the seat, skipping stages without a turn. No wrapping. */
-export function moveCouncilCell(cells: readonly CouncilCell[], id: string, key: string): CouncilCell | undefined {
+export function moveCouncilCell<T extends { readonly id: string; readonly seat: { readonly seat: string } }>(cells: readonly T[], id: string, key: string): T | undefined {
   const index = cells.findIndex(cell => cell.id === id)
   const current = cells[index]
   if (!current) return undefined

@@ -120,18 +120,20 @@ describe('the Council tab’s reads', () => {
 })
 
 describe('the quiet Council record', () => {
-  it('keeps full model names and opens the row’s thread when the model is visually shortened', async () => {
+  it('keeps full model names and opens the selected grid cell’s thread', async () => {
     withLayout()
     const { command } = provide()
     const record = councilFixture({ rows: [row('A', 'answer', 'working'), row('B', 'answer', 'done', { summary: 'Keep the export format.' })] })
     record.seats = record.seats.map((seat, index) => ({ ...seat, modelName: index === 0 ? 'GLM 5.3 Refuseless' : 'DeepSeek V4.1 Flash 1017 Abliterated' }))
-    const { container } = render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
     await screen.findByRole('heading', { name: 'Move history into node:sqlite now?' })
-    const rows = container.querySelectorAll('.council-row')
-    expect(within(rows[0] as HTMLElement).getByTitle('A GLM 5.3 Refuseless')).toHaveTextContent('A GLM 5.3 Refuseless')
-    expect(within(rows[1] as HTMLElement).getByTitle('B DeepSeek V4.1 Flash 1017 Abliterated')).toHaveTextContent('B DeepSeek V4.1 Flash 1017 Abliterated')
-    expect(within(rows[1] as HTMLElement).getByText('Keep the export format.')).toBeInTheDocument()
-    await userEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Open thread' }))
+    const grid = screen.getByRole('table')
+    expect(within(grid).getByRole('button', { name: /from A, GLM 5.3 Refuseless/ })).toBeInTheDocument()
+    await userEvent.click(within(grid).getByRole('button', { name: /from B, DeepSeek V4.1 Flash 1017 Abliterated/ }))
+    const reader = screen.getByRole('region', { name: 'Selected turn' })
+    expect(reader).toHaveTextContent('DeepSeek V4.1 Flash 1017 Abliterated')
+    expect(reader).toHaveTextContent('Keep the export format.')
+    await userEvent.click(within(reader).getByRole('button', { name: 'Open thread' }))
     expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-b' })
   })
 
