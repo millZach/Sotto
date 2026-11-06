@@ -232,6 +232,10 @@ msgstr ""
 msgid "{count, plural, one {# waiting} other {# waiting}}"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "{count, plural, one {↑ Watcher’s question} other {↑ # questions from Watcher}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "{count, plural, one {It can’t stop one thread on {host}} other {It can’t stop # threads on {host}}}"
 msgstr ""
@@ -913,6 +917,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {Show what needs you} other {Show the # things that need you}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -2961,6 +2969,10 @@ msgstr ""
 msgid "Go to the question from {title} in this conversation"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Go to Watcher’s question in this conversation: {asked}"
+msgstr ""
+
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Goal"
 msgstr ""
@@ -3039,6 +3051,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Hide what it said, {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Hide what needs you"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
@@ -5162,9 +5178,11 @@ msgid "Quality"
 msgstr ""
 
 #. The kind of request a card in Watcher’s conversation holds
+#. The kind of request a card in Watcher’s conversation holds
 #. Why a thread needs the user, after its name
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherGlance.tsx
+#: src/renderer/src/watcher/WatcherQuestions.tsx
 msgid "question"
 msgstr ""
 
@@ -5181,6 +5199,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Question from {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Question from Watcher"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -5739,6 +5761,14 @@ msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Score"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Scroll up to Watcher’s question"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Scroll up to Watcher’s questions"
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
@@ -7981,6 +8011,11 @@ msgstr ""
 msgid "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Watcher asks"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Watcher could not be started. Nothing was sent."
 msgstr ""
@@ -8015,6 +8050,10 @@ msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Watcher isn’t running. Start it in Sotto, then switch again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "Watcher keeps working while this waits"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -8110,6 +8149,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "What moves and what stays"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "What needs you"
 msgstr ""
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
@@ -8300,6 +8343,11 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title}."
+msgstr ""
+
+#. placeholder {0}: question.choice
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "You answered: {0}."
 msgstr ""
 
 #: src/renderer/src/watcher/TeammateMessages.tsx

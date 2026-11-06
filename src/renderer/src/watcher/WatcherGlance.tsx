@@ -3,6 +3,7 @@ import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Plural, Trans, useLingui } from '@lingui/react/macro'
 import { openAtRequestLabel, threadPress, waitKind, type OpenThread, type OverviewEntry, type WaitKind } from './WatcherOverview'
+import type { WatcherQuestion } from '../../../shared/watcherQuestions'
 
 /** How many requests the open list names before the rest are counted. */
 const NAMES = 5
@@ -23,10 +24,16 @@ export const goToAskLabel = (title: string, kind: 'question' | 'permission'): st
  * including in narrow rooms. Each name opens that thread beside Watcher at what it waits on, or with
  * Shift in the Threads room. A name whose request has its card in Watcher's conversation goes to that card instead and
  * focuses it (Zach's pick on October 19, 2026), and opens the thread as before when the card is no longer there. Past
- * five names the rest are counted, and the count opens All threads. Gone when nothing waits.
+ * five names the rest are counted, and the count opens All threads. Watcher's own questions that wait come first, as
+ * "Watcher asks", each with its row since All threads does not list them, and go to their cards (#2228). Gone when
+ * nothing waits.
  */
-export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump, allThreadsOpen }: {
+export function WatcherGlance({ entries, questions = [], onQuestion, onOpen, onShowAll, inline, onJump, allThreadsOpen }: {
   readonly entries: readonly OverviewEntry[]
+  /** Watcher's own questions that wait on the user, oldest first. */
+  readonly questions?: readonly Pick<WatcherQuestion, 'id' | 'question'>[]
+  /** Brings a question's card into view and focuses it; false when it is not drawn. */
+  readonly onQuestion?: (questionId: string) => boolean
   readonly onOpen: OpenThread
   /** Opens All threads; `from` is the count that was pressed, for focus to come back to. */
   readonly onShowAll: (from: HTMLElement) => void
@@ -55,21 +62,32 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump, allT
     document.addEventListener('focusin', outside)
     return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('focusin', outside) }
   }, [open, allThreadsOpen])
-  if (open && entries.length === 0) setOpen(false)
-  if (entries.length === 0) return null
-  const named = entries.slice(0, NAMES)
+  const waiting = entries.length + questions.length
+  if (open && waiting === 0) setOpen(false)
+  if (waiting === 0) return null
+  // Watcher's own questions are never in All threads, so each has its row and only threads give way to the count.
+  const asks = questions
+  const named = entries.slice(0, Math.max(0, NAMES - asks.length))
   const more = entries.length - named.length
-  const waiting = entries.length
   return <section ref={section} className="watcher-glance" aria-labelledby={heading} onKeyDown={event => {
     if (event.key === 'Escape' && !event.nativeEvent.isComposing && open) {
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
     }
   }}>
     <button ref={trigger} type="button" className="watcher-glance__lead tt-focusable" id={heading} aria-expanded={open} aria-controls={open ? list : undefined} aria-haspopup="dialog"
-      aria-label={open ? t`Hide threads that need you` : plural(waiting, { one: 'Show # thread that needs you', other: 'Show # threads that need you' })}
+      aria-label={questions.length > 0 ? open ? t`Hide what needs you` : plural(waiting, { one: 'Show what needs you', other: 'Show the # things that need you' })
+        : open ? t`Hide threads that need you` : plural(waiting, { one: 'Show # thread that needs you', other: 'Show # threads that need you' })}
       onClick={() => setOpen(value => !value)}><Plural value={waiting} one="# needs you" other="# need you" /><span className="watcher-glance__chevron" aria-hidden="true" /></button>
-    {open ? <div ref={panel} className="watcher-glance__panel" id={list} role="dialog" aria-label={t`Threads that need you`}>
+    {open ? <div ref={panel} className="watcher-glance__panel" id={list} role="dialog" aria-label={questions.length > 0 ? t`What needs you` : t`Threads that need you`}>
     <ul className="watcher-glance__names">
+      {asks.map(({ id, question: asked }) => <li key={id}>
+        <button type="button" className="watcher-glance__name tt-focusable" aria-label={t`Go to Watcher’s question in this conversation: ${asked}`} title={asked}
+          onClick={() => { onQuestion?.(id); setOpen(false) }}>
+          <span className="watcher-row__ring" data-tone="needs" aria-hidden="true" />
+          <span className="watcher-glance__title">{asked}</span>
+          <span className="watcher-glance__why" data-own="" aria-hidden="true"><Trans>Watcher asks</Trans></span>
+        </button>
+      </li>)}
       {named.map(entry => {
         const thread = entry.overview.thread
         const kind = waitKind(entry)

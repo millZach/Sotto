@@ -1,3 +1,4 @@
+import { OversizedLine } from './codexOversizedLine'
 import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -5,9 +6,15 @@ import { z } from 'zod'
 
 const OUTPUT_DRAIN_GRACE_MS = 300
 // Legacy history and completed turns can echo multiple screenshot batches. Keep a
-// separate history budget rather than limiting a frame to one submitted prompt.
-const MAX_FRAME_BYTES = 128 * 1024 * 1024
-const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
+// separate history budget rather than limiting a frame to one submitted prompt. A longer
+// line is read on without its pictures (`OversizedLine`), and skipped if it is still too long.
+export const MAX_FRAME_BYTES = 128 * 1024 * 1024
+/** How much of each end of a skipped line is kept to find the request it answered. */
+const LINE_END_CHARS = 64
+const ID = String.raw`(-?\d+|"(?:[^"\\]|\\.)*")`, OPEN = String.raw`^\s*\{\s*(?:"jsonrpc"\s*:\s*"2\.0"\s*,\s*)?`
+const REPLY_ID_FIRST = new RegExp(String.raw`${OPEN}"id"\s*:\s*${ID}\s*,\s*"(?:result|error)"`, 'u')
+const REPLY_FIRST = new RegExp(String.raw`${OPEN}"(?:result|error)"`, 'u')
+const REPLY_ID_LAST = new RegExp(String.raw`,\s*"id"\s*:\s*${ID}\s*\}\s*$`, 'u')
 
 export const rpcSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
 export type RpcFrame = z.infer<typeof rpcSchema>
@@ -26,6 +33,8 @@ export interface CodexProcessOptions {
   cwd: string
   env: NodeJS.ProcessEnv
   requestTimeoutMs: number
+  /** The most one line may hold; `MAX_FRAME_BYTES` unless a test asks for less. */
+  maxFrameBytes?: number
   /**
    * Every process hands its frames to the one queue the adapter owns, so a response's `apply` and the
    * notifications around it are applied one at a time, in the order each process sent them.
@@ -63,7 +72,11 @@ export class CodexProcess {
   constructor(private readonly options: CodexProcessOptions) {
     const child = spawn(options.executable, [...options.args], { cwd: options.cwd, env: options.env, windowsHide: true, shell: false, stdio: 'pipe' })
     this.child = child
+    const maxFrameBytes = options.maxFrameBytes ?? MAX_FRAME_BYTES, maxQueuedBytes = maxFrameBytes * 2
     let buffer: string[] = []; let bufferedBytes = 0; let queuedBytes = 0
+    // The line being read once it passed the budget, whether it stayed past it without its pictures, and the ends of
+    // such a line, which say which request it answered whichever way round Codex wrote its fields.
+    let oversized: OversizedLine | undefined; let skippedHead: string | undefined; let tail = ''
     this.closed = new Promise<void>(resolve => child.once('close', () => { this.fail(); resolve() }))
     // Let final output drain, then release handles a descendant may still hold.
     child.once('exit', () => {
@@ -79,15 +92,34 @@ export class CodexProcess {
       while (start < chunk.length) {
         const newline = chunk.indexOf('\n', start)
         const part = chunk.slice(start, newline < 0 ? undefined : newline)
-        buffer.push(part); bufferedBytes += Buffer.byteLength(part)
-        if (bufferedBytes > MAX_FRAME_BYTES) { this.abort(); return }
+        if (oversized || skippedHead !== undefined) {
+          oversized?.push(part)
+          tail = (tail + part.slice(-LINE_END_CHARS)).slice(-LINE_END_CHARS)
+        } else {
+          buffer.push(part); bufferedBytes += Buffer.byteLength(part)
+          // A line this long is never a reason to stop the app-server: the lines around it are whole (#2268).
+          if (bufferedBytes > maxFrameBytes) {
+            oversized = new OversizedLine()
+            for (const held of buffer) { oversized.push(held); tail = (tail + held.slice(-LINE_END_CHARS)).slice(-LINE_END_CHARS) }
+            buffer = []; bufferedBytes = 0
+          }
+        }
+        // Past the budget even without its pictures: only its opening is kept, to say what it answered.
+        if (oversized && oversized.size > maxFrameBytes) { skippedHead = oversized.head; oversized = undefined }
         if (newline < 0) break
+        start = newline + 1
+        if (skippedHead !== undefined) {
+          const head = skippedHead, end = tail
+          skippedHead = undefined; tail = ''
+          void options.enqueue(async () => { if (!this.lost) this.unreadable(head, end) }).catch(() => this.abort())
+          continue
+        }
         // Count each chunk once; repeatedly measuring an accumulating base64 frame is quadratic.
-        const line = buffer.join(''); const bytes = bufferedBytes
-        buffer = []; bufferedBytes = 0; start = newline + 1
+        const line = oversized ? oversized.line() : buffer.join(''); const bytes = oversized ? oversized.bytes : bufferedBytes
+        buffer = []; bufferedBytes = 0; oversized = undefined; tail = ''
         if (!line.trim()) continue
         queuedBytes += bytes
-        if (queuedBytes > MAX_QUEUED_BYTES) { this.abort(); return }
+        if (queuedBytes > maxQueuedBytes) { this.abort(); return }
         void options.enqueue(async () => {
           try { if (!this.lost) await this.frame(rpcSchema.parse(JSON.parse(line))) }
           finally { queuedBytes -= bytes }
@@ -117,6 +149,21 @@ export class CodexProcess {
       return
     }
     await this.options.onFrame(this, frame)
+  }
+
+  /**
+   * A line too long to hold even without its pictures was skipped. When it answered something Sotto asked, that
+   * request fails as unconfirmed, since Codex did answer it; anything else in it is let go, as an unreadable
+   * notification is (#1396).
+   */
+  private unreadable(head: string, end: string): void {
+    const id = REPLY_ID_FIRST.exec(head)?.[1] ?? (REPLY_FIRST.test(head) ? REPLY_ID_LAST.exec(end)?.[1] : undefined)
+    const key = id === undefined ? undefined : JSON.stringify(JSON.parse(id))
+    const waiter = key === undefined ? undefined : this.waiters.get(key)
+    if (!waiter) return
+    clearTimeout(waiter.timer); this.waiters.delete(key!)
+    waiter.reject(new Uncertain('Codex’s reply was too long for Sotto to read, so it is not known whether this worked. Check the thread before you try again.'))
+    if (this.endIdle && !this.waiters.size) this.end()
   }
 
   write(value: unknown): void {
