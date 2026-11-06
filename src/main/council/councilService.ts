@@ -123,6 +123,7 @@ export class CouncilService {
   private messages = new Set<string>()
   /** Threads with a create or a send on its way. */
   private readonly sending = new Set<string>()
+  private readonly pendingWork = new Set<Promise<unknown>>()
   /** The conversation each Council's threads read, while Sotto runs. */
   private readonly histories = new Map<string, { readonly title: string; readonly quoted: QuotedHistory; readonly parts: readonly string[] }>()
   /** Whether each followed prompt's thread waited on the user at the last pass, so a change there is told. */
@@ -173,7 +174,7 @@ export class CouncilService {
       if (record.askedBy?.delivery?.state === 'dispatching') record.askedBy.delivery.state = 'unconfirmed'
       const round = currentRound(record)
       if (isOpen(record) && !record.stoppedAt && round.stage !== 'done' && round.question === undefined) { record.stoppedAt = at; record.stoppedBecause = 'words-lost' }
-      if (record.settledAt && record.snapshot && !record.snapshot.removedAt) void this.removeSnapshot(record)
+      if (record.settledAt && record.snapshot && !record.snapshot.removedAt) void this.track(this.removeSnapshot(record))
     }
     this.reindex()
     this.unhook = this.options.control.useCouncil({
@@ -198,6 +199,14 @@ export class CouncilService {
     this.unhook?.(); this.unhook = undefined
     this.cancelTimer?.(); this.cancelTimer = undefined
     await this.climb.close()
+    // A prompt, snapshot removal or save already under way still owns this instance's record.
+    while (this.pendingWork.size) await Promise.allSettled(this.pendingWork)
+  }
+
+  private track<T>(work: Promise<T>): Promise<T> {
+    const pending = work.finally(() => { this.pendingWork.delete(pending) })
+    this.pendingWork.add(pending)
+    return pending
   }
 
   onChanged(listener: (councils: readonly string[], open?: readonly CouncilOpen[]) => void): () => void {
@@ -347,6 +356,7 @@ export class CouncilService {
 
   /** Sends each verdict that is due to the thread whose agent asked for it, once that thread is free. */
   private deliverFree(snapshot: AgentHostSnapshot, thread: (id: string) => AgentThread | undefined): void {
+    if (this.closed) return
     for (const record of this.pending) {
       const asked = record.askedBy, round = record.rounds[0]
       if (!asked || deliveryEnded(asked) || asked.delivery?.state === 'dispatching' || !isOpen(record) || !round || this.sending.has(record.originThread)) continue
@@ -359,8 +369,8 @@ export class CouncilService {
       this.deliveries.set(delivery.draftId, record)
       const text = deliveryText(COUNCIL_VERDICT_NOTE, `Council ${record.id}\n\n${this.draft(record, round, round.verdict!)}`)
       this.sending.add(record.originThread)
-      void sendDelivery({ control: this.options.control, host: this.options.host, save: () => this.save() }, record.originThread, delivery, text, () => this.deliveryGuard(record))
-        .finally(async () => { this.sending.delete(record.originThread); this.reindex(); await this.persist(); this.changed([record]) })
+      void this.track(sendDelivery({ control: this.options.control, host: this.options.host, save: () => this.save() }, record.originThread, delivery, text, () => this.deliveryGuard(record))
+        .finally(async () => { this.sending.delete(record.originThread); this.reindex(); await this.persist(); this.changed([record]) }))
     }
   }
 
@@ -524,7 +534,7 @@ export class CouncilService {
       }
       if (changed) moved.push(record)
     }
-    for (const record of moved) void this.moved(record)
+    for (const record of moved) void this.track(this.moved(record))
     if (!moved.length) this.dispatchFree(snapshot, thread)
     if (told && !moved.length) this.tell(this.records.filter(record => isOpen(record) && record.turns.some(turn => this.waiting.has(turn.id))).map(record => record.id))
   }
@@ -545,6 +555,7 @@ export class CouncilService {
 
   /** Sends each queued prompt whose thread is free: idle, connected, asking the user nothing and holding no other work. */
   private dispatchFree(snapshot: AgentHostSnapshot, thread: (id: string) => AgentThread | undefined): void {
+    if (this.closed) return
     for (const record of this.records) {
       if (!isOpen(record) || record.stoppedAt) continue
       for (const turn of record.turns) {
@@ -559,7 +570,7 @@ export class CouncilService {
           if (!held || !isThreadProviderConnected(snapshot, held) || held.clientConnected === false || isThreadTurnRunning(held) || held.requests.length > 0
             || this.options.control.hasPendingThreadWork(held.id)) continue
         }
-        void this.dispatch(record, turn, seat)
+        void this.track(this.dispatch(record, turn, seat))
       }
     }
   }
@@ -687,7 +698,7 @@ export class CouncilService {
       case 'answer': {
         const answer = readAnswerBlock(text, target.seat, criteriaOf(round).map(criterion => criterion.id))
         read = answer
-        if (answer.ok) { summary = answer.value.answer; void this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : []), researchOf(round)) }
+        if (answer.ok) { summary = answer.value.answer; void this.track(this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : []), researchOf(round))) }
         break
       }
       case 'review': {
@@ -695,7 +706,7 @@ export class CouncilService {
         read = review
         if (review.ok) {
           summary = reviewSummary(review.value)
-          void this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })), researchOf(round))
+          void this.track(this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })), researchOf(round)))
         }
         break
       }
@@ -1009,7 +1020,7 @@ export class CouncilService {
   private save(): Promise<void> {
     const keep = this.options.historyEnabled()
     if (this.storageError) return Promise.resolve()
-    return this.store.writeLatest(() => ({ version: 2, councils: [...this.records.map(record => savedRecord(record, keep)), ...this.climb.saved(keep)] }), keep)
+    return this.track(this.store.writeLatest(() => ({ version: 2, councils: [...this.records.map(record => savedRecord(record, keep)), ...this.climb.saved(keep)] }), keep))
   }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 
