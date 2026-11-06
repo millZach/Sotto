@@ -94,20 +94,9 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__merge .pr-surface__merge-go:not([data-blocked]):active:not(:disabled) { background: var(--tt-success-wash-press); filter: none; }
 /* A read in flight holds a ready Merge for a moment: it keeps its look, so a Refresh does not flash it blocked. */
 .pr-surface__merge-go[aria-disabled='true']:not([data-blocked]) { cursor: progress; opacity: .7; }
-/* Ready, with a choice of method: Merge and its method are one control, as a split button is. One green edge runs round
-   both and the wash stays under Merge's words, so the method reads as Merge's own and never outweighs it. Each half
-   still lights alone, and a focused half draws its ring over the other. */
-.pr-surface__merge:has(> .pr-surface__merge-go:not([data-blocked])):has(> .pr-surface__method) { gap: 0; }
-.pr-surface__merge:has(> .pr-surface__method) .pr-surface__merge-go:not([data-blocked]) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.pr-surface__merge-go:not([data-blocked]) + .pr-surface__method .pr-surface__method-button { border-color: var(--tt-success-edge); border-left-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; background: transparent; }
-.pr-surface__merge-go:not([data-blocked]) + .pr-surface__method .pr-surface__method-button:is(:hover:not(:disabled), [aria-expanded='true']) { border-color: var(--tt-success); background: var(--tt-hover); color: var(--tt-text); }
-.pr-surface__merge-go:not([data-blocked]) + .pr-surface__method .pr-surface__method-button:active:not(:disabled) { background: var(--tt-success-wash); }
-.pr-surface__merge .tt-button:focus-visible { position: relative; z-index: 1; }
-/* Blocked: an outline in dashes round its words and no fill, the place Merge will stand once it can, so it cannot be
-   taken for a dim enabled button in any theme. The words on it say so too, and the line under it says why. Pressing
-   or hovering changes nothing. The method beside it stays a button of its own, since it can still be chosen. */
-.pr-surface__merge .pr-surface__merge-go[data-blocked], .pr-surface__merge .pr-surface__merge-go[data-blocked]:is(:hover, :active) { border: 1px dashed var(--tt-text-faint); background: transparent; color: var(--tt-text-2); cursor: not-allowed; filter: none; }
-.pr-surface__merge .pr-surface__merge-go[data-blocked] > svg { color: var(--tt-text-muted); }
+/* Blocked: struck through with a hatch and no plate of its own, so it cannot be taken for a dim enabled button in any
+   theme. The words on it say so too, and the line under it says why. Pressing or hovering changes nothing. */
+.pr-surface__merge .pr-surface__merge-go[data-blocked], .pr-surface__merge .pr-surface__merge-go[data-blocked]:is(:hover, :active) { border: 1px dashed var(--tt-field-border); background: repeating-linear-gradient(135deg, var(--tt-hairline) 0 1px, transparent 1px 7px); color: var(--tt-text-2); cursor: not-allowed; filter: none; }
 .pr-surface__method { position: relative; flex: none; }
 .pr-surface__method-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; width: 270px; max-width: calc(100cqw - 32px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 .pr-surface__method-list[data-below] { top: calc(100% + 6px); bottom: auto; }
