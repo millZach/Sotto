@@ -145,6 +145,31 @@ function withSharedLines(lines: readonly DiffLine[]): DiffLine[] {
   return out
 }
 
+/** A line of Git's own header for a file, between its `diff --git` line and its paths. */
+const FILE_HEADER_LINE = /^(?:index [\da-f]+\.\.[\da-f]+(?: \d+)?$|(?:old|new|deleted) (?:file )?mode \d+$|rename (?:from|to) |similarity index |dissimilarity index |copy (?:from|to) |Binary files )/u
+/** The two lines naming a patch's paths, as Git and `diff -u` write them: `--- a/x` then `+++ b/x`, or /dev/null for either. */
+const PATHS_FROM = /^--- (?:a\/|\/dev\/null)/u, PATHS_TO = /^\+\+\+ (?:b\/|\/dev\/null)/u
+
+/**
+ * Lines without hunks less the headers a patch really has: each `diff --git` line with the header lines and paths after
+ * it, and a pair of paths that opens the text. Anything else that only looks like a header is a changed line: a removed
+ * SQL comment, `-- Retire the old table`, comes as `--- Retire the old table`, and a provider's own before and after
+ * text carries no headers at all.
+ */
+function withoutPatchHeaders(lines: readonly string[]): string[] {
+  const out: string[] = []
+  const pathsAt = (index: number): boolean => PATHS_FROM.test(lines[index] ?? '') && PATHS_TO.test(lines[index + 1] ?? '')
+  let index = pathsAt(0) ? 2 : 0
+  while (index < lines.length) {
+    const line = lines[index]!
+    if (!line.startsWith('diff --git ')) { out.push(line); index++; continue }
+    index++
+    while (index < lines.length && FILE_HEADER_LINE.test(lines[index]!)) index++
+    if (/^--- /u.test(lines[index] ?? '') && /^\+\+\+ /u.test(lines[index + 1] ?? '')) index += 2
+  }
+  return out
+}
+
 /**
  * A diff as the transcript or a reply carries it: a Git patch with hunks, a provider's bare hunks, or lines that only
  * carry `+` and `-`. Without hunks there are no line numbers to draw.
@@ -156,7 +181,7 @@ export function parseDiffText(text: string): DiffLine[] {
   }
   const source = text.endsWith('\n') ? text.slice(0, -1) : text
   if (source === '') return []
-  const lines = source.split('\n').filter(line => !/^(?:diff --git |index [\da-f]+\.\.|--- |\+\+\+ )/u.test(line)).map((line): DiffLine => {
+  const lines = withoutPatchHeaders(source.split('\n')).map((line): DiffLine => {
     if (line.startsWith('+')) return { kind: 'add', text: line.slice(1), oldLine: null, newLine: null }
     if (line.startsWith('-')) return { kind: 'remove', text: line.slice(1), oldLine: null, newLine: null }
     if (line.startsWith('\\')) return { kind: 'note', text: line.slice(1).trim(), oldLine: null, newLine: null }

@@ -114,6 +114,17 @@ describe('parseDiffText', () => {
     expect(parsed[1]!.oldLine).toBe(4)
   })
 
+  it('keeps a removed line that only looks like a header, and drops the headers a patch really has', () => {
+    // A native edit that removed a SQL comment: "-- Retire the old table" comes as "--- Retire the old table".
+    const edit = parseDiffText('--- Retire the old table\n-DROP TABLE legacy;\n+++ counter\n+SELECT 1;')
+    expect(edit.map(row => [row.kind, row.text])).toEqual([['remove', '-- Retire the old table'], ['remove', 'DROP TABLE legacy;'], ['add', '++ counter'], ['add', 'SELECT 1;']])
+    expect(edit.filter(row => row.kind === 'remove')).toHaveLength(2)
+    // A bare diff fence's lines keep the same way; its own paths and Git's header go.
+    const fenced = parseDiffText('diff --git a/m.sql b/m.sql\nindex 1a2b3c4..5d6e7f8 100644\n--- a/m.sql\n+++ b/m.sql\n--- Retire the old table\n+-- Keep the old table')
+    expect(fenced.map(row => [row.kind, row.text])).toEqual([['remove', '-- Retire the old table'], ['add', '-- Keep the old table']])
+    expect(parseDiffText('--- a/m.sql\n+++ b/m.sql\n--- Retire\n+keep').map(row => [row.kind, row.text])).toEqual([['remove', '-- Retire'], ['add', 'keep']])
+  })
+
   it('keeps the head of each file of a patch of several', () => {
     const parsed = parseDiffText('diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\ndiff --git a/y b/y\n@@ -1 +1 @@\n-c\n+d')
     expect(parsed.filter(row => row.text.startsWith('diff --git'))).toHaveLength(2)
