@@ -1281,6 +1281,11 @@ export const agentThreadDetailSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** True when older messages are still in the thread store; the pane offers Show earlier messages. */
   earlierAvailable: z.boolean().optional(),
+  /**
+   * The steps above a phone's **step window** (ADR-0194), as its host last cut it. Only a client that accepts
+   * `step-window` is sent it; no desktop is.
+   */
+  earlierSteps: z.number().int().nonnegative().optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
@@ -1318,6 +1323,9 @@ export const agentThreadDetailDeltaSchema = z.object({
 export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
+
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is

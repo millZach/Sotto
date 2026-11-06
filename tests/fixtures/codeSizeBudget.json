@@ -1,5 +1,6 @@
 {
   "src/main/agents/clientUpdates.ts": 29,
-  "src/main/agents/control.ts": 337,
-  "src/main/agents/statePublishers.ts": 18
+  "src/main/agents/control.ts": 335,
+  "src/main/agents/statePublishers.ts": 18,
+  "src/main/agents/threadTitles.ts": 22
 }
