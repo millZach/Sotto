@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, refusedModeLine, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, refusedModeChoice, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
 /**
@@ -37,12 +37,10 @@ export function watcherModeDescriptions(provider: string): Record<AgentRuntimeMo
 function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provider: string): ChoiceOption[] {
   const offered = model?.runtimeModes?.length ? model.runtimeModes : agentRuntimeModeSchema.options
   const lines = watcherModeDescriptions(provider)
-  // A mode the provider refused stays in its place, unchoosable, with the reason (#2185).
-  const refused = model?.refusedRuntimeModes ?? []
-  const lead = offered.includes(chosen) || refused.includes(chosen) ? [] : [{ id: chosen, label: RUNTIME_LABELS[chosen], disabled: true }]
-  const listed = refused.length === 0 ? offered : agentRuntimeModeSchema.options.filter(mode => offered.includes(mode) || refused.includes(mode))
-  return [...lead, ...listed.map(mode => {
-    if (refused.includes(mode)) return { id: mode, label: RUNTIME_LABELS[mode], disabled: true, description: refusedModeLine(provider), translated: true }
+  const lead = offered.includes(chosen) ? [] : [{ id: chosen, label: RUNTIME_LABELS[chosen], disabled: true }]
+  return [...lead, ...offered.map(mode => {
+    const refused = refusedModeChoice(model, mode, provider)
+    if (refused) return refused
     const own = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'codex' ? codexModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(own ? { description: own, translated: true } : { description: lines[mode] }) }
   })]

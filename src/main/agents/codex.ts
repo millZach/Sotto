@@ -224,8 +224,13 @@ const UNTRUSTED_REFUSAL = 'approval_policy = "untrusted" is no longer supported'
 /** What the user is told when that Codex refuses Ask for approval on a request (#2185). */
 export const ASK_FOR_APPROVAL_REFUSED = 'This version of Codex refuses Ask for approval, so nothing ran. Choose another permission mode.'
 class Rejected extends Error {
-  /** Codex refused the `untrusted` approval policy (#2185); whether Sotto sent it is the caller's to know. */
+  /** Codex refused the `untrusted` approval policy (#2185). Only the request that carried it says which Codex did. */
   readonly untrustedRefused: boolean
+  /**
+   * The version of the Codex that refused `untrusted` on a request that carried it (#2185), set where the request was
+   * sent; undefined when the request did not carry it, whatever Codex said.
+   */
+  untrustedRefusedBy: string | undefined
   readonly unmaterializedThreadId: string | undefined
   readonly missingThreadId: string | undefined
   /**
@@ -522,6 +527,8 @@ export class CodexAppServerHost implements AgentHost {
    * the mode as refused rather than choosable, and a request for it is refused here before it is sent.
    */
   private untrustedRefusedBy: string | undefined
+  /** The version each app-server answered `initialize` with, so a refusal is charged to the Codex that made it (#2185). */
+  private readonly serverVersions = new WeakMap<CodexProcess, string>()
   private watcher: CodexSessionLogWatcher | undefined
   private readonly pendingLogMessages = new Map<string, AgentMessage[]>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
@@ -701,11 +708,20 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** Whether the running Codex refused Ask for approval (#2185). */
   private refusesAskForApproval(): boolean { return this.untrustedRefusedBy !== undefined && this.untrustedRefusedBy === this.state.version }
-  /** `models` as the running Codex takes them: Ask for approval moved from offered to refused once it refused it. */
+  /**
+   * `models` as the running Codex takes them: once it refused Ask for approval, the mode stays listed, so nothing fits a
+   * saved choice of it to a weaker mode, and is marked refused, so it cannot be chosen and a start on it is refused.
+   */
   private offeredModes(models: ModelList): ModelList {
     if (!this.refusesAskForApproval()) return models
-    return models.map(model => model.runtimeModes?.includes('approval-required')
-      ? { ...model, runtimeModes: model.runtimeModes.filter(mode => mode !== 'approval-required'), refusedRuntimeModes: ['approval-required' as const] } : model)
+    return models.map(model => model.runtimeModes?.includes('approval-required') ? { ...model, refusedRuntimeModes: ['approval-required' as const] } : model)
+  }
+  /** Keeps the version `server` answers `initialize` with. */
+  private readVersion(server: CodexProcess): RpcApply {
+    return value => {
+      const result = initializeResponse.safeParse(value)
+      if (result.success) this.serverVersions.set(server, result.data.version ?? result.data.userAgent ?? '')
+    }
   }
   /**
    * Whether `command` makes Codex take `untrusted` (#2185): a new thread or a change to Ask for approval, or anything
@@ -752,6 +768,7 @@ export class CodexAppServerHost implements AgentHost {
     await this.rpc('initialize', clientInfo, value => {
       const result = initializeResponse.parse(value)
       version = result.version ?? result.userAgent ?? ''
+      this.serverVersions.set(server, version)
     }, undefined, server)
     server.write({ method: 'initialized' })
     try {
@@ -788,7 +805,7 @@ export class CodexAppServerHost implements AgentHost {
       const clientRevision = this.clientRevision
       const server = this.spawnServer(this.executable!)
       try {
-        await this.rpc('initialize', clientInfo, undefined, undefined, server)
+        await this.rpc('initialize', clientInfo, this.readVersion(server), undefined, server)
         server.write({ method: 'initialized' })
       } catch (error) {
         this.endServer(server)
@@ -835,7 +852,7 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
       const server = this.spawnServer(this.executable, judge)
       try {
-        await this.rpc('initialize', clientInfo, undefined, undefined, server)
+        await this.rpc('initialize', clientInfo, this.readVersion(server), undefined, server)
         server.write({ method: 'initialized' })
         if (judge) await judge.verifyConfiguration((method, params, apply) => this.rpc(method, params, apply, undefined, server))
       } catch (error) {
@@ -1462,7 +1479,12 @@ export class CodexAppServerHost implements AgentHost {
       this.emit(); throw error
     }
   }
-  private async resume(id: string): Promise<void> {
+  /**
+   * Load a thread's session on its app-server if it is not loaded. `leavingMode` is a mode the user just chose in place
+   * of Ask for approval: the session loads on it rather than on the `untrusted` a Codex that refuses it would turn the
+   * load down for, so choosing another mode still works there (#2185). The settings change that follows confirms it.
+   */
+  private async resume(id: string, leavingMode?: AgentRuntimeMode): Promise<void> {
     const generation = this.generation
     await this.checkLaunchProfile(id)
     if (generation !== this.generation) throw new Error('Codex connection changed.')
@@ -1486,7 +1508,7 @@ export class CodexAppServerHost implements AgentHost {
       // thread is opened, so resuming costs the same for a long thread and a short one.
       const tier = this.serviceTier(alias.modelId, speedAfterChange(alias))
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode), ...tier } : {}),
+        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(leavingMode ?? alias.runtimeMode), ...tier } : {}),
         ...configuration, developerInstructions }, async value => {
         if (alias.pendingSettings) return this.applySettings(id, value)
         const response = settingsResponse.parse(value)
@@ -2018,7 +2040,9 @@ export class CodexAppServerHost implements AgentHost {
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.
-        this.worked(id); await this.resume(id)
+        const leavingMode = command.type === 'configure-thread' && alias.runtimeMode === 'approval-required' && command.runtimeMode !== undefined
+          && command.runtimeMode !== 'approval-required' ? command.runtimeMode : undefined
+        this.worked(id); await this.resume(id, leavingMode)
         if (command.type === 'compact-thread') {
           const thread = this.ensureThread(id)
           if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('The thread is working or needs an answer before compaction.')
@@ -2242,11 +2266,12 @@ export class CodexAppServerHost implements AgentHost {
     } catch (error) {
       if (command.type === 'create-thread' && command.councilJudge) { this.creating.delete(command.threadId); await this.closeCouncilJudge(command.threadId) }
       if (error instanceof Uncertain) return { accepted: false, uncertain: true }
-      // Codex refused the `untrusted` Sotto sent: Ask for approval is off for this Codex until another version runs (#2185).
-      if (error instanceof Rejected && error.untrustedRefused && this.sendsUntrusted(command)) {
+      // Codex refused the `untrusted` Sotto sent on that request: Ask for approval is off for that version of Codex (#2185).
+      // An outdated app-server's refusal says nothing about the version running now.
+      if (error instanceof Rejected && error.untrustedRefusedBy !== undefined) {
         error.message = ASK_FOR_APPROVAL_REFUSED
-        if (!this.refusesAskForApproval()) {
-          this.untrustedRefusedBy = this.state.version; this.state.models = this.offeredModes(this.state.models)
+        if (error.untrustedRefusedBy === this.state.version && !this.refusesAskForApproval()) {
+          this.untrustedRefusedBy = error.untrustedRefusedBy; this.state.models = this.offeredModes(this.state.models)
           this.options.logEvent?.('codex-untrusted-refused'); this.emit()
         }
       }
@@ -2416,16 +2441,25 @@ export class CodexAppServerHost implements AgentHost {
    * that names a thread, else the provider's. A request for a thread with no app-server has nowhere to go.
    */
   private rpc(method: string, params: unknown, apply: RpcApply = () => undefined, onRejected?: RpcRejected, target?: CodexProcess, beforeWrite?: () => void): Promise<void> {
-    if (target) return target.rpc(method, params, apply, onRejected, beforeWrite)
+    // A refusal of `untrusted` counts only on a request that carried it, and against the Codex that answered (#2185).
+    const carriesUntrusted = params !== null && typeof params === 'object' && (params as { approvalPolicy?: unknown }).approvalPolicy === 'untrusted'
+    const send = (server: CodexProcess): Promise<void> => {
+      const sent = server.rpc(method, params, apply, onRejected, beforeWrite)
+      return carriesUntrusted ? sent.catch((error: unknown) => {
+        if (error instanceof Rejected && error.untrustedRefused) error.untrustedRefusedBy = this.serverVersions.get(server) ?? ''
+        throw error
+      }) : sent
+    }
+    if (target) return send(target)
     const threadId = params !== null && typeof params === 'object' ? (params as { threadId?: unknown }).threadId : undefined
     if (typeof threadId === 'string') {
       const id = this.sessionId(threadId)
       const server = id ? this.runtimes.get(id)?.server : undefined
-      return server ? server.rpc(method, params, apply, onRejected, beforeWrite) : Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
+      return server ? send(server) : Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
     }
-    if (this.provider?.alive) return this.provider.rpc(method, params, apply, onRejected, beforeWrite)
+    if (this.provider?.alive) return send(this.provider)
     if (!this.state.connected || !this.executable) return Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
-    return this.providerServer().then(server => server.rpc(method, params, apply, onRejected, beforeWrite))
+    return this.providerServer().then(send)
   }
   private removeRequest(id: string): void {
     const pending = this.requests.get(id)

@@ -296,9 +296,12 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }
   // A Codex that refuses `untrusted` on a request as 0.165 and newer refuse it in config, in Codex 0.167.0's own words
   // (#2185). `refuseUntrusted: 'always'` stands for a project config that sets it, refusing whatever the request carries.
-  if (script.refuseUntrusted && ['thread/start', 'thread/settings/update', 'turn/start'].includes(method)
+  // A held refusal waits for `release-reply` the way a held answer does.
+  if (script.refuseUntrusted && ['thread/start', 'thread/resume', 'thread/settings/update', 'turn/start'].includes(method)
     && (script.refuseUntrusted === 'always' || params?.approvalPolicy === 'untrusted')) {
-    emit({ id, error: { code: -32600, message: 'failed to load configuration: approval_policy = "untrusted" is no longer supported; remove this setting' } }); return
+    const refusal = { id, error: { code: -32600, message: 'failed to load configuration: approval_policy = "untrusted" is no longer supported; remove this setting' } }
+    if (holdReply) heldReplies.set(method, refusal); else emit(refusal)
+    return
   }
   if (method === 'initialize') served(method)
   // A test that stands in for an update scripts the version the installed client answers with.

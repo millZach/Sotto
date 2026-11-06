@@ -421,7 +421,7 @@ describe('Codex’s permission menu', () => {
 
   it('shows a mode Codex refused in its place, unchoosable, with why (#2185)', () => {
     const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
-    const model: AgentModel = { ...state.host.models.find(entry => entry.id === 'codex:model')!, runtimeModes: ['auto-accept-edits', 'auto', 'full-access'], refusedRuntimeModes: ['approval-required'] }
+    const model: AgentModel = { ...state.host.models.find(entry => entry.id === 'codex:model')!, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'], refusedRuntimeModes: ['approval-required'] }
     const refused = 'This version of Codex refuses this mode, so it is off. Choose another.'
     expect(modeChoices(model, 'auto-accept-edits', undefined)
       .map(choice => [choice.id, choice.disabled ?? false, choice.description])).toEqual([
