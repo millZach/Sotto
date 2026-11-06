@@ -226,6 +226,31 @@ describe('settled activity in the transcript', () => {
     expect(row.closest('li')!.querySelector(':scope > .thread-activity__copy-command')).toContainElement(within(transcript).getByRole('button', { name: 'Copy command' }))
   })
 
+  it('holds a long output at twelve lines and says how many more there are, on a press that shows the rest', async () => {
+    const user = userEvent.setup()
+    const long = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join('\n')
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'long', command: 'cat long.txt', durationMs: 40, output: `${long}\n` }),
+      activity({ id: 'near', command: 'cat near.txt', durationMs: 40, output: Array.from({ length: 14 }, (_, index) => `near ${index + 1}`).join('\n') }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    await user.click(within(transcript).getByRole('button', { name: /^Read ⁨long\.txt⁩, cat long\.txt/u }))
+    const more = within(transcript).getByRole('button', { name: 'Show 28 more lines' })
+    expect(more.closest('.thread-activity__output')).toHaveAttribute('data-held')
+    await user.click(more)
+    // The press shows the rest in place and takes focus into it; nothing is left to press.
+    expect(within(transcript).queryByRole('button', { name: /more lines?$/u })).toBeNull()
+    const output = within(transcript).getByLabelText('output code block')
+    expect(output).toHaveFocus()
+    expect(output).toHaveTextContent('line 40')
+    expect(output.closest('.thread-activity__output')).not.toHaveAttribute('data-held')
+    // Two lines more than the twelve are not worth a press: that output shows whole.
+    await user.click(within(transcript).getByRole('button', { name: /^Read ⁨near\.txt⁩, cat near\.txt/u }))
+    expect(within(transcript).queryByRole('button', { name: /more lines?$/u })).toBeNull()
+  })
+
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
     const user = userEvent.setup()
     const { transcript } = mount(stateWith({ activities: settled() }))

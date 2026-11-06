@@ -127,7 +127,7 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details .rich-message { font-size: var(--tt-type-body); line-height: 1.6; }
 .thread-activity__details .rich-code { margin: 0; }
 /* What came back is a well with no outline, as every container is (ADR-0110), so it reads as the step's evidence rather than
-   another box, and a long one holds twelve lines in view and scrolls for the rest. */
+   another box. Output still arriving from a host holds twelve lines in view and scrolls for the rest. */
 .thread-activity__details .rich-code[data-language='output'] { border-color: transparent; }
 .thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); }
 .thread-activity__details .rich-code[data-language='output'] .rich-code__scroll { max-height: calc(12lh + 18px); }
@@ -143,6 +143,17 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__status:not(:empty) { padding-left: 8px; }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 9px 44px 12px 14px; max-height: calc(12lh + 21px); }
+/* What a finished command printed shows whole, or, when it is long, its first twelve lines with the last fading and a press
+   under the well that says how many more there are. The well never scrolls up and down inside the transcript's own scroll. */
+.thread-activity__output { display: grid; justify-items: start; gap: 2px; min-width: 0; }
+.thread-activity__output > .rich-message { justify-self: stretch; min-width: 0; }
+.thread-activity__details .thread-activity__output .rich-code[data-language='output'] .rich-code__scroll { max-height: none; }
+.thread-activity__details .thread-activity__output[data-held] .rich-code[data-language='output'] .rich-code__scroll {
+  max-height: calc(12lh + 9px); overflow-y: hidden; padding-bottom: 0;
+  mask-image: linear-gradient(to bottom, currentColor calc(100% - 1lh), transparent);
+}
+/* The press's words line up with the lines above them. */
+.thread-activity__output-more { margin-left: 8px; }
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
 .thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }

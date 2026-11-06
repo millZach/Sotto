@@ -346,6 +346,34 @@ function CopyCommand({ command }: { readonly command: string }): ReactNode {
   </span>
 }
 
+/** How many lines of what a command printed show before the rest waits for a press. */
+const OUTPUT_LINES = 12
+
+/**
+ * What a command printed, in its well. A long one holds its first twelve lines and says how many more there are, on a press
+ * that shows the rest in place; a press is the way to read it all, and Copy in the well's corner takes it whole either way.
+ * The well does not scroll inside the transcript's own scroll. A count of one or two more lines is not worth the press, so
+ * such an output shows whole.
+ */
+function CommandOutput({ output }: { readonly output: string }): ReactNode {
+  useInterfaceLanguageState()
+  const [whole, setWhole] = useState(false)
+  const well = useRef<HTMLDivElement>(null)
+  const lines = output.replace(/\n$/u, '').split('\n').length
+  const more = whole || lines <= OUTPUT_LINES + 2 ? 0 : lines - OUTPUT_LINES
+  const show = (): void => {
+    setWhole(true)
+    // The press goes with the rest it showed, so focus moves into what came back rather than off the page.
+    well.current?.querySelector<HTMLElement>('pre')?.focus({ preventScroll: true })
+  }
+  return <div ref={well} className="thread-activity__output" data-held={more > 0 || undefined}>
+    <MessageContent text={fenced(output, 'output')} />
+    {more > 0 ? <button type="button" className="thread-activity__more thread-activity__output-more tt-focusable" onClick={show}>
+      {plural(more, { one: `Show ${{ lines: shownCount(more) }} more line`, other: `Show ${{ lines: shownCount(more) }} more lines` })}
+    </button> : null}
+  </div>
+}
+
 function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
   // A remote row whose host kept its long bodies back reads the record whole now that it is open (ADR-0025, October 18
   // amendment), and draws the part it was sent until then. Every other row draws exactly as it always has.
@@ -406,7 +434,7 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     {cut?.output !== undefined
       // Held output opens at its end, before and after the rest arrives.
       ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
-      : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
+      : record.output ? <CommandOutput output={record.output} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
     {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}

@@ -151,6 +151,47 @@ const REVIEW: EvidenceThread = {
 
 // ---- The plan running with its steps ----
 
+/** What `cat` prints for the publish windows module: the whole file, as a command's output arrives. */
+const PUBLISH_WINDOWS = `import type { AgentThread } from '../../shared/agents'
+
+/**
+ * When a thread's state may next go to the windows. Updates inside one window are folded into one, so a provider that
+ * streams fifty deltas a second costs the renderer a few publishes rather than fifty.
+ */
+export interface PublishWindow {
+  readonly threadId: string
+  readonly opensAt: number
+  readonly closesAt: number
+  /** Updates folded into this window so far. */
+  readonly folded: number
+}
+
+const WINDOW_MS = 48
+const IDLE_MS = 250
+
+export function publishWindow(thread: Pick<AgentThread, 'id' | 'status'>, now: number, open?: PublishWindow): PublishWindow {
+  if (open !== undefined && now < open.closesAt) return { ...open, folded: open.folded + 1 }
+  const length = thread.status === 'running' ? WINDOW_MS : IDLE_MS
+  return { threadId: thread.id, opensAt: now, closesAt: now + length, folded: 0 }
+}
+
+/** Whether a window has closed and its folded updates should go out now. */
+export function windowDue(window: PublishWindow, now: number): boolean {
+  return now >= window.closesAt
+}
+
+/** The windows still open after \`now\`, oldest first, so the timer wakes for the next one to close. */
+export function openWindows(windows: ReadonlyMap<string, PublishWindow>, now: number): PublishWindow[] {
+  const open: PublishWindow[] = []
+  for (const window of windows.values()) if (window.closesAt > now) open.push(window)
+  return open.sort((a, b) => a.closesAt - b.closesAt)
+}
+
+export function nextWake(windows: ReadonlyMap<string, PublishWindow>, now: number): number | undefined {
+  return openWindows(windows, now)[0]?.closesAt
+}
+`
+
 const PLAN_STEPS: NonNullable<Activity['steps']> = [
   { text: 'List every job AgentControl does and the private fields each one reads', status: 'completed' },
   { text: 'Count the callers of each public method across src/main and src/host', status: 'completed' },
@@ -167,8 +208,8 @@ const planTurn = new Turn('plan-1', 'plan-u1', 'running', undefined, 6)
   .command('plan-c1', 'rg -c "this\\.(pendingSends|outbox|turns|requests)" src/main/agents/control.ts', '412', 70).described('Count reads of the shared private fields')
   .command('plan-c2', 'rg -n "^  (async )?[a-zA-Z]+\\(" src/main/agents/control.ts | wc -l', '184', 60).described('Count the methods AgentControl has')
   .command('plan-c3', 'rg -l "agentControl\\." src/main src/host | xargs wc -l | tail -n 1', '  9841 total', 210).described('Measure the files that call AgentControl')
-  .command('plan-c4', 'cat src/main/agents/publishWindows.ts', 'export interface PublishWindow {\n  readonly threadId: string\n  readonly opensAt: number\n  …', 40).described('Read the publish windows module')
-  .command('plan-c5', 'cat tests/unit/main/workspaceControl.test.ts | head -n 80', "import { describe, expect, test } from 'vitest'\n…", 0, 'running').described('Read how the workspace control tests build a coordinator')
+  .command('plan-c4', 'cat src/main/agents/publishWindows.ts', PUBLISH_WINDOWS, 40).described('Read the publish windows module')
+  .command('plan-c5', 'cat tests/unit/main/workspaceControl.test.ts | head -n 80', "import { describe, expect, test } from 'vitest'\n\nimport { AgentControl } from '../../../src/main/agents/control'\nimport { fakeHost } from '../../fixtures/fakeHost'\n", 0, 'running').described('Read how the workspace control tests build a coordinator')
 
 const PLAN: EvidenceThread = {
   key: 'plan', id: threadId(2), title: 'Plan the split', modelId: 'claude:sonnet', project: 'sotto', status: 'running',
@@ -218,9 +259,12 @@ const DOC_DIFF = [
   '+Changing what `AgentControl` does. Anything we notice on the way is a follow-up with its own issue.',
 ].join('\n')
 
-const docTurn = new Turn('doc-1', 'doc-u1', 'completed', 82_000, 70)
+/** The document as `cat` printed it before the edit: the lines the diff keeps and removes. */
+const DOC_BEFORE = `${DOC_DIFF.split('\n').filter(line => line.startsWith(' ') || line.startsWith('-')).map(line => line.slice(1)).join('\n')}\n`
+
+const docTurn =new Turn('doc-1', 'doc-u1', 'completed', 82_000, 70)
   .reasoning('doc-r1', '**Writing the plan down**\n\nThe draft already has the argument. It needs the order, and the rules that keep each cut small.')
-  .command('doc-c1', 'cat docs/plans/agent-control-split.md', '# Splitting AgentControl\n\nStatus: an idea. Nothing is scheduled.\n…', 40)
+  .command('doc-c1', 'cat docs/plans/agent-control-split.md', DOC_BEFORE, 40)
   .edit('doc-e1', 'docs/plans/agent-control-split.md', 'update', DOC_DIFF)
 
 const DOC: EvidenceThread = {
