@@ -435,16 +435,17 @@ private final class WatcherFollow {
 }
 
 private extension View {
-    /// Opens at the page's end, and sits a short conversation at the bottom, as a chat does. On iOS 18 and later that is
-    /// all the anchor does, so a page that grows keeps a reader's place and follows new words only for a reader who sees
-    /// them (`WatcherFollow`), except while the reader is on a card: Watcher's words grow above the cards, so there the
-    /// page keeps its bottom where it was and the card stays put as they grow. iOS 17 can't separate the anchor's roles,
-    /// so there it always keeps its bottom, as it did before. Either way, what changes below the card moves it with the
-    /// page's bottom, and the page puts it back (`WatcherConversationPane.keepHeldCard`).
-    @ViewBuilder func watcherScrollAnchor(holdingCard: Bool) -> some View {
+    /// Opens at the page's end, and sits a short conversation at the bottom, as a chat does. On iOS 18 and later, a page
+    /// that grows, or whose box moves, keeps the place of a reader of earlier messages, and keeps its bottom where it was
+    /// for the rest (`WatcherFollow`). A reader who follows the newest words sees them stay on the box as it moves, in the
+    /// same frames: sending puts the keyboard away, and a page that waited to scroll after it showed the conversation leave
+    /// the box and drop back. A reader on a card keeps it put as Watcher's words grow above the cards. iOS 17 can't
+    /// separate the anchor's roles, so there it always keeps its bottom, as it did before. Either way, what changes below
+    /// the card moves it with the page's bottom, and the page puts it back (`WatcherConversationPane.keepHeldCard`).
+    @ViewBuilder func watcherScrollAnchor(keepsBottom: Bool) -> some View {
         if #available(iOS 18.0, *) {
             defaultScrollAnchor(.bottom, for: .initialOffset).defaultScrollAnchor(.bottom, for: .alignment)
-                .defaultScrollAnchor(holdingCard ? .bottom : nil, for: .sizeChanges)
+                .defaultScrollAnchor(keepsBottom ? .bottom : nil, for: .sizeChanges)
         } else {
             defaultScrollAnchor(.bottom)
         }
@@ -479,9 +480,9 @@ private struct WatcherConversationPane: View {
     @State private var visible: CGFloat = 0
     /// How far the page's ground fades in under the status bar, held here without watching it: only the fade redraws.
     @State private var topFade = TopFade()
-    /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
-    /// never as the page scrolls, and read only on iOS 18 and later.
-    @State private var holdingCard = false
+    /// The reader follows the newest words or is on a card (`WatcherFollow.following`, `WatcherFollow.held`), as the scroll
+    /// anchor needs it. Changed only where that is decided, never as the page scrolls, and read only on iOS 18 and later.
+    @State private var keepsBottom = true
     /// A message's photos, open full screen.
     @State private var viewing: OpenPhotos?
     /// The page's end, just under Watcher's working line and the user's follow-ups, where following scrolls to,
@@ -565,6 +566,9 @@ private struct WatcherConversationPane: View {
                     // `WatcherReaderPlace.endGap` above the box, so the working line and the follow-ups show whole.
                     Color.clear.frame(height: 0).id(Self.end).accessibilityHidden(true)
                         .background(reader { follow.end = $0.maxY })
+                    #if DEBUG
+                    if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
+                    #endif
                 }
                 // The top margin is the hero's own (`WatcherHero`).
                 .padding(.horizontal, Space.s4)
@@ -584,7 +588,7 @@ private struct WatcherConversationPane: View {
                     topFade.moved(follow.top - frame.minY)
                 })
             }
-            .watcherScrollAnchor(holdingCard: holdingCard)
+            .watcherScrollAnchor(keepsBottom: keepsBottom)
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
             .onUserScrolling { scrolling in
@@ -607,7 +611,7 @@ private struct WatcherConversationPane: View {
                     resumeFollowing()
                 }, stopAll: stopAll)
                 // It floats as a thread's reply box does, with the conversation running on under it.
-                .readingWidth().background(dockReader(proxy, words: hasWords))
+                .readingWidth().background(dockReader(proxy, words: hasWords)).sendWatchDock()
             }
             // New words, the user's own or Watcher's, and Watcher starting or ending a turn or the user's follow-ups coming
             // and going under them, are scrolled into view above the box, for a reader who sees the newest words or the
@@ -641,7 +645,7 @@ private struct WatcherConversationPane: View {
         box.missedFollow = false
         box.held = nil
         box.following = false
-        setHoldingCard(false)
+        setKeepsBottom(false)
         let still = reduceMotion
         withAnimation(still ? nil : .easeOut(duration: 0.35)) { scroll.scrollTo(WatcherHero.id, anchor: .top) }
         Task { @MainActor in
@@ -650,19 +654,20 @@ private struct WatcherConversationPane: View {
         }
     }
 
-    /// Decides where the page stands (`WatcherFollow.settle`), and tells the scroll anchor whether the reader is on a card.
+    /// Decides where the page stands (`WatcherFollow.settle`), and tells the scroll anchor whether the reader follows the
+    /// newest words or is on a card.
     private func settle() {
         follow.settle()
-        setHoldingCard(follow.held != nil)
+        setKeepsBottom(follow.following || follow.held != nil)
     }
     /// The page follows the newest words again, and no card is held.
     private func resumeFollowing() {
         follow.held = nil
         follow.following = true
-        setHoldingCard(false)
+        setKeepsBottom(true)
     }
-    private func setHoldingCard(_ holding: Bool) {
-        if WatcherFollow.seesLetGo, holdingCard != holding { holdingCard = holding }
+    private func setKeepsBottom(_ keeps: Bool) {
+        if WatcherFollow.seesLetGo, keepsBottom != keeps { keepsBottom = keeps }
     }
 
     /// Reads a frame, in global coordinates, as it moves. Nothing redraws for it, and nothing is decided by it.
@@ -919,10 +924,13 @@ private struct SendingBubble: View {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                     .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .sendingBeside(String(localized: "Sending to Watcher…"))
+            } else {
+                // With no words to sit beside, the spinner keeps its own line.
+                HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .accessibilityElement(children: .combine)
             }
-            HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
-                .font(.sotto(.caption)).foregroundStyle(Palette.muted)
-                .accessibilityElement(children: .combine)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
@@ -1579,7 +1587,7 @@ private struct WatcherDock: View {
         let label = waitingOnCard ? String(localized: "Queue") : queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
         return Button {
-            sent += 1; willSend(); focused = false
+            SendWatch.press(); sent += 1; willSend(); focused = false
             dictation.cancel(model.watcherDraftKey(hostID))
             Task { await model.sendToWatcher(hostID) }
         } label: {
