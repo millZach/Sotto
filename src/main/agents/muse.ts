@@ -18,7 +18,7 @@ import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
 import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museChildAdmission, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
-import { needsPerson, QUESTION_SKIPPED, unreadableRequest } from './nativeRequests'
+import { needsPerson, QUESTION_SKIPPED, unreadableRequest, WATCHER_QUESTION_TOOL_CLOSED } from './nativeRequests'
 import { tokenCount } from './nativeUsage'
 import { ObservedUsage } from './observedUsage'
 import { exhaustedQuotaReset, parseMuseQuota, unavailableProviderQuota } from './providerQuota'
@@ -1697,6 +1697,12 @@ export class MuseMspHost implements AgentHost {
           if (!sessionOf(parsed)) return
           if (entry.watcher) await this.launchProfile(owner, rpc)
           if (!current()) return
+          // Watcher's own question tool is closed to it (#2228): it would hold Watcher's turn, so Watcher asks with ask_user.
+          // Muse tells its model the input was cancelled, with why; a cancel that does not go leaves the card, as before.
+          if (entry.watcher) {
+            try { await rpc.request('userInput/cancel', { commandId: museCommandId(), sessionId: parsed.sessionId, userInputId: parsed.userInputId, reason: WATCHER_QUESTION_TOOL_CLOSED }); return }
+            catch { if (!current()) return }
+          }
           this.showRequest(museUserInputPending(owner, parsed), entry)
           return
         }

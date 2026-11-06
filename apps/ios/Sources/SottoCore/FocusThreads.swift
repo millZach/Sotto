@@ -10,6 +10,7 @@ public struct FocusThreads {
     public private(set) var working: [HostedThread] = []
     public private(set) var recent: [HostedThread] = []
     public private(set) var settled: [HostedThread] = []
+    public private(set) var snoozed: [HostedThread] = []
     /// Each Needs you row that stands for a delegated thread waiting on the user, by the row's ID: that delegated
     /// thread, whose requests the row shows. A row that waits on the user itself is not here.
     public private(set) var waitingIn: [String: HostedThread] = [:]
@@ -18,7 +19,7 @@ public struct FocusThreads {
     public let searching: Bool
     /// The thread open on this iPhone. It reads as opened at once, before its computer's next list says so.
     public let opened: ThreadRef?
-    public var isEmpty: Bool { questions.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty }
+    public var isEmpty: Bool { questions.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && snoozed.isEmpty }
     /// The requests Needs you shows: each row's own, or those of the delegated thread it stands for.
     public var requestCount: Int { questions.reduce(0) { $0 + asking($1).thread.requests.count } }
     /// Recent threads that finished while nothing showed them and have not been opened since: the Threads tab's count.
@@ -28,7 +29,7 @@ public struct FocusThreads {
     /// `holding` names the unsent threads this iPhone holds something for, by row ID. Any other unsent thread has no row
     /// unless it is open here: opening New thread and backing out leaves nothing behind, as on the desktop.
     public init(_ computers: [ComputerThreads], show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil,
-                holding: Set<String> = []) {
+                holding: Set<String> = [], now: Date = Date()) {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searching = !query.isEmpty
         self.opened = opened
@@ -53,10 +54,41 @@ public struct FocusThreads {
             if row.reachable && state.waitsOnYou { questions.append(row) }
             else if let delegated, row.reachable { waitingIn[row.id] = delegated; questions.append(row) }
             else if row.settled { settled.append(row) }
+            else if !row.failed, let until = row.thread.snoozedUntil.flatMap(Stamp.date), until > now { snoozed.append(row) }
             else if row.reachable && state.workInProgress { working.append(row) }
             else { recent.append(row) }
         }
     }
+
+    public struct SnoozedProject: Identifiable {
+        public let id: String
+        public let title: String
+        public var rows: [HostedThread]
+        fileprivate let activity: Date
+    }
+    /// Snoozed projects and their threads, newest activity first, as on the desktop.
+    public var snoozedProjects: [SnoozedProject] {
+        let dated: [(row: HostedThread, at: Date)] = snoozed.map { row in
+            let stamps: [String?] = [row.thread.updatedAt, row.thread.settledAt, row.thread.archivedAt, row.thread.summary?.lastMessageAt]
+            let dates = stamps.compactMap { $0 }.compactMap(Stamp.date)
+            return (row: row, at: dates.max() ?? Date.distantPast)
+        }
+        let rows = dated.sorted { $0.at == $1.at ? $0.row.id < $1.row.id : $0.at > $1.at }
+        var projects: [SnoozedProject] = []
+        var indices: [String: Int] = [:]
+        for item in rows {
+            let row = item.row
+            let key = row.ref.hostID + "/" + row.thread.projectId
+            if let index = indices[key] { projects[index].rows.append(row) }
+            else {
+                indices[key] = projects.count
+                projects.append(SnoozedProject(id: key, title: row.project ?? row.computer, rows: [row], activity: item.at))
+            }
+        }
+        return projects.sorted { $0.activity == $1.activity ? $0.id < $1.id : $0.activity > $1.activity }
+    }
+    /// The next time this grouping changes without a host update, including a cached offline snapshot.
+    public var nextSnoozeWake: Date? { snoozed.compactMap { $0.thread.snoozedUntil.flatMap(Stamp.date) }.min() }
 
     /// The ID of the row that stands for a thread: its own, or for a delegated thread, which has no row of its own, the
     /// row of the thread its delegation is reached from, whether or not it waits on the user now.

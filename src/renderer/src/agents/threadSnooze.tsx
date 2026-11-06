@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { z } from 'zod'
+import type { AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOwlFeature } from '../state/owlFeature'
 import type { PaneMenuItem } from './PaneMenu'
@@ -9,9 +10,8 @@ import { localeFormatter } from './localeFormat'
 import { clockLabel, type ThreadRow } from './threadFacts'
 
 /**
- * Snoozed threads (ADR-0175; Owl `thread-snooze`): each thread the user snoozed and when it wakes, kept on this computer
- * the way starred models are (ADR-0147). A snooze that has passed is ignored and dropped on the next write, so the record
- * keeps only what is still asleep.
+ * Host-owned snoozes (ADR-0175; Owl `thread-snooze`). The window's legacy record is migrated when its host supports
+ * snoozes, and remains the fallback while connected to an older host.
  */
 export const THREAD_SNOOZES_KEY = 'sotto.threads.snoozes'
 const snoozesSchema = z.record(z.string(), z.string())
@@ -44,10 +44,36 @@ function read(): ReadonlyMap<string, number> {
 }
 
 /** Every snooze on record while Snooze is on; none while the Owl list keeps it off, its record left whole. */
-export function useThreadSnoozes(): ReadonlyMap<string, number> {
+const migrating = new Set<string>()
+export function useThreadSnoozes(threads: readonly AgentThread[] = []): ReadonlyMap<string, number> {
   const on = useOwlFeature('thread-snooze')
   const snoozes = useSyncExternalStore(subscribe, read, () => NONE)
-  return on ? snoozes : NONE
+  useEffect(() => {
+    const agents = window.sotto?.agents
+    if (!on || !agents) return
+    const legacy = read()
+    for (const thread of threads) {
+      const until = legacy.get(thread.id)
+      if (thread.snoozedUntil === undefined || until === undefined || migrating.has(thread.id)) continue
+      if (thread.snoozedUntil !== null || until <= Date.now()) { snoozeThreads([thread.id], null); continue }
+      migrating.add(thread.id)
+      void agents.command({ type: 'snooze-thread', threadId: thread.id, until: new Date(until).toISOString() })
+        .then(result => { if (!result.error) snoozeThreads([thread.id], null) })
+        .catch(() => undefined) // Keep the legacy record if the host could not be reached.
+        .finally(() => migrating.delete(thread.id))
+    }
+  }, [on, snoozes, threads])
+  return useMemo(() => {
+    if (!on) return NONE
+    const shared = new Map(snoozes)
+    for (const thread of threads) {
+      if (thread.snoozedUntil === undefined) continue
+      if (thread.snoozedUntil === null && !snoozes.has(thread.id)) shared.delete(thread.id)
+      else if (thread.snoozedUntil === null) continue
+      else shared.set(thread.id, Date.parse(thread.snoozedUntil))
+    }
+    return shared
+  }, [on, snoozes, threads])
 }
 
 /** Snoozes each thread until `until`, or wakes it with null. */

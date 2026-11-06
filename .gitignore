@@ -933,6 +933,19 @@ artifacts/watcher-top-lines/*
 !artifacts/watcher-top-lines/beside-dark-820.png
 !artifacts/watcher-top-lines/machine-warning-dark-400.png
 !artifacts/watcher-top-lines/machine-warning-light-400.png
+artifacts/watcher-own-question/*
+!artifacts/watcher-own-question/own-question-card-dark-1600x1000.png
+!artifacts/watcher-own-question/own-question-card-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-card-dark-820x560.png
+!artifacts/watcher-own-question/own-question-card-light-1280x800.png
+!artifacts/watcher-own-question/own-question-card-light-820x560.png
+!artifacts/watcher-own-question/own-question-needs-you-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-needs-you-light-1280x800.png
+!artifacts/watcher-own-question/own-question-mark-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-mark-light-1280x800.png
+!artifacts/watcher-own-question/own-question-answered-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-answered-light-1600x1000.png
+!artifacts/watcher-own-question/readings.json
 
 # Watcher bottom navigation: keep the cited headless frames.
 artifacts/watcher-bottom-navigation/*
