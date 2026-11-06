@@ -470,28 +470,39 @@ function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
 /**
  * How many of the closed folds' peeks the body has room for, up to `most`: as many as leave it without a scroll, tried
  * before the frame is drawn, so a peek never shows only to go. A count found too tall is not tried again until the body
- * is taller or what it holds changes (`changed`, or the content growing or shrinking by itself). While a fold is open
- * (`held`) the count holds, so opening one never moves the heads above it. A body not laid out has no room.
+ * is taller or wider or what it holds changes (`changed`, or the content growing or shrinking by itself). While a fold is
+ * open (`held`) the count holds, so opening one never moves the heads above it; but a body that changes size while one is
+ * open fits its peeks again, measured without what the open folds list, so the peeks still show only where the surface
+ * with every fold closed would not scroll. A body not laid out has no room.
  */
 function usePeeksThatFit(body: RefObject<HTMLDivElement | null>, content: RefObject<HTMLDivElement | null>, most: number, held: boolean, changed: unknown): number {
   const [shown, setShown] = useState(0)
   const [resized, setResized] = useState(0)
-  /** For each count found too tall, the body's height then. */
-  const tooTall = useRef(new Map<number, number>())
+  /** For each count found too tall, the body's size then. */
+  const tooTall = useRef(new Map<number, { readonly height: number; readonly width: number }>())
   /** The content's height once the count last settled, so its own change can be told from a peek's. */
   const settled = useRef(-1)
+  /** The body's size once the count last settled, so a window that changed size can be told from a fold that opened. */
+  const settledSize = useRef({ height: -1, width: -1 })
   const seen = useRef(changed)
   useLayoutEffect(() => {
     const element = body.current, inner = content.current
-    if (!element || !inner || held) return
-    if (seen.current !== changed) { seen.current = changed; tooTall.current.clear() }
-    const room = element.clientHeight
+    if (!element || !inner) return
+    // Its width with the scrollbar's, so the scrollbar an open fold brings is not taken for a window that changed size.
+    const room = element.clientHeight, width = element.offsetWidth
     if (room <= 0) return
+    if (held && room === settledSize.current.height && width === settledSize.current.width) return
+    if (seen.current !== changed) { seen.current = changed; tooTall.current.clear() }
     if (shown > most) { setShown(most); return }
-    if (element.scrollHeight > room + 1) {
-      if (shown > 0) { tooTall.current.set(shown, room); setShown(shown - 1); return }
-    } else if (shown < most && (tooTall.current.get(shown + 1) ?? -1) < room) { setShown(shown + 1); return }
+    // What an open fold lists is left out, so what is measured is the surface as it would be with every fold closed.
+    let listed = 0
+    if (held) for (const list of inner.querySelectorAll<HTMLElement>('.pr-surface__fold-body')) listed += list.offsetHeight
+    const tall = tooTall.current.get(shown + 1)
+    if (element.scrollHeight - listed > room + 1) {
+      if (shown > 0) { tooTall.current.set(shown, { height: room, width }); setShown(shown - 1); return }
+    } else if (shown < most && (!tall || tall.height < room || tall.width < width)) { setShown(shown + 1); return }
     settled.current = inner.offsetHeight
+    settledSize.current = { height: room, width }
   }, [body, content, most, held, changed, shown, resized])
   useEffect(() => {
     const element = body.current, inner = content.current

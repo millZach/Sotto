@@ -1001,6 +1001,35 @@ describe('the drill-in under the merge checklist', () => {
     await opened()
     expect(peeks()[1]).toContain('d.ts')
   })
+  it('fits the peeks again when the window changes size with a fold open, as if every fold were closed', async () => {
+    // As above: 400 pixels, 60 more for each peek and 10 for each file a peek lists.
+    let room = 1000
+    const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row').length
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
+    const resized: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized.push(callback) } observe(): void {} disconnect(): void {} })
+    const files = [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }, { path: 'c.ts', additions: 3, deletions: 0 }, { path: 'd.ts', additions: 1, deletions: 0 }]
+    mount({ detail: detail({ body: 'The greeting now says hello. It used to say nothing at all.\nIt waits for a name.\n\n- And a list.', files, changedFiles: 4,
+      checks: [check('CI / build', 'failure'), check('CI / lint', 'pending'), check('test', 'success')] }) })
+    await opened()
+    const filesPeek = (): string => document.querySelector('.pr-surface__peek[data-of="files"]')?.textContent ?? ''
+    expect(filesPeek()).toContain('d.ts')
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    // Open, the count holds while the window stays as it was.
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toContain('d.ts')
+    // Shrunk with Checks open: the files' peek goes, since the surface would scroll with Checks closed.
+    room = 530
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toBe('')
+    expect(screen.getByRole('button', { name: 'Description' }).querySelector('.pr-surface__fold-preview[data-whole]')).not.toBeNull()
+    // Grown again, it comes back.
+    room = 1000
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toContain('d.ts')
+  })
   it('works out what the closed folds and the open list say', () => {
     expect(checksSummary([check('a', 'failure'), check('b', 'cancelled'), check('c', 'pending'), check('d', 'action-required'), check('e', 'success'), check('f', 'neutral')])).toEqual([
       { tone: 'failed', words: '2 failed' }, { tone: 'waiting', words: '1 need approval' }, { tone: 'waiting', words: '1 running' }, { tone: 'settled', words: '1 passed' }, { tone: 'settled', words: '1 skipped' }])
