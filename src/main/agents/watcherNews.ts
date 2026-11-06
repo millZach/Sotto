@@ -155,8 +155,8 @@ const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' 
  *
  * Each thing is said once (#2232): what Watcher is told for every wake-up is in its prompt, not here; events carry no ID,
  * since no tool takes one; lines that say the same of the same thread are one line with a count; and evidence news is
- * only what its detail says changed, so one with nothing to say has no line, and one whose detail gave way is counted
- * with the events left out.
+ * only what its detail says changed, so one with nothing to say has no line. Those words are short and are the line, so
+ * they never give way before the event does.
  */
 export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, held?: WatcherNewsHeld): string {
   const opening = NEWS_OPENING
@@ -181,15 +181,15 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
   const restartLines = [...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`)
   const compose = (count: number, detailed: number) => {
     const lines = new Map<string, { target: string; body: string; count: number }>()
-    let gaveWay = 0
     shown.slice(0, count).forEach((event, index) => {
-      const extra = index < detailed ? details[index] : undefined
-      if (event.kind === 'evidence-changed' && !extra) { if (details[index]) gaveWay++; return }
+      // Evidence news is its words, so they go with the event rather than give way before it.
+      const extra = event.kind === 'evidence-changed' || index < detailed ? details[index] : undefined
+      if (event.kind === 'evidence-changed' && !extra) return
       const target = JSON.stringify(event.target), text = body(event, index, extra), key = JSON.stringify([target, text])
       const same = lines.get(key)
       if (same) same.count++; else lines.set(key, { target, body: text, count: 1 })
     })
-    const omitted = news.omitted + shown.length - count + gaveWay
+    const omitted = news.omitted + shown.length - count
     return [opening, ...restartLines, ...[...lines.values()].map(item => `${item.target}${item.count > 1 ? `, ${item.count} times` : ''}: ${item.body}`),
       ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : [])].join('\n')
   }

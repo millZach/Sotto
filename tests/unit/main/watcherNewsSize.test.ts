@@ -53,9 +53,11 @@ it('says each thing in Watcher\'s news once: no closing paragraph, no event IDs,
   expect(text.split('\n').filter(line => line.startsWith(JSON.stringify(thread(3))))).toHaveLength(1)
 })
 
-it('counts evidence news whose detail gave way to room with the events left out (#2232)', () => {
-  const crowded: WatcherNewsDetail = item => item.kind === 'evidence-changed' ? 'x'.repeat(20_000) : undefined
-  const text = watcherNewsText(note([events[0]!, events[6]!]), crowded)
-  expect(text).not.toContain('xxxx')
-  expect(text).toContain('1 more events omitted.')
+it('keeps an evidence line\'s words while replies give way to room (#2232)', () => {
+  // Thirty finished turns whose replies cannot all fit, and a pull request whose checks failed.
+  const finished = Array.from({ length: 30 }, (_, n) => event(100 + n, 'turn-finished', { turnId: `turn-${n}` }))
+  const crowded: WatcherNewsDetail = item => item.kind === 'evidence-changed' ? detail(item) : 'x'.repeat(2_000)
+  const text = watcherNewsText(note([...finished, events[6]!]), crowded)
+  expect(text).toContain(`${JSON.stringify(thread(4))}: Pull request #2260: checks failed on its newest commit.`)
+  expect(text).not.toContain('omitted')
 })
