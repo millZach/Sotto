@@ -4,14 +4,16 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, ClaudeWritePending, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import { runToExit } from '../../../src/main/agents/gitLauncher'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
+vi.mock('../../../src/main/agents/gitLauncher', () => ({ runToExit: vi.fn(), stopProcessTree: vi.fn() }))
 
 type FakeChild = EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; kill: ReturnType<typeof vi.fn> }
 
 /** A child whose stdout is a real stream, so `setEncoding('utf8')` decodes the bytes the test writes. */
 function start(timeout = 5000, receive?: (frame: ClaudeFrame) => void) {
-  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(() => true) }) as FakeChild
+  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(() => true), pid: 4242 }) as FakeChild
   vi.mocked(spawn).mockReturnValueOnce(child as never)
   const frames: ClaudeFrame[] = []
   const onExit = vi.fn()
@@ -210,5 +212,43 @@ describe('ClaudeProtocol delayed writes', () => {
     else callback(outcome === 'error' ? new Error('Pipe failed') : undefined)
     expect(await completion).toBe(outcome === 'success' ? 'delivered' : 'failed')
     expect(write).toHaveBeenCalledTimes(1)
+  })
+})
+
+// On Windows `taskkill /T` walks the tree from the CLI's own process, so the CLI must still run when it does (#657): a
+// CLI that ends on closed input before taskkill runs leaves it nothing to find, and every stop read as unconfirmed.
+describe('ClaudeProtocol halt on Windows', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  const onWindows = () => Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+  afterEach(() => { Object.defineProperty(process, 'platform', platform); vi.mocked(runToExit).mockReset() })
+
+  it('ends the tree while the CLI still runs, then its input, and confirms once the CLI exits', async () => {
+    onWindows()
+    const { child, protocol, written } = start()
+    expect(vi.mocked(spawn).mock.calls[0]![2]).toMatchObject({ detached: false })
+    let inputOpenAtKill: boolean | undefined
+    vi.mocked(runToExit).mockImplementationOnce(async () => { inputOpenAtKill = !child.stdin.writableEnded; setImmediate(() => child.emit('exit', 1, null)) })
+    const confirmed = await protocol.halt()
+    expect(runToExit).toHaveBeenCalledWith('taskkill', ['/pid', '4242', '/T', '/F'])
+    expect(inputOpenAtKill).toBe(true)
+    expect(child.stdin.writableEnded).toBe(true)
+    expect(written.map(frame => (frame.request as ClaudeFrame | undefined)?.subtype)).toEqual(['interrupt'])
+    expect(confirmed).toBe(true)
+  })
+
+  it('does not confirm a stop that taskkill could not make, and kills the CLI itself', async () => {
+    onWindows()
+    const { child, protocol } = start()
+    vi.mocked(runToExit).mockRejectedValueOnce(Object.assign(new Error('taskkill exited with 128.'), { code: 128 }))
+    expect(await protocol.halt()).toBe(false)
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+  })
+
+  it('does not confirm the tree of a CLI that had already exited, which taskkill can no longer walk', async () => {
+    onWindows()
+    const { child, protocol } = start()
+    child.emit('exit', 0, null)
+    expect(await protocol.halt()).toBe(false)
+    expect(runToExit).not.toHaveBeenCalled()
   })
 })
