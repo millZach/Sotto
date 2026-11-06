@@ -111,10 +111,14 @@ Zach chose this. Reviewers of the design pass found the folders' rows tall and a
 
 - its name in the body's weight and, at the line's end, its time in the muted ink, with no status ring, no provider mark and no word. The ring keeps its column, so every name down the list starts on one edge;
 - pointed at, or reached by the keys, its provider's mark stands where the ring would be, and its shortcuts take the time's place across the line;
-- its word stays in what a screen reader hears, at the head of the row's description, as on every row. Its name stays its title, as ADR-0164 has it;
-- a wide sidebar's branch line goes with the word.
+- its word stays in what a screen reader hears, at the head of the row's description, as on every row. Its name stays its title, as ADR-0164 has it.
 
-A row whose word is news is not resting and keeps its two lines: Just finished, Prototype ready, Babysitting, Monitoring and a restart's time. So does a Done row with more to say on its second line: one whose provider is out of reach (Done · Disconnected), one Watcher watches, with its owl, and one on the Snoozed shelf, with the time it wakes. The sticky folder head, the Needs you card and the collapsed rail do not change.
+A row whose word is news is not resting and keeps its two lines: Just finished, Prototype ready, Babysitting, Monitoring and a restart's time. So does a Done row whose provider is out of reach (Done · Disconnected). The sticky folder head, the Needs you card and the collapsed rail do not change.
+
+**Decided in building, after the pick.** The prototype showed neither of these, so Zach did not pick them and has not been asked about them yet:
+
+- A Done row that Watcher watches, with its owl, or that sits on the Snoozed shelf, with the time it wakes, keeps its two lines. Its second line says something the user would otherwise lose from the screen, that Watcher is still on it or when it comes back, so it is not plainly resting.
+- In a sidebar wide enough to show it, a resting row's branch line goes with its word. The one line has no room for it, and a finished thread's branch is the least needed thing on its row; it shows again whenever the row takes two lines.
 
 **Why.** What is moving or waiting is what the list is read for, and it now stands out by shape as well as by ring and weight, while a finished thread takes about two-thirds of the height it did: 37 pixels a row in place of 54.
 
