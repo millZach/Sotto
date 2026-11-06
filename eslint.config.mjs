@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/watcher-top-lines/**',
+      'artifacts/watcher-own-question/**',
       'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',

@@ -58,6 +58,8 @@ import type { WatcherEvent } from '../../shared/watcherNews'
 import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
+import { WatcherQuestions } from './watcherQuestions'
+import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
 import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
@@ -179,7 +181,7 @@ function keepsUserWords(input: WatcherToolInput<'keep_state'>): boolean {
   return input.rules !== undefined || input.decisions !== undefined || input.add?.some(line => line.list !== 'issues') === true
     || input.edit?.some(line => !line.id.startsWith('i')) === true
 }
-const ASK_BEFORE_SETTLE = 'The user asks you to check with them before each settle. Ask on a question card whether to settle this thread, and call settle_thread again with userAgreed: true only once they agree. Nothing was settled.'
+const ASK_BEFORE_SETTLE = 'The user asks you to check with them before each settle. Ask with ask_user, naming this thread in settle, and call settle_thread again once the news says they chose Settle it. Nothing was settled.'
 /**
  * A settle_thread call split into the call its schema takes and whether it says the user agreed to the settle. A
  * userAgreed that is not true is left on the call, so the schema refuses it.
@@ -344,6 +346,8 @@ const STILL_READING = 'This read took longer than your provider waits for a tool
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
 interface CallProgress {
   operationId?: string
+  /** A settle the user agreed on Watcher's own card (#2228): once it goes, that answer has agreed it. */
+  settleAgreed?: { readonly watcherThreadId: string; readonly target: WatcherThreadTarget }
 }
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
 const LATE: unique symbol = Symbol('late')
@@ -619,6 +623,10 @@ export class WatcherService implements WatcherControlHooks {
   private readonly toldNews = new Map<string, { readonly requestId?: string; sentHead?: string | null }>()
   private toldToRetell: readonly WatcherEvent[] = []
   private readonly toldSaved: WatcherToldNews
+  /** Watcher's own questions (#2228): Sotto's cards in its conversation, which never hold its turn. */
+  private readonly questions: WatcherQuestions
+  /** The room's list of the current Watcher's questions, the same array while neither the questions nor the Watcher changed. */
+  private roomQuestions: { readonly all: readonly WatcherQuestion[]; readonly threadId: string | undefined; readonly shown: readonly WatcherQuestion[] } | undefined
   private lastSteer: { readonly threadId: string; readonly requestId: string; readonly messageId: string; readonly headBefore: string | null } | undefined
   /** Operations this run saw answered. With history off, a reply from before a restart is not Sotto's to show. */
   private readonly answeredThisRun = new Set<string>()
@@ -775,6 +783,7 @@ export class WatcherService implements WatcherControlHooks {
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
     this.kept = new WatcherStateStore(options.directory, options.historyEnabled)
     this.toldSaved = new WatcherToldNews(options.directory, options.historyEnabled)
+    this.questions = new WatcherQuestions(options.directory, options.historyEnabled)
     // The coordinator publishes from its own timers too, so this listener refuses nothing: while this computer has no host
     // ID, as while Sotto starts, none of its threads can be named, and the publish that brings the ID runs every step here.
     const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => {
@@ -851,7 +860,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
-  privacyChanged(): Promise<void> { this.archivedStops.clear(); return this.kept.privacyChanged() }
+  privacyChanged(): Promise<void> { this.archivedStops.clear(); return Promise.all([this.kept.privacyChanged(), this.questions.privacyChanged()]).then(() => undefined) }
   /** A copy of Watcher's record, for a caller that changes what it reads before saving it. */
   private recordCopy(): WatcherRecord { return this.options.control.watcherRecord() }
   /**
@@ -1104,7 +1113,7 @@ export class WatcherService implements WatcherControlHooks {
     this.wakes.settled(events, outcome)
     // Told, or sent in a way that is never sent twice. Anything else goes again, and stays saved until it does.
     if (outcome === 'told' || outcome === 'unknown') {
-      const told = new Set(events.flatMap(event => event.kind === 'thread-told' ? [event.id] : []))
+      const told = new Set(events.flatMap(event => event.kind === 'thread-told' || event.kind === 'user-answered' ? [event.id] : []))
       if (told.size) void this.toldSaved.forget(told).catch(() => undefined)
     }
   }
@@ -1185,6 +1194,51 @@ export class WatcherService implements WatcherControlHooks {
       this.publish()
       return { status: 'told', requestOpened: created !== undefined }
     })
+  }
+  /** The current Watcher's own questions for the room and the phone, open and answered, the same array until one changes. */
+  currentQuestions(threadId: string | undefined = this.view().current?.target.threadId): readonly WatcherQuestion[] {
+    const all = this.questions.all(), kept = this.roomQuestions
+    if (kept?.all === all && kept.threadId === threadId) return kept.shown
+    const shown = threadId === undefined ? [] : all.filter(question => question.watcherThreadId === threadId && question.state !== 'closed')
+    this.roomQuestions = { all, threadId, shown }
+    return shown
+  }
+  /**
+   * Watcher asks the user (`ask_user`, #2228): Sotto puts the question on a card in Watcher's conversation and answers at
+   * once, so Watcher's turn goes on and its news, sends and grants keep moving while the card waits. Only the user answers it.
+   */
+  async ask(threadId: string, args: unknown): Promise<unknown> {
+    if (!this.isCurrent(threadId)) return watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can ask the user. Nothing was asked.')
+    const parsed = watcherAskInputSchema.safeParse(args)
+    if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Give the question and two to four options with their own labels, or name the thread to settle. Nothing was asked.')
+    const question = await this.questions.ask(threadId, parsed.data)
+    this.publish()
+    return { status: 'ok', questionId: question.id, note: WATCHER_ASK_NOTE }
+  }
+  /** Whether an answer names a card of the current Watcher's own question, which the coordinator hands here. */
+  ownQuestion(threadId: string, requestId: string): boolean {
+    const id = watcherQuestionOf(requestId)
+    return id !== undefined && this.questions.get(id)?.watcherThreadId === threadId
+  }
+  /**
+   * The user's answer on Watcher's own card, from this window or a phone: their choice, kept in the card's own words, and
+   * news to Watcher that says it is theirs (ADR-0073, November 5, 2026). Null when it went; otherwise what to tell the user.
+   */
+  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
+    const id = watcherQuestionOf(answer.requestId), question = id === undefined ? undefined : this.questions.get(id)
+    if (!question || question.watcherThreadId !== threadId || question.state !== 'open') return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
+    if (!this.isCurrent(threadId)) return 'This question belongs to an earlier Watcher. Nothing was sent. Open Watcher to see what it asks now.'
+    const choice = watcherQuestionChoice(question, answer)
+    if (choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
+    const answered = await this.questions.answer(question.id, choice)
+    if (!answered) return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
+    const current = this.view().current
+    const event = current ? this.wakes.answeredEvent(answered.settle ?? current.target, randomUUID(),
+      { questionId: answered.id, question: answered.question, choice, ...answered.settle ? { settle: true as const } : {} }) : undefined
+    // Saved before it goes, as a thread's own message is: nothing else holds the user's choice for Watcher.
+    if (event) { await this.toldSaved.add(event).catch(() => undefined); this.wakes.tellSaved([event]) }
+    this.publish()
+    return null
   }
   /** Whether the turn a thread's message opened this request for has not ended. */
   private toldRequestLive(requestId: string): boolean {
@@ -1284,10 +1338,11 @@ export class WatcherService implements WatcherControlHooks {
    */
   private async restoreToldNews(): Promise<void> {
     if (this.options.workerHost) return
-    const queued = this.options.control.restoredWatcherEvents().filter(event => event.kind === 'thread-told'), saved = await this.toldSaved.load()
+    const queued = this.options.control.restoredWatcherEvents().filter(event => event.kind === 'thread-told' || event.kind === 'user-answered'), saved = await this.toldSaved.load()
     const told = new Set(this.view().wakeEventIds ?? []), queuedIds = new Set(queued.map(event => event.id))
     this.toldToRetell = saved.filter(event => !queuedIds.has(event.id) && !told.has(event.id))
-    const owed = [...queued, ...this.toldToRetell]
+    // The user's answers to Watcher's own questions open no request, so only a thread's own messages are owed a turn here.
+    const owed = [...queued, ...this.toldToRetell].filter(event => event.kind === 'thread-told')
     for (const event of owed) this.toldNews.set(event.id, event.told?.opened ? { requestId: event.requestId } : {})
     const requests = new Set(owed.map(event => event.requestId))
     for (const request of this.view().requests) if (isToldRequest(request) && request.state === 'active' && !requests.has(request.id)) this.endToldRequest(request.id)
@@ -2147,6 +2202,8 @@ export class WatcherService implements WatcherControlHooks {
       creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record),
+      // The store's own records, never copied: every change replaces the list (#2228).
+      ...this.questions.all().length ? { questions: this.currentQuestions(record.current?.target.threadId) as WatcherQuestion[] } : {},
       // What the conversation shown back recalled, apart and the same object until another read back (#1759).
       ...recalled ? { recalled: recalled.room } : {},
       // Where this run's starts were placed (#1032), from memory as the receipts' `placement` is; none while the feature is off.
@@ -2882,6 +2939,7 @@ export class WatcherService implements WatcherControlHooks {
   async recover(): Promise<void> {
     try {
       await this.restoreToldNews()
+      if (!this.options.workerHost) await this.questions.load()
       const record = this.view()
       if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, speed: record.creation.speed ?? null, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
       const current = this.view().current
@@ -3184,7 +3242,9 @@ export class WatcherService implements WatcherControlHooks {
       const tick = new Promise(done => setTimeout(done, 100))
       await (this.active.size > 0 ? Promise.race([Promise.allSettled([...this.active.values()]), tick]) : tick)
     }
-    const questions = thread.requests.map(watcherCardWords)
+    // Watcher's own questions still open go in the handover too, and their cards close: the new Watcher asks again (#2228).
+    const own = await this.questions.close(thread.id).catch(() => [] as WatcherQuestion[])
+    const questions = [...thread.requests.map(watcherCardWords), ...own.map(question => question.question)]
     // Nothing the user queued for the last Watcher goes to it once its turn ends: it moves to the new one (`carryOver`).
     await this.options.control.holdWatcherQueue(thread.id)
     // The new Watcher starts whether or not the stop takes: when it does not, the card may stay open in the last
@@ -4146,6 +4206,11 @@ export class WatcherService implements WatcherControlHooks {
   startCall(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): { readonly answer: Promise<unknown>; readonly settled: Promise<void> } {
     const progress: CallProgress = {}
     const work = this.invokeNow(threadId, name, args, progress)
+    // One Settle it agrees one settle: once the call goes, that answer is spent, so a later settle of the thread asks again.
+    void work.then(result => {
+      const agreed = progress.settleAgreed
+      if (agreed && (result as { status?: unknown } | null)?.status === 'ok') void this.questions.spendSettle(agreed.watcherThreadId, agreed.target).then(() => this.publish(), () => undefined)
+    }, () => undefined)
     const settled = work.then(() => undefined, () => undefined)
     // A read's answer is marked as it is given, so one answered too late to reach Watcher is not counted as given (#1552).
     if (context.waitMs === undefined) return { answer: work.then(result => this.toldReceipt(this.unchangedSince(name, result))), settled }
@@ -4183,7 +4248,11 @@ export class WatcherService implements WatcherControlHooks {
       const agreed = name === 'settle_thread' ? settleAgreement(args) : undefined
       const parsed = watcherToolSchemas[name].input.safeParse(agreed ? agreed.call : args)
       if (!parsed.success) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
-      if (agreed && (!agreed.userAgreed || this.inToldTurn()) && !this.settlesWithoutAsking()) refuse('ASK_USER_FIRST', ASK_BEFORE_SETTLE)
+      // The user's Settle it on Watcher's own card for this thread is their agreement, in Sotto's record of their press (#2228).
+      const settleTarget = agreed ? (parsed.data as WatcherToolInput<'settle_thread'>).target : undefined
+      const cardAgreed = settleTarget !== undefined && !this.settlesWithoutAsking() && this.questions.agreedSettle(threadId, settleTarget)
+      if (agreed && !cardAgreed && (!agreed.userAgreed || this.inToldTurn()) && !this.settlesWithoutAsking()) refuse('ASK_USER_FIRST', ASK_BEFORE_SETTLE)
+      if (cardAgreed) progress.settleAgreed = { watcherThreadId: threadId, target: settleTarget }
       if (name === 'keep_state' && this.inToldTurn() && keepsUserWords(parsed.data as WatcherToolInput<'keep_state'>)) refuse('INVALID_INPUT', KEEP_FROM_THREAD)
       if (name === 'watch_thread') {
         this.checkUserAskedWatch()

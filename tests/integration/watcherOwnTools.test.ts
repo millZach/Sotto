@@ -76,7 +76,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const { params } of launches) {
       expect(params).toMatchObject({ developerInstructions: expect.stringContaining(WATCHER_SYSTEM_PROMPT) })
       expect(params!.developerInstructions).toContain('Synthetic project developer instructions')
+      // Watcher asks with Sotto's ask_user (#2228): request_user_input, which held its turn, is off for it.
+      expect(params!.developerInstructions).not.toContain(questionInstructions('request_user_input', true))
       const config = params!.config as { mcp_servers: Record<string, unknown> }
+      expect(config).toMatchObject({ 'features.default_mode_request_user_input': false })
       expect(config).not.toHaveProperty('windows.sandbox')
       expect(Object.keys(config.mcp_servers).sort()).toEqual([...names].sort())
       expect(config.mcp_servers.sotto_threads).toMatchObject({ enabled_tools: ['list_threads'], default_tools_approval_mode: 'prompt',
@@ -89,7 +92,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const record of launches) {
       const args = (record.params!.frame as { args: string[] }).args
       if (args.includes('--no-session-persistence')) continue
-      expect(flag(args, '--append-system-prompt')).toBe(`${questionInstructions('AskUserQuestion', false)}\n\n${WATCHER_SYSTEM_PROMPT}`)
+      // Watcher asks with Sotto's ask_user (#2228): AskUserQuestion, which held its turn, is closed to it and never offered.
+      expect(flag(args, '--append-system-prompt')).toBe(WATCHER_SYSTEM_PROMPT)
+      expect(flag(args, '--disallowedTools')).toBe('AskUserQuestion')
+      expect(flag(args, '--append-system-prompt')).not.toContain(questionInstructions('AskUserQuestion', false))
       expect(['default', 'acceptEdits', 'auto', 'bypassPermissions']).toContain(flag(args, '--permission-mode'))
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')

@@ -557,6 +557,17 @@
 .watcher-ask-receipt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .watcher-ask-receipt__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .watcher-ask-receipt > .watcher-ask__open { margin-left: 0; }
+/* ---------- Watcher's own question (#2228, Zach's pick A, November 5, 2026) ---------- */
+/* A card where Watcher asked, shaped like a watched thread's card here, that never holds Watcher. Its row in the
+   needs-you list says Watcher asks, and a quiet mark over the conversation's top edge brings it back while it is
+   scrolled out of view. */
+.watcher-glance__why[data-own] { color: var(--watcher-needs-ink); }
+.watcher-question-mark { position: relative; z-index: 5; flex: none; height: 0; }
+.watcher-question-mark__chip { position: absolute; top: 8px; left: 50%; display: inline-flex; align-items: center; gap: 7px; max-width: calc(100% - 32px);
+  padding: 4px 12px; border: 0; border-radius: var(--tt-radius-inset); background: var(--tt-overlay); color: var(--tt-text-2); font: inherit;
+  font-size: var(--tt-type-caption); line-height: 18px; white-space: nowrap; transform: translateX(-50%); box-shadow: 0 0 0 1px var(--tt-hairline), var(--tt-shadow-sm); }
+.watcher-question-mark__chip:hover { color: var(--tt-text); }
+.watcher-question-mark__chip > .watcher-row__ring { width: 8px; height: 8px; }
 
 /* ---------- Stop all ---------- */
 /* At the end of Watcher's header, only while threads Watcher started are running: a quiet pill like

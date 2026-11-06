@@ -692,7 +692,7 @@ export class WatcherWakeUp {
       // Observed afresh, as after a restart, it goes again by itself, a bounded number of times. A sure failure waits for
       // news that needs Watcher, or for Watcher to come to rest.
       // A thread's own message cannot be observed afresh, and its thread was told it got through, so it goes again by itself too.
-      if ((outcome === 'unknown' || events.some(event => event.kind === 'thread-told')) && this.misses < WAKE_UP_TRIES) this.retries++
+      if ((outcome === 'unknown' || events.some(event => event.kind === 'thread-told' || event.kind === 'user-answered')) && this.misses < WAKE_UP_TRIES) this.retries++
     }
     if (outcome === 'unknown') { this.forget(events); this.observe(); return }
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
@@ -831,6 +831,19 @@ export class WatcherWakeUp {
       const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
       return { kind: 'thread-told', target, requestId: opened ?? one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), told, id }
+    })
+  }
+  /**
+   * The user answered a card of Watcher's own question (#2228): news under the request that watches the thread a settle
+   * question names, else under none. Undefined when Watcher's news is not running.
+   */
+  answeredEvent(target: WatcherThreadTarget, id: string, answered: NonNullable<WatcherEvent['answered']>): WatcherEvent | undefined {
+    if (!this.started || this.closed) return undefined
+    return this.withPassReads((): WatcherEvent => {
+      const eligible = answered.settle ? (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped) : []
+      const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      return { kind: 'user-answered', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+        observedAt: new Date(this.now()).toISOString(), answered, id }
     })
   }
   /** Saved messages from threads go out: just made, or back from a restart that found them untold. */
@@ -1618,7 +1631,7 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return false
     // A move is news while Watcher is there, whether or not a request watched the thread; a settled one is news too (#1178).
     // So is a thread's own message: the thread was told it got through, watched or not, delegated or not.
-    if (event.kind === 'thread-moved' || event.kind === 'thread-told') return !!this.record().current
+    if (event.kind === 'thread-moved' || event.kind === 'thread-told' || event.kind === 'user-answered') return !!this.record().current
     // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
     if (event.kind === 'threads-restarted') {
       if (!this.record().current) return false

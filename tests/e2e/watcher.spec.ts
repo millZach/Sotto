@@ -55,6 +55,8 @@ const checksEvidence = evidenceDirectory('artifacts/check-queue-view')
 const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 /** Moving threads, part 2 (#1178): Move threads, its sheet and each move's card. */
 const movesEvidence = evidenceDirectory('artifacts/move-threads-window')
+/** Watcher's own question (#2228, Zach's pick A): its card where it asked, its row in Needs you and its answered line. */
+const questionEvidence = evidenceDirectory('artifacts/watcher-own-question')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['fern', 'fern']] as const
@@ -321,7 +323,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button',
       '.watcher-machines__name', '.watcher-machines__count', '.watcher-machines__words', '.watcher-machines__more', '.receipt-card__placement',
       '.watcher-machine-panel h2', '.watcher-machine-panel dt', '.watcher-machine-panel dd', '.watcher-machine-panel p', '.watcher-machine-panel__title',
-      '.watcher-machine-panel__who', '.watcher-machine-panel__link']
+      '.watcher-machine-panel__who', '.watcher-machine-panel__link', '.watcher-question-mark__chip']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -416,7 +418,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -429,12 +431,13 @@ test.describe("Watcher's room on the built app", () => {
     const fresh = /^new-watcher-/u
     const machines = /^machines-/u
     const moves = /^moves-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key) && !moves.test(key))],
+    const question = /^own-question-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key) && !moves.test(key) && !question.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
       [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))],
       [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))], [machinesEvidence, [...recorded].filter(([key]) => machines.test(key))],
-      [movesEvidence, [...recorded].filter(([key]) => moves.test(key))]] as const
+      [movesEvidence, [...recorded].filter(([key]) => moves.test(key))], [questionEvidence, [...recorded].filter(([key]) => question.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1984,6 +1987,91 @@ test.describe("Watcher's room on the built app", () => {
       }
       // The answered request no longer offers a route to its card, even with the remaining requests open.
       await expect((await openNeedsYou(page)).getByRole('button', { name: /^Go to the permission from Visual gate flake/ })).toHaveCount(0)
+    }))
+  })
+
+  test('Watcher’s own question is a card where it asked that holds nothing, counts in Needs you and gives way to the user’s choice', async () => {
+    const asked = 'Settle Footer links? Its pull request merged and it has nothing left to do.'
+    // Watcher kept working after it asked: news replies came below the question.
+    const news = ['#2240 merged. Sent Council separation to merge next.', 'Owl build asked for computer use on forge. Granted it.',
+      'Council separation is green. Sent GO MERGE.', 'Dictation timing opened #2243. CI is running.', '#2243 is green. Sent GO MERGE to Dictation timing.',
+      '#2243 merged. Dictation timing is done.', 'Owl build finished with computer use on forge. Released it.']
+    const messages: AgentMessage[] = [
+      { id: 'watcher-asks', role: 'assistant', text: '#2236 merged. Footer links has nothing left to do, so I asked you whether to settle it.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 34)).toISOString() },
+      ...news.map((text, index): AgentMessage => ({ id: `watcher-news-${index}`, role: 'assistant', text, createdAt: new Date(Date.UTC(2026, 6, 12, 19, 36 + index)).toISOString() })),
+    ]
+    // Each news reply is a turn of its own, as main hands them over without the wake-ups that began them.
+    const turn = (turnId: string, minute: number, sequence: number): AgentActivity => ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status: 'completed', title: 'Turn',
+      startedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) - 5_000).toISOString(), completedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) + 1_000).toISOString() })
+    const activities = [turn('news-ask', 34, 200), ...news.map((_text, index) => turn(`news-${index}`, 36 + index, 201 + index))]
+    const question = (hostId: string, state: 'open' | 'answered'): NonNullable<WatcherRoomState['questions']>[number] => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: CURRENT,
+      question: asked, options: [{ label: 'Settle it', description: 'Stop watching it. The thread stays in All threads.' }, { label: 'Keep watching', description: 'Keep it in view in case more work comes in.' }],
+      settle: { hostId, threadId: 'footer-links' }, state, at: new Date(Date.UTC(2026, 6, 12, 19, 35)).toISOString(), ...state === 'answered' ? { choice: 'Settle it', endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() } : {} })
+    for (const [appearance, motion] of [['dark', 'normal'], ['light', 'reduced']] as const) await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', appearance, motion), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      const pane = watcherPane(page)
+      await seedRoom(page, { current: true, messages, activities, more: hostId => ({ questions: [question(hostId, 'open')] }) })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const card = pane.getByRole('region', { name: 'Question from Watcher' })
+      await expect(card).toBeVisible()
+      await expect(card).toContainText('Watcher asks')
+      await expect(card).toContainText('Watcher keeps working while this waits')
+      // It counts in Needs you beside the two threads that wait.
+      await expect(pane.locator('.watcher-glance__lead')).toHaveText('3 need you')
+      // Where Watcher asked: after its reply that said so, and before the news that came while it waited.
+      expect(await card.evaluate(element => {
+        const before = document.querySelector('[data-message-id="watcher-asks"]'), after = document.querySelector('[data-message-id="watcher-news-0"]')
+        return Boolean(before && after && before.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING && element.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING)
+      })).toBe(true)
+      // Nothing of the provider's waits in Watcher's thread, so its composer takes a message as it always does.
+      await expect(pane.locator('.thread-workspace__compose .agent-request')).toHaveCount(0)
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await card.scrollIntoViewIfNeeded()
+        await expect.poll(() => pageBoundProblems(page), { message: `the question at ${width}x${height}` }).toEqual([])
+        await captureInto(questionEvidence, launched, `own-question-card-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `own-question-card-${appearance}-${width}x${height}`)
+      }
+      await resizeContentWindow(launched, 1280, 800)
+      // The needs-you count counts it; its row says Watcher asks, and goes to the card.
+      await pane.getByRole('button', { name: /^Show (what needs you|the \d+ things that need you)$/ }).click()
+      const list = pane.getByRole('dialog', { name: 'What needs you' })
+      const row = list.getByRole('button', { name: `Go to Watcher’s question in this conversation: ${asked}` })
+      await expect(row).toContainText('Watcher asks')
+      await settle(page)
+      await captureInto(questionEvidence, launched, `own-question-needs-you-${appearance}-1280x800.png`)
+      await contrastHolds(page, `own-question-needs-you-${appearance}-1280x800`)
+      await page.keyboard.press('Escape')
+      await expect(list).toHaveCount(0)
+      // Scrolled to the newest reply, the card is above the view: the quiet mark brings it back.
+      await pane.locator('.thread-workspace__transcript').evaluate(element => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event('scroll')) })
+      const mark = pane.getByRole('button', { name: 'Scroll up to Watcher’s question' })
+      await expect(mark).toBeVisible()
+      await expect(mark).toContainText('↑ Watcher’s question')
+      await settle(page)
+      await expect.poll(() => pageBoundProblems(page), { message: 'the mark at 1280x800' }).toEqual([])
+      await captureInto(questionEvidence, launched, `own-question-mark-${appearance}-1280x800.png`)
+      await contrastHolds(page, `own-question-mark-${appearance}-1280x800`)
+      await mark.click()
+      await expect(card).toBeFocused()
+      // Answered: the card gives way to one line with the user's choice.
+      await seedRoom(page, { current: true, messages, activities, more: hostId => ({ questions: [question(hostId, 'answered')] }) })
+      await openRoom(page)
+      await expect(pane.getByRole('region', { name: 'Question from Watcher' })).toHaveCount(0)
+      const line = pane.locator('[data-watcher-question] .watcher-ask-receipt__words')
+      await expect(line).toHaveText('You answered: Settle it.')
+      await expect(pane.locator('.watcher-glance__lead')).toHaveText('2 need you')
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await line.scrollIntoViewIfNeeded()
+        await expect.poll(() => pageBoundProblems(page), { message: `the answered line at ${width}x${height}` }).toEqual([])
+        await captureInto(questionEvidence, launched, `own-question-answered-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `own-question-answered-${appearance}-${width}x${height}`)
+      }
     }))
   })
 
