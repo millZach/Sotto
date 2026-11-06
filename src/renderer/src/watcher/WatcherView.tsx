@@ -20,7 +20,6 @@ import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
-import { useFootFocusName } from '../agents/RailFocusName'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
@@ -128,10 +127,8 @@ function RoomTabs({ tab, onTab, moved }: { readonly tab: RoomTab; readonly onTab
  * name on hover and to assistive technology. It replaced the More menu that held the pages and the update.
  */
 function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
-  // Each icon says its name and shortcut under the header, to a resting pointer and to the keys, as the sidebar foot's do over it.
-  const focusName = useFootFocusName()
   return <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages"
-    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} focusName={focusName} />
+    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} />
 }
 
 /**

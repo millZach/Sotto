@@ -130,6 +130,11 @@
    own padding, as before. */
 .watcher-pane { --watcher-bar-gap: 16px; --watcher-column-end: max(8px, calc((100% - 760px) / 2 - var(--watcher-bar-gap))); }
 .watcher-pane > .thread-transcript > .thread-transcript__viewport > .thread-workspace__transcript { margin-right: var(--watcher-column-end); padding-right: var(--watcher-bar-gap); }
+/* A narrow or short pane gives the composer more of the width than the column (splitWorkspace.css), so the bar keeps to
+   the pane's edge there, beside the card rather than under its glass. */
+@container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
+  .watcher-pane > .thread-transcript { --watcher-column-end: 2px; }
+}
 /* Nothing of the conversation shows under the composer (the owner's ask on November 6, 2026): the words run on under the
    card, as they always have, and end inside it, as a thread's do (ADR-0125's note of November 4, 2026); the scroll bar's
    lane keeps its whole height. A clip, not a fill or a mask, so it paints nothing over the scene. */
@@ -146,9 +151,6 @@
 .threads-view.threads-view--mac .thread-pane .watcher-head { padding-left: calc(14px + var(--owl-sky-inset)); }
 .watcher-head__tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 6px; }
 .watcher-head h1 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* With the Watcher and Teams tabs, the lit tab already says Watcher: the room's name is said once, by the tab, and the
-   heading stays for assistive tech (the owner's ask on November 6, 2026). */
-.watcher-room .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; min-width: 0; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* All threads, beside Watcher's name: it opens the Overview over the room. */
 .watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
@@ -177,21 +179,14 @@
 /* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
    uncapped. These widths were set when the header also held three 30-pixel tabs, so they leave room to spare, with the
    130 pixels the room switch and More take at the header's end. All threads' label returns at 670 pixels of pane.
-   While Stop all shows, Stop all's returns at 760 and All threads' at 900, since All threads says how many work and
-   Stop all how many it stops (November 6, 2026); below 630 the name gives way, and below 550 All threads tightens
-   again. macOS keeps its own widths, since its header starts past the traffic lights. */
+   While Stop all shows, Stop all's returns at 760 and All threads' at 700, below 630 the name gives way, and below 550
+   All threads tightens again. macOS keeps its own widths, since its header starts past the traffic lights. */
 @container thread-pane (width < 670px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
 @container thread-pane (width < 760px) {
   .watcher-room:not(.threads-view--mac) .watcher-stop-all__text { display: none; }
   .watcher-room:not(.threads-view--mac) .watcher-stop-all__button { padding: 0 7px; }
 }
-@container thread-pane (width < 900px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list-text { display: none; }
-  .watcher-head .watcher-move-threads + .watcher-stop-all::before { margin: 0 8px 0 2px; }
-  /* Beside Move threads, Stop all keeps its square and how many it stops, and its word is its name and tooltip. */
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-move-threads) .watcher-stop-all__text { display: none; }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-move-threads) .watcher-stop-all__button { padding: 0 9px 0 8px; }
-}
+@container thread-pane (width < 700px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list-text { display: none; } }
 @container thread-pane (width < 630px) {
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
@@ -619,6 +614,18 @@
 .watcher-stop-all__button[aria-disabled='true'] { border-color: var(--tt-hairline); color: var(--tt-text-muted); cursor: default; }
 .watcher-stop-all__button[aria-disabled='true']:is(:hover, :active) { border-color: var(--tt-hairline); background: transparent; color: var(--tt-text-muted); }
 .watcher-stop-all__button[aria-disabled='true']:hover > svg { color: inherit; }
+/* With the Watcher and Teams tabs, the lit tab already says Watcher: the room's name is said once, by the tab, and the
+   heading stays for assistive tech (the owner's ask on November 6, 2026). */
+.watcher-room .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; min-width: 0; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* While the way off the page shares the header's row, All threads says how many work and Stop all how many it stops, so
+   below 900 pixels All threads keeps its icon and count, and beside Move threads Stop all keeps its square and count,
+   its word being its name and tooltip. Where the row stands in the window's corner instead, the header keeps its words. */
+@container thread-pane (width < 900px) {
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-stop-all) .watcher-head__list-text { display: none; }
+  .watcher-head:has(.watcher-head__way) .watcher-move-threads + .watcher-stop-all::before { margin: 0 8px 0 2px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-move-threads) .watcher-stop-all__text { display: none; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-move-threads) .watcher-stop-all__button { padding: 0 9px 0 8px; }
+}
 .watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
