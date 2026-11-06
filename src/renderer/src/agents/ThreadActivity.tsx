@@ -467,9 +467,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const base = planInView ? { lead: '', subject: t({ message: 'Updated the plan', comment: 'A running turn\'s plan among its opened steps; the plan itself stands above the working line.' }), mono: false, preview: '' } : activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
-  // A command its provider described reads as what it was for, with the command beside it, as the working line does: the
-  // rows scan as what happened, and the command is still there, in the code face. Open, the command stands whole under
-  // what it was for, but a script of several lines leaves itself to its block.
+  // A command its provider described reads as what it was for alone, as Claude's summaries do, so the rows scan as what
+  // happened (Zach's pick, ADR-0134's November 6 amendment). Its command shows once the row is open, whole under what it was
+  // for, but a script of several lines leaves itself to its block. Folded, the command is still in the row's name and on its
+  // tooltip.
   const purpose = planInView ? '' : stepDescription(record)
   const script = record.command?.trim().includes('\n') === true
   const status = planInView ? '' : statusText(record, connected)
@@ -497,7 +498,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
       {purpose ? <>
         <span className="thread-activity__subject">{purpose}</span>
-        {open && script ? null : open ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : <RowCommand command={shown.subject} className="thread-activity__command" />}
+        {open && !script ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : null}
       </> : !open && record.kind === 'command' && shown.mono && !shown.preview
         ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
         : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
@@ -513,8 +514,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>
   // The step running now stands out from the finished ones, as the plan's item in progress does: its mark in the accent.
+  // The tooltip sits on the row rather than its button, so assistive tech, which hears the command in the button's name, does
+  // not hear it again as its description.
   return <li className="thread-activity__row" data-kind={record.kind} data-status={record.status} data-open={open || undefined}
-    data-now={running && connected ? '' : undefined}
+    data-now={running && connected ? '' : undefined} title={purpose && !open && record.command ? record.command : undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     {expandable
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}

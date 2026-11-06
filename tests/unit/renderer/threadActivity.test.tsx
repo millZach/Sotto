@@ -189,19 +189,27 @@ describe('settled activity in the transcript', () => {
       activity({ id: 'read', command: 'cat src/policy.ts', cwd: 'd:/Projects/voice/', durationMs: 40, output: 'export class RequestPolicy {}',
         text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }) }),
       activity({ id: 'test', command: 'npm test', durationMs: 6_100, output: 'PASS' }),
+      activity({ id: 'peek', command: 'cat src/request.ts', durationMs: 30, output: 'export {}' }),
     ] }))
     const work = within(transcript).getByRole('button', { name: /^Worked for/u })
     if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
-    // What it was for comes first, the command beside it in the code face; its name says both, and its time.
+    // Folded, the row says only what it was for, as Claude's summaries do; its name says the command too, and its time, and
+    // the command is the row's tooltip.
     const row = within(transcript).getByRole('button', { name: 'Read the request policy, cat src/policy.ts, completed in 0.0s' })
-    expect(row.querySelector('.thread-activity__subject')).toHaveTextContent('Read the request policy')
-    // Folded, a command too long for its row gives way in its file's folders first, so it is drawn in parts.
-    const command = row.querySelector('.thread-activity__command')!
-    expect(command.textContent!.replace(/‎/gu, '')).toBe('cat src/policy.ts')
+    expect(row).toHaveTextContent(/^Read the request policy$/u)
+    expect(row.querySelector('.thread-activity__command')).toBeNull()
+    expect(row.closest('li')).toHaveAttribute('title', 'cat src/policy.ts')
+    expect(row).not.toHaveAccessibleDescription()
+    // A command with no description names itself, and folded, one too long for its row gives way in its file's folders first,
+    // so it is drawn in parts.
+    const own = within(transcript).getByRole('button', { name: 'cat src/request.ts, completed in 0.0s' })
+    const command = own.querySelector('.thread-activity__subject--mono')!
+    expect(command.textContent!.replace(/‎/gu, '')).toBe('cat src/request.ts')
     expect(command).toHaveAttribute('data-cut')
     expect([...command.children].map(part => [part.className.replace('thread-activity__command-', ''), part.textContent!.replace(/‎/gu, '')])).toEqual([
-      ['verb', 'cat '], ['folders', 'src/'], ['name', 'policy.ts'],
+      ['verb', 'cat '], ['folders', 'src/'], ['name', 'request.ts'],
     ])
+    expect(own.closest('li')).not.toHaveAttribute('title')
     // Under a second the folded row shows no time; a slow step keeps its own.
     expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
     expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
@@ -209,6 +217,7 @@ describe('settled activity in the transcript', () => {
     // Open, the row says what it was for and the command whole. Under a second its time is still only in its name, and where
     // the time came from, the thread's own provider, is said only to assistive tech; the body says none of it again.
     expect(row).toHaveTextContent(/^Read the request policycat src\/policy\.ts/u)
+    expect(row.closest('li')).not.toHaveAttribute('title')
     expect(row.querySelector('.thread-activity__meta > :not(.tt-visually-hidden)')).toBeNull()
     expect(row).toHaveAccessibleDescription('Reported by Codex')
     expect(row).toHaveAccessibleName('Read the request policy, cat src/policy.ts, completed in 0.0s')

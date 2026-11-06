@@ -83,23 +83,20 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__subject { color: var(--tt-text-2); }
 .thread-activity__subject--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .thread-activity__preview { color: var(--tt-text-muted); }
-/* A command its provider described: what it was for leads, and the command sits beside it, a size smaller in the code face,
-   as beside the working line. It keeps the second ink, as finished steps do, so code reads as clearly as the words about
-   it. A command too long to sit beside it whole takes a second line of its own under it, so the rows end raggedly as a list
-   does and the command can be read without opening its row; only a command longer than the whole row is cut there, where
-   it says least first (below). The row's marks keep to its first line, as an open row's do. */
+/* A command its provider described reads as what it was for alone, as Claude's summaries do; its command shows once the row
+   is open (ADR-0134, November 6 amendment). What it was for is cut at its end only when it is longer than the row. */
 .thread-activity__label[data-purpose] { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; }
 .thread-activity__label[data-purpose] > * { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Any shrink would cut what the step was for by an ellipsis, so only the command gives way. */
 .thread-activity__label[data-purpose] > .thread-activity__subject { flex-shrink: 0; max-width: 100%; }
-.thread-activity__label[data-purpose] > .thread-activity__command { max-width: 100%; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) { align-items: start; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__label { padding-block: 3px; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__meta { min-height: 25px; }
+/* An open row's command under what it was for, in the code face a size smaller. It keeps the second ink, as finished steps
+   do, so code reads as clearly as the words about it. */
 .thread-activity__command { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
-/* A folded row's command too long for its room gives way where it says least, so its verb and the files it acts on stay in
-   view: npm test -- …threadStoreWorker.test.ts …workspaceStoreWorker.test.ts. First the folders of every file it names,
+/* A folded command with no description, too long for its room, gives way where it says least, so its verb and the files it
+   acts on stay in view: npm test -- …threadStoreWorker.test.ts …workspaceStoreWorker.test.ts. First the folders of every file it names,
    from their start, each down to a sliver for the ellipsis; then what follows the last file; then the files after the
    first; then its flags and pattern; the first file's name last, each at its end. The verb never gives way. A command that
    names no file is cut at its end. Each step's weight is large enough that the next gives up nothing until it has to, since any shrink at all would draw an
