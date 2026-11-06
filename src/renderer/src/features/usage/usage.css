@@ -5,7 +5,10 @@
   --usage-seg: var(--tt-surface-sunken);
   --usage-seg-on: light-dark(var(--tt-surface), var(--tt-surface-overlay));
   --usage-pop: light-dark(var(--tt-surface), var(--tt-surface-overlay));
-  --usage-strong: var(--tt-accent);
+  /* By day the accent at full strength fills whole bars on a light page and outweighs every figure, so the marks take it a
+     third of the way to the page's muted ink and a fifth to the card: half the chroma, still 3.3:1 or more on the card in
+     every built-in theme. By night the accent already sits quiet on the dark card. */
+  --usage-strong: light-dark(color-mix(in oklab, color-mix(in oklab, var(--tt-accent) 65%, var(--tt-text-muted)) 80%, var(--tt-card-solid, var(--tt-card))), var(--tt-accent));
   --usage-mid: light-dark(color-mix(in oklab, var(--tt-accent) 62%, var(--tt-canvas)), color-mix(in oklab, var(--tt-accent) 56%, var(--tt-canvas)));
   --usage-soft: light-dark(color-mix(in oklab, var(--tt-accent) 36%, var(--tt-canvas)), color-mix(in oklab, var(--tt-accent) 30%, var(--tt-canvas)));
   --usage-ink: var(--tt-text-2);
