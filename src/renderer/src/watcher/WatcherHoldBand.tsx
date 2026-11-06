@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Clock, Unplug } from 'lucide-react'
 import { plural, t } from '@lingui/core/macro'
 import { Trans } from '@lingui/react/macro'
@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro'
 import type { WatcherHold } from '../../../shared/watcherHold'
 import { localeFormatter } from '../agents/localeFormat'
 import { restartProviderName, restartWhen } from '../agents/restartWords'
+import { useRestartStopped } from '../agents/RestartStopped'
 import type { WatcherRoom } from './watcherRoom'
 
 const clockTime = localeFormatter({ hour: 'numeric', minute: '2-digit' })
@@ -54,7 +55,9 @@ function heldWords(hold: WatcherHold): string {
  * a message, which waits and goes first.
  */
 export function WatcherHoldBand({ room, now }: { readonly room: WatcherRoom | null; readonly now?: number | undefined }): ReactNode {
-  const hold = room?.state?.hold
+  // Part of Restart stopped threads: stable shows none of it, whatever a host sends.
+  const enabled = useRestartStopped()
+  const hold = enabled ? room?.state?.hold : undefined
   const [open, setOpen] = useState(false)
   const [trying, setTrying] = useState(false)
   const [refused, setRefused] = useState<string | null>(null)
@@ -66,6 +69,7 @@ export function WatcherHoldBand({ room, now }: { readonly room: WatcherRoom | nu
     return () => clearInterval(timer)
   }, [hold])
   const heldId = useId()
+  const details = useRef<HTMLDetailsElement>(null)
   if (hold === undefined) return null
   const words = holdBandWords(hold, now ?? tick)
   const limitedWithReset = hold.kind === 'limited' && hold.resetsAt !== undefined
@@ -79,13 +83,22 @@ export function WatcherHoldBand({ room, now }: { readonly room: WatcherRoom | nu
   const Icon = hold.kind === 'failing' ? Unplug : Clock
   const since = clock(hold.since)
   // A group, as the limit restart band is: the room changing announces nothing unasked.
-  return <section className="watcher-hold" role="group" aria-label={words.lead} data-kind={hold.kind}>
+  // Escape closes what is open in the band, Details first, and leaves focus on what opened it.
+  const escape = (event: React.KeyboardEvent): void => {
+    if (event.key !== 'Escape') return
+    const opened = details.current
+    if (opened?.open) { opened.open = false; opened.querySelector('summary')?.focus() }
+    else if (open) { setOpen(false); document.getElementById(`${heldId}-toggle`)?.focus() }
+    else return
+    event.preventDefault(); event.stopPropagation()
+  }
+  return <section className="watcher-hold" role="group" aria-label={words.lead} data-kind={hold.kind} onKeyDown={escape}>
     <Icon size={14} aria-hidden="true" />
     <div className="watcher-hold__body">
       <p className="watcher-hold__words"><strong>{words.lead}</strong> {words.rest}</p>
       <div className="watcher-hold__acts">
         {limitedWithReset
-          ? <button type="button" className="watcher-hold__link tt-focusable" aria-expanded={open} aria-controls={heldId} onClick={() => setOpen(value => !value)}>
+          ? <button id={`${heldId}-toggle`} type="button" className="watcher-hold__link tt-focusable" aria-expanded={open} aria-controls={heldId} onClick={() => setOpen(value => !value)}>
             <Trans>What’s held</Trans>
           </button>
           : null}
@@ -98,7 +111,7 @@ export function WatcherHoldBand({ room, now }: { readonly room: WatcherRoom | nu
       </div>
       {limitedWithReset && open ? <p id={heldId} className="watcher-hold__held">{heldWords(hold)}</p> : null}
       {refused !== null ? <p className="watcher-hold__error" role="alert">{refused}</p> : null}
-      {!limitedWithReset && hold.detail !== undefined ? <details className="watcher-hold__details">
+      {!limitedWithReset && hold.detail !== undefined ? <details ref={details} className="watcher-hold__details">
         <summary className="tt-focusable"><Trans>Details</Trans></summary>
         <pre>{hold.detail}</pre>
         <p className="watcher-hold__meta">{plural(hold.tries + 1, {

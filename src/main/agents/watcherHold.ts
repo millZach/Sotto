@@ -1,6 +1,7 @@
 import type { AgentThread } from '../../shared/agents'
 import { LIMIT_RESTART_GRACE_MS, LIMIT_RESTART_HORIZON_MS, type ScheduledRestart } from '../../shared/limitRestart'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
+import { failedTurnReason } from '../../shared/threadFailures'
 import { WATCHER_FAILING_RETRY_MS, WATCHER_HOLD_DETAIL_MAX, type WatcherHold } from '../../shared/watcherHold'
 
 /** The part of Watcher's thread the hold reads. */
@@ -130,23 +131,16 @@ export class WatcherHoldState {
       return
     }
     // A failure Watcher rested on when this run first read its turns is the last run's, which Sotto's own close may have
-    // made: only a scheduled limit holds for it. A failure is new when this run saw Watcher working, or another turn there.
-    if (!current && scheduled === undefined && (seen === undefined || !seen.running && (seen.turn === '' || seen.turn === key))) return
+    // made: only a limit holds for it, scheduled or named on its stop. A failure is new when this run saw Watcher working,
+    // or another turn there.
+    if (!current && !limited && (seen === undefined || !seen.running && (seen.turn === '' || seen.turn === key))) return
     this.failure = { threadId: thread.id, turnId: turn.id, kind: limited ? 'limited' : 'failing', provider,
       since: current?.since ?? now, resetsAt: reset, nextTryAt: reset === undefined ? now + WATCHER_FAILING_RETRY_MS : undefined,
       lastTryAt: current ? now : undefined, tries: current ? current.tries + 1 : 0, detail: this.detail(thread), detailAsked: 1 }
   }
 }
 
-/** The newest failed turn's error, as its adapter worded it, cut to what Details carries. */
-function failedTurnDetail(thread: Pick<WatcherHoldThread, 'activities'>): string | undefined {
-  const activities = thread.activities ?? []
-  for (let index = activities.length - 1; index >= 0; index--) {
-    const activity = activities[index]
-    if (activity?.kind !== 'turn') continue
-    if (activity.status !== 'failed') return undefined
-    const error = activity.error?.trim()
-    return error ? error.slice(0, WATCHER_HOLD_DETAIL_MAX) : undefined
-  }
-  return undefined
+/** The failed turn's error, as its adapter worded it, cut to what Details carries. */
+function failedTurnDetail(thread: Pick<WatcherHoldThread, 'activities' | 'lastTurn'>): string | undefined {
+  return failedTurnReason(thread)?.trim().slice(0, WATCHER_HOLD_DETAIL_MAX) || undefined
 }

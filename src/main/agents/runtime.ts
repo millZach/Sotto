@@ -710,7 +710,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const resumeSetting = (): boolean => restartStopped ? options.settings().restartStoppedThreads : options.settings().resumeThreadsAfterRestart
   const restartResume = options.resumeAfterRestart === true
     ? new RestartResume({ directory, control: agentControl, enabled: resumeSetting,
-      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id) }) : undefined
+      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id),
+      // Watcher hears the threads it resumed with the rest of a restart's news, for its one summary (#2234).
+      ...restartStopped && watcher ? { resumed: (threadId: string) => {
+        const hostId = agentControl.hostId(), provider = agentControl.liveThread(threadId)?.providerId
+        if (hostId && provider && threadId !== watcherThreadHere()) watcher.wakes.threadsRestarted(provider, [{ hostId, threadId }], 'resumed')
+      } } : {} }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: resumeSetting,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })

@@ -406,9 +406,11 @@ describe('restarting watched threads that stopped with work left', () => {
     expect(f.delivered).toHaveLength(1)
   })
 
-  it('leaves a thread the user stopped, one waiting on them, one not watched, one whose queue carries it, and Watcher', async () => {
+  it('leaves a thread the user stopped, one waiting on them, one still working in the background, one not watched, one whose queue carries it, and Watcher', async () => {
     const card = { id: 'card', kind: 'question' as const, title: 'Which one?', questions: [] } as unknown as AgentThread['requests'][number]
-    const f = await fixture({ watcher: 'watcher', watched: ['stopped', 'asking', 'queued', 'watcher'], waiting: id => id === 'queued', threads: [
+    const f = await fixture({ watcher: 'watcher', watched: ['stopped', 'asking', 'reviewing', 'background', 'queued', 'watcher'], waiting: id => id === 'queued', threads: [
+      thread('reviewing', { ...failed('reviewing'), prototypeReady: { messageId: 'reply', at: new Date(START).toISOString() } as unknown as AgentThread['prototypeReady'] }),
+      thread('background', { ...failed('background'), backgroundWork: [{ id: 'agent', type: 'subagent', label: 'Agent' }] }),
       thread('stopped', { status: 'idle', lastTurn: { id: 'stopped-1', status: 'interrupted' } }),
       thread('asking', { ...failed('asking'), requests: [card] }),
       thread('unwatched', failed('unwatched')),

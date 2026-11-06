@@ -44,6 +44,14 @@ describe('Watcher’s hold', () => {
     expect(hold.holds(START)).toBe(true)
   })
 
+  it('holds for a limit Watcher already rested on when Sotto started, whose stop names a reset to come', () => {
+    const hold = new WatcherHoldState()
+    const reset = new Date(START + 60 * 60_000).toISOString()
+    hold.read(watcher({ id: 'turn-1', status: 'failed', limitStop: { resetsAt: reset } }), undefined, START)
+    expect(hold.shown(NONE)).toEqual(expect.objectContaining({ kind: 'limited', resetsAt: reset }))
+    expect(hold.holds(START)).toBe(true)
+  })
+
   it('holds nothing for a failure Watcher already rested on when this run first read it', () => {
     const hold = new WatcherHoldState()
     hold.read(failedTurn('turn-1'), undefined, START)

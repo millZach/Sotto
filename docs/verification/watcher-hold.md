@@ -20,6 +20,9 @@ overflowed or clipped, and every line of the band met 4.5:1 on the surface under
   with **Try now**, the last try's time, and **Details** closed. Opened, Details shows the provider's error and "Failing
   since 11:22 am · 17 tries". Try now went, and the band said when.
 - **No reply.** The failed turn keeps its "Failed after 1m 00s" line, and its error shows nowhere in the conversation.
+  Nor does the reply Claude Code made of its error ("You've hit your weekly limit"), seeded marked as the provider's.
+- **Escape.** What's held and Details each close with Escape, focus back on what opened them
+  (`tests/unit/renderer/watcherHoldBand.test.tsx`).
 
 | Screenshot | What it shows |
 | --- | --- |

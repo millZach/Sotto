@@ -808,7 +808,7 @@ export class WatcherWakeUp {
    * them reset (ADR-0144). Watcher hears of each, watched or not, since unwatched threads carry on too: a watched one under
    * the request that watches it, as its other news goes, and one no request watches under none.
    */
-  threadsRestarted(provider: string, targets: readonly WatcherThreadTarget[], cause?: 'work-left'): void {
+  threadsRestarted(provider: string, targets: readonly WatcherThreadTarget[], cause?: 'work-left' | 'resumed'): void {
     if (!this.started || this.closed || !targets.length) return
     const observedAt = new Date(this.now()).toISOString()
     const events = this.withPassReads(() => targets.map((target): WatcherEvent => {

@@ -99,7 +99,9 @@ const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-res
 export const RESTART_SUMMARY = 'Reply to the user once, briefly: which threads Sotto restarted, and what still waits on them, by read_state’s waitingOnUser. Do not restart those threads again yourself.'
 const restartedWords = (event: WatcherEvent): string => `${event.restartCause === 'work-left'
   ? 'This thread’s last turn had ended with an error before it finished, so Sotto restarted it with a short note of its own, the same on every provider.'
-  : `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.`}${
+  : event.restartCause === 'resumed'
+    ? 'Sotto closed while this thread was working, so Sotto restarted it with its resume note when it opened again.'
+    : `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.`}${
   unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`
 /**
  * A move's line (#1178): the user moved the thread, Sotto ran the move, and how it ended. Watcher's watch went with a
@@ -176,14 +178,16 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
   // Each provider whose limit reset is said once, before its threads' lines (ADR-0144), and the watched threads restarted
   // for work left once (#2234). Then Watcher is asked for one summary of them all, the one notice the user reads.
   const restarts = new Map<string, number>()
-  let workLeft = 0
+  let workLeft = 0, resumed = 0
   for (const event of shown) if (event.kind === 'threads-restarted') {
     if (event.restartCause === 'work-left') workLeft++
+    else if (event.restartCause === 'resumed') resumed++
     else restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
   }
   const restartLines = [...[...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`),
     ...workLeft ? [`Sotto restarted ${workLeft === 1 ? 'one watched thread' : `${workLeft} watched threads`} whose last turn had ended with an error before it finished, after Sotto started again or a limit reset. Each is named below.`] : [],
-    ...restarts.size || workLeft ? [RESTART_SUMMARY] : []]
+    ...resumed ? [`Sotto restarted ${resumed === 1 ? 'one thread that was' : `${resumed} threads that were`} working when Sotto closed. Each is named below.`] : [],
+    ...restarts.size || workLeft || resumed ? [RESTART_SUMMARY] : []]
   const compose = (count: number, detailed: number) => {
     const lines = shown.slice(0, count).map((event, index) => line(event, index, index < detailed ? details[index] : undefined))
     const omitted = news.omitted + shown.length - count

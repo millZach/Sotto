@@ -1421,17 +1421,21 @@ test.describe("Watcher's room on the built app", () => {
     // The turn that met the failure posts no reply: its error is only under the band's Details.
     const failedTurn: AgentActivity = { id: 'watcher-failed-turn', kind: 'turn', title: 'Turn', turnId: 'watcher-reply', afterMessageId: 'watcher-reply', sequence: 1, status: 'failed', startedAt: at(80), completedAt: at(79),
       error: 'request to api.anthropic.com failed, reason: write EPROTO' } as AgentActivity
+    // The reply Claude Code made of its own error, which Watcher's room leaves out.
+    const errorReply: AgentMessage = { id: 'watcher-limit-reply', role: 'assistant', text: 'You’ve hit your weekly limit · resets Thursday 1pm', providerError: true,
+      createdAt: new Date(Date.UTC(2026, 6, 12, 19, 34)).toISOString() }
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
         const { page } = launched
         await openThreads(page)
-        await seedRoom(page, { current: true, activities: [failedTurn], more: () => ({ hold: limited }) })
+        await seedRoom(page, { current: true, activities: [failedTurn], messages: [errorReply], more: () => ({ hold: limited }) })
         await resizeContentWindow(launched, 1280, 800)
         await openRoom(page)
         const band = watcherPane(page).getByRole('group', { name: /^Watcher’s Claude Code limit resets /u })
         await expect(band).toContainText('Sotto is holding 37 news until then.')
         await expect(band.getByRole('button', { name: 'Try now' })).toHaveCount(0)
         await expect(watcherPane(page).getByText('write EPROTO')).toHaveCount(0)
+        await expect(watcherPane(page).getByText('You’ve hit your weekly limit')).toHaveCount(0)
         // From the keyboard: What's held opens and says where the news came from, and that a message goes first.
         const what = band.getByRole('button', { name: 'What’s held' })
         await what.focus()
@@ -1447,7 +1451,7 @@ test.describe("Watcher's room on the built app", () => {
         }
         // The composer still takes a message.
         await expect(page.locator('#watcher-prompt')).toBeVisible()
-        await seedRoom(page, { current: true, activities: [failedTurn], more: () => ({ hold: failing }) })
+        await seedRoom(page, { current: true, activities: [failedTurn], messages: [errorReply], more: () => ({ hold: failing }) })
         await openRoom(page)
         await resizeContentWindow(launched, 1280, 800)
         const down = watcherPane(page).getByRole('group', { name: 'Claude Code isn’t answering.' })

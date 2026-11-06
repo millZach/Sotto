@@ -7,6 +7,7 @@ import {
 } from '../../shared/limitRestart'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { watcherBackgroundWorkCount } from './watcherWakeUp'
 
 const RECORDS_MAX = 500
 /** What a client is told of a restart's time: the reset the provider gave, or now if that had passed, since the restart
@@ -280,7 +281,8 @@ export class LimitRestart {
 
   /**
    * Whether a watched thread stopped with work left (ADR-0144, November 5, 2026 amendment): its last turn ended with an
-   * error before it finished, nothing runs in it, nothing waits on the user or goes by itself, and its provider is
+   * error before it finished, nothing runs in it, not even background work, nothing waits on the user, not even a
+   * prototype for review, nothing goes by itself, and its provider is
    * connected. A turn the user stopped finished as they chose. A turn a usage limit stopped is the limit restart's, until
    * its reset has passed; a limit that named no reset waits for the user, as decision 3 says. Watcher's own thread is the
    * hold's (#2234), and Watcher hears its other news when the hold ends.
@@ -288,7 +290,9 @@ export class LimitRestart {
   private workLeft(thread: AgentThread): boolean {
     const turn = thread.lastTurn
     if (turn?.status !== 'failed' || thread.kind === 'watcher-history' || thread.id === this.options.watcherThreadId?.()) return false
-    if (isThreadClosed(thread) || isThreadTurnRunning(thread) || thread.requests.length > 0 || this.dormant(thread.id)) return false
+    // A card or a prototype waiting for review waits on the user; background work, monitoring or a subagent still runs in it.
+    if (isThreadClosed(thread) || isThreadTurnRunning(thread) || thread.requests.length > 0 || thread.prototypeReady !== undefined || this.dormant(thread.id)) return false
+    if (watcherBackgroundWorkCount(thread) > 0) return false
     if (thread.historyStatus !== undefined && thread.historyStatus !== 'ready') return false
     if (turn.limitStop && (turn.limitStop.resetsAt === undefined || Date.parse(turn.limitStop.resetsAt) + LIMIT_RESTART_GRACE_MS > this.now())) return false
     if (this.options.waiting?.(thread.id) === true) return false

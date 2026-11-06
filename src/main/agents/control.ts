@@ -37,7 +37,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
-import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadReadPurpose } from './host'
+import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
@@ -3832,8 +3832,10 @@ export class AgentControl {
     const kept = this.failuresSeen.reasonOf(threadId)
     if (kept !== undefined) return kept
     const thread = this.threadById(threadId)
-    const activities = thread && this.dependencies.host.activities?.(threadId, thread.historyEpoch)
-    return thread && activities ? failedTurnReason({ activities, lastTurn: thread.lastTurn }) : undefined
+    // The workspace host reads a thread's stored activities as its history source does; another host reads none here.
+    const stored = this.dependencies.host as AgentHost & Partial<Pick<ThreadHistorySource, 'activities'>>
+    const activities = thread && stored.activities?.(threadId, thread.historyEpoch)
+    return thread && activities ? failedTurnReason({ activities: activities as AgentThread['activities'], lastTurn: thread.lastTurn }) : undefined
   }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {

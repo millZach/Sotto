@@ -52,8 +52,11 @@ export const watcherEventSchema = z.object({
   delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
   swarm: z.object({ id: z.uuid(), count: z.number().int().positive(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative() }).strict().optional(),
   restartedBy: z.string().min(1).max(64).optional(),
-  /** A `threads-restarted` thread Sotto restarted because its last turn stopped with work left, not at a limit (#2234). */
-  restartCause: z.literal('work-left').optional(),
+  /**
+   * Why Sotto restarted a `threads-restarted` thread other than a limit's reset (#2234): its last turn stopped with work
+   * left, or Sotto closed while it worked and its resume note went (ADR-0076).
+   */
+  restartCause: z.enum(['work-left', 'resumed']).optional(),
   moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),
   told: z.object({ words: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX), userWords: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX).optional(),
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),

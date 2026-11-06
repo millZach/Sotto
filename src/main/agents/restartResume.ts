@@ -37,6 +37,8 @@ export interface RestartResumeOptions {
   readonly tool: (threadId: string) => boolean
   /** A gated thread keeps its saved record unchanged until the owning feature is available again. */
   readonly preservesDormantThread?: (threadId: string) => boolean
+  /** Told of each thread whose resume note is in its queue, for Watcher's one summary after a restart (#2234). */
+  readonly resumed?: (threadId: string) => void
   readonly now?: () => number
 }
 
@@ -168,7 +170,11 @@ export class RestartResume {
     const news: RestartNews = { source: 'restart', since: record.since, resumes: record.resumes + 1 }
     this.delivering.add(thread.id)
     const handing: Promise<void> = this.options.control.deliverWakeUp(thread.id, news, { tool: this.options.tool(thread.id) }).then(
-      () => { if (!this.dormant(thread.id)) this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true }) },
+      () => {
+        if (this.dormant(thread.id)) return
+        this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true })
+        this.options.resumed?.(thread.id)
+      },
       // Nothing was queued. A thread that went is dropped; one Sotto closed on is kept for the next start. A thread the
       // read before the note found working carried the turn on by itself, and its record keeps the count.
       () => {

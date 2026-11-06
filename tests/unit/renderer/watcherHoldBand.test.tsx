@@ -1,12 +1,23 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WatcherHold } from '../../../src/shared/watcherHold'
 import type { WatcherRoomResult, WatcherRoomState } from '../../../src/shared/watcherRoom'
 import type { WatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 import { WatcherHoldBand, holdBandWords } from '../../../src/renderer/src/watcher/WatcherHoldBand'
+import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
+
+vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(),
+}))
+/** The Owl answer for Restart stopped threads, which the band asks before it exists. */
+const owl = (on: boolean): void => {
+  vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'restart-stopped-threads': on } } } as unknown as AppContextValue)
+}
+beforeEach(() => owl(true))
 
 /**
  * The band in Watcher's room while its own provider is limited or failing (#2234, Zach's pick A): one band, the one
@@ -43,6 +54,16 @@ describe('Watcher’s hold band', () => {
     await userEvent.click(what)
     expect(what.getAttribute('aria-expanded')).toBe('true')
     expect(band.textContent).toContain('6 from pull requests, 31 from threads. Watcher gets it in one message at the reset. A message you send goes first.')
+    // Escape closes it, and focus stays on what opened it.
+    await userEvent.keyboard('{Escape}')
+    expect(what.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(what)
+  })
+
+  it('shows nothing on stable, whatever a host sends', () => {
+    owl(false)
+    const { container } = render(<WatcherHoldBand room={room(limited)} now={NOW} />)
+    expect(container.textContent).toBe('')
   })
 
   it('says a failing provider plainly, offers Try now and keeps the error under Details', async () => {
@@ -53,7 +74,13 @@ describe('Watcher’s hold band', () => {
     expect(band.textContent).toContain('Last try 2:38 pm')
     expect(band.textContent).toContain('Failing since 1:22 pm · 17 tries')
     // The error is there only for whoever opens Details.
-    expect(screen.getByText(/write EPROTO/u).closest('details')?.open).toBe(false)
+    const details = screen.getByText(/write EPROTO/u).closest('details')!
+    expect(details.open).toBe(false)
+    await userEvent.click(screen.getByText('Details'))
+    expect(details.open).toBe(true)
+    // jsdom does not focus a summary, so the key goes to it directly, as a browser's focus would send it.
+    fireEvent.keyDown(screen.getByText('Details'), { key: 'Escape' })
+    expect(details.open).toBe(false)
     await userEvent.click(screen.getByRole('button', { name: 'Try now' }))
     expect(tried).toHaveBeenCalledTimes(1)
   })

@@ -2468,6 +2468,11 @@ it('tells Watcher of watched threads restarted for work left, and asks it for on
   const limit = { ...told[0]!, id: 'limit', restartCause: undefined }
   const both = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [...told, limit], omitted: 0 })
   expect(both.split(RESTART_SUMMARY)).toHaveLength(2)
+  // Threads Sotto closed on and resumed are named in the same summary.
+  const resumed = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [{ ...told[0]!, id: 'resumed', restartCause: 'resumed' }], omitted: 0 })
+  expect(resumed).toContain('Sotto restarted one thread that was working when Sotto closed.')
+  expect(resumed).toContain('Sotto closed while this thread was working, so Sotto restarted it with its resume note when it opened again.')
+  expect(resumed.split(RESTART_SUMMARY)).toHaveLength(2)
   // News with no restart asks for no summary.
   expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [], omitted: 0 })).not.toContain(RESTART_SUMMARY)
 })
