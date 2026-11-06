@@ -6,6 +6,10 @@ Read-only inspection of `~/Library/Application Support/sotto/workspace.json` fou
 
 The install log records build `0.1.43-owl.20261105.3` installed at 17:22:11. No evidence establishes a causal connection to the relaunch. A current read-only `ls-remote` with `nativeEnvironment()`'s allow-list and the runner's Git environment succeeded in 1.11 seconds; with the system-only PATH it succeeded in 0.90 seconds. The historical process environment is unavailable.
 
+Follow-up evidence supplied by the user comes from other services on the same Mac: one logged `[Errno 8] nodename nor servname provided, or not known` from 17:28:24 to 17:39:05, and another logged `fetch failed` every 30 seconds from about 17:27 to 17:38. A third check at 17:41 succeeded. Both failed sends fall inside this window, and their 30,197 ms and 49,832 ms durations fit Git hitting its 30-second deadline during a DNS outage, with the longer send potentially waiting on an early fetch too.
+
+The incident was most likely a local DNS outage on the Mac. This is an inference from those logs and the send timings, not direct proof from Git, whose stderr was not kept. The collision below is a separate defect, reproduced and fixed here, and was probably not what caused this incident.
+
 ## Reproduced defect
 
 In a temporary local repository, clone its old `main`, add a linked worktree, then advance the source's `main`. Run these concurrently from the clone and linked worktree, with `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0` and `GIT_OPTIONAL_LOCKS=0`:
@@ -22,7 +26,7 @@ error: cannot lock ref 'refs/remotes/origin/main': is at 1cc1672763ceb4f74568bf9
 ! 141f9d2..1cc1672 main -> origin/main (unable to update local ref)
 ```
 
-The two production paths have separate fetch coordination. This is a reproduced setup defect, not proof of the historical incident's cause. Retrying only this selected-ref collision handles a concurrent Git process too, without changing either fetch service's queue or weakening the requirement for a successful origin fetch.
+The two production paths have separate fetch coordination. Retrying only a failure to lock this exact selected ref handles both a ref that another fetch moved and a lock file that another fetch still holds, without changing either fetch service's queue or weakening the requirement for a successful origin fetch. A stale lock still fails after three attempts. This separate defect was probably not the historical incident's cause.
 
 ## Retry inspection
 
@@ -30,4 +34,4 @@ The two production paths have separate fetch coordination. This is a reproduced 
 
 ## Verification scope
 
-`node node_modules/vitest/vitest.mjs run tests/unit/main/threadOriginFetch.test.ts` passed all eight tests. The focused file covers collision recovery, bounded attempts, another-ref refusal, connection/credential refusal at both stages, missing remote branches, failed-cache eviction, persisted timeout stderr and real child-process stderr. `npm run typecheck` passed, and ESLint passed on the two changed TypeScript files. No app was launched; full CI, Playwright, design gates and a packaged-app reproduction are intentionally not run. The original incident remains undetermined until a recurrence supplies the new local diagnostic.
+`node node_modules/vitest/vitest.mjs run tests/unit/main/threadOriginFetch.test.ts` passed all nine tests. The focused file covers collision recovery with both moved-ref and existing-lock-file wording, bounded attempts, another-ref refusal, connection/credential refusal at both stages, missing remote branches, failed-cache eviction, persisted timeout stderr and real child-process stderr. `npm run typecheck` passed, and ESLint passed on the two changed TypeScript files. No app was launched; full CI, Playwright, design gates and a packaged-app reproduction are intentionally not run. The original incident is most likely explained by the local DNS outage inferred above; a recurrence can now supply Git's own diagnostic.

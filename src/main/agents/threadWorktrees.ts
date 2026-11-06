@@ -696,9 +696,9 @@ export class ThreadWorktrees {
       } catch (error) {
         const reported = await failure('fetch', error)
         // Background fetches and other Git processes share origin refs across every worktree. If another
-        // fetch moved this ref first, fetch again against its new value; connection/auth failures still stop.
+        // fetch moved or still holds this ref, try again; connection/auth failures still stop.
         const collision = error instanceof Error && error.message.split(/\r?\n/u).some(line =>
-          line.startsWith(`error: cannot lock ref 'refs/remotes/origin/${baseBranch}': is at `) && / but expected [0-9a-f]+$/u.test(line))
+          line.startsWith(`error: cannot lock ref 'refs/remotes/origin/${baseBranch}': `))
         if (!collision || attempt >= 2) throw reported
       }
     }

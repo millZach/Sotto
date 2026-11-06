@@ -47,6 +47,13 @@ describe('origin fetch recovery', () => {
     expect(f.fetch).toHaveBeenCalledTimes(4)
   })
 
+  it('retries when another fetch still holds the selected ref lock file', async () => {
+    const f = await fixture()
+    f.fetch.mockRejectedValueOnce(new Error("error: cannot lock ref 'refs/remotes/origin/main': Unable to create '/repo/.git/refs/remotes/origin/main.lock': File exists."))
+    expect(await f.allocate()).toMatchObject({ originBase: 'fetched' })
+    expect(f.fetch).toHaveBeenCalledTimes(2)
+  })
+
   it.each(['ls-remote', 'fetch'] as const)('keeps %s connection failures fatal, preserves their cause and redacts diagnostic URLs', async stage => {
     const f = await fixture()
     const error = Object.assign(new Error("fatal: Authentication failed for 'https://user:secret@example.invalid/repo'"), { code: 128 })
