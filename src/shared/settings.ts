@@ -316,6 +316,11 @@ export interface AppSettings {
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
   /**
+   * Whether the popup can be used at all (Owl `popup`, ADR-0181). Off, its window and renderer do not exist, its shortcut
+   * is let go and the tray does not offer it; the saved shortcut is kept for turning it back on.
+   */
+  popupEnabled: boolean
+  /**
    * The global shortcut that shows or hides the popup (Owl `popup`, ADR-0181), as an Electron accelerator; null has
    * none, and the popup opens only from the tray. Kept whole while the feature is off.
    */
@@ -527,6 +532,7 @@ const fieldSchemas = {
   hotkeyStandby: z.boolean(),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  popupEnabled: z.boolean(),
   popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
@@ -657,6 +663,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pressShortcuts: [],
   holdShortcuts: [],
   // Option-Shift-Space on a Mac, the chord Sotto Popup used before the popup was built in (ADR-0181).
+  popupEnabled: true,
   popupShortcut: 'Alt+Shift+Space',
   // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
   threadShortcuts: {},
@@ -860,6 +867,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    popupEnabled: parseField(persisted, 'popupEnabled', defaults),
     popupShortcut: parseField(persisted, 'popupShortcut', defaults),
     // Row by row, so one damaged shortcut falls back to its own default and no other.
     threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),

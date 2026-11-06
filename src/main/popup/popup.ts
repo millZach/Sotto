@@ -31,6 +31,8 @@ export interface Popup {
   readonly ipc: PopupIpcService
   toggle(): void
   show(): void
+  /** False while the user has turned the popup off in Settings: nothing makes its window then. */
+  enabled(): boolean
   /** Every settings change: the shortcut follows the saved keys and the card its look. */
   settingsChanged(settings: AppSettings): void
   /** Settings records keys, or stops recording: the popup's shortcut stands aside meanwhile (ADR-0181). */
@@ -62,10 +64,12 @@ export function createPopup(dependencies: PopupDependencies, startup: AppSetting
       void dependencies.command({ type: 'observe-threads', threadIds: [] }, popupClient).catch(() => undefined)
     },
   })
-  const toggle = (): void => { void window.toggle().catch(() => undefined) }
+  let enabled = startup.popupEnabled
+  const heldKeys = (settings: AppSettings): AppSettings => settings.popupEnabled ? settings : { ...settings, popupShortcut: null }
+  const toggle = (): void => { if (enabled) void window.toggle().catch(() => undefined) }
   const shortcut = new PopupShortcut(dependencies.shortcuts, toggle, dependencies.platform,
     state => dependencies.sendToMain(POPUP_SHORTCUT_STATE_CHANGED, state))
-  shortcut.apply(startup)
+  shortcut.apply(heldKeys(startup))
 
   const ipc: PopupIpcService = {
     hide: () => window.hide(),
@@ -107,9 +111,12 @@ export function createPopup(dependencies: PopupDependencies, startup: AppSetting
     feed,
     ipc,
     toggle,
-    show: () => { void window.show().catch(() => undefined) },
+    show: () => { if (enabled) void window.show().catch(() => undefined) },
+    enabled: () => enabled,
     settingsChanged: settings => {
-      shortcut.apply(settings)
+      enabled = settings.popupEnabled
+      shortcut.apply(heldKeys(settings))
+      if (!enabled) window.close()
       window.send(SETTINGS_CHANGED, settings)
     },
     suspendShortcut: suspended => shortcut.suspend(suspended),

@@ -10030,6 +10030,7 @@ msgid "Wait for this turn to finish before forking"
 msgstr ""
 
 #. A thread row's state: a command it started is still running.
+#. A thread row's state: a command it started is still running.
 #. The readout beside the creature: the thread waits on something it started.
 #. The readout beside the creature: the thread waits on something it started.
 #: src/renderer/src/agents/threadFacts.ts
@@ -10309,6 +10310,7 @@ msgid "worked on the cloud iPhone"
 msgstr ""
 
 #. A provider's background agent's state: it is running.
+#. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
 #. A turn that is running.
