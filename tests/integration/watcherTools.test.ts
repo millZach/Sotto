@@ -1237,6 +1237,8 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   await vi.waitFor(() => expect(master().some(command => command.type === 'send' && command.watcherNews?.includes(expected))).toBe(true))
   const sent = master().find(command => command.type === 'send' && command.watcherNews?.includes(expected))!
   expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
+  // A question's news says what it asks, in the worker's words, worked out as it goes and saved nowhere (#2230).
+  if (kind === 'question') expect(sent.type === 'send' && sent.watcherNews).toContain('Its question, in the worker\'s words: "private_worker_question_82ac".')
   // Sent, Watcher's conversation shows neither the message nor the news.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
@@ -2437,15 +2439,18 @@ it('works out what waits on the user from live data at each read: open cards, a 
   })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual([
+  const listed = [
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
     { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-below', delegatedThreadId: 'synthetic-delegated-below' },
     { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
-  ])
-  expect(JSON.stringify(read)).not.toContain('synthetic private')
-  // The owl panel reads the same live list (Zach's pick A).
-  expect(f.service.state().state?.waitingOnUser).toEqual(read.waitingOnUser)
+  ]
+  // A question card's own words come with its row, read only (#2230); a permission request's never do.
+  expect(read.waitingOnUser).toEqual([{ ...listed[0], asks: { question: 'synthetic private question', choices: [] } }, listed[1],
+    { ...listed[2], asks: { question: 'synthetic private question below', choices: [] } }, listed[3]])
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+  // The owl panel reads the same live list (Zach's pick A), which carries no card's words.
+  expect(f.service.state().state?.waitingOnUser).toEqual(listed)
   // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
   open = false
   const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
@@ -2474,7 +2479,7 @@ it('lists a card once when the thread holding it is watched and a watched thread
   ]
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual(expected)
+  expect(read.waitingOnUser).toEqual([expected[0], { ...expected[1], asks: { question: 'synthetic', choices: [] } }])
   expect(f.service.state().state?.waitingOnUser).toEqual(expected)
 })
 

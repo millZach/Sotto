@@ -868,3 +868,12 @@ On November 2 `settle_thread` refused a thread for an open pull request, #2004, 
 ## November 4, 2026: every thread keeps a next-turn choice
 
 [ADR-0192](0192-a-thread-keeps-a-choice-for-its-next-turn.md), Zach's pick, November 4, 2026: in Sotto Owl any other thread's chips also keep a model, effort, speed or permission chosen while it works, and main sends that choice once the thread rests. Watcher's own next-turn choice above is unchanged: it keeps its own path, and its permission chip still waits for Watcher to finish.
+
+## November 5, 2026: Watcher reads what a waiting question asks, and whether a closed card was answered (#2230)
+
+An audit of Watcher's sessions from October 14 to November 5 found Watcher guessing what cards asked: `waitingOnUser` and question news said only that a thread waited on the user's answer, with no question, no choices and no prototype link. It also found Watcher telling the user "You answered" when a card had only closed, since the closing line said the user answered it or its turn ended without an answer.
+
+- **A question's own words come with it.** Each `waitingOnUser` row of a question card carries `asks`: its question, its header first where it has one, up to eight choices, how many more choices and questions it has, and the names of the prototype pages Sotto found for it (ADR-0085). Question news says the same in one line, labelled as the worker's words. Both are worked out as Watcher reads, from the owning host's thread, and never saved, as a finished turn's reply is. The owl panel's live list, which the room builds on every update, carries none of it. A page goes by the name the thread gave it, never its token: a token stays with the clients that are sent the question.
+- **Not a permission request's.** Its words can carry a command's arguments, so its row and news stay as they were.
+- **Read only.** Watcher still never answers a card; only the user does. Nothing in these words asks Watcher to act.
+- **A closed card says which.** The closing says the user answered it only when Sotto saw the answer go, as before. When Sotto saw no answer and the thread's turn had ended too, it says the card ended without an answer. Otherwise, as when a phone answers a paired computer's card directly, which this desktop does not see, it says Sotto cannot tell and tells Watcher not to say the user answered.
