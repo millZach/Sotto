@@ -259,6 +259,15 @@ Zach decided on November 5, 2026, with the picks recorded in `docs/prototypes/co
 **Consequences.** No host is added and no key is used. What reaches each provider is what decision 3 already sends. The tool's descriptions tell the agent to call it only when the user asks, but the gate does not depend on the agent following them. An agent can still put a question the user did not mean into the one Council their message allows. The question shows at the top of the record, and **Stop** works as on any Council. A dictated message names the Council the same way a typed one does.
 
 
+## The Seat grid (amendment, November 6, 2026)
+
+Drake picked C, Seat grid, in [the record prototype](../prototypes/council-record-prototype.html). This replaces decision 4's prompt rows and decision 6's text-then-verdict layout with six stage rows and seat columns, ending with Chair. History belongs to Framing; amendments belong to Fairness check. Repairs are notes under their original turn in the reader, with both threads reachable. Marks name done, working, no result, asked again, changed its answer or needs you, using shape as well as colour. Blank cells are empty.
+
+Each round has one reader and one grid Tab stop. Left and Right follow filled cells in reading order; Up and Down follow that seat, skipping blanks. Moving selects; Enter and Space also select. The first selection is the first trouble, otherwise Verdict for a finished round or the turn being worked on. A user's selection survives new turns. The reader announces its selection politely without moving focus. Arrow keys bring the focused mark into view without scrolling to the reader. A click, Enter, Space or a notice link scrolls the reader’s top into view only when fewer than about three lines are visible; Shift+Tab or scrolling returns to the grid. Needs you means a waiting turn or one with actions. An ended turn without a result and without actions has a × mark, with no trouble notice. The key shows only marks in use and is omitted when all are done. While framing can change, its line opens a closed fold above the grid with the criteria, research and controls; Escape closes it and restores focus. Afterwards the framing is in the chair’s Framing cell, or above the grid if that turn is absent. Earlier rounds fold to their questions and retain their selections.
+
+The reader retains turn states, long summaries, checked citations and sources as lists, thread links and recovery actions, the framing and its controls, crux check, verdict, counts and objections. While framing can change, its controls stay above the grid. A quiet warning tint above the grid links to trouble. The follow-up form stays below the latest round. This changes no Council data, authority or Owl gate.
+
+
 [C01]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilSnapshot.ts#L22-L50
 [C02]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilSnapshot.ts#L57-L71
 [C03]: https://github.com/millZach/Sotto/blob/541d1a1f41aea9a2945f69fcef57488c96fc33db/src/main/council/councilService.ts#L613-L646
