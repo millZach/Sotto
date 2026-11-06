@@ -32,6 +32,8 @@ type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: n
    * restored from a saved position or not, is read from its first byte.
    */
   file?: FileIdentity | undefined
+  /** Whether `file` came from a saved position, which may hold its ID rounded to a number (`sameFile`). */
+  fileSaved: boolean
   /** Whether the tail has read its rollout to the end once, or holds a saved position that had. */
   caughtUp: boolean
   /** Its saved position: not looked for yet, to be read before the tail first reads, or dealt with. */
@@ -50,12 +52,21 @@ const MAX_LOCATE_BACKOFF_MS = 60_000
 const SAVE_DELAY_MS = 30_000
 
 type FileIdentity = { readonly ino?: string | undefined; readonly birthtimeMs?: number | undefined }
-function identityOf(stats: { readonly ino: number | bigint; readonly birthtimeMs: number }): FileIdentity {
-  return { ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
+/**
+ * Read from stats taken as bigints: an NTFS file ID is 64 bits, its top 16 a reuse count, so as a number it is rounded
+ * and a file put in another's place can share its ID (#2145).
+ */
+function identityOf(stats: { readonly ino: bigint; readonly birthtimeNs: bigint }): FileIdentity {
+  const birthtimeMs = Number(stats.birthtimeNs) / 1e6
+  return { ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(birthtimeMs) ? { birthtimeMs } : {}) }
 }
-/** Some Windows filesystems report no inode; the creation time is then the only identity on offer. */
-function sameFile(left: FileIdentity, right: FileIdentity): boolean {
-  if (left.ino || right.ino) return Boolean(left.ino && right.ino && left.ino === right.ino)
+/**
+ * Some Windows filesystems report no inode; the creation time is then the only identity on offer. A position saved
+ * before IDs were read whole (#2145) holds its ID as a number gave it, which `saved` lets match, so it is not read again
+ * from the first byte.
+ */
+function sameFile(left: FileIdentity, right: FileIdentity, saved = false): boolean {
+  if (left.ino || right.ino) return Boolean(left.ino && right.ino && (left.ino === right.ino || saved && left.ino === String(Number(right.ino))))
   return left.birthtimeMs !== undefined && right.birthtimeMs !== undefined && Math.abs(left.birthtimeMs - right.birthtimeMs) < 1
 }
 
@@ -223,7 +234,7 @@ export class CodexSessionLogWatcher {
     catchUp?: ((threadId: string) => boolean) | undefined }) {}
   observe(threadId: string): void {
     if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities(),
-      lineStart: 0, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
+      lineStart: 0, fileSaved: false, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
@@ -320,6 +331,7 @@ export class CodexSessionLogWatcher {
     if (tail.path !== position.path) { tail.caughtUp = false; return }
     tail.offset = position.offset; tail.lineStart = position.offset
     tail.file = { ...(position.ino === undefined ? {} : { ino: position.ino }), ...(position.birthtimeMs === undefined ? {} : { birthtimeMs: position.birthtimeMs }) }
+    tail.fileSaved = true
     for (const id of position.seen) tail.seen.add(id)
     tail.identities = CodexRolloutIdentities.restore(position.identities)
   }
@@ -383,11 +395,12 @@ export class CodexSessionLogWatcher {
       const file = await open(tail.path, 'r')
       const lineStart = tail.lineStart
       try {
-        const stats = await file.stat()
-        const size = stats.size
+        const stats = await file.stat({ bigint: true })
+        const size = Number(stats.size)
+        const identity = identityOf(stats)
         // A saved position is trusted only for the file it was taken from, and only while that file is not shorter.
-        if (tail.file && !sameFile(tail.file, identityOf(stats))) this.reset(tail)
-        tail.file = identityOf(stats)
+        if (tail.file && !sameFile(tail.file, identity, tail.fileSaved)) this.reset(tail)
+        tail.file = identity; tail.fileSaved = false
         if (size < tail.offset) this.reset(tail)
         // Background polls stay bounded. A guarded target read reaches the captured
         // file size with bounded buffers so takeover evidence is never truncated.

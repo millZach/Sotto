@@ -442,6 +442,57 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     for (const index of [7, 8]) expect(restored.identities('thread', `turn-${index}`)).toEqual(reference.identities('thread', `turn-${index}`))
   })
 
+  /**
+   * File IDs as NTFS gives them: 64 bits with a reuse count on top, so two files made one after the other round to one
+   * number and differ only as bigints (#2145). The low ten bits keep two files apart and always round away as a number.
+   */
+  async function largeFileIds(): Promise<void> {
+    const probe = await open(tmpdir(), 'r')
+    const handles = Object.getPrototypeOf(probe) as { stat(options?: { bigint?: boolean }): Promise<{ ino: number | bigint }> }
+    await probe.close()
+    const native = handles.stat
+    vi.spyOn(handles, 'stat').mockImplementation(async function (this: unknown, options?: { bigint?: boolean }) {
+      const stats = await native.call(this, options)
+      const id = 2n ** 63n + BigInt(stats.ino) % 1024n
+      stats.ino = options?.bigint ? id : Number(id)
+      return stats
+    })
+  }
+
+  it('tells a rollout put in its place from the one it read when file IDs are too large for a number', async () => {
+    const { root, path } = await rollout()
+    await largeFileIds()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const messages: AgentMessage[] = []
+    const first = watcher(root, messages, { positions })
+    await first.pollThread('thread')
+    await writeFile(`${path}.new`, turn(7) + turn(8))
+    await rename(`${path}.new`, path)
+    await first.pollThread('thread')
+    expect(messages.map(message => message.id)).toEqual(['user-1', 'user-7', 'user-8'])
+    await first.stop()
+    expect(BigInt(JSON.parse(positions.kept.get('thread')!).ino)).toBeGreaterThan(2n ** 63n)
+  })
+
+  it('reads on from a position saved with its file ID rounded to a number', async () => {
+    const { root, path } = await rollout()
+    await largeFileIds()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const first = watcher(root, [], { positions })
+    await first.pollThread('thread')
+    await first.stop()
+    const saved = JSON.parse(positions.kept.get('thread')!) as RolloutPosition
+    // With no message marked seen, a read from the first byte would report the first turn's again.
+    positions.kept.set('thread', JSON.stringify({ ...saved, ino: String(Number(saved.ino)), seen: [] }))
+    await appendFile(path, turn(2))
+    const messages: AgentMessage[] = []
+    const second = watcher(root, messages, { positions })
+    await second.pollThread('thread')
+    expect(messages.map(message => message.id)).toEqual(['user-2'])
+  })
+
   it('ends a read queued for a thread let go while it waited, without taking the thread up again', async () => {
     const { root, path } = await rollout()
     const positions = new MemoryPositions()
