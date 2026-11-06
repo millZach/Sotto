@@ -658,6 +658,14 @@ Of four slider designs in an HTML prototype (captured as the tag `prototype/watc
 
 Idle compaction (ADR-0127) now reaches Watcher's own conversation too, while Watcher rests.
 
+## November 5, 2026: Watcher compacts at 250k by default (#2233)
+
+This amends October 24's **Compact Watcher at** default. Over October 14 to November 5 the median Watcher call carried 216k-248k tokens, with a p90 of about 360k. All 67 compactions came at about 400k, every 3 to 7 hours, and cache reads were $680 of Watcher's $1,042. Zach chose 250k as the new default, over 200k (the slider's floor, with about twice as many compactions) and over changing the default for new installs only.
+
+- **The default is 250k.** The slider keeps its range, 200k to 1M on a 50k step.
+- **A saved 400k moves once.** Settings are saved whole, so a saved 400k, the old default, can't be told apart from a point nobody touched. The first read of a profile without Sotto's mark `watcherCompactAtMoved` moves a saved 400k to 250k, and every later read keeps what is saved, 400k included. Any other saved point never moves. The mark is not on the patch list, and no control sets it. A stable build doesn't know the mark and drops it at its next save; an Owl build reading that file afterwards moves a saved 400k once more.
+- **Unchanged:** what a compaction keeps. Compacting earlier changes only how often it runs. `read_state` after a compaction, the kept lines and the continuity summary's distinctions (November 3, #2102) carry the same things at any point.
+
 ## October 24, 2026: Watcher hears the user answer, reads what waits on them, and keeps its notes a line at a time
 
 Watcher kept telling Zach that items were waiting on him after he had answered them. When the user answered a watched thread's question or permission card, or a prototype stopped waiting for review, Sotto sent Watcher no news, so its notes and its last news still said the card was open. Its notes were hard to keep too: `keep_state` replaced a whole list, twenty lines of three hundred characters, so Watcher dropped unfinished notes to make room, and a note that was done could only be deleted. Zach asked for five changes on October 24, 2026.
