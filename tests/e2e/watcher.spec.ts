@@ -708,9 +708,9 @@ test.describe("Watcher's room on the built app", () => {
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
-      // Shown, and not only to assistive technology (the name, below 450 pixels off macOS).
+      // Shown, and not only to assistive technology (the name, when the Watcher tab carries it).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), ...head.querySelectorAll('.watcher-head__tabs button'), head.querySelector('.watcher-head__list'),
         ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       return {
@@ -718,7 +718,7 @@ test.describe("Watcher's room on the built app", () => {
         head: { ...rect(head), right: head.getBoundingClientRect().right - parseFloat(style.paddingRight), height: head.getBoundingClientRect().height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         // A label or count cut off by its own control.
-        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1, .watcher-head__tab')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
@@ -742,7 +742,7 @@ test.describe("Watcher's room on the built app", () => {
             // macOS draws its own traffic lights and has none of Sotto's window controls.
             room.querySelector<HTMLElement>('.threads-view__winctl')?.style.setProperty('display', mac ? 'none' : '')
           }, platform === 'darwin')
-          // Off macOS this checks the two narrowest panes, which this change leaves as they were.
+          // Off macOS this checks the two narrowest panes, where navigation takes the second row.
           for (const [width, height, steps] of platform === 'darwin' ? SPOTS : SPOTS.slice(0, 2)) {
             await resizeContentWindow(launched, width, height)
             await settle(page)
@@ -763,7 +763,7 @@ test.describe("Watcher's room on the built app", () => {
             if (platform === 'darwin') {
               // Nothing of the header's in the traffic lights' row where they are drawn, 16 to about 76 pixels in.
               for (const part of reading.parts.filter(candidate => candidate.top < 38)) expect.soft(part.left, `${part.name} clear of the traffic lights, ${where}`).toBeGreaterThanOrEqual(84)
-            } else expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+            } else expect.soft(reading.head.height, `header rows, ${where}`).toBe(reading.pane < 650 ? 80 : 44)
             result[`mac-header-${platform}-${appearance}-${Math.round(reading.pane)}px-${width}x${height}`] = reading
             if (platform === 'darwin') {
               // The capture draws the traffic lights in where macOS 26 puts them (16 pixels in and down, about 60 across),
@@ -2018,14 +2018,15 @@ test.describe("Watcher's room on the built app", () => {
 
   test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
     // The header off macOS: the tile, the name, All threads, the way off the page (the room switch, the pages and the
-    // update control), then Stop all while it shows, on one row. On macOS the header starts past the traffic lights, which its own journey checks.
+    // update control), then Stop all while it shows. Below 650 pixels navigation and Stop all take a second row.
+    // On macOS the first row starts past the traffic lights, which its own journey checks.
     test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
       // Shown, and not only to assistive technology (the name, in a narrow pane).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), ...head.querySelectorAll('.watcher-head__tabs button'), head.querySelector('.watcher-head__list'),
         ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       const box = head.getBoundingClientRect()
@@ -2036,19 +2037,20 @@ test.describe("Watcher's room on the built app", () => {
         head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         labels: labels.map(node => node.textContent ?? ''),
+        hasTeams: head.querySelector('.watcher-head__tabs') !== null,
         present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), stopAll: present('.watcher-stop-all__button') },
         // A label or count cut off by its own control, or the name cut to an ellipsis.
-        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1, .watcher-head__tab')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
     const apart = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
       a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5
     const round = (value: number) => Math.round(value * 10) / 10
-    // watcher.css: while Stop all shows, Watcher's name gives way below this width.
-    const NAME_FROM = 500
-    // The narrowest pane that shows All threads' label beside Stop all, captured with three-digit counts.
-    const CAPTURE_100 = 570
+    // watcher.css: below this width the Watcher tab carries the name, when Teams is on.
+    const NAME_FROM = 800
+    // All threads' label returns at this width, captured with three-digit counts.
+    const CAPTURE_100 = 800
     const evidence = evidenceDirectory('artifacts/watcher-header-overlap')
     await mkdir(evidence, { recursive: true })
     const readings: Record<string, unknown> = {}
@@ -2097,12 +2099,11 @@ test.describe("Watcher's room on the built app", () => {
                 const where = `${Math.round(reading.pane)}px pane at ${width}x${height}, ${appearance}, ${stopAll ? 'with' : 'without'} Stop all, ${counts} counts`
                 expect(Math.abs(reading.pane - target), `the divider moved to ${target}px, ${where}`).toBeLessThanOrEqual(1)
                 // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
-                // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
+                // styles keep it (always without Teams, from NAME_FROM pixels with Teams).
                 const { name, ...always } = reading.present
-                // More Watcher actions went with the Threads in flight limit (#1183), and the tabs with Watched and Watcher's
-                // picture (October 27, 2026).
+                // More Watcher actions went with the Threads in flight limit (#1183); the remaining controls stay present.
                 expect.soft(always, where).toEqual({ tile: true, list: true, stopAll })
-                if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
+                expect.soft(name, `the name shown, ${where}`).toBe(!reading.hasTeams || reading.pane >= NAME_FROM)
                 for (const [index, part] of reading.parts.entries()) {
                   for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
                   expect.soft(part.left, `${part.name} inside the header, ${where}`).toBeGreaterThanOrEqual(reading.head.left - 0.5)
@@ -2111,7 +2112,7 @@ test.describe("Watcher's room on the built app", () => {
                   expect.soft(part.bottom, `${part.name} inside the header, ${where}`).toBeLessThanOrEqual(reading.head.bottom + 0.5)
                 }
                 expect.soft(reading.clipped, where).toEqual([])
-                expect.soft(reading.head.height, `one row, ${where}`).toBe(44)
+                expect.soft(reading.head.height, `header rows, ${where}`).toBe(reading.pane < 650 ? 80 : 44)
                 readings[`${appearance}-${stopAll ? 'stop-all' : 'no-stop-all'}-${counts === 'seeded' ? '' : 'counts-100-'}${width}x${height}-${Math.round(reading.pane)}px`] = {
                   pane: round(reading.pane), head: [round(reading.head.left), round(reading.head.right)], labels: reading.labels, clipped: reading.clipped,
                   parts: reading.parts.map(part => [part.name, round(part.left), round(part.right)]),

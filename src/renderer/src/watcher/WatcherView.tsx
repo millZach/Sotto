@@ -131,7 +131,8 @@ function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null 
 /**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room, then the way off the page; once Watcher runs, Stop all at its
- * end. Watcher's room is its conversation alone (Zach, October 27, 2026), so the header holds no tabs. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
+ * end. With Teams on, Watcher and Teams tabs follow the name (ADR-0186). Once Watcher runs the tile is also a button
+ * for Watcher's context and state (#1189). On macOS no
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */

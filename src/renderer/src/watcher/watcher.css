@@ -111,18 +111,16 @@
 /* A narrow pane sets its header's left padding to 14px (splitWorkspace.css); on macOS the traffic lights' room wins. */
 .threads-view.threads-view--mac .thread-pane .watcher-head { padding-left: calc(14px + var(--owl-sky-inset)); }
 .watcher-head__tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 6px; }
-.watcher-head h1 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-head h1 { flex: none; margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; white-space: nowrap; }
 /* All threads, beside Watcher's name: it opens the Overview over the room. */
-.watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-head__list:active:not(:disabled):not([aria-expanded='true']) { border-color: var(--tt-hairline); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 /* On the button's own fill the muted count falls short of 4.5:1 in some themes, so it lifts with the label. */
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
-@container thread-pane (width < 600px) { .watcher-head__list-text { display: none; } }
 
-/* The header's far end: the room switch drawn as the sidebar foot draws it (threadsChrome.css), then More. The dot on
-   More says an update is in hand, as the update control's own dot does. */
+/* The header's far end uses the sidebar foot's room switch, page links and update control (threadsChrome.css). */
 .watcher-head { --foot-hover: color-mix(in srgb, var(--tt-text) 6%, transparent); --foot-lit: color-mix(in srgb, var(--tt-text) 12%, transparent); }
 /* The way off the page, after All threads: the sidebar foot's row, its controls 30px squares with an 8px radius on a 2px
    gap, the lit room in a neutral tint of the text colour and a hover in a fainter one. */
@@ -137,70 +135,36 @@
 .watcher-head__way .update-control { border-radius: var(--tt-radius-row); }
 .watcher-head__way .update-control:hover:not([aria-disabled='true']) { background: var(--foot-hover); }
 
-/* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
-   uncapped. These widths were set when the header also held three 30-pixel tabs, so they leave room to spare, with the
-   130 pixels the room switch and More take at the header's end. All threads' label returns at 670 pixels of pane.
-   While Stop all shows, Stop all's returns at 760 and All threads' at 700, below 630 the name gives way, and below 550
-   All threads tightens again. macOS keeps its own widths, since its header starts past the traffic lights. */
-@container thread-pane (width < 670px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
-@container thread-pane (width < 760px) {
-  .watcher-room:not(.threads-view--mac) .watcher-stop-all__text { display: none; }
-  .watcher-room:not(.threads-view--mac) .watcher-stop-all__button { padding: 0 7px; }
+/* Keep labels whole. At a compact width Stop all loses its words before the title does; with Teams on,
+   the Watcher tab can carry the name. Wider headers keep their original spacing and labels. */
+@container thread-pane (width <= 1000px) {
+  .watcher-head > .thread-workspace__title { gap: 6px; }
+  .watcher-head .watcher-stop-all__text { display: none; }
+  .watcher-head .watcher-stop-all__button { padding: 0 7px; }
 }
-@container thread-pane (width < 700px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list-text { display: none; } }
-@container thread-pane (width < 630px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* All threads keeps its icon and count in a narrow pane. */
+@container thread-pane (width < 800px) {
+  .watcher-head__list-text { display: none; }
+  .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
-@container thread-pane (width < 550px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
-}
-/* In the narrowest panes off macOS the row keeps to one line with a three-digit count on All threads beside Stop all by
-   drawing its gaps closer: after the tile, between All threads and the way off the page, and round its hairline. */
-@container thread-pane (width < 450px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head > .thread-workspace__title { gap: 4px; }
-  .watcher-room:not(.threads-view--mac) .watcher-head :is(.watcher-head__tile, .watcher-context) { margin-right: 2px; }
-  .watcher-room:not(.threads-view--mac) .watcher-head__way { margin-left: 0; }
-  .watcher-room:not(.threads-view--mac) .watcher-head__way .thread-nav__foot-rule { margin: 0 2px; }
-}
-/* Off macOS one row holds the way off the page beside Stop all in the narrowest pane, with Usage, Settings, Help and the
-   update control; Memory's link, while memory is on, makes it 32 pixels wider, so below 440 pixels the way off the
-   page and Stop all then take a second row, as they do on macOS below 650. */
-@container thread-pane (width < 440px) {
-  .watcher-room:not(.threads-view--mac) .thread-pane .watcher-head:has(.watcher-head__pages > :nth-child(4)) {
-    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
-    column-gap: 10px; height: auto; padding-bottom: 6px;
-  }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__title { display: contents; }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
-}
-/* Beside a thread at the smallest window the header's controls need the name's room: the tile still says whose room it
-   is, and the heading stays for assistive technology. */
-@container thread-pane (width < 580px) {
-  .watcher-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-/* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
-   in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
-   follow its 88 pixels, with a few to spare for longer counts). Below 794 pixels All threads and Stop all keep their
-   icons and counts. Below 650 pixels one row no longer holds the name, the way off the page and Stop all beside the
-   lights, so the way off the page and Stop all take a second row under them, starting at the pane's edge, and the
-   name stays. Focus still runs as the eye reads: the tile's row, then the way off the page and Stop all. */
-@container thread-pane (width < 794px) {
-  .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
-  .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
-}
+/* Beside a thread, navigation and Stop all move together to a second row, in the same keyboard order.
+   The first row keeps the title, or the Watcher and Teams tabs, and All threads' icon and count.
+   On macOS only that first row keeps the traffic lights' room; navigation starts at the pane's edge. */
 @container thread-pane (width < 650px) {
-  .threads-view.threads-view--mac .thread-pane .watcher-head {
-    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
-    column-gap: 10px; height: auto; padding-bottom: 6px; padding-left: 14px;
+  .threads-view .thread-pane .watcher-head {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 44px 30px;
+    column-gap: 6px; height: auto; padding: 0 12px 6px 14px;
   }
-  .threads-view--mac .watcher-head > .thread-workspace__title { display: contents; }
-  .threads-view--mac .watcher-head .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
-  .threads-view--mac .watcher-head h1 { position: static; width: auto; height: auto; clip-path: none; }
-  /* Before Watcher starts there is no tile to keep the first row clear of the lights, so the name keeps their room. */
-  .threads-view--mac .watcher-head:not(:has(.watcher-head__tile)) h1 { margin-left: calc(var(--mac-lights-room) - 14px); }
-  .threads-view--mac .watcher-head .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
-  .threads-view--mac .watcher-head > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
+  .watcher-head > .thread-workspace__title { display: contents; }
+  .watcher-head > :is(.watcher-head__tile, .watcher-context) { grid-row: 1; grid-column: 1; margin-right: 0; }
+  .watcher-head :is(h1, .watcher-head__tabs) { grid-row: 1; grid-column: 2; justify-self: start; }
+  .watcher-head__list { grid-row: 1; grid-column: 3; gap: 4px; padding: 0 6px 0 7px; }
+  .watcher-head .watcher-head__way { grid-row: 2; grid-column: 1 / 3; justify-self: start; margin-left: 0; }
+  .watcher-head > .thread-workspace__actions { grid-row: 2; grid-column: 3; justify-self: end; }
+  .threads-view.threads-view--mac .thread-pane .watcher-head { padding-left: 14px; }
+  .threads-view--mac .watcher-head > :is(.watcher-head__tile, .watcher-context) { margin-left: var(--owl-sky-inset); }
+  /* Before Watcher starts, the title or tabs is the first visible item beside the lights. */
+  .threads-view--mac .watcher-head:not(:has(.watcher-head__tile)) :is(h1, .watcher-head__tabs) { margin-left: var(--owl-sky-inset); }
 }
 
 /* The Sotto Owl tile once Watcher runs (#1189, pick C): a button, with a thin bar under it filling toward the point
@@ -568,7 +532,6 @@
 .watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-stop-all__button:active:not(:disabled):not([aria-expanded='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-stop-all__button:hover > svg, .watcher-stop-all__button[aria-expanded='true'] > svg { color: var(--tt-error-text); }
-@container thread-pane (width < 520px) { .watcher-stop-all__button { padding: 0 7px; } .watcher-stop-all__text { display: none; } }
 /* The popover, in the shape of a small panel under its button: the question, the threads it names with what each is doing, what a stop
    keeps, then Cancel and the stop on the error plate. After the press, each thread's result. */
 .watcher-stop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(344px, calc(100cqw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset);
@@ -599,8 +562,8 @@
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
 
 /* ---------- Moving threads to another machine (#1178 part 2, Zach's pick B on October 29, 2026) ---------- */
-/* Move threads, beside Stop all in Watcher's header while another machine is connected: Stop all's quiet outline, its
-   label giving way before Stop all's does, since the room keeps its words for what stops work. */
+/* Move threads, beside Stop all while another machine is connected: the same quiet outline, with its label
+   giving way whole in a narrow pane. */
 .watcher-move-threads { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; margin-right: 6px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border);
   border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; -webkit-app-region: no-drag;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
