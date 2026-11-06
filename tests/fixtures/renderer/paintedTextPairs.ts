@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { contrast, over, parseTokenBlocks, resolveColor, type Rgba } from './themeTokenResolver'
+import { contrast, over, parseTokenBlocks, resolveColor, type Mode, type Rgba } from './themeTokenResolver'
 
 /**
  * The text the main window really paints, on the surfaces it really sits on (#936). Each pair names its ink and the
@@ -115,22 +115,39 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   pair('terminal-foreground', ['terminal-background'], 'terminal'), pair('terminal-foreground', ['terminal-selection'], 'terminal selection'),
 ]
 
-function stylesheetProperty(path: string, name: string): string {
+function stylesheetProperty(path: string, name: string, mode: Mode): string {
   const block = parseTokenBlocks(readFileSync(join(process.cwd(), path), 'utf8')).find(candidate => candidate.declarations.has(name))
   if (!block) throw new Error(`${path} declares no ${name}`)
-  return block.declarations.get(name)!
+  return inMode(block.declarations.get(name)!, mode)
 }
 
-/** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them. */
-export function withPaintedLayers(declarations: Map<string, string>): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name))
-  for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name))
+/** A value with its light-dark() choices made, as the browser makes them under the root's colour scheme. */
+export function inMode(value: string, mode: Mode): string {
+  const at = value.indexOf('light-dark(')
+  if (at < 0) return value
+  const open = at + 'light-dark'.length
+  let depth = 0, comma = -1, end = -1
+  for (let index = open; index < value.length && end < 0; index++) {
+    const character = value[index]
+    if (character === '(') depth++
+    else if (character === ')') { depth--; if (depth === 0) end = index }
+    else if (character === ',' && depth === 1 && comma < 0) comma = index
+  }
+  if (comma < 0 || end < 0) throw new Error(`Unsupported light-dark(): ${value}`)
+  const chosen = mode === 'light' ? value.slice(open + 1, comma) : value.slice(comma + 1, end)
+  return inMode(value.slice(0, at) + chosen.trim() + value.slice(end + 1), mode)
+}
+
+/** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them, in the mode the root is painted in. */
+export function withPaintedLayers(declarations: Map<string, string>, mode: Mode): Map<string, string> {
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
+  for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name, mode))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')
-  declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups))
-  declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs'))
-  declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink'))
-  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash'))
+  declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups, mode))
+  declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs', mode))
+  declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink', mode))
+  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash', mode))
   return declarations
 }
 

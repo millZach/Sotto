@@ -73,7 +73,7 @@ describe('Omarchy M3 and readability check', () => {
     }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
     // The pairs the window really paints, which every built-in half meets too (themeTokens.test.ts).
-    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks))
+    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks), theme.appearance)
     painted.set('--tt-success', omarchySuccessText(theme.colors, theme.appearance))
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)

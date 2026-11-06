@@ -65,7 +65,7 @@ describe('main-window theme tokens', () => {
   })
 
   it.each(combinations)('%s mode of %s keeps every text pair the window paints at 4.5:1', (mode, id) => {
-    const declarations = withPaintedLayers(rootDeclarations(mode, id, {}, tokenBlocks))
+    const declarations = withPaintedLayers(rootDeclarations(mode, id, {}, tokenBlocks), mode)
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
