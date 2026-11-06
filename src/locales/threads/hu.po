@@ -241,6 +241,10 @@ msgstr ""
 msgid "{count, plural, one {Picture} other {# pictures}}"
 msgstr ""
 
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "{count, plural, one {Read {files} file} other {Read {files} files}}"
+msgstr ""
+
 #: src/renderer/src/agents/restartWords.ts
 msgid "{count, plural, one {so Sotto can’t restart its thread on its own. Send again once it resets.} other {so Sotto can’t restart its {threads} threads on its own. Send again once it resets.}}"
 msgstr ""
@@ -715,6 +719,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "{more, plural, one {One more question in that reply.} other {# more questions in that reply.}}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 msgstr ""
 
 #: src/renderer/src/agents/ScreenshotInput.tsx
@@ -2380,6 +2388,11 @@ msgstr ""
 msgid "Check for client updates"
 msgstr ""
 
+#. A step that ran git status, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Check git status"
+msgstr ""
+
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Check out feature branch & continue"
 msgstr ""
@@ -3007,6 +3020,11 @@ msgstr ""
 msgid "Copy {label} code, once the rest arrives"
 msgstr ""
 
+#. A step that copied a file, in Sotto's words for a command its provider did not describe; {shown} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Copy {shown}"
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Copy address"
@@ -3485,6 +3503,16 @@ msgstr ""
 msgid "Council"
 msgstr ""
 
+#. A step that counted the lines of several files, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Count lines"
+msgstr ""
+
+#. A step that counted a file's lines, in Sotto's words for a command its provider did not describe; {file} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Count the lines in {file}"
+msgstr ""
+
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Create and checkout a ref before pushing or opening a pull request."
 msgstr ""
@@ -3958,6 +3986,16 @@ msgstr ""
 msgid "Edit"
 msgstr ""
 
+#. A step that changed a file in place, in Sotto's words for a command its provider did not describe; {file} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Edit {file}"
+msgstr ""
+
+#. A step that patched files, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Edit files"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Edit queued message"
 msgstr ""
@@ -4237,6 +4275,16 @@ msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Files to attach"
+msgstr ""
+
+#. A step that looked for files, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Find files"
+msgstr ""
+
+#. A step that looked for files, in Sotto's words for a command its provider did not describe; {shown} is the folder.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Find files in {shown}"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -4676,6 +4724,11 @@ msgstr ""
 msgid "Install guide"
 msgstr ""
 
+#. A step that installed packages, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Install packages"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Installation steps"
 msgstr ""
@@ -5075,6 +5128,16 @@ msgstr ""
 msgid "Links from the message above"
 msgstr ""
 
+#. A step that listed a folder, in Sotto's words for a command its provider did not describe; {shown} is the folder.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "List {shown}"
+msgstr ""
+
+#. A step that listed the thread's own folder, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "List the folder"
+msgstr ""
+
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "listed its pages"
@@ -5144,6 +5207,11 @@ msgstr ""
 
 #: src/renderer/src/agents/BringChangesBack.tsx
 msgid "Make merge commit"
+msgstr ""
+
+#. A step that made a folder, in Sotto's words for a command its provider did not describe; {shown} is the folder.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Make the folder {shown}"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -5350,6 +5418,11 @@ msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Move"
+msgstr ""
+
+#. A step that moved or renamed a file, in Sotto's words for a command its provider did not describe; {shown} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Move {shown}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
@@ -6784,6 +6857,17 @@ msgstr ""
 msgid "Quotes from replies"
 msgstr ""
 
+#. A step that read a file, in Sotto's words for a command its provider did not describe; {file} is its path.
+#. A step that read a file, in Sotto's words for a command its provider did not describe; {file} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Read {file}"
+msgstr ""
+
+#. A step that ran git show, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Read a commit"
+msgstr ""
+
 #: src/renderer/src/agents/VisualWalkthrough.tsx
 msgid "Read all"
 msgstr ""
@@ -6794,6 +6878,21 @@ msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Read its reply"
+msgstr ""
+
+#. A step that ran git diff, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Read the changes"
+msgstr ""
+
+#. A step that ran git diff on one file, in Sotto's words for a command its provider did not describe; {shown} is the file.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Read the changes to {shown}"
+msgstr ""
+
+#. A step that ran git log, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Read the git history"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -6980,6 +7079,11 @@ msgstr ""
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Remove {name}"
+msgstr ""
+
+#. A step that removed a file or folder, in Sotto's words for a command its provider did not describe; {shown} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Remove {shown}"
 msgstr ""
 
 #. {words} names a mark, such as "Arrow" or "Note: the button".
@@ -7272,6 +7376,11 @@ msgstr ""
 msgid "Run"
 msgstr ""
 
+#. A step that ran something, in Sotto's words for a command its provider did not describe; {name} is what ran: a program such as node, a script such as build.mjs, a package script such as typecheck, or git and its subcommand, such as git push.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Run {name}"
+msgstr ""
+
 #. The heading of a card that asks to run a command.
 #: src/renderer/src/agents/requests/requestAnswers.ts
 msgid "Run a command"
@@ -7303,6 +7412,16 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Run on"
+msgstr ""
+
+#. A step that ran tests, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Run the tests"
+msgstr ""
+
+#. A step that ran one file's tests, in Sotto's words for a command its provider did not describe; {shown} is the file.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Run the tests in {shown}"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -7405,6 +7524,16 @@ msgstr ""
 msgid "Search {providerName} models"
 msgstr ""
 
+#. A step that searched files, in Sotto's words for a command its provider did not describe; {shown} is where.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Search {shown}"
+msgstr ""
+
+#. A step that searched files, in Sotto's words for a command its provider did not describe; {shown} is where, {plain} what for.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Search {shown} for “{plain}”"
+msgstr ""
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Search all {providerName} models"
@@ -7422,6 +7551,11 @@ msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Search folders…"
+msgstr ""
+
+#. A step that searched the files, in Sotto's words for a command its provider did not describe; {plain} is what for.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Search for “{plain}”"
 msgstr ""
 
 #. {currentName} is a folder's name.
@@ -7456,6 +7590,11 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Search results"
+msgstr ""
+
+#. A step that searched files, in Sotto's words for a command its provider did not describe.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Search the files"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -10364,6 +10503,11 @@ msgstr ""
 #. A kind of suggested next prompt: finish the work.
 #: src/renderer/src/agents/NextList.tsx
 msgid "Wrap up"
+msgstr ""
+
+#. A step that wrote a file, in Sotto's words for a command its provider did not describe; {file} is its path.
+#: src/renderer/src/agents/commandPurpose.ts
+msgid "Write {file}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx

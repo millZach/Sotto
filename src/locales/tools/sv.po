@@ -51,6 +51,11 @@ msgstr ""
 msgid "{added} added, {removed} removed"
 msgstr ""
 
+#. The line totals of a pull request; Changes says its own leave whitespace changes out.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "{added} lines added, {removed} removed, counting whitespace changes, as GitHub does."
+msgstr ""
+
 #. {added} and {removed} are counts of lines.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{added} lines added, {removed} removed, not counting whitespace changes."
@@ -59,6 +64,11 @@ msgstr ""
 #. {added} and {removed} are counts of lines.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{added} lines added, {removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher."
+msgstr ""
+
+#. {added}, {removed}, {hiddenAdded} and {hiddenRemoved} are counts of lines.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{added} lines added, {removed} removed. {hiddenAdded} added and {hiddenRemoved} removed change only whitespace and are hidden below."
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -159,6 +169,10 @@ msgstr ""
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "{interrupted, plural, other {# interrupted}}"
+msgstr ""
+
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{lines, plural, one {{count} whitespace line hidden} other {{count} whitespace lines hidden}}"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
