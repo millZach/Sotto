@@ -307,6 +307,24 @@ describe('what the working line says the work is for', () => {
     expect(words).toBe('Running rg -n policy src')
     expect(detail.textContent).toBe('')
   })
+
+  it('leaves the running step to its row while the steps are open, and names it again once they fold', () => {
+    try {
+      const { words, line } = shown(activity({ id: 'ls', command: 'ls' }), described())
+      expect(words).toBe('Read the request policy')
+      const row = within(screen.getByRole('log', { name: 'Thread transcript' })).getByTestId('thread-activity-live')
+      fireEvent.click(line)
+      // At once, since it answers the press: the turn's words on the line, the step on its own row under it.
+      expect(unmarked(word(row).textContent)).not.toMatch(/^$|request policy|cat /u)
+      expect(row.querySelector('.thread-activity-live__detail')!.textContent).toBe('')
+      expect(within(row).getAllByText('Read the request policy')).toHaveLength(1)
+      expect(within(row).getByRole('button', { name: /^Read the request policy, cat src\/policy\.ts/u })).toBeInTheDocument()
+      // Assistive tech still hears what runs on the line's own description.
+      expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
+      fireEvent.click(line)
+      expect(unmarked(word(row).textContent)).toBe('Read the request policy')
+    } finally { localStorage.clear() }
+  })
 })
 
 describe('what a finished turn changed', () => {

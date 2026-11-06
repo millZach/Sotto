@@ -407,6 +407,11 @@ export interface WorkingNow {
   readonly step?: AgentActivity['kind'] | 'reply'
   /** All of it as one sentence for assistive tech, with the command even when the line leaves it to the opened steps. */
   readonly spoken: string
+  /**
+   * The step the line names, when it names one rather than a reply or a wait. With the steps open that step has its own row,
+   * so the line leaves it there and carries the turn's words.
+   */
+  readonly stepId?: string
 }
 
 /**
@@ -462,12 +467,14 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
   const doing = running ? runningWords(running) : t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
   const described = running ? stepDescription(running) : ''
   const purpose = described || (running ? reasoningNow(steps) : '')
-  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing }
+  const named = running ? { stepId: running.id } : {}
+  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing, ...named }
   const step = running?.kind ?? 'reply'
   // A command sits beside the words as itself, in the code face: its mark already says it runs.
   const command = running?.kind === 'command' && running.command ? isolated(innerCommand(running.command)) : ''
-  return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', ') }
+  return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', '), ...named }
 }
+
 
 /** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
 export const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)

@@ -224,9 +224,9 @@ const workingKey = (now: WorkingNow | null): string | null => now === null ? nul
 /**
  * The working line's words: what the turn is on when it is known (`workingNow`), with what is running for it beside them,
  * else the Spaceballs words. Writes its own text instead of re-rendering the transcript, and never repeats the word it is
- * replacing.
+ * replacing. A change that comes with the steps opening or folding (`open`) shows at once, since it answers the press.
  */
-function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
+function WorkingWord({ now, open }: { readonly now: WorkingNow | null; readonly open: boolean }): ReactNode {
   const { t } = useLingui()
   const ref = useRef<HTMLSpanElement>(null)
   const detailRef = useRef<HTMLSpanElement>(null)
@@ -238,6 +238,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   const line = useRef({ step: key, at: 0, word: 0 })
   const latest = useRef(now)
   latest.current = now
+  const pressed = useRef(open)
   useEffect(() => {
     const state = line.current
     const timer = window.setInterval(() => {
@@ -250,6 +251,8 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   }, [])
   useEffect(() => {
     const state = line.current
+    const answer = pressed.current !== open
+    pressed.current = open
     if (state.step === key) return
     const show = (): void => {
       const node = ref.current
@@ -262,11 +265,11 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
       writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
     }
     // The words come back only after a gap that lasts; a new step waits out the hold of the one on the line.
-    const wait = key === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
+    const wait = answer ? 0 : key === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
     if (wait <= 0) { show(); return }
     const timer = window.setTimeout(show, wait)
     return () => window.clearTimeout(timer)
-  }, [key])
+  }, [key, open])
   const Mark = stepMark(step)
   // The words are decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <span className="thread-activity-live__now">
@@ -693,6 +696,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // A turn that compacts part-way keeps its steps one press away.
   if (thread.compaction?.status === 'running') {
     return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
+  // With the steps open, the step running now is their newest row, so the line leaves it there and carries the turn's own
+  // words, the Spaceballs words, as it does between steps: each is said once. A reply being written or a request waiting on
+  // the user has no row, so the line keeps saying it.
+  const lineNow = open && now?.stepId !== undefined ? null : now
       onKeyDown={disclosure?.onKeyDown}>
       <div className="thread-activity-live__line">
         <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
@@ -712,7 +719,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // No clock sits beside the words (ADR-0134, October 26 amendment), and no sign of a failed step.
   const words = <>
     {mark ?? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />}
-    <span className="thread-activity-live__state">{connected ? <WorkingWord now={now} /> : t`Last seen working`}</span>
+    <span className="thread-activity-live__state">{connected ? <WorkingWord now={lineNow} open={open} /> : t`Last seen working`}</span>
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
