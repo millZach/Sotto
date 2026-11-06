@@ -2115,11 +2115,19 @@ export class CodexAppServerHost implements AgentHost {
           if (!watcherGuard) await this.decline(id)
           watcherGuard?.()
           const turnId = this.runningTurns.get(id)
-          if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
-            this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
-            this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
-            this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
-          }, undefined, undefined, watcherGuard)
+          const server = this.runtimes.get(id)?.server
+          const stopped = (): void => {
+            this.ensureThread(id).lastTurn = { id: turnId!, status: 'interrupted' }
+            this.activity.turn(this.ensureThread(id), { id: turnId!, status: 'interrupted' }, true)
+            this.terminalTurns.add(turnKey(id, turnId!)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
+          }
+          if (turnId) try { await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, stopped, undefined, undefined, watcherGuard) }
+          catch (error) {
+            // An app-server that took the Stop but does not answer it in time is stopped itself, so the turn ends as
+            // asked and the thread's next action starts it again, rather than every later action waiting on it (#2268).
+            if (!(error instanceof Uncertain) || !server || this.runtimes.get(id)?.server !== server || this.runningTurns.get(id) !== turnId) throw error
+            stopped(); server.abort()
+          }
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`

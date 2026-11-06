@@ -109,6 +109,28 @@ describe('Codex app-server per thread session', () => {
     await expect.poll(() => replied(painting, 'Started the full video')).toBe(true)
   })
 
+  it('stops a thread whose app-server does not answer the Stop, and starts it again for the next send', async () => {
+    const { f, create, send, thread, replied } = await fixture()
+    const stuck = await create('Stuck')
+    await send(stuck, 'Long task')
+    await expect.poll(async () => (await thread(stuck)).status).toBe('running')
+    const server = await f.serverOf(stuck)
+
+    // The app-server takes the Stop and does nothing with it, as a hung one would.
+    await f.script({ hangOnInterrupt: true })
+    expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: stuck })).toEqual({ accepted: true })
+    const stopped = await thread(stuck)
+    expect(stopped.status).toBe('idle')
+    expect(stopped.lastTurn?.status).toBe('interrupted')
+    expect(f.adapter.resumedThreads()).not.toContain(stuck)
+
+    await f.script({})
+    expect(await send(stuck, 'Carry on')).toEqual({ accepted: true })
+    expect(await f.serverOf(stuck)).not.toBe(server)
+    await f.driver.completeTurn(stuck, 'Carried on')
+    await expect.poll(() => replied(stuck, 'Carried on')).toBe(true)
+  })
+
   it('finishes creating a thread whose app-server a client update made outdated halfway', async () => {
     const { f, send, replied } = await fixture()
     await f.script({ holdReply: 'thread/start' })

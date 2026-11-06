@@ -471,6 +471,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     notify('turn/started', { threadId: params.threadId, turn: { id: 'compact-turn', status: 'inProgress', items: [] } })
     reply({})
   } else if (method === 'turn/interrupt') {
+    // A hung app-server takes the Stop and does nothing with it: no turn ends and no answer comes. It is stopped the way
+    // a crashed one is, so the next app-server reads its turn back interrupted, as Codex does.
+    if (script.hangOnInterrupt) { state.crashed = [...state.crashed ?? [], process.pid]; save(); return }
     const thread = state.threads[params.threadId]
     const turn = thread.turns.find(turn => turn.id === params.turnId)
     if (turn) { turn.status = 'interrupted'; thread.status = { type: 'idle' }; save(); notify('turn/completed', { threadId: thread.id, turn }) }
