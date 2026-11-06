@@ -2792,7 +2792,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         if (nativeFixtureRoot && process.env['SOTTO_E2E_CERTIFIED_DETAIL_OBSERVATION'] === '1') {
           // The native test observes the real private tracker, never a renderer copy or a fixture
           // certificate. No production accessor or diagnostic channel is introduced.
-          const tracked = (agentControl as unknown as { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> }).certifiedDetailRevisions
+          const tracked = (agentControl as unknown as { revisions: { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> } }).revisions.certifiedDetailRevisions
           let ownedThreads = 0, reusedRecords = 0
           for (const [threadId, detail] of tracked) {
             if (isImmutableActivities(detail.activities)) ownedThreads++

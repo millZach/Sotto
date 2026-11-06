@@ -16,7 +16,7 @@ const record = (id: string, output = 'first'): AgentActivity => ({ id, turnId: '
 const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 'Synthetic', modelId: 'fake', status: 'running', messages: [], requests: [], activities: immutableActivities([record('one'), record('two')]) })
 function fixture(enabled: boolean, directory = '', watcherEnabled = true) {
   const control = createAgentControl({ directory, host: new E2EAgentHost(), credentials: { has: () => false, available: () => false } as never, streamingPublishCost: enabled, watcherEnabled })
-  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number>; watcherMessageDisplay?: WatcherMessageDisplay }
+  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; revisions: { certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number> }; watcherMessageDisplay?: WatcherMessageDisplay }
   return { control, detail, publish(value: AgentThread) { const revision = detail.detailRevision(value); return { revision, update: detail.detailUpdate(value, revision) } } }
 }
 
@@ -28,23 +28,23 @@ describe('certified activity detail under the streaming cost gate', () => {
       await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
       const cached = f.control.threadDetail(value.id)!
       expect(f.detail.detailSnapshots.size).toBe(1)
-      expect(isImmutableActivities(f.detail.certifiedDetailRevisions.get(value.id)?.activities)).toBe(true)
+      expect(isImmutableActivities(f.detail.revisions.certifiedDetailRevisions.get(value.id)?.activities)).toBe(true)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
       expect(f.detail.detailSnapshots.size).toBe(0)
-      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
-      expect(f.detail.detailRevisions.size).toBe(0)
-      expect(f.detail.certifiedDetailCounters.get(value.id)).toBe(cached.revision)
+      expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.revisions.detailRevisions.size).toBe(0)
+      expect(f.detail.revisions.certifiedDetailCounters.get(value.id)).toBe(cached.revision)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
       expect(f.control.threadDetail(value.id)!.revision).toBeGreaterThan(cached.revision)
       value.activities = structuredClone(value.activities)
       const mutable = f.control.threadDetail(value.id)!
-      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
-      expect(f.detail.detailRevisions.size).toBe(1)
+      expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.revisions.detailRevisions.size).toBe(1)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
       expect(f.detail.detailSnapshots.size).toBe(0)
-      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
-      expect(f.detail.detailRevisions.size).toBe(0)
-      expect(f.detail.certifiedDetailCounters.get(value.id)).toBe(mutable.revision)
+      expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.revisions.detailRevisions.size).toBe(0)
+      expect(f.detail.revisions.certifiedDetailCounters.get(value.id)).toBe(mutable.revision)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
       expect(f.control.threadDetail(value.id)!.revision).toBeGreaterThan(mutable.revision)
     } finally { f.control.dispose() }
@@ -63,8 +63,8 @@ describe('certified activity detail under the streaming cost gate', () => {
     updateProof()
     let held = f.control.threadDetail(value.id)!
     expect(held.messages[0]!.text).toBe(original)
-    expect(f.detail.certifiedDetailRevisions.has(value.id)).toBe(enabled)
-    if (enabled) expect(isImmutableActivities(f.detail.certifiedDetailRevisions.get(value.id)!.activities)).toBe(true)
+    expect(f.detail.revisions.certifiedDetailRevisions.has(value.id)).toBe(enabled)
+    if (enabled) expect(isImmutableActivities(f.detail.revisions.certifiedDetailRevisions.get(value.id)!.activities)).toBe(true)
     const invalid: AgentThreadDetailUpdate[] = []
     const off = f.control.subscribeThreadDetail(update => {
       const next = isAgentThreadDetailDelta(update) ? applyAgentThreadDetailDelta(held, update) : update
@@ -105,8 +105,8 @@ describe('certified activity detail under the streaming cost gate', () => {
       }
       f.detail.viewedThreadIds = []; f.detail.broadcastDetail()
       expect(f.detail.detailSnapshots.size).toBe(0)
-      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
-      expect(f.detail.detailRevisions.size).toBe(0)
+      expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.revisions.detailRevisions.size).toBe(0)
       value.activities = immutableActivities([{ ...value.activities![0]!, output: 'Changed while closed' }])
       f.detail.viewedThreadIds = [value.id]; f.detail.broadcastDetail()
       expect(updates.at(-1)?.revision).toBeGreaterThan(cached)
@@ -124,7 +124,7 @@ describe('certified activity detail under the streaming cost gate', () => {
       const cached = f.publish(value).revision
       await f.control.privacyChanged()
       expect(f.detail.detailSnapshots.size).toBe(0)
-      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       value.activities = immutableActivities([record('new', 'Fresh output after cleanup')])
       const next = f.publish(value)
       expect(next.revision).toBeGreaterThan(cached)

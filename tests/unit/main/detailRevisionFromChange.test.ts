@@ -31,7 +31,7 @@ vi.mock('../../../src/shared/agentThreadDetail', async importOriginal => {
 })
 
 type Internals = { detailRevision(thread: AgentThread): number; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void
-  detailMessageKeys: Map<string, unknown>; detailRevisions: Map<string, unknown>; certifiedDetailRevisions: Map<string, unknown>
+  revisions: { detailMessageKeys: Map<string, unknown>; detailRevisions: Map<string, unknown>; certifiedDetailRevisions: Map<string, unknown> }
   subscribeThreadDetail: AgentControl['subscribeThreadDetail']; privacyChanged: AgentControl['privacyChanged'] }
 const controls: AgentControl[] = [], roots: string[] = []
 afterEach(async () => {
@@ -131,13 +131,13 @@ it('drops what it read of a pane with the pane under the gate, and on a privacy 
   const off = control.subscribeThreadDetail(() => undefined)
   try {
     control.broadcastDetail()
-    expect(control.detailMessageKeys.has(value.id)).toBe(true)
+    expect(control.revisions.detailMessageKeys.has(value.id)).toBe(true)
     control.viewedThreadIds = []; control.broadcastDetail()
-    expect(control.detailMessageKeys.size).toBe(0)
-    expect(control.detailRevisions.size + control.certifiedDetailRevisions.size).toBe(0)
+    expect(control.revisions.detailMessageKeys.size).toBe(0)
+    expect(control.revisions.detailRevisions.size + control.revisions.certifiedDetailRevisions.size).toBe(0)
     control.detailRevision(value)
-    expect(control.detailMessageKeys.size).toBe(1)
+    expect(control.revisions.detailMessageKeys.size).toBe(1)
     await control.privacyChanged()
-    expect(control.detailMessageKeys.size).toBe(0)
+    expect(control.revisions.detailMessageKeys.size).toBe(0)
   } finally { off() }
 })
