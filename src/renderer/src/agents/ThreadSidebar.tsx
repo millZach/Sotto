@@ -38,6 +38,7 @@ import { RailTile } from './RailTile'
 import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
 import { useSettleGaps, type HeldGap } from './settleGap'
 import { SettleToast } from './SettleToast'
+import { useWordCut } from './wordCut'
 import './workingThreadsLine.css'
 import { snoozeThreads, SnoozeUntil, useSnoozeMenu, useThreadSnoozes, wakeWords } from './threadSnooze'
 
@@ -219,18 +220,21 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     ...wake ? { wake } : snooze ? { snooze } : {},
     watch: watchActions === null ? undefined : () => void watchActions.setThread(id, !watched),
   })
-  if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
-    <span className="thread-nav__item thread-nav__item--renaming">
-      <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
-        onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
-    </span>
-  </li>{swarm}</>
   // A plain Done or Settled at rest steps back, so what is moving or waiting stands out down a long list.
   const resting = row.state === 'done' && !finished && !prototype && !background && !restart
   // A resting row with nothing more to say takes one line, its name and a muted time, with no ring, mark or word (Zach's
   // pick C, ADR-0135, November 5, 2026); its word stays in its description. A row out of reach, watched or snoozed still
   // has something to say on its second line, so it keeps two.
   const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined
+  // A one-line name that does not fit is cut at a word's end; the whole name stays its tooltip and its spoken name.
+  const titleBox = useRef<HTMLSpanElement>(null)
+  const shownTitle = useWordCut(titleBox, title, stepsBack && !renaming ? (current ? 'current' : 'resting') : null)
+  if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+    <span className="thread-nav__item thread-nav__item--renaming">
+      <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
+        onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
+    </span>
+  </li>{swarm}</>
   const inQueue = queued && row.state === 'needs'
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
     data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined}
@@ -243,7 +247,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onDragEnd={() => panes.onDragThread(null)}>
       <StatusRing row={row} finished={finished} background={background} queued={inQueue} />
       {/* A double-click on the name renames, as F2 and the menu's Rename do. */}
-      <span className="thread-nav__title" onDoubleClick={canRename ? () => setRenaming(true) : undefined}>{title}</span>
+      <span ref={titleBox} className="thread-nav__title" onDoubleClick={canRename ? () => setRenaming(true) : undefined}>{shownTitle}</span>
       {snoozedUntil !== undefined
         ? <time id={timeId} className="thread-nav__time" dateTime={new Date(snoozedUntil).toISOString()} title={new Date(snoozedUntil).toLocaleString()}>
           {t({ message: `Until ${wakes}`, comment: '{wakes} is when a snoozed thread wakes, such as "Mon 9:00 am".' })}</time>

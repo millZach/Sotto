@@ -1186,7 +1186,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await page.mouse.move(0, 0)
       await page.evaluate(({ title, by }) => {
         const list = document.querySelector<HTMLElement>('.thread-nav__scroll')!
-        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__title')?.textContent === title)!
+        const row = [...list.querySelectorAll<HTMLElement>('.thread-folder__rows .thread-nav__row')].find(item => item.querySelector('.thread-nav__item')?.getAttribute('aria-label') === title)!
         list.scrollTop += row.getBoundingClientRect().bottom - (list.getBoundingClientRect().bottom - 7) - by
       }, { title, by })
     }
@@ -1199,6 +1199,106 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await shoot(`stuck-head-words-${theme}`, `A row's second line under the stuck head on ${name}.`, 'Fix the socket host flake', 36)
       await shoot(`stuck-head-current-${theme}`, `The open thread's row with its name under the stuck head on ${name}.`, 'Write the split plan down', 14)
     }
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+  } },
+  // Asked for by name only: where the thread list comes to rest. From the top it is scrolled by the wheel in uneven steps,
+  // set by the app's own kind of scroll (a scrollTop the way a restore would), and walked by the keys, and at each rest
+  // the top of the list is cut out under the stuck head and laid in one sheet per theme and mode, each labelled with how
+  // the scroll got there and where the first row lies against the head's edge. Then the end of the list, past every row.
+  { name: 'sidebar-rest', covers: [], run: async capture => {
+    const { page } = capture
+    const out = resolve(OUT!)
+    await openThread(page, 'Write the split plan down')
+    const list = page.locator('.thread-nav__scroll')
+    const still = async (): Promise<number> => {
+      let last = Number.NaN, same = 0
+      for (let tries = 0; tries < 60 && same < 4; tries += 1) {
+        await page.waitForTimeout(100)
+        const at = await list.evaluate(element => element.scrollTop)
+        same = at === last ? same + 1 : 0
+        last = at
+      }
+      return last
+    }
+    /** Where the first row the head does not wholly cover lies against the head's edge: 0 is right at it, under 0 cut. */
+    const edge = (): Promise<{ readonly scrollTop: number; readonly head: string; readonly row: string; readonly offset: number }> => list.evaluate(element => {
+      const top = element.getBoundingClientRect().top
+      const stuck = [...element.querySelectorAll<HTMLElement>('.thread-folder__head')].find(head => {
+        const box = head.getBoundingClientRect()
+        return box.top - top <= 6.5 && box.bottom - top > 0
+      })
+      const line = stuck === undefined ? top + 6 : stuck.getBoundingClientRect().bottom
+      const row = [...element.querySelectorAll<HTMLElement>('.thread-folder__rows > .thread-nav__row, .thread-nav__settled, .thread-folder__head')]
+        .filter(item => item !== stuck && item.getBoundingClientRect().height > 0)
+        .find(item => item.getBoundingClientRect().bottom > line + 0.5)
+      return {
+        scrollTop: Math.round(element.scrollTop),
+        head: stuck?.querySelector('.thread-folder__title')?.textContent ?? '',
+        row: row?.querySelector('.thread-nav__item')?.getAttribute('aria-label') ?? row?.textContent?.trim().slice(0, 32) ?? '',
+        offset: row === undefined ? 0 : Math.round((row.getBoundingClientRect().top - line) * 10) / 10,
+      }
+    })
+    const sheet = async (file: string, cells: readonly { readonly image: Buffer; readonly label: string }[]): Promise<void> => {
+      const first = await sharp(cells[0]!.image).metadata()
+      const width = first.width!, height = first.height!, label = 34, across = 5
+      const rows = Math.ceil(cells.length / across)
+      const escape = (text: string): string => text.replace(/&/gu, '&amp;').replace(/</gu, '&lt;')
+      const parts = await Promise.all(cells.map(async (cell, index) => {
+        const x = (index % across) * (width + 12), y = Math.floor(index / across) * (height + label + 12)
+        const [one, two] = cell.label.split('\n')
+        const text = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${label}"><rect width="100%" height="100%" fill="#202020"/><text x="6" y="14" font-family="Segoe UI, sans-serif" font-size="12" fill="#f2f2f2">${escape(one ?? '')}</text><text x="6" y="29" font-family="Segoe UI, sans-serif" font-size="12" fill="${(two ?? '').includes('cut') ? '#ff8a80' : '#9be7a1'}">${escape(two ?? '')}</text></svg>`)
+        return [{ input: cell.image, left: x, top: y }, { input: text, left: x, top: y + height }]
+      }))
+      await sharp({ create: { width: across * (width + 12) - 12, height: rows * (height + label + 12) - 12, channels: 3, background: '#808080' } })
+        .composite(parts.flat()).png().toFile(join(out, file))
+    }
+    const record: Record<string, unknown[]> = {}
+    for (const [theme, name, mode, size] of [[DEFAULT_THEME_ID, 'sotto', 'dark', [1600, 1000]], [DEFAULT_THEME_ID, 'sotto', 'light', [1600, 1000]], [DEFAULT_THEME_ID, 'sotto', 'dark', [1280, 800]],
+      ['glass', 'glass', 'dark', [1600, 1000]], ['glass', 'glass', 'light', [1600, 1000]]] as const) {
+      await resizeContentWindowFor(capture.launched, size[0], size[1])
+      await setAppearance(page, { appearance: mode, lightTheme: theme, darkTheme: theme }, mode)
+      await page.mouse.move(0, 0)
+      const box = (await list.boundingBox())!
+      const clip = { x: 0, y: Math.round(box.y) - 2, width: Math.round(box.x + box.width) + 1, height: 250 }
+      const cells: { image: Buffer; label: string }[] = [], facts: unknown[] = []
+      const take = async (how: string): Promise<void> => {
+        await still()
+        const at = await edge()
+        facts.push({ how, ...at })
+        cells.push({ image: await page.screenshot({ clip }), label: `${how} · rests at ${at.scrollTop}\n${at.offset < -0.5 ? `cut ${-at.offset}px` : `whole, ${at.offset}px under the edge`}: ${at.row.slice(0, 26)}` })
+      }
+      await list.evaluate(element => { element.scrollTop = 0 })
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      for (const step of [23, 41, 67, 100, 19, 133, 58, 250, 37, 90, 171]) {
+        await page.mouse.wheel(0, step)
+        await take(`wheel +${step}`)
+      }
+      for (const set of [212, 389, 517, 640]) {
+        await list.evaluate((element, to) => { element.scrollTop = to }, set)
+        await take(`scrollTop = ${set}`)
+      }
+      await list.evaluate(element => { element.scrollTop = 0 })
+      await page.mouse.move(0, 0)
+      await page.locator('.thread-nav__list [aria-current="page"]').focus()
+      for (const presses of [6, 6, 6]) {
+        for (let press = 0; presses > press; press += 1) await page.keyboard.press('ArrowDown')
+        await take(`Down x${presses}`)
+      }
+      await page.keyboard.press('End')
+      await take('End key')
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.wheel(0, 5000)
+      await take('wheel to the end')
+      await page.mouse.wheel(0, -77)
+      await take('wheel -77')
+      await page.mouse.move(0, 0)
+      const file = `sidebar-rest-${name}-${mode}-${size[0]}.png`
+      await sheet(file, cells)
+      record[file] = facts
+      manifest.set(file, { file, state: 'sidebar-rest', shows: `The top of the thread list at ${cells.length} resting scrolls on ${name === 'glass' ? 'Glass' : 'the default theme'} by ${mode === 'dark' ? 'night' : 'day'}, each labelled with how it got there and where its first row lies against the stuck head's edge.`, differs: '', bounds: [] })
+    }
+    await writeFile(join(out, 'sidebar-rest.json'), `${JSON.stringify(record, null, 1)}\n`)
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
   } },
   // Asked for by name only: the sidebar's resting rows on one line and its working and waiting rows on two (Zach's pick C,
