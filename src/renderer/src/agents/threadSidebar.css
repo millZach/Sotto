@@ -358,11 +358,11 @@
    running threads the names lead and one moving ring, not a column of teal words, says each is at work. */
 .thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: 450; }
 .thread-nav__row--details .thread-nav__standing > .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen]) { color: inherit; }
-/* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
-   ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
-   itself here was a cycle, which only reached the secondary ink by falling back to the row's colour. A folder's count
-   takes the frame's day ink (threads.css). */
-:root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: var(--tt-text-2); }
+/* A row's words, clock and mark take the secondary ink, by night as by day, still well under the names in the text's own:
+   in the muted ink the clock and the words under a name read faint at their size over a long day. It names that ink
+   outright: the property defined from itself here was a cycle, which only reached the secondary ink by falling back to
+   the row's colour. A folder's count takes the frame's day ink (threads.css). */
+.thread-nav__row--details { --tt-text-muted: var(--tt-text-2); }
 :root[data-theme='light'] .thread-nav .thread-folder__count { color: var(--threads-day-muted); }
 /* By day the amber that says a thread waits on you is a step deeper and a step heavier in the sidebar, in the rows and in
    Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
