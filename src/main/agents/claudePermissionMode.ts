@@ -31,9 +31,23 @@ export function permissionModeDrift(shown: AgentRuntimeMode, reported: unknown):
 
 const reportedWords = (reported: string): string => Object.hasOwn(NATIVE_WORDS, reported) ? NATIVE_WORDS[reported]! : 'a permission mode Sotto does not know'
 
-/** The failed turn's words when Claude Code started looser than the thread shows: Sotto stopped it, and nothing ran. */
-export const looserModeStopped = (shown: AgentRuntimeMode, reported: string): string =>
-  `Claude Code started in ${reportedWords(reported)} although this thread is set to ${RUNTIME_MODE_WORDS[shown]}, so Sotto stopped it before it acted. Nothing ran. Something between Sotto and Claude Code changed the mode, such as a wrapper script named claude on your PATH or Claude Code’s managed settings. Fix that, then send your message again.`
+/**
+ * The failed turn's words when Claude Code started looser than the thread shows: Sotto stopped it, and nothing from this
+ * message ran, once its whole process tree was seen gone (`confirmed`). Background work an earlier message started ended
+ * with it, so it is named, with how to get it back (ADR-0023).
+ */
+export function looserModeStopped(shown: AgentRuntimeMode, reported: string, stop: { ended?: readonly { label: string }[]; confirmed?: boolean } = {}): string {
+  const ended = stop.ended ?? []
+  const what = ended.length === 1 ? `"${ended[0]!.label}"` : `${ended.length} background tasks`
+  const them = ended.length === 1 ? 'it' : 'them'
+  const head = `Claude Code started in ${reportedWords(reported)} although this thread is set to ${RUNTIME_MODE_WORDS[shown]}`
+  const outcome = stop.confirmed === false
+    ? `${head}, so Sotto stopped it, but could not confirm that it ended, so it may have acted. Check the project for changes.`
+    : ended.length ? `${head}, so Sotto stopped it before it acted. Nothing from this message ran, and ${what}, started earlier, stopped with it.`
+      : `${head}, so Sotto stopped it before it acted. Nothing ran.`
+  const restart = ended.length ? ` Ask Claude to start ${them} again if you still need ${them}.` : ''
+  return `${outcome} Something between Sotto and Claude Code changed the mode, such as a wrapper script named claude on your PATH or Claude Code’s managed settings. Fix that, then send your message again.${restart}`
+}
 
 /** The one-line note when Claude Code runs stricter than the thread shows; the turn carries on. */
 export const stricterModeNote = (shown: AgentRuntimeMode, reported: string): string =>

@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 import { withCliPath } from './cliLookup'
+import { stopProcessTree } from './gitLauncher'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}
@@ -30,7 +31,8 @@ export class ClaudeProtocol {
   readonly closed: Promise<void>
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeout: number,
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
-    this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    // Off Windows the CLI leads its own process group, so `halt` can end what a wrapper script started as well (#657).
+    this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe', detached: process.platform !== 'win32' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); resolve(); if (!this.stopping) onExit() }))
     // Let final output drain, then release handles a descendant may still hold.
     this.child.once('exit', () => {
@@ -113,17 +115,20 @@ export class ClaudeProtocol {
     timer.unref(); void this.closed.then(() => clearTimeout(timer))
   }
   /**
-   * End the CLI now, for a turn that must not act (#657): `stop` lets it finish what it is doing first. The interrupt and
-   * the end of its input reach a CLI that outlives the process Sotto started, as one a wrapper script runs without `exec`
-   * does; the kill ends the rest.
+   * End the CLI now, for a turn that must not act (#657): `stop` lets it finish what it is doing first. The kill reaches
+   * the whole tree, so a CLI that a wrapper script runs as its child, without `exec`, ends too: its process group off
+   * Windows, `taskkill /T` on it. Settles true once the tree is seen gone, false when that could not be confirmed.
    */
-  halt(): void {
+  async halt(): Promise<boolean> {
     this.stopping = true
     try {
       this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`)
       this.child.stdin.end()
     } catch { /* Its input is already closed. */ }
-    this.child.kill('SIGKILL')
+    const pid = this.child.pid
+    if (pid === undefined) return true
+    try { await stopProcessTree(pid); return true }
+    catch { try { this.child.kill('SIGKILL') } catch { /* Gone. */ } return false }
   }
   private abort(): void { this.fail(); this.child.kill() }
   private fail(): void {

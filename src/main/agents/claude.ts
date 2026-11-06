@@ -2706,19 +2706,40 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'completed', title: 'Stricter permission mode', text: stricterModeNote(runtime.mode, reported) })
       return false
     }
-    const message = looserModeStopped(runtime.mode, reported)
-    runtime.protocol.halt(); void this.stopRuntime(id, runtime)
+    const shown = runtime.mode
     const turn = thread.lastTurn?.status === 'running' ? thread.lastTurn : undefined
     if (turn) {
-      // The prompt reached Claude Code, so it is recorded as sent; its turn then ends here, with what happened.
+      // The prompt reached Claude Code, so it is recorded as sent; its turn then ends once the CLI is seen gone.
       this.recordUnechoed.get(turn.id)?.()
       this.acknowledgements.get(turn.id)?.()
       this.completedOrigins.add(turn.id)
-      thread.lastTurn = { ...turn, status: 'failed' }; thread.status = 'error'
+    }
+    // Ended rather than left to finish, and its whole process tree with it; `stopRuntime` takes it off the thread at once,
+    // so nothing more it says is read, and names the background work that ended with it (ADR-0023).
+    const gone = runtime.protocol.halt()
+    const stopped = this.stopRuntime(id, runtime)
+    this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id); this.streaming.delete(id)
+    void Promise.all([gone, stopped.catch(() => [])]).then(([confirmed, ended]) => this.settleModeStop(id, runtime, turn, looserModeStopped(shown, reported, { ended, confirmed })))
+    return true
+  }
+  /**
+   * Fail what the halted CLI was doing, once its whole tree is gone (ADR-0043 amended November 6, 2026): the running turn,
+   * or a /compact, which is not a turn; either way the thread rests on the failure and the next send starts a new CLI.
+   */
+  private settleModeStop(id: string, runtime: Runtime, turn: AgentThread['lastTurn'], message: string): void {
+    const thread = this.threads.get(id); const alias = this.aliases[id]
+    if (!thread) return
+    if (turn && thread.lastTurn?.id === turn.id && thread.lastTurn.status === 'running') {
+      thread.lastTurn = { ...turn, status: 'failed' }
       this.markTurn(id, 'failed', turn.messageId, message)
     } else this.noteOnThread(id, { id: `claude-mode-${randomUUID()}`, kind: 'status', status: 'failed', title: 'Claude Code stopped', error: message })
-    thread.requests = []; this.changed(id); this.emit()
-    return true
+    if (this.compacting.get(id) === runtime) this.compacting.delete(id)
+    if (alias?.compaction?.status === 'running') {
+      alias.compaction = { commandId: alias.compaction.commandId, ...idleMark(alias.compaction), status: 'failed', error: message }
+      thread.compaction = alias.compaction
+      void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
+    }
+    thread.status = 'error'; thread.requests = []; this.changed(id); this.emit()
   }
   /** One record of Sotto's own on the thread's activity, under its newest message. */
   private noteOnThread(id: string, note: Pick<AgentActivity, 'id' | 'kind' | 'status' | 'title' | 'text' | 'error'>): void {

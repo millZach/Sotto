@@ -17,4 +17,10 @@ describe('Claude Code permission mode drift (#657)', () => {
     expect(permissionModeDrift('approval-required', undefined)).toBeUndefined()
     expect(looserModeStopped('approval-required', 'yolo')).toContain('Claude Code started in a permission mode Sotto does not know although this thread is set to Ask for approval')
   })
+  it('says the stop could not be confirmed rather than that nothing ran', () => {
+    const words = looserModeStopped('auto', 'bypassPermissions', { confirmed: false })
+    expect(words).toContain('so Sotto stopped it, but could not confirm that it ended, so it may have acted. Check the project for changes.')
+    expect(words).not.toContain('Nothing ran')
+    expect(looserModeStopped('auto', 'bypassPermissions', { ended: [{ label: 'a' }, { label: 'b' }] })).toContain('Nothing from this message ran, and 2 background tasks, started earlier, stopped with it.')
+  })
 })
