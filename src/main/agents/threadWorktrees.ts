@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
-import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
@@ -110,7 +110,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
       void stopping.then(() => {
         if (timedOut || processError || code !== 0) {
           const unavailable = (processError as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
-          reject(Object.assign(new Error(unavailable ? 'Git is unavailable. Install Git or explicitly choose a shared working copy.' : timedOut ? 'Git took too long.' : Buffer.concat(errors).toString('utf8').trim() || processError?.message || 'Git could not finish this action.'), { code: (processError as NodeJS.ErrnoException | undefined)?.code ?? code, timedOut }))
+          const stderr = Buffer.concat(errors).toString('utf8').trim()
+          reject(Object.assign(new Error(unavailable ? 'Git is unavailable. Install Git or explicitly choose a shared working copy.' : timedOut ? 'Git took too long.' : stderr || processError?.message || 'Git could not finish this action.'), { code: (processError as NodeJS.ErrnoException | undefined)?.code ?? code, timedOut, stderr }))
         } else accept(Buffer.concat(output).toString('utf8'))
       }, () => reject(new Error('Git took too long and its checkout processes could not be stopped. The folder was kept.')))
     })
@@ -664,22 +665,43 @@ export class ThreadWorktrees {
     // No origin is an answer; Git being unavailable is not, and the message runWorktreeGit gives it must reach the user.
     try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) }
     catch (error) { if (error instanceof Error && /Git is unavailable/u.test(error.message)) throw error; return 'no-origin' }
-    const failure = new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`)
+    const failure = async (stage: 'ls-remote' | 'fetch', error: unknown): Promise<Error> => {
+      const detail = error as { code?: unknown; timedOut?: boolean; stderr?: string }
+      // Keep the latest failure locally, including a collision that a retry recovered from. Never put Git's
+      // stderr in the pane or an operational log; remote URLs can contain credentials, so redact those here too.
+      const stderr = detail.stderr ?? (error instanceof Error ? error.message : String(error))
+      const path = join(this.directory, 'worktree-origin-fetch-failure.json'), temporary = `${path}.${randomUUID()}.tmp`
+      // Different branches can fail together. Replace the diagnostic whole so their writes cannot mix.
+      await writeFile(temporary, JSON.stringify({
+        at: new Date().toISOString(), repositoryRoot, baseBranch, stage, quiet, code: detail.code,
+        timedOut: detail.timedOut === true, stderr: stderr.replace(/\b(?:https?|ssh):\/\/\S+/gu, '[remote URL]').slice(0, 16_384),
+      }) + '\n', { mode: 0o600 }).then(() => rename(temporary, path)).catch(() => rm(temporary, { force: true }).catch(() => undefined))
+      return new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`, { cause: error })
+    }
     // --exit-code answers 2 for a remote that is reachable and has no such branch; anything else is a real failure.
     try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`], { quiet }) }
-    catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw failure }
+    catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw await failure('ls-remote', error) }
     // No FETCH_HEAD, as the background fetch writes none: a fetch typing started must not change what a
     // `git merge FETCH_HEAD` in the project would merge. A Git older than 2.29 does not know the flag.
     const fetch = (): Promise<string> => this.git(repositoryRoot, ['fetch', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [],
       'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], { quiet })
-    try {
-      await fetch().catch((error: unknown) => {
-        if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
-        this.fetchHeadFlag = false
-        return fetch()
-      })
-    } catch { throw failure }
-    return 'fetched'
+    for (let attempt = 0;; attempt++) {
+      try {
+        await fetch().catch((error: unknown) => {
+          if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
+          this.fetchHeadFlag = false
+          return fetch()
+        })
+        return 'fetched'
+      } catch (error) {
+        const reported = await failure('fetch', error)
+        // Background fetches and other Git processes share origin refs across every worktree. If another
+        // fetch moved this ref first, fetch again against its new value; connection/auth failures still stop.
+        const collision = error instanceof Error && error.message.split(/\r?\n/u).some(line =>
+          line.startsWith(`error: cannot lock ref 'refs/remotes/origin/${baseBranch}': is at `) && / but expected [0-9a-f]+$/u.test(line))
+        if (!collision || attempt >= 2) throw reported
+      }
+    }
   }
 
   /**
