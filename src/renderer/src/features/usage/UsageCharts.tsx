@@ -3,7 +3,7 @@ import { i18n as interfaceI18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
-import { chartStretches, seriesValues, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
+import { chartStretches, seriesValues, sumFigures, wholeFigure, type ChartFigure, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
 import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
@@ -105,6 +105,11 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const none = waiting !== undefined ? undefined : metric === 'tokens' && plan.peak === 0 ? t`No token counts in this range`
     : plan.series.length === 0 ? t`No prompts in this range` : undefined
   const scale = (amount: number): string => metric === 'prompts' ? fmtInt(amount) : fmtTok(amount)
+  // A day's figure over its bar reads as reported, as every figure on the page does: a dash when nothing reported it and
+  // ≥ when some records left part of it out, so the figure is a lower bound (ADR-0078).
+  const dayFigure = (at: number): ChartFigure => sumFigures(plan.series.map(item => item.figures[at] ?? wholeFigure(0)))
+  const figureText = (figure: ChartFigure): string => figure.known ? `${figure.partial ? '≥ ' : ''}${scale(figure.value)}` : '—'
+  const saysFigure = (figure: ChartFigure | undefined, read: boolean): figure is ChartFigure => figure !== undefined && (figure.value > 0 || (read && !figure.known))
   const index = selected === null ? -1 : days.indexOf(selected)
   const point = (event: PointerEvent<HTMLDivElement>): void => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -130,11 +135,11 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
       // A day with nothing keeps a one-pixel mark on the baseline, as the chart always had; a quiet stretch draws none.
       const shown = parts.length > 0 ? parts : quiet ? [] : plan.series.slice(0, 1)
       // The day being read says its figure over its bar too, so a pointer or the keys read the chart where it is drawn.
-      const total = labelled || day === selected ? dayTotal(at) : 0
+      const figure = labelled || day === selected ? dayFigure(at) : undefined
       return <span key={day} className="usage-chart__column" data-on={day === selected || undefined} style={{ '--usage-i': at } as Style}>
         {shown.map((item, place) => <i key={item.key} className="usage-chart__bar" data-tone={item.tone} data-top={place === shown.length - 1 || undefined}
           style={{ '--usage-h': height(item.values[at] ?? 0) } as Style} />)}
-        {total > 0 ? <b className="usage-chart__label" aria-hidden="true">{scale(total)}</b> : null}
+        {saysFigure(figure, day === selected) ? <b className="usage-chart__label" aria-hidden="true">{figureText(figure)}</b> : null}
       </span>
     }
     drawing = <div className="usage-chart__columns" data-split={(plan.series.length > 1 && plan.stacked) || undefined} data-folded={folded || undefined}>
@@ -161,8 +166,8 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
         {plan.series.map(item => <path key={item.key} className="usage-chart__line" data-tone={item.tone} d={path(item.values)} vectorEffect="non-scaling-stroke" />)}
       </svg>
       {index >= 0 ? <><span className="usage-chart__cross" style={{ left: across(index, count) }} />{plan.series.map(item => dot(item, index, true))}
-        {dayTotal(index) > 0 ? <b className="usage-chart__label usage-chart__label--at" aria-hidden="true"
-          style={{ left: across(index, count), bottom: `${(Math.max(...plan.series.map(item => Math.max(0, item.values[index] ?? 0))) / top * 100).toFixed(3)}%` }}>{scale(dayTotal(index))}</b> : null}</>
+        {saysFigure(dayFigure(index), true) ? <b className="usage-chart__label usage-chart__label--at" aria-hidden="true"
+          style={{ left: across(index, count), bottom: `${(Math.max(...plan.series.map(item => Math.max(0, item.values[index] ?? 0))) / top * 100).toFixed(3)}%` }}>{figureText(dayFigure(index))}</b> : null}</>
         : count <= 7 ? plan.series.flatMap(item => days.map((_, at) => dot(item, at, false))) : null}
     </div>
   }

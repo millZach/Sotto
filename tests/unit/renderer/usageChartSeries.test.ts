@@ -76,6 +76,14 @@ describe('Usage chart series', () => {
     expect(totalPlan('tokens', 'lines', days)).toMatchObject({ stacked: false, peak: 110, series: [{ name: 'Input and output', values: [110, 0] }] })
   })
 
+  it('keeps a day whose tokens are partly or not reported as a lower bound or unknown, so its figure says so', () => {
+    const days = [{ prompts: 1, input: 100, output: 10, tokensKnown: true, tokensPartial: true }, { prompts: 1, input: 0, output: 0, tokensKnown: false, tokensPartial: false }]
+    const plan = totalPlan('tokens', 'bars', days)
+    expect(sumFigures(plan.series.map(item => item.figures[0]!))).toEqual({ value: 110, known: true, partial: true })
+    expect(sumFigures(plan.series.map(item => item.figures[1]!))).toMatchObject({ known: false })
+    expect(totalPlan('prompts', 'bars', days).series[0]!.figures[0]).toEqual(wholeFigure(1))
+  })
+
   it('lists every series with its range total, or with one day value', () => {
     const choice = chooseSeries('model', models.slice(0, 2))
     const chart = splitPlan({ kind: 'lines', choice, totals: whole([15, 9]), values: wholeMap([['a', [10, 4]], ['b', [5, 5]]]), slots: new Map() })

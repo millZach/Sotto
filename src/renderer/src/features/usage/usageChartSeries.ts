@@ -150,15 +150,19 @@ function makeSeries(key: string, name: string, tone: SeriesTone, figures: readon
   return { key, name, tone, values, total: sum(values), figures, figure: sumFigures(figures), ...(title === undefined ? {} : { title }) }
 }
 
-/** One day's figures for the Total view. */
-export interface TotalDay { readonly prompts: number; readonly input: number; readonly output: number }
+/** One day's figures for the Total view, with whether its tokens were reported, whole or in part. */
+export interface TotalDay { readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown?: boolean; readonly tokensPartial?: boolean }
 
 /** The Total view as it was before the split: prompts in the accent; tokens as input under output, or one line of both. */
 export function totalPlan(metric: ChartMetric, kind: ChartKind, days: readonly TotalDay[]): ChartPlan {
-  const make = (key: string, name: string, tone: SeriesTone, values: number[]): ChartSeries => makeSeries(key, name, tone, values.map(wholeFigure))
-  if (metric === 'prompts') return plan([make('prompts', t`Prompts`, 'strong', days.map(day => day.prompts))], kind)
-  if (kind === 'lines') return plan([make('tokens', t`Input and output`, 'strong', days.map(day => day.input + day.output))], kind)
-  return plan([make('input', t`Input`, 'input', days.map(day => day.input)), make('output', t`Output`, 'output', days.map(day => day.output))], kind)
+  if (metric === 'prompts') return plan([makeSeries('prompts', t`Prompts`, 'strong', days.map(day => wholeFigure(day.prompts)))], kind)
+  // A day's tokens are as reported: unknown when nothing reported them, a lower bound when some records left part out.
+  const tokens = (value: (day: TotalDay) => number): ChartFigure[] => days.map(day => {
+    const known = day.tokensKnown ?? true
+    return { value: value(day), known, partial: known && (day.tokensPartial ?? false) }
+  })
+  if (kind === 'lines') return plan([makeSeries('tokens', t`Input and output`, 'strong', tokens(day => day.input + day.output))], kind)
+  return plan([makeSeries('input', t`Input`, 'input', tokens(day => day.input)), makeSeries('output', t`Output`, 'output', tokens(day => day.output))], kind)
 }
 
 export interface SplitInput {
