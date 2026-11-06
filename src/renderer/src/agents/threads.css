@@ -179,7 +179,7 @@
    message's bubble or a code block passes under it; in a pane with no margin it keeps 10px from the pane's edge. It is
    an arrow, named for what a press does; New messages says so in words. A ring of the room keeps what passes beside it
    from running into it. */
-.thread-transcript__jump { position: absolute; right: max(10px, calc((100% - 760px) / 2)); bottom: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: 0 0 0 4px var(--tt-canvas), var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.thread-transcript__jump { position: absolute; left: min(calc(100% - 42px), calc(50% + 390px)); bottom: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: 0 0 0 4px var(--tt-canvas), var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
 .thread-transcript__jump:not([data-unseen]) .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* In Watcher's room the margin is the scene's, so it keeps its word and its place in the middle of the column (ADR-0126). */
 .watcher-pane .thread-transcript__jump { right: auto; left: 50%; min-height: 36px; padding: 0 14px; box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); font-size: var(--tt-type-body); transform: translateX(-50%); }
@@ -328,18 +328,15 @@
 /* Glass's card can be seen through, and on Glass the words run on under it and show through it, slim or full, as they
    always have: a clip there would end them at the card's top, which ADR-0125 rules out. */
 :root[data-glass] .thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport { clip-path: none; }
-/* A pane too narrow to give Jump to latest a margin keeps it a lane. Jump stands 18px into the column, so a reply's prose stops
-   short of it, and that costs nothing in a pane wide enough for the 38em line. In a bubble the words stop short by padding; the
-   bubble's edge and the box of a code block or a diff still pass under it. */
-.thread-pane:not(.watcher-pane) .thread-message:not([data-role='user']) .rich-message { --rich-measure: min(38em, calc(100% - 22px)); }
-.thread-pane:not(.watcher-pane) .thread-message:not([data-role='user']) .thread-message__text { max-width: min(38em, calc(100% - 22px)); }
+/* Jump to latest never covers a message. It stands just above the composer, 10px clear of the column's right edge, and
+   where the pane leaves no margin for it, at the pane's edge with the column ending 4px clear of it (narrower by that much
+   than the composer, at the window's minimum about 28px). Watcher's stands in the middle of its conversation. */
+.thread-pane:not(.watcher-pane) .thread-transcript__content { margin-right: max(0px, 46px - max(18px, (100cqi - 760px) / 2)); }
 /* Plain words in a thread's messages take the lead step, as its rendered replies do (rich-messages.css). */
 .thread-pane:not(.watcher-pane) .thread-message__text { max-width: 38em; font-size: var(--tt-type-lead); }
-@container thread-pane (max-width: 871px) {
-  .thread-pane:not(.watcher-pane) .thread-message[data-role='user'] { padding-right: 20px; }
-}
-/* New messages is too wide for that lane, so in a pane that narrow it is the arrow too, with its coloured edge and its name. */
-@container thread-pane (max-width: 800px) {
+/* New messages reads rightwards from beside the column, so a pane without the margin for its words shows the arrow, with
+   its coloured edge and its name. */
+@container thread-pane (max-width: 1059px) {
   .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] { padding: 0; }
   .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
