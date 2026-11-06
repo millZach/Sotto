@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway (#2229): three variants of what a receipt card says when Watcher sent a GO MERGE out of the
+     merge train's turn, with its reason. Switch with ?variant=A|B|C or the bar below; ?theme=light for light. -->
+<html lang="en"><head><meta charset="utf-8"><title>PROTOTYPE · merge turn receipt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#141416;--surface:#1c1c1f;--line:#2b2b30;--text:#ececef;--text2:#b9b9c2;--muted:#8d8d98;--accent:#9fb4ff;--needs:#f0b46a;--ready:#7fd69a}
+:root[data-theme=light]{--bg:#f6f6f4;--surface:#fff;--line:#e3e3df;--text:#1d1d20;--text2:#45454d;--muted:#6b6b74;--accent:#3a55c9;--needs:#8a5200;--ready:#1f7a3d}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Figtree,system-ui,sans-serif}
+main{max-width:640px;margin:40px auto;padding:0 20px 120px}
+.reply{color:var(--text);margin:0 0 10px}
+.reply b{font-weight:600}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.top{display:flex;align-items:center;gap:8px}
+.glyph{width:15px;color:var(--muted)}
+.lead{color:var(--text2)}
+.name{font-weight:500;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px}
+.outcome{margin-left:auto;color:var(--ready);font-size:12.5px;display:inline-flex;gap:6px;align-items:center}
+.ring{width:10px;height:10px;border-radius:50%;border:2px solid currentColor}
+.meta{margin:0;padding-left:23px;color:var(--muted);font-size:12px}
+.meta span+span::before{content:'·';margin:0 7px}
+.line{margin:3px 0 0;padding-left:23px;color:var(--text2);font-size:12px;line-height:1.45}
+.line.needs{color:var(--needs)}
+.quote{margin:4px 0 0 23px;padding:2px 0 2px 9px;border-left:2px solid var(--line);color:var(--text2);font-size:12px}
+.held{color:var(--muted)}
+h2{font-size:12px;color:var(--muted);font-weight:500;margin:28px 0 8px;text-transform:none}
+.bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 8px;box-shadow:0 6px 24px #0006}
+.bar button{font:inherit;background:none;color:var(--text2);border:1px solid transparent;border-radius:8px;padding:4px 10px;cursor:pointer}
+.bar button[aria-pressed=true]{border-color:var(--accent);color:var(--text)}
+.state{font-size:12px;color:var(--muted);margin-left:8px}
+</style></head><body><main id="app"></main>
+<div class="bar" role="toolbar" aria-label="Prototype variants"></div>
+<script>
+const p=new URLSearchParams(location.search);document.documentElement.dataset.theme=p.get('theme')==='light'?'light':'dark'
+const reason='Zach asked for #2263 before the release, and #1959 merges main in after it anyway.'
+const held='#1959 in “Model picker” has its required checks running.'
+const send='<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>'
+const meta='<p class="meta"><span>Claude Code</span><span>forge</span><span>Sotto</span></p>'
+const cardTop=(lead,name)=>`<div class="top">${send}<span class="lead">${lead}</span><span class="name">${name}</span><span class="outcome"><span class="ring"></span>Working</span></div>`
+const variants={
+ A:{label:'A · one line',note:'What is built now: one Sotto line under the card, held reason then Watcher’s reason, in the placement line’s place and colour.',
+  card:()=>`${cardTop('Sent to','Required checks gate')}${meta}<p class="line">Merge turn given early. ${held} Watcher’s reason: ${reason}</p>`},
+ B:{label:'B · reason quoted',note:'Sotto’s line says what it went past, in the needs colour; Watcher’s reason sits under it as a quote, apart from Sotto’s words.',
+  card:()=>`${cardTop('Sent to','Required checks gate')}${meta}<p class="line needs">Out of turn: ${held}</p><p class="quote">Watcher’s reason: “${reason}”</p>`},
+ C:{label:'C · lead says it',note:'The card’s first words change to “Sent out of turn to”; the line under it is Watcher’s reason alone, with what held it after, muted.',
+  card:()=>`${cardTop('Sent out of turn to','Required checks gate')}${meta}<p class="line">Watcher’s reason: ${reason} <span class="held">(${held})</span></p>`},
+}
+const v=variants[p.get('variant')]?p.get('variant'):'A'
+document.getElementById('app').innerHTML=`<p class="reply">GO MERGE to <b>Required checks gate</b> (#2263) out of turn: ${reason}</p>
+<ul><li class="card">${variants[v].card()}</li><li class="card">${cardTop('Sent to','Footer links')}${meta}</li></ul>
+<h2>${variants[v].note}</h2>`
+const bar=document.querySelector('.bar')
+for(const k of Object.keys(variants)){const b=document.createElement('button');b.textContent=variants[k].label;b.setAttribute('aria-pressed',String(k===v));b.onclick=()=>{p.set('variant',k);location.search=p};bar.append(b)}
+const t=document.createElement('button');t.textContent=p.get('theme')==='light'?'Dark':'Light';t.onclick=()=>{p.set('theme',p.get('theme')==='light'?'dark':'light');location.search=p};bar.append(t)
+const s=document.createElement('span');s.className='state';s.textContent=`variant=${v} · theme=${document.documentElement.dataset.theme}`;bar.append(s)
+</script></body></html>
