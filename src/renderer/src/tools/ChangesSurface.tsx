@@ -131,8 +131,8 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
     <div className="changes-bar">
       {/* The totals keep their place; what they leave out shows beside them or drops to a line the sum never shows. */}
       <span className="changes-bar__sum">
-        {files.length > 0 ? <Totals {...totals} hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} /> : null}
-        {files.length > 0 && view.ignoreWhitespace ? <WhitespaceNote /> : null}
+        {files.length > 0 ? <Totals {...totals} hidesWhitespace={view.ignoreWhitespace} hidden={view.ignoreWhitespace ? review?.hiddenWhitespace : undefined} againstGitHub={changes.scope.kind === 'branch'} /> : null}
+        {files.length > 0 && view.ignoreWhitespace ? <WhitespaceNote hidden={review?.hiddenWhitespace} /> : null}
       </span>
       <div className="changes-bar__view" role="group" aria-label={t`Diff view`}>
         <span ref={setJumpSlot} className="changes-bar__jump" />
@@ -158,15 +158,27 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   </div>
 }
 
-/** The comparison's `+adds −dels`, at the head of the bar under the line of chrome. */
-function Totals({ additions, deletions, hidesWhitespace, againstGitHub }: {
+/** The lines Hide whitespace changes left out, when Git counted them. */
+interface HiddenLines { readonly additions: number; readonly deletions: number }
+
+/**
+ * The comparison's `+adds −dels`, at the head of the bar under the line of chrome. They count every line, as GitHub
+ * does, so a branch's totals and its pull request's read the same: with whitespace hidden, the lines that hid are
+ * added back when Git counted them, and the note beside says how many of them the lines below leave out.
+ */
+function Totals({ additions: shownAdditions, deletions: shownDeletions, hidesWhitespace, hidden, againstGitHub }: {
   readonly additions: number; readonly deletions: number; readonly hidesWhitespace: boolean
+  readonly hidden: HiddenLines | undefined
   /** A branch's totals are the ones a reader holds up against its pull request. */
   readonly againstGitHub: boolean
 }): ReactNode {
+  const additions = shownAdditions + (hidden?.additions ?? 0), deletions = shownDeletions + (hidden?.deletions ?? 0)
   const added = shownLineCount(additions), removed = shownLineCount(deletions)
-  // Git leaves whitespace-only lines out of these while Hide whitespace changes is on, and GitHub counts every line, so the two can differ.
-  const words = !hidesWhitespace ? plural(additions, { other: `${added} lines added, ${removed} removed` })
+  const hiddenAdded = shownLineCount(hidden?.additions ?? 0), hiddenRemoved = shownLineCount(hidden?.deletions ?? 0)
+  // Git leaves whitespace-only lines out while Hide whitespace changes is on, and GitHub counts every line. Counted, they
+  // are back in the totals; uncounted (a turn, or a host that does not count them), the totals say they leave them out.
+  const words = !hidesWhitespace || hidden && hidden.additions + hidden.deletions === 0 ? plural(additions, { other: `${added} lines added, ${removed} removed` })
+    : hidden ? i18n._(msg({ message: `${added} lines added, ${removed} removed. ${hiddenAdded} added and ${hiddenRemoved} removed change only whitespace and are hidden below.`, comment: '{added}, {removed}, {hiddenAdded} and {hiddenRemoved} are counts of lines.' }))
     : againstGitHub ? i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher.`, comment: '{added} and {removed} are counts of lines.' }))
       : i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes.`, comment: '{added} and {removed} are counts of lines.' }))
   return <span className="changes-counts changes-counts--total" title={words}>
@@ -176,13 +188,18 @@ function Totals({ additions, deletions, hidesWhitespace, againstGitHub }: {
 }
 
 /**
- * Says beside the totals what they leave out, so a branch's totals reading lower than its pull request's has its reason
- * in sight: Hide whitespace changes leaves whitespace-only lines out of the counts as well as the lines.
+ * Says beside the totals what Hide whitespace changes leaves out. Counted, it is how many lines the lines below leave
+ * out, and nothing when none; uncounted, that the totals leave them out too, so totals reading lower than a pull
+ * request's have their reason in sight.
  */
-function WhitespaceNote(): ReactNode {
+function WhitespaceNote({ hidden }: { readonly hidden: HiddenLines | undefined }): ReactNode {
   const { t } = useLingui()
+  if (hidden && hidden.additions + hidden.deletions === 0) return null
+  const lines = (hidden?.additions ?? 0) + (hidden?.deletions ?? 0), count = shownLineCount(lines)
   // The totals' own words already say it to a screen reader.
-  return <span className="changes-whitespace" aria-hidden="true">{t({ message: 'without whitespace', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.' })}</span>
+  return <span className="changes-whitespace" aria-hidden="true">{hidden
+    ? plural(lines, { one: `${count} whitespace line hidden`, other: `${count} whitespace lines hidden` })
+    : t({ message: 'without whitespace', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.' })}</span>
 }
 
 function turnWhen(createdAt: string): string {

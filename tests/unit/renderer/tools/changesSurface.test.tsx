@@ -41,7 +41,7 @@ const WORKING: GitReviewFile[] = [
 const checkpoint = (id: string, status: Checkpoint['status'], reason?: string): Checkpoint => ({ id, threadId: 'visual-gate', createdAt: '2026-09-23T10:00:00.000Z', status, files: [{ path: 'src/app.ts', change: 'modified' }], supported: true, ...(reason ? { reason } : {}) })
 const TURN_ONE = '11111111-1111-4111-8111-111111111111', TURN_TWO = '22222222-2222-4222-8222-222222222222'
 
-function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository'; truncated?: boolean; checkpoints?: Checkpoint[] } = {}) {
+function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository'; truncated?: boolean; checkpoints?: Checkpoint[]; branchFiles?: GitReviewFile[]; hiddenWhitespace?: { additions: number; deletions: number } } = {}) {
   let reviewFiles = options.files ?? WORKING
   let revision = 'r1'
   const listed = (): GitChange[] => reviewFiles.map(file => ({ path: file.path, status: file.status }))
@@ -50,9 +50,10 @@ function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository
     list: vi.fn(async (): Promise<ToolsResult<never>> => options.listError
       ? { ok: false, error: { code: options.listError, message: 'no repo' } }
       : { ok: true, value: { workspace, branch: 'feature/changes', revision, files: listed(), truncated: options.truncated ?? false } as never }),
-    review: vi.fn(async ({ scope }): Promise<ToolsResult<GitReview>> => scope.kind === 'working'
+    review: vi.fn(async ({ scope, ignoreWhitespace }): Promise<ToolsResult<GitReview>> => scope.kind === 'working'
       ? { ok: true, value: { workspace, revision, scope: { kind: 'working' }, files: reviewFiles, truncated: false } }
-      : { ok: true, value: { workspace, revision, scope: { kind: 'branch', base: scope.base ?? 'origin/main', automatic: scope.base === null, head: 'feature/changes' }, files: [reviewFile('src/trail.ts', 'added', { kind: 'text', patch: 'diff --git a/src/trail.ts b/src/trail.ts\n--- /dev/null\n+++ b/src/trail.ts\n@@ -0,0 +1 @@\n+trail\n' }, 1, 0)], truncated: false } }),
+      : { ok: true, value: { workspace, revision, scope: { kind: 'branch', base: scope.base ?? 'origin/main', automatic: scope.base === null, head: 'feature/changes' }, files: options.branchFiles ?? [reviewFile('src/trail.ts', 'added', { kind: 'text', patch: 'diff --git a/src/trail.ts b/src/trail.ts\n--- /dev/null\n+++ b/src/trail.ts\n@@ -0,0 +1 @@\n+trail\n' }, 1, 0)], truncated: false,
+        ...(ignoreWhitespace && options.hiddenWhitespace ? { hiddenWhitespace: options.hiddenWhitespace } : {}) } }),
     copyPath: vi.fn(async ({ path }) => ({ ok: true as const, value: { workspace, path, absolutePath: `D:/work/workshop/${path}` } })),
     reveal: vi.fn(async ({ path }) => ({ ok: true as const, value: { workspace, path, absolutePath: `D:/work/workshop/${path}` } })),
     watch: vi.fn(async () => ({ ok: true as const, value: undefined })),
@@ -312,6 +313,30 @@ describe('Changes as T3’s diff', () => {
     expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
     await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
     await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))
+  })
+
+  it('counts every line, as GitHub does, when Git counted the whitespace lines it hid, and says how many hid', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ branchFiles: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 2957, 1230)], hiddenWhitespace: { additions: 3, deletions: 3 } }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await pressView(user, 'Hide whitespace changes')
+    // The pull request reads +2,960 -1,233: the bar does too, and its note says the lines below leave six out.
+    await waitFor(() => expect(panel().querySelector('.changes-counts--total')).toHaveTextContent('+2,960 −1,233'))
+    expect(panel().querySelector('.changes-bar .changes-whitespace')).toHaveTextContent('6 whitespace lines hidden')
+    expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('2,960 lines added, 1,233 removed. 3 added and 3 removed change only whitespace and are hidden below.')
+    // A file's own head still counts the lines it shows.
+    expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2,957 −1,230')
+  })
+
+  it('says nothing beside the totals when hiding whitespace hid no line', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ branchFiles: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 12, 4)], hiddenWhitespace: { additions: 0, deletions: 0 } }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await pressView(user, 'Hide whitespace changes')
+    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('12 lines added, 4 removed'))
+    expect(panel().querySelector('.changes-whitespace')).toBeNull()
   })
 
   it('opens the tree over the lines from All files, and it goes on a pick, on Escape or when focus leaves', async () => {
