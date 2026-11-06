@@ -293,6 +293,7 @@ msgid "{passedCount} passed"
 msgstr ""
 
 #. Which file of a comparison is in view, as in "3 of 30".
+#. Which file of a comparison is in view, as in "3 of 30".
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{place} of {total}"
 msgstr ""
@@ -543,9 +544,9 @@ msgstr ""
 msgid "After turn"
 msgstr ""
 
-#. Before the base branch a branch is compared with, as in "Against origin/main".
+#. After the scope of Changes and before the base branch it compares with, as in "Branch changes against origin/main".
 #: src/renderer/src/tools/ChangesBasePicker.tsx
-msgid "Against"
+msgid "against"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -591,10 +592,9 @@ msgstr ""
 msgid "All agents"
 msgstr ""
 
-#. Opens the list of a comparison's files over its lines, in a narrow panel.
-#. Opens the list of a comparison's files over its lines, in a narrow panel.
+#. Opens the list of a comparison's files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "All files"
+msgid "All files, {place} of {total}"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx
@@ -825,6 +825,11 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Browser viewport size"
+msgstr ""
+
+#. Says what the Tools panel holds, after Show Tools in the pane header button's tooltip.
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Browser, files, changes and more"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
@@ -1844,6 +1849,10 @@ msgstr ""
 
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Hide the test iPhone; the agent keeps working"
+msgstr ""
+
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Hide Tools"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesViewMenu.tsx
@@ -2881,6 +2890,11 @@ msgstr ""
 msgid "Pull requests are not available in this window."
 msgstr ""
 
+#. Says what the Council is, after Show Council in the pane header button’s tooltip (ADR-0177).
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Puts one question to threads on several providers"
+msgstr ""
+
 #. A check on a pull request has not started.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Queued"
@@ -3338,6 +3352,10 @@ msgstr ""
 
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Show the test iPhone over the thread"
+msgstr ""
+
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Show Tools"
 msgstr ""
 
 #. {pinnedTitle} is a thread's title.

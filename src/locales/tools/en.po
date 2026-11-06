@@ -293,6 +293,7 @@ msgid "{passedCount} passed"
 msgstr "{passedCount} passed"
 
 #. Which file of a comparison is in view, as in "3 of 30".
+#. Which file of a comparison is in view, as in "3 of 30".
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{place} of {total}"
 msgstr "{place} of {total}"
@@ -543,10 +544,10 @@ msgstr "After the turn"
 msgid "After turn"
 msgstr "After turn"
 
-#. Before the base branch a branch is compared with, as in "Against origin/main".
+#. After the scope of Changes and before the base branch it compares with, as in "Branch changes against origin/main".
 #: src/renderer/src/tools/ChangesBasePicker.tsx
-msgid "Against"
-msgstr "Against"
+msgid "against"
+msgstr "against"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Against HEAD"
@@ -591,11 +592,10 @@ msgstr "All {total} passed"
 msgid "All agents"
 msgstr "All agents"
 
-#. Opens the list of a comparison's files over its lines, in a narrow panel.
-#. Opens the list of a comparison's files over its lines, in a narrow panel.
+#. Opens the list of a comparison's files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "All files"
-msgstr "All files"
+msgid "All files, {place} of {total}"
+msgstr "All files, {place} of {total}"
 
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
@@ -826,6 +826,11 @@ msgstr "Browser paused"
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Browser viewport size"
 msgstr "Browser viewport size"
+
+#. Says what the Tools panel holds, after Show Tools in the pane header button's tooltip.
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Browser, files, changes and more"
+msgstr "Browser, files, changes and more"
 
 #: src/renderer/src/tools/browserSteps.ts
 msgid "Browsing paused"
@@ -1845,6 +1850,10 @@ msgstr "Hide the test iPhone over the thread"
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Hide the test iPhone; the agent keeps working"
 msgstr "Hide the test iPhone; the agent keeps working"
+
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Hide Tools"
+msgstr "Hide Tools"
 
 #: src/renderer/src/tools/ChangesViewMenu.tsx
 msgid "Hide whitespace changes"
@@ -2881,6 +2890,11 @@ msgstr "Pull request URL or #42"
 msgid "Pull requests are not available in this window."
 msgstr "Pull requests are not available in this window."
 
+#. Says what the Council is, after Show Council in the pane header button’s tooltip (ADR-0177).
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Puts one question to threads on several providers"
+msgstr "Puts one question to threads on several providers"
+
 #. A check on a pull request has not started.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Queued"
@@ -3339,6 +3353,10 @@ msgstr "Show the test iPhone in Tools"
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Show the test iPhone over the thread"
 msgstr "Show the test iPhone over the thread"
+
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Show Tools"
+msgstr "Show Tools"
 
 #. {pinnedTitle} is a thread's title.
 #: src/renderer/src/tools/ToolsToggle.tsx
