@@ -13,6 +13,9 @@ import './changes.css'
 /** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
 const OPENING_ROWS = 24
 
+/** A line both sides keep with nothing on it: between a document's paragraphs, a gap rather than a numbered row. */
+export const blankContext = (line: DiffLine): boolean => line.kind === 'context' && line.text.trim() === ''
+
 export const sign = (line: DiffLine | undefined): string => line?.kind === 'add' ? '+' : line?.kind === 'remove' ? '−' : ''
 
 /** What a screen reader hears before a changed line, which sighted readers get from its sign. */
@@ -227,27 +230,57 @@ export function useHighlighter(wanted: boolean): Highlighter | null {
 /** What a cut body says while the rest of it is on its host (ADR-0025): the line where the rest goes, and the bar's status. */
 export interface DiffBlockCut { readonly line: string; readonly status: ReactNode }
 
+/** The file a diff of one file names in its own header (`+++ b/docs/plan.md`, or `--- a/` for a file that went), if it names one. */
+export function namedPath(diff: string): string | null {
+  if ((diff.match(/^diff --git /gmu)?.length ?? 0) > 1) return null
+  return /^\+\+\+ b\/(.+)$/mu.exec(diff)?.[1] ?? /^--- a\/(.+)$/mu.exec(diff)?.[1] ?? null
+}
+
+/** The box's file, as a file's head in Changes names it: its folder quiet, then its name. The whole path is its tooltip. */
+function FileName({ path }: { readonly path: string }): ReactNode {
+  const cut = path.lastIndexOf('/')
+  const folder = cut < 0 ? '' : path.slice(0, cut + 1), base = path.slice(cut + 1)
+  // An isolate keeps the folder's slashes in place inside the right-to-left box that cuts it from its start.
+  return <span className="changes-block__name" title={path}>
+    {folder ? <span className="changes-file__folder"><bdi>{folder}</bdi></span> : null}<span className="changes-file__base">{base}</span>
+  </span>
+}
+
 /** The sign of a line read once with what it became: it lost words and gained some. */
 export const EDITED_SIGN = '±'
 
-function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; readonly decoration: DiffDecoration; readonly numbers: boolean; readonly code: boolean }): ReactNode {
+/**
+ * How the box numbers its lines: `both` in two columns, where each line was and where it is now, as a pull request
+ * does, so a removed line keeps its number and neither column mixes the two counts; `one` in one column, for a file
+ * that only came or only went; `none` for a diff with no line numbers of its own.
+ */
+type Numbering = 'both' | 'one' | 'none'
+
+/** A line's numbers: where it was and where it is now in two columns, or its one number. */
+function Numbers({ numbering, was, now }: { readonly numbering: Numbering; readonly was: number | null; readonly now: number | null }): ReactNode {
+  if (numbering === 'none') return null
+  if (numbering === 'one') return <span className="changes-line__number" aria-hidden="true">{now ?? was ?? ''}</span>
+  return <><span className="changes-line__number changes-line__number--was" aria-hidden="true">{was ?? ''}</span><span className="changes-line__number" aria-hidden="true">{now ?? ''}</span></>
+}
+
+function Line({ line, decoration, numbering, code }: { readonly line: DiffLine; readonly decoration: DiffDecoration; readonly numbering: Numbering; readonly code: boolean }): ReactNode {
   const { i18n } = useLingui()
   const paint = decoration.paint.get(line)
-  return <div className="changes-line" data-kind={line.kind} data-paired={paint?.paired} title={line.kind === 'hunk' ? line.text : undefined}>
-    {numbers ? <span className="changes-line__number" aria-hidden="true">{line.newLine ?? line.oldLine ?? ''}</span> : null}
+  return <div className="changes-line" data-kind={line.kind} data-paired={paint?.paired} data-blank={blankContext(line) || undefined} title={line.kind === 'hunk' ? line.text : undefined}>
+    <Numbers numbering={numbering} was={line.oldLine} now={line.newLine} />
     <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
     <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
   </div>
 }
 
 /** A document's line and what it became, as one line (EditedText), or a reworked one as two paragraphs (ReworkedText). */
-function EditedLine({ before, after, segments, decoration, numbers }: {
-  readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbers: boolean
+function EditedLine({ before, after, segments, decoration, numbering }: {
+  readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbering: Numbering
 }): ReactNode {
   const paintBefore = decoration.paint.get(before), paintAfter = decoration.paint.get(after)
   const reworked = decoration.reworked.has(before), rewritten = decoration.rewritten.has(before)
   return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={rewritten || undefined}>
-    {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
+    <Numbers numbering={numbering} was={before.oldLine} now={after.newLine} />
     <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
     <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
       {reworked
@@ -291,14 +324,17 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
     for (const line of lines) { if (line.kind === 'add') added++; else if (line.kind === 'remove') removed++ }
     return { additions: shownLineCount(added), deletions: shownLineCount(removed) }
   }, [lines])
-  const numbers = lines.some(line => line.oldLine !== null || line.newLine !== null)
+  const side = wholeSide(lines)
+  const numbering: Numbering = !lines.some(line => line.oldLine !== null || line.newLine !== null) ? 'none' : side ? 'one' : 'both'
   const digits = useMemo(() => numberWidth(lines), [lines])
+  const named = path ?? namedPath(diff)
   const copied = outcome === 'copied'
   const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
   const copy = (): void => { if (!cut) void writeClipboard(diff).then(() => showOutcome('copied'), () => showOutcome('failed')) }
   const shownCount = shown.length.toLocaleString(), lineCount = lines.length.toLocaleString()
   return <div className="changes-block" role="group" aria-label={t({ message: 'Diff', comment: 'Names the box that shows one change to a file in the transcript.' })}>
     <div className="changes-block__bar">
+      {named ? <FileName path={named} /> : null}
       <span className="changes-counts">
         <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
         <span className="tt-visually-hidden">{t`${additions} added, ${deletions} removed`}</span>
@@ -309,9 +345,9 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
         {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
       </button>
     </div>
-    <div className="changes-diff__rows" data-reading={reading} data-numbers={numbers ? undefined : 'none'} data-whole={wholeSide(lines)} style={numbers ? digits : undefined}>
-      {rows.map(([index, partner]) => partner === undefined ? <Line key={index} line={shown[index]!} decoration={decoration} numbers={numbers} code={reading === 'code'} />
-        : <EditedLine key={index} before={shown[index]!} after={shown[partner]!} segments={decoration.inline.get(shown[index]!)!} decoration={decoration} numbers={numbers} />)}
+    <div className="changes-diff__rows" data-reading={reading} data-numbers={numbering === 'one' ? undefined : numbering} data-whole={side} style={numbering === 'none' ? undefined : digits}>
+      {rows.map(([index, partner]) => partner === undefined ? <Line key={index} line={shown[index]!} decoration={decoration} numbering={numbering} code={reading === 'code'} />
+        : <EditedLine key={index} before={shown[index]!} after={shown[partner]!} segments={decoration.inline.get(shown[index]!)!} decoration={decoration} numbering={numbering} />)}
       {cut ? <div className="changes-block__cut activity-body__cut">{cut.line}</div> : null}
     </div>
     {shown.length < lines.length ? <div className="changes-diff__more"><span>{t`Showing ${shownCount} of ${lineCount} lines.`}</span>

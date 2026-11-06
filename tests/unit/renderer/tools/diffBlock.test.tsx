@@ -3,7 +3,7 @@ import { cleanup, render } from '@testing-library/react'
 import { I18nProvider } from '@lingui/react'
 import { i18n } from '@lingui/core'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DiffBlock, codeBreaks } from '../../../../src/renderer/src/tools/DiffBlock'
+import { DiffBlock, codeBreaks, namedPath } from '../../../../src/renderer/src/tools/DiffBlock'
 
 afterEach(cleanup)
 
@@ -37,7 +37,29 @@ describe('DiffBlock', () => {
     const edited = container.querySelector('.changes-line[data-kind="edited"]')!
     expect(edited.querySelector('del')!.textContent).toBe('Removed: Nothing is')
     expect(edited.querySelector('ins')!.textContent).toBe('Added: Five pull requests are')
-    expect(edited.querySelector('.changes-line__number')!.textContent).toBe('4')
+    // Where it was, then where it is now.
+    expect([...edited.querySelectorAll('.changes-line__number')].map(number => number.textContent)).toEqual(['4', '4'])
+  })
+
+  it('names its file in its bar, the folder before the name, and numbers both sides so a removed line keeps its number', () => {
+    const container = draw('@@ -2,3 +2,3 @@\n Splitting\n-Open questions\n+The order\n tail\n', 'docs/plans/agent-control-split.md')
+    const name = container.querySelector('.changes-block__bar .changes-block__name')!
+    expect(name.querySelector('.changes-file__folder')).toHaveTextContent('docs/plans/')
+    expect(name.querySelector('.changes-file__base')).toHaveTextContent('agent-control-split.md')
+    expect(name.getAttribute('title')).toBe('docs/plans/agent-control-split.md')
+    expect(container.querySelector('.changes-diff__rows')!.getAttribute('data-numbers')).toBe('both')
+    const numbers = [...container.querySelectorAll('.changes-line:not([data-kind="hunk"])')].map(row => [...row.querySelectorAll('.changes-line__number')].map(number => number.textContent))
+    expect(numbers).toEqual([['2', '2'], ['3', ''], ['', '3'], ['4', '4']])
+  })
+
+  it("keeps one column of numbers for a file that only came, and names a diff's file from its own header", () => {
+    const container = draw('@@ -0,0 +1,2 @@\n+one\n+two\n', 'notes.md')
+    expect(container.querySelector('.changes-diff__rows')!.getAttribute('data-numbers')).toBeNull()
+    expect([...container.querySelectorAll('.changes-line__number')].map(number => number.textContent)).toEqual(['', '1', '2'])
+    expect(namedPath('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n')).toBe('src/a.ts')
+    expect(namedPath('--- a/gone.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n')).toBe('gone.md')
+    expect(namedPath('diff --git a/x b/x\n+++ b/x\ndiff --git a/y b/y\n+++ b/y\n')).toBeNull()
+    expect(namedPath('@@ -1 +1 @@\n-a\n+b\n')).toBeNull()
   })
 
   it('reads a reworked paragraph as two: the old one whole with what went struck, then the new one whole with what came', () => {

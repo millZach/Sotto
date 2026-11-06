@@ -81,7 +81,7 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
   // A document's lines: body ink on an added line, the removed ink, nearly the body's, on a removed one.
   pair('text', added, 'added line of a document'),
-  ...each('--changes-ink-removed', [['code-bg', '--changes-removed-prose'], ['code-bg', '--changes-removed-prose', hover], ['code-bg', '--changes-removed-prose', picked]], 'removed paragraph of a document, on its faint wash'),
+  ...each('--changes-ink-removed', [['code-bg'], ['code-bg', hover], ['code-bg', picked]], 'removed paragraph of a document'),
   // Inside the changed words syntax colour gives way to the body ink, so it only ever sits on the line's wash.
   ...CHANGES_CODE_INKS.flatMap(ink => each(ink, [context, added, removed], 'syntax colour in a diff')),
   ...each('success', [added, [...added, hover]], 'added line sign'),
@@ -149,7 +149,7 @@ export function inMode(value: string, mode: Mode): string {
 
 /** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them, in the mode the root is painted in. */
 export function withPaintedLayers(declarations: Map<string, string>, mode: Mode): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified', '--changes-ink-removed', '--changes-removed-prose']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified', '--changes-ink-removed']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
   for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name, mode))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')

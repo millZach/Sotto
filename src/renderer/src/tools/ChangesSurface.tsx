@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isCommentLine, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, ReworkedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { blankContext, EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, ReworkedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
@@ -347,6 +347,8 @@ function FileJump({ files, current, onShow, allFiles }: {
 
 /** Where a file's name joins its words: before a capital that ends a lower-case run, after a hyphen or underscore, or before any dot but the last, so `.ts` never sits alone. */
 const NAME_BREAK = /(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=[^.])(?=\.[^.]*\.)|(?<=[-_])/gu
+/** The fewest letters a cut name keeps at its end. */
+const NAME_TAIL = 10
 
 /**
  * A file's name in two parts, for a row that cuts it in the middle: its last words and ending, never cut, and what
@@ -380,8 +382,6 @@ function ScopePicker({ changes, turns: offersTurns, onChange }: { readonly chang
   return <label className="changes-scope">
     <span className="tt-visually-hidden">{t`Diff scope`}</span>
     <select className="changes-scope__select tt-focusable" value={value} onChange={event => {
-/** The fewest letters a cut name keeps at its end. */
-const NAME_TAIL = 10
       const next = event.target.value
       onChange(next === 'working' ? { kind: 'working' } : next === 'branch' ? { kind: 'branch', base: null } : next === 'latest' ? { kind: 'turn', checkpointId: null } : { kind: 'turn', checkpointId: next.slice('turn:'.length) })
     }}>
@@ -859,7 +859,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const { line } = row
     const number = line.newLine ?? line.oldLine
     const paint = decoration?.paint.get(line)
-    return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
+    return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-blank={blankContext(line) || undefined} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} data-comment={code && line.kind !== 'hunk' && isCommentLine(line.text, paint) || undefined} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} />{code ? <RunsOn words={i18n} /> : null}</>}</span>

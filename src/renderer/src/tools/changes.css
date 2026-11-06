@@ -197,8 +197,12 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 /* The gutter counts the file as it is now, so it reads 267, 268, 269, 270 down a change. A removed line has no place
    now: its sign says it went and its number stays out of the count, showing only where the reader points at it to
    comment. A whole file taken out has only its old numbers, so they show. */
-.changes-diff__rows:not([data-whole]) .changes-line[data-kind='remove'] > .changes-line__number { color: transparent; }
-.changes-diff__rows:not([data-whole]) .changes-line[data-kind='remove'] > .changes-line__number:hover { color: var(--tt-text); }
+.changes-diff__rows:not([data-whole], [data-numbers='both']) .changes-line[data-kind='remove'] > .changes-line__number { color: transparent; }
+.changes-diff__rows:not([data-whole], [data-numbers='both']) .changes-line[data-kind='remove'] > .changes-line__number:hover { color: var(--tt-text); }
+/* The transcript's box has no comments to open on a number, so it numbers both sides, as a pull request does: where a
+   line was, then where it is now. A removed line keeps its number in the first column and a new one has its own in the
+   second, and neither column mixes the two counts. */
+.changes-diff__rows[data-numbers='both'] .changes-line { grid-template-columns: var(--changes-number) var(--changes-digits, 4ch) 1ch minmax(0, 1fr); }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 /* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
 .changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
@@ -355,6 +359,10 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-reading='document'] .changes-line { row-gap: 0; padding-top: 1px; padding-bottom: 1px; }
 .changes-diff__rows[data-reading='document'] .changes-line__text, .changes-block .changes-line__text { max-width: 74ch; }
 .changes-diff__rows[data-reading='document'] [data-kind='context'] { color: var(--tt-text-muted); }
+/* The empty line both sides keep between two paragraphs is a gap of half a line, not a numbered row: the paragraphs
+   part as blocks, as on the page, and a long file takes fewer rows to read. Its row still takes a pick and a comment. */
+.changes-diff__rows[data-reading='document'] .changes-line[data-blank] { height: calc(1lh / 2); padding-top: 0; padding-bottom: 0; overflow: hidden; }
+.changes-diff__rows[data-reading='document'] .changes-line[data-blank] > * { visibility: hidden; }
 .changes-diff__rows[data-reading='document'] [data-kind='add'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] [data-kind='remove'] { color: var(--tt-text-2); }
 .changes-line__text:is([data-shape='heading-1'], [data-shape='heading-2'], [data-shape='heading-3']) { color: var(--tt-text); font-weight: 600; }
@@ -391,8 +399,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
    mark, a hairline underline in the added role's colour. What went, a paragraph taken out or the words that went from
    a line read once, is struck through in the removed role's colour, as track changes strike what went. Its letters
    keep nearly the body's ink, warmed a little toward the removed role, so a removed line reads as easily as the prose
-   around it and the stroke, the edge and the sign say it went. Hue lives only in those marks, the edges and a removed
-   paragraph's faint wash. */
+   around it and the stroke, the edge and the sign say it went. Hue lives only in those marks and the edges. */
 .changes-diff__rows[data-reading='document'] {
   --changes-added: transparent; --changes-removed: transparent;
   --changes-ink-removed: color-mix(in oklab, var(--tt-error-text) 18%, var(--tt-text));
@@ -406,13 +413,11 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 }
 .changes-diff__rows[data-reading='document'] :is([data-kind='remove'] .changes-word, del.changes-word--edit) { text-decoration-color: var(--changes-under-removed); }
 .changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--changes-ink-removed); text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); }
-/* A paragraph taken out is struck through, one hairline in the removed role's colour, and rests on the faintest wash of
-   that role, so it stands apart from the prose around it as a block that went while its letters stay the body's. Only
-   a removal has it: what is there now reads as the page, and the words struck inside a paragraph have none, so a
-   reworked paragraph never turns to patchwork. A whole file taken out keeps the secondary ink and only its edge, since
-   every line of it went. */
-.changes-diff__rows { --changes-removed-prose: light-dark(color-mix(in srgb, var(--tt-error) 5%, transparent), color-mix(in srgb, var(--tt-error) 8%, transparent)); }
-.changes-diff__rows[data-reading='document']:not([data-whole]) { --changes-removed: var(--changes-removed-prose); }
+/* A paragraph taken out is struck through, one hairline in the removed role's colour, and like a paragraph put in it
+   has no wash: a removed paragraph and an added one beside it weigh the same, its edge, sign and stroke saying it went,
+   so a full-width band of red never drowns the quieter additions under it. Its edges keep the day's strength by night
+   too. A whole file taken out keeps the secondary ink and only its edge, since every line of it went. */
+.changes-diff__rows[data-reading='document'] { --changes-edge-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-edge-removed: color-mix(in srgb, var(--tt-error) 60%, transparent); }
 .changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] { color: var(--changes-ink-removed); }
 /* A heading taken out reads in that ink too, not in the body's ink a heading has. */
 .changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] > .changes-line__text[data-shape] { color: inherit; }
@@ -463,6 +468,9 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* The transcript's box around one change: its counts and Copy, then the same lines as Changes. Nothing scrolls sideways. */
 .changes-block { margin: 10px 0; overflow: hidden; border: 1px solid var(--tt-code-border, var(--tt-border-faint)); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font-size: var(--tt-type-small); }
 .changes-block__bar { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 2px 4px 2px 10px; border-bottom: 1px solid var(--tt-hairline); }
+/* The file the box shows, before its counts, as a file's head in Changes names it: the folder quiet and cut from its
+   start where the bar is short, the name whole. */
+.changes-block__name { display: flex; flex: 0 1 auto; align-items: baseline; min-width: 0; color: var(--tt-text); font-size: var(--tt-type-small); white-space: nowrap; }
 .changes-block__status { flex: 1; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .changes-block__copy { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); transition: color 120ms ease, background-color 120ms ease; }
 .changes-block__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
