@@ -1133,6 +1133,67 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
   } },
+  // Asked for by name only: the sidebar's resting rows on one line and its working and waiting rows on two (Zach's pick C,
+  // ADR-0135, November 5, 2026), at every size, under the pointer and the keys, with a thread just finished, on Glass and
+  // Clay, and under reduced motion.
+  { name: 'sidebar-rows', covers: [], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Repository review')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    for (const size of [[1600, 1000], [1280, 800]] as const) await capture.shoot('sidebar-rows', 'A finished thread open, its resting rows one line each and its working and waiting rows two.', '', { size })
+    const over = async (): Promise<void> => {
+      if (await page.locator('aside.thread-nav[data-over]').count()) return
+      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    }
+    await capture.shoot('sidebar-rows', 'The same sidebar over the thread at the minimum window.', '', { size: [820, 560], before: over })
+    await page.keyboard.press('Escape')
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    const resting = sidebar.locator('.thread-nav__row[data-steps-back]').filter({ hasText: 'Write the split plan down' })
+    // The shoot brings the open thread's row to the list's middle after this runs, so the list is put there first and the
+    // pointer stays on the row it points at.
+    const pointAt = async (): Promise<void> => {
+      await page.evaluate(() => {
+        (document.activeElement as HTMLElement | null)?.blur()
+        const list = document.querySelector('.thread-nav__scroll'), open = list?.querySelector('[aria-current="page"]')
+        if (list && open) list.scrollTop += open.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - open.clientHeight) / 2
+      })
+      await resting.hover({ position: { x: 40, y: 12 } })
+      await page.waitForTimeout(200)
+    }
+    await capture.shoot('sidebar-rows-hover', 'The pointer on a resting row: its provider\'s mark where the ring would be and its shortcuts in its time\'s place.', '', { before: pointAt })
+    const keys = async (): Promise<void> => {
+      await page.mouse.move(0, 0)
+      await page.keyboard.press('Tab')
+      await resting.getByRole('button', { name: 'Write the split plan down', exact: true }).focus()
+    }
+    await capture.shoot('sidebar-rows-keys', 'The keyboard on the same resting row.', '', { before: keys })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    for (const theme of ['glass', 'clay'] as const) {
+      await setAppearance(page, { appearance: 'dark', lightTheme: theme, darkTheme: theme }, 'dark')
+      await capture.shoot(`sidebar-rows-${theme}`, `The same rows on ${theme === 'glass' ? 'Glass' : 'Clay'}.`)
+      await capture.shoot(`sidebar-rows-${theme}-hover`, `The pointer on a resting row on ${theme === 'glass' ? 'Glass' : 'Clay'}.`, '', { modes: ['dark'], before: pointAt })
+    }
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await capture.shoot('sidebar-rows-still', 'The same rows under reduced motion: the working rings hold still.', '', { modes: ['dark'], before: keys })
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    // Last, since the finish moves the thread to the top of its folder: a thread that finishes out of sight is news, so its row keeps its two lines and says Just finished.
+    const bump = evidenceThread('background-2')
+    await page.evaluate(async id => {
+      const send = window.sottoE2E!.agentEvent!
+      await send({ type: 'ready', threadId: id, status: 'running', text: '' })
+      await send({ type: 'ready', threadId: id, status: 'idle', text: 'Done.' })
+    }, bump.id)
+    try {
+      await expect(sidebar.locator('.thread-nav__row').filter({ hasText: bump.title })).toContainText('Just finished')
+      await capture.shoot('sidebar-rows-finished', 'A thread that finished out of sight keeps two lines and says Just finished; the rows at rest around it take one.')
+    } finally {
+      await page.evaluate(async id => { await window.sotto!.agents!.command({ type: 'select-thread', threadId: id }) }, bump.id)
+      await openThread(page, 'Repository review')
+    }
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default. Usage
   // at the smaller sizes is captureConnectedUsage's.
   { name: 'shell-check', covers: [], run: async capture => {
@@ -1157,7 +1218,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head']
+const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rows']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {

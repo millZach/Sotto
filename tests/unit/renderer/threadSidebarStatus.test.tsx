@@ -341,3 +341,25 @@ describe('a thread with a prototype waiting for review', () => {
     expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', prototype: false })
   })
 })
+
+// Zach's pick C (ADR-0135, November 5, 2026): a resting row steps back to one line; what moves or waits keeps two.
+describe('a resting row steps back', () => {
+  const row = (title: string): HTMLElement => screen.getByRole('button', { name: title }).closest('li')!
+  const page = { token: 'p'.repeat(32), kind: 'file' as const, name: 'settings-prototype.html', start: 'settings-prototype.html' }
+
+  it('to one line once its thread is plainly done, its word still said, and keeps two for anything with news', () => {
+    const live = mount(threadsStateFixture(), NOW)
+    expect(row('Footer links')).not.toHaveAttribute('data-steps-back')
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
+    expect(row('Footer links')).toHaveAttribute('data-steps-back', 'true')
+    // The row is still named by its title (ADR-0164), and Done is still what its description says first.
+    expect(screen.getByRole('button', { name: 'Footer links' })).toHaveAccessibleDescription(/^Codex,\s?Done\b/u)
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle', true)) })
+    expect(row('Footer links')).not.toHaveAttribute('data-steps-back')
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === 'footer-links' ? { ...thread, prototypeReady: { source: 'reply:m-1', pages: [page] } } : thread) } }) })
+    expect(status('Footer links')).toHaveTextContent('Prototype ready')
+    expect(row('Footer links')).not.toHaveAttribute('data-steps-back')
+    expect(row('Visual gate flake')).not.toHaveAttribute('data-steps-back')
+  })
+})

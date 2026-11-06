@@ -224,11 +224,15 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>{swarm}</>
-  // A plain Done or Settled at rest steps back, so what is moving or waiting stands out down a long list. It keeps its word.
+  // A plain Done or Settled at rest steps back, so what is moving or waiting stands out down a long list.
   const resting = row.state === 'done' && !finished && !prototype && !background && !restart
+  // A resting row with nothing more to say takes one line, its name and a muted time, with no ring, mark or word (Zach's
+  // pick C, ADR-0135, November 5, 2026); its word stays in its description. A row out of reach, watched or snoozed still
+  // has something to say on its second line, so it keeps two.
+  const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined
   const inQueue = queued && row.state === 'needs'
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
-    data-in-queue={inQueue ? id : undefined}
+    data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}
