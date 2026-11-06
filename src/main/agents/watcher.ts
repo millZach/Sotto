@@ -15,7 +15,7 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
-import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
+import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchive, type WatcherArchived } from './watcherArchive'
 import { WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
@@ -570,6 +570,9 @@ export class WatcherService implements WatcherControlHooks {
   private archiving: Promise<unknown> | undefined
   /** Fewer closed requests than this cannot hold a batch to archive: the last look found the rest still named. */
   private archiveFloor = 0
+  /** The archive whose index an observe pass waits to be read, and the last one it waited for (#1783). */
+  private archiveAwaited: WatcherArchive | undefined
+  private archiveRead: WatcherArchive | undefined
   /** The number of the last room built: each build takes the next, so the window can tell which is newer (#1450). */
   private roomSequence = 0
   /**
@@ -3734,6 +3737,22 @@ export class WatcherService implements WatcherControlHooks {
     this.observedHost = undefined
     const localId = this.options.control.hostId()
     if (!localId) return
+    // Until the archive's index is read, when there is one, Watcher's archived sends are nobody's, and a pass would take
+    // Watcher's own message at a thread's head for the user's turn and pause its watch (#1783). It waits for the index, as
+    // for the ID, and runs once it is read, or could not be, knowing Sotto's sends for the user as the coordinator's own
+    // pass does, so a fenced message at a head is not taken over a second time.
+    const archive = this.options.control.archivedWatcherWork()
+    if (archive && !archive.lookupsReady && this.archiveRead !== archive) {
+      if (this.archiveAwaited !== archive) {
+        this.archiveAwaited = archive
+        void archive.ready().catch(() => undefined).then(() => {
+          this.archiveRead = archive
+          if (this.archiveAwaited === archive) this.archiveAwaited = undefined
+          if (!this.closed) this.observe(this.options.control.watcherSnapshot(), this.options.control.knownUserMessages())
+        })
+      }
+      return
+    }
     const view = this.options.control.hostThreadsOf(snapshot)
     let byId: Map<string, AgentThread> | undefined
     const threadOf = (id: string): AgentThread | undefined => {

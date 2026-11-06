@@ -6164,11 +6164,17 @@ export class AgentControl {
    */
   private observeWatcher(snapshot: AgentHostSnapshot, changed?: HostThreadsChange): void {
     if (this.disposed) return
-    // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
-    // set is gathered from the outbox and every delivery only when it is first asked.
+    this.watcherHooks?.observe(snapshot, this.knownUserMessages(), changed)
+  }
+  /**
+   * The messages Sotto sent for the user, by native message ID, for a Watcher pass. The pass runs for every update and
+   * asks only of a head that may be a takeover, so the set is gathered from the outbox and every delivery only when it is
+   * first asked.
+   */
+  knownUserMessages(): Pick<ReadonlySet<string>, 'has'> {
     let known: Set<string> | undefined
-    this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }, changed)
+    return { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }
   }
   /**
    * The host snapshot's threads by look-up (`HostThreadsView`), for Watcher and delegation, when `snapshot` is the one the
