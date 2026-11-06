@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { boundedRecord } from './boundedRecord'
 import { agentRuntimeModeSchema, type AgentRuntimeMode } from './agents'
 import { parseWorkerRoleChoices, WORKER_ROLE_IDS, type WorkerRoleChoices } from './workerRoles'
 import { workerCeilingSchema } from './workerMachine'
@@ -16,7 +17,7 @@ import { workerCeilingSchema } from './workerMachine'
  */
 export const desktopDefaultsSchema = z.object({
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
-  workerRoles: z.record(z.string().max(64), z.unknown()).refine(rows => Object.keys(rows).length <= WORKER_ROLE_IDS.length * 4).optional(),
+  workerRoles: boundedRecord(z.string().max(64), z.unknown(), WORKER_ROLE_IDS.length * 4).optional(),
   /** Sent only when both sides have worker-swarms, after resolving this host's override. */
   workerCeiling: workerCeilingSchema.optional(),
   /** **Show every picture and video an agent makes** (ADR-0170, part 7), sent only to a host that lists `every-agent-picture`. */

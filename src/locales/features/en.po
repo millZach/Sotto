@@ -4647,10 +4647,6 @@ msgstr "Open {title} to answer its permission"
 msgid "Open {title} to answer its question"
 msgstr "Open {title} to answer its question"
 
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "Open {title} to review its prototype"
-msgstr "Open {title} to review its prototype"
-
 #: src/renderer/src/platformCopy.ts
 msgid "Open directly in the menu bar when Sotto launches."
 msgstr "Open directly in the menu bar when Sotto launches."
@@ -4696,14 +4692,6 @@ msgstr "Open the {provider} install guide"
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Open the new thread"
 msgstr "Open the new thread"
-
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "Open the prototype"
-msgstr "Open the prototype"
-
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "Open the prototype, {name}"
-msgstr "Open the prototype, {name}"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Open thread"
@@ -5114,19 +5102,6 @@ msgstr "Prompts you sent, by weekday and hour. Use the arrow keys to read one ho
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Proposed moves to {machine}"
 msgstr "Proposed moves to {machine}"
-
-#: src/renderer/src/watcher/WatcherGlance.tsx
-msgid "prototype to review"
-msgstr "prototype to review"
-
-#: src/renderer/src/watcher/WatcherContextTile.tsx
-#: src/renderer/src/watcher/WatcherOverview.tsx
-msgid "Prototype to review"
-msgstr "Prototype to review"
-
-#: src/renderer/src/watcher/WatcherContextTile.tsx
-msgid "Prototype to review in a thread it delegated to"
-msgstr "Prototype to review in a thread it delegated to"
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Provider"

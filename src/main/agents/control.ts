@@ -9,7 +9,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
 import { readVideo } from './shownMedia'
-import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, STEER_NOT_TAKEN, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
   type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
@@ -47,6 +47,7 @@ import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, 
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { ClientUpdates } from './clientUpdates'
 import { ThreadTitles } from './threadTitles'
+import { DetailRevisions } from './detailRevisions'
 // Tests still import this from here; the follow-up that moves them removes this line.
 export { TITLE_WRITE_CLOSING_WAIT_MS } from './threadTitles'
 import { ProviderClients } from './providerClients'
@@ -61,7 +62,7 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
+import { applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
 import { AGENT_STATE_BROADCAST_INTERVAL_MS, realPublishScheduler, type PublishScheduler } from './statePublishers'
 // Tests still import these from here; the follow-up that moves them removes this line.
 export { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes, type CoalescedAgentStatePublisher, type CoalescedThreadDetailPublisher, type PublishScheduler } from './statePublishers'
@@ -266,6 +267,8 @@ function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
 }
 /** A draft saved without an image its window still showed: the text is kept, the image is not. */
+/** A steer not taken whose message could not be saved back on the queue (#1408): kept, unsent, and tried again. */
+export const REQUEUE_NOT_SAVED = 'Could not save the follow-up queue. Your message is kept and was not sent. Sotto puts it back in the queue the next time this thread updates or Sotto restarts, once saving works again.'
 export const DRAFT_IMAGE_NOT_SAVED = 'An image in this draft is no longer kept, so the draft was saved without it. Your text was saved. Remove the image and attach it again.'
 const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX_DELIVERED_DRAFTS * 2)
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
@@ -1096,6 +1099,8 @@ export class AgentControl {
   private readonly clients: ProviderClients
   private readonly clientUpdates: ClientUpdates
   private readonly titles: ThreadTitles
+  /** Each shown thread's detail revision, and what it was read from. */
+  private readonly revisions: DetailRevisions
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -1211,23 +1216,6 @@ export class AgentControl {
   private broadcastPending = false
   /** Each detail listener, and whether it is sent appends (`AgentActivityAppend`) or every changed record whole. */
   private readonly detailListeners = new Map<(update: AgentThreadDetailUpdate) => void, { readonly appends: boolean }>()
-  /**
-   * Per thread: the version of the messages last handed out (see `detailMessageKeys`), the signature of the activity beside
-   * them, and the revision that stands for both.
-   */
-  private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
-  private readonly detailRevisions = new Map<string, { messages: number; activities: string; revision: number }>()
-  private readonly certifiedDetailSignatures = new WeakMap<AgentActivity, string>()
-  private readonly certifiedDetailRevisions = new Map<string, { messages: number; activities: readonly AgentActivity[]; revision: number }>()
-  /**
-   * Per thread: each message's ID and its text, shown and attachment lengths as the last revision read them, and a version
-   * that moves whenever one of them did. A publish hands every message over as a new copy, so they are compared by value,
-   * in place, rather than written into a history-sized signature on every broadcast. Kept and dropped with the revisions.
-   */
-  private readonly detailMessageKeys = new Map<string, { epoch: string; ids: string[]; lengths: number[]; version: number }>()
-  private detailMessageVersions = 0
-  /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
-  private readonly certifiedDetailCounters = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
   /**
    * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
@@ -1357,6 +1345,7 @@ export class AgentControl {
       state: () => this.state, disposed: () => this.disposed, history: thread => this.threadHistory(thread),
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), persist: () => this.persist(), dependencies,
     })
+    this.revisions = new DetailRevisions({ dependencies, shownLength: thread => this.detailShownLength(thread) })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -2445,76 +2434,8 @@ export class AgentControl {
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []),
     ])].filter(id => this.threadById(id) !== undefined)
   }
-  /**
-   * A revision that changes exactly when a thread's messages do. Built from identity and length rather
-   * than the text itself: a streaming chunk must bump it without the cost of copying every message.
-   */
-  private detailRevision(thread: AgentThread, activities = this.paneActivities(thread)): number {
-    const messages = this.detailMessagesVersion(thread)
-    if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
-      const held = this.certifiedDetailRevisions.get(thread.id)
-      if (held && held.messages === messages && held.activities === activities) return held.revision
-      if (held && held.messages === messages && held.activities.length === activities!.length
-        && held.activities.every((record, index) => record === activities![index]
-          || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) {
-        // The same records under new identities, as a store read gives them back: they stand for this revision from now
-        // on, or every later publish would compare each of them by signature again, for every long thread on screen.
-        this.certifiedDetailRevisions.set(thread.id, { ...held, activities: activities! })
-        return held.revision
-      }
-      // Retain the legacy signature only across a certified/mutable transition. Ordinary certified
-      // publishes compare the owned record identities, without building a signature at all.
-      const legacy = this.detailRevisions.get(thread.id)
-      const unchanged = !held && legacy?.messages === messages && legacy.activities === this.certifiedActivitiesSignature(activities!)
-      const revision = (held?.revision ?? legacy?.revision ?? this.certifiedDetailCounters.get(thread.id) ?? 0) + (unchanged ? 0 : 1)
-      this.certifiedDetailRevisions.set(thread.id, { messages, activities: activities!, revision })
-      this.certifiedDetailCounters.set(thread.id, revision)
-      return revision
-    }
-    const certified = this.certifiedDetailRevisions.get(thread.id)
-    if (certified) {
-      this.detailRevisions.set(thread.id, { revision: certified.revision, messages: certified.messages, activities: this.certifiedActivitiesSignature(certified.activities) })
-      this.certifiedDetailRevisions.delete(thread.id)
-    }
-    let activitySignature = activities && this.activityDetailSignatures.get(activities)
-    if (activitySignature === undefined) {
-      activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
-      if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
-    }
-    const held = this.detailRevisions.get(thread.id)
-    if (held && held.messages === messages && held.activities === activitySignature) return held.revision
-    const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
-    this.detailRevisions.set(thread.id, { messages, activities: activitySignature, revision })
-    if (this.dependencies.streamingPublishCost === true) this.certifiedDetailCounters.set(thread.id, revision)
-    return revision
-  }
-  private certifiedActivitiesSignature(activities: readonly AgentActivity[]): string {
-    return activities.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
-  }
-  /**
-   * The version of a thread's messages as a detail shows them: it moves exactly when a message's ID, text length, shown
-   * length or attachment count moves, or the history epoch or message count does. The held key is brought up to date in
-   * place, so an unchanged history makes nothing and a streaming chunk rewrites one number.
-   */
-  private detailMessagesVersion(thread: AgentThread): number {
-    const shownLength = this.detailShownLength(thread)
-    const messages = thread.messages, epoch = thread.historyEpoch ?? ''
-    let key = this.detailMessageKeys.get(thread.id), changed = false
-    if (!key || key.epoch !== epoch) { key = { epoch, ids: [], lengths: [], version: 0 }; this.detailMessageKeys.set(thread.id, key); changed = true }
-    const { ids, lengths } = key
-    for (let index = 0; index < messages.length; index++) {
-      const message = messages[index]!, at = index * 3
-      const text = message.text.length, shown = shownLength ? shownLength(message) : text, attachments = message.attachments?.length ?? 0
-      if (index >= ids.length) { ids.push(message.id); lengths.push(text, shown, attachments); changed = true; continue }
-      if (ids[index] !== message.id) { ids[index] = message.id; changed = true }
-      if (lengths[at] !== text) { lengths[at] = text; changed = true }
-      if (lengths[at + 1] !== shown) { lengths[at + 1] = shown; changed = true }
-      if (lengths[at + 2] !== attachments) { lengths[at + 2] = attachments; changed = true }
-    }
-    if (ids.length !== messages.length) { ids.length = messages.length; lengths.length = messages.length * 3; changed = true }
-    if (changed) key.version = ++this.detailMessageVersions
-    return key.version
-  }
+  /** A revision that changes exactly when a thread's messages do (`DetailRevisions`). */
+  private detailRevision(thread: AgentThread, activities = this.paneActivities(thread)): number { return this.revisions.revision(thread, activities) }
   /**
    * How long a message is as a detail shows it, when that can differ from its text: shorter, or -1 when it is not shown.
    * A wake-up of delegation news alone is left out by its own mark, so that is read from the message rather than from a
@@ -2531,12 +2452,6 @@ export class AgentControl {
       return message => shown.get(message.id) ?? -1
     }
     return thread.hiddenWakeUpMessageIds?.length ? hiddenWakeUpShownLength : undefined
-  }
-  private certifiedActivitySignature = (record: AgentActivity): string => {
-    if (!isImmutableActivity(record)) return agentActivitySignature(record)
-    let signature = this.certifiedDetailSignatures.get(record)
-    if (signature === undefined) { signature = agentActivitySignature(record); this.certifiedDetailSignatures.set(record, signature) }
-    return signature
   }
   /**
    * Hears every viewed thread's detail as it changes. `appends`: the listener applies `AgentActivityAppend`, so a record
@@ -2956,7 +2871,7 @@ export class AgentControl {
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
     this.hiddenShown.clear()
-    if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear(); this.detailMessageKeys.clear() }
+    this.revisions.privacyChanged()
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
     const cleanup = [
@@ -3136,11 +3051,7 @@ export class AgentControl {
     if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
-    if (this.dependencies.streamingPublishCost === true) {
-      for (const threadId of this.certifiedDetailRevisions.keys()) if (!targets.includes(threadId)) this.certifiedDetailRevisions.delete(threadId)
-      for (const threadId of this.detailRevisions.keys()) if (!targets.includes(threadId)) this.detailRevisions.delete(threadId)
-      for (const threadId of this.detailMessageKeys.keys()) if (!targets.includes(threadId)) this.detailMessageKeys.delete(threadId)
-    }
+    this.revisions.keepOnly(targets)
     if (!this.detailListeners.size) return
     for (const threadId of targets) {
       const thread = this.threadById(threadId)!
@@ -3157,7 +3068,7 @@ export class AgentControl {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
       const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: pane }, revision,
-        this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
+        this.dependencies.streamingPublishCost === true ? this.revisions.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
         // The pane's own records, when they are certified and in the order the delta reached: frozen, never edited, and the
@@ -4790,6 +4701,7 @@ export class AgentControl {
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
+    this.steeringFollowups.add(item.id)
     try {
       const validatePrompt = (): void => {
         validate()
@@ -4803,11 +4715,26 @@ export class AgentControl {
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
-      await this.followupStore.settle(item.id, accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed',
-        error instanceof Error ? error.message : 'Could not steer this message.')
+      // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead. The provider's
+      // short list of steers not taken is read first, so the transcript is looked at only for a steer it names.
+      const notTaken = (): boolean => {
+        const thread = this.thread(item.threadId)
+        return thread.notTakenMessageIds?.includes(item.messageId!) === true
+          && !thread.messages.some(message => message.role === 'user' && message.id === item.messageId)
+      }
+      if (!accepted && (error instanceof Error && error.message === STEER_NOT_TAKEN || notTaken())) {
+        this.requeueNotTaken(item.id, item.commandId!)
+        return
+      }
+      const status = accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed'
+      await this.followupStore.settle(item.id, status, error instanceof Error ? error.message : 'Could not steer this message.')
+      // Its turn may have ended while that was saved, when the queue still showed it dispatching: settled now, it goes next.
+      if (status === 'uncertain' && notTaken()) { this.requeueNotTaken(item.id, item.commandId!); return }
       throw error
-    } finally { this.syncFollowups(); this.publish() }
+    } finally { this.steeringFollowups.delete(item.id); this.syncFollowups(); this.publish() }
   }
+  /** Queued messages whose steer is still in flight (`steerFollowup`), which settles them; by follow-up ID. */
+  private readonly steeringFollowups = new Set<string>()
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     const origin = this.watcherOrigins.get(command)
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
@@ -5787,11 +5714,15 @@ export class AgentControl {
       }
     } catch (error) {
       this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
-      if (prompt && (provider === undefined || isUsageProviderId(provider))) {
+      // A queued steer its turn ended without taking (#1408) keeps its entry until its message is saved back on the queue
+      // (`requeueNotTaken`), so a failed save leaves a record that a later snapshot or a restart retries.
+      const keptForRequeue = command.type === 'steer' && error instanceof Error && error.message === STEER_NOT_TAKEN
+        && this.followupStore.peek().items.some(item => item.commandId === command.commandId)
+      if (!keptForRequeue && prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
       }
-      this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+      if (!keptForRequeue) this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
       throw error
@@ -6164,11 +6095,17 @@ export class AgentControl {
    */
   private observeWatcher(snapshot: AgentHostSnapshot, changed?: HostThreadsChange): void {
     if (this.disposed) return
-    // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
-    // set is gathered from the outbox and every delivery only when it is first asked.
+    this.watcherHooks?.observe(snapshot, this.knownUserMessages(), changed)
+  }
+  /**
+   * The messages Sotto sent for the user, by native message ID, for a Watcher pass. The pass runs for every update and
+   * asks only of a head that may be a takeover, so the set is gathered from the outbox and every delivery only when it is
+   * first asked.
+   */
+  knownUserMessages(): Pick<ReadonlySet<string>, 'has'> {
     let known: Set<string> | undefined
-    this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }, changed)
+    return { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }
   }
   /**
    * The host snapshot's threads by look-up (`HostThreadsView`), for Watcher and delegation, when `snapshot` is the one the
@@ -6454,6 +6391,8 @@ export class AgentControl {
       if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
+      // A steer the provider admitted but whose turn ended first was not sent (#1408): settled as not sent, never resent.
+      if (item.type === 'steer' && !message && item.messageId && thread?.notTakenMessageIds?.includes(item.messageId)) { this.settleSteerNotTaken(item); continue }
       const confirmed = (item.type === 'send' || item.type === 'steer') ? Boolean(message) : item.type === 'create-project'
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
@@ -6496,6 +6435,44 @@ export class AgentControl {
     this.titles.generate()
     this.persistAfterSnapshots()
     this.publish()
+  }
+  /**
+   * Settles an outbox steer its provider says it never took (#1408): the entry goes, the composer's draft reads as not
+   * sent and is kept, and a queued message goes back to the head of its queue, to go as the next message as the queue
+   * would have sent it when the turn ended. Nothing is sent from here.
+   */
+  private settleSteerNotTaken(item: Saved['outbox'][number]): void {
+    // One whose steer is still in flight is that steer's to settle, once the queue has saved what it last heard
+    // (`steerFollowup`). Any other, including one whose earlier requeue could not be saved, goes back on the queue, and
+    // its entry goes only once that is saved.
+    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
+    if (queued) { if (!this.steeringFollowups.has(queued.id)) this.requeueNotTaken(queued.id, item.id); return }
+    this.settleNotTakenEntry(item.id)
+    if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
+  }
+  /** The outbox entry of a steer not taken goes, and the usage it recorded with it. */
+  private settleNotTakenEntry(commandId: string): void {
+    const item = this.outbox.find(o => o.id === commandId); if (!item) return
+    this.outbox = this.outbox.filter(o => o !== item)
+    if (item.threadId && item.messageId && (item.provider === undefined || isUsageProviderId(item.provider))) {
+      try { this.dependencies.usage?.discardPrompt(item.threadId, item.messageId) }
+      catch { /* Only usage metadata is affected. */ }
+    }
+  }
+  /** Steers not taken whose queued message is going back on the queue (`requeueNotTaken`), by command. */
+  private readonly requeueing = new Set<string>()
+  /**
+   * A queued message whose steer `commandId` was not taken goes back to the head of its queue (#1408), once. Its outbox
+   * entry goes only after the queue is saved: if that save fails, the entry stays, so a later snapshot or a restart
+   * finds the steer not taken again and tries once more, and nothing is sent until the message is back on the queue.
+   */
+  private requeueNotTaken(id: string, commandId: string): void {
+    if (this.requeueing.has(commandId)) return
+    this.requeueing.add(commandId)
+    void this.followupStore.requeueAtHead(id, commandId)
+      .then(() => { this.settleNotTakenEntry(commandId); this.persistAfterSnapshots() })
+      .catch(() => { this.state.error = REQUEUE_NOT_SAVED })
+      .finally(() => { this.requeueing.delete(commandId); this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }
   private afterSnapshotsPersistQueued = false
   /**
@@ -6597,8 +6574,7 @@ export class AgentControl {
     this.detailSnapshots.clear()
     this.hiddenShown.clear(); this.hiddenShownTargets = new Set()
     if (this.watcherMessageDisplay?.retain(undefined, [])) this.presentedCache = new WeakMap()
-    this.certifiedDetailRevisions.clear()
-    this.certifiedDetailCounters.clear()
+    this.revisions.close()
   }
 }
 

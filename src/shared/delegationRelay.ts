@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { boundedRecord } from './boundedRecord'
 import { agentRuntimeModeSchema } from './agents'
 import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema, delegationWorkSchema } from './delegation'
 import { WATCHER_REPLY_BYTES_MAX } from './watcher'
@@ -36,7 +37,9 @@ export const DELEGATION_TAKEN_AT_MAX = 32
  * The `delegate` arguments a relayed start carries: never a machine or a system. `from_my_branch` and `test_run` only to a
  * desktop whose hello accepted `delegation-branch-starts` (#1316 part 2).
  */
-export const relayedInputSchema = z.record(z.string().max(64), z.unknown())
+/** At most this many arguments in a relayed start: the `delegate` tool has 20 (#2273). */
+export const DELEGATE_INPUT_KEYS_MAX = 64
+export const relayedInputSchema = boundedRecord(z.string().max(64), z.unknown(), DELEGATE_INPUT_KEYS_MAX)
 
 export const delegationRelayAskSchema = z.discriminatedUnion('type', [
   /**

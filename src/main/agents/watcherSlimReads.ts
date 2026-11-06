@@ -95,7 +95,7 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  * A roster row as list_threads' slim detail gives it: who it is, where it stands, what it waits on, whether Watcher watches
  * it, and its open pull requests' summaries in place of every evidence fact.
  */
-export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false, prototypeReady = false) {
+export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false) {
   const open = watcherOpenPullRequests(row.pullRequests, row.evidence).map(item => item.summary)
   const said = summariesByKey(row.evidence)
   // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
@@ -103,7 +103,7 @@ export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = fals
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
-    ...latest?.automationStopped ? { automationStopped: true as const } : {}, ...prototypeReady ? { prototypeReady: true as const } : {},
+    ...latest?.automationStopped ? { automationStopped: true as const } : {},
     ...row.protected ? { protected: true as const } : {}, pullRequests: open, ...endedCounts(row.pullRequests.map(pr => stateOf(pr, said))) }
 }
 
@@ -117,11 +117,6 @@ export interface WatcherSlimLookups {
    * desktop's own and either can be the older.
    */
   readonly turnFailed?: (target: WatcherThreadTarget) => boolean
-  /**
-   * Whether a prototype the thread made waits for the user's review (ADR-0108), from the thread too, so a paired host never
-   * sends a field an older desktop refuses.
-   */
-  readonly prototypeReady?: (target: WatcherThreadTarget) => boolean
   /** The pull requests the last read of the thread given to this Watcher conversation held merged or closed (#1147). */
   readonly endedBefore?: (target: WatcherThreadTarget) => ReadonlySet<string> | undefined
 }
@@ -131,29 +126,28 @@ export interface WatcherSlimLookups {
  */
 export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
   lookups: WatcherSlimLookups = {}): unknown {
-  const { turnFailed = () => false, prototypeReady = () => false, endedBefore = () => undefined } = lookups
+  const { turnFailed = () => false, endedBefore = () => undefined } = lookups
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
     // A paired host's page is filtered here, so its counts are counted again from what is left.
     const counts = asked.watchedOnly ? Object.fromEntries(Object.keys(result.counts as Record<string, number>).map(group => [group, rows.filter(row => row.group === group).length])) : result.counts
-    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target), ...prototypeReady(row.target) ? { prototypeReady: true as const } : {} }))
-      : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target), prototypeReady(row.target))) }
+    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) }))
+      : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target))) }
   }
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]
-    const read = prototypeReady(result.target as WatcherThreadTarget) ? { ...result, prototypeReady: true as const } : result
     // Only the pull request facts are summed up; the thread's own facts, a failed turn, a takeover or a receipt, are few and stay.
-    if (asked.evidence === 'full') return read
+    if (asked.evidence === 'full') return result
     // A merged or closed pull request is summed up only when it became so since Watcher's last read of the thread; the
     // others are counted. Before a first read, every one is counted: the news told each merge or close as it came (#1147).
     const before = endedBefore(result.target as WatcherThreadTarget), summaries = watcherPullRequestSummaries(evidence)
     const ended = (summary: WatcherPullRequestSummary) => summary.state === 'merged' || summary.state === 'closed'
     const pullRequests = summaries.filter(summary => !ended(summary) || before !== undefined && !before.has(prKey(summary.url!)))
     const left = endedCounts(summaries.filter(summary => !pullRequests.includes(summary)).map(summary => summary.state))
-    const slim = { ...read, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {}, ...left }
+    const slim = { ...result, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {}, ...left }
     // The full read was cut to the read bound. A slim one is almost always smaller; one that is not is given in full.
-    return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? read : slim
+    return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? result : slim
   }
   if (name === 'list_projects') {
     const asked = input as WatcherToolInput<'list_projects'>, query = asked.query?.toLowerCase()

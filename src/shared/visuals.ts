@@ -98,7 +98,7 @@ const FIELD_NAMES: Record<string, string> = { title: 'The title', kind: 'The kin
 function inputProblem(error: z.ZodError): string {
   const issue = error.issues[0]
   if (!issue) return 'The visual could not be read.'
-  if (issue.code === 'unrecognized_keys') return `The visual has fields it does not take: ${issue.keys.join(', ')}.`
+  if (issue.code === 'unrecognized_keys' && issue.path.length === 0) return `The visual has fields it does not take: ${issue.keys.join(', ')}.`
   const field = FIELD_NAMES[String(issue.path[0])] ?? 'The visual'
   if (issue.path[0] === 'kind') return `The kind must be one of: ${VISUAL_KINDS.join(', ')}.`
   if (issue.path[0] === 'steps' && issue.path.length > 1) {

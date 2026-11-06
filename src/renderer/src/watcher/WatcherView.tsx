@@ -445,8 +445,8 @@ const FAILURE_MARGIN_PX = 12
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
-  // What it waits on: its request's card, or the strip of a prototype waiting for review (ADR-0108).
-  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind], .prototype-ready') : null
+  // What it waits on: its request's card.
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
   if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return
@@ -735,12 +735,10 @@ export function WatcherView({ now: fixedNow }: {
   const sceneShown = roomOpen && (current === null || watcherRow !== undefined)
   const owls = useWatchedOwls(room?.state ?? null, state)
   // Watcher's own owl glows while something waits on the user (Zach, October 27, 2026): a question or permission of
-  // Watcher's own, or a thread in Needs you for a question, a permission or a prototype to review. A failed turn alone
-  // lights it no more than it lights a thread owl.
-  // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
-  // before a prototype that also waits.
+  // Watcher's own, or a thread in Needs you for a question or a permission. A failed turn alone lights it no more than it
+  // lights a thread owl, and a prototype never does on its own (ADR-0108, November 6, 2026).
   const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || asked.length > 0 || needs.some(({ facts }) =>
-    facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
+    facts.request !== undefined || facts.thread.requests.length > 0)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
   const linkedFile = state === null ? null : view.file

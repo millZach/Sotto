@@ -115,31 +115,17 @@ it('looks at once when a turn finishes or a request card arrives between two loo
   expect(after).not.toHaveBeenCalled()
 })
 
-it('tells Watcher once for each prototype waiting for review, and lets it go once the mark is gone (ADR-0108)', async () => {
+it('tells Watcher nothing of a prototype on its own: the question card that links it is the news (ADR-0108, November 6, 2026)', async () => {
   const f = fixture()
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
   const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
   f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-  // The mark comes a moment after the turn ends, once its page is found: a change in it is looked at at once.
-  f.wakes.observe(); f.wakes.observeSoon(vi.fn())
-  const event = f.wakes.news().find(item => item.kind === 'prototype-ready')!
-  expect(event).toMatchObject({ target: centerTarget, messageId: 'reply-1' })
-  expect(event).not.toHaveProperty('requestCardId')
-  expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [event], omitted: 0 }))
-    .toContain('This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.')
-  await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  // The same source is told once, however often it is seen.
-  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  expect(f.wakes.due(event)).toBe(true)
-  delete f.thread.prototypeReady
-  expect(f.wakes.due(event)).toBe(false)
-  // A waiting question’s prototype is news of its own, named by the question.
+  f.wakes.observe()
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished'])
   f.thread.requests = [{ id: 'question', kind: 'question', text: 'Which one?', options: [], pages: [page] }]
   f.thread.prototypeReady = { source: 'request:question', pages: [page] }
   f.wakes.observe()
-  expect(f.wakes.news().filter(item => item.kind === 'prototype-ready')).toEqual([expect.objectContaining({ requestCardId: 'question' })])
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished', 'needs-user'])
 })
 
 it('looks at once when the Watcher record is replaced, and owes nothing once closed', async () => {
@@ -2283,21 +2269,6 @@ describe('news that a card or prototype no longer waits on the user', () => {
     expect(kinds(f.delivered.at(-1))).toEqual(['request-closed'])
     f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.wakes.drained(); await f.advance(WATCHER_BATCH_MAX_MS)
     expect(f.delivered.map(kinds)).toEqual([['needs-user'], ['request-closed'], ['request-closed']])
-  })
-
-  it('tells Watcher a prototype it was told of no longer waits on review, but not when its thread was settled', async () => {
-    const f = fixture()
-    finish(f.thread)
-    const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
-    f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toEqual([expect.objectContaining({ target: centerTarget, messageId: 'reply-1' })])
-    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.')
-    f.thread.prototypeReady = { source: 'reply:reply-2', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; f.thread.workspaceSettledAt = new Date(f.now()).toISOString(); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toHaveLength(1)
   })
 })
 
