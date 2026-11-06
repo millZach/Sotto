@@ -2,9 +2,33 @@ import XCTest
 @testable import SottoCore
 
 final class FocusThreadsTests: XCTestCase {
-    private func thread(_ id: String, _ extra: String = "", requests: String = "[]") throws -> ThreadSummary {
-        try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"\#(id)","projectId":"p","title":"\#(id)","status":"idle","requests":\#(requests)\#(extra)}"#.utf8))
+    private func thread(_ id: String, _ extra: String = "", requests: String = "[]", status: String = "idle") throws -> ThreadSummary {
+        try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"\#(id)","projectId":"p","title":"\#(id)","status":"\#(status)","requests":\#(requests)\#(extra)}"#.utf8))
     }
+    func testSnoozesPartitionWorkAndExpireWithoutHidingRequests() throws {
+        let now = try XCTUnwrap(Stamp.date("2026-11-05T09:00:00Z"))
+        let snooze = #", "snoozedUntil":"2026-11-05T10:00:00Z""#
+        let asleep = try thread("asleep", snooze + #", "updatedAt":"2026-11-05T08:00:00Z""#, status: "running")
+        let later = try thread("later", snooze + #", "updatedAt":"2026-11-05T08:30:00Z""#)
+        let question = try thread("question", snooze, requests: #"[{"id":"q","kind":"question","text":"Choose","options":[]}]"#)
+        let permission = try thread("permission", snooze, requests: #"[{"id":"p","kind":"permission","text":"Approve","options":[]}]"#)
+        let failed = try thread("failed", snooze, status: "error")
+        let putAway = try thread("settled", snooze + #", "settledAt":"yesterday""#)
+        let computer = ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [asleep, later, question, permission, failed, putAway])
+        let groups = FocusThreads([computer], now: now)
+        XCTAssertEqual(Set(groups.questions.map(\.id)), ["h/question", "h/permission"])
+        XCTAssertEqual(groups.requestCount, 2)
+        XCTAssertTrue(groups.working.isEmpty)
+        XCTAssertEqual(groups.snoozedProjects.first?.rows.map(\.id), ["h/later", "h/asleep"])
+        XCTAssertEqual(groups.settled.map(\.id), ["h/settled"])
+        XCTAssertEqual(groups.recent.map(\.id), ["h/failed"])
+        let awake = FocusThreads([computer], now: now.addingTimeInterval(3600))
+        XCTAssertTrue(awake.snoozed.isEmpty)
+        XCTAssertEqual(awake.working.map(\.id), ["h/asleep"])
+        XCTAssertEqual(FocusThreads([computer], query: "later", now: now).snoozed.map(\.id), ["h/later"])
+        XCTAssertNil(try thread("older-host").snoozedUntil)
+    }
+
     func testSettledRequestsStayInNeedsYouAndSettledWorkIsQuiet() throws {
         let question = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"q","projectId":"p","title":"Ship","status":"idle","settledAt":"yesterday","requests":[{"id":"r","kind":"question","text":"Which target?","options":[]}]}"#.utf8))
         let work = try thread("background", #", "settledAt":"yesterday", "backgroundWork":[{"type":"subagent"}]"#)

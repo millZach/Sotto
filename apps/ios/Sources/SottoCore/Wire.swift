@@ -235,6 +235,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let earlierAvailable: Bool?; public let archivedAt: String?; public let summary: Summary?
     public let workspaceSettledAt: String?; public let settledAt: String?; public let settledOverride: String?
     public let backgroundWork: [BackgroundWork]?; public let compaction: Compaction?
+    /// The host's shared snooze, absent on older hosts and stable (ADR-0175).
+    public var snoozedUntil: String? = nil
+    public var updatedAt: String? = nil
     /// The computer's word that the thread finished while nothing showed it and has not been opened since, on
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil

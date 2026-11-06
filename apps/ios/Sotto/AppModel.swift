@@ -48,6 +48,7 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
+        if let wake = snoozeWakeAt, wake <= Date() { listed = Listed() }
         let holding = holdingThreads
         let key = Listed.GroupKey(show: show, query: query, opened: opened, holding: holding)
         if let kept = listed.groups[key] { return kept }
@@ -55,6 +56,17 @@ extension AppModel {
         if listed.groups.count >= 8 { listed.groups = [:] }
         let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
         listed.groups[key] = groups
+        if let wake = groups.nextSnoozeWake, snoozeWakeAt == nil || wake < snoozeWakeAt! {
+            snoozeWakeAt = wake
+            snoozeWakeTask?.cancel()
+            snoozeWakeTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, wake.timeIntervalSinceNow) * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.snoozeWakeAt = nil
+                self.listed = Listed()
+                self.objectWillChange.send()
+            }
+        }
         return groups
     }
     /// The threads this iPhone holds something for, by `ThreadRef.id`: words, photos or files in the reply box, a refused
@@ -1310,6 +1322,8 @@ struct RailAsk: Equatable {
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
+    private var snoozeWakeAt: Date?
+    private var snoozeWakeTask: Task<Void, Never>?
     private struct Listed {
         struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef?; let holding: Set<String> }
         var groups: [GroupKey: FocusThreads] = [:]
