@@ -401,24 +401,80 @@ export function editWeight(before: string, after: string, segments: readonly Wor
   return (changedA / Math.max(inkLength(before), 1) + changedB / Math.max(inkLength(after), 1)) / 2 >= REWRITTEN_NOW_SHARE ? 'rewritten' : 'reworked'
 }
 
-/** How far back from the first words that went the earlier wording's excerpt may reach for the start of their sentence. */
-const EXCERPT_LEAD = 80
+/** How many letters of one side of a change a glimpse shows before it stops at a word and says there is more. */
+const GLIMPSE_SIDE = 56
+/** How many letters the glimpses under one shut earlier wording show together: a line of the panel at 1600, or a little more. */
+const GLIMPSE_BUDGET = 132
+/** The kept words just before a change a glimpse shows, two at most, so a short change has its place. */
+const GLIMPSE_LEAD = /(?:\S+\s+)?\S+$/u
+/** Words that end a sentence, a close of quote or Markdown's mark after the stop included. */
+const SENTENCE_END = /[.!?:;]["'”’)\]*_`]*$/u
 
 /**
- * Where the one line of earlier wording shown under a reworked line, before it is opened, starts: at the sentence the
- * first words that went sit in, or at their own first word when that sentence starts far before them. So the line
- * shows what the paragraph said where it changed, not the opening both sides share. Null when no words went, only
- * new ones came: then the earlier wording is the paragraph without them, and a line of it says nothing.
+ * One change of a reworked line as its shut earlier wording shows it (changeGlimpses): the last few words both sides
+ * keep before it, then the words that went and the words that came in their place, each ended on a whole word.
+ * `lead` and `came` are ranges into the line after, `went` into the line before; `wentCut` and `cameCut` say a side
+ * goes on past what is shown.
  */
-export function earlierExcerptStart(before: string, segments: readonly WordSegment[]): number | null {
-  const first = segments.find(segment => segment.kind === 'changed' && before.slice(segment.before.start, segment.before.end).trim() !== '')
-  if (!first || first.kind !== 'changed') return null
-  const at = first.before.start + (before.slice(first.before.start).length - before.slice(first.before.start).trimStart().length)
-  let sentence = 0
-  for (const match of before.slice(0, at).matchAll(/[.!?:;]["'”’)\]*_`]*\s+/gu)) sentence = match.index + match[0].length
-  if (at - sentence <= EXCERPT_LEAD) return sentence
-  const word = before.lastIndexOf(' ', at - 1)
-  return word < 0 ? 0 : word + 1
+export interface ChangeGlimpse {
+  readonly lead: TextRange | null
+  readonly went: TextRange
+  readonly came: TextRange | null
+  readonly wentCut: boolean
+  readonly cameCut: boolean
+}
+
+/** The range without the space at its edges. */
+function trimmed(text: string, range: TextRange): TextRange {
+  const slice = text.slice(range.start, range.end)
+  const start = range.start + slice.length - slice.trimStart().length
+  return { start, end: Math.max(start, range.start + slice.trimEnd().length) }
+}
+
+/** The range cut to `most` letters at most, at the end of a word, so no word is ever cut through. */
+function wholeWords(text: string, range: TextRange, most: number): { readonly range: TextRange; readonly cut: boolean } {
+  if (range.end - range.start <= most) return { range, cut: false }
+  const space = text.lastIndexOf(' ', range.start + most)
+  const end = space > range.start ? space : text.indexOf(' ', range.start + most)
+  if (end < 0 || end >= range.end) return { range, cut: false }
+  // A word that ends on a comma or a stop is still a whole word; the mark stays out of the cut so "…" follows a word.
+  return { range: { start: range.start, end: range.start + text.slice(range.start, end).replace(/[\s,;:]+$/u, '').length }, cut: true }
+}
+
+/**
+ * What a reworked line's shut earlier wording shows of it: its changes where words went, in order, each the words that
+ * went struck beside the words that came in their place, as many as fit in about a line of the panel. So what changed
+ * is in sight without a press, and the press opens the whole of what it said. A change that only added words is left
+ * out, since the line as it is now shows its words. A line rewritten whole shows the start of what it said, alone,
+ * since the paragraph over it is what came. `more` says changes are left out. Null when no words went, only new ones
+ * came: the earlier wording is then the paragraph without them, and a glimpse of it says nothing.
+ */
+export function changeGlimpses(before: string, after: string, segments: readonly WordSegment[]): { readonly glimpses: readonly ChangeGlimpse[]; readonly more: boolean } | null {
+  const whole = !segments.some(segment => segment.kind === 'kept' && after.slice(segment.after.start, segment.after.end).trim() !== '')
+  const glimpses: ChangeGlimpse[] = []
+  let used = 0, more = false
+  for (const [index, segment] of segments.entries()) {
+    if (segment.kind !== 'changed') continue
+    const wentWords = trimmed(before, segment.before)
+    if (wentWords.end <= wentWords.start) continue
+    const went = wholeWords(before, wentWords, whole ? GLIMPSE_BUDGET : GLIMPSE_SIDE)
+    const cameWords = whole ? null : trimmed(after, segment.after)
+    const came = cameWords && cameWords.end > cameWords.start ? wholeWords(after, cameWords, GLIMPSE_SIDE) : null
+    const previous = segments[index - 1]
+    let lead: TextRange | null = null
+    if (previous?.kind === 'kept') {
+      const kept = trimmed(after, previous.after)
+      const shown = GLIMPSE_LEAD.exec(after.slice(kept.start, kept.end))
+      // A change that starts inside a word ("(" then a name) has no word of its own before it to lead with, and one that
+      // starts a sentence needs none: the end of the last sentence would only read as part of it.
+      if (shown && /\s$/u.test(after.slice(previous.after.start, previous.after.end)) && !SENTENCE_END.test(shown[0])) lead = { start: kept.end - shown[0].length, end: kept.end }
+    }
+    const size = (lead ? lead.end - lead.start + 1 : 0) + went.range.end - went.range.start + (came ? came.range.end - came.range.start + 1 : 0)
+    if (glimpses.length > 0 && used + size > GLIMPSE_BUDGET) { more = true; break }
+    glimpses.push({ lead, went: went.range, came: came?.range ?? null, wentCut: went.cut, cameCut: came?.cut ?? false })
+    used += size
+  }
+  return glimpses.length === 0 ? null : { glimpses, more }
 }
 
 function wordSet(text: string): ReadonlySet<string> {

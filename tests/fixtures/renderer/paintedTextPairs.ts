@@ -72,6 +72,10 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
   // The tab where a line of code runs on past the edge, on its line's own colour, and the earlier wording's toggle, pointed at.
   ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab and earlier wording, pointed at'),
+  // The runs-on arrow rests in the muted ink (as a line number does) and lifts to the secondary ink on a pointed line.
+  ...lines.map(line => pair('text-2', [...line, hover], 'runs-on arrow on a pointed line')),
+  // A shut earlier wording's glimpse: the words that went in the removed ink, on the toggle at rest, pointed at and on a picked line.
+  ...each('--changes-ink-removed', [[...context, 'hover-strong'], [...context, picked, 'hover-strong']], 'words that went in a glimpse, pointed at'),
   // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
   ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
   // A document's lines: body ink on an added line, secondary on a removed one.
