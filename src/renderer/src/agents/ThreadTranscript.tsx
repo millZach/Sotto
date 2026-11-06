@@ -1087,8 +1087,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away. Where
-  // what it opens would land under the composer, mostly out of sight, the view rises with the fold instead, only far
-  // enough for its end to show and never past the control reaching the top, so what was opened can be read at any size.
+  // what it opens would end under the composer, the view rises with the fold instead, only far enough for its end to show
+  // and never past the control reaching the top, so what was opened can be read to its end at any size.
   const onDisclosure = useCallback((control: HTMLElement): void => {
     const element = scroller.current
     if (element === null) return

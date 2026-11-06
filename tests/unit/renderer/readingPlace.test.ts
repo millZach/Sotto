@@ -158,9 +158,15 @@ describe('a key pressed in the transcript', () => {
 describe('how far a press lifts the transcript to show what it opened', () => {
   const view = { top: 40, bottom: 500 }
 
-  it('leaves the control where it was when what opened shows whole, or half the view of it does', () => {
+  it('leaves the control where it was when the end of what opened shows', () => {
     expect(revealLift(view, { top: 200 }, { top: 230, bottom: 480 })).toBe(0)
-    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 900 })).toBe(0)
+    expect(revealLift(view, { top: 200 }, { top: 230, bottom: 500.4 })).toBe(0)
+  })
+
+  it('lifts what opened mostly in view far enough for its end to show too', () => {
+    // An opened document diff whose last lines ran on under the composer, though most of it showed.
+    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 540 })).toBe(40)
+    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 900 })).toBe(100 - 40 - 4)
   })
 
   it('lifts what opened under the composer far enough for its end to show', () => {
@@ -168,7 +174,7 @@ describe('how far a press lifts the transcript to show what it opened', () => {
   })
 
   it('never lifts the control past the top of the view', () => {
-    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 1_400 })).toBe(470 - 40 - 12)
+    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 1_400 })).toBe(470 - 40 - 4)
     expect(revealLift(view, { top: 45 }, { top: 75, bottom: 300 })).toBe(0)
   })
 })
