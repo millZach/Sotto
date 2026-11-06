@@ -62,6 +62,8 @@ const id = z.string().min(1).max(512)
 const dynamicNoteDigestSchema = z.string().regex(/^[0-9a-f]{16}$/u)
 /** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
+/** How many steers a thread names as not taken (#1408): enough to settle every one an outbox could still hold. */
+export const NOT_TAKEN_MESSAGE_IDS_MAX = 20
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
 /** The longest text a message, a prompt or a follow-up carries. */
@@ -795,6 +797,11 @@ export const agentThreadSchema = z.object({
   historySaveNotice: z.string().max(600).optional(),
   /** A native request refused because Sotto could not show it; never a pending request or an approval. */
   requestNotice: z.string().max(600).optional(),
+  /**
+   * Sotto's message IDs of the newest steers the provider admitted but never took, because the turn they were sent into
+   * ended first (#1408). Not sent, and never sent again: the coordinator settles each one's delivery from this. Newest last.
+   */
+  notTakenMessageIds: z.array(id).max(NOT_TAKEN_MESSAGE_IDS_MAX).optional().catch(undefined),
   /** Changes only on a confirmed native rewind; cached activity must not cross it. */
   historyEpoch: z.string().optional(),
 })
@@ -828,6 +835,8 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
  * is left waiting to reconcile, so a window may say that nothing changed; the option chips read this exact sentence.
  */
 export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
+/** A steer the provider admitted whose turn ended before taking it (#1408): it was not sent. */
+export const STEER_NOT_TAKEN = 'The turn ended before it took this steer, so nothing was sent. Send it again as a new message.'
 /** What main answers when the provider did not say whether it took an action; Sotto keeps it and checks it later. */
 export const PROVIDER_RESULT_UNCONFIRMED = 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.'
 /** What main answers when a folder sent as existing is not there, so nothing was added and no folder was made. */

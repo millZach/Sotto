@@ -383,6 +383,9 @@ describe('remote command allow-list', () => {
       { type: 'create-thread', projectId: 'project', title: 'Auto', modelId: 'codex', runtimeMode: 'auto' },
       { type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: true },
       { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedIgnored: ['.env'] },
+      // Nested work and the ignored items it takes are confirmations of their own (ADR-0041), whatever else the command carries.
+      { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedRepositories: [{ path: 'nested/', changeCount: 1, unpushedCommitCount: 2, kind: 'repository' }] },
+      { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedItems: [{ path: 'build/', fileCount: 3 }] },
       { type: 'restore-thread-branch', threadId: 'thread', withUncommittedChanges: true },
       { type: 'answer', threadId: 'thread', requestId: 'request', answer: 'Allow', approved: true },
       { type: 'save-thread-draft', threadId: 'thread', draftId: 'draft', text: 'Blue', requestId: 'request' },

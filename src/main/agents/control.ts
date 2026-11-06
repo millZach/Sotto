@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, STEER_NOT_TAKEN, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
   type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
@@ -266,6 +266,8 @@ function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
 }
 /** A draft saved without an image its window still showed: the text is kept, the image is not. */
+/** A steer not taken whose message could not be saved back on the queue (#1408): kept, unsent, and tried again. */
+export const REQUEUE_NOT_SAVED = 'Could not save the follow-up queue. Your message is kept and was not sent. Sotto puts it back in the queue the next time this thread updates or Sotto restarts, once saving works again.'
 export const DRAFT_IMAGE_NOT_SAVED = 'An image in this draft is no longer kept, so the draft was saved without it. Your text was saved. Remove the image and attach it again.'
 const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX_DELIVERED_DRAFTS * 2)
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
@@ -4790,6 +4792,7 @@ export class AgentControl {
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
+    this.steeringFollowups.add(item.id)
     try {
       const validatePrompt = (): void => {
         validate()
@@ -4803,11 +4806,26 @@ export class AgentControl {
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {
       const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
-      await this.followupStore.settle(item.id, accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed',
-        error instanceof Error ? error.message : 'Could not steer this message.')
+      // Its turn ended before taking it (#1408): it was not sent, and goes as the next message instead. The provider's
+      // short list of steers not taken is read first, so the transcript is looked at only for a steer it names.
+      const notTaken = (): boolean => {
+        const thread = this.thread(item.threadId)
+        return thread.notTakenMessageIds?.includes(item.messageId!) === true
+          && !thread.messages.some(message => message.role === 'user' && message.id === item.messageId)
+      }
+      if (!accepted && (error instanceof Error && error.message === STEER_NOT_TAKEN || notTaken())) {
+        this.requeueNotTaken(item.id, item.commandId!)
+        return
+      }
+      const status = accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed'
+      await this.followupStore.settle(item.id, status, error instanceof Error ? error.message : 'Could not steer this message.')
+      // Its turn may have ended while that was saved, when the queue still showed it dispatching: settled now, it goes next.
+      if (status === 'uncertain' && notTaken()) { this.requeueNotTaken(item.id, item.commandId!); return }
       throw error
-    } finally { this.syncFollowups(); this.publish() }
+    } finally { this.steeringFollowups.delete(item.id); this.syncFollowups(); this.publish() }
   }
+  /** Queued messages whose steer is still in flight (`steerFollowup`), which settles them; by follow-up ID. */
+  private readonly steeringFollowups = new Set<string>()
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     const origin = this.watcherOrigins.get(command)
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
@@ -5787,11 +5805,15 @@ export class AgentControl {
       }
     } catch (error) {
       this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
-      if (prompt && (provider === undefined || isUsageProviderId(provider))) {
+      // A queued steer its turn ended without taking (#1408) keeps its entry until its message is saved back on the queue
+      // (`requeueNotTaken`), so a failed save leaves a record that a later snapshot or a restart retries.
+      const keptForRequeue = command.type === 'steer' && error instanceof Error && error.message === STEER_NOT_TAKEN
+        && this.followupStore.peek().items.some(item => item.commandId === command.commandId)
+      if (!keptForRequeue && prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
       }
-      this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+      if (!keptForRequeue) this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
       throw error
@@ -6460,6 +6482,8 @@ export class AgentControl {
       if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
+      // A steer the provider admitted but whose turn ended first was not sent (#1408): settled as not sent, never resent.
+      if (item.type === 'steer' && !message && item.messageId && thread?.notTakenMessageIds?.includes(item.messageId)) { this.settleSteerNotTaken(item); continue }
       const confirmed = (item.type === 'send' || item.type === 'steer') ? Boolean(message) : item.type === 'create-project'
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
@@ -6502,6 +6526,44 @@ export class AgentControl {
     this.titles.generate()
     this.persistAfterSnapshots()
     this.publish()
+  }
+  /**
+   * Settles an outbox steer its provider says it never took (#1408): the entry goes, the composer's draft reads as not
+   * sent and is kept, and a queued message goes back to the head of its queue, to go as the next message as the queue
+   * would have sent it when the turn ended. Nothing is sent from here.
+   */
+  private settleSteerNotTaken(item: Saved['outbox'][number]): void {
+    // One whose steer is still in flight is that steer's to settle, once the queue has saved what it last heard
+    // (`steerFollowup`). Any other, including one whose earlier requeue could not be saved, goes back on the queue, and
+    // its entry goes only once that is saved.
+    const queued = this.followupStore.peek().items.find(followup => followup.commandId === item.id)
+    if (queued) { if (!this.steeringFollowups.has(queued.id)) this.requeueNotTaken(queued.id, item.id); return }
+    this.settleNotTakenEntry(item.id)
+    if (item.draftId && item.threadId) this.setDelivery(item.threadId, item.draftId, 'failed')
+  }
+  /** The outbox entry of a steer not taken goes, and the usage it recorded with it. */
+  private settleNotTakenEntry(commandId: string): void {
+    const item = this.outbox.find(o => o.id === commandId); if (!item) return
+    this.outbox = this.outbox.filter(o => o !== item)
+    if (item.threadId && item.messageId && (item.provider === undefined || isUsageProviderId(item.provider))) {
+      try { this.dependencies.usage?.discardPrompt(item.threadId, item.messageId) }
+      catch { /* Only usage metadata is affected. */ }
+    }
+  }
+  /** Steers not taken whose queued message is going back on the queue (`requeueNotTaken`), by command. */
+  private readonly requeueing = new Set<string>()
+  /**
+   * A queued message whose steer `commandId` was not taken goes back to the head of its queue (#1408), once. Its outbox
+   * entry goes only after the queue is saved: if that save fails, the entry stays, so a later snapshot or a restart
+   * finds the steer not taken again and tries once more, and nothing is sent until the message is back on the queue.
+   */
+  private requeueNotTaken(id: string, commandId: string): void {
+    if (this.requeueing.has(commandId)) return
+    this.requeueing.add(commandId)
+    void this.followupStore.requeueAtHead(id, commandId)
+      .then(() => { this.settleNotTakenEntry(commandId); this.persistAfterSnapshots() })
+      .catch(() => { this.state.error = REQUEUE_NOT_SAVED })
+      .finally(() => { this.requeueing.delete(commandId); this.syncFollowups(); this.publish(); this.pumpFollowups() })
   }
   private afterSnapshotsPersistQueued = false
   /**

@@ -150,7 +150,10 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
     // Every new thread would start on it, so it is at least the grant one thread's own would be.
     case 'configure': return command.patch.newThreadRuntimeMode != null && command.patch.newThreadRuntimeMode !== 'approval-required'
     case 'restore-thread-branch': return command.withUncommittedChanges === true
+    // Ignored items, their files and nested repositories are each the user's confirmation that work goes with the folder
+    // (ADR-0041). Each is gated on its own, rather than through the workspace's rule that nested work is also ignored.
     case 'reclaim-thread-worktree': return command.withUncommittedChanges === true || Boolean(command.confirmedIgnored?.length)
+      || Boolean(command.confirmedItems?.length) || Boolean(command.confirmedRepositories?.length)
     case 'delete-thread': return true
     default: return false
   }
