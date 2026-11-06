@@ -9,6 +9,12 @@ const OUTPUT_DRAIN_GRACE_MS = 300
 // separate history budget rather than limiting a frame to one submitted prompt. A longer
 // line is read on without its pictures (`OversizedLine`), and skipped if it is still too long.
 export const MAX_FRAME_BYTES = 128 * 1024 * 1024
+/** How much of each end of a skipped line is kept to find the request it answered. */
+const LINE_END_CHARS = 64
+const ID = String.raw`(-?\d+|"(?:[^"\\]|\\.)*")`, OPEN = String.raw`^\s*\{\s*(?:"jsonrpc"\s*:\s*"2\.0"\s*,\s*)?`
+const REPLY_ID_FIRST = new RegExp(String.raw`${OPEN}"id"\s*:\s*${ID}\s*,\s*"(?:result|error)"`, 'u')
+const REPLY_FIRST = new RegExp(String.raw`${OPEN}"(?:result|error)"`, 'u')
+const REPLY_ID_LAST = new RegExp(String.raw`,\s*"id"\s*:\s*${ID}\s*\}\s*$`, 'u')
 
 export const rpcSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
 export type RpcFrame = z.infer<typeof rpcSchema>
@@ -68,8 +74,9 @@ export class CodexProcess {
     this.child = child
     const maxFrameBytes = options.maxFrameBytes ?? MAX_FRAME_BYTES, maxQueuedBytes = maxFrameBytes * 2
     let buffer: string[] = []; let bufferedBytes = 0; let queuedBytes = 0
-    // The line being read once it passed the budget, and the start of one that stayed past it without its pictures.
-    let oversized: OversizedLine | undefined; let skipped: string | undefined
+    // The line being read once it passed the budget, whether it stayed past it without its pictures, and the ends of
+    // such a line, which say which request it answered whichever way round Codex wrote its fields.
+    let oversized: OversizedLine | undefined; let skippedHead: string | undefined; let tail = ''
     this.closed = new Promise<void>(resolve => child.once('close', () => { this.fail(); resolve() }))
     // Let final output drain, then release handles a descendant may still hold.
     child.once('exit', () => {
@@ -85,25 +92,31 @@ export class CodexProcess {
       while (start < chunk.length) {
         const newline = chunk.indexOf('\n', start)
         const part = chunk.slice(start, newline < 0 ? undefined : newline)
-        if (skipped === undefined) {
-          if (oversized) oversized.push(part)
-          else {
-            buffer.push(part); bufferedBytes += Buffer.byteLength(part)
-            // A line this long is never a reason to stop the app-server: the lines around it are whole (#2268).
-            if (bufferedBytes > maxFrameBytes) { oversized = new OversizedLine(); for (const held of buffer) oversized.push(held); buffer = []; bufferedBytes = 0 }
+        if (oversized || skippedHead !== undefined) {
+          oversized?.push(part)
+          tail = (tail + part.slice(-LINE_END_CHARS)).slice(-LINE_END_CHARS)
+        } else {
+          buffer.push(part); bufferedBytes += Buffer.byteLength(part)
+          // A line this long is never a reason to stop the app-server: the lines around it are whole (#2268).
+          if (bufferedBytes > maxFrameBytes) {
+            oversized = new OversizedLine()
+            for (const held of buffer) { oversized.push(held); tail = (tail + held.slice(-LINE_END_CHARS)).slice(-LINE_END_CHARS) }
+            buffer = []; bufferedBytes = 0
           }
-          if (oversized && oversized.bytes > maxFrameBytes) { skipped = oversized.head; oversized = undefined }
         }
+        // Past the budget even without its pictures: only its opening is kept, to say what it answered.
+        if (oversized && oversized.size > maxFrameBytes) { skippedHead = oversized.head; oversized = undefined }
         if (newline < 0) break
         start = newline + 1
-        if (skipped !== undefined) {
-          const head = skipped; skipped = undefined
-          void options.enqueue(async () => { if (!this.lost) this.unreadable(head) }).catch(() => this.abort())
+        if (skippedHead !== undefined) {
+          const head = skippedHead, end = tail
+          skippedHead = undefined; tail = ''
+          void options.enqueue(async () => { if (!this.lost) this.unreadable(head, end) }).catch(() => this.abort())
           continue
         }
         // Count each chunk once; repeatedly measuring an accumulating base64 frame is quadratic.
         const line = oversized ? oversized.line() : buffer.join(''); const bytes = oversized ? oversized.bytes : bufferedBytes
-        buffer = []; bufferedBytes = 0; oversized = undefined
+        buffer = []; bufferedBytes = 0; oversized = undefined; tail = ''
         if (!line.trim()) continue
         queuedBytes += bytes
         if (queuedBytes > maxQueuedBytes) { this.abort(); return }
@@ -143,13 +156,13 @@ export class CodexProcess {
    * request fails as unconfirmed, since Codex did answer it; anything else in it is let go, as an unreadable
    * notification is (#1396).
    */
-  private unreadable(head: string): void {
-    const id = /^\s*\{\s*"id"\s*:\s*(-?\d+|"(?:[^"\\]|\\.)*")\s*,\s*"(?:result|error)"/u.exec(head)?.[1]
+  private unreadable(head: string, end: string): void {
+    const id = REPLY_ID_FIRST.exec(head)?.[1] ?? (REPLY_FIRST.test(head) ? REPLY_ID_LAST.exec(end)?.[1] : undefined)
     const key = id === undefined ? undefined : JSON.stringify(JSON.parse(id))
     const waiter = key === undefined ? undefined : this.waiters.get(key)
     if (!waiter) return
     clearTimeout(waiter.timer); this.waiters.delete(key!)
-    waiter.reject(new Uncertain('Codex answered with more than Sotto can read at once.'))
+    waiter.reject(new Uncertain('Codex’s reply was too long for Sotto to read, so it is not known whether this worked. Check the thread before you try again.'))
     if (this.endIdle && !this.waiters.size) this.end()
   }
 

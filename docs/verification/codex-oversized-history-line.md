@@ -26,13 +26,14 @@ A throwaway client started its own `codex app-server --stdio` (0.166.0) and sent
 
 By item type, the 340.9 MB were 106 `imageGeneration` items: 340.5 MB of it was their `result` field, each picture's base64 bytes. Each item also names its `savedPath`. `CodexProcess` ended an app-server when one line passed `MAX_FRAME_BYTES`, 128 MB. Codex 0.166.0 cannot page this history: `thread/items/list` answers `-32601 thread/items/list is not supported yet`, and `thread/turns/list` finds a single turn.
 
-The same reply, fed chunk by chunk through `OversizedLine` as Node delivered it, kept **353 KB** in **150 ms**. It parsed. All 106 picture strings were empty, all 106 still named their `savedPath`, and all 43 agent messages were whole.
+The same reply, fed chunk by chunk through `OversizedLine` as Node delivered it, kept **353 KB**. The line was done 1.8 s after its first chunk arrived, about as long as Codex took to write it. It parsed. All 106 picture strings were empty, all 106 still named their `savedPath`, and all 43 agent messages were whole.
 
 ## Tests
 
 - `tests/integration/codexSessionProcesses.test.ts`, **keeps a thread's app-server, turn and question when a whole read carries more picture bytes than a line may hold**. It uses a 64 KiB line and four 32 KiB pictures. Before the fix, the read rejected with "Codex disconnected before acknowledgement." A throwaway probe on the same scene, since removed, showed the rest of the forge chain. The turn failed, the question was dropped, and the next send was refused as "Codex history could not be verified before sending the prompt". Each later read started a new app-server and killed it again: 4 app-servers and 4 whole reads. After the fix the read succeeds, the question is answered on the same app-server, and the next send is accepted.
 - `tests/unit/main/workspaceStoreWriter.test.ts`, **gives Watcher the thread's stored history, as unavailable, when its provider cannot read the thread back**. It failed with "Codex disconnected before acknowledgement." before the change to `watcherRead`.
-- `tests/unit/main/codexOversizedLine.test.ts`: chunk splits down to one character, escapes, data URLs, long text kept, and a line still too long that fails only its own request while the app-server keeps going.
+- `tests/integration/codexSessionProcesses.test.ts`, **stops a thread whose app-server does not answer the Stop, and starts it again for the next send**. The fake takes the Stop and does nothing, as a hung app-server would. Before the fix the Stop came back `{ accepted: false, uncertain: true }` and the hung process stayed the thread's runtime. After it, the turn is interrupted, the app-server is gone, and the next send is accepted on a new one.
+- `tests/unit/main/codexOversizedLine.test.ts`: chunk splits down to one character, escapes, data URLs, and long text kept, a long run of base64 letters followed by words included. A line still too long fails only its own request, whether Codex wrote its ID before or after the result, and the app-server keeps going.
 
 `npm run typecheck` and `npm run lint` passed. Targeted Vitest runs with `--maxWorkers=2` passed:
 

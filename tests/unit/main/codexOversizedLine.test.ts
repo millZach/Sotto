@@ -26,30 +26,34 @@ describe('a Codex line too long for one frame (#2268)', () => {
     for (const size of [1, 2, 3, 7, 4096, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual(expected)
   })
 
-  it('keeps a short picture and a string that only starts like one', () => {
+  it('keeps a short picture and a string that only starts like one, however it is split', () => {
     const short = 'A'.repeat(PICTURE_CHARS)
-    const mixed = 'A'.repeat(PICTURE_CHARS) + ' and then words'
+    const mixed = 'A'.repeat(PICTURE_CHARS + 1000) + ' and then words'
     const reply = JSON.stringify({ id: 1, result: { short, mixed } })
-    expect(JSON.parse(kept(reply, 1000))).toEqual({ id: 1, result: { short, mixed } })
+    for (const size of [1000, 4096, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual({ id: 1, result: { short, mixed } })
   })
 
-  it('fails only the request a line still too long answered, and goes on reading the app-server', async () => {
-    // An app-server that answers its first request with a line of words longer than the budget, and its second as usual.
+  it('fails only the request a line still too long answered, whichever way round, and goes on reading the app-server', async () => {
+    // An app-server that answers its first two requests with lines of words longer than the budget, the first with its
+    // ID after the result and the second before it, and its third as usual.
     const script = `
       const readline = require('node:readline')
+      const words = { text: 'word '.repeat(200000) }
       readline.createInterface({ input: process.stdin }).on('line', line => {
         const { id } = JSON.parse(line)
-        process.stdout.write(JSON.stringify({ id, result: id === 1 ? { text: 'word '.repeat(200000) } : { ok: true } }) + '\\n')
+        process.stdout.write(JSON.stringify(id === 1 ? { result: words, id } : id === 2 ? { id, result: words } : { id, result: { ok: true } }) + '\\n')
       })`
     const server = new CodexProcess({ executable: process.execPath, args: ['-e', script], cwd: process.cwd(), env: process.env,
       requestTimeoutMs: 10_000, maxFrameBytes: 64 * 1024, enqueue: task => task(), onFrame: async () => undefined,
       onLost: () => { throw new Error('The app-server was ended.') }, rejection: error => new Error(String(error)) })
     try {
-      const first = server.rpc('thread/read', {})
-      const second = new Promise<unknown>((resolve, reject) => { void server.rpc('thread/read', {}, value => { resolve(value) }).catch(reject) })
+      const first = server.rpc('thread/read', {}), second = server.rpc('thread/read', {})
+      const third = new Promise<unknown>((resolve, reject) => { void server.rpc('thread/read', {}, value => { resolve(value) }).catch(reject) })
       await expect(first).rejects.toThrow(Uncertain)
-      await expect(second).resolves.toEqual({ ok: true })
+      await expect(second).rejects.toThrow(Uncertain)
+      await expect(third).resolves.toEqual({ ok: true })
       expect(server.alive).toBe(true)
+      expect(server.owed).toBe(false)
     } finally { server.end(); await server.closed }
   })
 })
