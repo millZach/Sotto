@@ -750,7 +750,15 @@ private struct Conversation: View {
         let last = pending.isEmpty && model.failedReplies[ref.id] == nil ? rows.last?.id : nil
         return VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
             if detail?.earlierAvailable == true || thread?.earlierAvailable == true {
-                Button("Show earlier messages") { Task { await model.earlier(ref) } }
+                // Under a step window, how many steps lie above it (ADR-0194): a picture thread's few long turns hold most of them.
+                Button { Task { await model.earlier(ref) } } label: {
+                    VStack(spacing: 2) {
+                        Text("Show earlier messages")
+                        if let steps = detail?.earlierSteps, steps > 0 {
+                            Text(verbatim: StepRun.count(steps)).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                    }
+                }
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                     .frame(maxWidth: .infinity)
                     .disabled(!online)
