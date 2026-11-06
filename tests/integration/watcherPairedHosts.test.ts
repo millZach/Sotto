@@ -2082,7 +2082,7 @@ for (const answer of ['accepted', 'uncertain'] as const) {
 it('lets go of a timed-out start’s moved branch once the paired machine shows it never had the start (#1033)', async () => {
   const f = await fromBranch()
   const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
-  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string>; reconcileRemote(hostId: string): Promise<void> }
+  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string> }
   const allowRemoval = deferred(), forgotten = deferred(), release = deferred()
   const branchMove = f.socket.branchMove.bind(f.socket)
   vi.spyOn(f.socket, 'branchMove').mockImplementation(async request => {
@@ -2098,15 +2098,14 @@ it('lets go of a timed-out start’s moved branch once the paired machine shows 
     expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
     expect(watcher.timedOutStarts.size).toBe(1)
     expect(await refs()).not.toBe('')
-    const reconciled = watcher.reconcileRemote(f.pairing.hostId)
+    // Watcher reconciles by itself after the timed-out start; nothing here asks it to.
     allowRemoval.resolve()
     await forgotten.promise
     // Git has removed the ref, but its RPC reply has not arrived: local bookkeeping is still pending.
     expect(await refs()).toBe('')
     expect(watcher.lostStartMoves.size).toBe(1)
     release.resolve()
-    await reconciled
-    expect(watcher.lostStartMoves.size).toBe(0)
+    await vi.waitFor(() => expect(watcher.lostStartMoves.size).toBe(0))
   } finally { allowRemoval.resolve(); release.resolve(); vi.restoreAllMocks() }
 }, 60_000)
 
