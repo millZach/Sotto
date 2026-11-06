@@ -32,8 +32,8 @@ type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: n
    * restored from a saved position or not, is read from its first byte.
    */
   file?: FileIdentity | undefined
-  /** Whether `file` came from a saved position, which may hold its ID rounded to a number (`sameFile`). */
-  fileSaved: boolean
+  /** Whether `file` came from a position saved before IDs were read whole, so its ID may be rounded to a number (`sameFile`). */
+  legacyId: boolean
   /** Whether the tail has read its rollout to the end once, or holds a saved position that had. */
   caughtUp: boolean
   /** Its saved position: not looked for yet, to be read before the tail first reads, or dealt with. */
@@ -62,11 +62,18 @@ function identityOf(stats: { readonly ino: bigint; readonly birthtimeNs: bigint 
 }
 /**
  * Some Windows filesystems report no inode; the creation time is then the only identity on offer. A position saved
- * before IDs were read whole (#2145) holds its ID as a number gave it, which `saved` lets match, so it is not read again
- * from the first byte.
+ * before IDs were read whole (#2145) holds its ID as a number gave it; `legacy` lets that rounded ID match, but only with
+ * the same creation time, so the update does not read every rollout again from the first byte and a file put in its
+ * place still is.
  */
-function sameFile(left: FileIdentity, right: FileIdentity, saved = false): boolean {
-  if (left.ino || right.ino) return Boolean(left.ino && right.ino && (left.ino === right.ino || saved && left.ino === String(Number(right.ino))))
+function sameFile(left: FileIdentity, right: FileIdentity, legacy = false): boolean {
+  if (left.ino || right.ino) {
+    if (!left.ino || !right.ino) return false
+    return left.ino === right.ino || legacy && left.ino === String(Number(right.ino)) && sameBirth(left, right)
+  }
+  return sameBirth(left, right)
+}
+function sameBirth(left: FileIdentity, right: FileIdentity): boolean {
   return left.birthtimeMs !== undefined && right.birthtimeMs !== undefined && Math.abs(left.birthtimeMs - right.birthtimeMs) < 1
 }
 
@@ -77,6 +84,8 @@ function sameFile(left: FileIdentity, right: FileIdentity, saved = false): boole
  * rollout from its first byte to there holds.
  */
 export const rolloutPositionSchema = z.object({ path: z.string(), offset: z.number().int().nonnegative(), ino: z.string().optional(), birthtimeMs: z.number().optional(),
+  /** Set when `ino` was read whole; a position saved before that (#2145) may hold it rounded to a number. */
+  wholeId: z.literal(true).optional(),
   seen: z.array(z.string()), identities: rolloutIdentitiesStateSchema })
 export type RolloutPosition = z.infer<typeof rolloutPositionSchema>
 /** Where saved rollout positions are kept, one for each thread, by its Codex thread ID. */
@@ -234,7 +243,7 @@ export class CodexSessionLogWatcher {
     catchUp?: ((threadId: string) => boolean) | undefined }) {}
   observe(threadId: string): void {
     if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities(),
-      lineStart: 0, fileSaved: false, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
+      lineStart: 0, legacyId: false, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
@@ -331,7 +340,7 @@ export class CodexSessionLogWatcher {
     if (tail.path !== position.path) { tail.caughtUp = false; return }
     tail.offset = position.offset; tail.lineStart = position.offset
     tail.file = { ...(position.ino === undefined ? {} : { ino: position.ino }), ...(position.birthtimeMs === undefined ? {} : { birthtimeMs: position.birthtimeMs }) }
-    tail.fileSaved = true
+    tail.legacyId = position.ino !== undefined && position.wholeId !== true
     for (const id of position.seen) tail.seen.add(id)
     tail.identities = CodexRolloutIdentities.restore(position.identities)
   }
@@ -353,7 +362,7 @@ export class CodexSessionLogWatcher {
       for (const [threadId, tail] of this.tails) {
         if (!tail.dirty || !tail.path || !tail.file) continue
         tail.dirty = false
-        const position: RolloutPosition = { path: tail.path, offset: tail.lineStart, ...tail.file, seen: [...tail.seen], identities: tail.identities.snapshot() }
+        const position: RolloutPosition = { path: tail.path, offset: tail.lineStart, ...tail.file, ...(tail.legacyId ? {} : { wholeId: true as const }), seen: [...tail.seen], identities: tail.identities.snapshot() }
         try { await positions.save(threadId, position) } catch { tail.dirty = true }
       }
     })
@@ -399,8 +408,8 @@ export class CodexSessionLogWatcher {
         const size = Number(stats.size)
         const identity = identityOf(stats)
         // A saved position is trusted only for the file it was taken from, and only while that file is not shorter.
-        if (tail.file && !sameFile(tail.file, identity, tail.fileSaved)) this.reset(tail)
-        tail.file = identity; tail.fileSaved = false
+        if (tail.file && !sameFile(tail.file, identity, tail.legacyId)) this.reset(tail)
+        tail.file = identity; tail.legacyId = false
         if (size < tail.offset) this.reset(tail)
         // Background polls stay bounded. A guarded target read reaches the captured
         // file size with bounded buffers so takeover evidence is never truncated.
