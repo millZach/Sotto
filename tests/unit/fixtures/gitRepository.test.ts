@@ -99,7 +99,8 @@ describe('independent Git repository fixtures', () => {
     const quiet = (() => { try { made.git('diff', '--quiet'); return undefined } catch (error) { return error as Error & { status?: number } } })()
     expect(quiet?.status).toBe(1)
     expect(quiet?.message).toContain(`Fixture command \`git diff --quiet\` in ${made.repo} exited 1. Git reported its own exit.`)
-    expect(quiet?.message).toMatch(/stderr and trace:\n[\s\S]*\| d0 \|[^\n]*\| start +\|[^\n]*git diff --quiet\n[\s\S]*\| d0 \|[^\n]*\| exit +\|[^\n]*code:1\n/u)
+    // Git for Windows names itself `git.exe` in the start line's argv.
+    expect(quiet?.message).toMatch(/stderr and trace:\n[\s\S]*\| d0 \|[^\n]*\| start +\|[^\n]*\bgit(?:\.exe)? diff --quiet\r?\n[\s\S]*\| d0 \|[^\n]*\| exit +\|[^\n]*code:1\r?\n/u)
     expect(quiet?.message).toMatch(/GIT_\* variables: .*GIT_CONFIG_NOSYSTEM/u)
     expect(quiet?.message).toContain(`lock files: ${join('.git', 'index.lock')}`)
     expect(quiet?.message).toMatch(/git status: \n# branch\.oid [0-9a-f]{40}\n# branch\.head main\n1 \.M .* tracked\.txt/u)
