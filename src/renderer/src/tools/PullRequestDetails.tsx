@@ -152,6 +152,7 @@ export function PullRequestFiles({ detail, onReview }: { readonly detail: Pick<G
           aria-label={t({ message: `Open ${path} on GitHub. ${added} added, ${removed} removed`, comment: '{path} is a file\'s path; {added} and {removed} are counts of lines.' })}>
           <span className="pr-surface__file-path"><bdi className="pr-surface__file-folder">{folder}</bdi><bdi className="pr-surface__file-name">{name}</bdi></span>
           <LineCounts additions={file.additions} deletions={file.deletions} />
+          <ExternalLink size={13} aria-hidden="true" className="pr-surface__file-go" />
         </button>
       </li>
     })}</ul> : <p className="pr-surface__quiet tt-paragraph">{t`GitHub did not list the files.`}</p>}

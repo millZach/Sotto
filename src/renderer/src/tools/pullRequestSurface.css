@@ -133,20 +133,32 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__babysit[data-state='ended'] .pr-surface__babysit-text span { color: var(--tt-text-muted); }
 .pr-surface__finished + .pr-surface__babysit { margin: 12px 0 0; }
 
-/* The folds, together on one card (ADR-0110: filled, with no outline): the surface ends where the card does, so a short
-   pull request reads as finished rather than trailing off, and an open fold grows inside it. */
+/* This pull request's own folds, together on one card (ADR-0110: filled, with no outline): the surface's account of it ends
+   where the card does, so a short pull request reads as finished rather than trailing off, and an open fold grows inside it. */
 .pr-surface__folds { border-radius: var(--tt-radius-md); background: var(--tt-card); }
-.pr-surface__folds:empty { display: none; }
+.pr-surface__folds:empty, .pr-surface__others:empty { display: none; }
 .pr-surface__dock + .pr-surface__folds { margin-top: 6px; }
 /* Rows on a card are divided by the card's inset, and the last has none (ADR-0110). */
-.pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
-.pr-surface__fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; min-height: 40px; padding: 10px 12px; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); font-weight: 500; text-align: left; }
+.pr-surface__folds > .pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
+/* A fold's head is one press, its preview and peek with it, so the whole of it lights under the pointer. */
+.pr-surface__fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; min-height: 40px; padding: 10px 12px; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
+.pr-surface__fold-head:hover { background: var(--tt-hover); }
+.pr-surface__fold-head:active { background: var(--tt-hover-strong); }
+.pr-surface__fold-head:hover > svg { color: var(--tt-text); }
+.pr-surface__folds > .pr-surface__fold:first-child > .pr-surface__fold-head { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
+.pr-surface__folds > .pr-surface__fold:last-child > .pr-surface__fold-head:last-child { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
+/* Other pull requests, the thread's linked ones and the repository's open ones: lists that lead away from this one, so
+   they stand under its card on the panel itself, their heads a step quieter than its own folds' (ADR-0110: no box). */
+.pr-surface__folds + .pr-surface__others { margin-top: 14px; }
+.pr-surface__others .pr-surface__fold-head { min-height: 34px; padding-block: 7px; border-radius: var(--tt-radius-row); color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 400; }
+.pr-surface__others .pr-surface__fold-head:is(:hover, [aria-expanded='true']) { color: var(--tt-text); }
+.pr-surface__others .pr-surface__fold-body { padding-top: 4px; }
 .pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 12px 14px 35px; }
 .pr-surface__fold-body[data-wide] { justify-items: stretch; padding-left: 12px; }
 .pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: 400; }
 /* What a closed Description holds: its first lines, under its name, in at most two lines. */
-.pr-surface__fold-preview { display: -webkit-box; flex: 1 0 100%; min-width: 0; padding-left: 23px; overflow: hidden; color: var(--tt-text-muted); font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-surface__fold-preview { display: -webkit-box; flex: 1 0 100%; min-width: 0; padding-left: 23px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Where the panel has room, it is its whole first paragraph, in up to four. */
 .pr-surface__fold-preview[data-whole] { -webkit-line-clamp: 4; }
 /* Where the panel has room, a closed fold's head also shows the first few of what it holds: the checks that still stand,
@@ -160,7 +172,7 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__peek-name { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
 .pr-surface__peek-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
 .pr-surface__peek-folder[data-group] { margin-right: .3em; }
-.pr-surface__peek-name > bdi:last-child { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pr-surface__peek-name > bdi:last-child { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; }
 .pr-surface__peek-word { color: var(--tt-text-muted); white-space: nowrap; }
 .pr-surface__peek-row:is([data-status='failure'], [data-status='cancelled']) .pr-surface__peek-word { color: var(--tt-error-text); }
 .pr-surface__peek-time { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
@@ -188,6 +200,9 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__file-path { display: flex; flex: 1; min-width: 0; }
 .pr-surface__file-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .pr-surface__file-name { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+/* Each opens on GitHub, as a check's row does, and says so with the same mark. */
+.pr-surface__file-go { flex: none; margin-left: -4px; color: var(--tt-text-muted); }
+.pr-surface__file:hover .pr-surface__file-go { color: var(--tt-text); }
 
 /* The repository's open pull requests: a search, then rows that say what, how it stands, who and how big. */
 .pr-surface__list-tools { display: flex; align-items: center; gap: 6px; }
@@ -276,6 +291,8 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
   .pr-surface__dock { margin-inline: -12px; padding: 12px 12px 10px; }
   .pr-surface__hint { margin-top: 6px; }
   .pr-surface__fold-head { min-height: 36px; padding-block: 8px; }
+  .pr-surface__others .pr-surface__fold-head { min-height: 32px; padding-block: 6px; }
+  .pr-surface__folds + .pr-surface__others { margin-top: 10px; }
 }
 /* Open <title> after a checkout refused because another thread holds the folder (#1823): a word in the line, underlined as a link is. */
 .pull-request-dialog__open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: start; text-decoration: underline; text-underline-offset: 2px; white-space: normal; overflow-wrap: anywhere; }

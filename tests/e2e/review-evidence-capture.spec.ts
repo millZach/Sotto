@@ -706,12 +706,15 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('doc-edit-clay', 'The same document edit in the transcript on the Clay theme.')
     await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
   } },
-  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready'], run: async capture => {
+  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     await pullRequestMoment(capture, 'checks-running')
     await pullRequestMoment(capture, 'checks-failed')
     await pullRequestMoment(capture, 'ready')
+    const files = page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('button', { name: /^Changed files/u })
+    await capture.shoot('pr-fold-hover', 'The pointer on a file under the closed Changed files head: the whole head lights, its files with it, as the one press that opens them.', '',
+      { before: async () => { await files.hover({ position: { x: 160, y: 70 } }) } })
     for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { modes: ['dark'], size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await closeTools(page)

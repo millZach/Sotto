@@ -217,7 +217,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           : failure ? <div className="files-problem" role="status"><strong>{failure}</strong><button type="button" className="files-link tt-focusable" onClick={() => void load()}>{t`Try again`}</button></div>
             : <NoPullRequest thread={thread} busy={busy} command={command} onLink={() => setLinking(true)}
               onCreate={actionId => void send({ type: 'git-action', threadId: thread.id, actionId, action: 'create_pr' }, 'create-pr', t`Sotto could not confirm this Git command.`).then(() => setNotice(current => current?.tone === 'status' ? null : current))} />}
-        <div className="pr-surface__folds">
+        <div className="pr-surface__others">
           {!loading && !failure && (links.length > 0 || thread.worktree?.git?.pullRequest) ? linked : null}
           {!loading && thread.worktree?.git?.hasRemote ? openList : null}
         </div>
@@ -365,7 +365,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         </li>
       })}</ol>
       {open || !known ? mergeDock : null}
-      {/* The folds share one box, so the surface ends where they do, however little or much is open. */}
+      {/* This pull request's own folds share one card, so the surface ends where they do, however little or much is open. */}
       <div className="pr-surface__folds">
         <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body, peeking('description'))} whole={peeking('description')} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
           <PullRequestDescription detail={detail} />
@@ -379,6 +379,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
           <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
         </Fold> : null}
+      </div>
+      {/* Other pull requests, the thread's and the repository's: lists that lead elsewhere, under this one's card rather than on it. */}
+      <div className="pr-surface__others">
         {linked}
         {openList}
       </div>
