@@ -257,17 +257,20 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 /* A changed line carries a thin wash and an edge in its role's colour. The words that changed keep a neutral ink, the
    body's, over a soft wash in their role's colour: the hue stays in the wash and never in the letters, so a long review
    of rewritten paragraphs reads as text with its changes found, not as red and green type. A wash of a light role on a
-   dark room lifts it far less than a wash of a dark role darkens a light one, so dark takes half as much again
-   for the words to stand off their line as plainly as they do in light. By day a line's own wash is twice the night's:
-   at 5% on paper an added run barely parted from the lines around it, so the day's words take a stronger wash again. */
+   dark room lifts it far less than a wash of a dark role darkens a light one, so by night a line takes nearly the
+   day's wash (9%, where 5% let a changed block sink into the code around it) and its edge is brighter. The words'
+   own wash sits over the line's, and the two together are the most every built-in theme, Glass and stock Omarchy
+   palette hold the body ink at 4.5:1 on, picked lines included. By day a line's wash is 10% and 9%: at 5% on paper
+   an added run barely parted from the lines around it. */
 .changes-diff__rows {
-  --changes-added: light-dark(color-mix(in srgb, var(--tt-success) 10%, transparent), color-mix(in srgb, var(--tt-success) 5%, transparent));
-  --changes-removed: light-dark(color-mix(in srgb, var(--tt-error) 9%, transparent), color-mix(in srgb, var(--tt-error) 5%, transparent));
-  --changes-word-added: light-dark(color-mix(in srgb, var(--tt-success) 18%, transparent), color-mix(in srgb, var(--tt-success) 19%, transparent));
-  --changes-word-removed: light-dark(color-mix(in srgb, var(--tt-error) 17%, transparent), color-mix(in srgb, var(--tt-error) 18%, transparent));
+  --changes-added: light-dark(color-mix(in srgb, var(--tt-success) 10%, transparent), color-mix(in srgb, var(--tt-success) 9%, transparent));
+  --changes-removed: light-dark(color-mix(in srgb, var(--tt-error) 9%, transparent), color-mix(in srgb, var(--tt-error) 9%, transparent));
+  --changes-word-added: light-dark(color-mix(in srgb, var(--tt-success) 18%, transparent), color-mix(in srgb, var(--tt-success) 14%, transparent));
+  --changes-word-removed: light-dark(color-mix(in srgb, var(--tt-error) 17%, transparent), color-mix(in srgb, var(--tt-error) 14%, transparent));
   --changes-word-ink-added: var(--tt-text); --changes-word-ink-removed: var(--tt-text);
-  --changes-word-picked-added: light-dark(color-mix(in srgb, var(--tt-success) 3%, transparent), color-mix(in srgb, var(--tt-success) 6%, transparent)); --changes-word-picked-removed: light-dark(color-mix(in srgb, var(--tt-error) 3%, transparent), color-mix(in srgb, var(--tt-error) 6%, transparent));
-  --changes-edge-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-edge-removed: color-mix(in srgb, var(--tt-error) 60%, transparent);
+  --changes-word-picked-added: light-dark(color-mix(in srgb, var(--tt-success) 3%, transparent), color-mix(in srgb, var(--tt-success) 3%, transparent)); --changes-word-picked-removed: light-dark(color-mix(in srgb, var(--tt-error) 3%, transparent), color-mix(in srgb, var(--tt-error) 3%, transparent));
+  --changes-edge-added: light-dark(color-mix(in srgb, var(--tt-success) 60%, transparent), color-mix(in srgb, var(--tt-success) 80%, transparent));
+  --changes-edge-removed: light-dark(color-mix(in srgb, var(--tt-error) 60%, transparent), color-mix(in srgb, var(--tt-error) 80%, transparent));
 }
 /* A whole file added or removed has nothing to compare, and a solid wash over all of it is only tiring: the edge says it. */
 .changes-diff__rows[data-whole] { --changes-added: transparent; --changes-removed: transparent; }
