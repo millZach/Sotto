@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { common, createLowlight } from 'lowlight'
 import type { DiffLine } from '../../../../src/renderer/src/tools/changesStore'
-import { changedWords, decorateDiff, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, editWeight, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
+import { changedWords, decorateDiff, earlierExcerptStart, fileLines, guessLanguage, hunkHeading, hunkSection, isCommentLine, editWeight, isDocumentPath, languageOfPath, looksLikeDocument, markdownPaint, pairChangedLines, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, wordSegments, type WordSegment } from '../../../../src/renderer/src/tools/diffDrawing'
 
 const highlighter = createLowlight(common)
 const line = (kind: DiffLine['kind'], text: string): DiffLine => ({ kind, text, oldLine: null, newLine: null })
@@ -258,6 +258,20 @@ describe('decorateDiff', () => {
     const decoration = decorateDiff(lines, { reading: 'document' })
     expect(decoration.reworked.has(lines[1]!)).toBe(true)
     expect(decoration.rewritten.has(lines[1]!)).toBe(true)
+  })
+
+  it('starts the earlier wording\'s one line at the sentence where words first went', () => {
+    const before = '**Log checkpoint.** SQLite folding the log into `threads.sqlite`. A worker thread runs them on a connection of its own, half a second after the last one finished.'
+    const after = '**Log checkpoint.** SQLite folding the log into `threads.sqlite`. The store worker runs them between its writes, half a second after the last one finished.'
+    expect(before.slice(earlierExcerptStart(before, wordSegments(before, after)!)!)).toMatch(/^A worker thread runs them/u)
+  })
+
+  it('starts it at the words that went when their sentence starts far before them, and has none when nothing went', () => {
+    const lead = 'One write to the event store, as main hands it over, posted and then confirmed by the store once it has committed or failed, '
+    const before = `${lead}waits on main.`, after = `${lead}waits in the worker.`
+    expect(before.slice(earlierExcerptStart(before, wordSegments(before, after)!)!)).toBe('on main.')
+    const grown = 'Every write goes this way. Until a write is confirmed, main holds it.'
+    expect(earlierExcerptStart(grown, wordSegments(grown, `${grown} An answer posted on its own waits the same way.`)!)).toBeNull()
   })
 
   it('reads a long paragraph rewritten whole once, as it is now, and leaves a short one above what it became', () => {

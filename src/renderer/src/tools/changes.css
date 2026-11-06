@@ -351,50 +351,49 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* A document's change is read the way an editor marks a page: as it reads now, with the change in the margin and under
    its words, and never as blocks of colour. The edge and the sign say where a paragraph changed, and they are what the
    eye finds first going down a long file. Nothing in a document carries a wash, so a page of new or rewritten text is
-   still a page. The lines around a change are quiet, what went is a step quieter than what is there now, and what is
-   there now reads in the body's ink. The words that came are underlined in the added role's colour; the words that
-   went from a line read once are struck through in the removed role's, and in a line drawn as it was they are
-   underlined in it. Hue lives only in those thin lines and the edges. The lines are a hairline, so a paragraph that
-   changed nearly all through reads as text with its changes under it, not as ruled paper. */
+   still a page. The lines around a change are quiet, and what is there now reads in the body's ink, all of it, so a
+   changed paragraph is one paragraph and not a mix of inks that reads as scattered bold. The words that came carry one
+   mark, a hairline underline in the added role's colour. What went reads in the removed role's ink, mixed into the
+   body's so it holds 4.5:1 and still reads as words, struck through as track changes strike what went: a paragraph
+   taken out, and the words that went from a line read once. Hue lives only in those lines, that ink and the edges. */
 .changes-diff__rows[data-reading='document'] {
   --changes-added: transparent; --changes-removed: transparent;
-  --changes-under-added: color-mix(in srgb, var(--tt-success) 40%, transparent); --changes-under-removed: color-mix(in srgb, var(--tt-error-text) 45%, transparent);
+  --changes-ink-removed: color-mix(in oklab, var(--tt-error-text) 70%, var(--tt-text));
+  --changes-under-added: color-mix(in srgb, var(--tt-success) 55%, transparent); --changes-under-removed: var(--changes-ink-removed);
 }
+.changes-diff__rows[data-reading='document'] .changes-line[data-kind='edited'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] .changes-word {
   border-radius: 0; background: none; color: var(--tt-text);
   text-decoration-line: underline; text-decoration-color: var(--changes-under-added); text-decoration-thickness: 1px; text-underline-offset: .32em; text-decoration-skip-ink: none;
 }
 .changes-diff__rows[data-reading='document'] :is([data-kind='remove'] .changes-word, del.changes-word--edit) { text-decoration-color: var(--changes-under-removed); }
-.changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--tt-text-muted); text-decoration-line: line-through; }
-/* A paragraph taken out is struck through, as an editor strikes a passage on a page and as the words that went from a
-   line read once are: a hairline in the removed role's colour at half strength, so the paragraph still reads, and a
-   removal is as plain at a glance as an addition without a wash. The words a removed line changed are struck in the
-   role's full colour. A whole file taken out has only its edge, since every line of it went. */
-.changes-diff__rows[data-reading='document'] { --changes-strike-removed: color-mix(in srgb, var(--tt-error-text) 50%, transparent); }
+.changes-diff__rows[data-reading='document'] del.changes-word--edit { color: var(--changes-ink-removed); text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); }
+/* A paragraph taken out is struck through in its ink at half strength, so the stroke marks it without crossing out its
+   letters, and a removal is as plain at a glance as an addition without a wash. The words a removed line changed are
+   struck at full strength. A whole file taken out keeps the secondary ink and only its edge, since every line of it went. */
+.changes-diff__rows[data-reading='document'] { --changes-strike-removed: color-mix(in srgb, var(--changes-ink-removed) 50%, transparent); }
+.changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] { color: var(--changes-ink-removed); }
+/* A heading taken out reads in that ink too, not in the body's ink a heading has. */
+.changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] > .changes-line__text[data-shape] { color: inherit; }
 .changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] > .changes-line__text {
   text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); text-decoration-thickness: 1px; text-decoration-skip-ink: none;
 }
-.changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] .changes-word { text-decoration-line: line-through; }
+.changes-diff__rows[data-reading='document']:not([data-whole]) [data-kind='remove'] .changes-word { color: inherit; text-decoration-line: line-through; }
 /* A code chip paints its own box over the line's stroke, so it carries the stroke itself. */
 .changes-diff__rows[data-reading='document']:not([data-whole]) :is(.changes-line, .changes-split__cell)[data-kind='remove'] .diff-md-code {
   text-decoration-line: line-through; text-decoration-color: var(--changes-strike-removed); text-decoration-thickness: 1px; text-decoration-skip-ink: none;
 }
 .changes-diff__rows[data-reading='document'] :is(.changes-line, .changes-split__row)[aria-selected='true'] .changes-word { background: none; }
-.changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'] del.changes-word--edit { color: var(--tt-text-2); }
 /* A picked line's accent wash would sink the muted ink below 4.5:1, so what a picked line keeps reads in the secondary ink. */
 .changes-diff__rows[data-reading='document'] .changes-line[aria-selected='true'][data-kind='context'] { color: var(--tt-text-2); }
-/* A paragraph reworked all through reads as it is now, and calm: what it keeps in the muted ink, what it brought in the
-   body's, so the new words stand out by their ink and their underline is only a hairline under them. Where words went
-   with nothing in their place, a small chip holds the removed lines' own minus sign, in the removed role's colour: a
-   mark, not a character of the text, and nothing like a spelling squiggle under a word, as a red stroke on the
-   underlines' line read ("did."). Its tooltip and a screen reader say the words that went. Under the paragraph, Show
-   earlier wording opens what it said before, smaller and quieter, the words that went underlined in the removed role's
-   colour. */
-.changes-diff__rows[data-reading='document'] .changes-line[data-reworked] { color: var(--tt-text-muted); }
-.changes-diff__rows[data-reading='document'] .changes-line[data-reworked][aria-selected='true'] { color: var(--tt-text-2); }
-/* A paragraph that changed more than it kept, or was rewritten whole, has more new than a reader follows word by word:
+/* A paragraph reworked all through reads as it is now, in the body's ink like any line there now, its new words
+   underlined. Where words went with nothing in their place, a small chip holds the removed lines' own minus sign, in
+   the removed role's colour: a mark, not a character of the text, and nothing like a spelling squiggle under a word.
+   Its tooltip and a screen reader say the words that went. Under the paragraph one quiet line of what it said before,
+   from where words first went, opens to the whole of it, smaller and quieter, the words that went in the removed ink.
+   A paragraph that changed more than it kept, or was rewritten whole, has more new than a reader follows word by word:
    underlines would run down most of its lines. It reads as it is now with no word marks, on both sides of the press,
-   what it brought in the body's ink and what it kept quieter, and its edge says which of its lines changed. */
+   and its edge says which of its lines changed. */
 .changes-diff__rows[data-reading='document'] .changes-line[data-rewritten] .changes-word { text-decoration-line: none; }
 .changes-line[data-rewritten] .changes-gone { width: 0; margin: 0; padding: 0; background: none; }
 .changes-line[data-rewritten] .changes-gone::before { content: none; }
@@ -416,10 +415,17 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-gone::before { content: '\2212'; }
 .changes-earlier { display: block; }
 .changes-earlier__toggle {
-  display: inline-flex; align-items: center; gap: 3px; height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px; border: 0; border-radius: var(--tt-radius-control);
-  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); line-height: 1;
-  transition: background-color 120ms ease, color 120ms ease;
+  display: flex; align-items: center; gap: 3px; width: fit-content; max-width: calc(100% + 6px); height: 24px; margin: 1px 0 0 -6px; padding: 0 7px 0 4px;
+  border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); line-height: 1;
+  text-align: left; transition: background-color 120ms ease, color 120ms ease;
 }
+/* Shut, the toggle shows Earlier and one line of what the paragraph said from where words first went, cut at the
+   line's end: what it said sits under what it says now, and a press opens all of it. Its marks keep the excerpt quiet. */
+.changes-earlier__label { flex: none; color: var(--tt-text-2); font-weight: 500; }
+.changes-earlier__excerpt { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-earlier__toggle:hover .changes-earlier__label { color: inherit; }
+.changes-diff__rows .changes-line__text .changes-earlier__excerpt .diff-md-strong { font-weight: inherit; }
+.changes-diff__rows .changes-line__text .changes-earlier__excerpt .diff-md-code { font-size: inherit; }
 .changes-earlier__toggle > svg { flex: none; transition: transform 120ms ease; }
 .changes-earlier__toggle[aria-expanded='true'] > svg { transform: rotate(90deg); }
 .changes-earlier__toggle:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -429,7 +435,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
   display: block; margin: 2px 0 6px; padding-left: 10px; box-shadow: inset 1px 0 0 var(--tt-hairline);
   color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.6;
 }
-.changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { color: var(--tt-text-2); text-decoration-line: underline; }
+.changes-diff__rows[data-reading='document'] .changes-earlier__text del.changes-word--edit { color: var(--changes-ink-removed); text-decoration-line: none; }
 .changes-line[aria-selected='true'] .changes-earlier__text { color: var(--tt-text-2); }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired] { background: none; }
 .changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] + .changes-line[data-paired][data-kind='add'] { margin-top: 4px; }

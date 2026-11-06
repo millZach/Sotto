@@ -51,8 +51,12 @@ describe('DiffBlock', () => {
     expect(row.querySelector('del.changes-word--edit')).toBeNull()
     const toggle = row.querySelector<HTMLButtonElement>('.changes-earlier__toggle')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.textContent).toBe('Show earlier wording')
+    // Shut, it shows one line of what the paragraph said, from where words first went, and says what a press does.
+    expect(toggle.getAttribute('aria-label')).toBe('Show earlier wording')
+    expect(toggle.querySelector('.changes-earlier__label')!.textContent).toBe('Earlier')
+    expect(toggle.querySelector('.changes-earlier__excerpt')!.textContent).toBe(before)
     fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-label')).toBeNull()
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(toggle.textContent).toBe('Hide earlier wording')
     const earlier = row.querySelector('.changes-earlier__text')!

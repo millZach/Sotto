@@ -401,6 +401,26 @@ export function editWeight(before: string, after: string, segments: readonly Wor
   return (changedA / Math.max(inkLength(before), 1) + changedB / Math.max(inkLength(after), 1)) / 2 >= REWRITTEN_NOW_SHARE ? 'rewritten' : 'reworked'
 }
 
+/** How far back from the first words that went the earlier wording's excerpt may reach for the start of their sentence. */
+const EXCERPT_LEAD = 80
+
+/**
+ * Where the one line of earlier wording shown under a reworked line, before it is opened, starts: at the sentence the
+ * first words that went sit in, or at their own first word when that sentence starts far before them. So the line
+ * shows what the paragraph said where it changed, not the opening both sides share. Null when no words went, only
+ * new ones came: then the earlier wording is the paragraph without them, and a line of it says nothing.
+ */
+export function earlierExcerptStart(before: string, segments: readonly WordSegment[]): number | null {
+  const first = segments.find(segment => segment.kind === 'changed' && before.slice(segment.before.start, segment.before.end).trim() !== '')
+  if (!first || first.kind !== 'changed') return null
+  const at = first.before.start + (before.slice(first.before.start).length - before.slice(first.before.start).trimStart().length)
+  let sentence = 0
+  for (const match of before.slice(0, at).matchAll(/[.!?:;]["'”’)\]*_`]*\s+/gu)) sentence = match.index + match[0].length
+  if (at - sentence <= EXCERPT_LEAD) return sentence
+  const word = before.lastIndexOf(' ', at - 1)
+  return word < 0 ? 0 : word + 1
+}
+
 function wordSet(text: string): ReadonlySet<string> {
   const words = new Set<string>()
   for (const word of text.toLowerCase().match(WORD) ?? []) {

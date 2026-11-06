@@ -7,7 +7,7 @@ import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/cod
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
 import { shownLineCount } from '../state/interfaceNumbers'
 import type { DiffLine } from './changesStore'
-import { decorateDiff, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
+import { decorateDiff, earlierExcerptStart, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
 import './changes.css'
 
 /** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
@@ -182,8 +182,10 @@ export function EditedText({ before, after, segments, paintBefore, paintAfter, a
 }
 
 /**
- * Under a reworked line read as it is now, what it said before, shut until asked for. A press here only opens or shuts
- * it: it never picks the line it sits in.
+ * Under a reworked line read as it is now, what it said before, shut until asked for. Shut, it still shows one quiet
+ * line of it, from the sentence where words first went (earlierExcerptStart), so what the paragraph said and what it
+ * says now are both in sight; the press opens the whole of it. A press here only opens or shuts it: it never picks
+ * the line it sits in.
  */
 export function EarlierWording({ before, after, segments, paintBefore, paintAfter, focusable = true }: {
   readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
@@ -193,10 +195,17 @@ export function EarlierWording({ before, after, segments, paintBefore, paintAfte
 }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
+  const from = open ? null : earlierExcerptStart(before, segments)
+  const show = t`Show earlier wording`
   return <span className="changes-earlier">
     <button type="button" className="changes-earlier__toggle tt-focusable" aria-expanded={open} tabIndex={focusable ? 0 : -1}
+      aria-label={from === null ? undefined : show} title={from === null ? undefined : show}
       onClick={event => { event.stopPropagation(); setOpen(shown => !shown) }}>
-      <ChevronRight size={12} aria-hidden="true" />{open ? t`Hide earlier wording` : t`Show earlier wording`}
+      <ChevronRight size={12} aria-hidden="true" />
+      {open ? t`Hide earlier wording` : from === null ? show : <>
+        <span className="changes-earlier__label">{t({ message: 'Earlier', comment: 'Before one line of what a reworked paragraph said before it changed, under the paragraph in Changes; a press shows all of it.' })}</span>
+        <span className="changes-earlier__excerpt">{from > 0 ? '…' : null}<PaintedText text={before.slice(from)} paint={paintWithin(paintBefore, { start: from, end: before.length })} /></span>
+      </>}
     </button>
     {open ? <span className="changes-earlier__text"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="earlier" /></span> : null}
   </span>
