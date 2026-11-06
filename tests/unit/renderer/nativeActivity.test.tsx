@@ -69,7 +69,7 @@ describe('native activity rows', () => {
     ])
     await user.click(screen.getByRole('button', { name: 'Audit the tests, 2 steps, completed' }))
     const steps = screen.getByRole('list', { name: 'Steps in Audit the tests' })
-    expect(within(steps).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Grep, it\\.skip, completed', 'npm test, completed'])
+    expect(within(steps).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Grep, it\\.skip, completed', 'Run the unit tests, npm test, completed'])
     expect(screen.getByText('Claude did not report this agent’s result.')).toBeTruthy()
     expect(screen.getByLabelText('json code block')).toHaveTextContent('"subagent_type": "general-purpose"')
     await user.click(within(steps).getByRole('button', { name: /npm test/u }))
