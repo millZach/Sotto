@@ -108,6 +108,8 @@ export class RestartResume {
     const record = this.working.get(threadId)
     if (!this.frozen && record?.queued) this.sending.set(threadId, record.resumes)
   }
+  /** Whether this thread's resume note is still to go, or on its way: a restart for work left leaves it to this (#2234). */
+  resuming(threadId: string): boolean { return this.pending.has(threadId) || this.delivering.has(threadId) }
   /** The note did not go after all; the next turn is not its own. */
   noteUnsent(threadId: string): void { if (!this.dormant(threadId)) this.sending.delete(threadId) }
 

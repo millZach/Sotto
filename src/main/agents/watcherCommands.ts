@@ -59,6 +59,11 @@ export interface WatcherControlHooks {
     readonly speed?: AgentSpeed | null | undefined; readonly fastMode?: boolean | undefined }, validate: (wanted: WatcherNextTurnOptions) => void): boolean
   /** Whether this thread's queue waits for Watcher's kept choice to go first. */
   holdsQueue?(threadId: string): boolean
+  /**
+   * Whether Watcher's provider is limited or failing, so what is queued for Watcher's own thread waits (#2234): the user's
+   * message waits for the reset and goes first. A restart note never waits for it.
+   */
+  holdsWatcherQueue?(threadId: string): boolean
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void

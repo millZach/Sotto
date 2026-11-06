@@ -143,6 +143,8 @@ export class FailuresSeen {
 
   /** The host's name for the failure the thread stands in, or undefined when it stands in none. */
   failureOf(threadId: string): string | undefined { return this.failures.get(threadId)?.id }
+  /** The failed turn's reason as the record kept it, while the thread stands in a failure (#2234). */
+  reasonOf(threadId: string): string | undefined { return this.failures.get(threadId)?.reason }
 
   /** The marks as the coordinator saves them. */
   saved(): SavedFailureSeen[] {

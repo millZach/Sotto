@@ -1222,6 +1222,20 @@ Watcher goes first when its own provider stopped it. When Watcher is on, it then
 
 If a provider gives no reset time, Sotto doesn't restart its threads on its own; the band says so, and you send again once the limit resets. That includes Devin, OpenCode, DeepSeek Harness and Cursor, and some Claude Code credit limits. A spending limit you set never resets on its own, so it schedules nothing.
 
+### Watched threads with work left
+
+When Watcher is on, Sotto also carries on the threads Watcher watches that stopped with work left: the thread's last turn ended with an error before it finished, nothing runs in it, it asks you nothing, and nothing waits in its queue. Sotto restarts such a thread once it starts again and reads that turn, and when Watcher's own usage limit resets, with this note, tagged **Restarted**:
+
+> Your last turn ended with an error before it finished, and any command or tool it was running stopped too, so its result may be missing. Check where things stand, then carry on.
+
+A turn you stopped is left alone, and so is a thread waiting on a limit that hasn't reset. Watcher hears which threads Sotto restarted, together, and replies once with a summary: what Sotto restarted, and what still waits on you. The same three-in-a-row limit and **Don't restart** apply.
+
+### While Watcher's own provider is limited or failing
+
+When Watcher's own provider stops it at a usage limit, or fails, Sotto holds the news it would wake Watcher with, so Watcher doesn't run a turn that fails each time something happens. A band under Watcher's top strip says so: "Watcher's Claude Code limit resets Monday at 3:00 PM. Sotto is holding 37 news until then." **What's held** says how much came from pull requests and how much from threads. At the reset Watcher gets all of it in one message.
+
+If the provider is failing rather than limited, the band reads "Claude Code isn't answering. Sotto holds news and tries again every few minutes." Every five minutes Sotto lets what it holds go to Watcher as one try; **Try now** does it at once. The provider's own error is under **Details**, and never posted as a reply. You can still write to Watcher meanwhile: your message waits and goes first, before the held news.
+
 When Sotto closes while a thread is working, for an update, a quit, a crash or a restart of the computer, the same setting sends the note in [Resume threads after a restart](#resume-threads-after-a-restart), tagged **Restarted**. Sotto keeps which threads to restart in `limit-restarts.json` and `restart-resume.json` in its data folder, thread IDs, providers and times only. Turn the setting off and a stopped thread waits for your next message. See [ADR-0144](adr/0144-stopped-threads-restart-when-their-limit-resets.md).
 
 ## Notifications on a Mac
