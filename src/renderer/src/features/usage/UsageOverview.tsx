@@ -86,10 +86,11 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     prompts: { value: fmtInt(prompts), text: fmtInt(prompts), note: page.rangeLabel,
       viz: series === null || series.filter(row => row.prompts > 0).length <= FEW_DAYS ? undefined : <Spark values={series.map(row => row.prompts)} /> },
     tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: totals.tokens.total.value === undefined ? t`No tokens in this range` : t`input + output` },
+    // No bar beside the share: a split that small has no scale or label and reads as an ornament, so the figure says it, as
+    // From cache's does, and the Where you work view draws each place's bar with its name and count.
     where: tokenTotal > 0
       ? { value: <><span className="usage-index__figure">{sottoShare}</span><span className="usage-index__unit"><Trans>in Sotto</Trans></span></>, text: t`${sottoShare} in Sotto`,
-        note: t`of tokens · ${sottoPromptShare} of prompts`,
-        viz: <span className="usage-mini-split" aria-hidden="true"><i className="usage-where--sotto" style={{ flexGrow: summary.sottoTokens }} /><i className="usage-where--outside" style={{ flexGrow: Math.max(0, tokenTotal - summary.sottoTokens) }} /></span> }
+        note: t`of tokens · ${sottoPromptShare} of prompts` }
       : { value: '—', text: '—', note: t`No tokens in this range` },
     cache: { value: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), text: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), note: summary.cacheShare === undefined ? t`No tokens in this range` : t`of input tokens` },
     models: {

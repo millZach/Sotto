@@ -123,7 +123,7 @@
 
 /* ---------- The index and its stage ---------- */
 /* The index, its figures and the chart grow and shrink with the room. The index never goes under 240 pixels, so the
-   widest figure, a share with its unit and its split bar, still fits inside the card at 1280. */
+   widest figure, a share with its unit, still fits on its line inside the card at 1280. */
 .usage-focus { display: grid; grid-template-columns: clamp(240px, 24cqi, 300px) minmax(0, 1fr); align-items: start; gap: clamp(28px, 4cqi, 52px); }
 /* The index and its stage are two cards (ADR-0110). */
 .usage-index { display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
@@ -132,8 +132,11 @@
 .usage-index__item[aria-selected='true'] { background: var(--tt-card-selected); }
 .usage-index__item[aria-selected='true']::before { content: ''; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: var(--tt-radius-mark); background: var(--tt-accent); }
 .usage-index__label { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-.usage-index__value { min-width: 0; overflow: hidden; font-size: clamp(23px, 1.2cqi + 15px, 31px); font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
-.usage-index__value[data-words] { padding-top: 4px; font-size: clamp(17px, .6cqi + 12px, 20px); font-weight: 500; letter-spacing: -.3px; }
+/* Every measure keeps one rhythm, its name, one line for its value and a line saying what that is of. A value in words, a
+   model's name or an hour, is set smaller than a figure so it fits, on the same line's height, so no measure stands taller
+   or shorter than the rest. */
+.usage-index__value { --usage-figure: clamp(23px, 1.2cqi + 15px, 31px); --usage-words: clamp(17px, .6cqi + 12px, 20px); min-width: 0; overflow: hidden; font-size: clamp(23px, 1.2cqi + 15px, 31px); font-weight: 450; line-height: 1.15; letter-spacing: -.9px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.usage-index__value[data-words] { padding-top: calc((var(--usage-figure) - var(--usage-words)) * 1.15); font-size: clamp(17px, .6cqi + 12px, 20px); font-weight: 500; letter-spacing: -.3px; }
 .usage-index__value[data-low] { color: var(--usage-low); }
 .usage-index__unit { margin-left: 7px; color: var(--tt-text-2); font-size: var(--tt-type-reading); font-weight: 450; letter-spacing: -.2px; }
 /* A figure with a unit, such as "under 1% in Sotto": the unit goes under the figure when the card is too narrow for both,
@@ -148,8 +151,6 @@
 .usage-index__item[data-empty] :is(.usage-index__value, .usage-index__viz) { display: none; }
 .usage-index__item[data-empty]:not([aria-selected='true']) .usage-index__label { color: var(--tt-text-2); }
 .usage-mini-rings { display: flex; gap: 4px; }
-.usage-mini-split { display: flex; gap: 2px; width: 56px; height: 8px; }
-.usage-mini-split i { min-width: 2px; border-radius: var(--tt-radius-mark); }
 /* On a card, tracks and gridlines mix into the card rather than the room, and segmented controls sink to the inset. */
 .usage-index, .usage-stage { --usage-ground: var(--tt-card); --usage-seg: var(--tt-card-inset); --usage-track: color-mix(in oklab, var(--tt-text) 11%, var(--usage-ground)); --usage-grid: color-mix(in oklab, var(--tt-text) 12%, var(--usage-ground)); }
 .usage-stage { min-width: 0; padding: 20px 24px 22px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
