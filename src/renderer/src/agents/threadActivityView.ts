@@ -43,6 +43,12 @@ export interface ActivityPlacement {
    * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
    */
   readonly newestTurnEnded?: true
+  /**
+   * The newest turn's own lifecycle failed, stopped or ended in a way Sotto could not tell, and none of its own runs, so
+   * nothing in it is being written now, whatever the thread's status still says. A turn that completed is left out: the
+   * provider may have begun one of its own after it, such as Claude's report, with no record yet. Absent otherwise.
+   */
+  readonly newestTurnCutShort?: true
 }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
@@ -178,19 +184,21 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
+  const newest = newestTurn(messages, sorted, anchors, named, places)
+  return { after, unshown, before, leading, trailing, ...newest.ended ? { newestTurnEnded: true as const } : {}, ...newest.cutShort ? { newestTurnCutShort: true as const } : {} }
 }
 
 /**
- * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), and whether it was cut short
+ * (`ActivityPlacement.newestTurnCutShort`), read over every message the
  * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
  * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
  * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
  * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
  * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
  */
-function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
-  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
+function newestTurn(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): { readonly ended: boolean; readonly cutShort: boolean } {
   const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
   const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
   const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
@@ -198,12 +206,14 @@ function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly Age
   for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
   for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
   const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
-  let ended = false, going = false, another = false
+  let ended = false, cut = false, going = false, another = false
   for (const [turnId, status] of lifecycles) {
-    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
-    else if (status === 'running') another = true
+    if (own.has(turnId)) {
+      if (status === 'running') going = true
+      else { if (isTerminalActivity(status)) ended = true; if (status !== 'completed') cut = true }
+    } else if (status === 'running') another = true
   }
-  return ended && !going && another
+  return { ended: ended && !going && another, cutShort: cut && !going }
 }
 
 

@@ -14,8 +14,8 @@ const reply = (id: string, text: string): AgentMessage => ({ id, role: 'assistan
 const command = (afterMessageId: string): AgentActivity =>
   ({ id: 'claude-tool-1', turnId: 'turn-1', sequence: 1, kind: 'command', status: 'running', title: 'Bash', command: 'git status', afterMessageId })
 
-function mount(messages: AgentMessage[], { running = true, sending = false, waiting = false, streamText = true, activities = [] as AgentActivity[] } = {}) {
-  render(<MessageList messages={messages} provider="claude" running={running} sending={sending} waiting={waiting} placement={placeActivities(messages, messages, activities)} context={context} streamText={streamText} />)
+function mount(messages: AgentMessage[], { running = true, sending = false, notWriting = false, streamText = true, activities = [] as AgentActivity[] } = {}) {
+  render(<MessageList messages={messages} provider="claude" running={running} sending={sending} notWriting={notWriting} placement={placeActivities(messages, messages, activities)} context={context} streamText={streamText} />)
   return document.querySelectorAll('.thread-message')
 }
 
@@ -70,19 +70,19 @@ describe('replies shown when finished', () => {
   })
 })
 
-describe('a turn waiting on the user', () => {
+describe('a reply the provider is not writing now', () => {
   it('draws its reply without the writing caret while a request waits, and with it again once answered', () => {
     mount([user, reply('a-1', 'I want to run the benchmark.')])
     expect(document.querySelector('[data-message-id="a-1"] .rich-message[data-streaming]')).not.toBeNull()
     cleanup()
-    mount([user, reply('a-1', 'I want to run the benchmark.')], { waiting: true })
+    mount([user, reply('a-1', 'I want to run the benchmark.')], { notWriting: true })
     expect(screen.getByText('I want to run the benchmark.')).toBeInTheDocument()
     expect(document.querySelector('[data-message-id="a-1"] .rich-message[data-streaming]')).toBeNull()
     expect(document.querySelector('[data-message-id="a-1"] [aria-busy]')).toBeNull()
   })
 
   it('shows the reply so far rather than Writing a reply while a request waits', () => {
-    mount([user, reply('a-1', 'I want to run the benchmark.')], { waiting: true, streamText: false })
+    mount([user, reply('a-1', 'I want to run the benchmark.')], { notWriting: true, streamText: false })
     expect(screen.getByText('I want to run the benchmark.')).toBeInTheDocument()
     expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   })

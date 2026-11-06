@@ -244,6 +244,15 @@ describe('the newest turn the placement reads', () => {
     expect(placeActivities(messages, messages, [news]).newestTurnEnded).toBeUndefined()
   })
 
+  it('says the newest turn was cut short when its own lifecycle failed, stopped or lost its outcome, and nothing of it runs', () => {
+    for (const status of ['failed', 'interrupted', 'unknown'] as const) {
+      expect(placeActivities(messages, messages, [{ ...activities[0]!, status }]).newestTurnCutShort).toBe(true)
+    }
+    // A completed turn may be followed by one the provider began on its own, which may be writing now.
+    expect(placeActivities(messages, messages, activities).newestTurnCutShort).toBeUndefined()
+    expect(placeActivities(messages, messages, [{ ...activities[0]!, status: 'running' }]).newestTurnCutShort).toBeUndefined()
+  })
+
   it('reads work a provider leaves running after its turn ended as saying nothing about which turn is going', () => {
     const left: AgentActivity[] = [{ id: 'plan', turnId: 'you', afterMessageId: 'you', sequence: 2, kind: 'plan', status: 'running', title: 'Plan', startedAt: at(0) },
       { id: 'agent', turnId: 'you', afterMessageId: 'you', sequence: 3, kind: 'subagent', status: 'running', title: 'Review', startedAt: at(0) }]

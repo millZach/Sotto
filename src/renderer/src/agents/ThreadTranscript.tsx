@@ -599,12 +599,16 @@ function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
   return found
 }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, waiting = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, modelMoved }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, notWriting = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, modelMoved }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
   readonly sending?: boolean
-  /** A request waits on the user, so the turn has stopped writing until they answer: its reply carries no caret. */
-  readonly waiting?: boolean
+  /**
+   * The provider is not writing the newest reply now, though the thread may read as running: a request waits on the user,
+   * the provider is not connected (Last seen working), or the turn has ended, failed, stopped or with its outcome unknown.
+   * The reply then carries no caret.
+   */
+  readonly notWriting?: boolean
   /**
    * Where the reply being written stands when the turn took steps before it: under the working line, which the transcript
    * draws after these messages. Null keeps it in its place here.
@@ -639,10 +643,10 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const agents = useOwlFeature('thread-delegation') && !live ? backgroundWork : undefined
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written, and so does a
-  // request waiting on the user: the turn has stopped until they answer, so no caret says it is still typing.
+  // turn that is not writing now (`notWriting`), so no caret says the provider is still typing.
   const newest = turns.at(-1)
   const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
-  const writing = live && !sending && !waiting && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
+  const writing = live && !sending && !notWriting && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   // Every reply here is the provider's, so its name heads only the first one drawn. Watcher's conversation keeps its own.
@@ -899,6 +903,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading', thread.earlierAvailable === true),
     [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
+  // The newest reply is being written only while the provider writes it now: connected (the working line reads Working, not
+  // Last seen working), with no request waiting on the user, in a turn not cut short. Otherwise it carries no caret,
+  // whatever the thread's status still says.
+  const notWriting = thread.requests.length > 0 || !row.connected || placement.newestTurnCutShort === true
   // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
   // names it. What it delegated are rows of delegated work in the turn each call was made in; the briefs it was sent are the words of
   // the thread that delegated to it, not the user's.
@@ -1273,7 +1281,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} waiting={thread.requests.length > 0} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
