@@ -115,6 +115,8 @@ Zach chose this. Reviewers of the design pass found the folders' rows tall and a
 
 A row whose word is news is not resting and keeps its two lines: Just finished, Prototype ready, Babysitting, Monitoring and a restart's time. So does a Done row whose provider is out of reach (Done · Disconnected). The sticky folder head, the Needs you card and the collapsed rail do not change.
 
+Note, November 5, 2026: that sentence says what pick C left alone, not that the head is fixed. Later in the same design pass the sticky folder head's edge was refined (`e13af1f59`): rows pass under the solid head, fading under a soft edge below its hairline, where a row's height of empty sidebar stood. No pick of Zach's claims that change, and he has not been asked about it yet.
+
 **Decided in building, after the pick.** The prototype showed neither of these, so Zach did not pick them and has not been asked about them yet:
 
 - A Done row that Watcher watches, with its owl, or that sits on the Snoozed shelf, with the time it wakes, keeps its two lines. Its second line says something the user would otherwise lose from the screen, that Watcher is still on it or when it comes back, so it is not plainly resting.
