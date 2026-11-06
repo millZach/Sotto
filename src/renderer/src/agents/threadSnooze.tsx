@@ -51,8 +51,9 @@ export function useThreadSnoozes(threads: readonly AgentThread[] = []): Readonly
   useEffect(() => {
     const agents = window.sotto?.agents
     if (!on || !agents) return
+    const legacy = read()
     for (const thread of threads) {
-      const until = snoozes.get(thread.id)
+      const until = legacy.get(thread.id)
       if (thread.snoozedUntil === undefined || until === undefined || migrating.has(thread.id)) continue
       if (thread.snoozedUntil !== null || until <= Date.now()) { snoozeThreads([thread.id], null); continue }
       migrating.add(thread.id)

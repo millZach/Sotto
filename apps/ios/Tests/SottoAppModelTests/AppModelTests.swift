@@ -495,6 +495,13 @@ final class AppModelTests: XCTestCase {
         // No new shell arrives: the phone's own clock invalidates its cached grouping.
         await until { model.focusThreads().snoozed.isEmpty }
         XCTAssertEqual(model.focusThreads().recent.map(\.ref), [ref])
+        // A later snooze still arms the clock after the first expired through a synchronous list read.
+        threads[0]["snoozedUntil"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(1))
+        host["threads"] = threads; source["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: source))))
+        XCTAssertEqual(model.focusThreads().snoozed.map(\.ref), [ref])
+        await until { model.focusThreads().snoozed.isEmpty }
+        XCTAssertEqual(model.focusThreads().recent.map(\.ref), [ref])
         // Even a stale snooze field never hides a new request or its badge.
         threads[0]["snoozedUntil"] = "2099-01-01T00:00:00Z"
         threads[0]["requests"] = [["id":"ask", "kind":"permission", "text":"Approve?", "options":[]]]

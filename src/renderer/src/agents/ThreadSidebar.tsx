@@ -208,7 +208,11 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const snooze = canSnooze ? (): void => setSnoozeMenu('beside') : undefined
   const setSnooze = (until: number | null): void => {
     if (row.thread.snoozedUntil === undefined) snoozeThreads([id], until)
-    else void command({ type: 'snooze-thread', threadId: id, until: until === null ? null : new Date(until).toISOString() })
+    else {
+      // A user's choice replaces any legacy entry still waiting to migrate.
+      snoozeThreads([id], null)
+      void command({ type: 'snooze-thread', threadId: id, until: until === null ? null : new Date(until).toISOString() })
+    }
   }
   const wake = canSnooze && snoozedUntil !== undefined ? (): void => setSnooze(null) : undefined
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard

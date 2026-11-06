@@ -48,7 +48,11 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
-        if let wake = snoozeWakeAt, wake <= Date() { listed = Listed() }
+        if let wake = snoozeWakeAt, wake <= Date() {
+            snoozeWakeTask?.cancel()
+            snoozeWakeAt = nil
+            listed = Listed()
+        }
         let holding = holdingThreads
         let key = Listed.GroupKey(show: show, query: query, opened: opened, holding: holding)
         if let kept = listed.groups[key] { return kept }
