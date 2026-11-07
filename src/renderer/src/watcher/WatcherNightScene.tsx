@@ -313,7 +313,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
         const more = pile.count
         next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: i18n._(msg`${more} more`), words: i18n._(msg`Press to see all threads.`), open: null, below: tipBelow(pile.spot.y - 16) })
       }
-      const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
+      const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.box.w}:${item.box.h}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
     }
     const frame = (now: number): void => {
