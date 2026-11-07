@@ -622,8 +622,8 @@ function useLinkedRows(thread: AgentThread): readonly LinkedRow[] {
     ...links.map(link => ({ number: link.number, url: link.url, title: link.title, state: link.state, draft: link.draft, source: LINK_SOURCE[link.source] })),
   ]
   // The same array while what the rows say is unchanged, so an update to the thread does not try the peeks again.
-  const said = rows.map(row => [row.url, row.number, row.title, row.state, row.draft, row.source].join('\n')).join('\n\n')
-  return useMemo(() => rows, [said])
+  const rowsKey = rows.map(row => [row.url, row.number, row.title, row.state, row.draft, row.source].join('\n')).join('\n\n')
+  return useMemo(() => rows, [rowsKey])
 }
 
 /**
