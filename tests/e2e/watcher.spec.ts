@@ -412,8 +412,9 @@ async function createWorker(page: Page, folder: string, title: string): Promise<
     if (opened.error || !opened.activeProjectId) throw new Error('Could not create the test worker project.')
     const room = await window.sotto!.watcher!.get()
     if (room.status !== 'ok' || !room.state.currentOptions) throw new Error('Watcher is unavailable.')
+    // Named as the New thread dialog names one: a thread on its stand-in title that was never sent to is not listed (ADR-0155).
     const created = await agents.command({ type: 'create-thread', projectId: opened.activeProjectId, modelId: room.state.currentOptions.modelId,
-      title, workingCopy: 'shared', runtimeMode: 'approval-required' })
+      title, titleSource: 'user', workingCopy: 'shared', runtimeMode: 'approval-required' })
     if (created.error || !created.activeThreadId) throw new Error('Could not create the test worker.')
     return created.activeThreadId
   }, { path: folder, title })
@@ -1350,6 +1351,8 @@ test.describe("Watcher's room on the built app", () => {
       })
       const fromEnd = () => log.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)
       const newsTurn = (id: string) => pane.locator(`.thread-activity[data-turn-id="${id}"]`)
+      // A running turn's steps fold under the working line until it is opened (ADR-0134), so the line is what it draws.
+      const working = pane.getByTestId('thread-activity-live')
       const reply = (id: string) => pane.locator(`[data-message-id="${id}"]`)
       // The control that takes the reader to the newest message, named for what it brings.
       const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages|Jump to \d+ new messages?)$/u })
@@ -1369,15 +1372,15 @@ test.describe("Watcher's room on the built app", () => {
         expect(await fromEnd(), `${answer} is away from the end`).toBeGreaterThan(400)
         const steps = [
           ['news starts', { messages, activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
-            () => expect(newsTurn(news)).toHaveCount(1)],
+            () => expect(working).toBeVisible()],
           ['its reply arrives', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
             () => expect(reply(newsReply.id)).toBeVisible()],
           ['it ends', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking'])], status: 'idle' },
             () => expect(reply(newsReply.id).getByRole('button', { name: /^After news/u })).toBeVisible()],
           ['silent news starts', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 42, ['list_threads'], 'running')], status: 'running' },
-            () => expect(newsTurn(silent)).toHaveCount(1)],
+            () => expect(working).toBeVisible()],
           ['it ends with no reply', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 43, ['list_threads'])], status: 'idle' },
-            () => expect(newsTurn(silent)).toHaveCount(0)],
+            async () => { await expect(working).toHaveCount(0); await expect(newsTurn(silent)).toHaveCount(0) }],
         ] as const
         for (const [what, next, drawn] of steps) {
           await history(next)
@@ -2754,7 +2757,7 @@ test.describe("Watcher's room on the built app", () => {
     }, ['codex', 'claude'])
   })
 
-  test('New Watcher: first in the composer, unavailable while Watcher works, and a press brings the new Watcher with the handover', async () => {
+  test('New Watcher: beside Send in the composer, unavailable while Watcher works, and a press brings the new Watcher with the handover', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       const captureNew = (name: string): Promise<void> => captureInto(newWatcherEvidence, launched, name)
@@ -2771,17 +2774,19 @@ test.describe("Watcher's room on the built app", () => {
       await expect(button).not.toHaveAttribute('aria-disabled', 'true')
       // Watcher always runs on this computer, so its composer does not say so.
       await expect(pane.locator('.thread-host-chip')).toHaveCount(0)
-      // The keyboard reaches it after the message and the paperclip, which is off for a model that takes no images, and
-      // before the model.
+      // The quiet pill keeps it beside Send, so the keyboard reaches it as the eye does: after the message, the paperclip,
+      // which is off for a model that takes no images, Watcher's permissions and the model.
       // Named for what it takes: any file where Owl's any-file attachments are on, otherwise screenshots.
       const paperclip = pane.getByRole('button', { name: /^Attach (files|screenshots)$/u })
       expect(await paperclip.evaluate((clip, chip) => Boolean(clip.compareDocumentPosition(chip!) & Node.DOCUMENT_POSITION_FOLLOWING), await button.elementHandle())).toBe(true)
       await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
       await page.keyboard.press('Tab')
       if (await paperclip.isEnabled()) await page.keyboard.press('Tab')
-      await expect(button).toBeFocused()
+      await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toBeFocused()
       await page.keyboard.press('Tab')
       await expect(pane.getByRole('combobox', { name: 'Thread model' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(button).toBeFocused()
       // The captures show the chip at rest, with the composer focused as the room opens.
       await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
       for (const appearance of ['dark', 'light'] as const) {
@@ -2879,23 +2884,23 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
-  test('stable shows nothing of Watcher, even with a projection seeded', async () => {
+  // Watcher was sent to stable on October 23, 2026 (8c0999071, ADR-0072), so stable shows the room Owl does.
+  test('stable shows Watcher, sent to stable, and keeps Watcher’s thread out of Threads', async () => {
     await onReleaseTrack('stable', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
       await seedRoom(page, { current: true })
-      await expect(page.getByRole('tablist', { name: 'Page' }).getByRole('tab')).toHaveCount(2)
-      await expect(switchTab(page, 'Watcher')).toHaveCount(0)
-      await expect(page.getByRole('img', { name: 'Watched by Watcher' })).toHaveCount(0)
-      await expect(page.getByText(/Watched by Watcher/)).toHaveCount(0)
-      await expect(page.getByRole('button', { name: /^Watch |^Stop watching/ })).toHaveCount(0)
-      await expect(page.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveCount(0)
-      await expect(page.locator('.watcher-foot .thread-nav__seg')).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'New Watcher' })).toHaveCount(0)
-      // Stable lists the thread the projection names as Watcher, since stable has no Watcher to give it to.
+      await expect(page.getByRole('tablist', { name: 'Page' }).getByRole('tab')).toHaveCount(3)
+      await expect(switchTab(page, 'Watcher')).toHaveCount(1)
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
+      await expect(threads.getByRole('button', { name: 'Footer links', exact: true }).getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
+      // The thread the projection names as Watcher is Watcher's, so Threads does not list it.
       await threads.getByRole('button', { name: /^Settled/ }).click()
-      await expect(threads.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(1)
+      await expect(threads.getByRole('button', { name: 'Benchmark rerun', exact: true })).toBeVisible()
+      await expect(threads.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(0)
+      await threads.getByRole('button', { name: /^Settled/ }).click()
+      await openRoom(page)
+      await expect(watcherPane(page).getByRole('textbox', { name: 'Watcher message' })).toBeVisible()
     }))
   })
 })
