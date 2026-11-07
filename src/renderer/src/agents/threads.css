@@ -245,9 +245,11 @@
    thread's rows paint inside their own box, so this one's paint reaches the gap and the control's focus ring. A wake-up
    or a brief keeps its control inside the corner. Watcher's conversation takes the same form in its own inks. The rows that tuck up
    under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them.
-   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not. */
+   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not.
+   The hover reach is drawn after the control and over the same strip, so the control sits above it; under it, a press
+   landed on the bubble and copied nothing. */
 .thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 26px; padding-bottom: 12px; overflow-clip-margin: 36px; }
-.thread-pane .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
+.thread-pane .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { z-index: 1; top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
 .thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 26px; }
 /* A message the user sent opens a turn, so the space before it is the widest in the conversation: a reader sees where one
    exchange ends and the next begins, while the message, its Worked for line and its reply stay close. The reply's copy room
