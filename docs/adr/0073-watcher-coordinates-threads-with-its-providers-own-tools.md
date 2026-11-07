@@ -976,3 +976,13 @@ The audit of October 14 to November 5 found Zach's rules at 30 of 30 open lines,
 - **The handover names every open rule.** A new Watcher's handover lists each open rule, up to sixty, where other lists stop at forty.
 
 Not taken: a question card before a rule is dropped. It would be a new surface the user sees, so it waits on Zach's word; with the refusal's words nothing drops a rule for it to ask about.
+
+## November 7, 2026: a Claude thread's work is what Claude Code says runs (#2323)
+
+October 15's "Unknown is not zero" waits for the provider to say how unknown sub-agents ended. Claude Code never says. Its background agents run inside its own process, so when that process has gone they have gone too, and no ending will come. Two Claude threads stayed held for good, each by one roster row that was not known to have ended. In one, an Agent call failed the moment it launched. Claude Code stamped the failure 2 ms after the call, but Sotto had stamped the call on receipt 6 ms after, and the roster dropped the failure as older than what it held. In the other, a background agent's completion never arrived on the stream. Both rows went unknown on restart, and their activity had since dropped out of what Sotto keeps, so nothing could reach them again. Stop cleared Claude's live work and monitors but not the roster, so `stop_thread` still reported 1 and `settle_thread` still refused.
+
+- **A Claude thread's work is its live report.** For a Claude thread, the work count, the work-settled news, `settle_thread` and the delegated-thread check read Claude Code's own background work and monitors, which its adapter keeps from the native stream and clears on a stop, an error result or when Claude Code stops. The roster's working and unknown rows no longer count there. The roster is history read back from activity: for Claude it can only lag that report. Every other provider's roster counts as before, and unknown is still not zero for them.
+- **An ending is never too old.** The roster takes the ending of an assignment that has not yet ended whatever its time, since an assignment ends once and its ending may carry the provider's clock while its start carried Sotto's.
+- **The refusal names what holds the thread.** `settle_thread`'s refusal names each counted background task and monitor by its label, as well as giving the counts.
+
+Not changed: Auto-settle merged threads and the worktree cleanup rules (ADR-0041) still read the roster as before.

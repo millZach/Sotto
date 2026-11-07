@@ -149,9 +149,10 @@ describe('finished', () => {
     ['a queued follow-up', {}, { followups: [followup('a', 'queued')] }, []], ['a dispatching follow-up', {}, { followups: [followup('a', 'dispatching')] }, []],
     ['a queued wake-up', {}, { followups: [followup('a', 'queued', true)] }, []],
     ['a queued delivery', {}, { deliveries: [delivery('a', 'queued')] }, []], ['a submitting delivery', {}, { deliveries: [delivery('a', 'submitting')] }, []],
-    ['a working sub-agent', { subagentSummary: subagents(1, 0) }, {}, []], ['a sub-agent a restart left unknown', { subagentSummary: subagents(0, 1) }, {}, []],
+    // A roster holds a Codex thread; a Claude thread's work is what Claude Code reports (#2323), its background work above.
+    ['a working sub-agent', { providerId: 'codex', subagentSummary: subagents(1, 0) }, {}, []], ['a sub-agent a restart left unknown', { providerId: 'codex', subagentSummary: subagents(0, 1) }, {}, []],
     ['a running child', {}, {}, [child('c', 'a', { status: 'running' })]],
-    ['a child with a working sub-agent', {}, {}, [child('c', 'a', { subagentSummary: subagents(1, 0) })]],
+    ['a child with a working sub-agent', {}, {}, [child('c', 'a', { providerId: 'codex', subagentSummary: subagents(1, 0) })]],
     ['a child that babysits', {}, {}, [child('c', 'a', { babysitting: [{ url: 'https://github.com/o/r/pull/1', number: 1, startedBy: 'agent', startedAt: AT }] })]],
     ['a child that compacts', {}, {}, [child('c', 'a', { compaction: { commandId: 'c', status: 'running' } })]],
     ['a child with a queued send', {}, { followups: [followup('c', 'queued')] }, [child('c', 'a')]],
@@ -190,6 +191,15 @@ describe('finished', () => {
     const { alerts, tracker, settle } = setup()
     tracker.track(state([thread('a'), ...children]))
     tracker.track(state([marked('a', { subagentSummary: subagents(0, 0) }), ...children], extra))
+    settle(ALERT_DELEGATION_SETTLE_MS)
+    expect(finishes(alerts)).toEqual(['a/finished/1'])
+  })
+
+  // #2323: a Claude roster row whose ending Sotto missed held the thread for good; Claude Code reports no work running.
+  it.each([['working', subagents(1, 0)], ['unknown', subagents(0, 1)]] as const)('is not held by a Claude roster row left %s with no background work', (_name, summary) => {
+    const { alerts, tracker, settle } = setup()
+    tracker.track(state([thread('a', { status: 'running' })]))
+    tracker.track(state([marked('a', { subagentSummary: summary })]))
     settle(ALERT_DELEGATION_SETTLE_MS)
     expect(finishes(alerts)).toEqual(['a/finished/1'])
   })

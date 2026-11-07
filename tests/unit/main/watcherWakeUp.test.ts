@@ -1312,6 +1312,21 @@ it('reads a turn that finishes while a restart has left sub-agents unknown as no
   expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(2)
 })
 
+// #2323: a Claude roster row whose ending Sotto missed (a launch failure stamped before its start, or a background agent's
+// notification the stream never delivered) went unknown on restart and held the thread for good. Claude Code's own live
+// report is what says its work runs; a Codex roster is still that report for Codex.
+it.each([
+  ['claude', 0, ['turn-finished']],
+  ['codex', 1, []],
+] as const)('reads a %s finish beside an unknown roster row and no live background work with a work count of %i', async (provider, count, kinds) => {
+  const f = fixture()
+  f.thread.providerId = provider
+  f.thread.subagentSummary = { total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 }
+  finish(f.thread); f.wakes.observe(); await f.advance(10_000)
+  expect(f.wakes.news().find(event => event.kind === 'turn-finished')!.backgroundWorkCount ?? 0).toBe(count)
+  expect(turnKinds(f.delivered)).toEqual(kinds)
+})
+
 it('owes nothing for work that starts after a finish was delivered as done', async () => {
   const f = fixture()
   finish(f.thread); f.wakes.observe(); await f.advance(2_000)

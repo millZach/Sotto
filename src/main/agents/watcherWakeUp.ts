@@ -186,7 +186,19 @@ const busyFinish = (event: WatcherEvent): boolean => event.kind === 'turn-finish
  * the working ones: a finish with any of this is not done and is owed work-settled news, and zero is the only settled answer.
  */
 export function watcherBackgroundWorkCount(thread: AgentThread): number {
-  return Math.max(thread.backgroundWork?.length ?? 0, (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)) + (thread.monitoring?.length ?? 0)
+  return Math.max(thread.backgroundWork?.length ?? 0, watcherRosterWork(thread)) + (thread.monitoring?.length ?? 0)
+}
+/**
+ * The sub-agents the roster still holds as working or not known to have ended, as they count toward a thread's background
+ * work. A Claude thread's count none (#2323): Claude Code reports its own live background work, which its adapter
+ * keeps as `backgroundWork` from the native stream and clears on a stop or when its process ends, and a Claude Code
+ * that has gone takes its background agents with it and never says how they ended. The roster is history read back
+ * from activity, so for a Claude thread it can only lag that live report, and a row whose ending it missed would
+ * otherwise hold the thread for good.
+ */
+export function watcherRosterWork(thread: AgentThread): number {
+  if (thread.providerId === 'claude') return 0
+  return (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)
 }
 const finishedTurn = (thread: AgentThread) => thread.status !== 'running' && thread.lastTurn && ['completed', 'failed'].includes(thread.lastTurn.status) ? thread.lastTurn : undefined
 const BUSY_TURN_ID = /^[a-f0-9]{64}\.([a-f0-9]{64})$/u

@@ -315,3 +315,28 @@ it('keeps the watch the user gives a thread that is already settled', async () =
   await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.watching(threadId)).toBe(true)
 })
+
+// #2323: a Claude thread held for good by a roster row whose ending Sotto missed. Claude Code's live report of its own
+// background work and monitors is what holds a Claude thread, and the refusal names each by its label; a Codex roster
+// still holds a Codex thread.
+it.each([
+  ['a Claude thread with an unknown roster row and no live work', { providerId: 'claude', subagentSummary: { total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 } }, undefined],
+  ['a Codex thread with an unknown roster row', { subagentSummary: { total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 } },
+    'This thread still has background work: 1 agent still working or not known to have ended. Stop it explicitly before settling.'],
+  ['a Claude thread with live background work and a monitor', { providerId: 'claude', subagentSummary: { total: 1, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 1 },
+    backgroundWork: [{ id: 'synthetic-task', type: 'subagent', label: 'Synthetic audit', startedAt: new Date().toISOString() }], monitoring: [{ id: 'synthetic-monitor', label: 'Synthetic watch' }] },
+    'This thread still has background work: 1 background task (“Synthetic audit”), 1 monitor (“Synthetic watch”). Stop it explicitly before settling.'],
+] as const)('settles or names what holds %s', async (_, fields, refusal) => {
+  const f = await fixture(), target = await f.watched(), requestId = await f.request()
+  await f.endTurn(target.threadId)
+  // The fixture's thread runs on the fake Codex; Claude is connected too so the thread read as Claude's is connected.
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const snapshot = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const read = snapshot()
+    return { ...read, threads: read.threads.map(thread => thread.id === target.threadId ? { ...thread, ...fields } as AgentThread : thread) }
+  })
+  const result = await f.settle(requestId, target)
+  if (refusal) expect(result).toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING', message: refusal })
+  else expect(result).toMatchObject({ status: 'ok' })
+})
