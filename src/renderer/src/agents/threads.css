@@ -205,6 +205,9 @@
 .thread-message { position: relative; margin: 0 0 28px; }
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
+/* A message's time takes the quiet weight, a step heavier by day (ADR-0024 November 7 amendment). Watcher's conversation
+   keeps its own, since its times already read in the secondary ink (ADR-0126 decision 5). */
+.thread-pane:not(.watcher-pane) .thread-message header > time { font-weight: var(--tt-weight-quiet); }
 .thread-message time { font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 /* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
 .thread-message__work {
