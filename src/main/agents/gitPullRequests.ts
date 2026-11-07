@@ -66,7 +66,7 @@ export function pullRequestQuery(withMergeSettings: boolean): string {
   viewer { login }
   repository(owner: $owner, name: $name) {${withMergeSettings ? `\n    ${MERGE_SETTINGS}` : ''}
     pullRequest(number: $number) {
-      number title url body state isDraft mergeable reviewDecision baseRefName headRefName headRefOid isCrossRepository mergedAt additions deletions author { login }
+      number title url body state isDraft mergeable reviewDecision baseRefName headRefName headRefOid isCrossRepository mergedAt createdAt additions deletions author { login }
       headRepositoryOwner { login } autoMergeRequest { mergeMethod } viewerCanUpdateBranch
       baseRef { compare(headRef: $pullRef) { behindBy } }
       latestOpinionatedReviews(last: 50) { nodes { state url author { login } } }
@@ -90,7 +90,7 @@ const rawContextSchema = z.object({
 const rawPullRequestSchema = z.object({
   number: z.number().int().positive(), title: z.string(), url: z.string(), body: loose(z.string()),
   state: z.string(), isDraft: loose(z.boolean()), mergeable: loose(z.string()), reviewDecision: loose(z.string()),
-  baseRefName: loose(z.string()), headRefName: loose(z.string()), headRefOid: loose(z.string()), isCrossRepository: loose(z.boolean()), mergedAt: loose(z.string()),
+  baseRefName: loose(z.string()), headRefName: loose(z.string()), headRefOid: loose(z.string()), isCrossRepository: loose(z.boolean()), mergedAt: loose(z.string()), createdAt: loose(z.string()),
   headRepositoryOwner: loose(z.object({ login: loose(z.string()) })), autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })),
   viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
   latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
@@ -360,7 +360,7 @@ export class GitPullRequests {
     // part of it that cannot be empty, such as a check run's suite, is refused.
     const checksUnknown = !raw.commits || checksRefused(answer.errors ?? []) || contexts.some(node => node == null)
     return {
-      ...(raw.headRefOid ? { headId: raw.headRefOid } : {}), observedAt: new Date(this.now()).toISOString(),
+      ...(raw.headRefOid ? { headId: raw.headRefOid } : {}), ...(raw.createdAt ? { createdAt: cut(raw.createdAt, 64) } : {}), observedAt: new Date(this.now()).toISOString(),
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
       baseBranch: raw.baseRefName ?? '', headBranch: raw.headRefName ?? '', crossRepository: raw.isCrossRepository === true,
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,

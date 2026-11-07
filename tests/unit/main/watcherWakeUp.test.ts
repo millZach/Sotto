@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
+import { WATCHER_AT_REST_MS, WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
 import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
@@ -2529,5 +2529,70 @@ describe('a thread’s message for Watcher (#2059)', () => {
     expect(watcherReplyBefore({ messages: [reply('a0', 'Earlier', '2026-11-02T21:39:00.000Z'), user('u1', '2026-11-02T21:40:14.000Z')] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
     expect(watcherReplyBefore({ messages: [] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
     expect(watcherReplyBefore({ messages }, 'not a time')).toBeUndefined()
+  })
+})
+
+describe('at-rest news (#2307)', () => {
+  const atRest = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'at-rest')
+  /** The worker's turn ends with its pull request open and its checks still running, as a lane's does after it pushes. */
+  const rests = async () => {
+    const f = fixture()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 1 })
+    f.wakes.observe(); await f.advance(WATCHER_ORDINARY_BATCH_MS)
+    return f
+  }
+
+  it('tells Watcher once that a watched thread has rested twenty minutes with its pull request open, and not again for the same state', async () => {
+    const f = await rests()
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(WATCHER_AT_REST_MS - WATCHER_ORDINARY_BATCH_MS - 1)
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(1)
+    expect(atRest(f)[0]!.turnId).toBe('turn-1')
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(1)
+    // Its checks finishing is a new place for it to stand, told once more.
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+    await f.advance(WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(2)
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(2)
+  })
+
+  it('says nothing for a thread at rest with no open pull request, one that merged, or one still working', async () => {
+    const f = await rests()
+    f.thread.pullRequests = [{ ...f.thread.pullRequests![0]!, state: 'merged' }]
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'merged', checks: 'passed', checkCount: 1 })
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(f)).toHaveLength(0)
+    const working = fixture()
+    working.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+    working.wakes.observe(); await working.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(working)).toHaveLength(0)
+  })
+
+  it('waits again from new progress, and drops news that is no longer true before it goes', async () => {
+    const f = await rests()
+    await f.advance(WATCHER_AT_REST_MS / 2)
+    f.thread.messages.push({ id: 'message-2', role: 'assistant', text: 'private worker output', createdAt: new Date(f.now()).toISOString() })
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS / 2 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(WATCHER_AT_REST_MS / 2)
+    expect(atRest(f)).toHaveLength(1)
+    const event = atRest(f)[0]!
+    expect(f.wakes.due(event)).toBe(true)
+    f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
+    expect(f.wakes.due(event)).toBe(false)
+  })
+
+  it('words the line with where each open pull request stands, and grants nothing', () => {
+    const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, omitted: 0, events: [{ id: 'rest', kind: 'at-rest', requestId: randomUUID(),
+      target: centerTarget, generation: 0, observedAt: centerTime, turnId: 'turn-1', revision: 'state' }] }, () => 'Its open pull requests: #9 (checks running).')
+    expect(text).toContain('at rest for twenty minutes')
+    expect(text).toContain('#9 (checks running)')
+    expect(text).toContain('not review or merge approval')
   })
 })

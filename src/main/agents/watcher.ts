@@ -41,7 +41,7 @@ import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
 import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
-import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
+import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
 import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './github'
@@ -412,15 +412,8 @@ function newestUserRequest(record: Readonly<WatcherRecord>, threadId: string): W
 }
 
 /** A thread's linked pull requests and its branch's, each once, as a thread's links list them first. */
-function threadPullRequests(thread: AgentThread): { number: number; url: string; state: 'open' | 'closed' | 'merged'; draft: boolean }[] {
-  const seen = new Set<string>()
-  return [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []].filter(pr => {
-    const prKey = pullRequestKey(pr.url) ?? pr.url
-    if (seen.has(prKey)) return false
-    seen.add(prKey)
-    return true
-  })
-}
+/** How an at-rest line says each open pull request's checks stand (#2307). */
+const AT_REST_CHECKS = { passed: 'checks passed', failed: 'checks failed', pending: 'checks running', unknown: 'checks not read yet' } as const
 const withSince = (checksPassedAt: string | undefined) => checksPassedAt === undefined ? {} : { checksPassedAt }
 /** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
 /**
@@ -1238,6 +1231,11 @@ export class WatcherService implements WatcherControlHooks {
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
+      // A thread at rest: where each of its open pull requests stands, as Sotto last read it (#2307).
+      if (event.kind === 'at-rest') {
+        const open = watcherOpenPullRequests(watcherThreadPullRequests(thread), this.wakes.evidence.read(event.target))
+        return open.length ? `Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.` : undefined
+      }
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
       // A finish held for its work whose thread began another turn first: its work-settled news will not come, and the
@@ -2572,7 +2570,7 @@ export class WatcherService implements WatcherControlHooks {
         return { url, ...head ? { head } : {}, ...counts ? { pending: counts } : {}, ...place ? { train: place } : {} }
       }
       const open: WatcherOpenPullRequest[] = thread
-        ? watcherOpenPullRequests(threadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
+        ? watcherOpenPullRequests(watcherThreadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
           .map(({ pr, summary }) => ({ summary, draft: pr.draft, ...withSince(since(pr.url)), ...train(pr.url) }))
         // Evidence does not say whether a pull request is a draft, so one read only from it is never queued.
         : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: undefined, ...withSince(since(summary.url)), ...train(summary.url) }))
@@ -2594,7 +2592,7 @@ export class WatcherService implements WatcherControlHooks {
     const threads = all.map(({ thread, target }) => ({ target, title: thread.title,
       settled: isWorkspaceThreadSettled(thread, projectsOf(target.hostId).find(project => project.id === thread.projectId)), watched: watched.has(key(target)) }))
     const pullRequests = new Map<string, WatcherKnownPullRequest>()
-    for (const { thread } of all) for (const pr of threadPullRequests(thread)) {
+    for (const { thread } of all) for (const pr of watcherThreadPullRequests(thread)) {
       const prKey = pullRequestKey(pr.url) ?? pr.url
       if (!pullRequests.has(prKey)) pullRequests.set(prKey, { url: pr.url, number: pr.number, state: pr.state })
     }

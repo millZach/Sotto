@@ -44,13 +44,17 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * `thread-ready` comes once for each READY TO MERGE a thread sent with `ready_to_merge` (#2229), watched or not: `ready`
  * names the pull request and the head the worker says is ready, and nothing of the worker's words. It is saved the way
  * `thread-told` is, since nothing else holds it. It grants nothing: whose turn it is to merge stays Watcher's call.
+ * `at-rest` comes once for each place a watched thread stands while it rests (#2307): twenty minutes after its last progress,
+ * with its turn ended, nothing running and nothing asked of the user, and a pull request of its own still open. `revision`
+ * is that place, its newest turn and each open pull request's head and whether its checks have finished, so a change in
+ * any of them is news again. It approves nothing.
  * `user-answered` comes once for each answer the user gave on a card of Watcher's own question (#2228, ADR-0073, amendment
  * of November 5, 2026): `answered` carries the question and the user's choice, which are theirs, under the thread a settle
  * question names, or Watcher's own thread. It is saved with the told words, since nothing else holds the choice for Watcher.
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled',
-    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'thread-ready', 'user-answered']),
+    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'thread-ready', 'user-answered', 'at-rest']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),

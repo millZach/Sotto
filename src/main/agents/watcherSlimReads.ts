@@ -63,6 +63,17 @@ function addressShared(items: readonly { url: string; summary: WatcherPullReques
   return items.map(({ url, summary }) => summary.number !== undefined && counts.get(summary.number)! > 1 && summary.url === undefined ? { ...summary, url } : summary)
 }
 
+/** A thread's pull requests: its links, then its branch's own, each once by its key (read_state, at-rest news). */
+export function watcherThreadPullRequests<P extends { readonly url: string }>(thread: { readonly pullRequests?: readonly P[] | undefined
+  readonly worktree?: { readonly git?: { readonly pullRequest?: P | null } | undefined } | undefined }): P[] {
+  const seen = new Set<string>()
+  return [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []].filter(pr => {
+    const prKey = pullRequestKey(pr.url) ?? pr.url
+    if (seen.has(prKey)) return false
+    seen.add(prKey)
+    return true
+  })
+}
 /**
  * A thread's open pull requests as its links list them, each with its summary from what the evidence says, its address
  * kept when another shares its number: the open pull requests of a slim roster row and of read_state (#1274).
