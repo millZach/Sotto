@@ -19,6 +19,7 @@ import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred, type Deferred } from '../../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { RESUME_NOTE } from '../../../src/shared/restartResume'
 
 const opened: { control: AgentControl; stop: () => Promise<void> }[] = []
 const removals: (() => Promise<void>)[] = []
@@ -500,6 +501,24 @@ describe('naming a thread from its first message while the first turn runs', () 
 
     const reopened = await coordinator({ root: f.root, beforeConnect, writeThreadTitle: async () => null })
     expect(titled(reopened.control, threadId)).toMatchObject({ title, titleSource: wakeUp ? 'user' : 'default' })
+  })
+
+  it('never names a thread from the restart note Sotto sent it, and names it from what the user says next', async () => {
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS })
+    const threadId = workshop(f.control).id
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: RESUME_NOTE, wakeUp: true })
+    const native = f.adapters.codex.state.threads[0]!
+    native.messages.push({ id: 'resume-reply', role: 'assistant', text: 'The tests were half run. I ran them again and they pass.', createdAt: new Date().toISOString() })
+    native.status = 'idle'
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh', provider: 'codex' })
+    expect(titled(f.control, threadId).title).toBe('Workshop')
+    expect(f.titles).not.toHaveBeenCalled()
+
+    native.messages.push({ id: 'user-prompt', role: 'user', text: 'Check the sidebar spacing.', createdAt: new Date().toISOString() })
+    native.status = 'running'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Check the sidebar spacing.', titledFromFirstMessage: true }))
   })
 
   it('names a thread from its first message as soon as it is sent, then takes the generated name when it lands', async () => {

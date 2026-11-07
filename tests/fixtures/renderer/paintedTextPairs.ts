@@ -52,9 +52,11 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...lines.flatMap(line => each('text-muted', [line, [...line, hover]], 'Changes line number')),
   // The prompt editor's placeholder, as threads.css paints it: on the composer card, where while a turn runs it is the
   // only thing that says what typing will do, and in the field a queued message is edited in (#1819).
-  ...each('--placeholder-ink', [['card'], ['field']], "the prompt editor's placeholder"),
-  // Faint text: ghost buttons and input placeholders.
+  ...each('--placeholder-ink', [['composer-card'], ['field']], "the prompt editor's placeholder"),
+  // Faint text: ghost buttons and input placeholders, and the composer's own, on the card it keeps (the Sotto theme by day
+  // parts it from the room's card, ADR-0110 November 7 amendment).
   ...each('text-faint', [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['card'], [followups], ...glass], 'ghost button or placeholder'),
+  ...each('composer-text-faint', [['composer-card'], [followups]], "the composer's ghost buttons"),
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),
   ...lines.map(line => pair('text', [...line, picked], 'picked line number')),
@@ -114,9 +116,9 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('link', [['canvas'], ['surface'], ['bubble'], ['sidebar'], ['selected']], 'links'),
   ...each('accent-text', [['canvas'], ['surface'], ['surface-elevated'], ['card'], ['card-selected'], ['sidebar'], ['selected'], ['bubble'], ['field'], ['hover-strong']], 'accent text and activity'),
   // Steer now, in the composer and on a queued message, keeps the accent while pointed at.
-  ...each('accent-text', [['card', hover], ['canvas', hover]], 'Steer now, hovered'),
+  ...each('accent-text', [['card', hover], ['composer-card', hover], ['canvas', hover]], 'Steer now, hovered'),
   // The effort offer's level on the accent's wash, on the composer card (ADR-0172).
-  pair('accent-text', ['card', '--effort-offer-wash'], 'the effort offer'),
+  pair('accent-text', ['composer-card', '--effort-offer-wash'], 'the effort offer'),
   // Text on its own fill.
   pair('bubble-text', ['bubble'], 'bubble'), pair('sidebar-text', ['sidebar'], 'sidebar'), pair('update-text', ['update-surface'], 'update chip'),
   pair('on-accent', ['accent'], 'accent fill'), pair('primary-contrast', ['primary'], 'primary action'), pair('primary-contrast', ['primary-hover'], 'primary action, hovered'),
@@ -181,6 +183,6 @@ export function paintedContrast(declarations: ReadonlyMap<string, string>, { ink
  */
 export function placeholderApartFromText(declarations: ReadonlyMap<string, string>): number {
   const token = (name: string): Rgba => resolveColor(name.startsWith('--') ? name : `--tt-${name}`, declarations)
-  const card = over(token('card'), token('canvas'))
+  const card = over(token('composer-card'), token('canvas'))
   return contrast(over(token('--placeholder-ink'), card), over(token('text'), card))
 }
