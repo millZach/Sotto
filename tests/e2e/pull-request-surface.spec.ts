@@ -146,7 +146,8 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await expect(checklist).toContainText('CI / Owned build passed')
     await expect(checklist).toContainText('Reviewers wait until it is ready')
     await expect(checklist).toContainText('Still a draft')
-    await expect(panel.getByText('Draft', { exact: true })).toBeVisible()
+    // The head's tag; Linked pull requests may also say Draft under its closed head where the panel has room.
+    await expect(panel.locator('.pr-surface__tag').getByText('Draft', { exact: true })).toBeVisible()
     await expect(merge).toHaveAttribute('aria-disabled', 'true')
     await panel.getByRole('button', { name: 'Description', exact: true }).click()
     await expect(panel.getByText('Says hello to whoever reviews this.', { exact: false })).toBeVisible()

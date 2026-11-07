@@ -900,7 +900,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const files = page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('button', { name: /^Changed files/u })
     await capture.shoot('pr-fold-hover', 'The pointer on a file under the closed Changed files head: the whole head lights, its files with it, as the one press that opens them.', '',
       { before: async () => { await files.hover({ position: { x: 160, y: 70 } }) } })
-    for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { modes: ['dark'], size })
+    for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await closeTools(page)
   } },
@@ -1053,7 +1053,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
     await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.')
-    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
+    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
   { name: 'pages', covers: ['dictate', 'settings', 'usage-no-records', 'help'], run: async capture => {
@@ -1661,7 +1661,7 @@ async function captureConnectedUsage(out: string): Promise<void> {
       manifest.set(file, { file, state, shows: what, differs, bounds: [] })
       try { await harness.capture(out, file, width, height, mode) } catch (error) { failures.push(`${state} ${file}: ${error instanceof Error ? error.message : String(error)}`) }
     }
-    for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, ['dark']], [820, 560, ['dark']]] as const) {
+    for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, MODES], [820, 560, MODES]] as const) {
       for (const mode of modes) await shoot(`${width === 1600 ? 'usage' : 'usage-sizes'}-${mode}-${width}.png`, width, height, mode)
     }
     // The other views a press on the index opens, at the largest size.

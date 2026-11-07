@@ -93,6 +93,21 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     expect(await fromRight(right)).toEqual(unfocused)
     await promptField(pane(page, 'wav-stall')).click()
     await expect(pane(page, 'wav-stall')).toHaveAttribute('data-focused')
+    // The pane out of focus shows its buttons only while pointed at or focused, and always its close (Zach's pick B,
+    // ADR-0182, November 7, 2026); the focused pane shows them all.
+    const lit = (head: Locator, name: string | RegExp): Promise<string> => head.getByRole('button', { name }).first().evaluate(button => getComputedStyle(button.closest('.thread-workspace__actions > *')!).opacity)
+    await page.mouse.move(800, 500)
+    await expect.poll(() => lit(right, /Watch/)).toBe('0')
+    await expect.poll(() => lit(right, /^Close /)).toBe('1')
+    await expect.poll(() => lit(left, /Watch/)).toBe('1')
+    await right.hover({ position: { x: 40, y: 10 } })
+    await expect.poll(() => lit(right, /Watch/)).toBe('1')
+    await page.mouse.move(800, 500)
+    await expect.poll(() => lit(right, /Watch/)).toBe('0')
+    await right.getByRole('button', { name: 'More actions', exact: true }).focus()
+    await expect.poll(() => lit(right, /Watch/)).toBe('1')
+    await promptField(pane(page, 'wav-stall')).click()
+    await expect(pane(page, 'wav-stall')).toHaveAttribute('data-focused')
     // Two panes side by side at 1600x1000: the names are whole, and the project reads while its pane has the room.
     await expect(left.locator('.thread-workspace__crumb > span').first()).toHaveText('workshop')
     expect(await cut(left)).toEqual([])
