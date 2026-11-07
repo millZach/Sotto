@@ -22,7 +22,7 @@
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/control.ts": {
-    "structuredClone(": 21,
+    "structuredClone(": 17,
     "watcherRecord()": 2,
     "clonePlainData(": 2
   },
@@ -33,6 +33,9 @@
   "src/main/agents/deepseek.ts": {
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/detailSends.ts": {
+    "structuredClone(": 4
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
