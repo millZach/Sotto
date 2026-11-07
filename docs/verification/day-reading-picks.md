@@ -20,7 +20,7 @@ The `before-*` images are the captures from the design pass's last review round 
 
 ## After, by day
 
-- `after-thread-idle-light-1600.png`: the sidebar's times, a working row's Working and its clock, and each folder's count are at 500. In the transcript the message times and the Worked for line are at 500, and the names keep their weight. The composer's card is still the lighter 4% card.
+- `after-thread-idle-light-1600.png`: the sidebar's times and a working row's Working and its clock are at 500. Each folder's count keeps the 500 it takes from its folder's name, by night as by day. In the transcript the message times and the Worked for line are at 500, and the names keep their weight. The composer's card is still the lighter 4% card.
 - `after-pr-ready-light-1600.png`: 5 of 5 done, the done lines, Checks' 10 passed, Changed files' 30, the peeked files and 22 more files are at 500. The two cards are 7%, so their edges and the room-coloured lines between their folds show. There is no outline.
 - `after-settings-light-1600.png`: each group of rows is a 7% card with its row lines showing. The toggles are drawn exactly as before.
 - `after-changes-big-light-1600.png`: the line under a file's head is the reading hairline. Sampled at x 1200, it paints 192,187,179 on the 242,240,234 sidebar, about 1.6:1. The faint rule it replaces was 213,208,200, about 1.3:1.

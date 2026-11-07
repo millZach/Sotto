@@ -609,8 +609,9 @@
 :root[data-theme='light'] .changes-surface { --tt-hairline: var(--tt-reading-hairline); }
 /* The composer keeps exactly the inks it had: its secondary text stays on the quiet tier, and so do the menus it opens. */
 .thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices { --tt-text-muted: var(--tt-text-quiet); }
-/* And the card and faint ink it was drawn in, where a theme parts them from the room's (the Sotto theme by day). */
-:root[data-theme='light'][data-theme-id='t3-code'] :is(.thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices) {
+/* And the card and faint ink it was drawn in, where a theme parts them from the room's (the Sotto theme by day). Watcher's
+   scene reads the card from its ink probe to set how see-through its composer is, so the probe keeps that card too. */
+:root[data-theme='light'][data-theme-id='t3-code'] :is(.thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices, .watcher-scene__ink) {
   --tt-card: var(--tt-composer-card);
   --tt-card-solid: var(--tt-composer-card);
   --tt-text-faint: var(--tt-composer-text-faint);

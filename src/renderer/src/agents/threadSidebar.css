@@ -309,7 +309,7 @@
 .thread-nav[data-mode='threads'] .thread-folder__toggle { padding-right: calc(var(--thread-folder-actions) + 8px); }
 .thread-nav[data-mode='threads'] .thread-folder__actions { width: var(--thread-folder-actions); margin-left: calc(-1 * var(--thread-folder-actions)); justify-content: flex-end; pointer-events: none; }
 .thread-nav[data-mode='threads'] .thread-folder__actions > * { pointer-events: auto; }
-.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: var(--tt-weight-quiet); }
+.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* A closed folder's dots sit just before the count, which stays last and so keeps the column's edge. */
 .thread-nav__indicators + .thread-folder__count { margin-left: 0; }
 .thread-folder__head:is(:hover, :focus-within, [data-peeking]) .thread-folder__count { visibility: hidden; }
