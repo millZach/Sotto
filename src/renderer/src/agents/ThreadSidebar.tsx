@@ -234,16 +234,17 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // pick C, ADR-0135, November 5, 2026); its word stays in its description. A row out of reach, watched or snoozed still
   // has something to say on its second line, so it keeps two.
   const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined
-  // A one-line name that does not fit is cut at a word's end; the whole name stays its tooltip and its spoken name.
+  const inQueue = queued && row.state === 'needs'
+  // Every row's name is one line (Zach, November 7, 2026): one that does not fit is cut at a word's end, and the whole name
+  // stays its tooltip and its spoken name. The look names what sets the name's weight, so a change of weight measures again.
   const titleBox = useRef<HTMLSpanElement>(null)
-  const shownTitle = useWordCut(titleBox, title, stepsBack && !renaming ? (current ? 'current' : 'resting') : null)
+  const shownTitle = useWordCut(titleBox, title, renaming ? null : [resting ? 'resting' : 'live', current && 'current', inQueue && 'queued'].filter(Boolean).join(' '))
   if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>{swarm}</>
-  const inQueue = queued && row.state === 'needs'
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
     data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>

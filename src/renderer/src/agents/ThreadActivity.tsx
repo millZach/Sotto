@@ -8,11 +8,11 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentThread } from '../../../shared/agents'
-import { MessageContent } from './MessageContent'
+import { CodeBlock, MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
+  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, workSummary, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
   activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, summaryBody, type ActivityLabel, type ActivityLeadKind, type CommandPart, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
@@ -332,14 +332,18 @@ const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly r
   </ol>
 })
 
-/** The open row says a one-line command whole, and this copies it from the end of the command's line, since a row's words cannot be selected. */
+/**
+ * Copies an opened step's command from the end of the command's line: in the row for a command with no description, whose words
+ * cannot be selected, and beside the command that heads the well (Zach kept it on November 7, 2026, ADR-0134).
+ */
 function CopyCommand({ command }: { readonly command: string }): ReactNode {
   const { t } = useLingui()
   const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
   const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
-  const name = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
+  const name = t({ message: 'Copy the command', comment: 'The accessible name of the button that copies the command an opened step ran.' })
+  const tip = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
   return <span className="thread-activity__copy-command">
-    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={name} onClick={copy}>
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={tip} onClick={copy}>
       {outcome === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
     </button>
     <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
@@ -350,16 +354,33 @@ function CopyCommand({ command }: { readonly command: string }): ReactNode {
 const OUTPUT_LINES = 12
 
 /**
- * What a command printed, in its well. A long one holds its first twelve lines and says how many more there are, on a press
+ * An opened command's well: the command heads what came back, in the same fill with no box inside it, and long lines wrap
+ * under a hanging indent (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The command keeps its
+ * own Copy beside it, and what came back has Copy in the well's corner; with nothing printed, the corner's Copy copies the
+ * command.
+ */
+function StepWell({ command, children }: { readonly command?: string | undefined; readonly children?: ReactNode }): ReactNode {
+  return <div className="thread-activity__well">
+    {command ? <div className="thread-activity__well-head" dir="ltr">
+      <p className="thread-activity__well-command"><code>{command}</code></p>
+      {children ? <CopyCommand command={command} /> : null}
+    </div> : null}
+    {children ?? (command ? <CopyCommand command={command} /> : null)}
+  </div>
+}
+
+/**
+ * What a command printed, in its well. A long one shows its first twelve lines and says how many more there are, on a press
  * that shows the rest in place; a press is the way to read it all, and Copy in the well's corner takes it whole either way.
  * The well does not scroll inside the transcript's own scroll. A count of one or two more lines is not worth the press, so
  * such an output shows whole.
  */
-function CommandOutput({ output }: { readonly output: string }): ReactNode {
+function CommandOutput({ output, command }: { readonly output: string; readonly command?: string | undefined }): ReactNode {
   useInterfaceLanguageState()
   const [whole, setWhole] = useState(false)
   const well = useRef<HTMLDivElement>(null)
-  const lines = output.replace(/\n$/u, '').split('\n').length
+  const code = output.replace(/\n$/u, '')
+  const lines = code.split('\n').length
   const more = whole || lines <= OUTPUT_LINES + 2 ? 0 : lines - OUTPUT_LINES
   const show = (): void => {
     setWhole(true)
@@ -367,7 +388,7 @@ function CommandOutput({ output }: { readonly output: string }): ReactNode {
     well.current?.querySelector<HTMLElement>('pre')?.focus({ preventScroll: true })
   }
   return <div ref={well} className="thread-activity__output" data-held={more > 0 || undefined}>
-    <MessageContent text={fenced(output, 'output')} />
+    <StepWell command={command}><div className="rich-message"><CodeBlock code={code} language="output" lines={more > 0 ? OUTPUT_LINES : undefined} /></div></StepWell>
     {more > 0 ? <button type="button" className="thread-activity__more thread-activity__output-more tt-focusable" onClick={show}>
       {plural(more, { one: `Show ${{ lines: shownCount(more) }} more line`, other: `Show ${{ lines: shownCount(more) }} more lines` })}
     </button> : null}
@@ -408,6 +429,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   // with what came back, then where it ran when that was somewhere else: each said once. A command whose input is not the provider's
   // description keeps those words here, first.
   const described = record.command !== undefined && stepDescription(record) !== ''
+  // A described one-line command heads the well of what came back, since its row says only what it was for.
+  const head = described && !script ? record.command : undefined
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command && !described ? said : null}
@@ -433,8 +456,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     </ol> : null}
     {cut?.output !== undefined
       // Held output opens at its end, before and after the rest arrives.
-      ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
-      : record.output ? <CommandOutput output={record.output} /> : null}
+      ? <StepWell command={head}><CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut /></StepWell>
+      : record.output ? <CommandOutput output={record.output} command={head} /> : head ? <StepWell command={head} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
     {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
@@ -520,18 +543,15 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const spoken = planInView ? label.subject : [kind, purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = purpose || label.subject
-  // Open, a one-line command is said whole in the row, and the way to copy it sits at the end of the command's own line rather
-  // than on a line of its own: the slot holds its place there, and the button, which cannot sit inside the row's own button,
-  // is drawn over it.
-  const copied = open && record.kind === 'command' && record.command && !script ? record.command : ''
+  // Open, a one-line command with no description is said whole in the row, and the way to copy it sits at the end of the
+  // command's own line rather than on a line of its own: the slot holds its place there, and the button, which cannot sit
+  // inside the row's own button, is drawn over it. A described one heads the well under the row instead (`StepWell`).
+  const copied = open && record.kind === 'command' && record.command && !script && !purpose ? record.command : ''
   const copySlot = copied ? <span className="thread-activity__copy-slot" aria-hidden="true" /> : null
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
-      {purpose ? <>
-        <span className="thread-activity__subject">{purpose}</span>
-        {open && !script ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : null}
-      </> : !open && record.kind === 'command' && shown.mono && !shown.preview
+      {purpose ? <span className="thread-activity__subject">{purpose}</span> : !open && record.kind === 'command' && shown.mono && !shown.preview
         ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
         : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
@@ -683,6 +703,30 @@ function OwnServerLine({ actions, server, mark, startedAt, steps }: {
   </div>
 }
 
+/**
+ * The first line of a running turn's opened steps, the running form of its Worked for line: "Working for 2m 14s · 4 steps ·
+ * Ran 3 commands" (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The working line itself
+ * stays the words alone (ADR-0134, October 26 amendment); the time is one press away. It counts up once a second while the
+ * steps are open, and only while the provider is connected.
+ */
+function WorkingFor({ startedAt, connected, steps }: {
+  readonly startedAt: string | undefined; readonly connected: boolean; readonly steps: readonly AgentActivity[]
+}): ReactNode {
+  const { t } = useLingui()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!connected || startedAt === undefined) return
+    const timer = window.setInterval(() => tick(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [connected, startedAt])
+  const did = useMemo(() => workSummary(steps), [steps])
+  const took = startedAt === undefined ? '' : elapsedText(startedAt)
+  const headline = !connected ? t`Last seen working`
+    : took ? t({ message: `Working for ${took}`, comment: '{took} is how long the running turn has worked so far, such as 2m 14s.' })
+      : t({ message: 'Working', comment: 'A turn that is running.' })
+  return <p className="thread-activity-live__head">{headline} · {stepsLabel(steps.length)}{did ? ` · ${did}` : null}</p>
+}
+
 /** A running turn's folded steps, as the line that holds them offers them. */
 interface StepsDisclosure {
   readonly id: string; readonly label: string; readonly open: boolean; readonly opened: ReactNode
@@ -763,6 +807,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
+      <WorkingFor startedAt={turn?.startedAt ?? sendingSince} connected={connected} steps={steps} />
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div></Fold>,
     onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },

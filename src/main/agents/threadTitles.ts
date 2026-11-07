@@ -17,13 +17,21 @@ const TITLE_REFRESH_SWEEP_MS = 5 * 60_000
 /** At most this many names are asked for in one sweep, so a sweep after a busy hour stays a trickle of side calls. */
 const TITLE_REFRESHES_PER_SWEEP = 5
 
+/**
+ * Something the user said: a user message with words in it that is not one of Sotto's wake-ups, such as the restart
+ * note (`wakeUp`), whose words are Sotto's and never name a thread.
+ */
+function userSaid(message: AgentMessage): boolean {
+  return message.role === 'user' && message.wakeUp !== true && message.text.trim().length > 0
+}
+
 /** A thread's first message and its newest exchange, what an hourly name is written from; null until a reply follows. */
 function currentExchange(messages: readonly AgentMessage[]): ThreadTitleExchange | null {
   const said = (message: AgentMessage): boolean => message.text.trim().length > 0
-  const first = messages.find(message => message.role === 'user' && said(message))
+  const first = messages.find(userSaid)
   const reply = messages.findLastIndex(message => message.role === 'assistant' && !isVisualMessage(message) && said(message))
   if (!first || reply === -1) return null
-  const prompt = messages.slice(0, reply).findLastIndex(message => message.role === 'user' && said(message))
+  const prompt = messages.slice(0, reply).findLastIndex(userSaid)
   if (prompt === -1) return null
   const newest = { prompt: messages[prompt]!.text, reply: messages[reply]!.text }
   return messages[prompt] === first ? newest : { ...newest, opening: first.text }
@@ -39,8 +47,8 @@ function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', 
   if (trigger === 'automatic' && thread.status === 'running') return null
   // A first-message title says Sotto saw this thread begin, so a steer or a queued follow-up sent during the
   // first turn does not stop it being named; any other thread is named only while it has said one thing.
-  if (trigger === 'automatic' && thread.titledFromFirstMessage !== true && messages.filter(message => message.role === 'user').length !== 1) return null
-  const prompt = messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
+  if (trigger === 'automatic' && thread.titledFromFirstMessage !== true && messages.filter(message => message.role === 'user' && message.wakeUp !== true).length !== 1) return null
+  const prompt = messages.findIndex(userSaid)
   if (prompt === -1) return null
   // A visual's message is Sotto's words about a drawing, not the agent's reply, so a title is never written from it.
   const reply = messages.slice(prompt + 1).find(message => message.role === 'assistant' && !isVisualMessage(message) && message.text.trim().length > 0)
@@ -170,7 +178,7 @@ export class ThreadTitles {
     if (threadSummaryOf(thread).messageCount === 0) { this.awaitingFirstMessage.add(thread.id); return }
     if (!this.awaitingFirstMessage.has(thread.id)) return
     // The first message, even when a steer is already beside it on the frame that brings it.
-    const first = watcherWakeUpsAsShown(this.context.history(thread)).find(message => message.role === 'user' && message.text.trim().length > 0)
+    const first = this.context.history(thread).find(userSaid)
     if (!first) return
     this.awaitingFirstMessage.delete(thread.id)
     this.trackTitleWrite(this.offerTitle(thread.id, () => this.context.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))

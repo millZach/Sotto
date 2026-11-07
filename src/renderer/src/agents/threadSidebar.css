@@ -246,7 +246,7 @@
 /* 14px is the floor for a row title: the 760px window recomposes around it and never shrinks the type. */
 .thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--tt-type-body); font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
-.thread-nav__time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-nav__time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: var(--tt-weight-quiet); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* What a row that wants you says where the clock would be; the whole sentence is the row's accessible description. */
 .thread-nav__needs { max-width: 96px; overflow: hidden; color: var(--tt-attention); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
@@ -324,13 +324,15 @@
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
 /* A row is two lines in three columns: the ring over the provider's mark, the name over what the thread is doing, and the
-   clock at the second line's end. The name has the whole first line, so it wraps far less often, and the words share one
+   clock at the second line's end. The name has the whole first line, so as much of it shows as can, and the words share one
    left edge, so a long list reads straight down it. The second line is set a step under the name rather than at caption
    size, so the words a row is read for stay easy on the eye over a long day, and the two lines keep a little air between
    them. The space around a row is larger than the space inside it, which is what keeps a row reading as one thing. */
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; padding: 6px 10px 6px 8px; width: 100%; }
 .thread-nav__row--details { margin: 0 0 1px; }
-.thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+/* A name takes one line at every width, cut at a word's end with an ellipsis; the whole name stays the row's tooltip and
+   its spoken name (Zach, November 7, 2026). */
+.thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--tt-type-body); line-height: 1.35; }
 /* Every name is in the text's own ink, so a long list of finished threads still reads as names and not as grey texture;
    what sets a row apart is its weight. What is moving or waiting is set heavy, name and words alike, so it stands out by
    shape as well as by the ring and its colour, and a plain Done is set light, its second line in the muted ink. */
@@ -340,18 +342,19 @@
 /* Down the list, colour says only what a thread is doing: the ring and its word. Every row's provider mark keeps its shape
    in the muted ink, so a working Claude thread is teal and not teal beside orange; hovering, or the row on screen, gives the
    provider its colour back. The words under the name and the clock take a little more weight than a caption, so they read
-   at a glance without taking more ink. */
+   at a glance without taking more ink. By day each of those words is set at the quiet weight's 500, where strokes that
+   thin render lighter than their ink (Zach's pick B, ADR-0024 November 7 amendment). */
 .thread-nav__row--details:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
-.thread-nav__row--details :is(.thread-nav__standing, .thread-nav__time) { font-weight: 450; }
+.thread-nav__row--details :is(.thread-nav__standing, .thread-nav__time) { font-weight: max(450, var(--tt-weight-quiet)); }
 .thread-nav__row--details:not([data-resting]) .thread-nav__standing { font-weight: 500; }
-.thread-nav__row--details[data-resting] :is(.thread-nav__standing, .thread-nav__time) { font-weight: 400; }
+.thread-nav__row--details[data-resting] :is(.thread-nav__standing, .thread-nav__time) { font-weight: var(--tt-weight-quiet); }
 /* A row whose need the Needs you card says keeps the middle weight: the card is where that need is said (ADR-0135). */
 .thread-nav__row--details[data-in-queue] .thread-nav__title { font-weight: 500; }
-.thread-nav__row--details[data-in-queue] .thread-nav__standing { font-weight: 450; }
+.thread-nav__row--details[data-in-queue] .thread-nav__standing { font-weight: max(450, var(--tt-weight-quiet)); }
 /* A working row's ring already turns in the activity colour, so its Working word says it a second time. The word stays
    (ADR-0135) but steps back into the row's quiet words, in the muted ink and the clock's weight, so down a list of
    running threads the names lead and one moving ring, not a column of teal words, says each is at work. */
-.thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: 450; }
+.thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: max(450, var(--tt-weight-quiet)); }
 .thread-nav__row--details .thread-nav__standing > .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen]) { color: inherit; }
 /* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
    ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
@@ -363,7 +366,7 @@
    Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
 :root[data-theme='light'] .thread-nav { --threads-warning-text: color-mix(in oklab, var(--tt-warning-text, var(--tt-warning)) 84%, var(--tt-text)); }
 :root[data-theme='light'] .thread-nav :is(.needs-you__status, .thread-nav__status[data-state='needs']) { font-weight: 600; }
-/* A title may take two lines; the ring stays on its first. A row's marks are one family: the ring over the provider's mark,
+/* The ring stands level with the name. A row's marks are one family: the ring over the provider's mark,
    each 12px in the same column, drawn with the same 1.5px line, the words' glyphs (In Needs you, a prototype, Watcher's
    owl) 12px too, and colour only where it says what the thread is doing. A working ring is that line with a quarter of it
    in the activity colour, turning, rather than a soft wedge half its size. */
@@ -405,7 +408,7 @@
    stands where the ring would be and the row's shortcuts take the time's place across the line. Working and waiting rows
    keep their two lines as above. */
 .thread-nav .thread-nav__row--details[data-steps-back] .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; gap: 0 8px; padding-block: 4px; }
-.thread-nav__row--details[data-steps-back] .thread-nav__title { grid-area: 1 / 2; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__row--details[data-steps-back] .thread-nav__title { grid-area: 1 / 2; }
 .thread-nav__row--details[data-steps-back] .thread-nav__ring { grid-area: 1 / 1; align-self: center; margin-top: 0; visibility: hidden; }
 .thread-nav .thread-nav__row--details[data-steps-back] .thread-nav__time { grid-area: 1 / 3; justify-self: end; min-width: 0; text-align: right; }
 .thread-nav__row--details[data-steps-back] .thread-nav__standing { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -127,3 +127,5 @@ Note, November 5, 2026: that sentence says what pick C left alone, not that the 
 **Why.** What is moving or waiting is what the list is read for, and it now stands out by shape as well as by ring and weight, while a finished thread takes about two-thirds of the height it did: 37 pixels a row in place of 54.
 
 **What it costs.** A resting row no longer says Done on screen, which ADR-0092 had it do (amended the same day), and its provider is out of sight until it is pointed at or reached by the keys. The list has two row heights.
+
+Note, 2026-11-07: Zach asked for one line. A row's name, on working, waiting, In Needs you and resting rows alike, now takes one line at every sidebar width, cut at a word's end with an ellipsis, where it had wrapped to a second line since #2017 (November 2, which recorded no pick). Working and waiting rows keep their two lines, the name over the words, and a resting row keeps its one. The whole name stays the row's tooltip and its spoken name.

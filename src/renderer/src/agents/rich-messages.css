@@ -2,8 +2,8 @@
 
    Colours come from the theme tokens through the --rich-* properties below, so
    an appearance theme can retune code or quote colours on .rich-message without
-   editing this file. Blocks that can be wider than the column (code, tables)
-   scroll inside themselves; the transcript never scrolls sideways. */
+   editing this file. Tables wider than the column scroll inside themselves, and
+   so does code outside a thread's messages; the transcript never scrolls sideways. */
 
 .rich-message {
   --rich-text: var(--tt-text-2);
@@ -194,6 +194,10 @@
 @media (prefers-reduced-motion: reduce) { .rich-code__body::before, .rich-code__body::after { transition: none; } }
 :root[data-reduced-motion='on'] .rich-code__body::before, :root[data-reduced-motion='on'] .rich-code__body::after { transition: none; }
 .rich-code__scroll code { font: inherit; }
+/* In a thread's messages a code block's long lines wrap under a hanging indent instead, so every character is in the column
+   and nothing hides behind the fade or scrolls sideways (Zach's pick B of the November 6 follow-ups). Watcher's
+   conversation keeps the look it had (ADR-0126). */
+.thread-pane:not(.watcher-pane) .thread-message .rich-code__scroll { white-space: pre-wrap; overflow-wrap: anywhere; text-indent: 2ch hanging each-line; }
 
 .rich-code .hljs-keyword, .rich-code .hljs-selector-tag, .rich-code .hljs-built_in, .rich-code .hljs-literal, .rich-code .hljs-doctag { color: var(--rich-code-keyword); }
 .rich-code .hljs-string, .rich-code .hljs-regexp, .rich-code .hljs-template-tag, .rich-code .hljs-addition, .rich-code .hljs-attr-value { color: var(--rich-code-string); }

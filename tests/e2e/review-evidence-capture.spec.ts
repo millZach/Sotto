@@ -568,11 +568,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('reading-copy', copyShows, '', { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    // A reply after the first is headed by nothing; its name and time show beside its copy control.
-    const reply = transcript(page).locator('.thread-message[data-role="assistant"][data-named="no"]').filter({ hasText: 'threadTitles' }).first()
+    // A reply after the first is headed by its name and time, as the first is (Zach's pick B, November 7, 2026).
+    const reply = transcript(page).locator('.thread-message[data-role="assistant"]').filter({ hasText: 'threadTitles' }).first()
     await reply.locator('.thread-message__copy').focus()
     await reply.evaluate(element => element.scrollIntoView({ block: 'center' }))
-    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, with its name and time beside it.')
+    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, which is headed by its name and time.')
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
@@ -1517,6 +1517,45 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await openThread(page, 'Repository review')
     }
   } },
+  // Asked for by name only: a long name on a working row takes one line, cut at a word's end, at the sidebar's narrowest
+  // and widest, beside the window at its widest and over the thread at the minimum (Zach, November 7, 2026).
+  { name: 'sidebar-name-one-line', covers: [], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Repository review')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    const working = evidenceThread('plan')
+    const long = 'Disk cleanup: find intermediate image/video files on forge and list what is safe to delete'
+    const rename = (title: string): Promise<void> => page.evaluate(async ([id, title]) => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: id!, title: title! }) }, [working.id, title])
+    await rename(long)
+    const row = sidebar.locator('.thread-nav__row').filter({ has: page.getByRole('button', { name: long, exact: true }) })
+    await expect(row).toContainText('Working')
+    const over = async (): Promise<void> => {
+      if (await page.locator('aside.thread-nav[data-over]').count()) return
+      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    }
+    try {
+      for (const [edge, key] of [['narrowest', 'Home'], ['widest', 'End']] as const) {
+        await resizeContentWindowFor(capture.launched, 1600, 1000)
+        await page.getByRole('separator', { name: 'Resize sidebar' }).focus()
+        await page.keyboard.press(key)
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+        await capture.shoot(`sidebar-name-one-line-${edge}`, `A long name on a working row at the sidebar's ${edge}: one line, cut at a word's end, over Working and its time.`)
+      }
+      // Over the thread at the minimum window the sidebar takes one width whatever was chosen, so one shot covers it, with
+      // the working row brought into view rather than the open thread's.
+      const overWithRow = async (): Promise<void> => {
+        await over()
+        await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      }
+      await capture.shoot('sidebar-name-one-line-over', 'The same row in the sidebar over the thread at the minimum window.', '', { size: [820, 560], before: overWithRow, keepSidebarScroll: true })
+      await page.keyboard.press('Escape')
+    } finally {
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+      await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick().catch(() => undefined)
+      await rename(working.title)
+    }
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default. Usage
   // at the smaller sizes is captureConnectedUsage's.
   { name: 'shell-check', covers: [], run: async capture => {
@@ -1541,7 +1580,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'model-menu', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows']
+const BY_NAME_ONLY = ['shell-check', 'model-menu', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows', 'sidebar-name-one-line']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {

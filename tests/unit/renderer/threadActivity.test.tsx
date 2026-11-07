@@ -157,9 +157,10 @@ describe('settled activity in the transcript', () => {
     expect(row).toHaveAccessibleDescription('Reported by Codex')
     // Copy command sits at the end of the command's own line, the row's next control, and what came back keeps its own Copy.
     const copy = row.closest('li')!.querySelector(':scope > .thread-activity__copy-command button')!
-    expect(copy).toHaveAccessibleName('Copy command')
+    expect(copy).toHaveAccessibleName('Copy the command')
+    expect(copy).toHaveAttribute('title', 'Copy command')
     expect(row.querySelector('.thread-activity__copy-slot')).not.toBeNull()
-    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['Copy output code'])
+    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['Copy the output'])
     await user.tab()
     expect(copy).toHaveFocus()
 
@@ -179,7 +180,7 @@ describe('settled activity in the transcript', () => {
     await user.click(row)
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
     expect(within(details).getByLabelText('command code block')).toHaveTextContent('cd app npm ci')
-    expect(within(transcript).queryByRole('button', { name: 'Copy command' })).toBeNull()
+    expect(within(transcript).queryByRole('button', { name: 'Copy the command' })).toBeNull()
   })
 
   it('leads a described command’s row with what it was for, and shows a quick step’s time neither folded nor open', async () => {
@@ -214,20 +215,43 @@ describe('settled activity in the transcript', () => {
     expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
     expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
     await user.click(row)
-    // Open, the row says what it was for and the command whole. Under a second its time is still only in its name, and where
-    // the time came from, the thread's own provider, is said only to assistive tech; the body says none of it again.
-    expect(row).toHaveTextContent(/^Read the request policycat src\/policy\.ts/u)
+    // Open, the row still says only what it was for, and the command heads the well of what came back, in the same fill
+    // (Zach's pick B, ADR-0134's November 7 amendment). Under a second its time is still only in its name, and where the time
+    // came from, the thread's own provider, is said only to assistive tech; the body says none of it again.
+    expect(row.querySelector('.thread-activity__label')).toHaveTextContent(/^Read the request policy$/u)
     expect(row.closest('li')).not.toHaveAttribute('title')
     expect(row.querySelector('.thread-activity__meta > :not(.tt-visually-hidden)')).toBeNull()
     expect(row).toHaveAccessibleDescription('Reported by Codex')
     expect(row).toHaveAccessibleName('Read the request policy, cat src/policy.ts, completed in 0.0s')
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
     expect(details).not.toHaveTextContent('Read the request policy')
-    expect(within(details).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
+    const well = details.querySelector('.thread-activity__well')!
+    expect(well.firstElementChild).toHaveClass('thread-activity__well-head')
+    expect(well.querySelector('.thread-activity__well-command')).toHaveTextContent(/^cat src\/policy\.ts$/u)
+    expect(within(well as HTMLElement).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
     // It ran in the thread's own folder, however that folder is spelt, so the body does not name it.
     expect(details).not.toHaveTextContent(/\bIn\b/u)
-    expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
-    expect(row.closest('li')!.querySelector(':scope > .thread-activity__copy-command')).toContainElement(within(transcript).getByRole('button', { name: 'Copy command' }))
+    // The command keeps its own Copy beside it on the well's top line, and the corner's Copy takes what came back; each name
+    // says which it copies, and each keeps its tooltip (Zach kept the command's Copy on November 7, 2026).
+    const head = well.querySelector<HTMLElement>('.thread-activity__well-head')!
+    expect(within(head).getByRole('button', { name: 'Copy the command' })).toHaveAttribute('title', 'Copy command')
+    expect(within(well as HTMLElement).getAllByRole('button', { name: /^Copy/u }).map(button => button.getAttribute('aria-label'))).toEqual(['Copy the command', 'Copy the output'])
+    expect(within(well as HTMLElement).getByRole('button', { name: 'Copy the output' })).toHaveAttribute('title', 'Copy code')
+  })
+
+  it('heads a described command that printed nothing with its command alone, and copies the command from the well', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'quiet', command: 'git add -A', durationMs: 40, text: JSON.stringify({ command: 'git add -A', description: 'Stage every change' }) }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    const row = within(transcript).getByRole('button', { name: /^Stage every change/u })
+    await user.click(row)
+    const well = document.getElementById(row.getAttribute('aria-controls')!)!.querySelector<HTMLElement>('.thread-activity__well')!
+    expect(well.querySelector('.thread-activity__well-command')).toHaveTextContent(/^git add -A$/u)
+    expect(within(well).getAllByRole('button', { name: /^Copy/u }).map(button => button.getAttribute('aria-label'))).toEqual(['Copy the command'])
   })
 
   it('holds a long output at twelve lines and says how many more there are, on a press that shows the rest', async () => {
@@ -243,6 +267,11 @@ describe('settled activity in the transcript', () => {
     await user.click(within(transcript).getByRole('button', { name: /^cat long\.txt/u }))
     const more = within(transcript).getByRole('button', { name: 'Show 28 more lines' })
     expect(more.closest('.thread-activity__output')).toHaveAttribute('data-held')
+    // Twelve whole lines show however they wrap, and the press sits under the well, outside it.
+    const held = within(transcript).getByLabelText('output code block')
+    expect(held).toHaveTextContent('line 12')
+    expect(held).not.toHaveTextContent('line 13')
+    expect(more.closest('.thread-activity__well')).toBeNull()
     await user.click(more)
     // The press shows the rest in place and takes focus into it; nothing is left to press.
     expect(within(transcript).queryByRole('button', { name: /more lines?$/u })).toBeNull()
@@ -262,7 +291,7 @@ describe('settled activity in the transcript', () => {
     await user.click(work)
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     await user.click(row)
-    const copy = within(transcript).getByRole('button', { name: 'Copy command' })
+    const copy = within(transcript).getByRole('button', { name: 'Copy the command' })
     copy.focus()
     await user.keyboard('{Escape}')
     expect(row).toHaveAttribute('aria-expanded', 'false')
@@ -307,8 +336,13 @@ describe('the running turn', () => {
     expect(steps.querySelectorAll('.thread-activity__row[data-now]')).toHaveLength(1)
     expect(test.closest('.thread-activity__row')).toHaveAttribute('data-now')
     expect(within(steps).getByRole('button', { name: 'npm ci, completed in 9.0s' })).toBeVisible()
+    // Opened, the steps' first line is the running form of the Worked for line, and its time counts up (Zach's pick B,
+    // ADR-0134's November 7 amendment).
+    const head = steps.querySelector('.thread-activity-live__head')!
+    expect(head).toHaveTextContent(/^Working for 1m 05s · 2 steps · Ran 2 commands$/u)
     act(() => { vi.advanceTimersByTime(1_000) })
     expect(test).toHaveTextContent('Running 9s')
+    expect(head).toHaveTextContent(/^Working for 1m 06s · /u)
     // A running step keeps its own clock; the line above it still has none.
     expect(liveRow.querySelector('.thread-activity-live__line [data-elapsed]')).toBeNull()
   })
