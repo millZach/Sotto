@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { EVIDENCE_THREADS, PERMISSION_REQUEST, placeCommandsIn, STREAM_MESSAGE_ID, STREAM_MOMENTS, STREAM_REPLY, STREAM_SHOWN, STREAM_THREAD_ID, evidenceThread, minutesAgo, streamActivities } from '../fixtures/reviewEvidence/content'
-import { buildEvidenceRepository, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
+import { buildEvidenceRepository, EVIDENCE_EARLIER_PULL, EVIDENCE_EARLIER_URL, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
 import { DEFAULT_THEME_ID } from '../../src/shared/themes/library'
 import { pageBoundProblems, setAppearance } from './support/designCapture'
 import { paintedContrastSweep } from './support/paintedContrastSweep'
@@ -891,7 +891,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('doc-edit-clay', 'The same document edit in the transcript on the Clay theme.')
     await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
   } },
-  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover'], run: async capture => {
+  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover', 'pr-linked'], run: async capture => {
     const { page } = capture
     await openPullRequestThread(page)
     await pullRequestMoment(capture, 'checks-running')
@@ -902,6 +902,22 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       { before: async () => { await files.hover({ position: { x: 160, y: 70 } }) } })
     for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
+    // A second pull request linked to the thread, an earlier merged one of the same work: closed, Linked pull requests
+    // previews it and leaves out the one the surface shows. It is unlinked again so the later states read as before.
+    const earlier = EVIDENCE_EARLIER_URL
+    const linkEarlier = (link: boolean): Promise<void> => page.evaluate(async ({ url, link }) => {
+      const agents = window.sotto!.agents!
+      const thread = (await agents.get()).host.threads.find(item => item.title === 'Thread store on a worker')!
+      const result = await agents.command(link ? { type: 'git-link-pull-request', threadId: thread.id, reference: url } : { type: 'git-unlink-pull-request', threadId: thread.id, url })
+      if (result.error) throw new Error(result.error)
+    }, { url: earlier, link })
+    await linkEarlier(true)
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    await expect(panel.getByRole('button', { name: /^Linked pull requests 2/u })).toBeVisible({ timeout: 30_000 })
+    await expect(panel.locator('.pr-surface__peek[data-of="links"]')).toContainText(`#${EVIDENCE_EARLIER_PULL}`, { timeout: 30_000 })
+    await capture.shoot('pr-linked', 'Ready, with an earlier merged pull request also linked to the thread: closed, Linked pull requests previews it and leaves out the one shown.', 'Both pull requests live in the scripted gh.')
+    await linkEarlier(false)
+    await expect(panel.getByRole('button', { name: /^Linked pull requests 1/u })).toBeVisible({ timeout: 30_000 })
     await closeTools(page)
   } },
   // How the answer holds: the blocked and the ready surface at every size, in a third theme, and the states that take Merge's place.

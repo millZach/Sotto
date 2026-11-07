@@ -18,4 +18,5 @@ November 7, 2026. Zach picked B for the three items of the follow-up mock-ups' `
 ## 3. Linked pull requests
 
 - Before: [before-pr-ready-dark.png](../../artifacts/layout-usage-picks/before-pr-ready-dark.png). Linked pull requests showed only its count.
-- After: [pr-ready-dark-1600.png](../../artifacts/layout-usage-picks/pr-ready-dark-1600.png), [pr-ready-light-1280.png](../../artifacts/layout-usage-picks/pr-ready-light-1280.png). Its closed head shows #1612, its title and Open. At 1280 the title is cut and the state stays. At 820 the panel has no room, so no fold previews anything. Open pull requests previews nothing.
+- After, with only its own pull request linked: [pr-ready-dark-1600.png](../../artifacts/layout-usage-picks/pr-ready-dark-1600.png). The closed head says its count alone, since the one linked is #1612, which the surface already shows as its heading (Zach's choice of November 7).
+- After, with an earlier merged pull request also linked (state `pr-linked`): [pr-linked-dark-1600.png](../../artifacts/layout-usage-picks/pr-linked-dark-1600.png), [pr-linked-light-1600.png](../../artifacts/layout-usage-picks/pr-linked-light-1600.png). The closed head shows #1598, its title and Merged, and leaves #1612 out. At 820 the panel has no room, so no fold previews anything. Open pull requests previews nothing.

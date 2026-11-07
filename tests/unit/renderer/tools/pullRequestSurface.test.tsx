@@ -1055,17 +1055,25 @@ describe('the drill-in under the merge checklist', () => {
     expect(document.querySelector('.pr-surface__peek[data-of="files"]')).not.toBeNull()
     expect(linkedPeek()).toBeNull()
     cleanup()
-    // Room for both: each linked pull request's number, title and state, the branch's own first, for the eye only.
+    // Room for both: each linked pull request's number, title and state, for the eye only, leaving out #74, which the
+    // surface already shows as its heading (Zach's choice of November 7, 2026).
     room = 1000
     mount({ detail: read, thread: linkedThread })
     await opened()
-    expect([...linkedPeek()!.querySelectorAll('.pr-surface__peek-row')].map(row => row.textContent)).toEqual(['#74Make the greeting friendlierOpen', '#76Mention the greeting in the READMEMerged'])
+    expect([...linkedPeek()!.querySelectorAll('.pr-surface__peek-row')].map(row => row.textContent)).toEqual(['#76Mention the greeting in the READMEMerged'])
     expect(linkedPeek()).toHaveAttribute('aria-hidden', 'true')
     expect(screen.getByRole('button', { name: 'Linked pull requests 2' })).toHaveAttribute('aria-expanded', 'false')
     // Open pull requests is read only on a press, so its closed fold previews nothing.
     expect(screen.getByRole('button', { name: 'Open pull requests' }).querySelector('.pr-surface__peek')).toBeNull()
-    // Opened, the fold's list takes the peek's place.
+    // Opened, the fold's list takes the peek's place, the shown one included.
     fireEvent.click(screen.getByRole('button', { name: 'Linked pull requests 2' }))
+    expect(linkedPeek()).toBeNull()
+    expect(within(screen.getByRole('list', { name: 'Linked pull requests' })).getAllByRole('button')).toHaveLength(2)
+    cleanup()
+    // With only the shown pull request linked, the closed head says its count alone, however much room there is.
+    mount({ detail: read })
+    await opened()
+    expect(screen.getByRole('button', { name: 'Linked pull requests 1' })).toHaveAttribute('aria-expanded', 'false')
     expect(linkedPeek()).toBeNull()
   })
   it('holds the peeks through a resize while a fold is open, and fits them again once every fold is closed', async () => {

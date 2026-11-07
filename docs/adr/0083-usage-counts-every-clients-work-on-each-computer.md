@@ -115,3 +115,5 @@ Zach chose B: on November 6 he looked at the follow-up mock-ups' `layout.html`, 
 - **The controls are text.** **Show** (Total, By provider, By model), **Bars | Lines** and the four filters above the page (the range, providers, computers and Where) are text buttons with no fill or box, in the same places. A chosen option takes the full ink and a heavier weight, and keeps the width it has chosen so nothing beside it moves; the pointer and an open menu give a soft wash. The view tabs (Overview, Subscriptions, Models) and Models' sort are unchanged.
 
 The chart's split of October 21 stands: Show and Bars | Lines stay on the chart.
+
+Where this differs from the mock-up, Zach chose on 2026-11-07, reviewing the pull request, to keep it as built: the view tabs stay a filled segment, the stretch says "No prompts for 16 days" (or how many days it holds) rather than naming its dates, and only Bars folds.
