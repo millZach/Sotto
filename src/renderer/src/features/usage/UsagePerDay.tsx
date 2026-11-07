@@ -35,7 +35,10 @@ export function useChartChoice(): [ChartChoice, (patch: Partial<ChartChoice>) =>
 const SHOWS: ReadonlyArray<readonly [ChartShow, MessageDescriptor]> = [['total', msg`Total`], ['provider', msg`By provider`], ['model', msg`By model`]]
 const KINDS: ReadonlyArray<readonly [ChartKind, MessageDescriptor]> = [['bars', msg`Bars`], ['lines', msg`Lines`]]
 
-/** A small radio group in the `usage-seg` style: one Tab stop, the arrows move and choose. */
+/**
+ * A small radio group of text buttons with no fill, the chosen one in the full ink and a heavier weight (Zach's pick B of
+ * `layout` item 2, ADR-0083, November 7, 2026): one Tab stop, the arrows move and choose.
+ */
 function Choice<T extends string>({ label, options, value, onChoose }: {
   readonly label: string
   readonly options: ReadonlyArray<readonly [T, MessageDescriptor]>
@@ -50,8 +53,8 @@ function Choice<T extends string>({ label, options, value, onChoose }: {
     event.preventDefault(); onChoose(options[target]![0])
     group.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[target]?.focus()
   }
-  return <div ref={group} className="usage-seg usage-seg--small" role="radiogroup" aria-label={label}>{options.map(([key, name], index) => <button key={key} type="button" role="radio"
-    className="tt-focusable" aria-checked={value === key} tabIndex={value === key ? 0 : -1} onClick={() => onChoose(key)} onKeyDown={event => onKey(event, index)}>{i18n._(name)}</button>)}</div>
+  return <div ref={group} className="usage-seg usage-seg--text" role="radiogroup" aria-label={label}>{options.map(([key, name], index) => <button key={key} type="button" role="radio"
+    className="tt-focusable" data-label={i18n._(name)} aria-checked={value === key} tabIndex={value === key ? 0 : -1} onClick={() => onChoose(key)} onKeyDown={event => onKey(event, index)}>{i18n._(name)}</button>)}</div>
 }
 
 /** What one filtered read asks for: a provider, or one model by every spelling its computers stored. */

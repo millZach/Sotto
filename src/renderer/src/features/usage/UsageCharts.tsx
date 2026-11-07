@@ -3,7 +3,7 @@ import { i18n as interfaceI18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
-import { axisMarks, chartScale, chartStretches, foldRun, keptDays, seriesValues, sumFigures, wholeFigure, type ChartFigure, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
+import { axisMarks, chartScale, chartStretches, foldLead, foldRun, keptDays, seriesValues, sumFigures, wholeFigure, type ChartFigure, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
 import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
@@ -88,9 +88,11 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   const dayTotal = (at: number): number => plan.series.reduce((sum, item) => sum + Math.max(0, item.values[at] ?? 0), 0)
   const busyDays = kind === 'bars' && waiting === undefined ? days.reduce((busy, _, at) => busy + (dayTotal(at) > 0 ? 1 : 0), 0) : 0
   const labelled = busyDays > 0 && busyDays <= FEW_DAYS
-  // In a sparse range a run of five empty days or more folds into the room of two, so the days with work get the width.
-  // A day nothing reported whole stays a day of its own, since it may not have been empty.
-  const layout = chartStretches(keptDays(plan.series, count), kind === 'bars' && waiting === undefined ? foldRun(count, labelled) : 0)
+  // In a sparse range a run of five empty days or more folds into the room of two, so the days with work get the width; in
+  // any range, so do five or more empty days before the first day with work. A day nothing reported whole stays a day of
+  // its own, since it may not have been empty.
+  const folds = kind === 'bars' && waiting === undefined
+  const layout = chartStretches(keptDays(plan.series, count), folds ? foldRun(count, labelled) : 0, folds ? foldLead(count) : 0)
   const folded = layout.room < count
   const { top, ticks } = chartScale(labelled ? plan.peak * 1.15 : plan.peak, metric === 'prompts' ? 10 : 1e5, metric === 'prompts')
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1

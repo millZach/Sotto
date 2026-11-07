@@ -106,3 +106,12 @@ On `usageStreamWrites.perf.test.ts`, a reply streaming 150 usage frames over a 3
 Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/usage-order/`, kept outside the repository, and picked B.
 
 The Overview's index keeps the C · Focus measures and their order, but a measure with nothing to show now follows the measures with figures, as one line each ("Room left" over "No limits read", "Tokens" over "No tokens in this range"), so the index opens on what is known; the arrow keys follow the order drawn, and at the minimum window two such lines share the grid's last row (`50e7bd36a`). In the Room left view only a subscription with a current reading gets a ring; a provider with none is a line under the rings, with its mark, its name and why ("No reading from this computer", "Sotto can't read these limits yet"), under a hairline when rings stand above it. The index draws its small rings beside Room left only when two or more subscriptions have readings, since a lone ring repeated its own figure and an empty one said nothing. Subscriptions still gives every provider its section.
+
+## Amended November 7, 2026: a quiet start, and quieter controls
+
+Zach chose B: on November 6 he looked at the follow-up mock-ups' `layout.html`, kept outside the repository in `sotto-council/prototypes/followups/`, and picked B for its second item.
+
+- **The empty start folds.** A range longer than a week whose first five or more days have no prompts (or no tokens, on Tokens) draws them as one quiet stretch with the room of two days, the stretch a sparse range's empty runs already fold into (`6d838b400`), saying how many days it holds, whatever the rest of the range holds. The rest is drawn day by day as before. A range with no work at all is not folded. Every day stays in the chart, and the pointer and keys still read each one. Lines are drawn day by day as before.
+- **The controls are text.** **Show** (Total, By provider, By model), **Bars | Lines** and the four filters above the page (the range, providers, computers and Where) are text buttons with no fill or box, in the same places. A chosen option takes the full ink and a heavier weight, and keeps the width it has chosen so nothing beside it moves; the pointer and an open menu give a soft wash. The view tabs (Overview, Subscriptions, Models) and Models' sort are unchanged.
+
+The chart's split of October 21 stands: Show and Bars | Lines stay on the chart.
