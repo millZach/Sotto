@@ -117,7 +117,7 @@ export function cursorPending(wireId: string | number, method: string, params: u
     if (!parsed.success) return undefined
     const question = parsed.data
     const questions = question.questions.map(entry => ({ id: entry.id, question: entry.prompt || question.title || 'Cursor has a question.',
-      options: entry.options.map(option => ({ id: option.id, label: option.label })), multiSelect: entry.allowMultiple === true, allowFreeText: false, required: false }))
+      options: entry.options.map(option => ({ id: option.id, label: option.label })), multiSelect: entry.allowMultiple === true, allowFreeText: false, required: false, skippable: true as const }))
     const only = questions.length === 1 ? questions[0]! : undefined
     return { wireId, threadId, kind: 'question', toolCallId: question.toolCallId, question, request: { id, kind: 'question',
       text: (question.title && !only ? question.title : questions.map(entry => entry.question).join('\n')).slice(0, TEXT_LIMIT),

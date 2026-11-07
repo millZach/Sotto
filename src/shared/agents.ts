@@ -415,7 +415,11 @@ export const agentRequestSchema = z.object({
     /** Its written answer is a **secret answer** (#2153): the agent asked for it masked, as Codex's `isSecret` does. Every
      *  client masks it, Sotto never saves its words, and it carries no images. Older clients drop the mark and show a
      *  plain field. */
-    secret: z.literal(true).optional() })).max(100).optional(),
+    secret: z.literal(true).optional(),
+    /** This one question may be skipped while the others are answered (ADR-0135, November 6, 2026): its provider is told the
+     *  user skipped it, or it is left out where that is how the provider takes an unanswered question. The adapter adds it;
+     *  a host that predates it marks none, so no client offers a question's own Skip there. */
+    skippable: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   /** A **confirmation** (CONTEXT.md): a permission with nothing to fill in and nothing named to act on beyond its words, answered
    * Allow once or Deny above the composer, the way a question is (issue #2149). The adapter adds it; a request without it,
@@ -444,7 +448,9 @@ export const agentRequestSchema = z.object({
 })
 /** At most this many questions answered in one answer: far more than any question card asks (#2273). */
 export const AGENT_QUESTION_ANSWERS_MAX = 1_000
-export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict(), AGENT_QUESTION_ANSWERS_MAX)
+/** One question's answer: its choices and words, or `skipped` for a `skippable` question the user skipped, with neither. */
+export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional(), skipped: z.literal(true).optional() }).strict()
+  .refine(answer => !answer.skipped || (answer.optionIds.length === 0 && !answer.text), 'A skipped question takes no answer.'), AGENT_QUESTION_ANSWERS_MAX)
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 const handoverCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 /**

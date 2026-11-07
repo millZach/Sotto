@@ -330,6 +330,7 @@ describe('what a receipt says was chosen', () => {
     expect(answerWords(permission('p'), { answer: 'Deny', approved: false, permissionChoice: 'no' })).toBe('Deny')
     expect(receiptWords('Footer links', OWN_WORDS)).toBe('You answered Footer links in your own words.')
     expect(receiptWords('Footer links', undefined)).toBe('Footer links no longer waits on you.')
+    expect(receiptWords('Fix login on staging', 'Wait for the rewrite, and skipped 2')).toBe('You answered Fix login on staging: Wait for the rewrite, and skipped 2.')
     // A title named from a first message keeps its full stop; the line does not say it twice.
     expect(receiptWords('Pick the badge colour.', 'Blue')).toBe('You answered Pick the badge colour: Blue.')
     expect(receiptWords('Pick the badge colour.', undefined)).toBe('Pick the badge colour no longer waits on you.')

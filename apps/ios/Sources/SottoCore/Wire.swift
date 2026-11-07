@@ -465,6 +465,9 @@ public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     /// The pages the computer found for a question (ADR-0085), each one the sheet offers to open. An older computer sends
     /// none, and a page this build cannot read is left out rather than losing the request.
     public var pages: [RequestPage] = []
+    /// True when the provider takes a skip of the whole request (ADR-0135): Skip sends `skipped`, never an empty answer. A
+    /// computer that predates it marks nothing, and this iPhone offers that Skip only where it is marked.
+    public var skippable: Bool? = nil
     /// Whether this asks what `other` asks, leaving the pages out: the computer adds those beside the provider's request a
     /// moment after it arrives, so a request read before they came is still the same request to answer. Equality keeps
     /// them, so the pages arriving is a change the sheet shows.
@@ -481,7 +484,7 @@ public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     }
 }
 extension AgentRequest {
-    private enum Keys: String, CodingKey { case id, kind, text, options, questions, permissionChoices, context, delivery, pages }
+    private enum Keys: String, CodingKey { case id, kind, text, options, questions, permissionChoices, context, delivery, pages, skippable }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -493,6 +496,7 @@ extension AgentRequest {
         context = try c.decodeIfPresent(RequestContext.self, forKey: .context)
         delivery = try c.decodeIfPresent(String.self, forKey: .delivery)
         pages = (c.tolerant([Lossy<RequestPage>].self, .pages) ?? []).compactMap(\.value)
+        skippable = c.tolerant(Bool.self, .skippable)
     }
 }
 /// One element of a list read on its own: nil when it cannot be read, so the rest of the list still is.
@@ -522,6 +526,9 @@ public struct Question: Decodable, Equatable, Identifiable, Sendable {
     /// True when the agent asked for this answer masked (#2153): its own-answer box hides what is typed. Absent from a
     /// computer that predates it, and from every question that is not secret.
     public let secret: Bool?
+    /// True when this one question may be skipped while the others are answered (ADR-0135, November 6, 2026). A computer
+    /// that predates it marks none, so the sheet offers no Skip of the question's own there.
+    public var skippable: Bool? = nil
 }
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
 public struct RequestContext: Decodable, Equatable, Sendable {

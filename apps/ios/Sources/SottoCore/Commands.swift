@@ -2,7 +2,11 @@ import Foundation
 
 public struct QuestionAnswer: Codable, Equatable, Sendable {
     public var optionIds: [String]; public var text: String?
-    public init(optionIds: [String] = [], text: String? = nil) { self.optionIds = optionIds; self.text = text }
+    /// True when the user skipped this question on its own (ADR-0135, November 6, 2026): nothing chosen, nothing written.
+    public var skipped: Bool?
+    public init(optionIds: [String] = [], text: String? = nil, skipped: Bool? = nil) { self.optionIds = optionIds; self.text = text; self.skipped = skipped }
+    /// A skipped question's answer.
+    public static let skip = QuestionAnswer(skipped: true)
 }
 /// The commands this client builds, each with the only fields the host accepts from a paired device.
 /// A copy of the rows it uses from the host's closed allow-list in src/host/remoteCommands.ts, which is
@@ -20,7 +24,7 @@ public enum RemoteCommands {
         "settle-thread": ["threadId"],
         "restore-thread": ["threadId"],
         "load-earlier-messages": ["threadId"],
-        "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
+        "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice", "skipped"],
         "create-project": ["provider", "title", "path", "useExisting"],
         "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
         // A running thread's model, effort, permissions and speed from its reply box (ADR-0166). A mode that lets the
@@ -131,9 +135,21 @@ public enum Commands {
             result["approved"] = .bool(option.kind.hasPrefix("allow-"))
             result["answer"] = .string(option.label)
         } else if let questions = current.questions, !questions.isEmpty {
-            guard Set(answers.keys).isSubset(of: Set(questions.map(\.id))) else { throw ClientError.invalidRequest }
+            guard Set(answers.keys).isSubset(of: Set(questions.map(\.id))),
+                  answers.values.allSatisfy({ $0.skipped != true || ($0.optionIds.isEmpty && ($0.text ?? "").isEmpty) }) else { throw ClientError.invalidRequest }
+            // Every question skipped where the provider takes a skip of the whole request: that skip, as the computer
+            // knows it (ADR-0135).
+            if current.skippable == true, questions.allSatisfy({ answers[$0.id]?.skipped == true }) {
+                result["skipped"] = .bool(true)
+                return try RemoteCommands.checked(.object(result))
+            }
             var wire: [String: JSONValue] = [:]
             for q in questions {
+                if let answer = answers[q.id], answer.skipped == true {
+                    guard q.skippable == true, q.unavailableReason == nil, answer.optionIds.isEmpty, (answer.text ?? "").isEmpty else { throw ClientError.invalidRequest }
+                    wire[q.id] = .object(["optionIds": .array([]), "skipped": .bool(true)])
+                    continue
+                }
                 if q.unavailableReason != nil {
                     if q.required == false { continue }
                     throw ClientError.invalidRequest

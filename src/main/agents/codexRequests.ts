@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, skipSentenceFits } from './nativeRequests'
 import { browserRequestText, TOOLS_STILL_DECIDES } from './browserRequests'
 import { changeFilesAction, modelSummary, readableFields } from './requestInput'
 import { BROWSER_MCP_SERVER } from './browserAgentServer'
@@ -52,7 +52,7 @@ const fieldWordsSchema = z.object(words)
 type FieldOption = { id: string; label: string }
 /** One form field as Sotto answers it: words, choices, a number, Yes or No, or several choices. */
 type FormField =
-  | { kind: 'text'; minLength?: number | undefined; maxLength?: number | undefined; default?: string | undefined }
+  | { kind: 'text'; minLength?: number | undefined; maxLength?: number | undefined; format?: string | undefined; default?: string | undefined }
   | { kind: 'choice'; options: FieldOption[]; default?: string | undefined }
   | { kind: 'number'; integer: boolean; minimum?: number | undefined; maximum?: number | undefined; default?: number | undefined }
   | { kind: 'boolean'; default?: boolean | undefined }
@@ -77,7 +77,7 @@ function formField(value: unknown): FormField | undefined {
     case 'string':
       if ('enum' in field) return { kind: 'choice', options: field.enum.map((id, index) => ({ id, label: field.enumNames?.[index] ?? id })), default: given(field.default) }
       if ('oneOf' in field) return { kind: 'choice', options: titled(field.oneOf), default: given(field.default) }
-      return { kind: 'text', minLength: given(field.minLength), maxLength: given(field.maxLength), default: given(field.default) }
+      return { kind: 'text', minLength: given(field.minLength), maxLength: given(field.maxLength), format: given(field.format), default: given(field.default) }
   }
 }
 
@@ -108,10 +108,13 @@ function formQuestion(id: string, value: unknown, required: boolean): NonNullabl
   const said = fieldWordsSchema.safeParse(value)
   const own = said.success ? said.data : {}
   const hints = field ? fieldHints(field) : ''
+  const needed = required && !noneAllowed(field)
+  // A field may be skipped on its own when it can be left out, or when it takes plain words the skip sentence fits.
+  const skippable = field !== undefined && (!needed || field.kind === 'text' && field.format === undefined && skipSentenceFits(field.minLength, field.maxLength))
   return { id, question: (own.description ?? id) + (hints ? `\n${hints}` : ''), ...(own.title ? { header: own.title } : {}),
     options: field?.kind === 'boolean' ? [...YES_NO] : field?.kind === 'choice' || field?.kind === 'several' ? field.options : [],
-    multiSelect: field?.kind === 'several', allowFreeText: field?.kind === 'text' || field?.kind === 'number', required: required && !noneAllowed(field),
-    ...(!field ? { unavailableReason: UNSUPPORTED_FIELD } : {}) }
+    multiSelect: field?.kind === 'several', allowFreeText: field?.kind === 'text' || field?.kind === 'number', required: needed,
+    ...(!field ? { unavailableReason: UNSUPPORTED_FIELD } : {}), ...(skippable ? { skippable: true as const } : {}) }
 }
 
 /** A field's answer in its own type, from a JSON answer or what the card sent, or a refusal in plain words. */
@@ -251,7 +254,7 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   const files = permission && !params.command && fileSummary ? fileSummary : undefined
   const fields = readableFields({ ...(params.reason && !summary && text !== params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { network: params.networkApprovalContext } : {}) })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: permission ? 'permission' : 'question', text, options, ...(confirmation ? { confirmation: true as const } : {}),
-    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: (q.isOther ?? false) || !q.options?.length, prose: true as const, ...(q.isSecret ? { secret: true as const } : {}) })) } : formQuestions ? { questions: formQuestions } : {}),
+    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: (q.isOther ?? false) || !q.options?.length, prose: true as const, skippable: true as const, ...(q.isSecret ? { secret: true as const } : {}) })) } : formQuestions ? { questions: formQuestions } : {}),
     ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
       ...(files ? { action: changeFilesAction(files.split('\n').length) } : {}), ...(summary ? { summary } : {}), ...(files || fields ? { details: [files, fields].filter(Boolean).join('\n') } : {}) } } }
 }
@@ -295,8 +298,11 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
     if (questionAnswers) {
       const answered = questionValues(pending.request, questionAnswers)
       // The card sends a choice by its ID, several choices as their IDs, and anything typed as text; `formValue` types each.
-      content = Object.fromEntries(Object.keys(answered).map(id => [id, questionAnswers[id]!.optionIds.length > 1 || formField(form.properties[id])?.kind === 'several'
-        ? questionAnswers[id]!.optionIds : questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]))
+      // A skipped field is left out when the form lets it be, and otherwise carries the skip sentence as its words.
+      content = Object.fromEntries(Object.keys(answered).flatMap(id => skippedQuestion(questionAnswers, id)
+        ? form.required?.includes(id) && !noneAllowed(formField(form.properties[id])) ? [[id, QUESTION_SKIPPED]] : []
+        : [[id, questionAnswers[id]!.optionIds.length > 1 || formField(form.properties[id])?.kind === 'several'
+          ? questionAnswers[id]!.optionIds : questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]]))
     } else {
       try { content = formAnswerSchema.parse(JSON.parse(answer)) }
       catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
@@ -319,7 +325,10 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   // Codex's own clients send typed words as `user_note: <text>` after any chosen label, so the model and Codex never
   // read them as the option they spell (Codex 0.166.0, tui/src/bottom_pane/request_user_input/mod.rs; issue #2157).
   // A Codex option's id is its label, and questionValues has checked every id against the native request.
+  // A skipped question goes as a note saying so: Codex's own app sends one the user passed over as no answer at all, and the
+  // note tells the model why (ADR-0135, November 6, 2026).
   if (questionAnswers) return { answers: Object.fromEntries(Object.keys(questionValues(pending.request, questionAnswers)).map(id => {
+    if (skippedQuestion(questionAnswers, id)) return [id, { answers: [`user_note: ${QUESTION_SKIPPED}`] }]
     const { optionIds, text } = questionAnswers[id]!
     return [id, { answers: [...optionIds, ...(text?.trim() ? [`user_note: ${text.trim()}`] : [])] }]
   })) }

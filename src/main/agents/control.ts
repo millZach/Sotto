@@ -5291,6 +5291,10 @@ export class AgentControl {
         if (!request) throw new Error('This request is no longer pending. Refresh the thread.')
         if (request.kind === 'permission' && command.approved === undefined) throw new Error('Choose Allow or Deny for this permission request.')
         if (command.skipped && !request.skippable) throw new Error('This question cannot be skipped. Answer it, or answer it in the provider’s app.')
+        // Each question the user skipped on its own must be one its adapter marked `skippable` (ADR-0135, November 6, 2026).
+        if (command.questionAnswers && Object.entries(command.questionAnswers).some(([questionId, given]) => given.skipped && request.questions?.find(question => question.id === questionId)?.skippable !== true)) {
+          throw new Error('This question cannot be skipped on its own. Answer it, or skip the whole form.')
+        }
         const legacyAnswerDraftId = sentDraft?.draftId ?? (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
           ? this.manualDraftId : undefined)
         const answerDraft = sentDraft ?? (!command.questionAnswers ? this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
