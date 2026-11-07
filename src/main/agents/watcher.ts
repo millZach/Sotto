@@ -56,7 +56,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
@@ -654,6 +654,8 @@ export class WatcherService implements WatcherControlHooks {
   /** The room's list of the current Watcher's questions, the same array while neither the questions nor the Watcher changed. */
   private roomQuestions: { readonly all: readonly WatcherQuestion[]; readonly threadId: string | undefined; readonly shown: readonly WatcherQuestion[] } | undefined
   private lastSteer: { readonly threadId: string; readonly requestId: string; readonly messageId: string; readonly headBefore: string | null } | undefined
+  /** The news that rides with each of the user's sends to Watcher still going, by command (#2226): told once it went, put back if it did not. */
+  private readonly ridingSends = new Map<string, { told(): void; back(): void }>()
   /** Operations this run saw answered. With history off, a reply from before a restart is not Sotto's to show. */
   private readonly answeredThisRun = new Set<string>()
   /**
@@ -3815,7 +3817,14 @@ export class WatcherService implements WatcherControlHooks {
       // The handover goes ahead of the words in the same message; its record is how every copy shows the two apart.
       if (handover && saved.rootUserMessageId === command.messageId) saved.handover = handover.provenance
     })
-    return { ...command, ...(handover ? { text: handover.prefix + command.text } : {}), watcherRequestNote: note }
+    // The user's own message wakes Watcher, so the news that waits for one rides with it (#2226), in the note beside it.
+    // Only Codex and Claude Code take the note through a channel of its own; elsewhere it is a line the conversation
+    // takes off by its exact words, so the news waits for the next wake-up there.
+    const provider = record.current?.provider
+    const riding = provider === 'codex' || provider === 'claude' ? this.wakes.takeRiding(record.current!.target) : undefined
+    if (riding) { this.ridingSends.get(command.commandId)?.back(); this.ridingSends.set(command.commandId, riding) }
+    const withNews = riding ? `${note}\n\n${watcherNewsText(riding.news, this.newsDetail(), this.newsHeld())}` : note
+    return { ...command, ...(handover ? { text: handover.prefix + command.text } : {}), watcherRequestNote: withNews }
   }
   /** `observedThread` is Watcher's thread as the observe pass has it, so the pass reads no other copy of it. */
   private activatePromptTurn(commandId: string, observedThread?: AgentThread): void {
@@ -3828,6 +3837,7 @@ export class WatcherService implements WatcherControlHooks {
     this.pendingPromptTurns.delete(commandId)
   }
   dispatched(command: AgentHostCommand): void {
+    this.ridingSends.get(command.commandId)?.told(); this.ridingSends.delete(command.commandId)
     const pending = this.pendingPromptTurns.get(command.commandId)
     this.activatePromptTurn(command.commandId)
     if (command.type === 'send' && command.threadId === this.view().current?.target.threadId) {
@@ -3840,6 +3850,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   lastSendWasWakeUp(threadId: string): boolean | undefined { return this.currentSend(threadId)?.wakeUp }
   dispatchAborted(command: AgentHostCommand): void {
+    this.ridingSends.get(command.commandId)?.back(); this.ridingSends.delete(command.commandId)
     this.pendingPromptTurns.delete(command.commandId)
     if (command.type === 'steer' && this.lastSteer?.messageId === command.messageId) this.lastSteer = undefined
     if (this.handoverOffer?.sendingCommandId === command.commandId) delete this.handoverOffer.sendingCommandId
@@ -6632,7 +6643,7 @@ ${operation.draftId}`)
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])
     this.heldChecks.clear(); this.checkOf.clear(); clearTimeout(this.checkTimer)
     this.lettingGoChecks = Promise.all(waiting.map(check => this.releaseMove(check.landed))).then(() => undefined)
-    this.closed = true; clearTimeout(this.holdTimer); this.holdTimer = undefined; clearTimeout(this.settledTimer); this.settledTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = []; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
+    this.closed = true; clearTimeout(this.holdTimer); this.holdTimer = undefined; clearTimeout(this.settledTimer); this.settledTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = []; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.ridingSends.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
   }
   /** Settles once `close` has let go of the branches its waiting checks would have started from, those still taking their snapshot included. */
   drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }

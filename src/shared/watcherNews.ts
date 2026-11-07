@@ -15,6 +15,12 @@ export const WATCHER_ORDINARY_BATCH_MS = 20_000
 export const WATCHER_ORDINARY_BATCH_MAX_MS = 60_000
 /** The kinds that keep the short batch: the user's answer, a failure, a send that may not have gone, a thread's own message or its READY TO MERGE. */
 export const WATCHER_URGENT_KINDS: ReadonlySet<string> = new Set(['needs-user', 'turn-failed', 'taken-over', 'delivery-changed', 'thread-told', 'thread-ready', 'user-answered'])
+/**
+ * The kinds that never wake Watcher by themselves and ride with the next news that does (#2226, Zach's pick on November 5,
+ * 2026): a card that no longer waits on the user, a swarm's progress, threads Sotto restarted and a move that ended. None
+ * asks anything of Watcher; a watched thread's turn that ends after it wakes Watcher as usual.
+ */
+export const WATCHER_RIDING_KINDS: ReadonlySet<string> = new Set(['request-closed', 'swarm-progress', 'threads-restarted', 'thread-moved'])
 /** How much of a finished turn's reply its news carries (#1190), so Watcher need not read the thread for it. */
 export const WATCHER_NEWS_REPLY_CHARS = 500
 export const WATCHER_NEWS_BYTES_MAX = 16 * 1_024

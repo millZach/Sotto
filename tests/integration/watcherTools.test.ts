@@ -2067,6 +2067,30 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
 })
 
+it('carries the news that rides in the note with the user’s next message to Watcher, and tells it once (#2226)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const { read } = pullRequestNews(f, started.target.threadId)
+  // Comments moving wake no one: they wait for the next real wake, which the user's own message is.
+  f.service.pullRequestObserved({ ...read, checks: 'pending', remarks: 'comments:1' })
+  f.service.pullRequestObserved({ ...read, checks: 'pending', remarks: 'comments:2', observedAt: new Date(Date.now() + 1).toISOString() })
+  await f.service.wakes.drained()
+  expect(f.service.wakes.untoldAttention(started.target).size).toBe(1)
+  await f.finish(f.id)
+  const result = await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic instruction' })
+  expect(result.error).toBeNull()
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const mine = () => f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.threadId === master && command.text === 'Synthetic instruction')
+  await vi.waitFor(() => expect(mine()).toBeDefined())
+  const sent = mine()
+  if (!sent || sent.type !== 'send') throw new Error('not sent')
+  expect(sent.watcherRequestNote).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
+  expect(sent.watcherRequestNote).toContain('Pull request #5: its comments or reviews changed; read them on GitHub.')
+  expect(sent.watcherNews).toBeUndefined()
+  // Told with the message: no wake-up carries it again.
+  await vi.waitFor(() => expect(f.service.wakes.untoldAttention(started.target).size).toBe(0))
+})
+
 it.each(['grok', 'codex'] as const)('moves a follow-up’s display proof to the message a %s retry is sent as', async provider => {
   const f = await fixture(), draftId = randomUUID(), stale = { originalLength: 3, wireDigest: 'a'.repeat(64) }
   await f.control.updateWatcher(record => {
