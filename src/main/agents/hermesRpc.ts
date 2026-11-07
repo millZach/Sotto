@@ -2,8 +2,8 @@ import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { z } from 'zod'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { findCli, type CliLookupOptions } from './cliLookup'
+import { delimiter, dirname, join } from 'node:path'
+import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /** The local Owl client is pinned to the build tested with this adapter. */
 export const HERMES_CLI_VERSION = '0.23.0'
@@ -52,11 +52,19 @@ export async function findHermesExecutable(environment: NodeJS.ProcessEnv = proc
   return findCli({ name: 'hermes', first: [join(lookup.home ?? homedir(), 'Developer', 'Tools', 'hermes-v0.23.0', '.venv', 'bin')] }, { ...lookup, environment })
 }
 
+/** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */
+export function withHermesPath(environment: NodeJS.ProcessEnv, executable: string): NodeJS.ProcessEnv {
+  const env = withCliPath(environment, executable)
+  const key = Object.keys(env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
+  const privateBin = dirname(executable)
+  return { ...env, [key]: (env[key] ?? '').split(delimiter).filter(folder => folder !== privateBin).join(delimiter) }
+}
+
 const OUTPUT_LIMIT = 64 * 1024
 /** Read the CLI version before starting a gateway. */
 export async function readHermesVersion(executable: string, env: NodeJS.ProcessEnv, prefixArgs: readonly string[] = []): Promise<string> {
   const stdout = await new Promise<string>(resolve => {
-    execFile(executable, [...prefixArgs, '--version'], { env, windowsHide: true, shell: false, timeout: 30_000,
+    execFile(executable, [...prefixArgs, '--version'], { env: withHermesPath(env, executable), windowsHide: true, shell: false, timeout: 30_000,
       killSignal: 'SIGKILL', maxBuffer: OUTPUT_LIMIT, encoding: 'utf8' },
     (error, out) => resolve(error ? '' : typeof out === 'string' ? out : ''))
   })
@@ -89,8 +97,7 @@ export class HermesRpc {
   readonly closed: Promise<void>
   constructor(executable: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
     private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void) {
-    // The absolute launcher selects Hermes's Python. Adding its venv to PATH makes the toolchain probe report that private Python.
-    this.child = spawn(executable, [...args], { cwd, env, windowsHide: true, shell: false, stdio: 'pipe' })
+    this.child = spawn(executable, [...args], { cwd, env: withHermesPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
