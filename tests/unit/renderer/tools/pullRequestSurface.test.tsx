@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { deferred } from '../../../fixtures/deferred'
 import { threadsStateFixture } from '../../../fixtures/agentState'
 import React from 'react'
@@ -5,14 +6,14 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, limitedWords, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByFolder, footCut, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
 import { BABYSIT_ENDINGS_DISMISSED_KEY } from '../../../../src/renderer/src/tools/babysitEndingsDismissed'
-import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestListItem, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
@@ -55,7 +56,9 @@ function mount(options: { detail?: GitPullRequestRead | ((request: { reference?:
 }
 const sent = (command: ReturnType<typeof mount>['command']) => command.mock.calls.map(call => call[0])
 const lines = () => within(screen.getByRole('list', { name: 'Merge checklist' })).getAllByRole('listitem')
-const mergeButton = () => screen.getByRole('button', { name: 'Merge #74' })
+const lineOf = (words: RegExp) => lines().find(line => words.test(line.textContent ?? ''))!
+/** Merge under either of its names: "Merge #74", or "Can't merge #74 yet" while something blocks it. */
+const mergeButton = () => screen.getByRole('button', { name: /^(?:Can't merge|Merge) #74/u })
 async function opened() { await screen.findByRole('heading', { name: '#74 Make the greeting friendlier' }) }
 async function menu(label: string) {
   fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
@@ -85,7 +88,7 @@ describe('the merge checklist, read from the pull request', () => {
   const read = (change: Partial<GitPullRequestDetail>) => checklist(detail(change)).map(line => [line.label, line.tone, line.why, line.fix?.kind ?? null])
   it('lists five lines in the order a merge meets them, each done for a pull request ready to merge', () => {
     expect(read({})).toEqual([
-      ['Checks passing', 'done', 'CI / build passed', null],
+      ['Checks passed', 'done', 'CI / build passed', null],
       ['Review approved', 'done', 'Approved by mira', null],
       ['Up to date with main', 'done', 'Has every commit on main', null],
       ['No conflicts', 'done', 'Merges cleanly into main', null],
@@ -97,34 +100,34 @@ describe('the merge checklist, read from the pull request', () => {
   it('gives each line that holds the merge back its one press: the failing check, the review, Update branch, Ready for review', () => {
     const draft = read({ draft: true, reviewDecision: 'review_required', reviews: [], checks: [check('Gates (Windows)', 'success'), check('Gates (macOS)', 'pending')], behindBy: 2 })
     expect(draft).toEqual([
-      ['Checks passing', 'running', 'Gates (macOS) is still running', null],
-      ['Review approved', 'todo', 'Reviewers wait until it is ready', null],
-      ['Up to date with main', 'todo', '2 commits behind main', 'update-branch'],
+      ['1 check running', 'running', 'Gates (macOS) is still running', null],
+      ['Needs a review', 'todo', 'Reviewers wait until it is ready', null],
+      ['Behind main', 'todo', '2 commits behind main', 'update-branch'],
       ['No conflicts', 'done', 'Merges cleanly into main', null],
-      ['Ready for review', 'todo', 'Still a draft', 'ready'],
+      ['Still a draft', 'todo', 'Mark it ready for review when the work is done', 'ready'],
     ])
     const failing = checklist(detail({ reviewDecision: 'changes_requested', reviews: [review('mira', 'changes_requested')],
       checks: [check('Gates (Windows)', 'failure', 'https://github.com/o/r/actions/runs/9', '3 tests failed in tests/unit/main'), check('Notices', 'success')] }))
     expect(failing[0]).toMatchObject({ tone: 'failed', why: 'Gates (Windows) failed: 3 tests failed in tests/unit/main', fix: { kind: 'open-check', name: 'Gates (Windows)', url: 'https://github.com/o/r/actions/runs/9' } })
     expect(failing[1]).toMatchObject({ tone: 'failed', why: 'mira asked for changes', fix: { kind: 'open-review', author: 'mira', url: `${URL}#pullrequestreview-mira` } })
     expect(mergeReady(detail(), failing)).toBe(false)
-    expect(linesLeft(failing)).toBe('2 lines left before this can merge.')
+    expect(mergeWaitsFor(failing)).toBe('You can merge once the failing check passes and someone approves it.')
     expect(checklistHeading(detail(), false)).toBe('Before merging')
-    expect(read({ checks: [check('a', 'cancelled'), check('b', 'failure')] })[0]).toEqual(['Checks passing', 'failed', 'a was cancelled, and 1 more', null])
-    expect(read({ checks: [check('deploy', 'action-required', 'https://github.com/o/r/actions/runs/3')] })[0]).toEqual(['Checks passing', 'todo', 'deploy is waiting for approval on GitHub', 'open-check'])
-    expect(read({ checks: [check('a', 'success'), check('b', 'skipped')] })[0]).toEqual(['Checks passing', 'done', '1 passed, 1 skipped', null])
-    expect(read({ canUpdateBranch: false, behindBy: 1 })[2]).toEqual(['Up to date with main', 'todo', '1 commit behind main. GitHub does not let this account update it', null])
+    expect(read({ checks: [check('a', 'cancelled'), check('b', 'failure')] })[0]).toEqual(['2 checks failed', 'failed', 'a was cancelled, and 1 more', null])
+    expect(read({ checks: [check('deploy', 'action-required', 'https://github.com/o/r/actions/runs/3')] })[0]).toEqual(['1 check needs approval', 'todo', 'deploy is waiting for approval on GitHub', 'open-check'])
+    expect(read({ checks: [check('a', 'success'), check('b', 'skipped')] })[0]).toEqual(['Checks passed', 'done', '1 passed, 1 skipped', null])
+    expect(read({ canUpdateBranch: false, behindBy: 1 })[2]).toEqual(['Behind main', 'todo', '1 commit behind main. GitHub does not let this account update it', null])
     // English writes a long way behind as it always has, without grouping its digits.
-    expect(read({ behindBy: 1_000 })[2]).toEqual(['Up to date with main', 'todo', '1000 commits behind main', 'update-branch'])
-    expect(read({ mergeable: 'conflicting' })[3]).toEqual(['No conflicts', 'failed', 'Conflicts with main. Resolve them in the branch and push', null])
-    expect(read({ mergeable: 'unknown' })[3]).toEqual(['No conflicts', 'running', 'GitHub is still checking. Refresh in a moment', null])
+    expect(read({ behindBy: 1_000 })[2]).toEqual(['Behind main', 'todo', '1000 commits behind main', 'update-branch'])
+    expect(read({ mergeable: 'conflicting' })[3]).toEqual(['Conflicts with main', 'failed', 'Resolve them in the branch and push', null])
+    expect(read({ mergeable: 'unknown' })[3]).toEqual(['Checking for conflicts', 'running', 'GitHub is still checking. Refresh in a moment', null])
   })
   it('says what GitHub reports rather than an approval nobody gave: no checks, no review required, a base it could not compare', () => {
     const noted = checklist(detail({ checks: [], reviewDecision: null, reviews: [], behindBy: null }))
     expect(noted.map(line => [line.label, line.tone, line.why])).toEqual([
       ['No checks', 'done', 'GitHub reports none for this pull request'],
       ['No review required', 'done', 'This repository merges without one'],
-      ['Up to date with main', 'unknown', 'GitHub could not compare it with main'],
+      ['Not compared with main', 'unknown', 'GitHub could not compare it with main'],
       ['No conflicts', 'done', 'Merges cleanly into main'],
       ['Ready for review', 'done', 'Not a draft'],
     ])
@@ -136,7 +139,7 @@ describe('the merge checklist, read from the pull request', () => {
     expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
     // Checks GitHub refused to show are not "No checks": the line says they could not be read, and is not counted as done.
     const refused = checklist(detail({ checks: [], checksUnknown: true }))
-    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks passing', 'unknown', 'GitHub did not let Sotto read the checks'])
+    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks could not be read', 'unknown', 'GitHub did not let Sotto read the checks'])
     expect(checklistCount(refused)).toBe('4 of 5 done, 1 does not block')
     // A failing check GitHub did return is never hidden behind unknown, and still holds the merge back.
     const failing = checklist(detail({ checks: [check('lint', 'failure', 'https://github.com/o/r/actions/runs/2')], checksUnknown: true }))
@@ -156,7 +159,71 @@ describe('the merge checklist, read from the pull request', () => {
       expect(checklistCount(lines)).toBe('4 of 5 done, 1 does not block')
     }
     expect(checklist(detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested'), review('sam', 'changes_requested')] }))[1])
-      .toMatchObject({ label: 'Review', tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
+      .toMatchObject({ label: 'Changes requested', tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
+  })
+  // A line's label is what a reader takes in first, so it says how the line stands in every state the surface can show,
+  // never the state it is waiting for: "Checks passing" over failed checks is what this holds against.
+  describe('labels each line with how it stands', () => {
+    const label = (change: Partial<GitPullRequestDetail>, id: ChecklistLine['id']): string => checklist(detail(change)).find(line => line.id === id)!.label
+    const checks = (...statuses: GitPullRequestCheck['status'][]): Partial<GitPullRequestDetail> => ({ checks: statuses.map((status, index) => check(`c${index}`, status)) })
+    it.each<[string, Partial<GitPullRequestDetail>, string]>([
+      ['one failed', checks('failure', 'success'), '1 check failed'],
+      ['two failed and one running', checks('failure', 'failure', 'pending', 'success'), '2 checks failed'],
+      ['one failed and one cancelled, counted as the Checks fold counts them', checks('cancelled', 'failure'), '2 checks failed'],
+      ['only cancelled', checks('cancelled', 'cancelled'), '2 checks cancelled'],
+      ['waiting for approval', checks('action-required', 'success'), '1 check needs approval'],
+      ['running', checks('pending', 'pending', 'success'), '2 checks running'],
+      ['passing', checks('success', 'success'), 'Checks passed'],
+      ['passing with some skipped', checks('success', 'skipped'), 'Checks passed'],
+      ['all skipped', checks('skipped', 'neutral'), 'Checks skipped'],
+      ['none', { checks: [] }, 'No checks'],
+      ['none readable', { checks: [], checksUnknown: true }, 'Checks could not be read'],
+      ['some unreadable', { ...checks('success'), checksUnknown: true }, 'Some checks could not be read'],
+    ])('checks: %s', (_, change, expected) => {
+      expect(label(change, 'checks')).toBe(expected)
+      expect(label(change, 'checks')).not.toBe('Checks passing')
+    })
+    it.each<[string, Partial<GitPullRequestDetail>, string]>([
+      ['approved', { reviewDecision: 'approved', reviews: [review('mira', 'approved')] }, 'Review approved'],
+      ['changes requested', { reviewDecision: 'changes_requested', reviews: [review('mira', 'changes_requested')] }, 'Changes requested'],
+      ['required, nobody has reviewed', { reviewDecision: 'review_required', reviews: [] }, 'Needs a review'],
+      ['required, approved but not enough', { reviewDecision: 'review_required', reviews: [review('mira', 'approved')] }, 'Needs a review'],
+      ['required, on a draft', { reviewDecision: 'review_required', reviews: [], draft: true }, 'Needs a review'],
+      ['required, on a closed pull request', { reviewDecision: 'review_required', reviews: [], state: 'closed' }, 'Not approved'],
+      ['not required, nobody has reviewed', { reviewDecision: null, reviews: [] }, 'No review required'],
+      ['not required, approved', { reviewDecision: null, reviews: [review('mira', 'approved')] }, 'Review approved'],
+      ['not required, changes requested', { reviewDecision: null, reviews: [review('ola', 'changes_requested')] }, 'Changes requested'],
+    ])('review: %s', (_, change, expected) => expect(label(change, 'review')).toBe(expected))
+    it('keeps a review nobody gave apart from one nobody needs', () => {
+      expect(label({ reviewDecision: 'review_required', reviews: [] }, 'review')).not.toBe(label({ reviewDecision: null, reviews: [] }, 'review'))
+    })
+    it.each<[string, Partial<GitPullRequestDetail>, ChecklistLine['id'], string]>([
+      ['up to date', { behindBy: 0 }, 'up-to-date', 'Up to date with main'],
+      ['behind', { behindBy: 3 }, 'up-to-date', 'Behind main'],
+      ['behind, closed', { behindBy: 3, state: 'closed' }, 'up-to-date', 'Behind main'],
+      ['not compared', { behindBy: null }, 'up-to-date', 'Not compared with main'],
+      ['merged', { state: 'merged', behindBy: 3 }, 'up-to-date', 'Up to date with main'],
+      ['conflicts', { mergeable: 'conflicting' }, 'conflicts', 'Conflicts with main'],
+      ['no conflicts', { mergeable: 'mergeable' }, 'conflicts', 'No conflicts'],
+      ['still checking', { mergeable: 'unknown' }, 'conflicts', 'Checking for conflicts'],
+      ['not checked, closed', { mergeable: 'unknown', state: 'closed' }, 'conflicts', 'Conflicts not checked'],
+      ['merged, conflicts unknown', { mergeable: 'unknown', state: 'merged' }, 'conflicts', 'No conflicts'],
+      ['ready', { draft: false }, 'ready', 'Ready for review'],
+      ['draft', { draft: true }, 'ready', 'Still a draft'],
+      ['draft, closed', { draft: true, state: 'closed' }, 'ready', 'Still a draft'],
+    ])('%s', (_, change, id, expected) => expect(label(change, id)).toBe(expected))
+    it('keeps every label true with auto-merge armed, and on a merged pull request', () => {
+      const armed = checklist(detail({ autoMerge: { method: 'squash' }, ...checks('pending', 'success'), reviewDecision: 'review_required', reviews: [] }))
+      expect(armed.map(line => line.label)).toEqual(['1 check running', 'Needs a review', 'Up to date with main', 'No conflicts', 'Ready for review'])
+      const merged = checklist(detail({ state: 'merged', ...checks('success', 'success') }))
+      expect(merged.map(line => line.label)).toEqual(['Checks passed', 'Review approved', 'Up to date with main', 'No conflicts', 'Ready for review'])
+    })
+    it('names the draft line\'s press for what it does, not for the line', async () => {
+      mount({ detail: detail({ draft: true }) })
+      await opened()
+      const line = screen.getByText('Still a draft').closest('li')!
+      expect(within(line).getByRole('button', { name: 'Ready for review' })).toBeInTheDocument()
+    })
   })
   it('reads a merged or closed pull request as settled, and offers auto-merge only where it can be armed', () => {
     const merged = detail({ state: 'merged', behindBy: 3, mergeable: 'unknown' })
@@ -197,12 +264,12 @@ describe('the Pull request surface', () => {
     expect(screen.getByText('Open', { selector: '.pr-surface__tag' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Ready to merge 5 of 5 done' })).toBeInTheDocument()
     expect(lines().map(line => line.textContent)).toEqual([
-      'Done: Checks passingCI / build passed', 'Done: Review approvedApproved by mira', 'Done: Up to date with mainHas every commit on main',
-      'Done: No conflictsMerges cleanly into main', 'Done: Ready for reviewNot a draft'])
+      'Done: CI / build passed', 'Done: Approved by mira', 'Done: Up to date with main. Has every commit on main',
+      'Done: No conflicts. Merges cleanly into main', 'Done: Not a draft'])
     expect(mergeButton()).not.toHaveAttribute('aria-disabled')
     expect(screen.getByText('Every commit, plus a merge commit.')).toBeInTheDocument()
     // The description folds below, closed until asked for.
-    expect(screen.queryByText(/Says hello\./u)).toBeNull()
+    expect(screen.queryByText(/One change/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Description' }))
     expect(screen.getByRole('button', { name: 'Description' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText(/Says hello\./u)).toBeInTheDocument()
@@ -288,7 +355,8 @@ describe('the Pull request surface', () => {
     await opened()
     expect(screen.getByRole('heading', { name: 'Before merging 3 of 5 done' })).toBeInTheDocument()
     expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
-    expect(mergeButton()).toHaveAccessibleDescription('2 lines left before this can merge. Merge when ready')
+    expect(mergeButton()).toHaveAccessibleName('Can\'t merge #74 yet')
+    expect(mergeButton()).toHaveAccessibleDescription('You can merge once the failing check passes and someone approves it. Merge when ready')
     fireEvent.click(mergeButton())
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open Gates (Windows) on GitHub' }))
@@ -301,10 +369,33 @@ describe('the Pull request surface', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enable auto-merge' }))
     await waitFor(() => expect(sent(command)).toEqual([expect.objectContaining({ action: 'enable-auto-merge', method: 'merge' })]))
   })
+  it('leads with what blocks the merge, and gives the lines that are done one quiet row', async () => {
+    mount({ detail: detail({ draft: true, behindBy: 2, mergeable: 'conflicting', reviewDecision: 'approved', reviews: [review('mira', 'approved')], checks: [check('build', 'pending')] }) })
+    await opened()
+    const words = lines().map(line => line.textContent)
+    expect(words[0]).toMatch(/^Failing: Conflicts with main/u)
+    expect(words.slice(1, 3).map(line => line?.split(':')[0])).toEqual(['To do', 'To do'])
+    expect(words[3]).toMatch(/^Waiting: 1 check running/u)
+    expect(words[4]).toBe('Done: Approved by mira')
+    expect(mergeButton()).toHaveAccessibleName('Can\'t merge #74 yet')
+    expect(screen.getByText(/^You can merge once its conflicts with main are resolved, it is up to date with main, it is marked ready for review, and the running check finishes\./u)).toBeInTheDocument()
+  })
+  it('keeps Merge as it is while a read holds a ready pull request, so a Refresh does not flash it blocked', async () => {
+    let answer: ((read: GitPullRequestRead) => void) | undefined
+    let reads = 0
+    mount({ detail: (() => { reads++; return reads === 1 ? detail() : new Promise<GitPullRequestRead>(resolve => { answer = resolve }) }) as never })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    await waitFor(() => expect(mergeButton()).toHaveAttribute('aria-disabled', 'true'))
+    expect(mergeButton()).toHaveAccessibleName('Merge #74')
+    expect(mergeButton()).not.toHaveAttribute('data-blocked')
+    answer!(detail())
+    await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
+  })
   it('leaves Merge when ready out where the repository does not allow auto-merge', async () => {
     mount({ detail: detail({ autoMergeAllowed: false, checks: [check('build', 'pending')] }) })
     await opened()
-    expect(screen.getByText('1 line left before this can merge.')).toBeInTheDocument()
+    expect(screen.getByText('You can merge once the running check finishes.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Merge when ready' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Merge when ready (auto-merge)' })).toBeNull()
@@ -314,8 +405,8 @@ describe('the Pull request surface', () => {
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Update branch' }))
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'update-branch' }]))
-    await waitFor(() => expect(within(lines()[4]!).getByRole('button', { name: 'Ready for review' })).toBeEnabled())
-    fireEvent.click(within(lines()[4]!).getByRole('button', { name: 'Ready for review' }))
+    await waitFor(() => expect(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' })).toBeEnabled())
+    fireEvent.click(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' }))
     await waitFor(() => expect(sent(command)[1]).toEqual({ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'ready' }))
   })
   it('shows an armed auto-merge, a closed and a merged pull request in place of Merge', async () => {
@@ -333,6 +424,8 @@ describe('the Pull request surface', () => {
     cleanup()
     const merged = mount({ detail: detail({ state: 'merged', mergedAt: '2026-09-23T10:14:00Z' }) })
     await waitFor(() => expect(merged.container.querySelector('.pr-surface__finished strong')).toHaveTextContent('Merged into main'))
+    // An ended pull request says so before its checklist.
+    expect(merged.container.querySelector('.pr-surface__finished')!.compareDocumentPosition(lines()[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Merge #74' })).toBeNull()
   })
   it('holds the rest in ···: Convert to draft, Update with rebase and Close after their words, Copy link, Unlink', async () => {
@@ -367,7 +460,7 @@ describe('the Pull request surface', () => {
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Open on GitHub' }))
     expect(openExternalLink).toHaveBeenCalledWith(URL)
-    fireEvent.click(within(lines()[4]!).getByRole('button', { name: 'Ready for review' }))
+    fireEvent.click(within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not mark this ready for review. GraphQL: Resource not accessible by integration')
   })
   it('says when there is nothing to merge yet, creates the pull request the way the Git action does, and links one', async () => {
@@ -414,6 +507,9 @@ describe('the Pull request surface', () => {
     const { gitPullRequest } = mount({ thread: linked, detail: request => request.reference?.endsWith('/70')
       ? detail({ number: 70, url: 'https://github.com/o/r/pull/70', title: 'Older work', state: 'merged', linked: 'linked', branch: false }) : detail({ linked: 'created' }) })
     await opened()
+    // The top line names the pull request by its number, the thread's own too, since a narrow header can drop it.
+    const strip = (): HTMLElement => document.querySelector<HTMLElement>('.pr-surface__top .pr-surface__lead')!
+    expect(strip()).toHaveTextContent(/^#74\s*Open$/u)
     const fold = screen.getByRole('button', { name: 'Linked pull requests 2' })
     expect(fold).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(fold)
@@ -422,6 +518,8 @@ describe('the Pull request surface', () => {
       'PR #74, Open: Make the greeting friendlier. Created from this thread', 'PR #70, Merged: Older work. Linked by you'])
     fireEvent.click(within(list).getByRole('button', { name: /^PR #70/u }))
     expect(await screen.findByRole('heading', { name: '#70 Older work' })).toBeInTheDocument()
+    // So does another one.
+    expect(strip()).toHaveTextContent(/^#70\s*Merged$/u)
     expect(gitPullRequest).toHaveBeenLastCalledWith({ threadId: 'thread-1', reference: 'https://github.com/o/r/pull/70' })
     await waitFor(() => expect(screen.getByRole('heading', { name: '#70 Older work' })).toHaveFocus())
   })
@@ -453,10 +551,10 @@ describe('the Pull request surface', () => {
     host: { projects: [], threads: [], models: [] },
     topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Marked ready for review.' } }) })
     await opened()
-    const press = within(lines()[4]!).getByRole('button', { name: 'Ready for review' })
+    const press = within(lineOf(/Ready for review|Not a draft/u)).getByRole('button', { name: 'Ready for review' })
     press.focus()
     fireEvent.click(press)
-    await waitFor(() => expect(within(lines()[4]!).queryByRole('button')).toBeNull())
+    await waitFor(() => expect(within(lineOf(/Ready for review|Not a draft/u)).queryByRole('button')).toBeNull())
     await waitFor(() => expect(screen.getByRole('heading', { name: '#74 Make the greeting friendlier' })).toHaveFocus())
   })
   it('keeps every press off until GitHub has been read again after one, so nothing is pressed twice over the old reading', async () => {
@@ -498,9 +596,9 @@ describe('the Pull request surface', () => {
   it('reads an open request for changes with nobody approving without claiming an approval', async () => {
     mount({ detail: detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested')] }) })
     await opened()
-    expect(lines()[1]).toHaveTextContent('Does not block: Reviewola asked for changes. This repository does not require a review')
-    expect(lines()[1]).not.toHaveTextContent(/approved/iu)
-    expect(within(lines()[1]!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
+    expect(lineOf(/^Does not block/u)).toHaveTextContent('Does not block: Changes requestedola asked for changes. This repository does not require a review')
+    expect(lineOf(/^Does not block/u)).not.toHaveTextContent(/approved/iu)
+    expect(within(lineOf(/^Does not block/u)!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
   })
   it('reads a paired host on an earlier build, which names no reviewer and no merge time', () => {
     const earlier: Record<string, unknown> = { ...detail() }
@@ -717,5 +815,322 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     mount({ babysit: { agent: 'Claude Code' }, thread: ending(new Date().toISOString()) })
     await opened()
     expect(screen.getByRole('group', { name: 'Not babysitting' })).toBeInTheDocument()
+  })
+})
+
+describe('the drill-in under the merge checklist', () => {
+  const FAILED = 'https://github.com/o/r/actions/runs/2'
+  const timed = (name: string, status: GitPullRequestCheck['status'], url: string | null, minutes: number | null): GitPullRequestCheck => ({ name, status, url, description: null,
+    startedAt: minutes === null ? null : '2026-09-23T10:00:00.000Z', completedAt: minutes === null || status === 'pending' ? null : new Date(Date.parse('2026-09-23T10:00:00.000Z') + minutes * 60_000).toISOString() })
+  it('folds every check below Merge, closed even when one failed, and the checklist stays as it was', async () => {
+    const { openExternalLink, command } = mount({ detail: detail({ checks: [timed('CI / build', 'success', 'https://github.com/o/r/actions/runs/1', 4), timed('CI / lint', 'failure', FAILED, 2), timed('CI / e2e', 'pending', null, null)] }) })
+    await opened()
+    expect(screen.queryByRole('list', { name: 'Checks' })).toBeNull()
+    expect(within(lines()[0]!).getByRole('button', { name: 'Open CI / lint on GitHub' })).toBeInTheDocument()
+    expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
+    const fold = screen.getByRole('button', { name: 'Checks 1 failed 1 running 1 passed' })
+    expect(fold).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(fold)
+    const list = screen.getByRole('list', { name: 'Checks' })
+    // What failed first, what passed folded; a check with nowhere to open has no press.
+    expect(within(list).getAllByRole('listitem').map(row => row.textContent)).toEqual(['CI / lintFailed2m 0s', 'CI / e2eQueued'])
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 passed' }))
+    expect(within(list).getByText('build')).toBeInTheDocument()
+    fireEvent.click(within(list).getByRole('button', { name: 'Open CI / lint on GitHub. Failed, 2m 0s' }))
+    expect(openExternalLink).toHaveBeenCalledWith(FAILED)
+    fireEvent.click(screen.getByRole('button', { name: 'Open all checks on GitHub' }))
+    expect(openExternalLink).toHaveBeenCalledWith('https://github.com/o/r/pull/74/checks')
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('has no Checks fold where GitHub reports none', async () => {
+    mount({ detail: detail({ checks: [] }) })
+    await opened()
+    expect(screen.queryByRole('button', { name: /^Checks/u })).toBeNull()
+  })
+  it('lists the changed files, the most changed first, each opening on GitHub', async () => {
+    const onReview = vi.fn()
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest: vi.fn(async () => detail({ additions: 12, deletions: 3, changedFiles: 2, files: [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }] })) }, openExternalLink })
+    render(<PullRequestSurface thread={thread()} command={vi.fn()} onStatus={vi.fn()} onReviewChanges={onReview} />)
+    await opened()
+    const fold = screen.getByRole('button', { name: /^Changed files 2/u })
+    expect(fold).toHaveTextContent('+12')
+    // The totals are GitHub's, whitespace changes counted, and say so where Changes says its own leave those out.
+    expect(fold.querySelector('.pr-surface__counts')).toHaveAttribute('title', '12 lines added, 3 removed, counting whitespace changes, as GitHub does.')
+    fireEvent.click(fold)
+    const list = screen.getByRole('list', { name: 'Changed files' })
+    expect(within(list).getAllByRole('button').map(row => row.getAttribute('aria-label'))).toEqual(['Open src/deep/b.ts on GitHub. 11 added, 2 removed', 'Open src/a.ts on GitHub. 1 added, 1 removed'])
+    fireEvent.click(within(list).getAllByRole('button')[0]!)
+    await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/o\/r\/pull\/74\/files#diff-[0-9a-f]{64}$/u)))
+    fireEvent.click(screen.getByRole('button', { name: 'Review in Changes' }))
+    // Against the branch the pull request merges into.
+    expect(onReview).toHaveBeenCalledExactlyOnceWith('main')
+  })
+  it('lists the changed files under their folders, the folder that changed most first, each folder with its lines', async () => {
+    mount({ detail: detail({ changedFiles: 4, files: [{ path: 'README.md', additions: 1, deletions: 0 }, { path: 'src/a.ts', additions: 2, deletions: 1 }, { path: 'tests/a.test.ts', additions: 30, deletions: 0 }, { path: 'src/b.ts', additions: 5, deletions: 0 }] }) })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Changed files 4/u }))
+    const list = screen.getByRole('list', { name: 'Changed files' })
+    // The files at the top first, under no folder; then each folder by how much it changed, its files the most changed first.
+    const sides = (element: Element): string => [...element.querySelectorAll('[data-side]')].map(side => side.textContent).join(' ').trim()
+    expect([...list.querySelectorAll('.pr-surface__files-folder')].map(folder => `${folder.querySelector('bdi')?.textContent} ${sides(folder)}`)).toEqual(['tests/ +30', 'src/ +7 −1'])
+    expect(within(screen.getByRole('list', { name: 'src/' })).getAllByRole('button').map(row => `${row.querySelector('bdi')?.textContent} ${sides(row)}`)).toEqual(['b.ts +5', 'a.ts +2 −1'])
+    expect(within(list).getAllByRole('button').map(row => row.getAttribute('title'))).toEqual(['README.md', 'tests/a.test.ts', 'src/b.ts', 'src/a.ts'])
+  })
+  it('says how many it does not list, and hides the fold from a host that did not read the files', async () => {
+    mount({ detail: detail({ changedFiles: 240, files: [{ path: 'a.ts', additions: 1, deletions: 0 }] }) })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Changed files 240/u }))
+    expect(screen.getByText('Showing the 1 first of 240 files.')).toBeInTheDocument()
+    cleanup()
+    mount()
+    await opened()
+    expect(screen.queryByRole('button', { name: /^Changed files/u })).toBeNull()
+  })
+  const listed = (number: number, title: string, change: Partial<GitPullRequestListItem> = {}): GitPullRequestListItem => ({ number, title, url: `https://github.com/o/r/pull/${number}`, draft: false, author: 'mira', headBranch: `feat/${number}`, updatedAt: '2026-09-23T10:00:00.000Z', additions: 5, deletions: 1, changedFiles: 2, checks: 'passed', reviewDecision: null, ...change })
+  it('reads the repository\'s open pull requests only when its fold opens, and searches them here', async () => {
+    const { gitPullRequest } = mount()
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 3, pullRequests: [listed(74, 'Make the greeting friendlier', { reviewDecision: 'changes_requested' }), listed(80, 'Fix the socket flake', { checks: 'failing', author: 'drake' }), listed(81, 'Draft the plan', { draft: true, checks: 'none' })] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    expect(gitPullRequestList).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open pull requests' }))
+    const list = await screen.findByRole('list', { name: 'Open pull requests' })
+    expect(gitPullRequestList).toHaveBeenCalledExactlyOnceWith({ threadId: 'thread-1' })
+    expect(within(list).getAllByRole('button')).toHaveLength(3)
+    expect(within(list).getByRole('button', { name: /^Show #74:/u })).toHaveAttribute('aria-current', 'true')
+    expect(within(list).getByRole('button', { name: /^Show #80: Fix the socket flake\. A check failed\./u })).toBeInTheDocument()
+    // Each row says how it stands in words beside each mark, so a passed check's tick is never read as an approval.
+    expect([...list.querySelectorAll('.pr-surface__open-state')].map(state => state.textContent)).toEqual(['Checks passedChanges requested', 'A check failed', 'No checksDraft'])
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'drake' } })
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'nothing like it' } })
+    expect(screen.getByText('No open pull request matches that search.')).toBeInTheDocument()
+    expect(gitPullRequestList).toHaveBeenCalledOnce()
+  })
+  it('folds an open fold on an Escape nothing inside it answered, back to its heading, after the search field clears first', async () => {
+    const { gitPullRequest } = mount()
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 1, pullRequests: [listed(74, 'Make the greeting friendlier')] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    const heading = screen.getByRole('button', { name: 'Open pull requests' })
+    fireEvent.click(heading)
+    await screen.findByRole('list', { name: 'Open pull requests' })
+    const search = screen.getByRole('searchbox', { name: /^Search open pull requests/u })
+    fireEvent.change(search, { target: { value: 'greeting' } })
+    search.focus()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(search).toHaveValue('')
+    expect(heading).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(heading).toHaveAttribute('aria-expanded', 'false')
+    expect(heading).toHaveFocus()
+    expect(screen.queryByRole('list', { name: 'Open pull requests' })).toBeNull()
+    // This pull request's own folds answer Escape the same way.
+    const description = screen.getByRole('button', { name: /^Description/u })
+    if (description.getAttribute('aria-expanded') !== 'true') fireEvent.click(description)
+    expect(description).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(document.getElementById(description.getAttribute('aria-controls')!)!, { key: 'Escape' })
+    expect(description).toHaveAttribute('aria-expanded', 'false')
+    expect(description).toHaveFocus()
+  })
+  it('says so when GitHub holds the list back or the project has no remote, and keeps the rows it has', async () => {
+    const { gitPullRequest } = mount()
+    const gitPullRequestList = vi.fn<() => Promise<unknown>>(async () => ({ repository: 'o/r', total: 1, pullRequests: [listed(74, 'Make the greeting friendlier')] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Open pull requests/u }))
+    await screen.findByRole('list', { name: 'Open pull requests' })
+    gitPullRequestList.mockResolvedValueOnce({ limited: { retryAt: '2099-01-01T00:00:00.000Z' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh open pull requests' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/GitHub is limiting requests/u)
+    expect(screen.getByRole('list', { name: 'Open pull requests' })).toBeInTheDocument()
+    gitPullRequestList.mockResolvedValueOnce(null)
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh open pull requests' }))
+    expect(await screen.findByText(/has no GitHub remote/u)).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Open pull requests' })).toBeNull()
+  })
+  it('reads one the thread does not know with nothing to press but linking it, and goes back to its own', async () => {
+    const other = 'https://github.com/o/r/pull/80'
+    const { gitPullRequest, command } = mount({ detail: request => request.reference === other
+      ? detail({ number: 80, url: other, title: 'Fix the socket flake', branch: false, linked: null, behindBy: 2 }) : detail() })
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 1, pullRequests: [listed(80, 'Fix the socket flake')] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Open pull requests/u }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Show #80:/u }))
+    await screen.findByRole('heading', { name: '#80 Fix the socket flake' })
+    expect(screen.queryByRole('button', { name: 'Merge #80' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Close pull request' })).toBeNull()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(command).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Link to this thread' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-link-pull-request', threadId: 'thread-1', reference: other }]))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to #74' }))
+    await opened()
+    expect(mergeButton()).toBeInTheDocument()
+  })
+  it('says what a closed fold holds on its head, and leaves the head\'s name as what a press opens', async () => {
+    mount({ detail: detail({ body: '## What changed\n\n- Says **hello** to whoever `reviews` this.', checks: [check('a', 'success'), check('b', 'skipped')] }) })
+    await opened()
+    const description = screen.getByRole('button', { name: 'Description' })
+    expect(description).toHaveTextContent('Says hello to whoever reviews this.')
+    fireEvent.click(description)
+    expect(description.querySelector('.pr-surface__fold-preview')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Checks 1 passed 1 skipped' })).toHaveAttribute('aria-expanded', 'false')
+  })
+  it('shows the first of what the closed folds hold under their heads, most needed first, only while the body has room for it', async () => {
+    // A body as tall as `room`, holding 400 pixels, 60 more for each peek and 10 for each file a peek lists, so a count of peeks either fits or scrolls.
+    let room = 0
+    const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row:not([data-more])').length
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
+    const files = [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }, { path: 'c.ts', additions: 3, deletions: 0 }, { path: 'd.ts', additions: 1, deletions: 0 }]
+    const read = detail({ body: 'The greeting now says hello. It used to say nothing at all.\nIt waits for a name.\n\n- And a list.', files, changedFiles: 4,
+      checks: [check('CI / build', 'failure'), check('CI / lint', 'pending'), check('test', 'success')] })
+    const peeks = (): string[] => [...document.querySelectorAll('.pr-surface__peek')].map(peek => peek.textContent ?? '')
+    const description = (): string => screen.getByRole('button', { name: 'Description' }).querySelector('.pr-surface__fold-preview')?.textContent ?? ''
+    // Not laid out: no room, so the heads say only what they always did.
+    const first = mount({ detail: read })
+    await opened()
+    expect(peeks()).toEqual([])
+    expect(description()).toBe('The greeting now says hello.')
+    first.unmount()
+    // Room for two: the checks that still stand, then the description's whole first paragraph; the files wait.
+    room = 530
+    mount({ detail: read })
+    await opened()
+    expect(peeks()).toHaveLength(1)
+    expect(peeks()[0]).toContain('CI /buildFailed')
+    expect(peeks()[0]).toContain('CI /lintQueued')
+    expect(peeks()[0]).not.toContain('test')
+    expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
+    // The heads' names stay what a press opens, and a peek is only for the eye.
+    expect(screen.getByRole('button', { name: 'Checks 1 failed 1 running 1 passed' })).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('.pr-surface__peek')).toHaveAttribute('aria-hidden', 'true')
+    // An open fold holds the count, so the heads above it do not move; its own peek gives way to what it holds.
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    expect(peeks()).toEqual([])
+    expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    cleanup()
+    // Room for three: the three most changed files too, the most changed first.
+    room = 610
+    mount({ detail: read })
+    await opened()
+    expect(peeks()).toHaveLength(2)
+    expect(peeks()[1]).toMatch(/^src\/deep\/b\.ts.*c\.ts.*src\/a\.ts/u)
+    expect(peeks()[1]).not.toContain('d.ts')
+    // Its last line says how many more the fold holds, so three never read as the whole list.
+    expect(peeks()[1]).toMatch(/1 more file$/u)
+    cleanup()
+    // Room to spare after every peek: more of the files, and with every file shown, no line says more.
+    room = 1000
+    mount({ detail: read })
+    await opened()
+    expect(peeks()[1]).toContain('d.ts')
+    expect(peeks()[1]).not.toContain('more')
+    cleanup()
+    // GitHub's count wins over the files it listed: four listed of thirty, so the line counts the twenty-six not shown.
+    mount({ detail: { ...read, changedFiles: 30 } })
+    await opened()
+    expect(peeks()[1]).toMatch(/26 more files$/u)
+  })
+  it('holds the peeks through a resize while a fold is open, and fits them again once every fold is closed', async () => {
+    // As above: 400 pixels, 60 more for each peek and 10 for each file a peek lists.
+    let room = 1000
+    const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row:not([data-more])').length
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
+    const resized: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized.push(callback) } observe(): void {} disconnect(): void {} })
+    const files = [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }, { path: 'c.ts', additions: 3, deletions: 0 }, { path: 'd.ts', additions: 1, deletions: 0 }]
+    mount({ detail: detail({ body: 'The greeting now says hello. It used to say nothing at all.\nIt waits for a name.\n\n- And a list.', files, changedFiles: 4,
+      checks: [check('CI / build', 'failure'), check('CI / lint', 'pending'), check('test', 'success')] }) })
+    await opened()
+    const filesPeek = (): string => document.querySelector('.pr-surface__peek[data-of="files"]')?.textContent ?? ''
+    expect(filesPeek()).toContain('d.ts')
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    // Shrunk with Checks open: the counts hold (ADR-0027, November 5), so the heads above the open fold do not move.
+    room = 530
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toContain('d.ts')
+    // Closed again, the peeks fit the smaller window: the files' peek goes.
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toBe('')
+    // Grown with every fold closed, it comes back.
+    room = 1000
+    act(() => { for (const callback of resized) callback() })
+    expect(filesPeek()).toContain('d.ts')
+  })
+  it('works out what the closed folds and the open list say', () => {
+    expect(checksSummary([check('a', 'failure'), check('b', 'cancelled'), check('c', 'pending'), check('d', 'action-required'), check('e', 'success'), check('f', 'neutral')])).toEqual([
+      { tone: 'failed', words: '2 failed' }, { tone: 'waiting', words: '1 need approval' }, { tone: 'waiting', words: '1 running' }, { tone: 'settled', words: '1 passed' }, { tone: 'settled', words: '1 skipped' }])
+    expect(descriptionPreview('')).toBe('')
+    expect(descriptionPreview('<!-- a template\nits second line -->\n# Title\n---\n![shot](a.png)\n1. [The link](https://x.test) and __more__')).toBe('The link and more')
+    expect(descriptionPreview('```sh\nnpm test\n```\n> - [x] Quoted')).toBe('Quoted')
+    // A whole first sentence, so a narrow panel ends the preview on the pull request's own stop rather than cutting it.
+    expect(descriptionPreview('The thread store now writes on a worker thread. Main reads it and hands the worker every write.')).toBe('The thread store now writes on a worker thread.')
+    expect(descriptionPreview('Fix v2. The store keeps its order. Then it stops.')).toBe('Fix v2. The store keeps its order.')
+    expect(descriptionPreview('Reads the file at src/main/index.ts on start and writes nothing')).toBe('Reads the file at src/main/index.ts on start and writes nothing')
+    // Its whole first paragraph, for a panel with room: up to a blank line, a heading, a fence or the list's next item.
+    expect(descriptionPreview('## What\n\nThe store writes on a worker now. Main reads it\nin order.\n\nA second paragraph.', true)).toBe('The store writes on a worker now. Main reads it in order.')
+    expect(descriptionPreview('- [x] The first item, which **says** it all.\n- The second item.', true)).toBe('The first item, which says it all.')
+    expect(descriptionPreview('Before the fence it ends here.\n```\ncode\n```', true)).toBe('Before the fence it ends here.')
+    expect(listReviewWord('approved')).toBe('Approved')
+    expect(listReviewWord('changes_requested')).toBe('Changes requested')
+    expect(listReviewWord('review_required')).toBeNull()
+    expect(listReviewWord(null)).toBeNull()
+    const lines = checklist(detail({ behindBy: null, draft: true, checks: [check('a', 'failure')] }))
+    expect(linesInOrder(lines).map(line => line.tone)).toEqual(['failed', 'todo', 'unknown', 'done', 'done'])
+    expect(lines.map(line => line.id)).toEqual(['checks', 'review', 'up-to-date', 'conflicts', 'ready'])
+  })
+  it('works out the order, the addresses and the matches the folds use', () => {
+    expect(checksOnGitHub('https://github.com/o/r/pull/74/?x=1')).toBe('https://github.com/o/r/pull/74/checks')
+    const { standing, settled } = checksInOrder([check('a', 'success'), check('b', 'pending'), check('c', 'skipped'), check('d', 'failure'), check('e', 'cancelled'), check('f', 'action-required')])
+    expect(standing.map(item => item.name)).toEqual(['d', 'e', 'f', 'b'])
+    expect(settled.map(item => item.name)).toEqual(['a', 'c'])
+    expect(checkWord({ status: 'pending', startedAt: null })).toBe('Queued')
+    expect(checkWord({ status: 'pending', startedAt: '2026-09-23T10:00:00.000Z' })).toBe('Running')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: '2026-09-23T10:04:12.000Z' })).toBe('4m 12s')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: null }, Date.parse('2026-09-23T10:00:30.000Z'))).toBe('30s')
+    expect(checkTime({ startedAt: null, completedAt: null })).toBeNull()
+    expect(checkTime({})).toBeNull()
+    expect(checkNameParts('CI / Test / shard 1')).toEqual({ group: 'CI', own: 'Test / shard 1' })
+    expect(checkNameParts('deploy/preview')).toEqual({ group: null, own: 'deploy/preview' })
+    expect(filesByWeight([{ path: 'b', additions: 1, deletions: 1 }, { path: 'a', additions: 1, deletions: 1 }, { path: 'c', additions: 9, deletions: 0 }]).map(file => file.path)).toEqual(['c', 'a', 'b'])
+    const folders = filesByFolder([{ path: 'b/x', additions: 1, deletions: 1 }, { path: 'a/y', additions: 2, deletions: 0 }, { path: 'top', additions: 1, deletions: 0 }, { path: 'c/z', additions: 9, deletions: 4 }, { path: 'c/w', additions: 0, deletions: 1 }])
+    expect(folders.map(folder => [folder.folder, folder.files.map(file => file.path), folder.additions, folder.deletions])).toEqual([['', ['top'], 1, 0], ['c/', ['c/z', 'c/w'], 9, 5], ['a/', ['a/y'], 2, 0], ['b/', ['b/x'], 1, 1]])
+    expect(pathParts('src/main/x.ts')).toEqual({ folder: 'src/main/', name: 'x.ts' })
+    expect(pathParts('x.ts')).toEqual({ folder: '', name: 'x.ts' })
+    const item = { number: 74, title: 'Make it friendlier', author: 'mira', headBranch: 'feat/hello' }
+    for (const query of ['', '#74', '74', 'FRIEND', 'mira', 'feat/hello']) expect(listMatches(item, query)).toBe(true)
+    expect(listMatches(item, 'drake')).toBe(false)
+  })
+  it('anchors a file on GitHub by the SHA-256 of its path', async () => {
+    await expect(fileOnGitHub('https://github.com/o/r/pull/74/?x=1', 'a.txt')).resolves.toBe(`https://github.com/o/r/pull/74/files#diff-${createHash('sha256').update('a.txt').digest('hex')}`)
+  })
+})
+
+describe('the surface\'s foot, which ends on a whole row', () => {
+  const row = (top: number, bottom: number, padTop = 9, padBottom = 9, line = 18) => ({ top, bottom, padTop, padBottom, line })
+  it('stops at the top of the row the foot would cut, dissolving over its top space', () => {
+    expect(footCut([row(700, 756), row(756, 812)], 790)).toEqual({ at: 756, soft: 9 })
+  })
+  it('lets the innermost row decide, so a fold head\'s peek gives way a row at a time', () => {
+    expect(footCut([row(600, 820, 10, 10), row(760, 780, 0, 0), row(783, 803, 0, 0)], 790)).toEqual({ at: 783, soft: 4 })
+  })
+  it('cuts nothing where the foot falls in space: between rows, or in a row\'s bottom padding', () => {
+    expect(footCut([row(700, 756), row(760, 816)], 758)).toEqual({ at: 758, soft: 0 })
+    expect(footCut([row(700, 756)], 750)).toEqual({ at: 750, soft: 0 })
+  })
+  it('gives a tall paragraph way at its last whole line', () => {
+    expect(footCut([row(500, 700, 0, 0, 22)], 620)).toEqual({ at: 610, soft: 4 })
   })
 })

@@ -1,24 +1,26 @@
-import React, { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { createContext, memo, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  ArrowDownUp, Bot, Brain, Camera, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MousePointerClick,
+  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Copy, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MessageSquareText, MousePointerClick,
   MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
-import type { AgentThread } from '../../../shared/agents'
+import { isVisualMessage, type AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type TurnChange,
-  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
+  activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
+  activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, summaryBody, type ActivityLabel, type ActivityLeadKind, type CommandPart, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
+import { DiffBlock } from '../tools/DiffBlock'
+import { useTransientFlag, writeClipboard } from './richActions'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
@@ -28,6 +30,8 @@ import {
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
+import { Fold } from './Fold'
+import { folderKey } from './projectFolders'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -68,6 +72,11 @@ export interface ActivityGroupViewProps {
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
   /** How the turn ended, when a folded turn line above the group already says it. */
   readonly outcome?: AgentActivity['status'] | undefined
+  /**
+   * The group is all a fold holds, so its line would only say again what the Worked for line above it says: the rows stand
+   * straight under that line, with no heading and no fold of their own.
+   */
+  readonly bare?: boolean | undefined
 }
 
 /** Whole seconds while the clock runs, so the number does not flicker through tenths. */
@@ -105,9 +114,32 @@ export function foldOnEscape(open: boolean, fold: (summary: HTMLElement) => void
   }
 }
 
+/** A change's added and removed lines, "+24 −8". Green and red are the success and error roles, as Changes draws them. */
+export function LineCountMarks({ counts, spoken = true }: {
+  readonly counts: LineCounts | null | undefined
+  /** False where the name around it already says them. */
+  readonly spoken?: boolean
+}): ReactNode {
+  if (!counts || (!counts.added && !counts.removed)) return null
+  return <span className="thread-lines">
+    <span dir="ltr" aria-hidden="true">
+      {counts.added ? <span className="thread-lines__added">+{shownLineCount(counts.added)}</span> : null}
+      {counts.added && counts.removed ? ' ' : null}
+      {counts.removed ? <span className="thread-lines__removed">−{shownLineCount(counts.removed)}</span> : null}
+    </span>
+    {spoken ? <span className="tt-visually-hidden">, {spokenLineCounts(counts)}</span> : null}
+  </span>
+}
+
+/** A reported change to one file, drawn with that file type's colours. */
+function ChangeDiff({ diff, path }: { readonly diff: string; readonly path: string }): ReactNode {
+  return <DiffBlock diff={displayDiff(diff).replace(/\n$/u, '')} path={path} />
+}
+
 /**
- * What a finished turn left behind. The count stays in view while the work is folded, because the files
- * a turn changed are what a reader comes back for; the diffs are the ones the provider reported.
+ * What a finished turn left behind, beside its line: one file by its verb and name, several by their count, each with the lines
+ * it added and removed. It stays in view while the work is folded, because the files a turn changed are what a reader comes back
+ * for; the diffs are the ones the provider reported.
  */
 export function TurnChangedFiles({ changes, onDisclosure }: {
   readonly changes: readonly TurnChange[]
@@ -121,25 +153,31 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
   const views = new Map(useActivityBodies(sources, open).map(view => [view.sent, view]))
   if (!changes.length) return null
   const count = changes.length
-  const label = plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
+  const only = count === 1 ? changes[0]! : undefined
+  const onlyName = only ? only.path.split(/[\\/]/u).filter(Boolean).at(-1) ?? only.path : ''
+  const label = only ? spokenActivity(changeLeadKind(only.kind), { lead: '', subject: onlyName })
+    : plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
   return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
       <FilePen className="thread-activity__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-      <span>{label}</span>
+      <span className="thread-changes__words">{only
+        ? <ActivityWords kind={changeLeadKind(only.kind)} label={{ lead: '', subject: onlyName, mono: true }} subjectClass="thread-changes__file" plain />
+        : label}</span>
+      <LineCountMarks counts={changesLineCounts(changes)} />
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {open ? <ul id={bodyId} className="thread-changes__list" aria-label={label}>
+    <Fold open={open}><ul id={bodyId} className="thread-changes__list" aria-label={label}>
       {changes.map(change => <li key={change.path}>
         <p className="thread-activity__fact">{change.verb} <code>{change.path}</code></p>
         {change.diffs.map((diff, index) => {
           const source = change.sources?.[index], view = source && views.get(source.record)
-          if (!source || !view) return <MessageContent key={index} text={fenced(displayDiff(diff), 'diff')} />
+          if (!source || !view) return <ChangeDiff key={index} diff={diff} path={change.path} />
           const whole = view.state === 'loaded' ? activityChanges(view.record)[source.index]?.diff ?? diff : diff
-          return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" cut />
+          return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" path={change.path} cut />
         })}
       </li>)}
-    </ul> : null}
+    </ul></Fold>
   </div>
 }
 
@@ -158,29 +196,91 @@ const WORKING_WORDS = [
 const WORD_MS = 3800
 const FADE_MS = 220
 
-/** Changes its own word instead of re-rendering the transcript, and never repeats the word it is replacing. */
-function WorkingWord(): ReactNode {
+/** How long what is on the line holds it, so a quick run of steps reads rather than flickers, and a short gap between two steps never shows. */
+const HOLD_MS = 1500
+
+/** Reduced motion, from Sotto's own setting or the system's. */
+const stillMotion = (): boolean => document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+
+function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | null, now: WorkingNow | null): void {
+  node.textContent = words
+  // The light crossing the words draws a lit copy of them, which reads the words from here.
+  node.dataset.word = words
+  // What is running for those words sits beside them, still and smaller; the light crosses only the words.
+  if (detail) {
+    detail.textContent = now?.detail ?? ''
+    detail.toggleAttribute('data-code', now?.code === true)
+  }
+  if (!stillMotion()) for (const part of [node, detail?.parentElement]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+}
+
+/** The step beside the words carries its row's mark from the opened steps, so it reads as the step and not as more of the sentence. */
+const stepMark = (step: WorkingNow['step']): LucideIcon => step === undefined || step === 'reply' ? MessageSquareText : ICONS[step]
+
+const nextWord = (current: number): number => (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
+
+/** One string for what the line says, so a step that reads the same as the one on the line changes nothing. */
+const workingKey = (now: WorkingNow | null): string | null => now === null ? null : `${now.words}\n${now.detail}`
+
+/**
+ * The working line's words: what the turn is on when it is known (`workingNow`), with what is running for it beside them,
+ * else the Spaceballs words. Writes its own text instead of re-rendering the transcript, and never repeats the word it is
+ * replacing. A change that comes with the steps opening or folding (`open`) shows at once, since it answers the press.
+ */
+function WorkingWord({ now, open }: { readonly now: WorkingNow | null; readonly open: boolean }): ReactNode {
   const { t } = useLingui()
   const ref = useRef<HTMLSpanElement>(null)
+  const detailRef = useRef<HTMLSpanElement>(null)
+  // The first words only: from here the effects write them, so a redraw of the line never undoes it.
+  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true }))
+  // The step's mark is the one part React draws, and only when the step on the line changes.
+  const [step, setStep] = useState(now?.step)
+  const key = workingKey(now)
+  const line = useRef({ step: key, at: 0, word: 0 })
+  const latest = useRef(now)
+  latest.current = now
+  const pressed = useRef(open)
   useEffect(() => {
-    let current = 0
+    const state = line.current
     const timer = window.setInterval(() => {
       const node = ref.current
-      if (!node) return
-      current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
-      node.textContent = WORKING_WORDS[current]!
-      // The light crossing the words draws a lit copy of them, which reads the word from here.
-      node.dataset.word = WORKING_WORDS[current]!
-      const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
-      if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+      if (!node || state.step !== null || Date.now() - state.at < WORD_MS) return
+      state.word = nextWord(state.word)
+      writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
     }, WORD_MS)
     return () => window.clearInterval(timer)
   }, [])
-  // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
-  return <>
-    <span ref={ref} className="thread-activity-live__word" data-word={WORKING_WORDS[0]} aria-hidden="true">{WORKING_WORDS[0]}</span>
+  useEffect(() => {
+    const state = line.current
+    const answer = pressed.current !== open
+    pressed.current = open
+    if (state.step === key) return
+    const show = (): void => {
+      const node = ref.current
+      if (!node) return
+      const shown = latest.current
+      state.step = workingKey(shown)
+      state.at = Date.now()
+      if (shown !== null) { setStep(shown.step); writeWorking(node, shown.words, detailRef.current, shown); return }
+      state.word = nextWord(state.word)
+      writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
+    }
+    // The words come back only after a gap that lasts; a new step waits out the hold of the one on the line.
+    const wait = answer ? 0 : key === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
+    if (wait <= 0) { show(); return }
+    const timer = window.setTimeout(show, wait)
+    return () => window.clearTimeout(timer)
+  }, [key, open])
+  const Mark = stepMark(step)
+  // The words are decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
+  return <span className="thread-activity-live__now">
+    <span ref={ref} className="thread-activity-live__word" data-word={first.words} aria-hidden="true">{first.words}</span>
+    <span className="thread-activity-live__step" aria-hidden="true">
+      <Mark className="thread-activity-live__mark" size={13} strokeWidth={1.8} aria-hidden="true" />
+      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined}>{first.detail}</span>
+    </span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
-  </>
+  </span>
 }
 
 /** A finished subagent whose provider sent no result says so, instead of opening to nothing. */
@@ -190,7 +290,8 @@ function missingAgentOutput(record: AgentActivity): boolean {
 }
 
 function hasDetails(record: AgentActivity): boolean {
-  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated || record.cut)
+  const text = record.kind === 'reasoning' ? summaryBody(record) : record.text
+  return Boolean(record.command || record.cwd || record.output || record.error || text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated || record.cut)
     || missingAgentOutput(record)
 }
 
@@ -200,18 +301,77 @@ const STEP_LABELS: Record<string, MessageDescriptor> = {
   pending: msg({ message: 'To do', comment: 'A plan step\'s state.' }),
 }
 
-/** The plan as the provider last reported it. Sotto shows its state; only the provider can change it. */
-function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
+/**
+ * The plan as the provider last reported it. Sotto shows its state; only the provider can change it. Above a running turn's
+ * working line it stands as the same checklist a size smaller (`live`), and an item whose state moves on fades into its new
+ * mark, as the line's own words do.
+ */
+const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly record: AgentActivity; readonly live?: boolean }): ReactNode {
   const { t } = useLingui()
   const steps = record.steps ?? []
   const done = steps.filter(step => step.status === 'completed').length, total = steps.length
-  return <ol className="thread-activity__steps" aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
+  const list = useRef<HTMLOListElement>(null)
+  const seen = useRef<readonly string[] | null>(null)
+  const statuses = steps.map(step => step.status).join('\n')
+  useLayoutEffect(() => {
+    if (!live) return
+    const before = seen.current, now = statuses.split('\n')
+    seen.current = now
+    if (before === null || stillMotion()) return
+    list.current?.querySelectorAll(':scope > li').forEach((item, index) => {
+      if (before[index] !== undefined && before[index] !== now[index]) item.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+    })
+  }, [live, statuses])
+  return <ol ref={list} className={live ? 'thread-activity__steps thread-activity-live__plan' : 'thread-activity__steps'}
+    aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
     {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
-      <span className="thread-activity__step-mark" aria-hidden="true" />
+      {step.status === 'completed' ? <Check className="thread-activity__step-done" size={13} strokeWidth={2.2} aria-hidden="true" /> : <span className="thread-activity__step-mark" aria-hidden="true" />}
       <span className="thread-activity__step-text">{step.text}</span>
       <span className="tt-visually-hidden">{Object.hasOwn(STEP_LABELS, step.status) ? t(STEP_LABELS[step.status]!) : step.status}</span>
     </li>)}
   </ol>
+})
+
+/** The open row says a one-line command whole, and this copies it from the end of the command's line, since a row's words cannot be selected. */
+function CopyCommand({ command }: { readonly command: string }): ReactNode {
+  const { t } = useLingui()
+  const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
+  const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
+  const name = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
+  return <span className="thread-activity__copy-command">
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={name} onClick={copy}>
+      {outcome === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+    </button>
+    <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
+  </span>
+}
+
+/** How many lines of what a command printed show before the rest waits for a press. */
+const OUTPUT_LINES = 12
+
+/**
+ * What a command printed, in its well. A long one holds its first twelve lines and says how many more there are, on a press
+ * that shows the rest in place; a press is the way to read it all, and Copy in the well's corner takes it whole either way.
+ * The well does not scroll inside the transcript's own scroll. A count of one or two more lines is not worth the press, so
+ * such an output shows whole.
+ */
+function CommandOutput({ output }: { readonly output: string }): ReactNode {
+  useInterfaceLanguageState()
+  const [whole, setWhole] = useState(false)
+  const well = useRef<HTMLDivElement>(null)
+  const lines = output.replace(/\n$/u, '').split('\n').length
+  const more = whole || lines <= OUTPUT_LINES + 2 ? 0 : lines - OUTPUT_LINES
+  const show = (): void => {
+    setWhole(true)
+    // The press goes with the rest it showed, so focus moves into what came back rather than off the page.
+    well.current?.querySelector<HTMLElement>('pre')?.focus({ preventScroll: true })
+  }
+  return <div ref={well} className="thread-activity__output" data-held={more > 0 || undefined}>
+    <MessageContent text={fenced(output, 'output')} />
+    {more > 0 ? <button type="button" className="thread-activity__more thread-activity__output-more tt-focusable" onClick={show}>
+      {plural(more, { one: `Show ${{ lines: shownCount(more) }} more line`, other: `Show ${{ lines: shownCount(more) }} more lines` })}
+    </button> : null}
+  </div>
 }
 
 function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
@@ -224,30 +384,41 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const { t } = useLingui()
   const body = useActivityBody(sent, needed)
   const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
-  const notes = [timingNote(record, provider), record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
-  const cwd = record.cwd
+  // Where the row's time came from stands beside that time in the open row; here only what else was lost.
+  const notes = [record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
+  // Where a command ran is said only when it was not the thread's own folder, which the pane's header already names.
+  const folder = useContext(ThreadFolderContext)
+  const cwd = record.cwd && (folder === undefined || folderKey(folder) !== folderKey(record.cwd)) ? record.cwd : undefined
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
-  const text = parsed ? inputDetail(record) : record.text
+  // A reasoning summary's heading is its row's words, so what it opens is the rest.
+  const text = parsed ? inputDetail(record) : record.kind === 'reasoning' ? summaryBody(record) : record.text
   const json = parsed && record.kind !== 'command'
   // Cut input matters only where the row shows it: a command shows its description and an edit its diff instead.
   const cutText = cut !== undefined && textShown
+  // The open row reads a one-line command whole, so it is said there once; a script of several lines keeps its block.
+  const script = record.command !== undefined && record.command.trim().includes('\n')
+  const said = cutText ? record.kind === 'reasoning' || !json
+    ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
+    : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
+    : text ? record.kind === 'reasoning'
+      ? <MessageContent text={text} />
+      : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null
+  // What ran and what it was for are the open row's, with the way to copy the command at the end of its line; the body leads
+  // with what came back, then where it ran when that was somewhere else: each said once. A command whose input is not the provider's
+  // description keeps those words here, first.
+  const described = record.command !== undefined && stepDescription(record) !== ''
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
-    {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
-    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
-    {cutText ? record.kind === 'reasoning' || !json
-      ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
-      : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
-      : text ? record.kind === 'reasoning'
-        ? <MessageContent text={text} />
-        : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null}
+    {record.command && !described ? said : null}
+    {script ? <MessageContent text={fenced(record.command!, 'command')} /> : null}
+    {record.command ? null : said}
     {activityChanges(record).map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
       {/* A single changed file is already named by its row; a tool's files are what it touched. */}
       {changes.length > 1 || record.kind !== 'file-change' ? <p className="thread-activity__fact">{changeVerb(change.kind)} <code>{change.path}</code></p> : null}
       {cut && changeDiffIsCut(sent, index)
-        ? <CutCode view={body} kind="diff" text={displayDiff(change.diff ?? '')} language="diff" cut />
-        : change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
+        ? <CutCode view={body} kind="diff" text={displayDiff(change.diff ?? '')} language="diff" path={change.path} cut />
+        : change.diff ? <ChangeDiff diff={change.diff} path={change.path} /> : null}
     </div>)}
     {/* A workflow's own entry stands for its run; the list is its agents. */}
     {record.agents?.some(agent => agent.kind !== 'workflow') ? <ol className="thread-activity__agents" aria-label={t`Agents`} data-connected={connected || undefined}>
@@ -263,12 +434,48 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     {cut?.output !== undefined
       // Held output opens at its end, before and after the rest arrives.
       ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
-      : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
+      : record.output ? <CommandOutput output={record.output} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
+    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
   </div>
 }
+
+/**
+ * A folded row's command, which gives way where it says least on a row too narrow for it whole (`commandCut`), so its verb and
+ * the file it acts on stay readable. The parts are spans in one left-to-right isolate, so a right-to-left interface keeps the
+ * command's direction (ADR-0123); the folders are laid out right to left so they lose their start, and the left-to-right mark
+ * keeps their last separator on their right. A file after the first is one span with its folders, which goes whole once its
+ * name has given way, so no ellipsis stands beside another.
+ */
+function RowCommand({ command, className }: { readonly command: string; readonly className: string }): ReactNode {
+  const parts = commandCut(command)
+  if (parts === null) return <span className={className} dir="ltr">{command}</span>
+  const piece = (part: CommandPart, key: number): ReactNode =>
+    <span key={key} className={`thread-activity__command-${part.role}`}>{part.role === 'folders' ? `${part.text}\u200e` : part.text}</span>
+  // What stands before a later file, its folders and its name are one span.
+  const pieces: ReactNode[] = []
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!
+    if (part.role !== 'between') { pieces.push(piece(part, index)); continue }
+    pieces.push(<span key={index} className="thread-activity__command-more">{parts.slice(index, index + 3).map((more, at) => piece(more, index + at))}</span>)
+    index += 2
+  }
+  return <span className={className} dir="ltr" data-cut="">{pieces}</span>
+}
+
+/**
+ * The plan record whose checklist stands above the working line, which the opened steps under that line keep as one
+ * step without opening it again, so opening the steps adds what they did and never says the plan twice.
+ */
+const PlanInViewContext = createContext<string | undefined>(undefined)
+
+/**
+ * The folder the thread works in, so an opened command names the folder it ran in only when that was somewhere else.
+ * Undefined while the thread's folder is not known, and then every opened command names its folder.
+ */
+export const ThreadFolderContext = createContext<string | undefined>(undefined)
 
 const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
   readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
@@ -277,46 +484,85 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const [open, setOpen] = useState(false)
+  const [pressedOpen, setOpen] = useState(false)
   const detailId = useId()
   const { record, children } = node
+  // The plan in view above the working line is already open there: its row stands among the steps and opens nothing.
+  const planInView = useContext(PlanInViewContext) === record.id
+  const expandable = !planInView && (hasDetails(record) || children.length > 0)
+  const open = pressedOpen && expandable
   const count = children.length
   const steps = count ? plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` }) : ''
-  const base = activityLabel(record)
+  // The plan in view is a step that happened, not its contents again: its checklist and progress stand above the line.
+  const base = planInView ? { lead: '', subject: t({ message: 'Updated the plan', comment: 'A running turn\'s plan among its opened steps; the plan itself stands above the working line.' }), mono: false, preview: '' } : activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
-  const status = statusText(record, connected)
+  // A command its provider described reads as what it was for alone, as Claude's summaries do, so the rows scan as what
+  // happened (Zach's pick, ADR-0134's November 6 amendment). Its command shows once the row is open, whole under what it was
+  // for, but a script of several lines leaves itself to its block. Folded, the command is still in the row's name and on its
+  // tooltip.
+  const purpose = planInView ? '' : stepDescription(record)
+  const script = record.command?.trim().includes('\n') === true
+  const status = planInView ? '' : statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
-  const running = record.status === 'running'
-  const expandable = hasDetails(record) || children.length > 0
-  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview,
+  const running = record.status === 'running' && !planInView
+  const lines = activityLineCounts(record)
+  // Where the time came from qualifies the time, so an open row keeps it for its time's tooltip and for assistive tech: in
+  // view it would only name the thread's own provider again, or say beside no time that none was recorded.
+  const timing = open ? timingNote(record, provider) : ''
+  const timingId = useId()
+  const quiet = quietUnknown && record.status === 'unknown'
+  // A row's time shows only when it says something, open or folded: a step under a second leaves it to the row's name.
+  const brief = quickStep(record)
+  const timed = record.status === 'completed' && !brief
+  // A reasoning summary's row shows its heading alone; assistive tech, which does not see its mark, hears what it is first.
+  const kind = record.kind === 'reasoning' && label.subject !== record.title ? record.title : ''
+  const spoken = planInView ? label.subject : [kind, purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
-  const subject = label.subject
+  const subject = purpose || label.subject
+  // Open, a one-line command is said whole in the row, and the way to copy it sits at the end of the command's own line rather
+  // than on a line of its own: the slot holds its place there, and the button, which cannot sit inside the row's own button,
+  // is drawn over it.
+  const copied = open && record.kind === 'command' && record.command && !script ? record.command : ''
+  const copySlot = copied ? <span className="thread-activity__copy-slot" aria-hidden="true" /> : null
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
-    <span className="thread-activity__label">
-      <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />
+    <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
+      {purpose ? <>
+        <span className="thread-activity__subject">{purpose}</span>
+        {open && !script ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : null}
+      </> : !open && record.kind === 'command' && shown.mono && !shown.preview
+        ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
+        : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
-      {running ? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" /> : null}
-      {quietUnknown && record.status === 'unknown' ? null : status}
+      {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
+      <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
+      {quiet || brief ? null : timed && timing ? <span title={timing}>{status}</span> : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
+      {timing ? <span id={timingId} className="tt-visually-hidden">{timing}</span> : null}
     </span>
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>
+  // The step running now stands out from the finished ones, as the plan's item in progress does: its mark in the accent.
+  // The tooltip sits on the row rather than its button, so assistive tech, which hears the command in the button's name, does
+  // not hear it again as its description.
   return <li className="thread-activity__row" data-kind={record.kind} data-status={record.status} data-open={open || undefined}
+    data-now={running && connected ? '' : undefined} title={purpose && !open && record.command ? record.command : undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     {expandable
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}
+        aria-describedby={timing ? timingId : undefined}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
-    {open ? <div id={detailId} className="thread-activity__open">
+    {copied ? <CopyCommand command={copied} /> : null}
+    <Fold open={open}><div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
       {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>
         {children.map(child => <ActivityRow key={child.record.id} node={child} connected={connected} provider={provider} quietUnknown={quietUnknown} onDisclosure={onDisclosure} />)}
       </ul> : null}
-    </div> : null}
+    </div></Fold>
   </li>
 })
 
@@ -327,31 +573,19 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
  * a press here does not change that, because the group usually sits inside a fold that follows it. Nothing here can act
  * on the provider or its agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
-  const [showAll, setShowAll] = useState(false)
   const listId = useId()
   const stepsOpen = useStepsOpen()
-  const quiet = useOwlFeature('quiet-browser')
   const expanded = choice ?? (live || stepsOpen)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
-  // Work done for a subagent or tool sits under it, and on Owl a run of calls to Sotto's browser is one line (ADR-0154).
-  const nodes: readonly ActivityNode[] = expanded ? nestActivities(group.records) : []
-  // Within a transcript a line stands for its whole turn, and the group hears only of its own turn's lines; a view outside
-  // one reads its own records.
-  const shared = useTurnBrowserLines(quiet ? group.turnId : null)
-  const records = group.records
-  const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
-    [quiet, shared, records, group.turnId])
-  const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
-  const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
-  const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
-  const canFold = !live && group.records.length > 0
-  const name = [headline, summary].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
+  const lineCounts = recordsLineCounts(group.records)
+  const canFold = !live && !bare && group.records.length > 0
+  const name = [headline, summary, lineCounts ? spokenLineCounts(lineCounts) : ''].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
-  return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
+  return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined} data-bare={bare || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
     aria-label={name} onKeyDown={foldOnEscape(canFold && expanded, summary => { onDisclosure?.(summary); setChoice(false) })}>
     {canFold ? <button type="button" className="thread-activity__summary tt-focusable" aria-expanded={expanded} aria-controls={expanded ? listId : undefined} aria-label={name}
@@ -359,19 +593,47 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       {headline ? <span className="thread-activity__headline">{headline}</span> : null}
       {summary ? <span className="thread-activity__counts">{summary}</span> : null}
+      {/* Once open, each row says its own. */}
+      <LineCountMarks counts={expanded ? null : lineCounts} spoken={false} />
     </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
     <TurnFailureReason turn={group.turn} />
-    {rows.length ? <ul id={listId} className="thread-activity__rows">
-      {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
-        onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
-      {rows.map(item => item.run
-        ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
-        : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
-    </ul> : null}
+    {bare
+      ? <ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} />
+      : <Fold open={expanded}><ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} /></Fold>}
   </section>
 })
+
+/**
+ * A group's rows, drawn only while they show. A running turn shows its newest six, with Show N earlier for the rest. Its plan
+ * is one of its steps (ADR-0134).
+ */
+function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure, outcome }: {
+  readonly id: string
+} & Pick<ActivityGroupViewProps, 'group' | 'live' | 'connected' | 'provider' | 'onDisclosure' | 'outcome'>): ReactNode {
+  const [showAll, setShowAll] = useState(false)
+  const quiet = useOwlFeature('quiet-browser')
+  const records = group.records
+  // Work done for a subagent or tool sits under it, and on Owl a run of calls to Sotto's browser is one line (ADR-0154).
+  const nodes = useMemo(() => nestActivities(records), [records])
+  // Within a transcript a line stands for its whole turn, and the group hears only of its own turn's lines; a view outside
+  // one reads its own records.
+  const shared = useTurnBrowserLines(quiet ? group.turnId : null)
+  const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
+    [quiet, shared, records, group.turnId])
+  const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
+  const earlier = live && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
+  const row = (item: ActivityItem): ReactNode => item.run
+    ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
+    : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />
+  if (!shown.length) return null
+  return <ul id={id} className="thread-activity__rows">
+    {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
+      onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
+    {(earlier ? shown.slice(-LIVE_ROWS) : shown).map(row)}
+  </ul>
+}
 
 /** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
 export const STILL_WAITING_MS = 30_000
@@ -439,8 +701,8 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
-export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince, tip }: {
-  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction'>>; readonly connected: boolean
+export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince }: {
+  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction' | 'requests'>>; readonly connected: boolean
   /** Display name of the provider, for the opened steps' "Reported by Codex". */
   readonly provider: string
   /** Called before the steps open or fold so the transcript can keep the line in place. */
@@ -450,10 +712,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
    * provider's first word; its own running turn takes the line over as soon as it arrives.
    */
   readonly sendingSince?: string | undefined
-  /** The tip under the working words for this running turn (ADR-0159), when tips are on. */
-  readonly tip?: ((turnId: string) => ReactNode) | undefined
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   // The turn whose steps the user opened or folded here, so the next turn starts as the user last left any turn's steps
   // even though this line stays mounted between turns.
   const [pressed, setPressed] = useState<{ readonly turnId: string; readonly open: boolean } | null>(null)
@@ -482,11 +742,29 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // again, one cell walking round while the server reads the prompt, and a step round for each piece of text it writes.
   const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
+  const last = thread.messages.at(-1)
+  // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
+  const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
+  // A request waiting on the user holds the turn, so the line says so rather than that a reply is being written.
+  const requests = thread.requests
+  const waitingOn = requests?.some(request => request.kind === 'permission') ? 'permission' : requests?.length ? 'question' : undefined
+  // Read again only when the turn's steps, its newest reply or what it waits on change, not for each word of a reply
+  // streaming in, or when the interface language does, since the words are in it.
+  const now = useMemo(() => workingNow(steps, replyId, waitingOn), [steps, replyId, waitingOn, i18n.locale])
+  // With the steps open, the step running now is their newest row, so the line leaves it there and carries the turn's own
+  // words, the Spaceballs words, as it does between steps: each is said once. A reply being written or a request waiting on
+  // the user has no row, so the line keeps saying it.
+  const lineNow = open && now?.stepId !== undefined ? null : now
+  // When the provider sent a plan, its checklist stands above the line while the turn runs (ADR-0134, November 5 amendment,
+  // "the plan stays in view"). Its record is still one of the steps under the line, a row that does not open the list again;
+  // once the steps are open the checklist reads each item whole, as the opened plan did.
+  const plan = useMemo(() => newestPlan(steps), [steps])
+  const checklist = plan ? <PlanSteps record={plan} live /> : null
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
-    opened: open ? <div id={stepsId} className="thread-activity-live__steps">
+    opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
-    </div> : null,
+    </div></Fold>,
     onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
     onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); foldedTurns.add(turnId) }),
   }
@@ -511,30 +789,28 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} mark={mark} startedAt={turn.startedAt} steps={disclosure} />
   }
-  // The words alone carry the wait: no clock sits beside them (ADR-0134, October 26 amendment).
+  // No clock sits beside the words (ADR-0134, October 26 amendment), and no sign of a failed step.
   const words = <>
     {mark ?? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />}
-    <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
+    <span className="thread-activity-live__state">{connected ? <WorkingWord now={lineNow} open={open} /> : t`Last seen working`}</span>
   </>
-  // A tip sits under the words while the provider is connected, and above the steps once they open.
-  const tipLine = connected && turnId !== null && tip ? tip(turnId) : null
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+    {checklist}
     <div className="thread-activity-live__line">{words}</div>
-    {tipLine}
   </div>
   const taken = disclosure.label
   const name = connected ? t({ message: `Working, ${taken} so far`, comment: '{taken} is how many steps the running turn has taken, such as 3 steps.' })
     : t({ message: `Last seen working, ${taken} so far`, comment: '{taken} is how many steps the turn had taken, such as 3 steps.' })
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
     onKeyDown={disclosure.onKeyDown}>
+    {checklist}
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
-      onClick={disclosure.onToggle}>
+      aria-description={connected ? now?.spoken : undefined} onClick={disclosure.onToggle}>
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {tipLine}
-    {disclosure.opened}
+    <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
   </div>
 }
 
@@ -579,7 +855,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
       <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {open ? <ol id={listId} className="thread-browser__steps" aria-label={said}>
+    <Fold open={open}><ol id={listId} className="thread-browser__steps" aria-label={said}>
       {run.steps.map(step => {
         const unfinished = stepUnfinished(step, !going)
         const StepIcon = unfinished ? CircleAlert : STEP_ICONS[step.verb]
@@ -588,7 +864,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
           <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
         </li>
       })}
-    </ol> : null}
+    </ol></Fold>
   </Tag>
 }
 

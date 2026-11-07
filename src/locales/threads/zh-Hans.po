@@ -90,6 +90,10 @@ msgstr ""
 msgid "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
 msgstr ""
 
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "{added, plural, one {{lineCount} line added} other {{lineCount} lines added}}"
+msgstr ""
+
 #. Lines added to and removed from a changed file.
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "{added} added, {removed} removed"
@@ -319,6 +323,7 @@ msgstr ""
 msgid "{directory} has nothing to mention."
 msgstr ""
 
+#. A plan's steps: 2 of 5 done.
 #. A plan's steps: 2 of 5 done.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{done} of {total} done"
@@ -731,6 +736,10 @@ msgstr ""
 msgid "{more, plural, one {One more question in that reply.} other {# more questions in that reply.}}"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
+msgstr ""
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr ""
@@ -938,6 +947,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{needs, plural, other {{needing} waiting on you}}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{newCount, plural, one {# new} other {# new}}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{newCount, plural, one {Jump to # new message} other {Jump to # new messages}}"
 msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
@@ -1180,6 +1197,10 @@ msgstr ""
 msgid "{remaining} left to answer"
 msgstr ""
 
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "{removed, plural, one {{lineCount} line removed} other {{lineCount} lines removed}}"
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{reviews, plural, one {# review} other {# reviews}}"
 msgstr ""
@@ -1359,11 +1380,6 @@ msgstr ""
 msgid "{title}, interactive page"
 msgstr ""
 
-#. A tip naming one of the thread's skills. {token} is how it is written in the prompt; {about} is the provider's own description of it.
-#: src/renderer/src/agents/tips.tsx
-msgid "{token} in the prompt: {about}"
-msgstr ""
-
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{tools, plural, one {used {toolCount} tool} other {used {toolCount} tools}}"
 msgstr ""
@@ -1520,7 +1536,7 @@ msgstr ""
 
 #. {more} is how many more threads wait; {overflowKinds} says what for, such as 2 approvals, 1 answer.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "+ {more} more waiting ({overflowKinds})"
+msgid "+ {more} more: {overflowKinds}"
 msgstr ""
 
 #. {branch} is a Git branch name, such as main; {behind} counts commits.
@@ -1645,11 +1661,6 @@ msgstr ""
 
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "a revert is in progress"
-msgstr ""
-
-#. A tip under a working Codex thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "A skill in the project’s <0>.agents/skills</0> folder is one <1>$</1> away in every Codex thread there."
 msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts
@@ -1916,6 +1927,11 @@ msgstr ""
 msgid "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 msgstr ""
 
+#. Pops open the approval or question a waiting thread holds, to answer it.
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Answer"
+msgstr ""
+
 #. Brings back a skipped question so it can be answered.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer it"
@@ -2026,16 +2042,6 @@ msgstr ""
 
 #: src/renderer/src/agents/CouncilPress.tsx
 msgid "Ask the Council about this reply"
-msgstr ""
-
-#. A tip under Watcher's working line.
-#: src/renderer/src/agents/tips.tsx
-msgid "Ask Watcher to start a thread for a job. It follows the thread and tells you when it needs you."
-msgstr ""
-
-#. A tip under Watcher's working line.
-#: src/renderer/src/agents/tips.tsx
-msgid "Ask Watcher which threads are waiting on you."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -2588,11 +2594,6 @@ msgstr ""
 msgid "Circle"
 msgstr ""
 
-#. A tip under a working Claude thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "Claude reads <0>CLAUDE.md</0> at the start of every session. Ask it to add a rule there instead of repeating yourself."
-msgstr ""
-
 #. Empties the default projects directory.
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Clear"
@@ -2742,11 +2743,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
-msgstr ""
-
-#. A tip under a working Codex thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 msgstr ""
 
 #. {computer} is the name of the computer the thread runs on, such as forge.
@@ -3019,6 +3015,7 @@ msgstr ""
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+#: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copied"
 msgstr ""
@@ -3084,6 +3081,11 @@ msgstr ""
 msgid "Copy code, once the rest arrives"
 msgstr ""
 
+#. Copies the command an opened step ran.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Copy command"
+msgstr ""
+
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Copy commands"
 msgstr ""
@@ -3100,6 +3102,7 @@ msgstr ""
 
 #: src/renderer/src/agents/diagrams/DiagramFrame.tsx
 #: src/renderer/src/agents/MessageContent.tsx
+#: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy failed"
 msgstr ""
@@ -4027,6 +4030,16 @@ msgstr ""
 msgid "Edited {subject}"
 msgstr ""
 
+#. The working line while a file changes; {name} is the file's name, such as control.ts.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Editing {name}"
+msgstr ""
+
+#. The working line while files change; {name} is the first file's name, such as control.ts.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Editing {name} and {more} more"
+msgstr ""
+
 #. The reasoning effort chip, when no level is set.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Effort"
@@ -4388,11 +4401,6 @@ msgstr ""
 msgid "For 1 hour"
 msgstr ""
 
-#. A tip under a working Claude thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "For a wide search, ask Claude to use subagents. Each runs in its own context, so this thread’s stays small."
-msgstr ""
-
 #. Starts the forked thread.
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Fork"
@@ -4599,11 +4607,6 @@ msgstr ""
 msgid "Hide the list in {title}"
 msgstr ""
 
-#. The button on a tip that hides it for good.
-#: src/renderer/src/agents/tips.tsx
-msgid "Hide this tip"
-msgstr ""
-
 #: src/renderer/src/agents/BringChangesBack.tsx
 msgid "Hide until this branch changes"
 msgstr ""
@@ -4685,6 +4688,11 @@ msgstr ""
 #. Before the folder a command ran in.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "In <0>{cwd}</0>"
+msgstr ""
+
+#. A sidebar row's state: the thread waits on the user and stands in the Needs you card above, which says what for.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "In Needs you"
 msgstr ""
 
 #. A plan step's state.
@@ -5168,6 +5176,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Local folder"
+msgstr ""
+
+#. {longest} is how long the longest approval or question has waited, such as 26 min.
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "longest wait {longest}"
 msgstr ""
 
 #. A step in the browser line; starts lowercase.
@@ -5976,11 +5989,6 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
-#. {oldest} is how long the longest wait has lasted, such as 4 min.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "oldest {oldest}"
-msgstr ""
-
 #. When babysitting ended before today, as in "Ended on Oct 7 at 4:05 pm".
 #. {date} is a month and day, as in "Restarts on Oct 30 at 3:00 pm".
 #: src/renderer/src/agents/babysitting.ts
@@ -6029,8 +6037,6 @@ msgid "Only the first entries of this folder are listed. Keep typing to narrow t
 msgstr ""
 
 #. A sidebar row's menu: open the thread in the focused pane.
-#. Opens the thread.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
 msgstr ""
@@ -6086,7 +6092,27 @@ msgid "Open {title} on {name}, the thread that continues this one"
 msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Open {title} to answer"
+msgid "Open {title}, a turn failed in {waitingIn}"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open {title}, its last turn failed"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open {title}, needs your answer"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open {title}, needs your answer in {waitingIn}"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open {title}, needs your approval"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open {title}, needs your approval in {waitingIn}"
 msgstr ""
 
 #. {title} is the check's thread; {machine} is "this computer" or a host's name.
@@ -6256,14 +6282,11 @@ msgstr ""
 msgid "Open this thread"
 msgstr ""
 
+#. Opens the thread a Needs you entry is reached from, such as a wait in a thread it delegated to.
 #. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open thread"
-msgstr ""
-
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Open to answer"
 msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -6564,6 +6587,11 @@ msgstr ""
 msgid "Plan"
 msgstr ""
 
+#. One part of a list of what a turn did, starting lowercase; {progress} is how far its plan got, such as 3 of 7 done.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "plan {progress}"
+msgstr ""
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Plan from {ownerTitle}"
 msgstr ""
@@ -6614,31 +6642,6 @@ msgstr ""
 msgid "Preparing the working copy."
 msgstr ""
 
-#. A tip under a working thread. {keys} is the dictation shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Press {keys} to dictate your next prompt instead of typing it."
-msgstr ""
-
-#. A tip under a working thread. {keys} is a keyboard shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Press {keys} to jump to the next thread waiting on you."
-msgstr ""
-
-#. A tip under a working thread. {keys} is a keyboard shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Press {keys} to put the cursor in the prompt."
-msgstr ""
-
-#. A tip under a working thread. {keys} is a keyboard shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Press {keys} to show this thread’s terminal drawer."
-msgstr ""
-
-#. A tip under a working thread. {keys} is a keyboard shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Press {keys} to stop this turn."
-msgstr ""
-
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "pressed {key}"
@@ -6687,6 +6690,7 @@ msgstr ""
 #. Read before a project's name.
 #: src/renderer/src/agents/threadFacts.ts
 #: src/renderer/src/agents/ThreadGreeting.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Project"
 msgstr ""
 
@@ -6794,17 +6798,6 @@ msgstr ""
 msgid "Push to default ref?"
 msgstr ""
 
-#. A tip's Try it button, named for what it does.
-#: src/renderer/src/agents/tips.tsx
-msgid "Put “{insert}” in the prompt"
-msgstr ""
-
-#. A tip's Try it button, named for what it does. {0} is a skill as written in the prompt.
-#. placeholder {0}: skillToken(tip.skill)
-#: src/renderer/src/agents/tips.tsx
-msgid "Put {0} in the prompt"
-msgstr ""
-
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question"
 msgstr ""
@@ -6882,6 +6875,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Read your saved servers again"
+msgstr ""
+
+#. The working line while a tool reads a file; {name} is the file's name, such as threads.css.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Reading {name}"
 msgstr ""
 
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -7341,11 +7339,6 @@ msgstr ""
 msgid "Review comments"
 msgstr ""
 
-#. A tip under a working thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "Right-click a link in a reply, or press <0>Shift+F10</0> on it, to choose where it opens."
-msgstr ""
-
 #. Runs a code block's shell command in a new terminal.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Run"
@@ -7398,6 +7391,11 @@ msgstr ""
 #. An action that is running, when it has no name of its own.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Running"
+msgstr ""
+
+#. The working line while a command runs; {command} is the command, such as npm test.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Running {command}"
 msgstr ""
 
 #. {name} is a Git hook's name, such as pre-commit.
@@ -7556,11 +7554,6 @@ msgstr ""
 
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "Select ref"
-msgstr ""
-
-#. A tip under a working thread. {keys} is a keyboard shortcut.
-#: src/renderer/src/agents/tips.tsx
-msgid "Select words in a reply and press {keys} to quote them in your prompt."
 msgstr ""
 
 #. {words} names a mark on a picture, such as "Arrow" or "Note: the button".
@@ -9530,11 +9523,6 @@ msgstr ""
 msgid "Timed by Sotto"
 msgstr ""
 
-#. What a screen reader calls the tip line under the working words.
-#: src/renderer/src/agents/tips.tsx
-msgid "Tip"
-msgstr ""
-
 #. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "To do"
@@ -9628,13 +9616,13 @@ msgstr ""
 msgid "Try again, sending your last message to {name} again"
 msgstr ""
 
-#. A tip's button that puts what it names in the prompt.
-#: src/renderer/src/agents/tips.tsx
-msgid "Try it"
-msgstr ""
-
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Try updating Muse again"
+msgstr ""
+
+#. Comes before the name of a thread whose last turn failed, in the Needs you card: Turn failed in Streaming WAV stall.
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Turn failed in"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
@@ -9651,11 +9639,6 @@ msgstr ""
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "Turn on Dynamic for this thread?"
-msgstr ""
-
-#. A tip under a working thread. {sigil} is the character that opens the skills list.
-#: src/renderer/src/agents/tips.tsx
-msgid "Type {sigil} in the prompt to pick one of this thread’s skills."
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -9883,6 +9866,11 @@ msgstr ""
 msgid "updated the plan"
 msgstr ""
 
+#. A running turn's plan among its opened steps; the plan itself stands above the working line.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Updated the plan"
+msgstr ""
+
 #. A provider's client is being updated.
 #. A provider's client is being updated.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -9979,6 +9967,21 @@ msgstr ""
 #. A button; a sentence elsewhere in the dialog names it.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Use this folder"
+msgstr ""
+
+#. One part of a list of what a turn did, starting lowercase; {first} is a tool's name, such as Read.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first}"
+msgstr ""
+
+#. One part of a list of what a turn did, starting lowercase; {first} and {second} are tools' names.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first} and {second}"
+msgstr ""
+
+#. One part of a list of what a turn did, starting lowercase; {first} and {second} are tools' names.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first}, {second} and {more} more"
 msgstr ""
 
 #. The browser line once the agent has moved on, when it opened no address.
@@ -10118,12 +10121,22 @@ msgstr ""
 msgid "Waiting for Sotto…"
 msgstr ""
 
+#. The working line while a question waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your answer"
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Waiting for your answer to its question. Answer it below."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Waiting for your last prompt to be confirmed."
+msgstr ""
+
+#. The working line while a permission request waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your permission"
 msgstr ""
 
 #. {toolName} is the name of a tool the delegated thread asks to use.
@@ -10302,11 +10315,6 @@ msgstr ""
 msgid "What’s the plan?"
 msgstr ""
 
-#. A tip under a working thread.
-#: src/renderer/src/agents/tips.tsx
-msgid "When this turn ends, press <0>Tab</0> in an empty prompt to use the suggested next prompt."
-msgstr ""
-
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "Where a new project goes. Each computer has its own folder."
 msgstr ""
@@ -10325,11 +10333,6 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Where the server listens, on this computer, your network or your tailnet."
-msgstr ""
-
-#. Put in Watcher's prompt by a tip's Try it.
-#: src/renderer/src/agents/tips.tsx
-msgid "Which threads are waiting on me?"
 msgstr ""
 
 #. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
@@ -10482,6 +10485,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Write your answer…"
+msgstr ""
+
+#. The working line while the agent writes its reply.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Writing a reply"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx

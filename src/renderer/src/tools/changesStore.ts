@@ -29,11 +29,14 @@ export type ChangesScope =
  */
 export interface ChangesView {
   readonly layout: 'stacked' | 'split'
+  /** Wraps long lines of code at the panel's edge. Off, a line of code runs on and its file scrolls sideways; a document always wraps. */
   readonly wrap: boolean
   readonly ignoreWhitespace: boolean
   readonly fileTree: boolean
+  /** Draws one file of the comparison at a time, for a comparison too long to read through. */
+  readonly oneFile: boolean
 }
-export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: true, ignoreWhitespace: false, fileTree: false }
+export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: false, ignoreWhitespace: false, fileTree: false, oneFile: false }
 
 /** Where the Diff layout, Hide whitespace changes and Default diff file state settings say Changes starts. */
 export interface ChangesStartingView {
@@ -52,6 +55,8 @@ export interface ChangesReview {
   readonly turn?: { readonly number: number; readonly checkpoint: Checkpoint }
   /** Why there is nothing to show, when the comparison itself could not be made: no turns yet, a checkpoint unavailable. */
   readonly notice?: ToolsNotice
+  /** Read with whitespace hidden, the lines that hid, when Git counted them (GitReview.hiddenWhitespace). */
+  readonly hiddenWhitespace?: { readonly additions: number; readonly deletions: number }
 }
 
 export type ChangesReviewState =
@@ -290,6 +295,7 @@ export class ChangesStore {
       const result = await settle(bridge.review({ ...target, scope, ignoreWhitespace }))
       next = !result.ok ? { status: 'error', error: result.error } : {
         status: 'ready', review: { key, files: result.value.files, truncated: result.value.truncated,
+          ...(result.value.hiddenWhitespace ? { hiddenWhitespace: result.value.hiddenWhitespace } : {}),
           ...(result.value.scope.kind === 'branch' ? { branch: { base: result.value.scope.base, automatic: result.value.scope.automatic, head: result.value.scope.head } } : {}) },
       }
     } else next = await this.readTurn(bridge, target, scope.checkpointId, key, ignoreWhitespace)

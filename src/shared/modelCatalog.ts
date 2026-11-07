@@ -84,6 +84,9 @@ const MODEL_WORDS: Readonly<Record<string, string>> = { gpt: 'GPT', codex: 'Code
 export function servedModelName(provider: string, modelId: string): string {
   const id = canonicalModelId(provider, modelId)
   if (id === 'unknown') return 'Model not reported'
+  // A catalog's own spelling, `claude:sonnet`: the provider's mark says the part before the colon.
+  const alias = /^[a-z]+:([a-z][a-z0-9-]*)$/u.exec(id)
+  if (alias) return servedModelName(provider, alias[1]!)
   const claude = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/u.exec(id)
   if (claude) return `Claude ${claude[1]![0]!.toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}${claude[3] === undefined ? '' : `.${claude[3]}`}`
   const gpt = /^gpt-(\d+(?:\.\d+)*)(?:-(.+))?$/u.exec(id)

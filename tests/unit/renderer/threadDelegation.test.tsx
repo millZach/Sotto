@@ -287,7 +287,7 @@ describe('delegated threads in the sidebar', () => {
     const folder = folderOf(state).open.find(item => item.id === 'workshop')!
     expect(folder.working).toBe(1)
     const row = folder.rows.find(item => item.thread.id === PARENT)!
-    expect(row).toMatchObject({ state: 'working', stateLabel: 'Working', workingSince: Date.parse(at(3)), when: '3m 00s', attention: false })
+    expect(row).toMatchObject({ state: 'working', stateLabel: 'Working', workingSince: Date.parse(at(3)), when: '3 min', attention: false })
     expect(row.waitingIn).toBeUndefined()
     expect(rowStatus(row)).toMatchObject({ text: 'Working', finished: false })
     const live = mount(state)
@@ -317,20 +317,20 @@ describe('delegated threads in the sidebar', () => {
     const original = describe(state, NOW).find(row => row.thread.id === PARENT)!
     const rolled = (now: number): ThreadRow => organizeWorkspace(state, describe(state, now), '', null, true, now).open
       .flatMap(folder => folder.rows).find(row => row.thread.id === PARENT)!
-    expect(rolled(NOW).when).toBe('3m 00s')
-    expect(rolled(NOW + 2_000).when).toBe('3m 02s')
-    expect(describe(state, NOW + 2_000).find(row => row.thread.id === PARENT)).toBe(original)
+    expect(rolled(NOW).when).toBe('3 min')
+    expect(rolled(NOW + 60_000).when).toBe('4 min')
+    expect(describe(state, NOW + 60_000).find(row => row.thread.id === PARENT)).toBe(original)
     expect(original.state).toBe('done')
     vi.useFakeTimers(); vi.setSystemTime(NOW)
     const live = mount(state, true)
     openFolder(/^workshop \d+ threads?$/u)
     const clock = (): Element => screen.getByRole('button', { name: 'Visual gate flake' }).querySelector('.thread-nav__time')!
-    expect(clock()).toHaveTextContent('3m 00s')
-    act(() => { vi.advanceTimersByTime(2_000) })
-    expect(clock()).toHaveTextContent('3m 02s')
+    expect(clock()).toHaveTextContent('3 min')
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(clock()).toHaveTextContent('4 min')
     // The earlier child ends; the parent's cached own row still has no working clock.
     act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === CHILD ? { ...thread, status: 'idle' } : thread) } }))
-    expect(clock()).toHaveTextContent('2m 02s')
+    expect(clock()).toHaveTextContent('3 min')
     act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === GRANDCHILD ? { ...thread, status: 'idle' } : thread) } }))
     expect(screen.getByRole('button', { name: 'Visual gate flake' })).toHaveTextContent('Just finished')
     const stoppedClock = clock().textContent

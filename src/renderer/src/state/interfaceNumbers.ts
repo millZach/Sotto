@@ -15,6 +15,20 @@ export function shownCount(value: number): string {
   return english() ? String(value) : new Intl.NumberFormat(i18n.locale).format(value)
 }
 
+const lineCountFormats = new Map<string, Intl.NumberFormat>()
+
+/**
+ * A count of lines added or removed, "+2,957": grouped in every language, English included, because these run to
+ * thousands and are read at a glance. Every place that shows such a count writes it through this, so one change never
+ * reads two ways. Row after row asks for it, so each language's format is built once.
+ */
+export function shownLineCount(value: number): string {
+  const locale = i18n.locale || SOURCE_INTERFACE_LANGUAGE
+  let format = lineCountFormats.get(locale)
+  if (!format) { format = new Intl.NumberFormat(locale); lineCountFormats.set(locale, format) }
+  return format.format(value)
+}
+
 /** A number with a fixed count of decimals: English ungrouped, as `toFixed` wrote it ("1234.5"). */
 export function shownDecimal(value: number, digits: number): string {
   return english() ? value.toFixed(digits) : new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)

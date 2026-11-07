@@ -194,6 +194,19 @@ export class GitChangesService extends ToolOperations {
       const diff = ['-c', 'core.bigFileThreshold=512k', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames', '--relative', '--src-prefix=a/', '--dst-prefix=b/', ...(request.ignoreWhitespace ? ['--ignore-all-space'] : [])]
       const nameStatus = parseNameStatusZ(await this.git(cwd, [...diff, '--name-status', '-z', range, '--'], { env }))
       const numstat = new Map(parseNumstatZ(await this.git(cwd, [...diff, '--numstat', '-z', range, '--'], { env })).map(entry => [entry.path, entry]))
+      // With whitespace hidden, the lines it hid, from a count of every line: GitHub counts those, so the pull request's
+      // totals read higher by exactly this much.
+      let hiddenWhitespace: GitReview['hiddenWhitespace']
+      if (request.ignoreWhitespace) {
+        const every = parseNumstatZ(await this.git(cwd, [...diff.filter(flag => flag !== '--ignore-all-space'), '--numstat', '-z', range, '--'], { env }))
+        const sum = (entries: Iterable<{ readonly additions: number | null; readonly deletions: number | null }>): { additions: number; deletions: number } => {
+          let additions = 0, deletions = 0
+          for (const entry of entries) { additions += entry.additions ?? 0; deletions += entry.deletions ?? 0 }
+          return { additions, deletions }
+        }
+        const all = sum(every), shown = sum(numstat.values())
+        hiddenWhitespace = { additions: Math.max(0, all.additions - shown.additions), deletions: Math.max(0, all.deletions - shown.deletions) }
+      }
       let patch: string, overflowed = false
       try { patch = await this.git(cwd, [...diff, '--patch', range, '--'], { env, maxBuffer: GIT_REVIEW_MAX_PATCH }) }
       catch (error) {
@@ -235,7 +248,7 @@ export class GitChangesService extends ToolOperations {
           return this.readReview(payload, false)
         }
       }
-      return { workspace: owner, revision: listing.revision, scope, files: files.slice(0, GIT_REVIEW_MAX_FILES), truncated }
+      return { workspace: owner, revision: listing.revision, scope, files: files.slice(0, GIT_REVIEW_MAX_FILES), truncated, ...(hiddenWhitespace ? { hiddenWhitespace } : {}) }
     } catch (error) {
       if ((error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return fail('too-large', 'This comparison is too large to list. Review it with Git directly.')
       throw error

@@ -150,15 +150,19 @@ function makeSeries(key: string, name: string, tone: SeriesTone, figures: readon
   return { key, name, tone, values, total: sum(values), figures, figure: sumFigures(figures), ...(title === undefined ? {} : { title }) }
 }
 
-/** One day's figures for the Total view. */
-export interface TotalDay { readonly prompts: number; readonly input: number; readonly output: number }
+/** One day's figures for the Total view, with whether its tokens were reported, whole or in part. */
+export interface TotalDay { readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown?: boolean; readonly tokensPartial?: boolean }
 
 /** The Total view as it was before the split: prompts in the accent; tokens as input under output, or one line of both. */
 export function totalPlan(metric: ChartMetric, kind: ChartKind, days: readonly TotalDay[]): ChartPlan {
-  const make = (key: string, name: string, tone: SeriesTone, values: number[]): ChartSeries => makeSeries(key, name, tone, values.map(wholeFigure))
-  if (metric === 'prompts') return plan([make('prompts', t`Prompts`, 'strong', days.map(day => day.prompts))], kind)
-  if (kind === 'lines') return plan([make('tokens', t`Input and output`, 'strong', days.map(day => day.input + day.output))], kind)
-  return plan([make('input', t`Input`, 'input', days.map(day => day.input)), make('output', t`Output`, 'output', days.map(day => day.output))], kind)
+  if (metric === 'prompts') return plan([makeSeries('prompts', t`Prompts`, 'strong', days.map(day => wholeFigure(day.prompts)))], kind)
+  // A day's tokens are as reported: unknown when nothing reported them, a lower bound when some records left part out.
+  const tokens = (value: (day: TotalDay) => number): ChartFigure[] => days.map(day => {
+    const known = day.tokensKnown ?? true
+    return { value: value(day), known, partial: known && (day.tokensPartial ?? false) }
+  })
+  if (kind === 'lines') return plan([makeSeries('tokens', t`Input and output`, 'strong', tokens(day => day.input + day.output))], kind)
+  return plan([makeSeries('input', t`Input`, 'input', tokens(day => day.input)), makeSeries('output', t`Output`, 'output', tokens(day => day.output))], kind)
 }
 
 export interface SplitInput {
@@ -204,4 +208,100 @@ export function splitPlan({ kind, choice, totals, values, slots, incomplete = fa
 export function seriesValues(chart: ChartPlan, dayIndex: number | null): Array<{ key: string; name: string; title?: string; tone: SeriesTone; figure: ChartFigure }> {
   return chart.series.map(item => ({ key: item.key, name: item.name, tone: item.tone, figure: dayIndex === null ? item.figure : item.figures[dayIndex] ?? wholeFigure(0),
     ...(item.title === undefined ? {} : { title: item.title }) }))
+}
+
+/** A stretch of the Per day bars: one day, or a run of days with nothing drawn in the room of a few. */
+export type ChartStretch =
+  | { readonly kind: 'day'; readonly at: number }
+  | { readonly kind: 'quiet'; readonly from: number; readonly to: number }
+
+/** A run of empty days at least this long folds into a quiet stretch. */
+export const QUIET_RUN = 5
+/** How many days' room a quiet stretch takes, however many days it holds. */
+export const QUIET_ROOM = 2
+
+/**
+ * How the bars of a range are laid out. A run of at least `run` empty days takes the room of two and says how many days
+ * it holds, so the days with work get the width rather than a flat line; a `run` of 0 folds nothing. Every day is still
+ * in the chart, in order, and the keyboard and pointer still read each one. `room` is how many days' width the chart
+ * spans, and `start` and `width` place each day across it, from 0 to 1.
+ */
+export interface ChartLayout { readonly stretches: ChartStretch[]; readonly room: number; readonly start: number[]; readonly width: number[] }
+/**
+ * The days a fold keeps standing (`chartStretches`' `busy`): each day with work, and each day not reported whole, whose
+ * nothing could be work no record counted. Only a day every record reports as a complete zero is empty enough to fold
+ * into "No tokens for 29 days".
+ */
+export function keptDays(series: readonly Pick<ChartSeries, 'values' | 'figures'>[], count: number): boolean[] {
+  return Array.from({ length: count }, (_, at) => {
+    if (series.some(item => (item.values[at] ?? 0) > 0)) return true
+    const figure = sumFigures(series.map(item => item.figures[at] ?? wholeFigure(0)))
+    return !figure.known || figure.partial || figure.value > 0
+  })
+}
+export function chartStretches(busy: readonly boolean[], run: number): ChartLayout {
+  const stretches: ChartStretch[] = []
+  for (let at = 0; at < busy.length;) {
+    let end = at
+    while (run > 0 && end < busy.length && !busy[end]) end += 1
+    if (run > 0 && end - at >= run) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
+    stretches.push({ kind: 'day', at }); at += 1
+  }
+  const room = stretches.reduce((sum, stretch) => sum + (stretch.kind === 'day' ? 1 : QUIET_ROOM), 0)
+  const start: number[] = [], width: number[] = []
+  let used = 0
+  for (const stretch of stretches) {
+    if (stretch.kind === 'day') { start.push(used / room); width.push(1 / room); used += 1; continue }
+    const days = stretch.to - stretch.from + 1
+    for (let day = 0; day < days; day += 1) { start.push((used + day * QUIET_ROOM / days) / room); width.push(QUIET_ROOM / days / room) }
+    used += QUIET_ROOM
+  }
+  return { stretches, room, start, width }
+}
+
+/**
+ * How long a run of empty days must be to fold: five when only a few days have work, and otherwise none, so a busier
+ * range is drawn day by day (6d838b400). A week or less never folds.
+ */
+export function foldRun(count: number, fewBusyDays: boolean): number {
+  return count > 7 && fewBusyDays ? QUIET_RUN : 0
+}
+
+/**
+ * The Per day chart's scale: a round top over the tallest day and the gridlines up to it, two or three at a round step
+ * (1, 2, 2.5 or 5 of a power of ten), so the figures beside the chart read as a scale. Prompts are whole, so their step
+ * is too. The top is never under `floor`, so a quiet range does not draw one prompt as a tall bar.
+ */
+export function chartScale(peak: number, floor: number, whole: boolean): { top: number; ticks: number[] } {
+  const want = Math.max(floor, peak, 1)
+  const raw = want / 3
+  const power = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 2, 2.5, 5, 10].map(factor => factor * power).find(value => value >= raw && (!whole || (Number.isInteger(value) && value >= 1))) ?? Math.ceil(raw)
+  const lines = Math.max(1, Math.ceil(want / step - 1e-9))
+  return { top: step * lines, ticks: Array.from({ length: lines }, (_, at) => step * (at + 1)) }
+}
+
+/** The least distance between two dates on the axis, as a share of the plot's width. */
+export const MARK_ROOM = 0.14
+
+/**
+ * Which days the axis names in a range of more than a week: where it starts and ends, the first day after each folded
+ * run, then every week back from the end (every few weeks in a long range), leaving out any that would crowd one
+ * already kept. A week or less names every day.
+ */
+export function axisMarks(count: number, layout: ChartLayout | null): number[] {
+  if (count <= 7) return Array.from({ length: count }, (_, at) => at)
+  const centre = (at: number): number => layout === null ? (at + 0.5) / count : layout.start[at]! + layout.width[at]! / 2
+  const quiet = new Set<number>(), firsts: number[] = []
+  layout?.stretches.forEach((stretch, place) => {
+    if (stretch.kind !== 'quiet') return
+    for (let at = stretch.from; at <= stretch.to; at += 1) quiet.add(at)
+    if (layout.stretches[place + 1]?.kind === 'day') firsts.push(stretch.to + 1)
+  })
+  const step = 7 * Math.max(1, Math.round(count / 35))
+  const weeks: number[] = []
+  for (let at = count - 1 - step; at > 0; at -= step) if (!quiet.has(at)) weeks.push(at)
+  const kept = [0, count - 1]
+  for (const at of [...firsts, ...weeks]) if (!kept.includes(at) && kept.every(other => Math.abs(centre(at) - centre(other)) >= MARK_ROOM)) kept.push(at)
+  return kept.sort((a, b) => a - b)
 }

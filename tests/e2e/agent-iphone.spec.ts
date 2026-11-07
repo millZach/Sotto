@@ -113,7 +113,7 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
         expect(placed!.x + placed!.width).toBeLessThanOrEqual(width); expect(placed!.y + placed!.height).toBeLessThanOrEqual(height)
         const rail = await panel.locator('.tools-rail').evaluate(element => element.scrollHeight <= element.clientHeight + 1)
         expect(rail).toBe(true)
-        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
+        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
         await expect.poll(async () => (await nativeViews(launched)).find(view => view.url === url)?.zoom ?? 0).toBeCloseTo(((await screen.boundingBox())?.width ?? 0) / 393, 1)
         await screenshot(launched, `tools-${width}x${height}-${mode}`)
       }

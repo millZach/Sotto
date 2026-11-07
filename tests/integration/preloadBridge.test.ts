@@ -227,7 +227,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadMedia', 'threadPrompts', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitPullRequestList', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadMedia', 'threadPrompts', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {

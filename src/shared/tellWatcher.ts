@@ -1,8 +1,13 @@
 import { z } from 'zod'
+import { gitPullRequestUrlSchema } from './gitPullRequests'
 
 /** The one name every client addresses a thread's way to Watcher by (ADR-0073, amendment of November 2, 2026). */
 export const TELL_WATCHER_MCP_SERVER = 'sotto_watcher'
 export const TELL_WATCHER_TOOL = 'tell_watcher'
+/** A worker's READY TO MERGE as a fact Sotto carries rather than words in a reply (#2229). */
+export const READY_TO_MERGE_TOOL = 'ready_to_merge'
+/** How many READY TO MERGE one thread may send in `TELL_WATCHER_LIMIT_WINDOW_MS`: one per push of a busy branch, and never a flood. */
+export const READY_TO_MERGE_LIMIT = 6
 /** How much of the worker's words, and of the user's own message, one piece of news carries, in UTF-8 bytes. */
 export const TELL_WATCHER_WORDS_BYTES_MAX = 2_048
 /** How many messages one thread may send Watcher in `TELL_WATCHER_LIMIT_WINDOW_MS`, so one thread cannot keep waking it. */
@@ -29,6 +34,18 @@ export type ToldUserMessage = z.infer<typeof toldUserMessageSchema>
 /** A thread's message for Watcher: the worker's words, and the user's own message when Sotto found one. */
 export const tellWatcherAskSchema = z.object({ threadId: z.string().min(1).max(512), words, userMessage: toldUserMessageSchema.optional() }).strict()
 export type TellWatcherAsk = z.infer<typeof tellWatcherAskSchema>
+/** A full commit ID, as GitHub names a pull request's head. */
+export const commitIdSchema = z.string().regex(/^[0-9a-f]{40}$/u, 'Use the full 40-character commit ID.')
+/** What a worker's READY TO MERGE says (#2229): which pull request, at which head. No words of the worker's go with it. */
+export const readyToMergeSchema = z.object({ pullRequest: gitPullRequestUrlSchema, head: commitIdSchema }).strict()
+export type ReadyToMerge = z.infer<typeof readyToMergeSchema>
+/** A thread's READY TO MERGE for Watcher, as a host pushes it to a desktop whose hello accepted `watcher-ready`. */
+export const readyToMergeAskSchema = z.object({ threadId: z.string().min(1).max(512), ready: readyToMergeSchema }).strict()
+export type ReadyToMergeAsk = z.infer<typeof readyToMergeAskSchema>
+/** Either kind of ask a host pushes as `watcher-tell-ask`: a READY TO MERGE goes only to a desktop that accepted `watcher-ready`. */
+export const watcherTellPushSchema = z.union([tellWatcherAskSchema, readyToMergeAskSchema])
+export type WatcherTellPush = z.infer<typeof watcherTellPushSchema>
+export const isReadyToMergeAsk = (ask: WatcherTellPush): ask is ReadyToMergeAsk => 'ready' in ask
 /** Whether Watcher will hear of it, and whether Sotto opened a request for it. */
 export const tellWatcherAnswerSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('told'), requestOpened: z.boolean() }).strict(),

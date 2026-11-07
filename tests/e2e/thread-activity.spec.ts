@@ -49,14 +49,15 @@ test('settled turn folds its work above the final reply, failures and all, and o
   const { app, page } = await launch()
   try {
     const log = transcript(page)
-    const work = log.getByRole('button', { name: /^Worked for 2m 04s · \d+ steps$/ })
+    const work = log.getByRole('button', { name: /^Worked for 2m 04s · \d+ steps/ })
     await expect(work).toHaveAttribute('aria-expanded', 'false')
     // Folded, the turn reads as the request, one line of work and the final reply.
     await expect(log.locator('.thread-message')).toHaveCount(2)
     await expect(log.locator('.thread-activity')).toHaveCount(0)
     await expect(log.locator('.thread-message').last()).toContainText('Fixed. The length marker is patched after every chunk')
-    await expect(work).toHaveCSS('font-size', '14px')
-    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '15px')
+    await expect(work).toHaveCSS('font-size', '13px')
+    // A thread's messages are on the lead step (ADR-0169, November 5 amendment), a size up from the work line's.
+    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '16px')
     expect(await overflow(page)).toBeLessThanOrEqual(0)
 
     for (const mode of ['dark', 'light'] as const) {
@@ -72,7 +73,7 @@ test('settled turn folds its work above the final reply, failures and all, and o
     // Its groups open with it, since the fold was opened by hand; a failed step shows with the rest of its group.
     const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
     await expect(summary).toHaveAttribute('aria-expanded', 'true')
-    const later = log.getByRole('button', { name: 'Ran 2 commands, changed 2 files, 1 agent action' })
+    const later = log.getByRole('button', { name: /^Ran 2 commands, changed 2 files, 1 agent action/ })
     await expect(later).toHaveAttribute('aria-expanded', 'true')
     await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(1)
     // Opened, messages keep their order and count; activity sits between them.
@@ -96,9 +97,10 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await expect(search).toHaveAttribute('aria-expanded', 'true')
     expect(Math.abs(await summary.evaluate(element => element.getBoundingClientRect().top) - top)).toBeLessThanOrEqual(1)
     const details = page.locator(`#${await search.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))
-    await expect(details.getByLabel('command code block')).toContainText('rg -n "patchLength" src/main/audio')
+    // What ran is said once, by the open row; the body adds where it ran and what came back.
+    await expect(details.getByLabel('command code block')).toHaveCount(0)
     await expect(details.getByLabel('output code block')).toContainText('wavStream.ts:24')
-    await expect(details).toContainText('Reported by Codex')
+    await expect(search).toContainText('Reported by Codex')
     await details.getByRole('button', { name: 'Copy output code' }).click()
     await expect.poll(() => app.evaluate(() => (globalThis as unknown as { activityFixture: { copied: string[] } }).activityFixture.copied.at(-1))).toContain('wavStream.ts:46')
     for (const mode of ['dark', 'light'] as const) {
@@ -107,11 +109,11 @@ test('settled turn folds its work above the final reply, failures and all, and o
     }
     await theme(page, 'dark')
 
-    const files = log.getByRole('button', { name: 'Edited src/main/audio/wavStream.ts, and 1 more file, completed' })
+    const files = log.getByRole('button', { name: /^Edited src\/main\/audio\/wavStream\.ts, and 1 more file/ })
     await files.click()
-    await expect(files).toHaveText('Changed 2 files')
-    await expect(log.getByLabel('diff code block').first()).toContainText('this.patchLength(this.written)')
-    await expect(log.locator('.rich-code[data-language="diff"] .hljs-addition').first()).toBeVisible()
+    await expect(files).toHaveText(/^Changed 2 files/u)
+    await expect(log.locator('.changes-block').first()).toContainText('this.patchLength(this.written)')
+    await expect(log.locator('.changes-block .changes-line[data-kind="add"]').first()).toBeVisible()
     await log.getByRole('button', { name: 'Spawn agent, 1 agent, completed in 31s' }).click()
     await expect(log.getByRole('list', { name: 'Agents' })).toContainText('Agent 1CompletedNo other caller depends on close-time patching.')
     await expect(log.getByRole('list', { name: 'Agents' }).getByRole('button')).toHaveCount(0)
@@ -133,9 +135,9 @@ test('a running turn folds its steps under the glowing working words, opens them
     const live = log.getByTestId('thread-activity-live')
     const line = live.getByRole('button', { name: /^Working, \d+ steps so far$/ })
     await expect(line).toHaveAttribute('aria-expanded', 'false')
-    // The words alone carry the wait: no clock, no step named on the line, and no live rows until it opens.
+    // The line names the step it is on (ADR-0134, November 4 amendment): no clock, no count, and no live rows until it opens.
     await expect(live.locator('.thread-activity-live__word')).toBeVisible()
-    await expect(live).not.toContainText('npm test')
+    await expect(live.locator('.thread-activity-live__word')).toContainText(/^Running .*npm test/u)
     await expect(live.locator('[data-elapsed]')).toHaveCount(0)
     await expect(log.locator('.thread-activity[data-live]')).toHaveCount(0)
     // A band of the accent, at its most vivid, lights the letters as it crosses them, and the dot steps aside for it.
@@ -149,10 +151,11 @@ test('a running turn folds its steps under the glowing working words, opens them
       await theme(page, mode)
       await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
       await page.screenshot({ path: resolve(shots, `live-1280-${mode}.png`) })
-      // The light held mid-word, so the evidence shows how strongly it lights the letters.
+      // The light held mid-word, so the evidence shows how strongly it lights the letters. Two layers move as one: the lit
+      // copy, and the muted words fading out where it fades in.
       const held = await page.evaluate(() => document.getAnimations().filter(animation => (animation as CSSAnimation).animationName === 'thread-activity-glow')
         .map(animation => { animation.pause(); animation.currentTime = 1_550; return true }).length)
-      expect(held).toBe(1)
+      expect(held).toBe(2)
       await live.screenshot({ path: resolve(shots, `live-glow-held-${mode}.png`), scale: 'device' })
       await page.evaluate(() => { for (const animation of document.getAnimations()) if ((animation as CSSAnimation).animationName === 'thread-activity-glow') animation.play() })
     }
@@ -184,7 +187,7 @@ test('a running turn folds its steps under the glowing working words, opens them
     await show(page, 'disconnected')
     await expect(live).toContainText('Last seen working')
     await expect(live.locator('.thread-activity-live__word')).toHaveCount(0)
-    await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
+    await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toHaveCSS('animation-name', 'none')
     const seen = live.getByRole('button', { name: /^Last seen working, \d+ steps so far$/ })
     if (await seen.getAttribute('aria-expanded') === 'false') await seen.click()
     await expect(log.locator('[data-elapsed]')).toHaveCount(0)
@@ -202,18 +205,17 @@ test('restored history reads as unknown and trimmed, never as success', async ()
   try {
     await show(page, 'restored')
     const log = transcript(page)
-    await log.getByRole('button', { name: 'Outcome unknown' }).click()
-    const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
-    await summary.click()
+    await log.getByRole('button', { name: /^Outcome unknown/ }).click()
     const read = log.getByRole('button', { name: 'Get-Content -Path src/main/audio/wavStream.ts -TotalCount 80, Outcome unknown' })
     await read.click()
-    await expect(page.locator(`#${await read.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))).toContainText('Time not recorded · Some details were not kept.')
+    await expect(page.locator(`#${await read.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))).toContainText('Some details were not kept.')
+    await expect(read).toContainText('Time not recorded')
     await expect(log.locator('.thread-activity__meta[data-status="completed"]')).toHaveCount(0)
     // The heading states the unknown outcome once; rows keep it in their accessible names only.
     await expect(log.locator('.thread-activity__meta').filter({ hasText: 'Outcome unknown' })).toHaveCount(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)
-      await scrollTo(page, summary, 60)
+      await scrollTo(page, read, 60)
       await page.screenshot({ path: resolve(shots, `restored-1280-${mode}.png`) })
     }
   } finally { await app.close() }
@@ -224,7 +226,6 @@ test('the shipped minimum width and reduced motion keep rows readable without si
   try {
     const log = transcript(page)
     await log.getByRole('button', { name: /^Worked for/ }).click()
-    await log.getByRole('button', { name: /^Ran 2 commands, changed 2 files/ }).click()
     await log.getByRole('button', { name: 'npm test -- --run tests/unit/wavStream.test.ts, completed in 4.2s' }).click()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     const label = log.locator('.thread-activity__row[data-kind="command"] .thread-activity__label').last()
@@ -239,10 +240,12 @@ test('the shipped minimum width and reduced motion keep rows readable without si
     await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'on' })
     // Nothing moves: the words hold their ink and the dot stands still beside them.
     const live = log.getByTestId('thread-activity-live')
-    await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
-    await expect(live.locator('.thread-activity__pulse')).toBeVisible()
+    await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toHaveCSS('animation-name', 'none')
+    await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toBeVisible()
     await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'none')
     expect(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element, '::after').content)).toBe('none')
+    expect(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element, '::before').content)).toBe('none')
+    await expect(live.locator('.thread-activity-live__word')).not.toHaveCSS('color', 'rgba(0, 0, 0, 0)')
     await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     await page.screenshot({ path: resolve(shots, 'live-820-reduced-motion-light.png') })
@@ -257,7 +260,7 @@ test('a turn a steer cut reads as steered, not stopped, at the minimum window', 
     const steered = log.getByRole('button', { name: 'Steered after 1m 05s' })
     await expect(steered).toHaveAttribute('aria-expanded', 'false')
     await expect(log.getByRole('button', { name: /^Stopped/ })).toHaveCount(0)
-    await expect(log.getByRole('button', { name: /^Worked for 9\.0s · \d+ steps?$/ })).toBeVisible()
+    await expect(log.getByRole('button', { name: /^Worked for 9\.0s · \d+ steps?/ })).toBeVisible()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)

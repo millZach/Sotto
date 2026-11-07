@@ -6,6 +6,7 @@ import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
+import { gitPullRequestUrlSchema } from './gitPullRequests'
 import { distinctSwarmBriefs, swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
@@ -30,6 +31,10 @@ export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse', 
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
+/** The longest reason Watcher may give for starting a thread on the shared checkout (#2235). */
+export const WATCHER_SHARED_REASON_MAX = 300
+/** Sotto's reason when a start has to share its project's folder: there is no Git to make a worktree with. */
+export const WATCHER_NOT_GIT_REASON = 'This project is not a Git repository, so it has no worktree to make. The thread works in the project’s folder.'
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 /** Durable assignment, independent of any one request. Contains no user or provider prose. */
@@ -44,11 +49,12 @@ const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
   z.object({ kind: z.literal('provider'), choiceId: entityId }).strict(),
 ])
-const workingCopy = z.discriminatedUnion('kind', [
+export const watcherWorkingCopySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('shared') }).strict(),
   z.object({ kind: z.literal('new-worktree') }).strict(),
   z.object({ kind: z.literal('existing-worktree'), choiceId: id }).strict(),
 ])
+const workingCopy = watcherWorkingCopySchema
 const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), speed: agentSpeedSchema.nullable().optional(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
 const workerQueue = z.object({ ahead: counter, waiting: counter, note: shortText.min(1) }).strict()
 const workerChoices = choices.pick({ modelId: true, reasoningEffort: true, speed: true, permission: true })
@@ -61,7 +67,7 @@ export const WATCHER_REFUSAL_CODES = [
   'WORKING_COPY_UNAVAILABLE', 'WORKING_COPY_CHANGED', 'THREAD_BUSY', 'STEER_UNAVAILABLE', 'TURN_CHANGED',
   'BACKGROUND_WORK_RUNNING', 'PATH_OUTSIDE_PROJECT', 'UNSAFE_PATH', 'SENSITIVE_FILE', 'SCAN_LIMIT', 'SEARCH_TOO_BROAD',
   'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED', 'STATE_FULL', 'SLASH_COMMAND',
-  'ASK_USER_FIRST',
+  'ASK_USER_FIRST', 'MERGE_TURN_HELD',
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
@@ -205,10 +211,16 @@ export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it 
  * and what each waits on from its own records. read_state gives the whole of it back.
  *
  * Each kept line has an ID, so Watcher adds, edits, closes or drops one line at a time (October 24, 2026). A list holds
- * WATCHER_KEPT_ITEMS_MAX open lines; adding past that is refused, never made room for. A closed line says how it ended
+ * WATCHER_KEPT_ITEMS_MAX open lines, and rules WATCHER_KEPT_RULES_MAX (#2236); adding past that is refused, never made room for. A closed line says how it ended
  * and stays, out of that count, until Sotto clears it WATCHER_KEPT_CLOSED_MS after it was closed.
  */
 export const WATCHER_KEPT_ITEMS_MAX = 30
+/**
+ * The open lines the rules list holds (#2236): the standing rules the user gave, which Watcher must never drop or merge
+ * to make room. At 30 Zach's rules filled the list two or three times a session. Twice that keeps a whole read_state
+ * near 35 KB with every rule at its longest, well short of the 73 KB results that providers saved to files.
+ */
+export const WATCHER_KEPT_RULES_MAX = 60
 export const WATCHER_KEPT_ITEM_MAX = 300
 /** Closed lines a list keeps until they clear; past this the oldest closed clear at once. */
 export const WATCHER_KEPT_CLOSED_MAX = 30
@@ -218,6 +230,8 @@ export const WATCHER_KEPT_CLOSED_MS = 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_UNTOUCHED_MS = 3 * 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_LISTS = ['decisions', 'rules', 'issues'] as const
 export type WatcherKeptList = typeof WATCHER_KEPT_LISTS[number]
+/** How many open lines a list holds: the rules list its own larger number, the others WATCHER_KEPT_ITEMS_MAX. */
+export const watcherKeptOpenMax = (list: WatcherKeptList): number => list === 'rules' ? WATCHER_KEPT_RULES_MAX : WATCHER_KEPT_ITEMS_MAX
 const keptText = z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)
 /** A line's ID: its list's letter and a number Sotto gives it, as `d3`, `r1` or `i12`. Never given twice. */
 const keptId = z.string().regex(/^[dri][1-9]\d{0,8}$/u)
@@ -226,7 +240,8 @@ export const watcherKeptItemSchema = z.object({ id: keptId, text: keptText, touc
   closedAt: time.optional(), closedNote: keptText.optional() }).strict()
 export type WatcherKeptItem = z.infer<typeof watcherKeptItemSchema>
 const keptLines = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX)
-export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptLines, issues: keptLines, updatedAt: time.nullable() }).strict()
+const keptRules = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX)
+export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptRules, issues: keptLines, updatedAt: time.nullable() }).strict()
 export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
 /** What `watcher-state.json` holds: the lists and the next line number. */
 export const watcherKeptRecordSchema = watcherKeptStateSchema.extend({ nextId: z.number().int().positive().max(999_999_999) }).strict()
@@ -235,11 +250,12 @@ export type WatcherKeptRecord = z.infer<typeof watcherKeptRecordSchema>
 export const watcherKeptLegacySchema = z.object({ decisions: z.array(keptText).max(20), rules: z.array(keptText).max(20),
   issues: z.array(keptText).max(20), updatedAt: time.nullable() }).strict()
 const keptWords = z.array(keptText).max(WATCHER_KEPT_ITEMS_MAX)
+const ruleWords = z.array(keptText).max(WATCHER_KEPT_RULES_MAX)
 /**
  * keep_state's input. A list given whole replaces that list's open lines, as before line IDs: a line whose words are
  * unchanged keeps its ID and when it was touched. `add`, `edit`, `close` and `drop` change one line each, by its ID.
  */
-export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: keptWords.optional(), issues: keptWords.optional(),
+export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: ruleWords.optional(), issues: keptWords.optional(),
   add: z.array(z.object({ list: z.enum(WATCHER_KEPT_LISTS), text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   edit: z.array(z.object({ id: keptId, text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   close: z.array(z.object({ id: keptId, note: keptText.optional() }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
@@ -270,9 +286,18 @@ export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
 export const WATCHER_STATE_COMPUTED_MAX = 100
 const sottoSentence = z.string().min(1).max(300)
 const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
-/** A pull request in the merge queue: open, not a draft, its checks passed, oldest pass first. */
+/**
+ * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
+ * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
+ * land while its required checks run, and `checksRunning` how many required and other checks are still to finish on its
+ * head, where Sotto can read which are required; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
+ * MERGE its thread sent, with `onHead` saying whether that is still the head.
+ */
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
-  pullRequest: watcherPullRequestSummarySchema, checksPassedAt: time }).strict()
+  pullRequest: watcherPullRequestSummarySchema, url: z.string().max(2_048).optional(), inTrainSince: time, checksPassedAt: time.optional(),
+  requiredChecks: z.enum(['passed', 'running', 'failed', 'unknown']), head: z.string().max(64).optional(),
+  checksRunning: z.object({ required: z.number().int().nonnegative(), optional: z.number().int().nonnegative() }).strict().optional(),
+  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict().optional() }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
@@ -326,6 +351,20 @@ const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullab
   headroom: counter.nullable().optional() }).strict()
 /** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
 export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time, workers: watcherWorkerCountsSchema.optional() })
+
+/** How long Watcher's reason for a GO MERGE out of the train's turn may be: a sentence or two, which the user reads. */
+export const WATCHER_OVERRIDE_REASON_MAX = 500
+/**
+ * A send that is a GO MERGE (#2229): the pull request it gives its turn, and Watcher's reason when it goes while another
+ * train pull request's required checks run or the base branch is red. Sotto shows that reason on the send's receipt.
+ */
+export const watcherGoMergeSchema = z.object({ pullRequest: gitPullRequestUrlSchema,
+  overrideReason: z.string().trim().min(1).max(WATCHER_OVERRIDE_REASON_MAX).optional() }).strict()
+export type WatcherGoMerge = z.infer<typeof watcherGoMergeSchema>
+/** What a GO MERGE went past, in Sotto's words, with Watcher's reason; `note` says what Sotto could not read for it. */
+export const watcherGoMergeReceiptSchema = z.object({ held: z.array(z.string().min(1).max(400)).max(WATCHER_STATE_COMPUTED_MAX + 1),
+  overrideReason: z.string().max(WATCHER_OVERRIDE_REASON_MAX).optional(), note: z.string().min(1).max(400).optional() }).strict()
+export type WatcherGoMergeReceipt = z.infer<typeof watcherGoMergeReceiptSchema>
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -387,6 +426,9 @@ export const watcherToolSchemas = {
       // checkout behind (#1690). Sotto's, like the move: main sets it when it places the start, and Watcher never names it.
       fromOrigin: z.string().min(1).max(255).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // Why a start runs on the shared checkout (#2235): Watcher's sharedReason, or Sotto's when the project has no Git.
+      // The desktop's alone, and in memory only: a retry after a restart has none.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(),
       queue: workerQueue.optional(),
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
@@ -407,10 +449,13 @@ export const watcherToolSchemas = {
   send_to_thread: {
     // A send that names no `delivery` steers (ADR-0130): main picks the mode from the thread before admission, and a
     // paired host is sent the one it picked.
+    // `goMerge` is the desktop's alone (#2229): it marks the send as the GO MERGE for that pull request, which Sotto
+    // checks against the merge train and the base branch before it goes. A paired host is sent the call without it.
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
-      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional() }).strict(),
+      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(), goMerge: watcherGoMergeSchema.optional() }).strict(),
     // `note` is the desktop's alone: what a send that asked to steer did instead, when it went now or queued (ADR-0130).
-    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional() }),
+    // `goMerge`, the desktop's too: what held the merge turn that `overrideReason` went past, and what Sotto could not read.
+    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional(), goMerge: watcherGoMergeReceiptSchema.optional() }),
   },
   stop_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
@@ -440,7 +485,7 @@ export const watcherToolSchemas = {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
     input: watcherKeepStateInputSchema,
     // Only the lines this call changed and how many each list holds (#2231): read_state gives the whole state.
-    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX) * WATCHER_KEPT_LISTS.length * 2),
+    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX * WATCHER_KEPT_LISTS.length) * 2),
       counts: watcherKeptCountsSchema }),
   },
   read_state: {
@@ -453,7 +498,7 @@ export const watcherToolSchemas = {
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherStateWaitingSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX), contextTokens: counter.nullable(), compactAtTokens: counter,
       // On the final page: pass it as changedSince to read only what changed after this read.
       changeCursor: cursor.optional(),
       // A changedSince read Sotto still held the cursor of: what it left out as unchanged, and what is no longer there.
@@ -476,6 +521,8 @@ export const watcherToolSchemas = {
     input: z.object({ operationId: z.uuid() }).strict(),
     // The outcome fields are optional: stop and settle carry none, and an older owning host sends none.
     output: boundedRead(result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState,
+      // A start's reason to share the checkout, as its start result gave it (#2235). The desktop's alone, in memory only.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(), queue: workerQueue.optional(), effectiveChoices: workerChoices.optional(),
       outcome: watcherOutcomeSchema.optional(), reference: watcherOutcomeReferenceSchema.optional(), outcomeNote: shortText.min(1).optional(),
       // The worker's own words for the turn that answered, never Sotto's evidence.

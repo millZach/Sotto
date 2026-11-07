@@ -117,10 +117,6 @@ msgstr ""
 msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "{count, plural, one {{tips} tip hidden or used.} other {{tips} tips hidden or used.}}"
-msgstr ""
-
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr ""
@@ -1748,6 +1744,10 @@ msgstr ""
 #. How a file in Changes first shows: only its header
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Collapsed"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
 msgstr ""
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
@@ -3597,10 +3597,6 @@ msgstr ""
 msgid "No supported open-source themes found. Try a broader search."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips are hidden."
-msgstr ""
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -4993,16 +4989,20 @@ msgstr ""
 msgid "Show floating widget when idle"
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show hidden tips again"
-msgstr ""
-
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Show in menu bar"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar already uses {keys}. Pick other keys."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -5057,11 +5057,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show thread {thread}"
-msgstr ""
-
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

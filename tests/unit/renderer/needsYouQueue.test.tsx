@@ -46,7 +46,7 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(document.querySelector('.thread-nav__indicators')).not.toBeNull()
   })
 
-  it('stands where Dismiss all stood while on, counts everyone and says the oldest blocking wait', () => {
+  it('stands where Dismiss all stood while on, counts everyone and says the longest blocking wait', () => {
     owl(true)
     let state = threadsStateFixture()
     state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, since: ago(12) }] }))
@@ -57,11 +57,9 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(document.querySelector('.thread-nav__indicators')).toBeNull()
     expect(within(queue()).getByText('Needs you')).toBeInTheDocument()
     expect(queue()).toHaveTextContent('2')
-    expect(queue()).toHaveTextContent('oldest 12 min')
+    expect(queue()).toHaveTextContent('longest wait 12 min')
     expect(within(queue()).getByText('Visual gate flake')).toBeInTheDocument()
-    expect(within(queue()).getByText('Needs your approval')).toBeInTheDocument()
     expect(within(queue()).getByText('Streaming WAV stall')).toBeInTheDocument()
-    expect(within(queue()).getByText('Needs attention')).toBeInTheDocument()
     // It follows the search field, as the line it replaces did.
     const search = screen.getByRole('searchbox', { name: 'Search threads' })
     expect(search.compareDocumentPosition(queue()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -72,16 +70,80 @@ describe('the Needs you queue (ADR-0135)', () => {
     owl(true)
     mount(threadsStateFixture())
     const entry = queue().querySelector<HTMLElement>('[data-entry-id="visual-gate"]')!
-    expect(entry).toHaveTextContent('Needs your approval')
+    // Which wait it is stands in the line's tooltip and the title's spoken name, not its words (Zach's pick C, November 5, 2026).
+    expect(entry).not.toHaveTextContent('Needs your approval')
+    expect(entry.querySelector('.needs-you__line')).toHaveAttribute('title', 'Needs your approval')
+    expect(within(entry).getByRole('button', { name: 'Open Visual gate flake, needs your approval' })).toHaveTextContent(/^Visual gate flake$/)
     // The command and the project and machine line are the card's, not the entry's (October 29, 2026).
     expect(queue()).not.toHaveTextContent('npm test')
     expect(entry.querySelector('.needs-you__meta, .needs-you__ask')).toBeNull()
     expect(within(queue()).queryByRole('button', { name: 'Allow' })).toBeNull()
     const press = within(entry).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
-    expect(press).toHaveTextContent('Open to answer')
+    expect(press).toHaveTextContent(/^Answer$/)
     expect(press).toHaveAttribute('aria-haspopup', 'dialog')
     expect(press).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('names the press of a delegated wait Open thread, since it only opens the thread it is reached from', () => {
+    owl(true)
+    const state = threadsStateFixture()
+    // Footer links delegated a review, and the delegated thread waits on an approval (ADR-0135, a delegated wait).
+    const ask = state.host.threads.find(thread => thread.id === 'visual-gate')!.requests[0]!
+    state.host.threads.push({ id: 'footer-review', projectId: 'workshop', title: 'Review the footer fix', modelId: 'codex:gpt', providerId: 'codex', status: 'running',
+      delegatedBy: 'footer-links', requests: [{ ...ask, id: 'footer-review-ask' }], messages: [] })
+    const onOpen = vi.fn()
+    render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, true, NOW)}
+      command={vi.fn()} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()}
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
+    const entry = queue().querySelector<HTMLElement>('[data-entry-id="footer-links"]')!
+    expect(within(entry).getByRole('button', { name: /^Open .+, needs your approval in Review the footer fix$/u })).toBeInTheDocument()
+    expect(within(entry).queryByRole('button', { name: /to answer/u })).toBeNull()
+    const press = within(entry).getByRole('button', { name: /^Open [^,]+$/u })
+    expect(press).toHaveTextContent(/^Open thread$/)
+    expect(press).not.toHaveAttribute('aria-haspopup')
+    fireEvent.click(press)
+    expect(onOpen.mock.calls[0]?.[0]).toBe('footer-links')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('leads with what holds an agent, and rests a failed turn under it in muted words', () => {
+    owl(true)
+    let state = threadsStateFixture()
+    state = edit(state, 'footer-links', thread => ({ ...thread, requests: [{ id: 'fl-q', kind: 'question', text: 'Which page?', options: [], since: ago(4) }] }))
+    state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, since: ago(0) }] }))
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1', failureSince: ago(60) }))
+    mount(state)
+    const entries = [...queue().querySelectorAll<HTMLElement>('.needs-you__entry')]
+    expect(entries.map(item => item.dataset.entryId)).toEqual(['visual-gate', 'footer-links', 'wav-stall'])
+    const [approval, question, failed] = entries as [HTMLElement, HTMLElement, HTMLElement]
+    expect(approval.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
+    // A wait under a minute says nothing; the question's four minutes are said, and lead the heading.
+    expect(approval.querySelector('.needs-you__wait')).toBeNull()
+    expect(question.querySelector('.needs-you__wait')).toHaveTextContent('4 min')
+    expect(queue().querySelector('.needs-you__longest')).toHaveTextContent('longest wait 4 min')
+    expect(within(question).getByRole('button', { name: 'Open Footer links, needs your answer' })).toBeInTheDocument()
+    expect(within(question).getByRole('button', { name: 'Open to answer the question in Footer links' })).toHaveTextContent(/^Answer$/)
+    // The failed turn blocks nothing: no amber, its words muted, and Dismiss and Show why for the pointer and the keys.
+    expect(failed).toHaveAttribute('data-rest')
+    expect(failed.querySelector('.thread-nav__ring')).not.toHaveAttribute('data-state')
+    expect(failed).toHaveTextContent(/^Turn failed in\s*Streaming WAV stall/u)
+    expect(failed.querySelector('.needs-you__wait')).toBeNull()
+    expect(within(failed).getByRole('button', { name: 'Open Streaming WAV stall, its last turn failed' })).toBeInTheDocument()
+    expect(within(failed).getByRole('button', { name: 'Dismiss Needs attention on Streaming WAV stall' })).toHaveTextContent('Dismiss')
+    expect(within(failed).getByRole('button', { name: 'Show why Streaming WAV stall needs attention' })).toHaveTextContent('Show why')
+    expect(failed.querySelector('.needs-you__line')).toHaveAttribute('title', 'Needs attention')
+  })
+
+  it('says no longest wait while only failures wait, or nothing blocking has waited a minute', () => {
+    owl(true)
+    let state = threadsStateFixture()
+    state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, since: ago(0) }] }))
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1', failureSince: ago(90) }))
+    mount(state)
+    expect(queue().querySelector('.needs-you__longest')).toBeNull()
+    expect(queue()).not.toHaveTextContent('just now')
+    expect(queue()).not.toHaveTextContent('oldest')
   })
 
   it('pops an approval open over the sidebar and answers it through the answer store', async () => {
@@ -178,19 +240,20 @@ describe('the Needs you queue (ADR-0135)', () => {
     ])
   })
 
-  it('shows three entries, counts the rest, and unfolds for Show all', async () => {
+  it('shows three approvals and questions and two failures, counts the rest, and unfolds for Show all', async () => {
     owl(true)
     let state = threadsStateFixture()
     for (const [index, id] of ['weekly-note', 'footer-links', 'grok-previews'].entries()) {
       state = edit(state, id, thread => ({ ...thread, requests: [{ id: `extra-${index}`, kind: 'permission' as const, text: 'Run it?', options: [], since: ago(20 - index) }] }))
     }
     mount(state)
-    expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(3)
-    expect(queue()).toHaveTextContent('+ 2 more waiting')
+    // Four approvals and the failed WAV stall: three approvals stand, then the failure, and one approval is counted.
+    expect([...queue().querySelectorAll<HTMLElement>('.needs-you__entry')].map(item => item.dataset.kind)).toEqual(['approval', 'approval', 'approval', 'failed'])
+    expect(queue()).toHaveTextContent('+ 1 more: 1 approval')
     await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Show all waiting threads' })) })
     expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(5)
     await act(async () => { fireEvent.keyDown(queue(), { key: 'Escape' }) })
-    expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(3)
+    expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(4)
   })
 
   it('hands the focus to the next entry when a dismissed entry leaves', async () => {
@@ -203,7 +266,7 @@ describe('the Needs you queue (ADR-0135)', () => {
     dismiss.focus()
     await act(async () => { fireEvent.click(dismiss) })
     await act(async () => { again(edit(state, 'wav-stall', thread => ({ ...thread, failureSeen: true }))) })
-    expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Grok voice previews' })[0])
+    expect(document.activeElement).toBe(within(queue()).getByRole('button', { name: 'Open Grok voice previews, its last turn failed' }))
   })
 
   it('hands the focus on when an entry answered in its card leaves', async () => {
@@ -218,7 +281,7 @@ describe('the Needs you queue (ADR-0135)', () => {
     await act(async () => { fireEvent.click(allow) })
     await act(async () => { again(edit(state, 'visual-gate', thread => ({ ...thread, requests: [] }))) })
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Streaming WAV stall' })[0])
+    expect(document.activeElement).toBe(within(queue()).getByRole('button', { name: 'Open Streaming WAV stall, its last turn failed' }))
   })
 
   it('holds an unconfirmed answer in its card instead of offering to send it again', async () => {

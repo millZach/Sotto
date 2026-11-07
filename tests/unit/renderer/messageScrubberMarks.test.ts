@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { AgentMessage, AgentRequest } from '../../../src/shared/agents'
 import {
-  joinedMarks, nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberMarks, scrubberShown, storedMarks, swell, tickPlaces,
+  joinedMarks, nearestTick, plainOpening, REST_SIGMA_PX, restingFade, scrubberAfter, scrubberLane, scrubberMarks, scrubberShown, storedMarks, swell, tickPlaces,
   SCRUBBER_LANE_PX, SWELL_SIGMA_PX,
 } from '../../../src/renderer/src/agents/messageScrubberMarks'
 
@@ -102,6 +102,21 @@ describe('where the ticks sit', () => {
     expect(heights[2]).toBeCloseTo(Math.exp(-2))
     expect(heights[3]).toBeLessThan(0.001)
     expect(swell(places, null)).toEqual([0, 0, 0, 0])
+  })
+
+  it('shows at rest only the ticks around the messages on screen, fading out above and below them (pick C)', () => {
+    const places = [100, 100 + REST_SIGMA_PX, 100 + 2 * REST_SIGMA_PX, 100 + 3 * REST_SIGMA_PX, 100 + 4 * REST_SIGMA_PX, 100 + 5 * REST_SIGMA_PX, 100 + 6 * REST_SIGMA_PX]
+    const fade = restingFade(places, [3, 4])
+    // The ticks of the messages on screen show whole; the fade is measured from the nearer end of them.
+    expect(fade[3]).toBe(1)
+    expect(fade[4]).toBe(1)
+    expect(fade[2]).toBeCloseTo(Math.exp(-0.5), 3)
+    expect(fade[5]).toBeCloseTo(Math.exp(-0.5), 3)
+    expect(fade[1]).toBeCloseTo(Math.exp(-2), 3)
+    // Three sigmas off is under the floor, so the mark ends rather than trailing down the column.
+    expect(fade[0]).toBe(0)
+    expect(fade[6]).toBeCloseTo(Math.exp(-2), 3)
+    expect(restingFade(places, [])).toEqual(places.map(() => 0))
   })
 })
 

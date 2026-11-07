@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { AgentRequest } from '../../../src/shared/agents'
-import { answeredChoices, answerWords, SKIPPED } from '../../../src/renderer/src/agents/requests/answeredChoices'
+import { answerCount, answeredChoices, answerWords, chosenCount, SKIPPED } from '../../../src/renderer/src/agents/requests/answeredChoices'
 
 /**
  * What this window answered, kept for Watcher's line about each request (ADR-0073, answering in Watcher's conversation),
@@ -34,6 +34,13 @@ describe('what this window answered', () => {
     expect(answeredChoices.sent('thread', 'request')).toBe('Deny')
   })
 
+  it('keeps how many choices an answer carried, from whichever note counted them', () => {
+    answeredChoices.note('thread', 'request', 'Ara, Rex, Two seconds', false, 3)
+    expect(answeredChoices.choices('thread', 'request')).toBeUndefined()
+    answeredChoices.note('thread', 'request', 'Ara, Rex, Two seconds', true)
+    expect(answeredChoices.choices('thread', 'request')).toBe(3)
+  })
+
   it('says nothing was sent from here for a choice that main never took', () => {
     answeredChoices.note('thread', 'request', 'Allow once', false)
     expect(answeredChoices.sent('thread', 'request')).toBeUndefined()
@@ -53,5 +60,23 @@ describe('the words for an answer with questions skipped', () => {
     expect(answerWords(request, { answer: '', questionAnswers: { a: { optionIds: ['wait'] }, b: { optionIds: [], skipped: true }, c: { optionIds: [], skipped: true } } }))
       .toBe('Wait for the rewrite, and skipped 2')
     expect(answerWords(request, { answer: '', questionAnswers: { a: { optionIds: [], skipped: true }, b: { optionIds: [], skipped: true }, c: { optionIds: [], skipped: true } } })).toBe(SKIPPED)
+    // A skipped question is no choice, so the row counts only what was chosen.
+    expect(answerCount(request, { answer: '', questionAnswers: { a: { optionIds: ['wait'] }, b: { optionIds: [], skipped: true }, c: { optionIds: [], skipped: true } } })).toBe(1)
+  })
+})
+
+describe('how many choices an answer carried', () => {
+  const asked: AgentRequest = { id: 'voices', kind: 'question', text: 'Voice previews', options: [], questions: [
+    { id: 'voices', question: 'Which voices?', multiSelect: true, allowFreeText: false, options: [{ id: 'ara', label: 'Ara, the bright one' }, { id: 'rex', label: 'Rex' }, { id: 'eve', label: 'Eve' }] },
+    { id: 'length', question: 'How long?', multiSelect: false, allowFreeText: true, options: [{ id: 'two', label: 'Two seconds' }] },
+  ] }
+  it('counts each option picked and an answer of the user’s own, whatever commas the labels hold', () => {
+    const selections = { voices: { optionIds: ['ara', 'rex'], other: false, text: '' }, length: { optionIds: [], other: true, text: 'Three seconds' } }
+    expect(chosenCount(asked, { choice: null, selections })).toBe(3)
+    expect(answerCount(asked, { answer: '', questionAnswers: { voices: { optionIds: ['ara', 'rex', 'eve'] }, length: { optionIds: ['two'] } } })).toBe(4)
+    expect(chosenCount(asked, { choice: 'skip', selections })).toBe(0)
+    const permission: AgentRequest = { id: 'p', kind: 'permission', text: 'Run the suite', options: [] }
+    expect(chosenCount(permission, { choice: 'allow', selections: {} })).toBe(1)
+    expect(answerCount(permission, { answer: 'Allow', approved: true })).toBe(1)
   })
 })

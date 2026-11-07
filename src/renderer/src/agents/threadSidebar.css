@@ -31,6 +31,9 @@
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: var(--tt-radius-control); -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
+/* The one action this row is for says its name; Add project and Collapse keep their symbols. */
+.thread-nav__top .tt-button.thread-nav__new { width: auto; gap: 6px; padding: 0 8px 0 6px; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; white-space: nowrap; }
+.thread-nav__top .tt-button.thread-nav__new:hover { color: var(--tt-text); }
 
 /* The room switch in the foot, and Watcher's floating switch, which draws the same one. */
 .thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
@@ -41,6 +44,8 @@
 .threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
 .threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--threads-field); font-size: var(--tt-type-small); font-weight: 400; }
 .threads-search .tt-input::-webkit-search-cancel-button { display: none; }
+/* In a short window the list is what the sidebar is for, so what stands around it takes less. */
+@media (max-height: 640px) { .threads-search { height: 28px; margin-bottom: 6px; } }
 /* The sidebar's own controls ease their hover as the shared buttons do; reduced motion clamps it in global.css. */
 .threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); translate: 0 -50%; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .threads-search__clear:hover { background: var(--threads-hover); color: var(--tt-text); }
@@ -56,28 +61,45 @@
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
 /* Needs you (ADR-0135): under the search, one entry per thread that needs the user. A filled card like every
    container (ADR-0110); need is said by each entry's ring and status words, never by an outline or a capsule. */
-.needs-you { flex: none; margin: 0 8px 8px; padding: 8px 8px 2px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
-.needs-you__head { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; }
+.needs-you { flex: none; margin: 0 8px 4px; padding: 3px 7px 2px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
+.needs-you__head { display: flex; align-items: center; gap: 6px; min-height: 22px; }
 .needs-you__heading { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
 .needs-you__count { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
-.needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
-.needs-you__entries { margin: 2px 0 0; padding: 0; list-style: none; }
-.needs-you__entry { padding: 8px 0; border-top: 1px solid var(--tt-hairline); }
+.needs-you__longest { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.needs-you__entries { margin: 0; padding: 0; list-style: none; }
+/* What holds an agent leads (Zach's pick C, ADR-0135, November 5, 2026): one line a thread, the amber ring and Answer in
+   view for an approval or a question; a failed turn rests under them in muted ink, its presses shown to the pointer or the
+   keys. Which wait it is stands in the line's tooltip and the title's spoken name. */
+.needs-you__entry { border-top: 1px solid var(--tt-hairline); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
-.needs-you__top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.needs-you__top > .thread-nav__ring { flex: none; }
-.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--tt-type-small); font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
-.needs-you__status { color: var(--threads-warning-text); font-weight: 500; }
-.needs-you__tag { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
-/* What the thread needs, then its one press: on one line while they fit, the press under the words when they do not. */
-.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 4px 0 0 16px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-.needs-you__need > .needs-you__status { margin-right: auto; }
-.needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-/* The entry's press is the compact size so it sits beside the words rather than under them. */
-.needs-you__actions .tt-button { min-height: 26px; padding: 0 6px; font-size: var(--tt-type-caption); }
-.needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 1px solid var(--tt-hairline); }
-.needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.needs-you__line { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 26px; }
+.needs-you__line > .thread-nav__ring { flex: none; }
+.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--tt-type-small); font-weight: 500; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.needs-you__tag { flex: none; padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.needs-you__actions { display: flex; flex: none; gap: 4px; margin-left: auto; }
+/* The line's press is the compact size so it sits on the line. */
+:is(.needs-you__head, .needs-you__actions, .needs-you__foot) > .tt-button { min-height: 22px; padding: 0 5px; font-size: var(--tt-type-caption); }
+.needs-you__entry[data-rest] .needs-you__line { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.needs-you__entry[data-rest] .needs-you__line > .thread-nav__ring { border-color: var(--tt-text-muted); }
+.needs-you__failed { flex: none; white-space: nowrap; }
+.needs-you__entry[data-rest] .needs-you__title { flex: 0 1 auto; color: var(--tt-text-2); font-size: var(--tt-type-caption); }
+.needs-you__entry[data-rest] .needs-you__actions > .tt-button--ghost { color: var(--tt-text-muted); }
+.needs-you__entry[data-rest] .needs-you__actions > .tt-button--ghost:is(:hover, :focus-visible) { color: var(--tt-text); }
+.needs-you__entry[data-rest]:not(:hover, :focus-within) .needs-you__actions { display: none; }
+/* Dismiss N failed stands in the heading's place for the wait while the pointer or the keys are on the heading. Out of
+   sight it keeps its Tab stop, so the keys reach it and bring it into view. */
+.needs-you__dismiss-all { margin-left: auto; }
+.needs-you__head:not(:hover, :focus-within) .needs-you__dismiss-all { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.needs-you__head:is(:hover, :focus-within) .needs-you__longest:has(~ .needs-you__dismiss-all) { display: none; }
+@media (hover: none) {
+  .needs-you__entry[data-rest]:not(:hover, :focus-within) .needs-you__actions { display: flex; }
+  .needs-you__head:not(:hover, :focus-within) .needs-you__dismiss-all { position: static; width: auto; height: auto; clip-path: none; }
+  .needs-you__longest:has(~ .needs-you__dismiss-all) { display: none; }
+}
+.needs-you__foot { display: flex; gap: 6px; align-items: center; min-height: 26px; border-top: 1px solid var(--tt-hairline); }
+.needs-you__overflow { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.needs-you__foot > .tt-button--ghost { color: var(--tt-text-muted); }
 /* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
    amendment). It holds the thread's own request card, or why its last turn failed. */
 .needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto;
@@ -103,7 +125,53 @@
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .pane-menu__list.thread-snooze { display: flex; align-items: center; gap: 8px; width: 320px; max-width: calc(100vw - 16px); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
+.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; }
+/* A list at rest starts at a whole row. Scrolled, an open folder's head stays at the top while its rows pass under it, as
+   a table's rows pass under its header, and when a scroll ends between rows the list goes on to the next row's edge the
+   way it was moving (listEndRoom.ts), so the row under the head's hairline is whole: never half a row, never a faded one,
+   never a gap. A scroll shorter than a row still moves the list a row; it never springs back, as snapping to the nearest
+   row did to a small touchpad scroll. While the list moves, the solid head cuts a row cleanly; at rest no row is cut
+   there. Each row, the gap a Settle holds (ADR-0167), each folder and each shelf is a place to rest. A row's place lies a
+   head's depth down (its scroll margin, which a row the keys reach also lands by, whole under the head), so a folder's
+   first row rests with its head over it, and a closed folder's head and a shelf rest at the band. A held gap is a place
+   as the row it holds was, so nothing moves under a still pointer. The list's end is a place to rest too: its end room
+   is just enough that the furthest the list can scroll is also a row's edge. At the foot the rows pass under a solid band
+   that ends in a hairline, drawn only while there is more of the list below. Each edge is solid in every theme, and on
+   Glass it lies on the room's own layers (below), so no row reads through it. */
+.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; --list-edge-fill: var(--threads-sidebar); --list-head-depth: 28px; scroll-padding-block: 6px 7px; }
+.thread-nav[data-mode] .thread-nav__scroll .thread-folder__rows > :is(.thread-nav__row, .thread-nav__gap) { scroll-margin-top: var(--list-head-depth); }
+/* Glass's sidebar is a tint over the room, so an edge drawn in the tint let the rows passing under it read through. An edge
+   there lies on the room's own layers under the tint: the window's material is the operating system's and cannot be
+   painted, so over it the room's tint lies on the solid overlay surface, and in-app glass's backdrop, which stays where it
+   is as the page scrolls, is painted fixed so it matches the sidebar beside it. Its heads stick at the list's very top. */
+:root[data-glass] .thread-nav[data-mode] .thread-nav__scroll { --list-edge-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)), var(--tt-surface-overlay); --list-edge-fill: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--list-edge-under); scroll-padding-top: 0; }
+:root[data-glass='in-app'] .thread-nav[data-mode] .thread-nav__scroll { --list-edge-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed; }
+.thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; }
+/* The foot's band: the hairline and 6px of the sidebar, after the list's end room. */
+.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 7px; margin-top: var(--list-end-room, 0px); }
+@container scroll-state(scrollable: bottom) {
+  .thread-nav[data-mode] .thread-nav__scroll::after { background: linear-gradient(var(--tt-hairline), var(--tt-hairline)) 0 0 / 100% 1px no-repeat, var(--list-edge-fill); }
+}
+/* A scrolled list keeps the name of the project its rows belong to: each open folder's head stays under the band while its
+   rows pass beneath it, and once stuck it ends in a hairline, so the list under Needs you always starts at a named folder,
+   as a sidebar's sections do. A head sticks only inside its own folder, so the next one pushes it on, and a closed
+   folder's head scrolls as a row does. Its sidebar reaches up to the band, and its hover keeps the sidebar under the wash,
+   so no row shows through either. */
+.thread-nav[data-mode] .thread-folder__head { position: sticky; top: 6px; z-index: 1; background-color: var(--threads-sidebar); box-shadow: 0 -6px 0 var(--threads-sidebar); container-type: scroll-state; }
+.thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--threads-sidebar); }
+/* On Glass, once stuck, the head's toggle, which spans it, lies on the room's own layers as the edges do. At rest a head is
+   drawn as before. It sticks at the list's very top, with no band above it, since the band can only be drawn in the tint. */
+:root[data-glass] .thread-nav[data-mode] .thread-folder__head { top: 0; box-shadow: none; }
+@container scroll-state(stuck: top) {
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__toggle { background: var(--list-edge-fill); }
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) > .thread-folder__toggle { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--list-edge-fill); }
+}
+.thread-nav[data-mode] .thread-folder__toggle::after { content: ''; position: absolute; top: 100%; right: -4px; left: -4px; height: 1px; background: transparent; pointer-events: none; }
+@container scroll-state(stuck: top) {
+  .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); }
+}
+
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
@@ -149,6 +217,10 @@
 .thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: var(--tt-radius-control); }
 .thread-nav__row:hover { background: var(--threads-hover); }
 .thread-nav__row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
+/* By day the selected row's tint sat barely off the sidebar under a pale teal edge, so it read washed rather than chosen.
+   It wears the selected card itself (ADR-0110 decision 1: a selected card or item wears --tt-card-selected), with no edge:
+   a filled item, as every selected card is. */
+:root[data-theme='light'] .thread-nav__row[data-current] { background: var(--tt-card-selected); border-color: transparent; }
 /* Hidden actions take no pointer; shown, they take their own width so the row button (and a click on
    its centre) never lies under them. */
 .thread-nav__row-actions { position: absolute; top: 1px; right: 0; pointer-events: none; }
@@ -157,21 +229,15 @@
 .thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); text-align: left; font: inherit; }
 .thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 34px; padding: 0 8px 0 10px; border-radius: var(--tt-radius-control); }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
-/* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
-   fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
-   against the sidebar and selected row) while keeping the provider hue. */
-.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, #d7dbe1); }
-.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
-.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
-.thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin, #a5d8f5); }
+/* Each mark in its provider's glyph colour (tokens.css): the badge colour by night, mixed halfway toward the text by
+   day, about 4:1 on the sidebar and the selected row. */
+.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex-mark); }
+.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude-mark); }
+.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok-mark); }
+.thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin-mark); }
 /* OpenCode's and Cursor's light tokens are already the darkened mark, so they are drawn as they are in both modes. */
 .thread-nav__mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
 .thread-nav__mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
-:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok'], [data-provider='devin']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='devin'] { --threads-provider-fill: var(--tt-provider-devin); }
 .thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
 .thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
 .thread-nav__rename { font-size: var(--tt-type-body); font-weight: 500; }
@@ -257,39 +323,119 @@
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
-.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
-.thread-nav__row--details .thread-nav__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
-/* A title may take two lines; the ring and the clock stay on its first. */
-.thread-nav__row--details :is(.thread-nav__ring, .thread-nav__time) { align-self: start; }
-.thread-nav__row--details .thread-nav__ring { margin-top: calc((var(--tt-type-body) * 1.4 - 10px) / 2); }
-.thread-nav__row--details .thread-nav__time { line-height: calc(var(--tt-type-body) * 1.4); }
-.thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
-.thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-/* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after it. */
-.thread-nav__provider { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
-.thread-nav__provider .thread-nav__model { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.thread-nav__metadata .thread-nav__status { display: block; margin-left: auto; min-width: 0; flex-shrink: 0; max-width: 70%; text-overflow: ellipsis; }
+/* A row is two lines in three columns: the ring over the provider's mark, the name over what the thread is doing, and the
+   clock at the second line's end. The name has the whole first line, so it wraps far less often, and the words share one
+   left edge, so a long list reads straight down it. The second line is set a step under the name rather than at caption
+   size, so the words a row is read for stay easy on the eye over a long day, and the two lines keep a little air between
+   them. The space around a row is larger than the space inside it, which is what keeps a row reading as one thing. */
+.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; padding: 6px 10px 6px 8px; width: 100%; }
+.thread-nav__row--details { margin: 0 0 1px; }
+.thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+/* Every name is in the text's own ink, so a long list of finished threads still reads as names and not as grey texture;
+   what sets a row apart is its weight. What is moving or waiting is set heavy, name and words alike, so it stands out by
+   shape as well as by the ring and its colour, and a plain Done is set light, its second line in the muted ink. */
+.thread-nav__row--details .thread-nav__title { color: var(--tt-text); }
+.thread-nav__row--details:not([data-resting]) .thread-nav__title { font-weight: 600; }
+.thread-nav__row--details[data-resting]:not([data-current]) .thread-nav__title { font-weight: 400; }
+/* Down the list, colour says only what a thread is doing: the ring and its word. Every row's provider mark keeps its shape
+   in the muted ink, so a working Claude thread is teal and not teal beside orange; hovering, or the row on screen, gives the
+   provider its colour back. The words under the name and the clock take a little more weight than a caption, so they read
+   at a glance without taking more ink. */
+.thread-nav__row--details:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
+.thread-nav__row--details :is(.thread-nav__standing, .thread-nav__time) { font-weight: 450; }
+.thread-nav__row--details:not([data-resting]) .thread-nav__standing { font-weight: 500; }
+.thread-nav__row--details[data-resting] :is(.thread-nav__standing, .thread-nav__time) { font-weight: 400; }
+/* A row whose need the Needs you card says keeps the middle weight: the card is where that need is said (ADR-0135). */
+.thread-nav__row--details[data-in-queue] .thread-nav__title { font-weight: 500; }
+.thread-nav__row--details[data-in-queue] .thread-nav__standing { font-weight: 450; }
+/* A working row's ring already turns in the activity colour, so its Working word says it a second time. The word stays
+   (ADR-0135) but steps back into the row's quiet words, in the muted ink and the clock's weight, so down a list of
+   running threads the names lead and one moving ring, not a column of teal words, says each is at work. */
+.thread-nav__row--details .thread-nav__standing:has(> .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen])) { font-weight: 450; }
+.thread-nav__row--details .thread-nav__standing > .thread-nav__status[data-state='working']:not([data-disconnected], [data-unseen]) { color: inherit; }
+/* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
+   ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
+   itself here was a cycle, which only reached the secondary ink by falling back to the row's colour. A folder's count
+   takes the frame's day ink (threads.css). */
+:root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: var(--tt-text-2); }
+:root[data-theme='light'] .thread-nav .thread-folder__count { color: var(--threads-day-muted); }
+/* By day the amber that says a thread waits on you is a step deeper and a step heavier in the sidebar, in the rows and in
+   Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
+:root[data-theme='light'] .thread-nav { --threads-warning-text: color-mix(in oklab, var(--tt-warning-text, var(--tt-warning)) 84%, var(--tt-text)); }
+:root[data-theme='light'] .thread-nav :is(.needs-you__status, .thread-nav__status[data-state='needs']) { font-weight: 600; }
+/* A title may take two lines; the ring stays on its first. A row's marks are one family: the ring over the provider's mark,
+   each 12px in the same column, drawn with the same 1.5px line, the words' glyphs (In Needs you, a prototype, Watcher's
+   owl) 12px too, and colour only where it says what the thread is doing. A working ring is that line with a quarter of it
+   in the activity colour, turning, rather than a soft wedge half its size. */
+.thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; width: 12px; height: 12px; margin-top: calc((var(--tt-type-body) * 1.35 - 12px) / 2); }
+.thread-nav__row--details .thread-nav__ring[data-state='working']:not([data-unseen], [data-background]) { border: 1.5px solid color-mix(in srgb, var(--tt-activity) 26%, transparent); border-top-color: var(--tt-activity); background: none; mask: none; }
+.thread-nav__row--details .thread-nav__ring[data-background] svg { width: 12px; height: 12px; }
+.thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; font-size: var(--tt-type-small); line-height: 18px; visibility: visible; }
+.thread-nav__metadata { display: contents; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+/* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after the words. */
+.thread-nav__provider { grid-area: 2 / 1; display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.thread-nav__provider .thread-nav__mark { flex: none; width: 12px; height: 12px; }
+.thread-nav__standing { grid-area: 2 / 2; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 18px; white-space: nowrap; }
+.thread-nav__standing .thread-nav__status { display: block; flex: 0 1 auto; grid-column: auto; font-size: inherit; text-overflow: ellipsis; }
+.thread-nav__standing .watched-badge { flex: none; }
+.thread-nav__standing .thread-nav__model { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .thread-nav__model, .thread-nav__copy-kind { display: none; }
-.thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.thread-nav__branch { display: none; grid-row: 3; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-nav__branch > svg, .thread-nav__copy-kind { flex: none; }
 .thread-nav__branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
 /* The current row's selection is a tint, so its amber takes the on-tint tone. */
 .thread-nav__row[data-current] :is(.thread-nav__branch[data-working-copy-state='error'], .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected]) { color: var(--tt-warning-on-tint); }
-.thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 3px; right: 1px; opacity: 0; pointer-events: none; border-radius: var(--tt-radius-control); background: var(--tt-sidebar); }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
-.thread-nav__row--details[data-current] .thread-nav__row-actions { background: var(--tt-selected); }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 114px; }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: hidden; max-width: 0; }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__branch { padding-right: 114px; }
+/* The row's shortcuts stand at the second line's end in the clock's place, so the name and the words stay put under the pointer. */
+.thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 1px; right: 2px; padding-right: 0; opacity: 0; pointer-events: none; }
+.thread-nav .thread-nav__row--details .thread-nav__action { width: 24px; height: 24px; min-height: 24px; }
+/* They show under the pointer and with the keyboard's focus, not for the focus a click leaves behind, so the row just
+   pressed reads as quietly as the rest once the pointer moves on. */
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
+.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: hidden; }
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 52px; }
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__branch { padding-right: 104px; }
+/* A resting row steps back to one line (Zach's pick C, ADR-0135, November 5, 2026): its name and, at the line's end, its
+   time in the muted ink, with no ring, no mark and no word, so what is moving or waiting stands out down a long list. The
+   ring keeps its column, so every name still starts on one edge. The word leaves the screen and stays in the row's
+   description, and a wide sidebar's branch line leaves with it. Pointed at, or reached by the keys, the provider's mark
+   stands where the ring would be and the row's shortcuts take the time's place across the line. Working and waiting rows
+   keep their two lines as above. */
+.thread-nav .thread-nav__row--details[data-steps-back] .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; gap: 0 8px; padding-block: 4px; }
+.thread-nav__row--details[data-steps-back] .thread-nav__title { grid-area: 1 / 2; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__row--details[data-steps-back] .thread-nav__ring { grid-area: 1 / 1; align-self: center; margin-top: 0; visibility: hidden; }
+.thread-nav .thread-nav__row--details[data-steps-back] .thread-nav__time { grid-area: 1 / 3; justify-self: end; min-width: 0; text-align: right; }
+.thread-nav__row--details[data-steps-back] .thread-nav__standing { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.thread-nav .thread-nav__row--details[data-steps-back] :is(.thread-nav__provider, .thread-nav__branch) { display: none; }
+.thread-nav .thread-nav__row--details[data-steps-back] .thread-nav__row-actions { top: 50%; bottom: auto; transform: translateY(-50%); }
+.thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__item { padding-right: 100px; }
+.thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__time { display: none; }
+.thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__ring { display: none; }
+.thread-nav .thread-nav__row--details[data-steps-back]:is(:hover, :has(:focus-visible)) .thread-nav__provider { display: flex; grid-area: 1 / 1; align-self: center; }
 .thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
 .thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; transition: background-color 160ms ease; }
 .thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
-.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: thin; }
+/* The rail is 52px (64px on Owl), so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar.
+   A short band of the sidebar stands at each edge, with no line: the rail has no hairlines (ADR-0146, October 28), so a
+   tile going under the band fades out whole, and that is what says there is more. */
+.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; }
+.thread-nav__rail-list::before, .thread-nav__rail-list::after { content: ''; position: sticky; z-index: 2; display: block; height: 4px; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav__rail-list::before { top: 0; }
+.thread-nav__rail-list::after { bottom: 0; }
+/* Under the sidebar standing over the thread the bands stay under it too, rather than striking through Needs you. */
+.thread-nav[data-over] .thread-nav__rail-list::before, .thread-nav[data-over] .thread-nav__rail-list::after { z-index: 0; }
+/* A tile the band would cut through its letters fades out whole, unless the keys are on it. */
+@supports (animation-timeline: view()) {
+  .thread-nav__rail-list .thread-nav__rail-thread:not(:focus-visible) { animation: thread-nav-edge linear both; animation-timeline: view(block 5px); animation-range: cover; }
+}
+@keyframes thread-nav-edge {
+  entry 0%, entry 80% { opacity: 0; pointer-events: none; }
+  entry 88%, exit 12% { opacity: 1; pointer-events: auto; }
+  exit 20%, exit 100% { opacity: 0; pointer-events: none; }
+}
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
 .thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); color: var(--tt-text); background: transparent; font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
@@ -297,29 +443,72 @@
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: var(--tt-radius-mark); background: var(--threads-sidebar); }
-/* Owl's rail (ADR-0146): Watcher's tile under Expand, the threads it watches under it, smaller tiles for resting threads. */
-.thread-nav__rail-mark { font-size: var(--tt-type-caption); font-weight: 600; }
+/* A symbol the keys reach is named as the pointer's tooltip names it (RailFocusName.tsx): a rail tile beside the rail, its
+   title over what it is doing, a pane header's symbol under it, and the sidebar foot's icons over the foot. */
+.focus-name { position: fixed; z-index: 80; display: grid; gap: 1px; max-width: 280px; padding: 6px 10px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; pointer-events: none; transform: translateY(-50%); }
+.focus-name[data-side='below'] { padding-block: 5px 6px; transform: translateX(-50%); }
+.focus-name[data-side='above'] { padding-block: 5px 6px; transform: translateY(-100%); }
+.focus-name > strong { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .focus-name { animation: focus-name-arrive 100ms ease-out; } }
+@keyframes focus-name-arrive { from { opacity: 0; } }
+/* Owl's rail (ADR-0146): Watcher's tile under Expand, then a tray for each project's waiting and moving threads, each tile
+   its provider's mark and status ring, and the resting threads' smaller tiles in one tray at the foot (Zach's pick C,
+   November 5, 2026). That rail is 64px wide, where the rail without it is 52px. */
 .thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
 .thread-nav__rail-group { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.thread-nav__rail-group + .thread-nav__rail-group { margin-top: 4px; }
-/* A part of two or more tiles sits in a tray: a faint wash and an edge in its own group colour (Drake's pick r3,
-   October 28, 2026). Sized to the tiles, it gives way to the rail's scrollbar rather than clip. */
+/* A part sits in a tray: a faint wash and an edge (Drake's pick r3, October 28, 2026). The app keeps no colour for a
+   project, so every project's tray takes the same theme role and its name at the head tells it from the next; the
+   resting tray takes the muted ink. Sized to the tiles, centred on the rail. */
 .thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: var(--tt-radius-card); background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
-.thread-nav__rail-tray[data-hue='1'] { --rail-group: var(--tt-rail-group-1); }
-.thread-nav__rail-tray[data-hue='2'] { --rail-group: var(--tt-rail-group-2); }
-.thread-nav__rail-tray[data-hue='3'] { --rail-group: var(--tt-rail-group-3); }
-.thread-nav__rail-tray[data-hue='4'] { --rail-group: var(--tt-rail-group-4); }
+.thread-nav__rail-project { --rail-group: var(--tt-rail-group-1); width: 58px; padding: 4px 0 8px; gap: 7px; }
+.thread-nav__rail-resting { --rail-group: var(--tt-text-muted); }
+.thread-nav__rail-label { display: block; box-sizing: border-box; width: 100%; padding: 0 3px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-micro); font-weight: 500; line-height: 14px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__rail-list .thread-nav__rail-thread { display: grid; place-items: center; }
+.thread-nav__rail-provider { width: 16px; height: 16px; }
+.thread-nav__rail-thread[data-resting] .thread-nav__rail-provider { width: 13px; height: 13px; opacity: .8; }
 /* The owl on a watched tile, in the muted text colour the owl on a watched row takes (Drake's pick D, October 27, 2026). */
 .thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: var(--tt-radius-tag); background: var(--threads-sidebar); color: var(--tt-text-muted); }
 /* Amber means only that it waits on you: the whole edge, so it keeps 3:1 by day. */
 .thread-nav__rail-thread[data-waiting]:not([aria-current]) { border-color: var(--tt-attention); }
-.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: var(--tt-radius-control); font-size: var(--tt-type-micro); font-weight: 500; color: var(--tt-text-muted); }
+.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: var(--tt-radius-control); color: var(--tt-text-muted); }
+/* At 64px the foot's icons would stand two abreast; they keep the one column the narrower rail gives them. */
+.thread-nav__rail[data-owl] .thread-nav__foot { flex-direction: column; flex-wrap: nowrap; }
+.thread-nav__rail[data-owl] .thread-nav__foot-rule { flex: none; align-self: stretch; }
 /* The rail hides the switch, so the foot's hairline lies flat as its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
 .thread-nav__rail .thread-nav__foot-rule { flex: 1 0 100%; width: auto; height: 1px; margin: 0 0 6px; }
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
+/* Below a 1000px window the rail stands, and Expand or Ctrl+Shift+B opens the whole sidebar over the thread rather than
+   beside it (Zach's pick C, ADR-0110, November 5, 2026). The rail keeps its place under it, so the thread never moves or
+   rewraps; a press beside it, Escape or a chosen thread puts it away. Its contents measure the panel, not the rail. */
+.thread-nav[data-over] { z-index: 50; overflow: visible; }
+.thread-nav[data-over] > .thread-nav__expanded { position: absolute; inset: 0 auto 0 0; z-index: 1; width: 280px; max-width: calc(100vw - 24px); container: thread-sidebar / inline-size;
+  border-right: 1px solid var(--tt-hairline); background: inherit; box-shadow: var(--tt-shadow-lg); }
+/* Glass's sidebar lets the room through; over the thread it lies on a solid surface, so the thread does not read through it. */
+:root[data-glass] .thread-nav[data-over] > .thread-nav__expanded { background: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--tt-surface-overlay); }
+/* The aside holds its contents' fixed boxes, so the scrim is drawn across the window from the aside's own corner. */
+.thread-nav__scrim { position: absolute; inset: 0 auto 0 0; z-index: 0; width: 100vw; background: var(--tt-backdrop); -webkit-app-region: no-drag; }
+@keyframes thread-nav-over { from { opacity: 0; transform: translateX(-16px); } }
+@keyframes thread-nav-scrim { from { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-nav[data-over] > .thread-nav__expanded { animation: thread-nav-over 160ms ease-out; }
+  :root:not([data-reduced-motion='on']) .thread-nav__scrim { animation: thread-nav-scrim 160ms ease-out; }
+}
+/* Where Tools has taken the sidebar's column (toolsRail.css), the keys still open the sidebar over the field. */
+.threads-view:has(> .thread-nav[data-over]) { position: relative; }
+@media (max-width: 950px) {
+  .threads-view[data-tools] > .thread-nav[data-over] { display: flex; position: absolute; inset: 0 auto 0 0; width: 0 !important; }
+}
+/* A waiting thread's row in its folder while it stands in Needs you (Zach's pick B, ADR-0135, November 5, 2026): the card
+   says what it needs, so the row rests its ring, drops the amber and points up to the card. */
+.thread-nav__ring[data-queued] { border-color: var(--tt-text-muted); }
+.thread-nav__status[data-in-queue] { color: var(--tt-text-2); }
+.thread-nav__status[data-in-queue] > svg { display: inline-block; flex: none; margin-right: 4px; vertical-align: -2px; }
+/* Pointing at the entry or the row, or the keyboard's focus on either, lights the other. */
+.thread-nav__row:is([data-peer], [data-peer-focus]) { background: var(--threads-hover); }
+.needs-you__entry:is([data-peer], [data-peer-focus]) { margin-inline: -7px; padding-inline: 7px; background: var(--threads-hover); box-shadow: inset 2px 0 0 var(--tt-text-muted); }
 @container thread-sidebar (max-width: 285px) { .thread-nav__wordmark { display: none; } }
 @container thread-sidebar (max-width: 339px) {
   .thread-folder__toggle .host-badge { padding-inline: 5px; }
@@ -327,12 +516,11 @@
 }
 @container thread-sidebar (min-width: 340px) {
   .thread-nav__branch { display: flex; }
-  .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 0; }
-  .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: visible; max-width: 70%; }
+  /* Here the shortcuts have the branch's line, so the clock and the words keep theirs. */
+  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: visible; }
+  .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 0; }
 }
 @container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
-
-.thread-nav .thread-nav__row--details:is(:hover, :focus-within, [data-current]) .thread-nav__time { visibility: visible; }
 
 /* Keep main up to date's line under a project's name (ADR-0142, variant A). */
 .thread-folder__main { padding: 1px 8px 6px 26px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }

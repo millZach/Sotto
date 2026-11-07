@@ -112,6 +112,8 @@ describe('the error a failed Claude turn leaves', () => {
     await f.action('thread', { type: 'raw', frame: { type: 'assistant', error: 'rate_limit', message: { id: 'failure', role: 'assistant', content: [{ type: 'text', text: 'API Error: 429' }] } } })
     await f.action('thread', { type: 'raw', frame: failed({ result: 'API Error: 429 rate limited' }) })
     await expect.poll(async () => error(f)).toBe(`${USAGE} Claude Code didn’t say when its limit resets. Send again once it has.`)
+    // The reply Claude Code made of the error is marked as the provider's, for Watcher's room to leave out (#2234).
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === 'thread')?.messages.find(message => message.id === 'failure')).toMatchObject({ providerError: true })
     // Another thread finishing says nothing about this one.
     await f.driver.completeTurn('other', 'Finished elsewhere.')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === 'other')?.messages.at(-1)?.text).toBe('Finished elsewhere.')

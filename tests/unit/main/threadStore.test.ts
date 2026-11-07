@@ -173,6 +173,17 @@ describe('thread store', () => {
     expect(f.store.appendBatches(new Map())).toEqual({ failed: new Set() })
   })
 
+  it('keeps a provider’s error reply marked through a replacement and a rebuild (#2234)', async () => {
+    const f = await store()
+    f.store.appendMany('thread', [{ kind: 'message-added', at, message: message('u0', 'user', 'Ask') },
+      { kind: 'message-added', at, message: { ...message('a0', 'assistant', 'You’ve hit your weekly limit'), providerError: true } }])
+    // A history read again from the provider's log may carry no mark; the one kept stands.
+    f.store.append('thread', { kind: 'message-replaced', at, message: message('a0', 'assistant', 'You’ve hit your weekly limit') })
+    expect(f.store.readMessages('thread').messages.map(item => item.providerError)).toEqual([undefined, true])
+    f.store.rebuild()
+    expect(f.store.readMessages('thread').messages.map(item => item.providerError)).toEqual([undefined, true])
+  })
+
   it('rebuilds the projection from the log alone', async () => {
     const f = await store()
     f.store.replaceThreadMessages('thread', conversation(2))

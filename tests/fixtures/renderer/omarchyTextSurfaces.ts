@@ -36,4 +36,4 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
 ]
 /** These color: declarations paint SVG/provider marks only; their children override inherited text.
  * Quiet-pill permission shields use accent and chart-6 for Automatic and Full access. */
-export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'accent', 'chart-6', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-opencode', 'provider-cursor'] as const
+export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'accent', 'chart-6', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-opencode', 'provider-cursor', 'provider-codex-mark', 'provider-claude-mark', 'provider-grok-mark', 'provider-devin-mark'] as const

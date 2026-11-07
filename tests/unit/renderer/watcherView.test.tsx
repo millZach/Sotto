@@ -759,7 +759,7 @@ describe("Watcher's room", () => {
     fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }))
     const beside = await screen.findByRole('region', { name: 'Grok voice previews' })
-    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s · 1 step' })
+    const work = within(beside).getByRole('button', { name: /^Worked for 2m 04s · 1 step/u })
     work.focus()
     fireEvent.click(work)
     expect(work).toHaveAttribute('aria-expanded', 'true')
@@ -770,12 +770,9 @@ describe("Watcher's room", () => {
     expect(screen.getByRole('region', { name: 'Grok voice previews' })).toBeInTheDocument()
     // From inside what it shows, Escape folds it too and puts focus back on its button.
     fireEvent.click(work)
-    const group = within(beside).getByRole('button', { name: 'Ran 1 command' })
-    group.focus()
-    // The group opened with the fold, so Escape folds it first, then the fold.
-    fireEvent.keyDown(group, { key: 'Escape' })
-    expect(group).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.keyDown(group, { key: 'Escape' })
+    const row = within(beside).getByRole('button', { name: /^npm test/u })
+    row.focus()
+    fireEvent.keyDown(row, { key: 'Escape' })
     expect(work).toHaveAttribute('aria-expanded', 'false')
     expect(work).toHaveFocus()
     // Nothing left open: Escape closes the pane.
@@ -877,7 +874,7 @@ describe("Watcher's room", () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
-    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s · 1 step' })
+    const failed = within(beside).getByRole('button', { name: /^Failed after 2m 04s · 1 step/u })
     await waitFor(() => expect(failed).toHaveFocus())
     expect(failed.closest('[data-turn-outcome="failed"]')).toHaveTextContent('The playback test failed again.')
   })

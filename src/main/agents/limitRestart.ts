@@ -7,11 +7,14 @@ import {
 } from '../../shared/limitRestart'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { watcherBackgroundWorkCount } from './watcherWakeUp'
 
 const RECORDS_MAX = 500
 /** What a client is told of a restart's time: the reset the provider gave, or now if that had passed, since the restart
  * goes a grace later and every surface names the time the stop itself named. */
 const shownAt = (at: string): string => new Date(Date.parse(at) - LIMIT_RESTART_GRACE_MS).toISOString()
+/** How long Watcher waits to hear of watched threads restarted for work left after the last of them, so it hears them together. */
+export const LIMIT_RESTART_REPORT_MS = 15_000
 /** How long a restart that is due waits for its provider to connect before it looks again. */
 export const LIMIT_RESTART_RETRY_MS = 60_000
 /**
@@ -31,6 +34,8 @@ const recordSchema = z.object({
   restarts: z.number().int().min(0).max(LIMIT_RESTARTS_IN_A_ROW_MAX),
   /** Its restart note is in its queue: kept only to count the restarts in a row, and never published. */
   sent: z.literal(true).optional(),
+  /** A watched thread whose last turn stopped with work left, restarted at once rather than at a reset (#2234). */
+  cause: z.literal('work-left').optional(),
 }).strict()
 const fileSchema = z.object({ version: z.literal(1), threads: z.array(recordSchema).max(RECORDS_MAX) }).strict()
 type LimitRecord = z.infer<typeof recordSchema>
@@ -52,8 +57,19 @@ export interface LimitRestartOptions {
   readonly enabled: () => boolean
   /** Watcher's own thread on this host, when it has one: its restart goes first. */
   readonly watcherThreadId?: () => string | undefined
-  /** Which threads were restarted when one provider's limit reset, Watcher's first, for Watcher to hear. */
-  readonly restarted?: (provider: ProviderId, threadIds: readonly string[]) => void
+  /**
+   * Which threads were restarted when one provider's limit reset, Watcher's first, for Watcher to hear; and, with `cause`,
+   * which watched threads were restarted for work left (#2234), told together a little after the last of them.
+   */
+  readonly restarted?: (provider: ProviderId, threadIds: readonly string[], cause?: 'work-left') => void
+  /**
+   * Watcher's watched threads on this host (#2234): one whose last turn stopped with work left is restarted once this run
+   * first reads that turn, and when Watcher's own limit resets. Absent while Watcher is off: nothing is recovered.
+   */
+  readonly watched?: () => Iterable<string> | undefined
+  /** Whether a thread waits on something that goes by itself or on the user: its follow-up queue holds anything, or the
+   * resume note of ADR-0076 is on its way to it. Such a thread is not restarted for work left. */
+  readonly waiting?: (threadId: string) => boolean
   /** Whether the thread has Sotto's pull request tools, for babysitting news its note may be folded with. */
   readonly tool?: (threadId: string) => boolean
   /** A gated thread keeps its saved record unchanged until the owning feature is available again. */
@@ -79,6 +95,11 @@ export class LimitRestart {
   private readonly shown = new Map<string, ScheduledRestart>()
   /** Each thread's last turn as the last read saw it: a stop is news only when it is a turn that was not there before. */
   private readonly turns = new Map<string, string>()
+  /** Threads whose first turn this run has read, for the work-left check after a start (#2234). */
+  private readonly startRead = new Set<string>()
+  /** Watched threads restarted for work left and not yet told to Watcher, by provider, and the timer that tells them. */
+  private readonly unreported = new Map<string, string[]>()
+  private cancelReport: (() => void) | undefined
   private readonly delivering = new Set<string>()
   private readonly now: () => number
   private readonly schedule: NonNullable<LimitRestartOptions['schedule']>
@@ -109,6 +130,7 @@ export class LimitRestart {
   close(): Promise<void> {
     this.closed = true
     this.cancelTimer?.(); this.cancelTimer = undefined
+    this.cancelReport?.(); this.cancelReport = undefined
     return this.writing ?? Promise.resolve()
   }
 
@@ -122,12 +144,13 @@ export class LimitRestart {
   track(snapshot: Pick<AgentHostSnapshot, 'connected'>, threads: Iterable<AgentThread>, gone?: Iterable<string>): void {
     if (this.closed) return
     let changed = false
+    const watched = this.watchedOnce()
     for (const id of gone ?? []) {
       this.turns.delete(id)
       // A thread gone from a connected host was deleted: nothing will restart it.
       if (snapshot.connected && this.records.has(id) && !this.dormant(id) && !this.delivering.has(id)) { this.drop(id); changed = true }
     }
-    for (const thread of threads) changed = this.read(thread) || changed
+    for (const thread of threads) changed = this.read(thread, watched) || changed
     if (changed) { this.save(); this.arm() }
   }
 
@@ -135,7 +158,8 @@ export class LimitRestart {
   trackAll(snapshot: Pick<AgentHostSnapshot, 'connected' | 'threads'>): void {
     if (this.closed) return
     let changed = false
-    for (const thread of snapshot.threads) changed = this.read(thread) || changed
+    const watched = this.watchedOnce()
+    for (const thread of snapshot.threads) changed = this.read(thread, watched) || changed
     if (snapshot.connected) for (const id of [...this.records.keys()]) {
       if (this.dormant(id) || this.delivering.has(id) || this.options.control.thread(id)) continue
       this.drop(id); changed = true
@@ -170,9 +194,34 @@ export class LimitRestart {
 
   private dormant(threadId: string): boolean { return this.options.preservesDormantThread?.(threadId) === true }
 
+  /**
+   * The watched set, asked at most once for a read of many threads, and only when a thread there needs it. Undefined
+   * while it cannot be known yet, as before this computer's host ID is back.
+   */
+  private watchedOnce(): () => ReadonlySet<string> | undefined {
+    let watched: ReadonlySet<string> | undefined, asked = false
+    return () => {
+      if (!asked) { asked = true; const ids = this.options.watched?.(); watched = ids === undefined ? undefined : new Set(ids) }
+      return watched
+    }
+  }
+
   /** One thread read against the last read of it; true when its record changed. */
-  private read(thread: AgentThread): boolean {
+  private read(thread: AgentThread, watched?: () => ReadonlySet<string> | undefined): boolean {
     if (this.dormant(thread.id)) return false
+    // The first turn this run reads of a watched thread: one that stopped with work left is restarted now (#2234). It is
+    // decided once the watched set is known and the thread's provider is connected, and only once.
+    if (this.options.watched && thread.lastTurn && !this.startRead.has(thread.id) && (!thread.historyStatus || thread.historyStatus === 'ready')) {
+      const set = thread.lastTurn.status === 'failed' ? watched?.() : undefined
+      if (thread.lastTurn.status !== 'failed') this.startRead.add(thread.id)
+      else if (set !== undefined && isThreadProviderConnected(this.options.control.host(), thread)) {
+        this.startRead.add(thread.id)
+        if (set.has(thread.id) && this.workLeft(thread)) {
+          this.turns.set(thread.id, `${thread.lastTurn.status} ${thread.lastTurn.id}`)
+          return this.recover(thread)
+        }
+      }
+    }
     // An earlier Watcher conversation is read only: it cannot receive a restart or the user's next send.
     if (thread.kind === 'watcher-history') {
       if (!this.records.has(thread.id)) return false
@@ -217,7 +266,7 @@ export class LimitRestart {
     const due = Math.max(reset, now) + LIMIT_RESTART_GRACE_MS
     const at = Number.isFinite(reset) && due - now <= LIMIT_RESTART_HORIZON_MS ? new Date(due).toISOString() : undefined
     // The first stop of a provider's limit: its threads still working in the background were stopped by it too.
-    const first = ![...this.records.values()].some(record => record.provider === report.provider && !record.sent)
+    const first = ![...this.records.values()].some(record => record.provider === report.provider && !record.sent && record.cause === undefined)
     this.drop(thread.id)
     this.set({ threadId: thread.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts })
     if (first) {
@@ -230,10 +279,71 @@ export class LimitRestart {
     return true
   }
 
+  /**
+   * Whether a watched thread stopped with work left (ADR-0144, November 5, 2026 amendment): its last turn ended with an
+   * error before it finished, nothing runs in it, not even background work, nothing waits on the user, not even a
+   * prototype for review, nothing goes by itself, and its provider is
+   * connected. A turn the user stopped finished as they chose. A turn a usage limit stopped is the limit restart's, until
+   * its reset has passed; a limit that named no reset waits for the user, as decision 3 says. Watcher's own thread is the
+   * hold's (#2234), and Watcher hears its other news when the hold ends.
+   */
+  private workLeft(thread: AgentThread): boolean {
+    const turn = thread.lastTurn
+    if (turn?.status !== 'failed' || thread.kind === 'watcher-history' || thread.id === this.options.watcherThreadId?.()) return false
+    // A card or a prototype waiting for review waits on the user; background work, monitoring or a subagent still runs in it.
+    if (isThreadClosed(thread) || isThreadTurnRunning(thread) || thread.requests.length > 0 || thread.prototypeReady !== undefined || this.dormant(thread.id)) return false
+    if (watcherBackgroundWorkCount(thread) > 0) return false
+    if (thread.historyStatus !== undefined && thread.historyStatus !== 'ready') return false
+    if (turn.limitStop && (turn.limitStop.resetsAt === undefined || Date.parse(turn.limitStop.resetsAt) + LIMIT_RESTART_GRACE_MS > this.now())) return false
+    if (this.options.waiting?.(thread.id) === true) return false
+    const record = this.records.get(thread.id)
+    // Already scheduled, or its note is on its way; one sent counts toward three in a row.
+    if (record && !record.sent || this.delivering.has(thread.id)) return false
+    if (record?.sent && record.restarts >= LIMIT_RESTARTS_IN_A_ROW_MAX) return false
+    return isThreadProviderConnected(this.options.control.host(), thread)
+  }
+
+  /** Records a watched thread with work left for a restart now; true when the record changed. */
+  private recover(thread: AgentThread): boolean {
+    if (!this.options.enabled() || !thread.providerId) return false
+    const previous = this.records.get(thread.id), restarts = previous?.sent ? previous.restarts : 0
+    const now = new Date(this.now()).toISOString()
+    this.drop(thread.id)
+    this.set({ threadId: thread.id, provider: thread.providerId, stoppedAt: now, at: now, restarts, cause: 'work-left' })
+    return true
+  }
+
+  /**
+   * Watcher's own limit reset (#2234): every watched thread whose last turn stopped with work left while Watcher could not
+   * hear it is restarted too, so Watcher comes back to its threads going again.
+   */
+  private recoverWatched(): boolean {
+    let changed = false
+    for (const id of this.options.watched?.() ?? []) {
+      const thread = this.options.control.thread(id)
+      if (thread && this.workLeft(thread)) changed = this.recover(thread) || changed
+    }
+    return changed
+  }
+
+  /** Tells Watcher of the watched threads restarted for work left together, a little after the last of them. */
+  private report(provider: string, threadIds: readonly string[]): void {
+    this.unreported.set(provider, [...this.unreported.get(provider) ?? [], ...threadIds])
+    this.cancelReport?.()
+    this.cancelReport = this.schedule(() => {
+      this.cancelReport = undefined
+      const told = [...this.unreported]
+      this.unreported.clear()
+      if (this.closed) return
+      for (const [provider, ids] of told) this.options.restarted?.(provider as ProviderId, ids, 'work-left')
+    }, LIMIT_RESTART_REPORT_MS)
+  }
+
   private set(record: LimitRecord): void {
     this.records.delete(record.threadId)
     this.records.set(record.threadId, record)
-    if (record.sent) { if (this.shown.delete(record.threadId)) this.onMoved?.(record.threadId) }
+    // A restart for work left goes at once, so no surface says it is scheduled (#2234).
+    if (record.sent || record.cause === 'work-left') { if (this.shown.delete(record.threadId)) this.onMoved?.(record.threadId) }
     else {
       this.shown.set(record.threadId, Object.freeze({ provider: record.provider, stoppedAt: record.stoppedAt, ...(record.at ? { at: shownAt(record.at) } : {}) }))
       this.onMoved?.(record.threadId)
@@ -275,7 +385,7 @@ export class LimitRestart {
       this.onChanged?.()
       return
     }
-    let waiting = false
+    let waiting = false, watcherBack = false
     const watcher = this.options.watcherThreadId?.()
     for (const provider of [...new Set(due.map(record => record.provider))]) {
       const host = this.options.control.host()
@@ -283,21 +393,22 @@ export class LimitRestart {
       if (!host.connected || host.providers && !host.providers.some(item => item.id === provider && item.connection === 'connected')) { waiting = true; continue }
       const ordered = due.filter(record => record.provider === provider)
         .sort((left, right) => Number(right.threadId === watcher) - Number(left.threadId === watcher) || Date.parse(left.stoppedAt) - Date.parse(right.stoppedAt))
-      const restarted: string[] = []
+      const restarted: string[] = [], recovered: string[] = []
       for (const record of ordered) {
         if (this.closed || this.records.get(record.threadId) !== record) continue
         const thread = this.options.control.thread(record.threadId)
         if (!thread || isThreadClosed(thread) || isThreadTurnRunning(thread)) { this.drop(record.threadId); continue }
         if (!isThreadProviderConnected(this.options.control.host(), thread)) { waiting = true; continue }
-        const news: LimitRestartNews = { source: 'limit-restart', provider, since: record.stoppedAt, restarts: record.restarts + 1 }
+        const news: LimitRestartNews = { source: 'limit-restart', provider, since: record.stoppedAt, restarts: record.restarts + 1, ...record.cause ? { cause: record.cause } : {} }
         this.delivering.add(record.threadId)
         try {
           await this.options.control.deliverWakeUp(record.threadId, news, { tool: this.options.tool?.(record.threadId) ?? false })
           if (this.records.get(record.threadId) === record) {
-            this.set({ threadId: record.threadId, provider, stoppedAt: record.stoppedAt, restarts: news.restarts, sent: true })
+            this.set({ threadId: record.threadId, provider, stoppedAt: record.stoppedAt, restarts: news.restarts, sent: true, ...record.cause ? { cause: record.cause } : {} })
             // Saved at once: a start that read it unsent would queue the note a second time.
             this.save()
-            restarted.push(record.threadId)
+            if (record.cause === 'work-left') recovered.push(record.threadId)
+            else { restarted.push(record.threadId); if (record.threadId === watcher) watcherBack = true }
           }
         } catch {
           // Nothing was queued: the thread went, was settled or works again. Either way nothing restarts it now.
@@ -305,7 +416,10 @@ export class LimitRestart {
         } finally { this.delivering.delete(record.threadId) }
       }
       if (restarted.length) this.options.restarted?.(provider as ProviderId, restarted)
+      if (recovered.length) this.report(provider, recovered)
     }
+    // Watcher's own limit reset: the watched threads that stopped with work left while it could not hear go again too (#2234).
+    if (watcherBack && !this.closed) this.recoverWatched()
     this.onChanged?.()
     if (waiting && !this.closed) this.arm(LIMIT_RESTART_RETRY_MS)
   }

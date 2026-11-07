@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
-  GIT_PULL_REQUEST_FILES_MAX, gitCommitIdSchema,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestPress, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
+  GIT_PULL_REQUEST_FILES_MAX, GIT_PULL_REQUEST_LIST_MAX, gitCommitIdSchema,
+  type GitPullRequestAction, type GitPullRequestList, type GitPullRequestListItem, type GitPullRequestCheck, type GitPullRequestPress, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
 import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
@@ -66,7 +66,7 @@ export function pullRequestQuery(withMergeSettings: boolean): string {
   viewer { login }
   repository(owner: $owner, name: $name) {${withMergeSettings ? `\n    ${MERGE_SETTINGS}` : ''}
     pullRequest(number: $number) {
-      number title url body state isDraft mergeable reviewDecision baseRefName headRefName headRefOid isCrossRepository mergedAt
+      number title url body state isDraft mergeable reviewDecision baseRefName headRefName headRefOid isCrossRepository mergedAt additions deletions author { login }
       headRepositoryOwner { login } autoMergeRequest { mergeMethod } viewerCanUpdateBranch
       baseRef { compare(headRef: $pullRef) { behindBy } }
       latestOpinionatedReviews(last: 50) { nodes { state url author { login } } }
@@ -94,7 +94,7 @@ const rawPullRequestSchema = z.object({
   headRepositoryOwner: loose(z.object({ login: loose(z.string()) })), autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })),
   viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
   latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
-  changedFiles: loose(z.number().int().nonnegative()),
+  changedFiles: loose(z.number().int().nonnegative()), additions: loose(z.number().int().nonnegative()), deletions: loose(z.number().int().nonnegative()), author: loose(z.object({ login: loose(z.string()) })),
   files: loose(z.object({ nodes: loose(z.array(loose(z.object({ path: loose(z.string()), additions: loose(z.number().int().nonnegative()), deletions: loose(z.number().int().nonnegative()) })))) })),
   commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(rawContextSchema))) })) })) })) })))) })),
 })
@@ -109,6 +109,40 @@ const rawAnswerSchema = z.object({
   /** Where GitHub refused a part of the read: each error's path names the field it left empty. */
   errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
 })
+/**
+ * The open pull requests of a repository, in one GraphQL read, the most recently updated first, with what one line of a
+ * list needs. Asked only when the user opens the list or refreshes it, so a repository nobody looks at costs nothing.
+ */
+const PULL_REQUEST_LIST_QUERY = `query PullRequestList($owner: String!, $name: String!) {
+  ${RATE_LIMIT_SELECTION}
+  viewer { login }
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: ${GIT_PULL_REQUEST_LIST_MAX}, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      totalCount
+      nodes {
+        number title url isDraft updatedAt additions deletions changedFiles reviewDecision headRefName author { login }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}`
+const rawListNodeSchema = z.object({
+  number: z.number().int().positive(), title: z.string(), url: z.string(), isDraft: loose(z.boolean()), updatedAt: loose(z.string()),
+  additions: loose(z.number().int().nonnegative()), deletions: loose(z.number().int().nonnegative()), changedFiles: loose(z.number().int().nonnegative()),
+  reviewDecision: loose(z.string()), headRefName: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })),
+  commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ statusCheckRollup: loose(z.object({ state: loose(z.string()) })) })) })))) })),
+})
+const rawListAnswerSchema = z.object({
+  data: z.object({
+    rateLimit: rateLimitSchema, viewer: loose(z.object({ login: loose(z.string()) })),
+    repository: z.object({ pullRequests: z.object({ totalCount: z.number().int().nonnegative(), nodes: loose(z.array(loose(rawListNodeSchema))) }) }).nullable(),
+  }),
+})
+/** GitHub's rollup of a head's checks, in the list's four words; a head with no rollup reports none. */
+function listChecksOf(state: string | null | undefined): GitPullRequestListItem['checks'] {
+  const upper = state?.toUpperCase() ?? ''
+  return upper === 'SUCCESS' ? 'passed' : upper === 'FAILURE' || upper === 'ERROR' ? 'failing' : upper === 'PENDING' || upper === 'EXPECTED' ? 'running' : 'none'
+}
 /** A check in the shape `gh pr view --json statusCheckRollup` gave it, which `checkOf` reads. */
 export type RawCheck = Omit<z.infer<typeof rawContextSchema>, 'checkSuite'> & { readonly workflowName?: string | null | undefined }
 interface MergeSettings { readonly at: number; readonly mergeMethods: GitPullRequestMergeMethod[]; readonly autoMergeAllowed: boolean }
@@ -340,7 +374,42 @@ export class GitPullRequests {
       // Files GitHub refused, or did not list, are left out rather than read as none.
       ...(raw.files?.nodes ? { files: filesOf(raw.files.nodes) } : {}),
       ...(typeof raw.changedFiles === 'number' ? { changedFiles: raw.changedFiles } : {}),
+      ...(typeof raw.additions === 'number' ? { additions: raw.additions } : {}),
+      ...(typeof raw.deletions === 'number' ? { deletions: raw.deletions } : {}),
+      ...(raw.author?.login ? { author: cut(raw.author.login, 100) } : {}),
     }
+  }
+
+  /**
+   * The open pull requests of the repository this folder's remotes name, the most recently updated first; null where it
+   * has no GitHub remote. One GraphQL read, on a press, and refused the way a pull request read is under the rate limit (#820).
+   */
+  async list(cwd: string): Promise<GitPullRequestList | null> {
+    const repository = baseRepository(await readGitHubRemotes(this.run, cwd, this.hosts))
+    if (!repository) return null
+    const retryAt = this.rateLimit.retryAt(repository.host, 'user')
+    if (retryAt !== null) throw new GitPullRequestLimited(retryAt, this.now())
+    const args = ['api', 'graphql', ...repository.host === 'github.com' ? [] : ['--hostname', repository.host], '-f', `query=${PULL_REQUEST_LIST_QUERY}`, '-f', `owner=${repository.owner}`, '-f', `name=${repository.name}`]
+    let answer: z.infer<typeof rawListAnswerSchema>
+    const asked = this.rateLimit.asking()
+    try { answer = rawListAnswerSchema.parse(JSON.parse(await this.gh(cwd, args))) }
+    catch (error) {
+      if (error instanceof z.ZodError || error instanceof SyntaxError) throw new GitPullRequestRefusal('GitHub answered in a form Sotto could not read. Refresh to try again.')
+      const message = error instanceof Error ? error.message : ''
+      if (isRateLimitAnswer(message)) throw new GitPullRequestLimited(this.rateLimit.limited(repository.host, message, refusalReading(error)), this.now())
+      throw new GitPullRequestRefusal(`Could not read the open pull requests. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim(), ghReadFailure(error))
+    }
+    this.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
+    if (!answer.data.repository) throw new GitPullRequestRefusal(`Could not read the open pull requests. GitHub has no repository ${repository.owner}/${repository.name} that your gh sign-in can see.`)
+    const { totalCount, nodes } = answer.data.repository.pullRequests
+    const pullRequests = (nodes ?? []).flatMap((node): GitPullRequestListItem[] => {
+      if (!node || !pullRequestAddress(node.url)) return []
+      const review = node.reviewDecision?.toUpperCase()
+      return [{ number: node.number, url: cut(node.url, 2_048), title: cut(node.title, 500), draft: node.isDraft === true, author: node.author?.login ? cut(node.author.login, 100) : null, headBranch: cut(node.headRefName ?? '', 512),
+        updatedAt: timeOf(node.updatedAt), additions: node.additions ?? 0, deletions: node.deletions ?? 0, changedFiles: node.changedFiles ?? 0, checks: listChecksOf(node.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.state),
+        reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null }]
+    }).slice(0, GIT_PULL_REQUEST_LIST_MAX)
+    return { repository: `${repository.owner}/${repository.name}`, total: totalCount, pullRequests }
   }
 
   /** Where a reference points: a URL names its repository; a number is the one gh reads pull requests from in this folder. */

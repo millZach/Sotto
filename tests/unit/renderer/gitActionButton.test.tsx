@@ -133,7 +133,8 @@ describe('the Git action in the pane header', () => {
     expect(within(dialog).getByText('feat/x')).toBeInTheDocument()
     expect(within(dialog).queryByText('Default branch')).toBeNull()
     const list = within(dialog).getByRole('list', { name: 'Changed files' })
-    expect(within(list).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Msrc/app.ts+4 \u22121', 'Udocs/new.md+2 \u22120', 'Mlogo.png'])
+    // Each file's counts are words for a screen reader and figures to see, a side with no lines showing nothing.
+    expect(within(list).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Msrc/app.ts4 added, 1 removed+4\u22121', 'Udocs/new.md2 added, 0 removed+2', 'Mlogo.png'])
     expect(within(dialog).getByRole('textbox', { name: 'Commit message (optional)' })).toHaveFocus()
     expect(within(dialog).getByRole('textbox', { name: 'Commit message (optional)' })).toHaveAttribute('placeholder', 'Leave empty to auto-generate')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Edit' }))

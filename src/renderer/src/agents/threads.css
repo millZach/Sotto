@@ -15,6 +15,9 @@
   --threads-attention: var(--tt-attention, var(--tt-warning, #f0b45c));
   --threads-warning-text: var(--tt-warning-text, var(--tt-warning, #f0b45c));
 }
+/* By day the frame's small muted words (a folder's count, the project and branch beside a pane's name) are thin strokes on
+   a warm surface, so they take a step more ink, halfway to the secondary text: about 8:1 where they measured 7. */
+:root[data-theme='light'] :is(.threads-view, .thread-nav) { --threads-day-muted: color-mix(in oklab, var(--tt-text-muted) 50%, var(--tt-text-2)); }
 .threads-view { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); overflow: hidden; }
 
 /* Workspace */
@@ -28,28 +31,77 @@
 .thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+/* A thread's title measures itself, so the name's floor below can never ask for more than the row has left. */
+.thread-workspace__title:has(> .thread-workspace__where) { --pane-name-lead: 26px; flex: 1 1 0; margin-right: 0; container: pane-title / inline-size; }
+.thread-workspace__title:has(> .watched-badge) { --pane-name-lead: 48px; }
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
-.thread-workspace__branches { min-width: 0; }
+/* The name is what tells panes apart, so it is served first (ADR-0182, November 4 amendment): whole if the row can hold it,
+   and only then cut. A very long name still leaves a wide pane room for where the thread works. Its floor is 3em or its own
+   width, whichever is less, so a short name is never held open, and never more than the row has left beside the buttons, so
+   it is cut with an ellipsis rather than run under them. --pane-width carries the pane's own width past the title's. */
+@property --pane-width { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.thread-workspace__head { --pane-width: 100cqi; }
+.thread-workspace__head h2 { flex: 0 1 auto; min-width: calc-size(max-content, min(size, 3em, 100cqi - var(--pane-name-lead, 26px))); max-width: max(22em, calc(var(--pane-width) * .62)); margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Everything beside the name stands in what is left, and gives way a whole part at a time as that narrows, so nothing is
+   drawn as "s…" and nothing is drawn over its neighbour: first the workspace, then the project, then the branch, then the
+   pull request's number. An open list is shown whatever the room, so the chords that open one keep working. The box is
+   empty row too, so its bare stretch still moves the window; in a split, the crumb's words stay the pane's handle. Its small
+   padding keeps a control's focus ring clear of the clipped edge. */
+:root[data-theme='light'] .threads-view .thread-workspace__head .thread-workspace__where { --tt-text-muted: var(--threads-day-muted); }
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
+/* Only an open list rises over its neighbours; at rest the box stays in the header's layer, so Tools expanded over the
+   thread covers it whole rather than showing the project and branch through its own header. */
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has([aria-expanded='true']) { z-index: 30; overflow-x: visible; }
+/* A tag says something the row must not lose, so it keeps what room there is once the name has its floor. */
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has(.thread-workspace__tag) { min-width: min(148px, 100cqi - var(--pane-name-lead, 26px) - 10px - 48px); }
+.thread-workspace__head .thread-workspace__crumb { -webkit-app-region: no-drag; }
+.thread-workspace__head .thread-workspace__branches { flex: 0 1 auto; min-width: 0; -webkit-app-region: no-drag; }
 .thread-workspace__branches:empty { display: none; }
-/* The name gives way first, so what stands beside it stays whole while there is room for it (ADR-0182). It stops at a
-   floor, or at its own width if that is less, so a short name is never held open. */
-.thread-workspace__head h2 { flex: 0 1000 auto; min-width: calc-size(max-content, min(size, 14em, 30cqi)); margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* In a narrow pane the name keeps the row, and the project crumb is what gives way. */
-@container thread-pane (max-width: 720px) { .thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; } }
-.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.thread-workspace__branches .branch-toolbar__pr { flex: none; }
+/* Where the thread works is one quiet line after the name: the project, its folder, the pull request and the branch, each
+   in the same muted caption and the interface's own face, parted by their own space rather than by dots. Only the pull
+   request's state keeps its colour, on its mark. */
+.thread-workspace__branches .branch-toolbar__separator { display: none; }
+.thread-workspace__branches .branch-toolbar__branch { font-family: inherit; }
+.thread-workspace__crumb { display: flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
-.thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161): its project name
-   shortens, and the working copy keeps its own width, so it is never drawn under them. */
-.thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; }
-.thread-workspace__crumb[data-has-working-copy] > span:first-of-type { flex: 0 1 auto; min-width: 0; }
+.thread-workspace__crumb > span:first-of-type { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-workspace__crumb > .working-copy { flex: none; }
+/* With the branch controls beside it the working copy needn't say the branch too: its icon stands for it, its panel and name unchanged. */
+.thread-workspace__where:has(.branch-toolbar__branch) .working-copy__trigger { padding-inline: 5px; }
+.thread-workspace__where:has(.branch-toolbar__branch) .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* A new thread's greeting names its project, so the header does not. */
+.thread-pane[data-greeting] .thread-workspace__crumb > span:first-of-type, .thread-pane[data-greeting] .thread-workspace__crumb::before { display: none; }
+@container pane-where (width < 420px) { .thread-workspace__branches .branch-toolbar__menu:not(:has([aria-expanded='true'])) { display: none; } }
+/* Where the branch's name would be cut with the project beside it, the project leaves first, whatever the box's width
+   (headerWhereFit.ts measures it), so "feat/thread-store-worker" reads whole where it read "feat/thread-store-w...". */
+.thread-workspace__where[data-crowded] .thread-workspace__crumb > span:first-of-type, .thread-workspace__where[data-crowded] .thread-workspace__crumb::before { display: none; }
+@container pane-where (width < 300px) {
+  .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb > span:first-of-type, .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb::before { display: none; }
+}
+@container pane-where (width < 180px) {
+  .thread-workspace__crumb > span:first-of-type, .thread-workspace__crumb::before { display: none; }
+  .thread-workspace__where:has(.branch-toolbar) .working-copy { display: none; }
+  .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
+}
+/* Below this the branch's name would be a letter or two, so it leaves whole and stays in the button's tooltip. */
+@container pane-where (width < 200px) { .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) > span { display: none; } }
+@container pane-where (width < 120px) {
+  .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .thread-workspace__branches .branch-toolbar__picker:not(:has([aria-expanded='true'])) { display: none; }
+}
+/* The number is the last to leave, so it gives up its padding before it goes. Under this width it would be cut, so it goes whole. */
+@container pane-where (width < 90px) {
+  .thread-workspace__branches .branch-toolbar__pr { gap: 3px; padding-inline: 2px; }
+  .thread-workspace__crumb:not(:has(.thread-workspace__tag)) { display: none; }
+}
+@container pane-where (width < 50px) { .thread-workspace__branches .branch-toolbar__pr { display: none; } }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
-.thread-workspace__head h2:has(input) { flex: 1 1 220px; min-width: 3em; }
+.thread-workspace__head h2:has(input) { flex: 1 1 220px; min-width: min(3em, 100cqi - var(--pane-name-lead, 26px)); }
 .thread-workspace__head h2 > input { width: 100%; }
-/* The actions stand on the pane's own surface, so branch controls a narrow pane has squeezed pass under them unseen. */
+/* The actions stand on the pane's own surface. */
 .thread-workspace__actions { position: relative; display: flex; flex: none; align-items: center; gap: 2px; background: var(--tt-canvas); }
 .thread-workspace__error { margin: 12px 24px 0; }
 
@@ -58,6 +110,35 @@
 .pane-action:hover:not(:disabled, [aria-disabled='true']), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled, [aria-disabled='true']):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:is(:disabled, [aria-disabled='true']) { opacity: .5; cursor: default; }
+/* The header says words only for the thread's own presses, the Git action and Watch. Tools, the Council and the Terminal
+   drawer are the symbols they were before ADR-0163 at every width, named on hover and for a screen reader, so nothing in
+   the row grows or shrinks as a pane narrows (ADR-0163 decision 5, ADR-0182 decision 1). */
+/* The thread's own presses, then air, then the layout's keys: two groups, in ADR-0163's fixed order. The layout's keys
+   (the Council, Tools, the Terminal drawer and ···) stand edge to edge as one set, so they read as one toolbar beside
+   the two worded presses rather than as four more presses at the same spacing. Close, in a split, keeps its gap. */
+.thread-workspace__actions > .watch-toggle { margin-right: 10px; }
+.thread-workspace__actions > :is(.pane-action, .pane-menu):not(.thread-pane__close) + :is(.pane-action, .pane-menu):not(.thread-pane__close) { margin-left: -2px; }
+/* In a narrow pane every pixel beside the buttons is the name's and then the pull request number's, so the row tightens and
+   the name takes the sidebar row's size. The buttons keep their size and their place against the pane's right edge, so
+   nothing moves under a pointer as a pane is resized (ADR-0163, decision 5). */
+@container thread-pane (width < 720px) {
+  .thread-workspace__head { gap: 2px; }
+  .thread-workspace__title { gap: 6px; }
+  .thread-workspace__head h2 { font-size: var(--tt-type-body); letter-spacing: -.1px; }
+  .thread-workspace__actions > .watch-toggle { margin-right: 2px; }
+}
+/* In a narrow pane, beside Tools or in a split, the buttons can leave the name a few words. Rather than cut it there, a
+   name the row cannot hold on one line takes the row's two lines, so "Thread store on a worker" and "Repository review"
+   read whole where they read "Thread stor..." and "Reposit...". A name that fits stays on one line, and only a name too
+   long for both is cut, at the end of the second. Lines break between words only, so a word too long for the room is cut
+   with an ellipsis as the name was. In the narrowest panes the two lines are a step smaller. The buttons
+   keep their size and their place. */
+@container thread-pane (width < 720px) {
+  .thread-workspace__head h2:not(:has(input)) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; white-space: normal; }
+}
+@container thread-pane (width < 480px) {
+  .thread-workspace__head h2:not(:has(input)) { font-size: var(--tt-type-small); line-height: 1.25; }
+}
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
@@ -83,7 +164,7 @@
 .tools-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
 .tools-dot[data-needs] { background: var(--tt-attention); }
 
-.thread-transcript { --thread-jump-gap: 14px; position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.thread-transcript { --thread-jump-gap: 14px; --tt-text-muted: var(--tt-transcript-muted); position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
 /* Scroll anchoring is on because the containment below gives an offscreen message an estimated height: without it,
    a message resolving to its true height as the reader scrolls back through the history moves the text under them
@@ -93,10 +174,20 @@
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: var(--tt-type-small); }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+/* Jump to latest stands at the column's right end, just above the composer's right corner, so it reads as the
+   conversation's and the composer's rather than floating in the margin. A reply's prose stops well short of it, so only a
+   message's bubble or a code block passes under it; in a pane with no margin it keeps 10px from the pane's edge. It is
+   an arrow, named for what a press does; New messages says so in words. A ring of the room keeps what passes beside it
+   from running into it. */
+.thread-transcript__jump { position: absolute; left: min(calc(100% - 42px), calc(50% + 390px)); bottom: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: 0 0 0 4px var(--tt-canvas), var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.thread-transcript__jump:not([data-unseen]) .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* In Watcher's room the margin is the scene's, so it keeps its word and its place in the middle of the column (ADR-0126). */
+.watcher-pane .thread-transcript__jump { right: auto; left: 50%; min-height: 36px; padding: 0 14px; box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); font-size: var(--tt-type-body); transform: translateX(-50%); }
+.watcher-pane .thread-transcript__jump:not([data-unseen]) .thread-transcript__jump-word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
-.thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
+.thread-transcript__jump[data-unseen] { padding: 0 12px 0 10px; border-color: var(--threads-field-focus); }
+.watcher-pane .thread-transcript__jump[data-unseen] { padding: 0 14px; }
 /*
  * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
  * reader scrolls near them, so opening a thread of hundreds of messages and scrolling it stays cheap. The
@@ -112,7 +203,7 @@
  */
 .thread-transcript__content > :nth-last-child(-n + 12) { content-visibility: visible; }
 .thread-message { position: relative; margin: 0 0 28px; }
-.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
 .thread-message time { font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 /* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
@@ -134,14 +225,83 @@
 .thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }
 .thread-message__copy[data-copied] svg { animation: rich-confirm 220ms cubic-bezier(.2, .9, .3, 1.3); }
-.thread-message:has(> .thread-message__copy) { padding-bottom: 30px; }
-.thread-message[data-role='user'] .thread-message__copy { bottom: 8px; left: 12px; }
-.thread-message[data-role='user']:has(> .thread-message__copy) { padding-bottom: 40px; }
+.thread-message:has(> .thread-message__copy) { margin-bottom: 14px; padding-bottom: 30px; }
+/* In the bubble's corner its icon lines up with the words above it. The room under the last line is the control's and no more. */
+.thread-message[data-role='user'] .thread-message__copy { bottom: 6px; left: 9px; }
+.thread-message[data-role='user']:has(> .thread-message__copy) { margin-bottom: 28px; padding-bottom: 36px; }
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
+/* A thread's replies are all its provider's, so the name and time head only the first one. On the rest they wait beside
+   Copy, in the room it already keeps, and show with it on hover or focus. Assistive tech still reads them first. While
+   Copy says what it did, they make way for its words. */
+.thread-message[data-named='no'] > header { position: absolute; bottom: 0; left: 34px; height: 28px; margin: 0; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.thread-message[data-named='no']:has(> .thread-message__copy):is(:hover, :focus-within) > header { opacity: 1; }
+.thread-message[data-named='no']:has(> .thread-message__copy:is([data-copied], [aria-expanded='true'])) > header { opacity: 0; }
 .thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
-.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card) var(--tt-radius-card) var(--tt-radius-tag) var(--tt-radius-card); }
-.thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
+.thread-message__text { max-width: 42em; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
+/* The user's message is as wide as what they wrote, against the column's right edge, every corner the same. */
+.thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }
+.thread-message[data-role='user'] .thread-message__text { color: var(--tt-bubble-text); }
+.thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-bubble-text); --rich-strong: var(--tt-bubble-text); }
+/* A message the user sent ends at its words, and its copy control shows just under the bubble's bottom-left corner, in
+   the gap the next row already leaves (Zach's pick B, November 5 2026). The gap is the control's and no more, so nothing
+   moves when it shows. The bubble's hover reaches down over the gap, so the pointer can travel to the control. A long
+   thread's rows paint inside their own box, so this one's paint reaches the gap and the control's focus ring. A wake-up
+   or a brief keeps its control inside the corner. Watcher's conversation takes the same form in its own inks. The rows that tuck up
+   under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them.
+   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not. */
+.thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 26px; padding-bottom: 12px; overflow-clip-margin: 36px; }
+.thread-pane .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
+.thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 26px; }
+/* A message the user sent opens a turn, so the space before it is the widest in the conversation: a reader sees where one
+   exchange ends and the next begins, while the message, its Worked for line and its reply stay close. The reply's copy room
+   is most of that space, so a little more than it is enough: the gap before a turn stays about half again the gap under a
+   message, and a long thread of short exchanges is not padded out. */
+.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 16px; }
+/* Show all under a diff the transcript cut short is the secondary button (.tt-button, ADR-0110 decision 2): the surface
+   inside an edge in the field-border role, on the line that says how much shows, so the box ends close under its last line
+   and clear of the composer. */
+.thread-transcript .changes-block > .changes-diff__more { gap: 10px; padding: 2px 12px 8px; }
+.thread-transcript .changes-block > .changes-diff__more .files-link {
+  display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control);
+  background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.thread-transcript .changes-block > .changes-diff__more .files-link:hover { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.thread-transcript .changes-block > .changes-diff__more .files-link:active { background: var(--tt-hover); color: var(--tt-text); }
+/* Inside the turn the Worked for line is a caption: its press is a row a little taller than its words, not a full control row. */
+.thread-pane:not(.watcher-pane) .thread-work > :is(.thread-work__summary, .thread-changes > .thread-changes__summary) { min-height: 26px; }
+/* A turn that only thought for a moment ran nothing worth a look, so its closed line steps back to the muted ink and the eye
+   passes it for the reply; the turns that did work keep the second ink, so they are the ones that stand out down a long
+   thread. Watcher's conversation draws its turns the same way (ADR-0134). The pointer and the keyboard bring it up as they
+   bring up every line. */
+.thread-pane .thread-work[data-moment]:not([data-expanded]) > .thread-work__summary:not(:hover, :active, :focus-visible) { color: var(--tt-text-muted); }
+/* A quick turn, under fifteen seconds with one step or none, keeps its closed Worked for line's room but shows nothing there
+   until the pointer is over the turn (its message, the line or the reply under it) or the keyboard reaches the line, so a
+   long thread of short exchanges reads as messages and replies. The line is still a button in the tab order with its name,
+   and what the turn changed still shows beside it. No rule parts the turns: the bubble alone says where one starts (Zach's
+   pick C, "quiet turns", November 6 2026, ADR-0134). Watcher's conversation draws its turns the same way. Under reduced
+   motion the line comes and goes at once, by the global rule. */
+.thread-pane .thread-work[data-quiet]:not([data-expanded]) > .thread-work__summary { opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-pane .thread-work[data-quiet]:is(:hover, :focus-within) > .thread-work__summary,
+.thread-pane .thread-message[data-role='user']:hover + .thread-work[data-quiet] > .thread-work__summary,
+.thread-pane .thread-work[data-quiet]:has(+ .thread-message:hover) > .thread-work__summary { opacity: 1; }
+/* In Watcher's conversation the closed line keeps the rule under it, so the rule comes and goes with the line rather than
+   standing alone over the reply. */
+.watcher-pane .thread-work[data-quiet]:not([data-expanded]) { border-bottom-color: transparent; transition: border-color 120ms ease; }
+.watcher-pane .thread-work[data-quiet]:is(:hover, :focus-within),
+.watcher-pane .thread-message[data-role='user']:hover + .thread-work[data-quiet],
+.watcher-pane .thread-work[data-quiet]:has(+ .thread-message:hover) { border-bottom-color: var(--threads-field-border); }
+/* A long thread's rows paint only inside their own box, and the line's press reaches 6px past the box's left edge, so its
+   focus ring (3px, 2px out) is let paint past it on every side: the keyboard is how a quick turn's line is found. */
+.thread-transcript__content > .thread-work { overflow-clip-margin: 12px; }
+/* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
+.thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + :is(.thread-work, .thread-activity, .thread-activity-live, .thread-browser-lines, .thread-delivery, .thread-lifted, .continue-now, .delegated-work, .delegated-work-still) { margin-top: 0; }
+/* Watcher's conversation keeps the look it had, but for the sent message's form above: its room is the owner's, and it
+   runs over the night scene (ADR-0126), whose ink ceiling is worked out from these inks. */
+.watcher-pane .thread-message header { margin-bottom: 8px; }
+.watcher-pane .thread-message:has(> .thread-message__copy) { margin-bottom: 28px; }
+.watcher-pane .thread-message__text { max-width: none; }
+.watcher-pane .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
+.watcher-pane .thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-text-2); --rich-strong: var(--tt-text); }
 /* A wake-up babysitting sent (ADR-0061): on the user's side, labelled Sotto and Wake-up, edged in the accent. */
 .thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
 .thread-message[data-from='sotto'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }
@@ -162,10 +322,35 @@
 .thread-message[data-role='user'] .thread-message__status:is([data-status='failed'], [data-status='uncertain']) { color: var(--tt-warning-on-tint); }
 .thread-message[data-role='user'] .rich-message__feedback > span { color: var(--tt-error-on-tint); }
 /* A delivery state with no prompt text to repeat: one line in the user's column, under their message. */
-.thread-delivery { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 28px max(24px, 12%); padding: 0 18px; }
+.thread-delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; margin: 0 0 28px max(24px, 12%); padding: 0 14px; }
 .thread-message[data-role='user'] + .thread-delivery { margin-top: -18px; }
 .thread-delivery .thread-message__status { margin-left: 0; }
 .thread-delivery .thread-message__delivery { flex: 1 1 auto; margin: 0; padding: 0; border: 0; }
+
+/* The words run on under the card at full ink (#1391; ADR-0125: nothing cuts them off at the card's top, in any theme) and
+   end inside it, rather than showing again in the space under its foot or past its rounded corners. A clip, not a fill, so it
+   holds on Glass and paints nothing where there are no words, which keeps the card from reading as sitting in a well. The
+   scroll bar's lane at the right keeps its whole height. A clip and not a mask: a mask over the transcript's moving parts
+   (a reply's caret, the working line) put the composer in a layer of its own, where its words lost their subpixel smoothing. */
+.thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport {
+  --thread-foot-end: calc(var(--thread-prompt-foot, 20px) + var(--tt-radius-card));
+  clip-path: polygon(0 0, 100% 0, 100% 100%, calc(100% - 16px) 100%, calc(100% - 16px) calc(100% - var(--thread-foot-end)), 0 calc(100% - var(--thread-foot-end)));
+}
+/* Glass's card can be seen through, and on Glass the words run on under it and show through it, slim or full, as they
+   always have: a clip there would end them at the card's top, which ADR-0125 rules out. */
+:root[data-glass] .thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport { clip-path: none; }
+/* Jump to latest never covers a message. It stands just above the composer, 10px clear of the column's right edge, and
+   where the pane leaves no margin for it, at the pane's edge with the column ending 4px clear of it (narrower by that much
+   than the composer, at the window's minimum about 28px). Watcher's stands in the middle of its conversation. */
+.thread-pane:not(.watcher-pane) .thread-transcript__content { margin-right: max(0px, 46px - max(18px, (100cqi - 760px) / 2)); }
+/* Plain words in a thread's messages take the lead step, as its rendered replies do (rich-messages.css). */
+.thread-pane:not(.watcher-pane) .thread-message__text { max-width: 38em; font-size: var(--tt-type-lead); }
+/* New messages reads rightwards from beside the column, so a pane without the margin for its words shows the arrow, with
+   its coloured edge and its name. */
+@container thread-pane (max-width: 1059px) {
+  .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] { padding: 0; }
+  .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 
 /* Composer */
 /* Height, in order: the composer card keeps its full size, the transcript keeps a readable minimum, and the queue
@@ -382,15 +567,9 @@
 /* Narrow windows (the 760px minimum): a slimmer sidebar, the same 44px header, same type sizes. */
 @media (max-width: 980px) {
   .thread-workspace__head { padding-left: 14px; }
-  /* The project crumb is the first thing a narrow row gives up; the thread's name is what identifies the pane. */
-  .thread-workspace__crumb { display: none; }
-  /* The project name may give way; the working-copy control remains a keyboard-accessible action. */
-  .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
-  .thread-workspace__crumb[data-has-working-copy]::before, .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
-  .thread-workspace__crumb .working-copy__trigger { max-width: 160px; }
   .thread-workspace__transcript { padding: 22px 18px; }
   .thread-workspace__compose { padding: 8px 16px 16px; }
-  .thread-message[data-role='user'] { margin-left: 24px; }
+  .thread-message[data-role='user'] { --bubble-inset: 24px; }
 }
 /* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
 @media (max-height: 760px) {
@@ -412,8 +591,8 @@
 
 /* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */
 @media (prefers-reduced-motion: reduce) {
-  .thread-message__copy { transition: none; }
+  .thread-message__copy, .thread-message[data-named='no'] > header { transition: none; }
   .thread-message__copy[data-copied] svg { animation: none; }
 }
-:root[data-reduced-motion='on'] .thread-message__copy { transition: none; }
+:root[data-reduced-motion='on'] .thread-message__copy, :root[data-reduced-motion='on'] .thread-message[data-named='no'] > header { transition: none; }
 :root[data-reduced-motion='on'] .thread-message__copy[data-copied] svg { animation: none; }

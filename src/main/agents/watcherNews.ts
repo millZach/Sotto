@@ -1,6 +1,7 @@
 import { PROVIDER_LABELS, type AgentMessage, type AgentRequest, type AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
+import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent,
+  type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
 import type { WatcherCardWords, WatcherEvidence } from '../../shared/watcher'
 import { SETTLE_IT } from '../../shared/watcherQuestions'
@@ -8,18 +9,18 @@ import { SETTLE_IT } from '../../shared/watcherQuestions'
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
     event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'thread-moved' ? event.moveId ?? null : event.kind === 'thread-told' || event.kind === 'user-answered' ? event.id : event.turnId ?? null])
+      : event.kind === 'thread-moved' ? event.moveId ?? null : carriesWords(event) ? event.id : event.turnId ?? null])
 }
 /**
- * News that carries words nothing else holds: a thread's own message and the user's answer to Watcher's own question.
- * A takeover never drops it and the limits never leave it out.
+ * News that carries what nothing else holds: a thread's own message, its READY TO MERGE (#2229) and the user's answer to
+ * Watcher's own question. A takeover never drops it, the limits never leave it out and it is saved until told.
  */
-export const carriesWords = (event: Pick<WatcherEvent, 'kind'>): boolean => event.kind === 'thread-told' || event.kind === 'user-answered'
+export const carriesWords = (event: Pick<WatcherEvent, 'kind'>): boolean => event.kind === 'thread-told' || event.kind === 'thread-ready' || event.kind === 'user-answered'
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))
   for (const event of later) {
     const target = targetKey(event.target)
-    // A thread's own message is told whoever holds the thread: a takeover fences what Watcher sends, not what it hears.
+    // A thread's own message, and its READY TO MERGE, is told whoever holds the thread: a takeover fences what Watcher sends, not what it hears.
     if (event.kind === 'taken-over') { for (const [slot, previous] of events) if (targetKey(previous.target) === target && !carriesWords(previous)) events.delete(slot) }
     else if (!carriesWords(event) && [...events.values()].some(previous => targetKey(previous.target) === target && previous.kind === 'taken-over')) continue
     const slot = eventSlot(event), previous = events.get(slot)
@@ -31,7 +32,7 @@ export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: reado
 export function foldWatcherNews(earlier: WatcherNews | undefined, later: WatcherNews): WatcherNews {
   const all = foldWatcherEvents(earlier?.events ?? [], later.events), targets = new Set<string>()
   const events: WatcherEvent[] = [], omitted = (earlier?.omitted ?? 0) + later.omitted
-  // A thread's own message is never what these limits leave out: nothing else holds its words.
+  // A thread's own message, its READY TO MERGE or the user's answer is never what these limits leave out: nothing else holds it.
   for (const event of [...all.filter(carriesWords), ...all.filter(item => !carriesWords(item))]) {
     const target = targetKey(event.target)
     if (events.length >= 400 || !targets.has(target) && targets.size >= WATCHER_NEWS_TARGETS_MAX) continue
@@ -46,7 +47,7 @@ export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after tha
  * Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`).
  * Evidence news has no words of its own: its line is what Sotto's detail says changed, and with none it has no line (#2232).
  */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told' | 'user-answered' | 'evidence-changed'>, string> = {
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told' | 'thread-ready' | 'user-answered' | 'evidence-changed'>, string> = {
   'swarm-progress': 'The swarm made progress. Read its lead for the synthesis.',
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
@@ -83,9 +84,18 @@ function closedWords(event: WatcherEvent): string {
 const providerName = (provider: string | undefined): string => provider === undefined ? 'Its provider' : Object.hasOwn(PROVIDER_LABELS, provider)
   ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider
 /** Whether a `threads-restarted` or `thread-moved` event's thread is one no request watches (ADR-0144, #1178). */
-const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || event.kind === 'thread-told' || event.kind === 'user-answered') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || carriesWords(event)) && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
 /** A restarted thread's line (ADR-0144), in Sotto's words: which limit had stopped it, and whether Watcher watches it. */
-const restartedWords = (event: WatcherEvent): string => `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.${
+/**
+ * What Watcher is asked once its news names threads Sotto restarted (#2234): one reply that sums them up, which is the one
+ * notice the user reads of a restart or a limit reset. It approves nothing and restarts nothing more.
+ */
+export const RESTART_SUMMARY = 'Reply to the user once, briefly: which threads Sotto restarted, and what still waits on them, by read_state’s waitingOnUser. Do not restart those threads again yourself.'
+const restartedWords = (event: WatcherEvent): string => `${event.restartCause === 'work-left'
+  ? 'This thread’s last turn had ended with an error before it finished, so Sotto restarted it with a short note of its own, the same on every provider.'
+  : event.restartCause === 'resumed'
+    ? 'Sotto closed while this thread was working, so Sotto restarted it with its resume note when it opened again.'
+    : `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.`}${
   unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`
 /**
  * A move's line (#1178): the user moved the thread, Sotto ran the move, and how it ended. Watcher's watch went with a
@@ -118,6 +128,15 @@ function toldWords(event: WatcherEvent): string {
   return `${worker} ${user} ${grant}`
 }
 /**
+ * A thread's READY TO MERGE (#2229): the pull request and head it names, which are the worker's to say, and what to do
+ * with it. What Sotto's own reads say of that pull request goes beside it as the wake-up's detail.
+ */
+function readyWords(event: WatcherEvent): string {
+  const ready = event.ready
+  if (!ready) return 'This thread said READY TO MERGE in a way Sotto cannot read. Read the thread.'
+  return `This thread says its pull request ${ready.pullRequest} is READY TO MERGE at ${ready.head}, with ready_to_merge.${unwatched(event) ? ' No request of yours watches it.' : ''} Give it its turn with send_to_thread's goMerge when the merge train says it is next; this grants nothing and approves nothing.`
+}
+/**
  * The user's answer on a card of Watcher's own question (#2228): the question and the user's choice, which is theirs, from
  * their press on Sotto's card. A settle question's Settle it is their agreement to that one settle.
  */
@@ -131,16 +150,19 @@ function answeredWords(event: WatcherEvent): string {
   return `${said} ${settle} [question ${answered.questionId}]`
 }
 /**
- * The messages from threads that wait for the next wake-up, so those that go always fit whole. Each fits alone: at most
- * two sets of words, each at most TELL_WATCHER_WORDS_BYTES_MAX and doubled at worst by JSON, and the sentences around them.
+ * The news nothing else holds, from threads and the user, that waits for the next wake-up, so what goes always fits whole:
+ * the user's answers and threads' messages first, then READY TO MERGE (#2229), each in the order the news gives them. Each
+ * fits alone: at most two sets of words, each at most TELL_WATCHER_WORDS_BYTES_MAX and doubled at worst by JSON, and the
+ * sentences around them; a READY TO MERGE is shorter, with room kept for the detail Sotto adds beside it.
  */
 export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet<string> {
   const later = new Set<string>()
   let used = 0
   // The user's answers to Watcher's own questions wait the same way (#2228): nothing else holds the choice either.
-  for (const event of events) {
-    if (!carriesWords(event)) continue
-    const size = Buffer.byteLength(event.kind === 'thread-told' ? toldWords(event) : answeredWords(event)) + 200
+  const carried = events.filter(carriesWords)
+  for (const event of [...carried.filter(item => item.kind !== 'thread-ready'), ...carried.filter(item => item.kind === 'thread-ready')]) {
+    const size = Buffer.byteLength(event.kind === 'thread-told' ? toldWords(event) : event.kind === 'thread-ready' ? readyWords(event) : answeredWords(event))
+      + (event.kind === 'thread-ready' ? 600 : 200)
     if (used > 0 && used + size > WATCHER_NEWS_BYTES_MAX * 3 / 4) later.add(event.id)
     else used += size
   }
@@ -176,7 +198,7 @@ export function watcherCardLine(words: WatcherCardWords): string {
   return `Its question, in the worker's words: ${JSON.stringify(words.question)}.${choices}${words.moreQuestions ? ` The card asks ${words.moreQuestions} more ${words.moreQuestions === 1 ? 'question' : 'questions'}.` : ''}${
     words.prototype ? ` Its prototype: ${words.prototype.map(page => JSON.stringify(page)).join(', ')}.` : ''}${words.links ? ` Its links: ${words.links.join(', ')}.` : ''}`
 }
-const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'user-answered' ? answeredWords(event) : event.kind === 'swarm-progress' && event.swarm
+const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'thread-ready' ? readyWords(event) : event.kind === 'user-answered' ? answeredWords(event) : event.kind === 'swarm-progress' && event.swarm
   ? `${event.swarm.done} of ${event.swarm.count} angles done, ${event.swarm.failed} failed, ${event.swarm.queued} queued. The lead holds their replies and writes the synthesis. This grants no permission.`
   : event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
@@ -196,8 +218,8 @@ const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' 
 export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, held?: WatcherNewsHeld): string {
   const opening = NEWS_OPENING
   const settled = new Set(news.events.filter(event => event.kind === 'work-settled').map(event => JSON.stringify([targetKey(event.target), event.turnId ?? null])))
-  // A thread's own message goes first: when the news runs out of room, it is never what gives way (`toldEventsForLater`).
-  const told = (event: WatcherEvent): number => carriesWords(event) ? 0 : 1
+  // The user's answers and threads' messages go first, then READY TO MERGE: when the news runs out of room, none of them is what gives way (`toldEventsForLater`).
+  const told = (event: WatcherEvent): number => event.kind === 'thread-ready' ? 1 : carriesWords(event) ? 0 : 2
   const shown = news.events.filter(event => !(event.kind === 'turn-finished' && settled.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))))
     .sort((left, right) => told(left) - told(right))
   const details = shown.map(event => detail?.(event))
@@ -214,10 +236,19 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
   const body = (event: WatcherEvent, index: number, extra: string | undefined) => [said(event, index), event.operationId && event.kind !== 'delivery-changed'
     ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
     .filter(Boolean).join(' ')
-  // Each provider whose limit reset is said once, before its threads' lines (ADR-0144).
+  // Each provider whose limit reset is said once, before its threads' lines (ADR-0144), and the watched threads restarted
+  // for work left once (#2234). Then Watcher is asked for one summary of them all, the one notice the user reads.
   const restarts = new Map<string, number>()
-  for (const event of shown) if (event.kind === 'threads-restarted') restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
-  const restartLines = [...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`)
+  let workLeft = 0, resumed = 0
+  for (const event of shown) if (event.kind === 'threads-restarted') {
+    if (event.restartCause === 'work-left') workLeft++
+    else if (event.restartCause === 'resumed') resumed++
+    else restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
+  }
+  const restartLines = [...[...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`),
+    ...workLeft ? [`Sotto restarted ${workLeft === 1 ? 'one watched thread' : `${workLeft} watched threads`} whose last turn had ended with an error before it finished, after Sotto started again or a limit reset. Each is named below.`] : [],
+    ...resumed ? [`Sotto restarted ${resumed === 1 ? 'one thread that was' : `${resumed} threads that were`} working when Sotto closed. Each is named below.`] : [],
+    ...restarts.size || workLeft || resumed ? [RESTART_SUMMARY] : []]
   const compose = (count: number, detailed: number) => {
     const lines = new Map<string, { target: string; body: string; count: number }>()
     shown.slice(0, count).forEach((event, index) => {

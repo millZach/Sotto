@@ -52,15 +52,26 @@
 .projects-directory__path { display: block; margin-top: 6px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 .projects-directory__path--none { color: var(--tt-text-muted); font-family: inherit; }
 .projects-directory__error { color: var(--tt-error); font-size: var(--tt-type-small); }
-.help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
+.help-view { width: min(100%, 720px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: var(--tt-type-title); font-weight: 500; letter-spacing: -.9px; }
-.help-grid { display: flex; flex-direction: column; gap: 42px; }
-.help-topics { border: 0; padding: 0; border-radius: 0; background: none; }
-.help-topics__group { font-family: inherit; font-size: var(--tt-type-small); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--tt-text-muted); padding-bottom: 10px; }
-.help-topic { border-top: 1px solid var(--tt-hairline); }
-.help-topic summary { padding: 18px 0; }
-.help-topic summary h2 { font-size: var(--tt-type-lead); font-weight: 500; }
-.help-topic p { padding: 0 0 18px; color: var(--tt-text-2); font-size: var(--tt-type-reading); line-height: 1.65; }
+/* The topics take the column's width, not their longest line's, so the page sits in the middle of the room. */
+.help-grid { display: flex; flex-direction: column; align-items: stretch; gap: 42px; }
+.help-topics { display: block; }
+/* Each group's topics are a card, as a group of Settings rows is (ADR-0110): the words stand clear of its edge, and its rows are divided the same way. */
+.help-topics__group { margin: 28px 0 10px; padding: 0; border: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; }
+.help-topics__group:first-child { margin-top: 0; }
+.help-topics__card { overflow: hidden; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.help-topic { border-top: 0; }
+.help-topic + .help-topic { border-top: 2px solid var(--tt-card-inset); }
+.help-topic summary { padding: 14px 20px; }
+.help-topic summary h2 { font-size: var(--tt-type-reading); font-weight: 500; }
+.help-topic p { padding: 0 20px 16px; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; }
+.help-topic p + p { margin-top: -6px; }
+/* Choices a topic names one by one, such as the speech models: each its own line under the sentence that introduces them,
+   its name in the full ink and what qualifies it after. */
+.help-topic__list { display: grid; gap: 4px; max-width: 70ch; margin: -8px 0 0; padding: 0 20px 14px 40px; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.5; }
+.help-topic__list li::marker { color: var(--tt-text-muted); }
+.help-topic__list b { color: var(--tt-text); font-weight: 500; }
 .help-aside { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .help-aside .tt-panel { border: 0; padding: 0; background: none; }
 .help-aside .tt-panel__header { padding: 0 0 14px; }
@@ -138,6 +149,9 @@
 .settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
 .settings-view .settings-rows > :last-child { border-bottom: 0; }
 .settings-view .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label control' 'description control' 'error error'; gap: 5px 22px; }
+/* A field with only its name and its control is one line: the name level with the control's middle, and no empty rows
+   for a description or an error it does not have holding space under both. */
+.settings-view .settings-rows .tt-field:has(> .tt-field__label):not(:has(> .tt-field__description, > .tt-field__error)) { grid-template-areas: 'label control'; row-gap: 0; }
 .settings-view .settings-rows .tt-field__label, .settings-view .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; line-height: 1.35; }
 .settings-view .settings-rows .tt-field__description { margin: 0; max-width: 330px; font-size: var(--tt-type-small); line-height: 1.45; }
 .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); font-size: var(--tt-type-body); }

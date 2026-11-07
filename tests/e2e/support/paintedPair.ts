@@ -8,7 +8,7 @@ import type { Locator } from '@playwright/test'
 export async function measurePaintedPair(element: Locator) {
   return element.evaluate(async element => {
     await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())))
-    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+    await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity)
       .map(animation => animation.finished.catch(() => undefined)))
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1
     const context = canvas.getContext('2d')!
