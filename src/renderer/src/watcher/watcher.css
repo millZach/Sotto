@@ -183,6 +183,33 @@
 .watcher-context__aside { display: block; color: var(--tt-text-muted); }
 .watcher-context__none { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
+/* ---------- The hold band ---------- */
+/* Zach's pick A, November 5, 2026 (#2234): while Watcher's own provider is limited or failing, one band under the strip,
+   in the limit restart band's style (restartStopped.css) and the conversation's column. Quiet: no warning tone. */
+.watcher-pane > .watcher-hold { position: relative; }
+.watcher-hold { z-index: 5; display: grid; flex: none; grid-template-columns: 14px minmax(0, 1fr); gap: 0 10px;
+  margin: 0 max(24px, calc((100% - 760px) / 2)) 8px; padding: 8px 12px 9px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row);
+  background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-hold { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
+}
+.watcher-hold > svg { margin-top: 3px; color: var(--tt-text-muted); }
+.watcher-hold__body { min-width: 0; }
+.watcher-hold__words { margin: 0; }
+.watcher-hold__words strong { color: var(--tt-text); font-weight: 600; }
+.watcher-hold__acts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; }
+.watcher-hold__acts:empty { display: none; }
+.watcher-hold__link { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; font-size: var(--tt-type-caption);
+  text-decoration: underline; text-underline-offset: 3px; }
+.watcher-hold__link[aria-disabled='true'] { color: var(--tt-text-muted); cursor: progress; }
+.watcher-hold__meta { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.watcher-hold__held { margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.watcher-hold__error { margin: 4px 0 0; color: var(--tt-error-text); font-size: var(--tt-type-caption); }
+.watcher-hold__details { margin-top: 4px; font-size: var(--tt-type-caption); }
+.watcher-hold__details > summary { width: fit-content; border-radius: var(--tt-radius-mark); color: var(--tt-link); }
+.watcher-hold__details > pre { max-height: 7.5em; margin: 4px 0 2px; padding: 6px 8px; overflow: auto; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken);
+  color: var(--tt-text-2); font-family: var(--tt-font-mono); white-space: pre-wrap; }
+
 /* ---------- The needs-you and machines strip ---------- */
 /* Drake's pick B, November 5, 2026: one quiet strip. The needs-you count opens the requests; machine activity sits
    beside it where it fits. No permanent underlines or rule. The strip shares the conversation's column. */

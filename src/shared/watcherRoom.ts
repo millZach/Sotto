@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { watcherHoldSchema } from './watcherHold'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema, watcherToolSchemas } from './watcher'
 import { workerPlacementReceiptSchema } from './workerMachine'
@@ -22,6 +23,8 @@ export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
 export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
 /** New Watcher: a new conversation on the current Watcher's own provider, model, effort and permissions (ADR-0073). */
 export const WATCHER_START_NEW = 'sotto:watcher:start-new'
+/** Try now on the band while Watcher's provider is failing (#2234): what Sotto holds for Watcher goes at once. */
+export const WATCHER_TRY_NOW = 'sotto:watcher:try-now'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /**
  * The machines for the room's machines line and Settings, under Watcher (#1032, Owl `cross-machine-work`): Watcher's own
@@ -96,6 +99,11 @@ export const watcherRoomStateSchema = z.object({
    * Watcher's own. Absent when nothing waits, and from older hosts.
    */
   nextTurnOptions: watcherNextTurnOptionsSchema.optional(),
+  /**
+   * While Watcher's own provider is limited or failing (#2234), what holds it and how much news waits for it: the room's
+   * band. Absent while nothing holds Watcher, while Restart stopped threads is off, and from older hosts.
+   */
+  hold: watcherHoldSchema.optional(),
   /**
    * What the replacement that made the current Watcher carried over (#1735), for the new Watcher's note while it has said
    * nothing: whether the last one's card was closed, how many of the user's messages moved to its queue paused, whether the
@@ -386,6 +394,8 @@ export interface WatcherBridge {
    * the current Watcher itself, and offers the last one's handover. Older stand-ins omit it; the real Owl preload supplies it.
    */
   startNew?(): Promise<WatcherRoomResult>
+  /** Try now while Watcher's provider is failing (#2234): what Sotto holds goes at once. Older stand-ins omit it. */
+  tryNow?(): Promise<WatcherRoomResult>
   /** Each machine's facts, load and work placed but not started (#1032). Only while Work across machines is on. */
   readMachines?(): Promise<WatcherMachinesRead>
   /**

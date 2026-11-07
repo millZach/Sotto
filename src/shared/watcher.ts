@@ -31,6 +31,10 @@ export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse', 
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
+/** The longest reason Watcher may give for starting a thread on the shared checkout (#2235). */
+export const WATCHER_SHARED_REASON_MAX = 300
+/** Sotto's reason when a start has to share its project's folder: there is no Git to make a worktree with. */
+export const WATCHER_NOT_GIT_REASON = 'This project is not a Git repository, so it has no worktree to make. The thread works in the project’s folder.'
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 /** Durable assignment, independent of any one request. Contains no user or provider prose. */
@@ -45,11 +49,12 @@ const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
   z.object({ kind: z.literal('provider'), choiceId: entityId }).strict(),
 ])
-const workingCopy = z.discriminatedUnion('kind', [
+export const watcherWorkingCopySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('shared') }).strict(),
   z.object({ kind: z.literal('new-worktree') }).strict(),
   z.object({ kind: z.literal('existing-worktree'), choiceId: id }).strict(),
 ])
+const workingCopy = watcherWorkingCopySchema
 const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), speed: agentSpeedSchema.nullable().optional(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
 const workerQueue = z.object({ ahead: counter, waiting: counter, note: shortText.min(1) }).strict()
 const workerChoices = choices.pick({ modelId: true, reasoningEffort: true, speed: true, permission: true })
@@ -206,10 +211,16 @@ export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it 
  * and what each waits on from its own records. read_state gives the whole of it back.
  *
  * Each kept line has an ID, so Watcher adds, edits, closes or drops one line at a time (October 24, 2026). A list holds
- * WATCHER_KEPT_ITEMS_MAX open lines; adding past that is refused, never made room for. A closed line says how it ended
+ * WATCHER_KEPT_ITEMS_MAX open lines, and rules WATCHER_KEPT_RULES_MAX (#2236); adding past that is refused, never made room for. A closed line says how it ended
  * and stays, out of that count, until Sotto clears it WATCHER_KEPT_CLOSED_MS after it was closed.
  */
 export const WATCHER_KEPT_ITEMS_MAX = 30
+/**
+ * The open lines the rules list holds (#2236): the standing rules the user gave, which Watcher must never drop or merge
+ * to make room. At 30 Zach's rules filled the list two or three times a session. Twice that keeps a whole read_state
+ * near 35 KB with every rule at its longest, well short of the 73 KB results that providers saved to files.
+ */
+export const WATCHER_KEPT_RULES_MAX = 60
 export const WATCHER_KEPT_ITEM_MAX = 300
 /** Closed lines a list keeps until they clear; past this the oldest closed clear at once. */
 export const WATCHER_KEPT_CLOSED_MAX = 30
@@ -219,6 +230,8 @@ export const WATCHER_KEPT_CLOSED_MS = 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_UNTOUCHED_MS = 3 * 24 * 60 * 60 * 1_000
 export const WATCHER_KEPT_LISTS = ['decisions', 'rules', 'issues'] as const
 export type WatcherKeptList = typeof WATCHER_KEPT_LISTS[number]
+/** How many open lines a list holds: the rules list its own larger number, the others WATCHER_KEPT_ITEMS_MAX. */
+export const watcherKeptOpenMax = (list: WatcherKeptList): number => list === 'rules' ? WATCHER_KEPT_RULES_MAX : WATCHER_KEPT_ITEMS_MAX
 const keptText = z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)
 /** A line's ID: its list's letter and a number Sotto gives it, as `d3`, `r1` or `i12`. Never given twice. */
 const keptId = z.string().regex(/^[dri][1-9]\d{0,8}$/u)
@@ -227,7 +240,8 @@ export const watcherKeptItemSchema = z.object({ id: keptId, text: keptText, touc
   closedAt: time.optional(), closedNote: keptText.optional() }).strict()
 export type WatcherKeptItem = z.infer<typeof watcherKeptItemSchema>
 const keptLines = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX)
-export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptLines, issues: keptLines, updatedAt: time.nullable() }).strict()
+const keptRules = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX)
+export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptRules, issues: keptLines, updatedAt: time.nullable() }).strict()
 export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
 /** What `watcher-state.json` holds: the lists and the next line number. */
 export const watcherKeptRecordSchema = watcherKeptStateSchema.extend({ nextId: z.number().int().positive().max(999_999_999) }).strict()
@@ -236,11 +250,12 @@ export type WatcherKeptRecord = z.infer<typeof watcherKeptRecordSchema>
 export const watcherKeptLegacySchema = z.object({ decisions: z.array(keptText).max(20), rules: z.array(keptText).max(20),
   issues: z.array(keptText).max(20), updatedAt: time.nullable() }).strict()
 const keptWords = z.array(keptText).max(WATCHER_KEPT_ITEMS_MAX)
+const ruleWords = z.array(keptText).max(WATCHER_KEPT_RULES_MAX)
 /**
  * keep_state's input. A list given whole replaces that list's open lines, as before line IDs: a line whose words are
  * unchanged keeps its ID and when it was touched. `add`, `edit`, `close` and `drop` change one line each, by its ID.
  */
-export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: keptWords.optional(), issues: keptWords.optional(),
+export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: ruleWords.optional(), issues: keptWords.optional(),
   add: z.array(z.object({ list: z.enum(WATCHER_KEPT_LISTS), text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   edit: z.array(z.object({ id: keptId, text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
   close: z.array(z.object({ id: keptId, note: keptText.optional() }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
@@ -411,6 +426,9 @@ export const watcherToolSchemas = {
       // checkout behind (#1690). Sotto's, like the move: main sets it when it places the start, and Watcher never names it.
       fromOrigin: z.string().min(1).max(255).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // Why a start runs on the shared checkout (#2235): Watcher's sharedReason, or Sotto's when the project has no Git.
+      // The desktop's alone, and in memory only: a retry after a restart has none.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(),
       queue: workerQueue.optional(),
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
@@ -467,7 +485,7 @@ export const watcherToolSchemas = {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
     input: watcherKeepStateInputSchema,
     // Only the lines this call changed and how many each list holds (#2231): read_state gives the whole state.
-    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX) * WATCHER_KEPT_LISTS.length * 2),
+    output: result({ changed: z.array(watcherKeptChangeSchema).max((WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX + WATCHER_KEPT_CLOSED_MAX * WATCHER_KEPT_LISTS.length) * 2),
       counts: watcherKeptCountsSchema }),
   },
   read_state: {
@@ -480,7 +498,7 @@ export const watcherToolSchemas = {
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherStateWaitingSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 2 + WATCHER_KEPT_RULES_MAX), contextTokens: counter.nullable(), compactAtTokens: counter,
       // On the final page: pass it as changedSince to read only what changed after this read.
       changeCursor: cursor.optional(),
       // A changedSince read Sotto still held the cursor of: what it left out as unchanged, and what is no longer there.
@@ -503,6 +521,8 @@ export const watcherToolSchemas = {
     input: z.object({ operationId: z.uuid() }).strict(),
     // The outcome fields are optional: stop and settle carry none, and an older owning host sends none.
     output: boundedRead(result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState,
+      // A start's reason to share the checkout, as its start result gave it (#2235). The desktop's alone, in memory only.
+      sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional(),
       swarm: swarmReceiptSchema.optional(), queue: workerQueue.optional(), effectiveChoices: workerChoices.optional(),
       outcome: watcherOutcomeSchema.optional(), reference: watcherOutcomeReferenceSchema.optional(), outcomeNote: shortText.min(1).optional(),
       // The worker's own words for the turn that answered, never Sotto's evidence.

@@ -19,6 +19,8 @@ const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
 /** A thread whose own facts Watcher has not been told: the digest of none. */
 const NOTHING_TOLD = observationDigest([])
+/** No news held: the answer while nothing waits, made once. */
+const NO_HELD_NEWS = Object.freeze({ count: 0, pullRequests: 0 })
 /**
  * How long a Git-backed thread's turn end waits for the Git read its finish starts. The workspace reads the working
  * copy again 1.5 seconds after a turn's work settles; the read lands just after the two-second batch otherwise, and
@@ -564,6 +566,24 @@ export class WatcherWakeUp {
   }
   news(): WatcherEvent[] { return this.withPassReads(() => this.recent.filter(event => this.due(event))) }
   /**
+   * The news waiting here that needs Watcher, counted for the room's band while Watcher's provider is limited or failing
+   * (#2234): how many, and how many of those are a pull request's news. Bounded as the batch is.
+   */
+  heldNews(): { readonly count: number; readonly pullRequests: number } {
+    if (!this.pending.length) return NO_HELD_NEWS
+    return this.withPassReads(() => {
+      let count = 0, pullRequests = 0
+      for (const event of this.pending) {
+        if (!this.attends(event)) continue
+        count++
+        if (event.kind === 'evidence-changed') pullRequests++
+      }
+      return { count, pullRequests }
+    })
+  }
+  /** Looks again whether waiting news may go, after what held it ended with no event of its own, as a hold's reset (#2234). */
+  recheck(): void { if (!this.closed) this.batch() }
+  /**
    * Whether news needs Watcher's attention: anything but evidence, or evidence of a pull request's link, state, checks,
    * review or merge changing. Evidence of a thread's own facts alone does not; it only rides with news that does. Which
    * evidence woke is kept in memory only, as Watcher's news is: a restart observes it all afresh.
@@ -785,14 +805,14 @@ export class WatcherWakeUp {
    * them reset (ADR-0144). Watcher hears of each, watched or not, since unwatched threads carry on too: a watched one under
    * the request that watches it, as its other news goes, and one no request watches under none.
    */
-  threadsRestarted(provider: string, targets: readonly WatcherThreadTarget[]): void {
+  threadsRestarted(provider: string, targets: readonly WatcherThreadTarget[], cause?: 'work-left' | 'resumed'): void {
     if (!this.started || this.closed || !targets.length) return
     const observedAt = new Date(this.now()).toISOString()
     const events = this.withPassReads(() => targets.map((target): WatcherEvent => {
       const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
       const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
       return { kind: 'threads-restarted', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
-        observedAt, restartedBy: provider, id: observationDigest(['threads-restarted', target, observedAt]) }
+        observedAt, restartedBy: provider, ...cause ? { restartCause: cause } : {}, id: observationDigest(['threads-restarted', target, observedAt]) }
     }))
     this.tell(events)
   }

@@ -15,7 +15,7 @@ import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import type { BaseBranchChecks } from '../../src/main/agents/watcherComputedState'
-import { WATCHER_KEPT_ITEMS_MAX, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_NOT_GIT_REASON, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -1936,7 +1936,7 @@ it.each(['working-copy-as-base', 'base-as-working-copy'])('refuses a %s choice b
   const copy = choices.choices.find(item => item.kind === 'existing-worktree')!, base = choices.baseRefs[0]!
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
-  const input = role === 'working-copy-as-base' ? { ...f.start(), baseRefChoiceId: copy.choiceId }
+  const input = role === 'working-copy-as-base' ? { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: copy.choiceId }
     : { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: base.choiceId } }
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
   expect(f.control.watcherRecord()).toEqual(record)
@@ -1951,10 +1951,75 @@ it('passes a valid branch choice to creation and retains it in the receipt', asy
   if (choices.status !== 'ok' || !('baseRefs' in choices)) throw new Error('copy read refused')
   const base = choices.baseRefs.find(item => item.name === 'main')!
   const create = vi.spyOn(f.control, 'commandFromWatcher')
-  expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: base.choiceId }))
-    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId } })
+  expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: base.choiceId }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId }, sharedReason: 'Synthetic reason the user gave.' })
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', baseBranch: 'main' }), expect.anything())
   create.mockRestore()
+})
+
+// #2235: Watcher's threads start in their own new worktree in a Git project, and the shared checkout needs a reason.
+it('starts a thread in a new worktree in a Git project unless Watcher gives a reason to share the checkout', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const create = vi.spyOn(f.control, 'commandFromWatcher')
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const started = await f.call('start_thread', unnamed)
+  expect(started).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(started).not.toHaveProperty('sharedReason')
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent' }), expect.anything())
+  // Shared without a reason is refused before anything is admitted.
+  const record = f.control.watcherRecord()
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  expect(f.control.watcherRecord()).toEqual(record)
+  // A reason alone starts it on the shared checkout, and the result gives the reason back for Watcher's reply.
+  const reason = 'The user asked for this research thread on the shared checkout.'
+  expect(await f.call('start_thread', { ...unnamed, retryKey: randomUUID(), sharedReason: reason }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: reason })
+  expect(create.mock.calls.filter(([command]) => command.type === 'create-thread').at(-1)?.[0]).toMatchObject({ workingCopy: 'shared' })
+  // A reason beside another working copy explains nothing, so the result leaves it out.
+  const named = await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' }, sharedReason: reason })
+  expect(named).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(named).not.toHaveProperty('sharedReason')
+  create.mockRestore()
+})
+
+it('treats the project’s own checkout as the shared checkout, and starts nothing shared it cannot tell is safe', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const choices = await f.call('list_working_copies', { project: f.start().project })
+  if (choices.status !== 'ok' || !('choices' in choices)) throw new Error('copy read refused')
+  const own = choices.choices.find(item => item.kind === 'existing-worktree')!
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId } }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  const reason = 'The user asked for this one on the checkout itself.'
+  const started = await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId }, sharedReason: reason })
+  expect(started).toMatchObject({ status: 'ok', sharedReason: reason })
+  // read_operation gives the reason back too, as for a start whose answer came too late for its client.
+  if (started.status !== 'ok' || !('receipt' in started)) throw new Error('start refused')
+  expect(await f.call('read_operation', { operationId: started.receipt.operationId })).toMatchObject({ status: 'ok', sharedReason: reason })
+  // When Sotto cannot tell whether the project is Git, the shared checkout is refused without a reason.
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockRejectedValue(new Error('synthetic-git-unreadable'))
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: true })
+})
+
+it('answers a retry of a start that named no working copy as it was first answered, even once the project has Git', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const first = await f.call('start_thread', unnamed)
+  expect(first).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  await initializeGitRepository(f.project.path)
+  const again = await f.call('start_thread', unnamed)
+  expect(again).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  if (first.status !== 'ok' || again.status !== 'ok' || !('receipt' in first) || !('receipt' in again)) throw new Error('start refused')
+  expect(again.receipt.operationId).toBe(first.receipt.operationId)
+})
+
+it('starts a thread in the folder of a project that is not a Git repository, and says why', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', unnamed)).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: WATCHER_NOT_GIT_REASON })
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
 })
 
 it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
@@ -1970,7 +2035,7 @@ it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after sna
     const record = f.control.watcherRecord(), selected = f.control.shell().activeThreadId
     expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: choice.choiceId } }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
-    expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: first.baseRefs[0]!.choiceId }))
+    expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: first.baseRefs[0]!.choiceId }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
     expect(f.control.watcherRecord()).toEqual(record)
     expect(f.control.shell().activeThreadId).toBe(selected)
@@ -2659,6 +2724,22 @@ it('gives a keep_state change in under 1 KB, and a repeat read_state with nothin
   expect(compacted).toMatchObject({ sinceUnknown: true })
   expect(compacted.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
   expect(f.service.stateNote()).toBeUndefined()
+})
+
+
+// #2236: the rules list holds WATCHER_KEPT_RULES_MAX, and a whole read with every rule at its longest stays readable.
+it('keeps every rule the rules list holds, and reads them all back in one result well under what providers save to files', async () => {
+  const f = await fixture()
+  for (let at = 0; at < 4; at++) await f.call('start_thread', f.start())
+  const long = (kind: string, at: number) => `${kind} ${at + 1}: ${'synthetic words the user said about how threads start, merge and get checked, '.repeat(4)}`.slice(0, 280).trim()
+  expect(await f.call('keep_state', { rules: Array.from({ length: WATCHER_KEPT_RULES_MAX }, (_, at) => long('Rule', at)),
+    decisions: Array.from({ length: 12 }, (_, at) => long('Decision', at)), issues: Array.from({ length: 25 }, (_, at) => long('Issue', at)) })).toMatchObject({ status: 'ok' })
+  expect(await f.call('keep_state', { add: [{ list: 'rules', text: 'One rule past the list.' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
+    message: expect.stringContaining('do not drop, merge or close one to make room') })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.kept.rules).toHaveLength(WATCHER_KEPT_RULES_MAX)
+  expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(40_000)
 })
 
 it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {
