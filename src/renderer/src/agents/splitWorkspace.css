@@ -30,19 +30,19 @@
 @media (min-resolution: 2dppx) { .threads-view .thread-pane { --threads-pane-edge: inset 0 .5px 0 color-mix(in oklab, var(--tt-accent) 50%, transparent); } }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] { box-shadow: var(--threads-pane-edge); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
-/* The other panes keep every control in its place and step back with their titles: the Git action loses its outline and
-   its words and Watch take the muted ink, so the window has one outlined control, the focused pane's, and two panes side
-   by side read as one row of presses and one quieter row. Nothing moves or goes: the pointer over that header, or the
-   focus inside it, gives the row its full ink, and a thread Watcher watches stays lit. */
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action, .git-action__more) { border-color: transparent; }
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action__quick, .watch-toggle:not([aria-pressed='true'])) { color: var(--tt-text-muted); }
-/* The rest of that header steps back with them: its name takes the muted ink, and the provider's mark and the pull
-   request's state colour rest in it too, so the only colour across the top of the window is the focused pane's. The
-   layout's symbols, already muted, are drawn a step toward the room by letting it through, keeping 4.5:1 and more on every
-   built-in theme by day and 5:1 by night, and naming no room token in an ink, so the audited inks still cover it. Each
-   keeps its place and its press, and the pointer or the focus on the header gives the row its own ink back. */
+/* The other panes carry the same controls, each in its place, and show them only while the pointer is over that header or
+   the focus is inside it, so the window shows one row of presses, the focused pane's (Zach's pick B of `layout` item 1,
+   ADR-0182, November 7, 2026). They are hidden, not removed: nothing moves as focus moves, Tab still reaches each one and
+   shows the row, and a control whose menu is open stays. Close stays on every pane. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane > .thread-workspace__head .thread-workspace__actions > :not(.thread-pane__close) { transition: opacity 120ms ease; }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > :not(.thread-pane__close, [aria-expanded='true'], :has([aria-expanded='true'])) { opacity: 0; }
+/* The rest of that header steps back: its name takes the muted ink, and the provider's mark and the pull request's state
+   colour rest in it too, so the only colour across the top of the window is the focused pane's. Its close, the one
+   control it always shows, is drawn a step toward the room by letting it through, keeping 4.5:1 and more on every
+   built-in theme by day and 5:1 by night, and naming no room token in an ink, so the audited inks still cover it. The
+   pointer or the focus on the header gives the row its own ink back. */
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(h2, .thread-workspace__title > .provider-mark, .branch-toolbar__pr > svg) { color: var(--tt-text-muted); }
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > :is(.pane-action, .pane-menu > .pane-action):not([aria-pressed='true'], [aria-expanded='true']) { color: color-mix(in srgb, var(--tt-text-muted) 82%, transparent); }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > .thread-pane__close { color: color-mix(in srgb, var(--tt-text-muted) 82%, transparent); }
 
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
@@ -83,8 +83,8 @@
 .threads-view .thread-panes__drops[data-preview] { background: var(--tt-surface); }
 .threads-view .thread-panes__drop-name { position: absolute; top: 28px; left: 30px; right: 30px; overflow: hidden; color: var(--tt-text-2); font-size: var(--tt-type-body); text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 
-/* A thread on screen in another pane is outlined in the sidebar; the focused one keeps the filled row. */
-.threads-view .thread-nav__row[data-open] { border-color: var(--threads-selected-border); }
+/* A thread on screen in another pane carries no outline in the sidebar: it shows the two-pane mark where its time was
+   (threadSidebar.css), and only the focused one keeps the filled row (Zach's pick B of `layout` item 1, November 7, 2026). */
 
 /* A narrow pane recomposes like a narrow window does, and keeps the type sizes: below 720px, and a short pane up to
    1000px, its padding tightens, so panes of an even split start their transcripts level. */

@@ -96,6 +96,9 @@ describe('split thread workspace', () => {
     // Only the focused thread is current in the sidebar; the other open pane is marked as on screen.
     expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })).toHaveAttribute('aria-current', 'page')
     expect(within(sidebar()).getByRole('button', { name: 'Grok voice previews' }).closest('li')).toHaveAttribute('data-open')
+    // It says so where its time was, with the two-pane mark, and describes itself that way (Zach's pick B, November 7).
+    expect(within(sidebar()).getByRole('button', { name: 'Grok voice previews' })).toHaveAccessibleDescription(/Open in another pane/u)
+    expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })).not.toHaveAccessibleDescription(/Open in another pane/u)
   })
 
   it('keeps each pane\'s draft, send and pending message with its own thread, across projects', async () => {
