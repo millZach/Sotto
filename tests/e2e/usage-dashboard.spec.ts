@@ -1,5 +1,4 @@
 // Run after npm run build: npx playwright test tests/e2e/usage-dashboard.spec.ts
-import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -27,9 +26,9 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     await harness.open()
     const measures = () => page.getByRole('tablist', { name: 'Usage measures', exact: true })
     const views = () => page.getByRole('tablist', { name: 'Usage views', exact: true })
-    await expect(measures().getByRole('tab')).toHaveCount(7)
-    await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
-    await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
+    // Nothing is counted yet, so one card says what will show here in place of the tabs and their empty figures (#1834).
+    await expect(page.getByRole('region', { name: 'No usage yet', exact: true })).toBeVisible()
+    await expect(measures()).toHaveCount(0)
     expect((await activity()).totals.prompts.user).toBe(0)
 
     await harness.connect()
@@ -75,6 +74,8 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     expect(initial.models.some(row => row.modelId.endsWith(SELECTED_USAGE_MODEL))).toBe(false)
 
     await harness.open()
+    await expect(page.getByRole('region', { name: 'No usage yet', exact: true })).toHaveCount(0)
+    await expect(measures().getByRole('tab')).toHaveCount(7)
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^From cache 57% /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^Room left 80% /u })).toBeVisible(usageWait)
@@ -142,7 +143,7 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
 
     await chooseUsageFilter(page, 'Computer', 'This computer')
     await chooseUsageFilter(page, 'Provider', 'Devin')
-    await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
+    await expect(measures().getByRole('tab', { name: 'Tokens No tokens in this range', exact: true })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
     await chooseUsageFilter(page, 'Provider', 'Claude Code')
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
@@ -162,10 +163,12 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     await page.getByLabel('From', { exact: true }).fill(dates.yearStart); await page.getByLabel('Through', { exact: true }).fill(dates.today)
     await expect(page.locator('.usage-chart__column')).toHaveCount(366)
     await harness.resize(820, 560)
-    expect(await page.locator('.usage-chart__plot').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    // A year's columns fit the plot, and the scale's figures, in their gutter beside it, fit the chart.
+    expect(await page.locator('.usage-chart__columns').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    expect(await page.locator('.usage-chart').first().evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.getByLabel('From', { exact: true }).fill(dates.tomorrow); await page.getByLabel('Through', { exact: true }).fill(dates.tomorrow)
     await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
-    await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
+    await expect(measures().getByRole('tab', { name: 'Tokens No tokens in this range', exact: true })).toBeVisible()
     await page.getByLabel('Through', { exact: true }).fill(dates.yesterday)
     await expect(page.getByRole('alert')).toContainText('Choose an end date on or after the start date.')
     await chooseUsageFilter(page, 'Date range', 'Last 30 days')
@@ -215,6 +218,8 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     expect((await activity()).totals.tokenRecords).toBe(0)
     const afterClear = await activity()
 
+    // Under 1000 px the sidebar stands as the rail, without the page switch (ADR-0110), so Threads is reached from a wider window.
+    await harness.resize(1280, 800)
     await openThreads(page); await expect(promptField(page)).toBeEditable()
     await fillPrompt(promptField(page), 'Start a new counted native turn after clear.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
@@ -242,7 +247,10 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     const restored = await activity()
     expect(restored.totals.tokens.total.value).toBe(3600); expect(restored.totals.prompts.user).toBe(1)
     await openThreads(page)
-    // Opening the observed thread starts the owned fake process; no new user prompt is sent on this restart.
+    // Typing in the thread starts its Claude Code, as opening it alone no longer does (9307494e9, ADR-0057); nothing is
+    // sent, so no new user prompt is counted on this restart.
+    await expect(promptField(page)).toBeEditable()
+    await fillPrompt(promptField(page), 'Typed, not sent.')
     await expect.poll(() => readFile(join(harness.client, `alive-${nativeId}.json`)).then(() => true, () => false), usageWait).toBe(true)
     await action(nativeId, { type: 'raw-burst', frames: [first, second, { ...usageResultFrame(nativeId), duration_ms: 333 }] })
     await expect.poll(async () => (await page.evaluate(() => window.sotto!.agents!.get())).host.threads.find(thread => thread.id === threadId)?.usage?.elapsedMs, usageWait).toBe(333)
@@ -349,21 +357,23 @@ test('Owl Usage splits the Per day chart by model and provider, as bars or lines
   } finally { await harness.cleanup() }
 })
 
-test('stable hides Usage and its preload bridge while preserving an Owl numeric database', async () => {
+// Usage was sent to stable on October 23, 2026 (8c0999071, ADR-0072), so stable shows the page Owl does.
+test('stable shows Usage and its preload bridge, reading the numeric database Owl kept', async () => {
   test.setTimeout(90_000)
   const harness = await usageDashboardHarness()
   try {
     let page = await harness.launch()
-    await harness.open(); expect((await harness.activity()).metadata.generation).toBe(0)
+    await harness.open()
+    const owl = (await harness.activity()).metadata
+    expect(owl.generation).toBe(0)
     await harness.close()
-    const path = join(harness.profile, 'usage.sqlite')
-    const digest = async () => createHash('sha256').update(await readFile(path)).digest('hex')
-    const before = await digest()
     page = await harness.launch(false)
     expect(await harness.currentApp().evaluate(({ app }) => app.getVersion())).not.toContain('-owl.')
-    await expect(page.getByRole('link', { name: 'Usage', exact: true })).toHaveCount(0)
-    expect(await page.evaluate(() => typeof window.sotto?.usage)).toBe('undefined')
-    await harness.close(); expect(await digest()).toBe(before)
+    expect(await page.evaluate(() => typeof window.sotto?.usage?.read)).toBe('function')
+    await harness.open()
+    // The same database, not a new one: it started when Owl first opened it and has not been cleared.
+    expect((await harness.activity()).metadata).toMatchObject({ startedAt: owl.startedAt, generation: 0 })
+    await harness.close()
     expect(harness.pageErrors).toEqual([])
   } finally { await harness.cleanup() }
 })
