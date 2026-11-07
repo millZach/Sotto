@@ -6,7 +6,7 @@ import type { WatcherProfileTools } from './host'
 import { watcherSystemPrompt } from './watcherPrompt'
 import { WORKER_KIND_LIST } from '../../shared/workerRoles'
 import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
-import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, watcherRefusalSchema } from '../../shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_SHARED_REASON_MAX, watcherRefusalSchema, watcherWorkingCopySchema } from '../../shared/watcher'
 import { THREAD_MOVE_PROPOSE_TOOL, threadMoveProposeInputSchema, threadMoveProposeOutputSchema } from '../../shared/threadMoves'
 import { TEAM_ASK_TOOL, TEAM_READ_TOOL, teamAskToolInputSchema, teamAskToolOutputSchema, teamReadToolInputSchema, teamReadToolOutputSchema } from '../../shared/teams'
 import { WATCHER_ASK_TOOL, watcherAskInputSchema, watcherAskOutputSchema } from '../../shared/watcherQuestions'
@@ -41,12 +41,20 @@ const START_FROM = 'To start from a thread\'s branch, name fromThread with its h
 const MACHINES_WHERE = ' newWorkersStart says where a start that names no machine goes: This computer, a machine the user chose, or your choice.'
 /** settle_thread as Watcher is offered it: userAgreed is this computer's alone, taken off before the call is parsed (October 29, 2026). */
 const offeredSettle = watcherToolSchemas.settle_thread.input.extend({ userAgreed: z.literal(true).optional() }).strict()
+/**
+ * A start as Watcher is offered it (#2235): its working copy may be left out, for a new worktree in a Git project, and
+ * sharedReason, why it runs on the shared checkout instead, is Watcher's alone, taken off before the call is parsed.
+ */
+const offeredStartBase = watcherToolSchemas.start_thread.input.extend({ workingCopy: watcherWorkingCopySchema.optional(),
+  sharedReason: z.string().min(1).max(WATCHER_SHARED_REASON_MAX).optional() })
+/** How a start chooses its working copy, said with every variant of start_thread. */
+const START_COPY = ' Leave out workingCopy and a Git project starts the thread in its own new worktree, which is the default. To start on the shared checkout instead, give sharedReason, one short sentence on why, and say that reason in your reply; the result gives it back as sharedReason. A project that is not a Git repository starts in its folder, and the result says so.'
 /** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
-const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
+const startByModel = offeredStartBase.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
 /** What Work across machines adds to a start (#1032, #1033), none of it offered while that is off. */
 const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: true } as const
 /** Fixed feature variants are built once; tool registration only selects them. */
-const roleSwarmStart = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
+const roleSwarmStart = offeredStartBase.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
 const modelSwarmStart = startByModel.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
 const roleStart = roleSwarmStart.omit({ count: true, prompts: true })
 const modelStart = modelSwarmStart.omit({ count: true, prompts: true })
@@ -89,7 +97,7 @@ const swarmHereOutputs: Partial<Record<WatcherToolName, z.ZodType>> = {
 export function watcherToolDefinitions(roles: boolean, machines = false, swarms = false): readonly ThreadToolDefinition[] {
   const outputs = swarms ? machines ? undefined : swarmHereOutputs : machines ? singleOutputs : singleHereOutputs
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
-    description: name === 'start_thread' ? `${swarms ? (roles ? START_BY_ROLE : descriptions[name]).replace(WORKING_WARNING, '') : roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE} ${START_FROM}` : ''}${swarms ? ' Count greater than one starts a swarm: that many angles, each in its own worktree, and one lead on the role’s model for synthesis. Supply prompts with one brief per angle, or the lead plans them. Use one retryKey for the whole swarm. Counts explicitly requested by the user override the role’s usual and up-to counts. Extra starts queue in order above the machine ceiling; the receipt names how many wait and the cost shape, count × effort plus the lead.' : ''}`
+    description: name === 'start_thread' ? `${swarms ? (roles ? START_BY_ROLE : descriptions[name]).replace(WORKING_WARNING, '') : roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE} ${START_FROM}` : ''}${swarms ? ' Count greater than one starts a swarm: that many angles, each in its own worktree, and one lead on the role’s model for synthesis. Supply prompts with one brief per angle, or the lead plans them. Use one retryKey for the whole swarm. Counts explicitly requested by the user override the role’s usual and up-to counts. Extra starts queue in order above the machine ceiling; the receipt names how many wait and the cost shape, count × effort plus the lead.' : ''}${START_COPY}`
       : name === 'list_machines' ? (machines ? LIST_MACHINES_WITH_LOAD + MACHINES_WHERE : descriptions[name]) + (swarms ? ' Also returns each role’s usual and up-to worker counts, and each supporting machine’s workerCeiling and workerQueued. A null ceiling is unknown, never unlimited.' : '') : descriptions[name],
     inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines, swarms) : name === 'settle_thread' ? offeredSettle : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(outputs?.[name] ?? watcherToolSchemas[name].output),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,

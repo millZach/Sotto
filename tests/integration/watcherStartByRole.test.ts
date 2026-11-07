@@ -201,7 +201,8 @@ it('names the paired host, not the new-thread default, when the host\'s limit he
   const f = await fixture({ newThread: 'full-access' })
   f.setChoices({ 'computer-use': { modelId: f.base.id, reasoningEffort: 'low' } })
   const hostId = acceptingHost(f, 'approval-required')
-  const result = f.ok(await f.call(f.start({ role: 'computer-use', project: { hostId, projectId: f.project.id } })))
+  // This synthetic host cannot be read, so its shared checkout needs a reason (#2235).
+  const result = f.ok(await f.call(f.start({ role: 'computer-use', project: { hostId, projectId: f.project.id }, sharedReason: 'Synthetic reason the user gave.' })))
   expect(result.effectiveChoices.permission).toEqual({ kind: 'runtime', mode: 'approval-required' })
   expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval, the most that host lets this computer give a thread it starts there.')
   expect(result.role!.note).not.toContain('new-thread default')
@@ -219,11 +220,13 @@ it('sends a paired host the concrete start, with no role key an older host would
     subscribe: () => () => undefined,
   }
   f.service.useRemoteHosts(remote)
-  const result = await f.call(f.start({ role: 'research', project: { hostId, projectId: f.project.id } }))
+  const result = await f.call(f.start({ role: 'research', project: { hostId, projectId: f.project.id }, sharedReason: 'Synthetic reason the user gave.' }))
   expect(result).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
   expect(packets).toHaveLength(1)
   const input = packets[0]!.call.input as Record<string, unknown>
   expect(input).not.toHaveProperty('role')
+  // Nor the reason to share its checkout, which is the desktop's alone (#2235).
+  expect(input).not.toHaveProperty('sharedReason')
   expect(input).toMatchObject({ modelId: f.other.id, reasoningEffort: 'medium', permission: { kind: 'runtime', mode: 'approval-required' } })
   expect(watcherHostControlSchema.safeParse(packets[0]).success).toBe(true)
 })

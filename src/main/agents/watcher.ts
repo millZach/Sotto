@@ -57,7 +57,7 @@ import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessa
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
-import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
+import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
@@ -188,6 +188,10 @@ const ASK_BEFORE_SETTLE = 'The user asks you to check with them before each sett
  * A settle_thread call split into the call its schema takes and whether it says the user agreed to the settle. A
  * userAgreed that is not true is left on the call, so the schema refuses it.
  */
+/** A folder as a path compares: resolved, and without case on Windows, whose paths ignore it. */
+const folderKey = (path: string): string => { const at = resolve(path); return process.platform === 'win32' ? at.toLowerCase() : at }
+/** What a start on the shared checkout of a Git project is refused with until Watcher says why (#2235). */
+const SHARED_NEEDS_REASON = 'Threads start in their own new worktree in a Git project. To start this one on the shared checkout, give sharedReason, a short reason you then say in your reply.'
 function settleAgreement(args: unknown): { call: unknown; userAgreed: boolean } {
   if (!args || typeof args !== 'object' || Array.isArray(args) || !('userAgreed' in args)) return { call: args, userAgreed: false }
   const { userAgreed, ...call } = args as Record<string, unknown>
@@ -350,6 +354,8 @@ const STILL_READING = 'This read took longer than your provider waits for a tool
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
 interface CallProgress {
   operationId?: string
+  /** A start's reason to share the checkout (#2235), remembered with its operation once admitted. */
+  sharedReason?: string | undefined
   /** A settle the user agreed on Watcher's own card (#2228): once it goes, that answer has agreed it. */
   settleAgreed?: { readonly watcherThreadId: string; readonly target: WatcherThreadTarget }
 }
@@ -1855,7 +1861,7 @@ export class WatcherService implements WatcherControlHooks {
       creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
       effectiveChoices: { modelId: create.modelId!, reasoningEffort: create.reasoningEffort ?? null, speed: create.speed ?? null, permission: create.permission ?? { kind: 'runtime', mode: 'approval-required' },
         workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) },
-      ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, true),
+      ...this.roleBlock(operation.id), ...this.sharedReasonBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, true),
       check: { ahead, note: this.checkNote(operation.id) } }
   }
   /** Where a waiting check stands in this machine's queue, for the model (#1312). */
@@ -4346,7 +4352,10 @@ export class WatcherService implements WatcherControlHooks {
       // Settle without asking (October 29, 2026): its userAgreed is this computer's alone, so it is taken off the call
       // before the call is parsed, and a paired host is never sent it.
       const agreed = name === 'settle_thread' ? settleAgreement(args) : undefined
-      const parsed = watcherToolSchemas[name].input.safeParse(agreed ? agreed.call : args)
+      // A start's working copy (#2235): a new worktree in a Git project unless Watcher gives a reason to share the
+      // checkout. The reason is Watcher's alone, taken off before the call is parsed, so a paired host is never sent it.
+      const copy = name === 'start_thread' ? await this.startCopy(args) : undefined
+      const parsed = watcherToolSchemas[name].input.safeParse(agreed ? agreed.call : copy ? copy.call : args)
       if (!parsed.success) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
       // The user's Settle it on Watcher's own card for this thread is their agreement, in Sotto's record of their press (#2228).
       const settleTarget = agreed ? (parsed.data as WatcherToolInput<'settle_thread'>).target : undefined
@@ -4488,6 +4497,8 @@ export class WatcherService implements WatcherControlHooks {
         // is recorded, so starts made together each see the ones before them in every machine's headroom (#1694).
         const release = this.options.workerMachine?.() === 'watcher' ? await this.placingTurn() : undefined
         try {
+          // Why it shares the checkout goes with its operation, so its receipt and read_operation give it back.
+          progress.sharedReason = copy?.sharedReason
           const placed = await this.placeStart(asked)
           if (!placed) release?.()
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
@@ -4521,6 +4532,10 @@ export class WatcherService implements WatcherControlHooks {
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
   }
+  /** Each start's reason to share the checkout, by operation (#2235). */
+  private readonly sharedReasons = new Map<string, string>()
+  /** What a start that named no working copy was given, by its request and retry key, so a retry is answered the same (#2235). */
+  private readonly startCopies = new Map<string, { workingCopy: unknown; sharedReason?: string }>()
   private readonly workerStarts = new Map<string, { input: WatcherToolInput<'start_thread'>; target: WatcherThreadTarget; position: number; landed?: LandedMove | undefined }>()
   private queuedWorker(threadId: string): string | undefined {
     for (const [id, entry] of this.workerStarts) if (entry.target.threadId === threadId && this.options.swarms?.admission.view(id)?.state === 'queued') return id
@@ -4804,6 +4819,7 @@ export class WatcherService implements WatcherControlHooks {
     // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
     placed?.admitted?.(admitted.operation.target, admitted.retry, admitted.operation.id)
     if (progress) progress.operationId = admitted.operation.id
+    if (progress?.sharedReason && !admitted.retry) this.rememberSharedReason(admitted.operation.id, progress.sharedReason)
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
       const active = this.active.get(admitted.operation.id)
@@ -5128,6 +5144,15 @@ ${operation.draftId}`)
     const note = this.steerFallbacks.get(operationId)
     return note ? { note } : {}
   }
+  private rememberSharedReason(operationId: string, reason: string): void {
+    this.sharedReasons.set(operationId, reason)
+    for (const kept of this.sharedReasons.keys()) { if (this.sharedReasons.size <= ROLE_STARTS_KEPT) break; this.sharedReasons.delete(kept) }
+  }
+  /** Why a start runs on the shared checkout (#2235), in memory only, as its role is. */
+  private sharedReasonBlock(operationId: string): { sharedReason: string } | Record<string, never> {
+    const sharedReason = this.sharedReasons.get(operationId)
+    return sharedReason ? { sharedReason } : {}
+  }
   private roleBlock(operationId: string): { role: RoleReceipt } | Record<string, never> {
     const role = this.roleStarts.get(operationId)
     return role ? { role } : {}
@@ -5233,7 +5258,7 @@ ${operation.draftId}`)
         effectiveChoices: { ...worker.effectiveChoices ?? { modelId: thread!.modelId, reasoningEffort: thread!.reasoningEffort ?? null,
           speed: thread!.speed !== undefined ? thread!.speed : thread!.fastMode ? 'fast' : null,
           permission: thread!.providerMode ? { kind: 'provider', choiceId: thread!.providerMode } : { kind: 'runtime', mode: thread!.runtimeMode ?? 'approval-required' } },
-          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id), ...this.placementBlock(operation.id),
+          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id), ...this.sharedReasonBlock(operation.id), ...this.placementBlock(operation.id),
         ...this.branchStartBlock(operation.id),
         // Nothing is held back at any count; past ten working threads the start's own answer says so, for Watcher to tell
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
@@ -5365,7 +5390,7 @@ ${operation.draftId}`)
         this.releaseChecks()
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.view().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined || workerWaitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
+        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.sharedReasonBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined || workerWaitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
           ...waitingThere && waitingOn ? { check: this.checkOf.get(operation.id)!.away!.place! } : {} } : {}),
         ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
@@ -6013,7 +6038,8 @@ ${operation.draftId}`)
     this.wakes.observeAll()
     if (call.name === 'read_operation') {
       if (!operation) refuse('UNKNOWN_OPERATION', 'That operation is unavailable.')
-      const base = { status: 'ok' as const, receipt: this.receipt(operation), limits: this.limits(operation, archived), action: operation.action, state: this.operationState(operation.target), ...this.workerReadBlock(operation) }
+      const base = { status: 'ok' as const, receipt: this.receipt(operation), limits: this.limits(operation, archived), action: operation.action, state: this.operationState(operation.target), ...this.workerReadBlock(operation),
+        ...operation.action === 'start' ? this.sharedReasonBlock(operation.id) : {} }
       // A desktop that did not ask is answered as before, since it could not read the outcome fields.
       if (!outcomes) return base
       const read = { ...base, ...hosted ?? await this.outcomeRead(operation) }
@@ -6274,6 +6300,69 @@ ${operation.draftId}`)
     this.pages.get(page.revision)!.workingCopies = { revision, baseRefs }
     for (const { choiceId, ...choice } of entries) this.copyChoices.set(choiceId, { ...choice, projectId: input.project.projectId, revision, snapshotId: page.revision })
     return { status: 'ok', project: input.project, revision, choices: page.rows, baseRefs, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
+  }
+  /**
+   * Where a start runs (#2235). Zach's rule since October 23, 2026 is that a thread starts in its own new worktree, never the
+   * shared checkout, unless he says otherwise; Watcher broke it twenty times when the choice was its to name each time. A
+   * start that names no working copy now gets a new worktree in a Git project, and the project's folder where there is no
+   * Git, with Sotto's reason. The shared checkout of a Git project needs Watcher's `sharedReason`, which the result gives
+   * back. The user's own new threads keep their default (ADR-0014).
+   */
+  private async startCopy(args: unknown): Promise<{ call: unknown; sharedReason?: string }> {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return { call: args }
+    const { sharedReason, ...call } = args as Record<string, unknown>
+    if (sharedReason !== undefined && (typeof sharedReason !== 'string' || !sharedReason.trim() || sharedReason.length > WATCHER_SHARED_REASON_MAX)) {
+      refuse('INVALID_INPUT', `Give sharedReason as one short sentence of at most ${WATCHER_SHARED_REASON_MAX} characters. Nothing was started.`)
+    }
+    const reason = typeof sharedReason === 'string' ? sharedReason.trim() : undefined
+    const named = call.workingCopy as { kind?: unknown; choiceId?: unknown } | undefined
+    // A retry is answered as the start it repeats was, even where the project has gained or lost Git since.
+    const retry = typeof call.requestId === 'string' && typeof call.retryKey === 'string' ? `${call.requestId}\0${call.retryKey}` : undefined
+    const earlier = retry === undefined || named !== undefined ? undefined : this.startCopies.get(retry)
+    if (earlier) return { call: { ...call, workingCopy: earlier.workingCopy }, ...earlier.sharedReason === undefined ? {} : { sharedReason: earlier.sharedReason } }
+    const decided = await this.decideStartCopy(call, named, reason)
+    if (retry !== undefined && named === undefined) {
+      this.startCopies.set(retry, { workingCopy: (decided.call as { workingCopy: unknown }).workingCopy, ...decided.sharedReason === undefined ? {} : { sharedReason: decided.sharedReason } })
+      for (const kept of this.startCopies.keys()) { if (this.startCopies.size <= ROLE_STARTS_KEPT) break; this.startCopies.delete(kept) }
+    }
+    return decided
+  }
+  private async decideStartCopy(call: Record<string, unknown>, named: { kind?: unknown; choiceId?: unknown } | undefined, reason: string | undefined): Promise<{ call: unknown; sharedReason?: string }> {
+    const project = watcherProjectTargetSchema.safeParse(call.project)
+    // An existing worktree that is the project's own checkout is the shared checkout by another name.
+    if (named?.kind === 'existing-worktree') {
+      // A choice that expired is refused later as changed, as before, so only a live one is looked at.
+      this.prunePages()
+      const path = typeof named.choiceId === 'string' ? this.copyChoices.get(named.choiceId)?.path : undefined
+      const root = project.success ? this.owningSnapshot(project.data.hostId)?.projects.find(item => item.id === project.data.projectId)?.path : undefined
+      if (path === undefined || root === undefined || folderKey(path) !== folderKey(root)) return { call }
+      if (reason === undefined) refuse('INVALID_INPUT', `${SHARED_NEEDS_REASON} Nothing was started.`)
+      return { call, sharedReason: reason }
+    }
+    // A reason beside a new worktree explains nothing that happens, so it is left out.
+    if (named !== undefined && named.kind !== 'shared') return { call }
+    if (reason !== undefined) return { call: { ...call, workingCopy: { kind: 'shared' } }, sharedReason: reason }
+    // A call this malformed is refused when it is parsed, with the same words as any other.
+    if (!project.success) return { call }
+    const git = await this.projectIsGit(project.data)
+    if (git === false) return { call: { ...call, workingCopy: { kind: 'shared' } }, sharedReason: WATCHER_NOT_GIT_REASON }
+    if (named === undefined) return { call: { ...call, workingCopy: { kind: 'new-worktree' } } }
+    if (git) refuse('INVALID_INPUT', `${SHARED_NEEDS_REASON} Nothing was started.`)
+    refuse('PROVIDER_UNAVAILABLE', 'Sotto could not tell whether this project is a Git repository just now, so it did not start this thread on the shared checkout. Try again, give sharedReason, or leave out its working copy for a new worktree. Nothing was started.', true)
+  }
+  /**
+   * Whether a project is a Git repository, which a new worktree needs, read from its own computer: a paired host's from its
+   * working-copy choices. Undefined when that could not be read, as from a host that is not connected.
+   */
+  private async projectIsGit(project: WatcherProjectTarget): Promise<boolean | undefined> {
+    try {
+      if (project.hostId === this.hostId()) return (await this.options.host.workingCopyOptions(project.projectId)).isGit
+      // A host Watcher may not read refuses the start as any call to it would, unasked.
+      this.requireRemote(project.hostId, false)
+      const choices = watcherToolSchemas.list_working_copies.output.parse(await this.remote!.read(project.hostId, { master: this.view().current!, ...this.adoptOn(project.hostId),
+        call: { name: 'list_working_copies', input: watcherHostInput('list_working_copies', { project, limit: WATCHER_ROSTER_MAX }) } } as WatcherHostRead))
+      return choices.status === 'ok' ? choices.choices.some(choice => choice.kind === 'new-worktree') : undefined
+    } catch (error) { if (error instanceof Refusal) throw error; return undefined }
   }
   private async resolveCopies(input: WatcherToolInput<'start_thread'>) {
     if (input.workingCopy.kind === 'shared' && !input.baseRefChoiceId) return { workingCopy: 'shared' as const }

@@ -102,7 +102,9 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: boo
   await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic master request' })
   const requestId = watcher.state().requests.at(-1)!.id
   const start = () => ({ requestId, retryKey: randomUUID(), project: { hostId: paired.pairing.hostId, projectId: paired.project.id },
-    modelId: paired.model.id, title: 'Synthetic remote worker', workingCopy: { kind: 'shared' as const }, firstPrompt: 'host_private_prompt_19cb' })
+    modelId: paired.model.id, title: 'Synthetic remote worker', workingCopy: { kind: 'shared' as const }, firstPrompt: 'host_private_prompt_19cb',
+    // The host's project is a Git project, so a start kept on its shared checkout says why (#2235).
+    sharedReason: 'Synthetic reason the user gave for the shared checkout.' })
   const call = async <N extends WatcherToolName>(name: N, input: unknown): Promise<WatcherToolOutput<N>> => {
     const result = watcherToolSchemas[name].output.parse(await watcher.invoke(id, name, input)) as WatcherToolOutput<N>
     if ('receipt' in result && result.receipt) {
@@ -1698,8 +1700,10 @@ async function acrossMachines(setting: WorkerMachineSetting = 'this-computer') {
   await origin(f.project.path, 'https://github.com/millZach/Sotto')
   // A start that stays on This computer names a model ready here; one placed on the paired machine names one ready there.
   const here = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
-  return { ...f, local, choice, onThisComputer: () => ({ ...f.start(), project: { hostId: f.control.hostId()!, projectId: local.id } }),
-    staysHere: () => ({ ...f.start(), project: { hostId: f.control.hostId()!, projectId: local.id }, modelId: here.id }),
+  // This computer's copy is a Git project, so a start these tests keep on its shared checkout says why (#2235).
+  const shared = { sharedReason: 'Synthetic reason the user gave for the shared checkout.' }
+  return { ...f, local, choice, onThisComputer: () => ({ ...f.start(), ...shared, project: { hostId: f.control.hostId()!, projectId: local.id } }),
+    staysHere: () => ({ ...f.start(), ...shared, project: { hostId: f.control.hostId()!, projectId: local.id }, modelId: here.id }),
     // `call` waits for a started thread on the paired host; a start that stays here is read as Watcher reads it.
     startHere: async (input: unknown) => watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', input)) }
 }
@@ -2582,7 +2586,9 @@ it('has a host whose Owl answer is off refuse a start marked as a check, startin
   expect(f.hello.features).not.toContain('watcher-check-queue')
   // A stable desktop never sends the flag; this one is made to, as an older Owl desktop could.
   const mutate = (f.watcher as unknown as { mutate(threadId: string, name: string, input: unknown): Promise<unknown> }).mutate.bind(f.watcher)
-  const refused = watcherToolSchemas.start_thread.output.parse(await mutate(f.id, 'start_thread', { ...f.start(), title: 'Synthetic stable check', check: true }))
+  // Below where a start's sharedReason is taken off, so it is left out here.
+  const { sharedReason: _reason, ...start } = f.start(); void _reason
+  const refused = watcherToolSchemas.start_thread.output.parse(await mutate(f.id, 'start_thread', { ...start, title: 'Synthetic stable check', check: true }))
   expect(refused).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
   expect(f.socket.shell().host.threads.some(thread => thread.title === 'Synthetic stable check')).toBe(false)
 })
