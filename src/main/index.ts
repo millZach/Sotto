@@ -2563,7 +2563,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], machinesEnabled: crossMachineEnabled,
-        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
+        holdEnabled: owlFeatures['restart-stopped-threads'], watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),

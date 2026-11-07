@@ -188,6 +188,9 @@ export function createE2EWatcherBridge(): WatcherBridge | undefined {
       : { status: 'ok', text: seed.startNew.text, counts: state.handover.counts },
     continueWithHandover: async () => ({ status: 'ok', state }),
     dismissHandover: async () => ({ status: 'ok', state: publish({ handover: null }) }),
+    // Try now as main answers it while Watcher's provider fails (#2234): the try goes, and the band says when it went.
+    tryNow: async () => ({ status: 'ok', state: state.hold?.kind === 'failing'
+      ? publish({ hold: { ...state.hold, lastTryAt: new Date().toISOString(), tries: state.hold.tries + 1 } }) : state }),
     ...seed.machines ? { readMachines: async () => seed.machines! } : {},
     onChanged: listener => {
       // The script starts with the first listener, the room's own.

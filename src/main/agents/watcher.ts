@@ -70,6 +70,7 @@ import { watcherOwnChanges } from './watcherOwnChanges'
 import { userWordsOf } from './continueThread'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
+import { WatcherHoldState } from './watcherHold'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
@@ -598,6 +599,14 @@ export class WatcherService implements WatcherControlHooks {
   /** The last read_thread result Watcher was given of each thread, by Watcher conversation and target, and when (#1552). In memory only. */
   private readonly readsGiven = new Map<string, { digest: string; at: string }>()
   private closed = false
+  /**
+   * Watcher's hold while its own provider is limited or failing (#2234), only while Restart stopped threads is on: news
+   * and what is queued for Watcher wait, and the room shows one band. One timer, for when the hold lets them go.
+   */
+  private hold: WatcherHoldState | undefined
+  private holdTimer: ReturnType<typeof setTimeout> | undefined
+  private holdArmedFor: number | undefined
+  private heldLast = false
   private remote: WatcherRemoteHosts | undefined
   private remoteOff: (() => void) | undefined
   private readonly remoteProgress = new Map<string, { hostId: string; fingerprint: string }>()
@@ -774,7 +783,13 @@ export class WatcherService implements WatcherControlHooks {
     /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer holds a settle. Read once at start. */
     babysittingRetired?: boolean
     /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at the default, 250K (#2233). */
-    compactAt?: () => number }) {
+    compactAt?: () => number
+    /**
+     * Hold news while Watcher's own provider is limited or failing (#2234, ADR-0144's November 5 amendment), read once at
+     * start: only while Restart stopped threads is on.
+     */
+    holdNews?: boolean }) {
+    if (options.holdNews === true) this.hold = new WatcherHoldState()
     this.hosts = new WatcherHosts({ local: () => options.control.watcherSnapshot(), localThreads: snapshot => options.control.hostThreadsOf(snapshot), remote: () => this.remote })
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), hosts: this.hosts, record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
       // The pass hands the target's key, the same JSON `key` makes, so it builds none for each watched thread (#1248).
@@ -792,7 +807,8 @@ export class WatcherService implements WatcherControlHooks {
       },
       answers: (target, thread, record) => this.answeringOperation(target, thread, record),
       restoredEvents: () => options.control.restoredWatcherEvents(), wakeUpQueued: () => options.control.watcherWakeUpQueued(),
-      canDeliver: target => options.control.canDeliverWatcherNews(target),
+      // While Watcher's provider is limited or failing, news waits here and goes in one wake when the hold ends (#2234).
+      canDeliver: target => options.control.canDeliverWatcherNews(target) && !this.holding(),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
@@ -803,7 +819,7 @@ export class WatcherService implements WatcherControlHooks {
     // ID, as while Sotto starts, none of its threads can be named, and the publish that brings the ID runs every step here.
     const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => {
       if (!options.control.hostId()) return
-      this.releaseWorkerStarts(); this.endFinishedPauses(); this.closeAnsweredRequests(); this.endToldTurns(); this.applyNextTurn(); this.compactWhenDue(); this.publish()
+      this.readHold(); this.releaseWorkerStarts(); this.endFinishedPauses(); this.closeAnsweredRequests(); this.endToldTurns(); this.applyNextTurn(); this.compactWhenDue(); this.publish()
     })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
@@ -1121,7 +1137,45 @@ export class WatcherService implements WatcherControlHooks {
         && request.participants.some(part => part.state === 'participating' && part.automationStopped !== true && key(part.target) === wanted))
   }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
-  wakeReady(): boolean { return this.wakes.ready() }
+  wakeReady(): boolean { return this.wakes.ready() && !this.holding() }
+  /** Whether Watcher's provider is limited or failing now, so its news and queue wait (#2234). */
+  private holding(): boolean { return this.hold?.holds(Date.now()) === true }
+  holdsWatcherQueue(threadId: string): boolean { return this.hold?.threadId() === threadId && this.holding() }
+  /**
+   * Reads Watcher's own thread for its hold (#2234), on every coordinator publish: a look-up and, only while a failure
+   * stands, a comparison. When the hold ends, what waited goes: news in one wake, and the queue, the user's message first.
+   */
+  private readHold(): void {
+    const hold = this.hold
+    if (!hold || this.closed) return
+    const current = this.view().current?.target, hostId = this.options.control.hostId()
+    const thread = current && current.hostId === hostId ? this.localThread(current.threadId) : undefined
+    hold.read(thread, thread ? this.options.control.scheduledRestart(thread.id) : undefined, Date.now(), thread ? () => this.options.control.failureReason(thread.id) : undefined)
+    const holding = this.holding()
+    if (this.heldLast && !holding) queueMicrotask(() => { if (this.closed) return; this.wakes.recheck(); this.options.control.resumeWatcherQueue() })
+    this.heldLast = holding
+    this.armHold()
+  }
+  /** One timer for when the hold lets what waits go, read again at least every minute so a computer asleep past it catches up. */
+  private armHold(): void {
+    const until = this.holding() ? this.hold?.until() : undefined
+    if (until === this.holdArmedFor) return
+    clearTimeout(this.holdTimer); this.holdTimer = undefined; this.holdArmedFor = until
+    if (until === undefined) return
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = undefined; this.holdArmedFor = undefined
+      this.readHold(); this.publish()
+    }, Math.min(Math.max(0, until - Date.now()), 60_000))
+    this.holdTimer.unref?.()
+  }
+  /**
+   * Try now on the band: what a failing Watcher holds goes at once, as one wake, with the user's waiting message first.
+   * A limit with a reset waits for it, and the room says so.
+   */
+  tryNow(): WatcherRoomResult {
+    if (this.hold?.tryNow(Date.now())) { this.readHold(); this.publish() }
+    return this.get()
+  }
   /** Watcher's hidden wake-up left its queue; the coordinator has already saved any of its news as untold again. */
   wakeUpSettled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
     if (this.closed) return
@@ -2245,6 +2299,9 @@ export class WatcherService implements WatcherControlHooks {
     if (current && this.nextTurn?.threadId === current.id) room.nextTurnOptions = this.nextTurn.options
     const carried = this.currentCarried() && this.carried!.room
     if (carried) room.carried = carried
+    // The band while Watcher's provider is limited or failing, with what is held for it (#2234).
+    const hold = this.hold?.shown(this.wakes.heldNews())
+    if (hold) room.hold = hold
     return room
   }
   /**
@@ -6450,7 +6507,7 @@ ${operation.draftId}`)
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])
     this.heldChecks.clear(); this.checkOf.clear(); clearTimeout(this.checkTimer)
     this.lettingGoChecks = Promise.all(waiting.map(check => this.releaseMove(check.landed))).then(() => undefined)
-    this.closed = true; clearTimeout(this.settledTimer); this.settledTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = []; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
+    this.closed = true; clearTimeout(this.holdTimer); this.holdTimer = undefined; clearTimeout(this.settledTimer); this.settledTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = []; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
   }
   /** Settles once `close` has let go of the branches its waiting checks would have started from, those still taking their snapshot included. */
   drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }

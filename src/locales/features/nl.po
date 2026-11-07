@@ -16,6 +16,11 @@ msgstr ""
 msgid "“{reason}”"
 msgstr ""
 
+#. placeholder {0}: hold.tries + 1
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{0, plural, =1 {Failing since {since}} other {Failing since {since} · # tries}}"
+msgstr ""
+
 #. placeholder {0}: entry.starting
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
@@ -49,6 +54,11 @@ msgstr ""
 #. placeholder {0}: proposal.threads.filter(item => item.ticked).length
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
+msgstr ""
+
+#. placeholder {0}: hold.pullRequests
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{0, plural, other {All # from pull requests.}}"
 msgstr ""
 
 #. placeholder {0}: record.completedTurns
@@ -91,6 +101,12 @@ msgstr ""
 #. placeholder {2}: item.of
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "{0} for {1} of {2}"
+msgstr ""
+
+#. How the news Sotto holds for Watcher splits.
+#. placeholder {0}: hold.pullRequests
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{0} from pull requests, {threads} from threads."
 msgstr ""
 
 #. placeholder {0}: planned.words ?? ''
@@ -379,6 +395,14 @@ msgstr ""
 msgid "{fromName} is short on memory, and {toName} has room."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{held, plural, =0 {Sotto holds news until then.} other {Sotto is holding # news until then.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{held, plural, other {Sotto holds news and tries again every few minutes. Holding # so far.}}"
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{host} restarted before {name} updated. Nothing was changed. Try again."
 msgstr ""
@@ -575,6 +599,11 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "{name} is offline. Its figures appear when it reconnects."
+msgstr ""
+
+#. Watcher's provider fails every turn. {name} is a provider, such as Claude Code.
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{name} isn’t answering."
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -857,6 +886,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{text} for {model}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "{threads, plural, other {All # from threads.}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
@@ -2433,6 +2466,10 @@ msgstr ""
 msgid "Design"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Details"
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Devin account"
 msgstr ""
@@ -3501,6 +3538,12 @@ msgstr ""
 msgid "Last confirmed"
 msgstr ""
 
+#. When Sotto last tried Watcher's failing provider, as in "Last try 2:44 pm".
+#. placeholder {0}: clock(hold.lastTryAt)
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Last try {0}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "last turn failed"
 msgstr ""
@@ -4528,6 +4571,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Nothing was stopped"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Nothing yet. Watcher gets what comes in one message at the reset. A message you send goes first."
 msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
@@ -6227,6 +6274,10 @@ msgstr ""
 msgid "Sotto could not reach Watcher, so nothing was started. Try again."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Sotto could not reach Watcher. Nothing was sent. Press Try now again."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Sotto could not reach Watcher. Nothing was stopped. Try again."
 msgstr ""
@@ -6353,6 +6404,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Sotto heard you. Your microphone works."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Sotto holds news and tries again every few minutes."
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -7592,6 +7647,10 @@ msgstr ""
 msgid "Try microphone again"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Try now"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
 msgstr ""
@@ -7979,6 +8038,14 @@ msgstr ""
 msgid "Watcher could not be started. Nothing was sent."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Watcher gets it in one message at the reset. A message you send goes first."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Watcher gets what Sotto held in one message now."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Watcher had no threads to stop. Nothing was stopped."
 msgstr ""
@@ -8046,6 +8113,21 @@ msgstr ""
 #. Whose a check is: Watcher started it.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "Watcher’s"
+msgstr ""
+
+#. {name} is a provider, such as Claude Code.
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Watcher’s {name} limit has reset."
+msgstr ""
+
+#. {name} is a provider, such as Devin.
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Watcher’s {name} limit is used up, and {name} didn’t say when it resets."
+msgstr ""
+
+#. {name} is a provider, such as Claude Code; {when} is "at 3:00 pm", "tomorrow at 3:00 pm" or "Monday at 3:00 pm".
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "Watcher’s {name} limit resets {when}."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -8136,6 +8218,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "What you were writing moved here."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHoldBand.tsx
+msgid "What’s held"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx

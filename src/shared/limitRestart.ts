@@ -18,12 +18,18 @@ export function limitRestartNote(provider: string): string {
 /** How every limit restart note begins, for telling one from other text a wake-up record already marks as Sotto's. */
 export const LIMIT_RESTART_NOTE_TAIL = 'usage limit has reset. Your last turn stopped at the limit partway through'
 /**
- * Whether a message Sotto's own record has already marked as a wake-up is a limit restart note. The note opens the wake-up
- * it is part of, after the provider's name, so it is told by how the text starts; text alone never makes a message Sotto's.
+ * The note a watched thread gets when Sotto restarts it because its last turn stopped with work left (ADR-0144, November 5,
+ * 2026 amendment, #2234): after Sotto starts again, or when Watcher's limit resets. The same words on every provider.
+ */
+export const WORK_LEFT_RESTART_NOTE = 'Your last turn ended with an error before it finished, and any command or tool it was running stopped too, so its result may be missing. Check where things stand, then carry on.'
+/**
+ * Whether a message Sotto's own record has already marked as a wake-up is a limit restart note, or the note for work left.
+ * The note opens the wake-up it is part of, after the provider's name for a limit, so it is told by how the text starts;
+ * text alone never makes a message Sotto's.
  */
 export function isLimitRestartNoteText(text: string): boolean {
   const start = text.trimStart(), at = start.indexOf(`’s ${LIMIT_RESTART_NOTE_TAIL}`)
-  return at > 0 && at <= 64 && !start.slice(0, at).includes('\n')
+  return at > 0 && at <= 64 && !start.slice(0, at).includes('\n') || start.startsWith(WORK_LEFT_RESTART_NOTE)
 }
 
 /** How many limit restarts in a row one thread gets before it waits for the user, as the resume note has. */
@@ -54,6 +60,8 @@ export const limitRestartNewsSchema = z.object({
   provider: z.string().min(1).max(64),
   since: z.iso.datetime(),
   restarts: z.number().int().min(1).max(LIMIT_RESTARTS_IN_A_ROW_MAX),
+  /** A watched thread restarted because its last turn stopped with work left, not at a limit (#2234). */
+  cause: z.literal('work-left').optional(),
 }).strict()
 export type LimitRestartNews = z.infer<typeof limitRestartNewsSchema>
 

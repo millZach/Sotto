@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIMIT_RESTART_CHECK_MS, LIMIT_RESTART_RETRY_MS, LimitRestart, type LimitRestartControl } from '../../../src/main/agents/limitRestart'
+import { LIMIT_RESTART_CHECK_MS, LIMIT_RESTART_REPORT_MS, LIMIT_RESTART_RETRY_MS, LimitRestart, type LimitRestartControl } from '../../../src/main/agents/limitRestart'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { LIMIT_RESTART_GRACE_MS, LIMIT_RESTART_HORIZON_MS, LIMIT_RESTARTS_IN_A_ROW_MAX, limitRestartNote, type LimitRestartNews } from '../../../src/shared/limitRestart'
 import type { AgentControl } from '../../../src/main/agents/control'
@@ -33,7 +33,8 @@ const thread = (id: string, patch: Partial<AgentThread> = {}): AgentThread => ({
 const limitStop = (id: string, resetsAt?: string, turn = `${id}-1`): Partial<AgentThread> =>
   ({ status: 'error', lastTurn: { id: turn, status: 'failed', limitStop: resetsAt ? { resetsAt } : {} } })
 
-async function fixture(options: { threads?: AgentThread[]; enabled?: () => boolean; watcher?: string; saved?: unknown; deliver?: (id: string) => Promise<void>; checkEveryMs?: number } = {}) {
+async function fixture(options: { threads?: AgentThread[]; enabled?: () => boolean; watcher?: string; saved?: unknown; deliver?: (id: string) => Promise<void>; checkEveryMs?: number
+  watched?: readonly string[]; waiting?: (id: string) => boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-limit-restart-')); roots.push(root)
   if (options.saved) await writeFile(join(root, 'limit-restarts.json'), JSON.stringify(options.saved))
   let now = START
@@ -41,13 +42,14 @@ async function fixture(options: { threads?: AgentThread[]; enabled?: () => boole
   const host: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, threads: options.threads ?? [thread('workshop')],
     providers: [{ id: 'claude', connection: 'connected', name: 'Claude Code', version: '', capabilities: EMPTY_AGENT_HOST.capabilities }] }
   const delivered: { threadId: string; news: LimitRestartNews }[] = []
-  const told: { provider: string; threadIds: readonly string[] }[] = []
+  const told: { provider: string; threadIds: readonly string[]; cause?: 'work-left' }[] = []
   const control: LimitRestartControl = {
     host: () => host, thread: id => host.threads.find(item => item.id === id),
     deliverWakeUp: async (threadId, news) => { await options.deliver?.(threadId); delivered.push({ threadId, news }) },
   }
   const restart = new LimitRestart({ directory: root, control, enabled: options.enabled ?? (() => true), watcherThreadId: () => options.watcher,
-    restarted: (provider, threadIds) => told.push({ provider, threadIds }), now: () => now, checkEveryMs: options.checkEveryMs ?? 2_147_000_000,
+    restarted: (provider, threadIds, cause) => told.push({ provider, threadIds, ...cause ? { cause } : {} }), now: () => now,
+    ...options.watched ? { watched: () => options.watched } : {}, ...options.waiting ? { waiting: options.waiting } : {}, checkEveryMs: options.checkEveryMs ?? 2_147_000_000,
     schedule: (callback, delay) => { const timer = { callback, delay, cancelled: false }; timers.push(timer); return () => { timer.cancelled = true } } })
   restarts.push(restart)
   await restart.start()
@@ -377,5 +379,101 @@ describe('the coordinator restarting a thread a usage limit stopped', () => {
     await control.start(); await control.command({ type: 'connect' })
     const answer = await control.command({ type: 'cancel-restart', threadId: 'workshop' })
     expect(answer.error).toBe('This host does not restart stopped threads. Nothing was changed.')
+  })
+})
+
+/**
+ * Watched threads that stopped with work left (ADR-0144, November 5, 2026 amendment, #2234): restarted once Sotto starts
+ * and this run first reads the failed turn, and when Watcher's own limit resets, through the same record, note path, cap
+ * and setting. Watcher hears them together, once.
+ */
+describe('restarting watched threads that stopped with work left', () => {
+  const failed = (id: string, turn = `${id}-1`): Partial<AgentThread> => ({ status: 'error', lastTurn: { id: turn, status: 'failed' } })
+
+  it('restarts a watched thread whose last turn failed once this run reads it, and tells Watcher of it once', async () => {
+    const f = await fixture({ threads: [thread('worker', failed('worker'))], watched: ['worker'] })
+    // Restarted at once: nothing says it is scheduled.
+    expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    await f.fire()
+    expect(f.delivered).toEqual([{ threadId: 'worker', news: { source: 'limit-restart', provider: 'claude', since: new Date(START).toISOString(), restarts: 1, cause: 'work-left' } }])
+    expect(f.told).toEqual([])
+    expect(f.live()).toEqual([expect.objectContaining({ delay: LIMIT_RESTART_REPORT_MS })])
+    await f.fire()
+    expect(f.told).toEqual([{ provider: 'claude', threadIds: ['worker'], cause: 'work-left' }])
+    // Read again, the same failed turn is not restarted twice.
+    f.read()
+    expect(f.live()).toEqual([])
+    expect(f.delivered).toHaveLength(1)
+  })
+
+  it('leaves a thread the user stopped, one waiting on them, one still working in the background, one not watched, one whose queue carries it, and Watcher', async () => {
+    const card = { id: 'card', kind: 'question' as const, title: 'Which one?', questions: [] } as unknown as AgentThread['requests'][number]
+    const f = await fixture({ watcher: 'watcher', watched: ['stopped', 'asking', 'reviewing', 'background', 'queued', 'watcher'], waiting: id => id === 'queued', threads: [
+      thread('reviewing', { ...failed('reviewing'), prototypeReady: { messageId: 'reply', at: new Date(START).toISOString() } as unknown as AgentThread['prototypeReady'] }),
+      thread('background', { ...failed('background'), backgroundWork: [{ id: 'agent', type: 'subagent', label: 'Agent' }] }),
+      thread('stopped', { status: 'idle', lastTurn: { id: 'stopped-1', status: 'interrupted' } }),
+      thread('asking', { ...failed('asking'), requests: [card] }),
+      thread('unwatched', failed('unwatched')),
+      thread('queued', failed('queued')),
+      thread('watcher', failed('watcher')),
+    ] })
+    expect(f.live()).toEqual([])
+    expect(await f.saved()).toEqual([])
+  })
+
+  it('leaves a turn that fails while Sotto runs to Watcher, and a limit that named no reset to the user', async () => {
+    const f = await fixture({ watched: ['worker', 'devin'], threads: [thread('worker', { status: 'idle', lastTurn: { id: 'worker-1', status: 'completed' } }),
+      thread('devin', { providerId: 'claude', status: 'error', lastTurn: { id: 'devin-1', status: 'failed', limitStop: {} } })] })
+    f.update('worker', failed('worker', 'worker-2'))
+    expect(f.live()).toEqual([])
+  })
+
+  it('restarts a limit stop whose reset passed while Sotto was closed', async () => {
+    const reset = new Date(START - 60 * 60_000).toISOString()
+    const f = await fixture({ watched: ['worker'], threads: [thread('worker', limitStop('worker', reset))] })
+    await f.fire()
+    expect(f.delivered).toEqual([expect.objectContaining({ threadId: 'worker', news: expect.objectContaining({ cause: 'work-left' }) })])
+  })
+
+  it('waits for the watched set before it decides', async () => {
+    let watched: readonly string[] | undefined = undefined
+    const f = await fixture({ threads: [thread('worker', failed('worker'))] })
+    expect(f.live()).toEqual([])
+    // A restart that names no watched set yet decides nothing, so a later read still can.
+    const later = new LimitRestart({ directory: f.root, control: { host: () => f.host, thread: id => f.host.threads.find(item => item.id === id), deliverWakeUp: async () => undefined },
+      enabled: () => true, watched: () => watched, now: () => START, schedule: () => () => undefined })
+    restarts.push(later)
+    await later.start()
+    later.track(f.host, f.host.threads)
+    expect(await f.saved()).toEqual([])
+    watched = ['worker']
+    later.track(f.host, f.host.threads)
+    expect(later.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    await later.close()
+    expect(JSON.parse(await readFile(join(f.root, 'limit-restarts.json'), 'utf8'))).toEqual({ version: 1, threads: [expect.objectContaining({ threadId: 'worker', cause: 'work-left', restarts: 0 })] })
+  })
+
+  it('stops after three restarts in a row, as a limit restart does', async () => {
+    const f = await fixture({ watched: ['worker'], threads: [thread('worker', failed('worker'))], saved: { version: 1, threads: [
+      { threadId: 'worker', provider: 'claude', stoppedAt: new Date(START - 60_000).toISOString(), restarts: LIMIT_RESTARTS_IN_A_ROW_MAX, sent: true, cause: 'work-left' }] } })
+    expect(f.live()).toEqual([])
+    expect(f.delivered).toEqual([])
+  })
+
+  it('restarts nothing while the setting is off', async () => {
+    const f = await fixture({ watched: ['worker'], threads: [thread('worker', failed('worker'))], enabled: () => false })
+    expect(f.live()).toEqual([])
+  })
+
+  it('restarts the watched threads that stopped with work left once Watcher’s own limit resets, after Watcher', async () => {
+    const reset = new Date(START + 60 * 60_000).toISOString()
+    const f = await fixture({ watcher: 'watcher', watched: ['worker'], threads: [thread('watcher'), thread('worker', { status: 'idle', lastTurn: { id: 'worker-1', status: 'completed' } })] })
+    f.update('watcher', limitStop('watcher', reset))
+    // While Watcher could not hear it, a watched thread's turn failed.
+    f.update('worker', failed('worker', 'worker-2'))
+    await f.fire()
+    expect(f.delivered.map(item => item.threadId)).toEqual(['watcher'])
+    await f.fire()
+    expect(f.delivered.map(item => [item.threadId, item.news.cause])).toEqual([['watcher', undefined], ['worker', 'work-left']])
   })
 })
