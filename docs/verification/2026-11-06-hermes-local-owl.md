@@ -33,3 +33,9 @@ Watcher, remote hosts, phones, Windows/Linux, other permission modes and all sub
 A later PR needs the provider ADR and README/privacy/key-handling decisions, supported install/update design, Windows work and CI/adapter-contract coverage, plus a real UI trial. The user explicitly deferred that work for this local Owl.
 
 After installing at a quiet time, connect Hermes in Providers, create a Full access Spark thread in a real project, ask it to edit and test a small file, steer it while running, queue a follow-up, stop a running command, and reopen the thread to resume. Try a second thread in the same project for memory, then Refuseless once its API permits traffic. Check the existing Council and Dynamic flows as well.
+
+## Hermes icon — November 7, 2026
+
+The shared provider mark now uses the MIT-licensed Nous girl from Hermes v0.23.0: white in dark mode, black in light mode. Both originals are cropped to `350 0 4600 4600` and rasterized to transparent 128×128 PNGs, 12,030 bytes combined. This covers Providers, model pickers and every other caller of `ProviderMark`.
+
+Headless Playwright 1.64.1 rendered the actual component and application CSS at 12, 13, 14, 16, 17, 18 and 20px, with 32/64px references, in both themes at 1× and 2×. All 13 placements select exactly one loaded variant, including after a theme switch, and preserve their requested dimensions. Both renders were visually inspected: [1× PNG](/Users/drakemorey/Developer/Reports/hermes-provider-icon-2026-11-07/preview.png), [2× PNG](/Users/drakemorey/Developer/Reports/hermes-provider-icon-2026-11-07/preview@2x.png). Typecheck, targeted ESLint and the existing provider-mark unit file (3 tests) passed. No Sotto instance was launched for these checks. The local build is Owl `0.1.43-owl.20261106.6`.

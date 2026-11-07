@@ -1,11 +1,15 @@
 import React, { type ReactNode } from 'react'
 import type { ProviderId } from '../../../shared/agents'
+import hermesBlack from '../assets/providers/hermes-black.png'
+import hermesWhite from '../assets/providers/hermes-white.png'
 
 // Provider marks adapted from T3 Code (MIT, d1d15c67 apps/web/src/components/Icons.tsx), except Devin's,
 // which is the product mark from devin.ai (the header logo, the same path as https://devin.ai/favicon.svg).
 // Muse's squiggle is its product favicon: https://muse.ai/images/favicon/app-squiggle.svg, checked October 12, 2026.
 // OpenCode's is adapted from T3 Code's (MIT, e58a4857 packages/provider-opencode/src/client.ts): a square ring (ADR-0087).
 // DeepSeek's whale is its product mark as Simple Icons draws it (simple-icons deepseek.svg, checked October 24, 2026).
+// Hermes uses Nous Research's MIT-licensed nous-girl-{black,white}.svg from hermes-agent v0.23.0.
+// The PNGs crop the viewBox to 350 0 4600 4600 and rasterize at 128px so the face reads in small tiles.
 // The marks identify each provider's own client; the trademarks belong to their owners.
 const MARKS: Readonly<Partial<Record<ProviderId, { readonly viewBox: string; readonly path: string }>>> = {
   muse: {
@@ -49,6 +53,12 @@ const MARKS: Readonly<Partial<Record<ProviderId, { readonly viewBox: string; rea
 
 /** A provider's recognizable mark; unknown providers get their initial. Decorative: callers name the provider in text. */
 export function ProviderMark({ provider, name, size = 14 }: { readonly provider: ProviderId | undefined; readonly name: string; readonly size?: number }): ReactNode {
+  if (provider === 'hermes') {
+    return <span className="provider-mark provider-mark--hermes" data-provider={provider} style={{ width: size, height: size }} aria-hidden="true">
+      <img className="provider-mark__on-light" src={hermesBlack} alt="" draggable={false} />
+      <img className="provider-mark__on-dark" src={hermesWhite} alt="" draggable={false} />
+    </span>
+  }
   const mark = provider === undefined ? undefined : MARKS[provider]
   if (mark === undefined) {
     return <span className="provider-mark provider-mark--initial" data-provider={provider ?? 'other'} style={{ width: size, height: size }} aria-hidden="true">{name.trim().charAt(0).toLocaleUpperCase() || '?'}</span>
