@@ -1586,30 +1586,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private followTurnPullRequests(threadId: string): void {
     const thread = this.threadById(threadId)
     if (!thread || this.stopping || !this.visible(thread) || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.councilJudge) return
-    // What the open thread's timer asks, for a thread nobody has open: a lookup kept fresh is not asked again (#820).
+    // What the open thread's timer asks, for a thread nobody has open: a lookup kept fresh is not asked again (#820). Only a
+    // thread whose last Git read found a pushed-to remote and a branch other than the default is asked, so a thread on the
+    // default branch adds no GitHub read to every turn.
     const git = thread.worktree?.git
     if (git?.isRepository && git.hasRemote && git.branch && !git.isDefaultBranch) void this.readRemoteStatus(threadId, { background: true })
     const service = this.gitPullRequests
     if (!service) return
-    const turn = endedTurn(thread.activities), created = createdPullRequestUrls(turn.records)
+    const turn = endedTurn(thread.activities)
+    // Opened during the turn is the test for both signals: a command that ran gh pr create may print another pull request too.
+    if (turn.startedAt === undefined) return
+    const created = createdPullRequestUrls(turn.records)
     void (async () => {
       await Promise.resolve()
       const linked = new Set((this.threadById(threadId)?.pullRequests ?? []).map(link => pullRequestKey(link.url)))
-      const named = turn.startedAt === undefined ? [] : pullRequestUrlsIn(this.turnReply(threadId))
-      const asked = new Map<string, boolean>()
-      for (const url of created) asked.set(url, true)
-      for (const url of named) if (!asked.has(url)) asked.set(url, false)
-      const wanted = [...asked].filter(([url]) => !linked.has(pullRequestKey(url))).slice(0, OPENED_PULL_REQUESTS_MAX)
+      const wanted = [...new Set([...created, ...pullRequestUrlsIn(this.turnReply(threadId))])]
+        .filter(url => !linked.has(pullRequestKey(url))).slice(0, OPENED_PULL_REQUESTS_MAX)
       if (!wanted.length) return
       let folder: string
       try { folder = this.threadRepositoryFolder(threadId, 'pull requests') } catch { return }
       const found: GitPullRequestView[] = []
-      for (const [url, ranCreate] of wanted) {
+      for (const url of wanted) {
         if (this.stopping) return
         let view: GitPullRequestView
         try { view = await service.view(folder, url) } catch { continue }
         this.observePullRequest(view)
-        if (ranCreate || openedDuringTurn(view.createdAt, turn.startedAt)) found.push(view)
+        if (openedDuringTurn(view.createdAt, turn.startedAt)) found.push(view)
       }
       if (!found.length || this.stopping) return
       await this.onLane(threadId, async () => {

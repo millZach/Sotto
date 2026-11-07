@@ -60,7 +60,8 @@ describe('the pull requests a turn opened (#2307)', () => {
     const session = f.adapters.codex.state.threads.at(-1)!
     session.activities = [
       { id: 'turn', turnId: 'turn-1', sequence: 0, kind: 'turn', status: 'running', title: 'Working', startedAt: new Date(began).toISOString() },
-      record('create', { turnId: 'turn-1', command: 'gh pr create --fill', output: url(7) }),
+      // A compound command prints an older pull request after the one it opened; only the one opened during the turn links.
+      record('create', { turnId: 'turn-1', command: 'gh pr create --fill && gh pr view 8 --json url', output: `${url(7)}\n${url(8)}` }),
     ]
     f.adapters.codex.emit()
     // The reply names the pull request it opened in another worktree, and one opened long before, which it only cites.
@@ -69,7 +70,7 @@ describe('the pull requests a turn opened (#2307)', () => {
     session.status = 'idle'; f.adapters.codex.emit()
     const links = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.pullRequests ?? []
     await vi.waitFor(() => expect(links().map(link => [link.number, link.source])).toEqual([[7, 'created'], [9, 'created']]))
-    expect(view.mock.calls.map(([, reference]) => reference)).toEqual([url(7), url(9), url(8)])
+    expect(view.mock.calls.map(([, reference]) => reference)).toEqual([url(7), url(8), url(9)])
     await vi.waitFor(() => expect(readRemote).toHaveBeenCalledWith(expect.any(String), { background: true }))
   })
 })

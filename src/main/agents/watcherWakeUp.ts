@@ -13,7 +13,7 @@ import { carriesWords, eventSlot, foldWatcherEvents, foldWatcherNews, requestRev
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import { watcherOpenPullRequests } from './watcherSlimReads'
+import { watcherOpenPullRequests, watcherThreadPullRequests } from './watcherSlimReads'
 import { byPlace, type WatcherHostsIndex, type WatcherHostsReader, type WatcherHostsTouched } from './watcherHosts'
 
 const RETRY_LIMIT = 8
@@ -1395,12 +1395,15 @@ export class WatcherWakeUp {
     if (!thread.lastTurn || thread.lastTurn.status === 'running') return undefined
     if (!this.connected(snapshot, thread) || !threadCapabilities(snapshot, thread).observe || isThreadTurnRunning(thread) || this.active(thread)
       || thread.requests.length || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)) || !this.workSettled(thread, target.hostId)) return undefined
-    const seen = new Set<string>(), links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
-      .filter(pr => { const prKey = pullRequestKey(pr.url) ?? pr.url; return !seen.has(prKey) && Boolean(seen.add(prKey)) })
-    const open = watcherOpenPullRequests(links, this.evidence.read(target))
+    const open = watcherOpenPullRequests(watcherThreadPullRequests(thread), this.evidence.read(target))
     if (!open.length) return undefined
-    return observationDigest([thread.lastTurn?.id ?? null, ...open.map(({ pr, summary }) =>
-      [pullRequestKey(pr.url) ?? pr.url, summary.headId ?? null, summary.checks === 'passed' || summary.checks === 'failed'])])
+    // A failed check says the checks failed, not that they finished: one still running keeps them unfinished.
+    const pending = this.evidence.pendingChecks(target)
+    return observationDigest([thread.lastTurn?.id ?? null, ...open.map(({ pr, summary }) => {
+      // As last read, aged or not: a read growing old is not a new place to stand.
+      const prKey = pullRequestKey(pr.url) ?? pr.url, checks = summary.checks ?? 'unknown'
+      return [prKey, summary.headId ?? null, checks, (checks === 'passed' || checks === 'failed') && !pending.has(prKey)]
+    })])
   }
   /**
    * At-rest news (#2307): a watched thread that has been at rest for WATCHER_AT_REST_MS since its last progress, with a pull
@@ -1419,7 +1422,7 @@ export class WatcherWakeUp {
     progress.rest = this.schedule(() => {
       delete progress.rest
       const current = this.options.snapshot(), live = this.lookUp(current, target)
-      if (!live || this.progress.get(key) !== progress || !this.watchedByKey().has(key)) return
+      if (!live || this.progress.get(key) !== progress) return
       // Progress in an update whose pass is still owed is progress all the same: that pass starts the wait again.
       if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
       this.restCheck(current, live, target, key, progress, true)
@@ -1598,10 +1601,14 @@ export class WatcherWakeUp {
     for (const [key, target] of changed) this.evidenceChanged(target, before.get(key), false, this.attentionMoved(target, attention.get(key)!))
     if (changed.size) { const snapshot = this.options.snapshot(); for (const target of changed.values()) this.restAgain(snapshot, target) }
   }
-  /** Checks that finished, or a pull request that ended, while a watched thread rests is a new place for it to stand (#2307). */
+  /**
+   * Checks that finished, or a pull request that ended, while a watched thread rests is a new place for it to stand (#2307).
+   * Only a watched thread keeps progress, and `event` tells only a thread a request still watches, so nothing here reads the
+   * requests again.
+   */
   private restAgain(snapshot: AgentHostSnapshot, target: WatcherThreadTarget, thread = this.lookUp(snapshot, target)): void {
     const key = targetKey(target), progress = this.progress.get(key)
-    if (thread && progress && this.watchedByKey().has(key)) this.restCheck(snapshot, thread, target, key, progress)
+    if (thread && progress) this.restCheck(snapshot, thread, target, key, progress)
   }
   pullRequest(read: PullRequestObservation): void {
     if (this.closed) return

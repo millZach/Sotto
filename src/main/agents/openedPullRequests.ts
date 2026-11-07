@@ -5,12 +5,10 @@ import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests
  * The pull requests a thread's turn opened, found as the turn ends, so a thread that opens one from its own shell has it
  * linked as one it created, as Create PR links one (#2307): read_state, the merge queue and Watcher's pull
  * request news all read a thread's links and its branch's own, and a lane whose branch is not the one it pushed, or
- * that nobody has open, had neither. Two signals, each a link only once GitHub confirms the pull request exists:
- *
- * - a `gh pr create` the turn ran: the URLs its output prints, which is the pull request it opened, or the one that
- *   already existed for its branch;
- * - the turn's reply: a GitHub pull request URL it names, only if GitHub says that pull request was opened after the
- *   turn began, so a reply that cites another thread's pull request, or an old one, links nothing.
+ * that nobody has open, had neither. Two signals name the candidates: the URLs a `gh pr create` the turn ran printed, and
+ * the GitHub pull request URLs its reply names. Each is a link only once GitHub says that pull request was opened after
+ * the turn began, so a reply that cites another thread's pull request or an old one, or a command that printed another
+ * after its `gh pr create`, links nothing. One that already existed for the branch is the branch's own, found by its branch.
  *
  * Reads only the ended turn's records and reply, never the thread's history, at most OPENED_PULL_REQUESTS_MAX each.
  */
@@ -35,16 +33,23 @@ export function pullRequestUrlsIn(text: string | undefined): string[] {
   return urls
 }
 
-/** The newest turn's records and when it began, from the records a thread holds as its turn ends. */
+/**
+ * The newest turn's records and when it began, from the records a thread holds as its turn ends. It walks back from the
+ * newest record and stops at the first of another turn, so it reads that turn's records alone, never the older ones.
+ */
 export function endedTurn(activities: readonly AgentActivity[] | undefined): { readonly records: readonly AgentActivity[]; readonly startedAt: number | undefined } {
-  if (!activities?.length) return { records: [], startedAt: undefined }
-  let turn: AgentActivity | undefined
-  for (const record of activities) if (record.kind === 'turn' && (!turn || record.sequence >= turn.sequence)) turn = record
-  const turnId = turn?.turnId ?? activities.at(-1)!.turnId
-  const records = activities.filter(record => record.turnId === turnId)
-  const started = turn?.startedAt ?? records.reduce<string | undefined>((first, record) => record.startedAt !== undefined && (first === undefined || record.startedAt < first) ? record.startedAt : first, undefined)
+  const turnId = activities?.at(-1)?.turnId
+  if (!activities || turnId === undefined) return { records: [], startedAt: undefined }
+  const records: AgentActivity[] = []
+  let started: string | undefined, turnStarted = false
+  for (let index = activities.length - 1; index >= 0; index--) {
+    const record = activities[index]!
+    if (record.turnId !== turnId) break
+    records.push(record)
+    if (record.startedAt !== undefined && (record.kind === 'turn' || started === undefined || record.startedAt < started) && !(turnStarted && record.kind !== 'turn')) { started = record.startedAt; turnStarted ||= record.kind === 'turn' }
+  }
   const startedAt = started === undefined ? undefined : Date.parse(started)
-  return { records, startedAt: Number.isFinite(startedAt) ? startedAt : undefined }
+  return { records: records.reverse(), startedAt: Number.isFinite(startedAt) ? startedAt : undefined }
 }
 
 /** The pull request URLs the `gh pr create` commands among `records` printed. */

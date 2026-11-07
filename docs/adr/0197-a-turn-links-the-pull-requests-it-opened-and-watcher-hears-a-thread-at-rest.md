@@ -17,20 +17,22 @@ A second gap sat behind the first. A watched thread whose turn ended with CI sti
 
 ## Decision
 
-**1. A turn's end links the pull requests it opened, as created from the thread.** As a thread's turn ends, its host reads that turn's records and reply:
+**1. A turn's end links the pull requests it opened, as created from the thread.** As a thread's turn ends, its host reads that turn's records and reply for candidates:
 
-- the URLs that a `gh pr create` the turn ran printed, in its output or error, are the pull requests it opened, or the one that already existed for its branch;
-- a GitHub pull request URL its reply names counts only if GitHub says that pull request was opened during the turn, from two minutes before its start for clock drift on. A reply that cites another lane's pull request, or an old one, links nothing.
+- the URLs that a `gh pr create` the turn ran printed, in its output or error;
+- the GitHub pull request URLs its reply names.
 
-Each is read through `gh` first, as **Link pull request** reads one, and linked with the source `created`, which the Pull request surface already shows as **Created from this thread**. It adds no source, so no host or client changes its schema. At most five URLs are read per turn, and a pull request already linked is not read again. Only the newest turn's records and reply are read, never the thread's history. Watcher's own threads and council judges link nothing.
+A candidate counts only if GitHub says that pull request was opened during the turn, from two minutes before its start for clock drift on. A reply that cites another lane's pull request or an old one, or a command that printed another after its `gh pr create` (`gh pr create && gh pr view 99`), links nothing. The pull request that already existed for the branch, which `gh pr create` prints when it refuses, is the branch's own and is found by decision 2. A turn whose records say nothing of when it began links nothing.
 
-**2. A turn's end asks GitHub for its branch's own pull request.** A thread on a pushed branch other than the default, with a remote, has the remote half of its status read as the timer's background read, under the same rules: a fresh answer is not asked again, and the rate-limit reserve and pause hold (#820). It runs off the update path and outside the thread's lane.
+Each candidate is read through `gh`, as **Link pull request** reads one, and one opened during the turn is linked with the source `created`, which the Pull request surface already shows as **Created from this thread**. It adds no source, so no host or client changes its schema. At most five URLs are read per turn, and a pull request already linked is not read again. Only the newest turn's records, walked back from the newest until another turn's, and its reply are read, never the thread's history. Watcher's own threads and council judges link nothing.
+
+**2. A turn's end asks GitHub for its branch's own pull request.** A thread whose last Git read found a branch other than the default, with a remote, has the remote half of its status read as the timer's background read, under the same rules: a fresh answer is not asked again, and the rate-limit reserve and pause hold (#820). It runs off the update path and outside the thread's lane.
 
 **3. The pull request read names when it was opened.** `createdAt` joins the pull request detail as an optional field, which an earlier host or client leaves out or ignores.
 
 **4. At-rest news.** A watched thread at rest for twenty minutes (`WATCHER_AT_REST_MS`, quiet's twenty minutes) with a pull request of its own still open brings Watcher one news line, `at-rest`. At rest means connected, a turn has ended, nothing is running, no sub-agent is working, no work is unknown and nothing waits on the user. The twenty minutes run from the thread's last progress, as quiet's do. The line says the thread is at rest with a pull request open, and its detail lists each open pull request with how its checks stand.
 
-It is told once for each state: the newest turn, and each open pull request's head and whether its checks have finished. The same state is not told again, after a restart too, since the event's ID is that state. A new turn, a new head or checks that finish while the thread still rests is a new state, told once more. News that stops being true before it goes, because the thread began a turn or its pull request merged, does not go. A thread that never ran a turn brings none.
+It is told once for each state: the newest turn, and each open pull request's head, how its checks were last read and whether they have finished. A failed check is not finished while another still runs, and a read growing old is no new state. The same state is not told again, after a restart too, since the event's ID is that state. A new turn, a new head or checks that finish while the thread still rests is a new state, told once more. News that stops being true before it goes, because the thread began a turn or its pull request merged, does not go. A thread that never ran a turn brings none.
 
 It is ordinary news (the twenty-second batch) and a wake, alongside quiet in #2226's set of news Watcher must act on. Its words grant nothing and approve no merge.
 
@@ -40,4 +42,5 @@ It is ordinary news (the twenty-second batch) and a wake, alongside quiet in #22
 - The Pull request surface lists those pull requests under **Linked pull requests** as **Created from this thread**, the same as one the Git action made.
 - A turn that runs `gh pr create`, or names a new pull request in its reply, makes one more `gh` read per pull request at its end. A turn on a pushed branch may make one batched branch lookup and one fetch, both kept fresh as the timer's are.
 - Two lanes that open pull requests at the same moment can each name the other's in a reply and both be linked to it. That needs the reply to cite a pull request opened during its own turn, which is rare, and **Unlink from thread** undoes it.
+- A thread whose folder Sotto has never read, or whose last read found it on the default branch before its turn switched branch in the shell, is not asked about its branch at that turn's end; it is at the next, once a read has seen the branch.
 - At-rest news says nothing of a thread at rest with no pull request open, however much its reply says it has still to do, or of a workflow-dispatch run (#2260). Those need a signal Sotto can read, which this change does not add. A watched thread whose turn failed is #2234's **work left** (PR #2264), which restarts it; at-rest news is for a turn that ended and left a pull request waiting.
