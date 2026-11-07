@@ -235,7 +235,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line__on::after {
   content: '\2192'; display: grid; place-items: center; width: 3ch; box-sizing: border-box; border-radius: var(--tt-radius-tag);
   background: linear-gradient(var(--changes-over), var(--changes-over)), linear-gradient(var(--changes-fill), var(--changes-fill)), var(--tt-surface-sunken);
-  color: var(--tt-text-muted); font-family: var(--tt-font-ui); cursor: pointer; transition: color 120ms ease;
+  color: var(--tt-text-muted); font-family: var(--tt-font-ui); transition: color 120ms ease;
 }
 :is(.changes-line, .changes-split__cell):hover .changes-line__on::after { color: var(--tt-text-2); }
 /* On a picked line the accent's wash would sink the muted ink, so the arrow takes the body's, as the numbers do. */
