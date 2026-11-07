@@ -3161,6 +3161,21 @@ msgstr ""
 msgid "Copy the code {code}"
 msgstr ""
 
+#. The accessible name of the button that copies the command an opened step ran.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Copy the command"
+msgstr ""
+
+#. The accessible name of the button that copies what an opened step printed.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy the output"
+msgstr ""
+
+#. Copies what an opened step printed, once all of it has arrived.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy the output, once the rest arrives"
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Copy works once the rest arrives"
 msgstr ""

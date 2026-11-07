@@ -332,14 +332,18 @@ const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly r
   </ol>
 })
 
-/** The open row says a one-line command whole, and this copies it from the end of the command's line, since a row's words cannot be selected. */
+/**
+ * Copies an opened step's command from the end of the command's line: in the row for a command with no description, whose words
+ * cannot be selected, and beside the command that heads the well (Zach kept it on November 7, 2026, ADR-0134).
+ */
 function CopyCommand({ command }: { readonly command: string }): ReactNode {
   const { t } = useLingui()
   const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
   const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
-  const name = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
+  const name = t({ message: 'Copy the command', comment: 'The accessible name of the button that copies the command an opened step ran.' })
+  const tip = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
   return <span className="thread-activity__copy-command">
-    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={name} onClick={copy}>
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={tip} onClick={copy}>
       {outcome === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
     </button>
     <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
@@ -351,12 +355,16 @@ const OUTPUT_LINES = 12
 
 /**
  * An opened command's well: the command heads what came back, in the same fill with no box inside it, and long lines wrap
- * under a hanging indent (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The command is text
- * here rather than part of the row's button, so it can be selected; with nothing printed, Copy in the well's corner copies it.
+ * under a hanging indent (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The command keeps its
+ * own Copy beside it, and what came back has Copy in the well's corner; with nothing printed, the corner's Copy copies the
+ * command.
  */
 function StepWell({ command, children }: { readonly command?: string | undefined; readonly children?: ReactNode }): ReactNode {
   return <div className="thread-activity__well">
-    {command ? <p className="thread-activity__well-command" dir="ltr"><code>{command}</code></p> : null}
+    {command ? <div className="thread-activity__well-head" dir="ltr">
+      <p className="thread-activity__well-command"><code>{command}</code></p>
+      {children ? <CopyCommand command={command} /> : null}
+    </div> : null}
     {children ?? (command ? <CopyCommand command={command} /> : null)}
   </div>
 }

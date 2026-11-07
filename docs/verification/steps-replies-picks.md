@@ -8,9 +8,13 @@ Zach picked B for all four items of `sotto-council/prototypes/followups/steps.ht
 
 ![After: the command heads the well, lines wrap under a hanging indent, twelve lines, then Show 26 more lines](../../artifacts/steps-replies-picks/after-step-output-dark-1600.png)
 
+![After, light at 1600](../../artifacts/steps-replies-picks/after-step-output-light-1600.png)
+
+![After, dark at the 820 minimum](../../artifacts/steps-replies-picks/after-step-output-dark-820.png)
+
 ![After, light at the 820 minimum: the same well, two comment lines wrapping](../../artifacts/steps-replies-picks/after-step-output-light-820.png)
 
-The row says only what the step was for. Under it, `cat src/main/agents/publishWindows.ts` heads the output in the same fill, over a hairline, with Copy in the well's corner. Nothing runs off the right at any size, and there is no sideways scroll bar. The twelve lines are whole lines: the two that wrap at 820 still count as one each. **Show 26 more lines** sits under the well.
+The row says only what the step was for. Under it, `cat src/main/agents/publishWindows.ts` heads the output in the same fill, over a hairline. Beside the command is its own Copy, named "Copy the command", which Zach kept on November 7, 2026. Copy in the well's corner is named "Copy the output". Both are the same size and ink, and at 820 the command's Copy stays clear of the corner's. Nothing runs off the right at any size, and there is no sideways scroll bar. The twelve lines are whole lines: the two that wrap at 820 still count as one each. **Show 26 more lines** sits under the well.
 
 ## 2. Code in replies wraps
 

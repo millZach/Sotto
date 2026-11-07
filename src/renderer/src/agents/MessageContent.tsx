@@ -318,9 +318,13 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
         {BLOCK_RUN[runState].icon}<span>{i18n._(BLOCK_RUN[runState].text)}</span>
       </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
-        aria-label={cut
-          ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
-          : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
+        aria-label={language === 'output'
+          // What an opened step printed, in its well beside the command's own Copy, so the name says which it copies.
+          ? cut ? t({ message: 'Copy the output, once the rest arrives', comment: 'Copies what an opened step printed, once all of it has arrived.' })
+            : t({ message: 'Copy the output', comment: 'The accessible name of the button that copies what an opened step printed.' })
+          : cut
+            ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
+            : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
         title={cut ? t`Copy works once the rest arrives` : t`Copy code`} onClick={copy}>
         {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>

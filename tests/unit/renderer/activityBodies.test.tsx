@@ -46,7 +46,7 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     expect(fetchBody).toHaveBeenCalledExactlyOnceWith({ threadId: 'remote:thread', activityId: 'test' })
     expect(screen.getByText('Getting earlier lines from forge…')).toBeInTheDocument()
     expect(screen.getByText('⋯ earlier lines are on forge')).toBeInTheDocument()
-    const copy = screen.getByRole('button', { name: 'Copy output code, once the rest arrives' })
+    const copy = screen.getByRole('button', { name: 'Copy the output, once the rest arrives' })
     expect(copy).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(/passed 299/u)).toBeInTheDocument()
     expect(screen.queryByText(/passed 0\./u)).toBeNull()
@@ -55,7 +55,7 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     expect(screen.getByText(/passed 0\./u)).toBeInTheDocument()
     expect(screen.queryByText('Getting earlier lines from forge…')).toBeNull()
     expect(screen.queryByText('⋯ earlier lines are on forge')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Copy output code' })).not.toHaveAttribute('aria-disabled')
+    expect(screen.getByRole('button', { name: 'Copy the output' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('opens held output at its end, before and after the rest arrives', async () => {
@@ -193,7 +193,7 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     const user = userEvent.setup()
     render(<ActivityGroupView group={group([wholeTest])} live threadRunning={false} connected provider="Claude Code" />)
     await user.click(screen.getByRole('button', { name: /npm test|Bash/u }))
-    expect(screen.getByRole('button', { name: 'Copy output code' })).not.toHaveAttribute('aria-disabled')
+    expect(screen.getByRole('button', { name: 'Copy the output' })).not.toHaveAttribute('aria-disabled')
     expect(document.querySelector('[data-cut]')).toBeNull()
     expect(fetchBody).not.toHaveBeenCalled()
   })

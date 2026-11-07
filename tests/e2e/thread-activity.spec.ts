@@ -101,7 +101,7 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await expect(details.getByLabel('command code block')).toHaveCount(0)
     await expect(details.getByLabel('output code block')).toContainText('wavStream.ts:24')
     await expect(search).toContainText('Reported by Codex')
-    await details.getByRole('button', { name: 'Copy output code' }).click()
+    await details.getByRole('button', { name: 'Copy the output' }).click()
     await expect.poll(() => app.evaluate(() => (globalThis as unknown as { activityFixture: { copied: string[] } }).activityFixture.copied.at(-1))).toContain('wavStream.ts:46')
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)

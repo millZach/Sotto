@@ -147,12 +147,17 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__well { position: relative; justify-self: stretch; min-width: 0; border-radius: var(--tt-radius-inset); background: var(--tt-code-bg); }
 .thread-activity__well:has(.rich-code__scroll:focus-visible) { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
 .thread-activity__well .rich-code:has(> .rich-code__body > .rich-code__scroll:focus-visible) { outline: none; }
+/* The well's top line: the command, then its own Copy beside it, the corner Copy's size and ink, and clear of the corner. */
+.thread-activity__well-head { display: flex; align-items: flex-start; gap: 4px; padding: 3px 48px 0 14px; }
 .thread-activity__well-command {
-  margin: 0; padding: 9px 44px 6px 14px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5;
+  flex: 0 1 auto; min-width: 0; margin: 0; padding: 6px 0; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere; text-indent: 4ch hanging each-line;
 }
 .thread-activity__well-command code { font: inherit; }
-.thread-activity__well-command + .rich-message { border-top: 1px solid var(--tt-hairline); }
+.thread-activity__well-head > .thread-activity__copy-command { position: static; flex: none; translate: none; }
+.thread-activity__well-head .thread-activity__copy { width: 32px; height: 32px; border-radius: var(--tt-radius-sm); }
+.thread-activity__well-head .thread-activity__copy svg { width: 15px; height: 15px; }
+.thread-activity__well-head + .rich-message { margin-top: 3px; border-top: 1px solid var(--tt-hairline); }
 /* With nothing printed, Copy in the well's corner copies the command. */
 .thread-activity__well > .thread-activity__copy-command { top: 5px; right: 8px; left: auto; translate: none; }
 .thread-activity__details .rich-code[data-language='output'] { border: 0; border-radius: 0; background: transparent; }
@@ -169,7 +174,7 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__status:not(:empty) { padding-left: 8px; }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 9px 44px 12px 14px; max-height: calc(12lh + 21px); }
-.thread-activity__details .thread-activity__well-command + .rich-message .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 8px 44px 10px 14px; }
+.thread-activity__details .thread-activity__well-head + .rich-message .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 8px 44px 10px 14px; }
 /* What a finished command printed shows whole, or, when it is long, its first twelve lines and a press under the well that
    says how many more there are. The well never scrolls up and down inside the transcript's own scroll. */
 .thread-activity__output { display: grid; justify-items: start; gap: 2px; min-width: 0; }
