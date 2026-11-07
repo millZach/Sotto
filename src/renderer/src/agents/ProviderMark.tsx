@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react'
-import type { ProviderId } from '../../../shared/agents'
+import { providerIdOfLabel, type ProviderId } from '../../../shared/agents'
 import hermesBlack from '../assets/providers/hermes-black.png'
 import hermesWhite from '../assets/providers/hermes-white.png'
 
@@ -53,6 +53,7 @@ const MARKS: Readonly<Partial<Record<ProviderId, { readonly viewBox: string; rea
 
 /** A provider's recognizable mark; unknown providers get their initial. Decorative: callers name the provider in text. */
 export function ProviderMark({ provider, name, size = 14 }: { readonly provider: ProviderId | undefined; readonly name: string; readonly size?: number }): ReactNode {
+  provider ??= providerIdOfLabel(name)
   if (provider === 'hermes') {
     return <span className="provider-mark provider-mark--hermes" data-provider={provider} style={{ width: size, height: size }} aria-hidden="true">
       <img className="provider-mark__on-light" src={hermesBlack} alt="" draggable={false} />

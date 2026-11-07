@@ -30,6 +30,8 @@ describe('the provider a model label names', () => {
     expect(providerIdOfLabel('CODEX')).toBe('codex')
     expect(providerIdOfLabel('Grok Build')).toBe('grok')
     expect(providerIdOfLabel('Devin')).toBe('devin')
+    expect(providerIdOfLabel('DeepSeek')).toBe('deepseek')
+    expect(providerIdOfLabel('DeepSeek Harness')).toBe('deepseek')
   })
   it('is nothing for any other label', () => {
     expect(providerIdOfLabel('Anthropic')).toBeUndefined()

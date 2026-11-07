@@ -1010,7 +1010,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness', hermes: 'Hermes',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1024,6 +1024,8 @@ export function providerConnectionNotice(state: Pick<AgentState, 'host' | 'confi
 /** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
 export function providerIdOfLabel(label: string): ProviderId | undefined {
   const name = label.trim().toLowerCase()
+  // Older saved catalogs used the client's full name. Keep their provider identity after the display rename.
+  if (name === 'deepseek harness') return 'deepseek'
   return providerIdSchema.options.find(id => id === name || PROVIDER_LABELS[id].toLowerCase() === name)
 }
 export const agentConfigurationSchema = z.object({
