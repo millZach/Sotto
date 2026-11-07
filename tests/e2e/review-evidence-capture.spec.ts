@@ -1595,12 +1595,13 @@ async function captureWatcherControls(out: string): Promise<void> {
     }
     await room.shoot('watcher-answered-hover', 'The pointer on the line that replaced the answered card.', scene, { before: onAnswered })
     const onSettings = async (): Promise<void> => {
-      const link = pane.locator('.watcher-head__way .thread-nav__page[href="#settings"]')
+      // The row of icons stands in Watcher's footer at the bottom left (ADR-0152's Watcher footer), not in its header.
+      const link = page.locator('.watcher-foot .thread-nav__page[href="#settings"]')
       const box = (await link.boundingBox())!
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
       await page.waitForTimeout(900)
     }
-    await room.shoot('watcher-way-tip', 'The pointer resting on Settings in the header\'s row of icons.', scene, { before: onSettings })
+    await room.shoot('watcher-way-tip', 'The pointer resting on Settings in the footer\'s row of icons.', scene, { before: onSettings })
     // Back up the conversation, then two replies arrive.
     await page.mouse.move(0, 0)
     await log.evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
