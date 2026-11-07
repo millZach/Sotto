@@ -157,3 +157,29 @@ test('a sent message ends at its words and shows its control just under its corn
     await expect(control.locator('.thread-message__copy-label')).toHaveText('Copied')
   } finally { await app.close() }
 })
+
+// Zach, November 7, 2026: a click on a sent message's copy did nothing while a reply's copied. The bubble's hover
+// reach over the gap lay on top of the control there, so the pointer pressed the bubble instead of the button.
+test('a click on a sent message\'s control copies it', async () => {
+  const { app, page } = await launch()
+  try {
+    const bubble = transcript(page).locator('.thread-message[data-role="user"]:not([data-from])').first()
+    const control = bubble.getByRole('button', { name: 'Copy message as Markdown' })
+    await bubble.scrollIntoViewIfNeeded()
+    await bubble.hover()
+    await expect(control).toHaveCSS('opacity', '1')
+    // What the pointer finds at the control's middle is the control, not something drawn over it.
+    const box = (await control.boundingBox())!
+    const hit = await page.evaluate(({ x, y }) => {
+      const element = document.elementFromPoint(x, y)
+      return element?.closest('.thread-message__copy') ? 'control' : `${element?.tagName.toLowerCase()}.${element?.className}`
+    }, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    expect(hit).toBe('control')
+    // A real pointer press at that spot, not one Playwright steers to the button itself.
+    const before = (await copied(app)).length
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(control.locator('.thread-message__copy-label')).toHaveText('Copied')
+    await expect.poll(async () => (await copied(app)).length).toBe(before + 1)
+    expect((await copied(app)).at(-1)).toBe('The WAV preview stalls after two seconds. Find out why, fix it and run the tests.')
+  } finally { await app.close() }
+})
