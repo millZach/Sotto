@@ -88,4 +88,14 @@ describe('the sidebar frame in the stylesheets', () => {
     // A container as the sidebar is, so its top row answers the container queries on the sidebar's width the same way.
     expect(styleOf(settings, '.settings-view .settings-sidebar').get('container')).toBe('thread-sidebar / inline-size')
   })
+
+  it("keeps every thread row's name on one line, cut with an ellipsis, at every sidebar width", () => {
+    // Zach asked for one line on November 7, 2026: no rule, in any container query, lets a row's name wrap or clamp to two.
+    const titles = [...sidebar, ...chrome].filter(rule => rule.selectors.some(selector => selector.includes('.thread-nav__title')))
+    const wraps = titles.filter(rule => rule.declarations.get('white-space') === 'normal' || rule.declarations.has('-webkit-line-clamp')
+      || rule.declarations.has('line-clamp') || rule.declarations.has('overflow-wrap'))
+    expect(wraps.map(rule => rule.selectors.join(', '))).toEqual([])
+    const name = styleOf(sidebar, '.thread-nav__row--details .thread-nav__title')
+    expect([name.get('white-space'), name.get('overflow'), name.get('text-overflow')]).toEqual(['nowrap', 'hidden', 'ellipsis'])
+  })
 })
