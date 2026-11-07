@@ -104,11 +104,27 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     // A width change or repaint can replace the cells; never preserve an unrelated selection.
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
+  // True while find() drives the addon. Any other change of results is the addon counting again on its own.
+  let finding = false
   const resultChanges = addon.onDidChangeResults(result => {
     results = { resultIndex: result.resultIndex, resultCount: result.resultCount }
     showCount()
     previous.disabled = next.disabled = result.resultCount === 0
-    if (result.resultIndex >= 0) rememberSelection()
+    if (result.resultIndex < 0) return
+    if (!finding && selected && selected.term === input.value) {
+      // The addon counts again 200 ms after output stops, from wherever the selection sits. Reopening the drawer
+      // resizes its grid, and ConPTY's repaint can draw the lines a row away from where xterm reflowed them, leaving
+      // the selection over another match. That count made the other match current, so Enter seemed to do nothing
+      // (#1125). Put the remembered match back and count from it instead.
+      const chosen = terminal.getSelectionPosition()
+      restoreSelection()
+      const kept = terminal.getSelectionPosition()
+      if (selected && kept && (kept.start.x !== chosen?.start.x || kept.start.y !== chosen.start.y)) {
+        queueMicrotask(() => { if (!bar.hidden) find(false, true) })
+        return
+      }
+    }
+    rememberSelection()
   })
   const resizeChanges = terminal.onResize(restoreSelection)
   let paintedDecorations = ''
@@ -136,14 +152,17 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     paintedDecorations = JSON.stringify(decorations)
     const options = { incremental, decorations }
     restoreSelection()
-    if (rebuildHighlights) {
-      rebuildHighlights = false
-      addon.clearDecorations()
-      // Repainted result positions must be rebuilt at the retained match before navigation advances.
-      if (selected && selected.term === input.value && !incremental) addon.findNext(input.value, { incremental: true, decorations })
-    }
-    if (backwards) addon.findPrevious(input.value, options)
-    else addon.findNext(input.value, options)
+    finding = true
+    try {
+      if (rebuildHighlights) {
+        rebuildHighlights = false
+        addon.clearDecorations()
+        // Repainted result positions must be rebuilt at the retained match before navigation advances.
+        if (selected && selected.term === input.value && !incremental) addon.findNext(input.value, { incremental: true, decorations })
+      }
+      if (backwards) addon.findPrevious(input.value, options)
+      else addon.findNext(input.value, options)
+    } finally { finding = false }
   }
   const hide = (): void => { bar.hidden = true; selected?.marker.dispose(); selected = undefined; rebuildHighlights = false; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
   input.addEventListener('input', () => find(false, true))
