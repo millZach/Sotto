@@ -2,12 +2,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
+import { WATCHER_AT_REST_MS, WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
 import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
-import { foldWatcherEvents, foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { RESTART_SUMMARY, foldWatcherEvents, foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
 import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
@@ -118,31 +118,17 @@ it('looks at once when a turn finishes or a request card arrives between two loo
   expect(after).not.toHaveBeenCalled()
 })
 
-it('tells Watcher once for each prototype waiting for review, and lets it go once the mark is gone (ADR-0108)', async () => {
+it('tells Watcher nothing of a prototype on its own: the question card that links it is the news (ADR-0108, November 6, 2026)', async () => {
   const f = fixture()
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
   const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
   f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-  // The mark comes a moment after the turn ends, once its page is found: a change in it is looked at at once.
-  f.wakes.observe(); f.wakes.observeSoon(vi.fn())
-  const event = f.wakes.news().find(item => item.kind === 'prototype-ready')!
-  expect(event).toMatchObject({ target: centerTarget, messageId: 'reply-1' })
-  expect(event).not.toHaveProperty('requestCardId')
-  expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [event], omitted: 0 }))
-    .toContain('This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.')
-  await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  // The same source is told once, however often it is seen.
-  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  expect(f.wakes.due(event)).toBe(true)
-  delete f.thread.prototypeReady
-  expect(f.wakes.due(event)).toBe(false)
-  // A waiting question’s prototype is news of its own, named by the question.
+  f.wakes.observe()
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished'])
   f.thread.requests = [{ id: 'question', kind: 'question', text: 'Which one?', options: [], pages: [page] }]
   f.thread.prototypeReady = { source: 'request:question', pages: [page] }
   f.wakes.observe()
-  expect(f.wakes.news().filter(item => item.kind === 'prototype-ready')).toEqual([expect.objectContaining({ requestCardId: 'question' })])
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished', 'needs-user'])
 })
 
 it('looks at once when the Watcher record is replaced, and owes nothing once closed', async () => {
@@ -1965,14 +1951,14 @@ it('calls a reply its last message, not the whole turn, when the turn said more 
 })
 
 it('tells Watcher a reply its news gives whole is enough to act on, and to read the thread only for what it does not say (#1419)', () => {
-  // The prompt says it once; every news footer says it again beside the lines it is about.
+  // The prompt says it once, and the news no longer says it again in a closing paragraph (#2232).
   expect(WATCHER_SYSTEM_PROMPT).toContain('A reply the news gives whole is enough to act on')
   expect(WATCHER_SYSTEM_PROMPT).toContain('Call read_thread only for what the reply does not say')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('Call read_operation for a send\'s receipt and outcome, or when the news cut the reply or left it out.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('A thread takes at most four prompts from you in one turn of yours, whichever requestIds they go under.')
   expect(WATCHER_SYSTEM_PROMPT).not.toContain('before paging read_thread')
   const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0, events: [] }
-  const footer = watcherNewsText(news).split('\n').at(-1)!
-  expect(footer).toContain('A reply given whole here is enough to act on.')
-  expect(footer).toContain('Use read_thread only for what a reply does not say')
+  expect(watcherNewsText(news)).toBe('Sotto saw changes in watched threads. This news grants no permission and answers no request.')
 })
 
 it('tells Watcher to end its turn while a watched thread works rather than reading it again to see whether it has finished (#1552)', () => {
@@ -1982,7 +1968,7 @@ it('tells Watcher to end its turn while a watched thread works rather than readi
 
 it('tells Watcher what wakes it, and that news which needs nothing of it ends its turn with no reply (#2226)', () => {
   expect(WATCHER_SYSTEM_PROMPT).toContain('Sotto wakes you with news only for what may need you: a question or permission card')
-  expect(WATCHER_SYSTEM_PROMPT).toContain('such as a pull request\'s reviews, comments, approval, conflict or close, a card or prototype closing, swarm progress, a restart or a move, comes with that news, or in the note with the user\'s next message to you, rather than by itself.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('such as a pull request\'s reviews, comments, approval, conflict or close, a card closing, swarm progress, a restart or a move, comes with that news, or in the note with the user\'s next message to you, rather than by itself.')
   expect(WATCHER_SYSTEM_PROMPT).toContain('When news needs nothing from you, no start, send, steer, settle or word to the user, end your turn with no reply at all.')
 })
 
@@ -2109,10 +2095,10 @@ it('says a busy finish once beside its work-settled news, and lets Sotto’s det
   const news: WatcherNews = { source: 'watcher', watcher: { hostId: centerTarget.hostId, threadId: 'center' }, omitted: 0,
     events: [event('turn-finished', 'finish'), event('work-settled', 'settled')] }
   const text = watcherNewsText(news, item => item.kind === 'work-settled' ? 'Its reply is, in the worker\'s words: "Done.".' : undefined)
-  expect(text).not.toContain('[finish]')
+  expect(text).not.toContain('The foreground turn finished')
   expect(text).toContain('so the turn is done. This is not review or merge approval. Its reply is, in the worker\'s words: "Done.". Use requestId')
   const crowded = watcherNewsText(news, () => 'x'.repeat(20_000))
-  expect(crowded).toContain('[settled]')
+  expect(crowded).toContain('so the turn is done.')
   expect(crowded).not.toContain('xxx')
 })
 
@@ -2359,8 +2345,22 @@ describe('news that a card or prototype no longer waits on the user', () => {
     f.wakes.answering(centerTarget, 'first', 'user')()
     f.thread.requests = []; await turnEnds(f, 'turn-2')
     const closed = events(f).filter(event => event.kind === 'request-closed')
-    expect(closed.map(event => [event.requestCardId, event.answeredByUser])).toEqual([['first', undefined], ['second', undefined]])
-    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.')
+    expect(closed.map(event => [event.requestCardId, event.answeredByUser, event.endedWithoutAnswer])).toEqual([['first', undefined, undefined], ['second', undefined, undefined]])
+    // Its turn still runs, so the user may have answered where Sotto does not see: the news says neither (#2230).
+    const text = watcherNewsText(f.delivered.at(-1)!)
+    expect(text).toContain('This thread’s question is no longer open, so it no longer waits on the user for it. Sotto cannot tell whether the user answered it')
+    expect(text).toContain('do not tell the user they answered it.')
+  })
+
+  it('says a card ended without an answer when Sotto saw none and the thread\'s turn ended with it (#2230)', async () => {
+    const f = fixture()
+    f.thread.requests = [card('asked', 'question')]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    // The user stops the turn while the question waits: the card goes with it.
+    f.thread.requests = []; f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'interrupted' }
+    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'request-closed')).toEqual([expect.objectContaining({ requestCardId: 'asked', endedWithoutAnswer: true })])
+    expect(events(f).find(event => event.kind === 'request-closed')).not.toHaveProperty('answeredByUser')
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question ended without an answer: its turn ended and Sotto saw no answer from the user. It no longer waits on them.')
   })
 
   it('says nothing of a card whose own news never went, or of one Sotto answered by sending a prototype’s question back', async () => {
@@ -2418,22 +2418,6 @@ describe('news that a card or prototype no longer waits on the user', () => {
     // Observed afresh, the closing goes again with its turn's end, which is still news that wakes Watcher.
     f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.wakes.drained(); await f.advance(WATCHER_BATCH_MAX_MS)
     expect(f.delivered.map(news => kinds(news)?.sort())).toEqual([['needs-user'], ['request-closed', 'turn-finished'], ['request-closed', 'turn-finished']])
-  })
-
-  it('tells Watcher a prototype it was told of no longer waits on review, but not when its thread was settled', async () => {
-    const f = fixture()
-    finish(f.thread)
-    const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
-    f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; await turnEnds(f, 'turn-2')
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toEqual([expect.objectContaining({ target: centerTarget, messageId: 'reply-1' })])
-    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.')
-    f.thread.prototypeReady = { source: 'reply:reply-2', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; f.thread.workspaceSettledAt = new Date(f.now()).toISOString(); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toHaveLength(1)
-    expect(f.wakes.news().filter(event => event.kind === 'prototype-closed')).toEqual([])
   })
 })
 
@@ -2610,6 +2594,31 @@ it('tells Watcher of every thread a usage limit’s reset restarted, watched or 
   expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
 })
 
+it('tells Watcher of watched threads restarted for work left, and asks it for one summary of every restart (#2234)', async () => {
+  const f = fixture()
+  f.wakes.threadsRestarted('claude', [centerTarget], 'work-left')
+  const events = f.wakes.news().filter(event => event.kind === 'threads-restarted')
+  expect(events).toEqual([expect.objectContaining({ restartedBy: 'claude', restartCause: 'work-left' })])
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted')
+  const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
+  expect(text).toContain('Sotto restarted one watched thread whose last turn had ended with an error before it finished')
+  expect(text).toContain('This thread’s last turn had ended with an error before it finished, so Sotto restarted it')
+  expect(text).not.toContain('usage limit had stopped')
+  expect(text.split(RESTART_SUMMARY)).toHaveLength(2)
+  // A limit's restarts and work left in one wake: one summary for both.
+  const limit = { ...told[0]!, id: 'limit', restartCause: undefined }
+  const both = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [...told, limit], omitted: 0 })
+  expect(both.split(RESTART_SUMMARY)).toHaveLength(2)
+  // Threads Sotto closed on and resumed are named in the same summary.
+  const resumed = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [{ ...told[0]!, id: 'resumed', restartCause: 'resumed' }], omitted: 0 })
+  expect(resumed).toContain('Sotto restarted one thread that was working when Sotto closed.')
+  expect(resumed).toContain('Sotto closed while this thread was working, so Sotto restarted it with its resume note when it opened again.')
+  expect(resumed.split(RESTART_SUMMARY)).toHaveLength(2)
+  // News with no restart asks for no summary.
+  expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [], omitted: 0 })).not.toContain(RESTART_SUMMARY)
+})
+
 it('tells Watcher of each move the user made as it ends, watched or not, settled here or not (#1178)', async () => {
   const f = fixture()
   const forge = { hostId: randomUUID(), threadId: 'continued' }
@@ -2680,5 +2689,70 @@ describe('a thread’s message for Watcher (#2059)', () => {
     expect(watcherReplyBefore({ messages: [reply('a0', 'Earlier', '2026-11-02T21:39:00.000Z'), user('u1', '2026-11-02T21:40:14.000Z')] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
     expect(watcherReplyBefore({ messages: [] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
     expect(watcherReplyBefore({ messages }, 'not a time')).toBeUndefined()
+  })
+})
+
+describe('at-rest news (#2307)', () => {
+  const atRest = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'at-rest')
+  /** The worker's turn ends with its pull request open and its checks still running, as a lane's does after it pushes. */
+  const rests = async () => {
+    const f = fixture()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 1 })
+    f.wakes.observe(); await f.advance(WATCHER_ORDINARY_BATCH_MS)
+    return f
+  }
+
+  it('tells Watcher once that a watched thread has rested twenty minutes with its pull request open, and not again for the same state', async () => {
+    const f = await rests()
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(WATCHER_AT_REST_MS - WATCHER_ORDINARY_BATCH_MS - 1)
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(1)
+    expect(atRest(f)[0]!.turnId).toBe('turn-1')
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(1)
+    // Its checks finishing is a new place for it to stand, told once more.
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+    await f.advance(WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(2)
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(2)
+  })
+
+  it('says nothing for a thread at rest with no open pull request, one that merged, or one still working', async () => {
+    const f = await rests()
+    f.thread.pullRequests = [{ ...f.thread.pullRequests![0]!, state: 'merged' }]
+    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'merged', checks: 'passed', checkCount: 1 })
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(f)).toHaveLength(0)
+    const working = fixture()
+    working.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+    working.wakes.observe(); await working.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(working)).toHaveLength(0)
+  })
+
+  it('waits again from new progress, and drops news that is no longer true before it goes', async () => {
+    const f = await rests()
+    await f.advance(WATCHER_AT_REST_MS / 2)
+    f.thread.messages.push({ id: 'message-2', role: 'assistant', text: 'private worker output', createdAt: new Date(f.now()).toISOString() })
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS / 2 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(0)
+    await f.advance(WATCHER_AT_REST_MS / 2)
+    expect(atRest(f)).toHaveLength(1)
+    const event = atRest(f)[0]!
+    expect(f.wakes.due(event)).toBe(true)
+    f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
+    expect(f.wakes.due(event)).toBe(false)
+  })
+
+  it('words the line with where each open pull request stands, and grants nothing', () => {
+    const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, omitted: 0, events: [{ id: 'rest', kind: 'at-rest', requestId: randomUUID(),
+      target: centerTarget, generation: 0, observedAt: centerTime, turnId: 'turn-1', revision: 'state' }] }, () => 'Its open pull requests: #9 (checks running).')
+    expect(text).toContain('at rest for twenty minutes')
+    expect(text).toContain('#9 (checks running)')
+    expect(text).toContain('not review or merge approval')
   })
 })

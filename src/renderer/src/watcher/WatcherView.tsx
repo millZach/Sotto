@@ -18,7 +18,7 @@ import { useAgents } from '../agents/AgentContext'
 import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
-import { SidebarFoot, SidebarRail } from '../agents/SidebarFrame'
+import { railWidth, SidebarFoot, SidebarRail } from '../agents/SidebarFrame'
 import { useSidebarSize } from '../agents/sidebarSize'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
@@ -48,6 +48,9 @@ import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
+import { WatcherHoldBand } from './WatcherHoldBand'
+import { TurnFailureWordsContext } from '../agents/OwnServerTurn'
+import { useRestartStopped } from '../agents/RestartStopped'
 import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
 import { BESIDE_FILE_ID, BESIDE_PANE_ID, BesideDivider, BesideLinkedFile, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
@@ -65,6 +68,7 @@ import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { TeamsPage } from './TeamsPage'
 import { placeTeammateMessages, useTeamsBridge, useTeamsState } from './teamsState'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
+import { focusWatcherQuestion, placeQuestions, WatcherQuestionMark } from './WatcherQuestions'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { useOrchestratingSpeed, useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
@@ -135,6 +139,7 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       {tabs}
+      {/* The total, as the owner's pick of November 6, 2026 shows it: the One strip's machines line already says how many work. */}
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
         aria-label={t`All threads, ${count}. Show the list`} title={t`All threads`} onClick={onToggleList}>
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
@@ -416,17 +421,26 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const teamsBridge = useTeamsBridge()
   const teamsState = useTeamsState(teamsBridge)
   const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates])
+  // Each GO MERGE that went while the merge train held its turn (#2229), with Watcher's reason, kept in memory as main keeps it.
+  const receiptOverrides = room?.state?.receiptOverrides
+  const overridesById = useMemo(() => receiptOverrides?.length ? new Map(receiptOverrides.map(({ operationId, ...override }) => [operationId, override] as const)) : undefined, [receiptOverrides])
+  // Watcher's own questions (#2228), where Watcher asked: the room hands the same list until one changes.
+  const ownQuestions = room?.state?.questions
+  const questionsPlaced = useMemo(() => ownQuestions?.length ? placeQuestions(messages, ownQuestions) : undefined, [messages, ownQuestions])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, overrides: overridesById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, overridesById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
+  // A turn of Watcher's that fails posts no reply while Restart stopped threads is on: the room's band is the one notice,
+  // with the error under its Details (#2234).
+  const failureWords = !useRestartStopped()
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
-  return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
+  return <TurnFailureWordsContext.Provider value={failureWords}><BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
     <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
         error={error} now={now} watcherHeader={header} watcherEmpty={empty}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
     </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
-  </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
+  </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider></TurnFailureWordsContext.Provider>
 }
 
 /** Room left above a failed turn's line when it is brought into view, so the line does not sit flush on the edge. */
@@ -441,8 +455,8 @@ const FAILURE_MARGIN_PX = 12
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
-  // What it waits on: its request's card, or the strip of a prototype waiting for review (ADR-0108).
-  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind], .prototype-ready') : null
+  // What it waits on: its request's card.
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
   if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return
@@ -518,6 +532,7 @@ export function WatcherView({ now: fixedNow }: {
   const command = agents.command
   const mac = app?.platform === 'darwin'
   const sidebar = useSidebarSize()
+  const railOn = useOwlFeature('sidebar-rail')
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
   const continued = useContinueEnabled()
@@ -687,6 +702,10 @@ export function WatcherView({ now: fixedNow }: {
     return found
   }, [placed, shownIds, rowFor])
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
+  // Watcher's own questions that still wait (#2228): they count in Needs you, and the list goes to their cards.
+  const roomQuestions = room?.state?.questions
+  const asked = useMemo(() => (roomQuestions ?? []).filter(question => question.state === 'open'), [roomQuestions])
+  const askedIds = useMemo(() => asked.map(question => question.id), [asked])
 
   // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
   const crossMachine = useOwlFeature('cross-machine-work')
@@ -703,10 +722,13 @@ export function WatcherView({ now: fixedNow }: {
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} tabs={tabs} />
-    {needs.length > 0 || crossMachine ? <div className="watcher-status">
-      {needs.length > 0 ? <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
+    {needs.length > 0 || asked.length > 0 || crossMachine ? <div className="watcher-status">
+      {needs.length > 0 || asked.length > 0 ? <WatcherGlance entries={needs} questions={asked} onQuestion={focusWatcherQuestion} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
       {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
     </div> : null}
+    {/* While Watcher's own provider is limited or failing, one band under the strip (#2234, Zach's pick A). */}
+    <WatcherHoldBand room={room} now={fixedNow} />
+    {askedIds.length > 0 ? <WatcherQuestionMark paneId={WATCHER_PANE_ID} open={askedIds} /> : null}
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>
@@ -726,19 +748,17 @@ export function WatcherView({ now: fixedNow }: {
   const sceneShown = roomOpen && (current === null || watcherRow !== undefined)
   const owls = useWatchedOwls(room?.state ?? null, state)
   // Watcher's own owl glows while something waits on the user (Zach, October 27, 2026): a question or permission of
-  // Watcher's own, or a thread in Needs you for a question, a permission or a prototype to review. A failed turn alone
-  // lights it no more than it lights a thread owl.
-  // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
-  // before a prototype that also waits.
-  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || needs.some(({ facts }) =>
-    facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
+  // Watcher's own, or a thread in Needs you for a question or a permission. A failed turn alone lights it no more than it
+  // lights a thread owl, and a prototype never does on its own (ADR-0108, November 6, 2026).
+  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || asked.length > 0 || needs.some(({ facts }) =>
+    facts.request !== undefined || facts.thread.requests.length > 0)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
   const linkedFile = state === null ? null : view.file
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.collapsed || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.chosenCollapsed || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -762,8 +782,10 @@ export function WatcherView({ now: fixedNow }: {
         </div>
       </div>
     </section>
-    <div className={`watcher-foot${sidebar.collapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.collapsed ? (mac ? 80 : 52) : sidebar.width }}>
-      {sidebar.collapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.collapse(false) }} /> : <SidebarFoot />}
+    {/* The footer follows only the user's own Collapse: a narrow window stands the Threads sidebar as the rail and opens it
+        over a thread, and this room has no thread to open it over, so its row keeps the bottom left at every width. */}
+    <div className={`watcher-foot${sidebar.chosenCollapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.chosenCollapsed ? railWidth(mac, railOn) : sidebar.width }}>
+      {sidebar.chosenCollapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.choose(false) }} /> : <SidebarFoot />}
     </div>
     <PageWindowControls />
     {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}

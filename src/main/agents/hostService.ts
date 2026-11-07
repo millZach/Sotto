@@ -11,7 +11,7 @@ import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentCon
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -29,7 +29,7 @@ import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
-import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
+import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -188,7 +188,7 @@ export interface HostService {
   subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
   setNextPromptsWanted?(wanted: boolean): void
   /** The host's threads reach this desktop's Watcher (`watcher-tell`): each message they send it, and the answer that says it got through. */
-  subscribeWatcherTell?(listener: (askId: string, ask: TellWatcherAsk) => void): () => void
+  subscribeWatcherTell?(listener: (askId: string, ask: WatcherTellPush) => void): () => void
   answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
   /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
   tellProductEventAnswer?(): void
@@ -219,6 +219,8 @@ export interface HostService {
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
    * threads say Needs attention until their next turn. */
   readonly supportsFailureSeen?: boolean
+  /** The Owl host owns snoozes and accepts snooze-thread (ADR-0175). */
+  readonly supportsThreadSnooze?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
@@ -295,6 +297,8 @@ export interface HostService {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press, for the Pull request surface. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** A folder's entries in a thread's working copy, for Files (ADR-0025, October 5 amendment). */
@@ -363,6 +367,7 @@ export function desktopPopupClient(user: string = localUser()): ClientIdentity {
 
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
+  readonly supportsThreadSnooze?: boolean
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
@@ -396,6 +401,8 @@ export interface LocalHostControl {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press, for the Pull request surface. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** The threads some client shows now, for the finished-unread mark (ADR-0046); true when a mark was cleared. */
   showThreads?(threadIds: readonly string[]): boolean
 }
@@ -536,6 +543,7 @@ export class LocalHostService implements HostService {
     if (!this.options.agentsView) throw new Error('The Agents view is unavailable on this host.')
     return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
   }
+  get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   get supportsBringBack(): boolean { return this.options.bringBack === true }
@@ -636,6 +644,10 @@ export class LocalHostService implements HostService {
   gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.control.gitPullRequest) return Promise.reject(new Error('Pull requests are unavailable on this host.'))
     return this.control.gitPullRequest(request)
+  }
+  gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    if (!this.control.gitPullRequestList) return Promise.reject(new Error('Pull requests are unavailable on this host.'))
+    return this.control.gitPullRequestList(request)
   }
   // The folder browser reads this machine, not the coordinator, so it goes straight to the filesystem
   // rather than through `LocalHostControl`.

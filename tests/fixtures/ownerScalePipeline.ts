@@ -439,7 +439,9 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   let roomRecords = 0
   const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: payload => { roomRecords += historyRecords(payload); return true } })
   const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
-  const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
+  // Made before the router, as main makes it, so each command reply is numbered as it is built (#306).
+  const broadcaster = new AgentStateBroadcaster()
+  const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { replyBuilt: broadcaster.replyBuilt, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
   watcher?.useRemoteHosts(router.watcherHosts())
   router.add({ hostId: localHostId, name: 'This computer', kind: 'local', service,
@@ -487,7 +489,6 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     undefined, dormant, () => requestDraftWatcherOwnerIds(control, () => workspace.dormantThreadIds(), router))
   await requestDrafts.start()
 
-  const broadcaster = new AgentStateBroadcaster()
   const statePublisher = coalesceAgentStatePublishes(next => {
     // Every published state asks for answer recovery, as main's does.
     router.scheduleRequestDraftReconcile(requestDrafts)

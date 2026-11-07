@@ -66,6 +66,7 @@ import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import type { BaseBranchChecks } from './watcherComputedState'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import { LimitRestart } from './limitRestart'
@@ -99,6 +100,7 @@ export interface AgentRuntimeOptions {
   watcherEnabled?: boolean
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
+  threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
   /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -254,6 +256,8 @@ export interface AgentRuntimeOptions {
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'pullRequestState' | 'log'> & {
     /** GitHub's open pull requests' branches, which Clear settled threads after asks before a thread goes (ADR-0140). */
     readonly openPullRequestBranches?: (repositoryRoot: string, github?: SharedGitHub) => Promise<ReadonlySet<string>>
+    /** The checks on the newest commit of a pull request's base branch, which Watcher asks once per GO MERGE (#2229). */
+    readonly baseBranchChecks?: (url: string, github?: SharedGitHub) => Promise<BaseBranchChecks>
   }
   /**
    * Babysitting (ADR-0061). `agentTool` is the desktop's switch, read live: while it is on, this computer's Claude Code,
@@ -422,7 +426,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -521,12 +525,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
-  const pullRequestState = options.worktreeCleanup?.pullRequestState
+  const pullRequestState = options.worktreeCleanup?.pullRequestState, baseBranchChecks = options.worktreeCleanup?.baseBranchChecks
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, ...options.teams ? { teamMessageGoing: () => options.teams!.userMessageGoing() } : {}, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...restartStopped ? { holdNews: true } : {}, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {},
+      ...baseBranchChecks && github ? { baseBranchChecks: (url: string) => baseBranchChecks(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},
@@ -710,7 +715,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const resumeSetting = (): boolean => restartStopped ? options.settings().restartStoppedThreads : options.settings().resumeThreadsAfterRestart
   const restartResume = options.resumeAfterRestart === true
     ? new RestartResume({ directory, control: agentControl, enabled: resumeSetting,
-      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id) }) : undefined
+      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id),
+      // Watcher hears the threads it resumed with the rest of a restart's news, for its one summary (#2234).
+      ...restartStopped && watcher ? { resumed: (threadId: string) => {
+        const hostId = agentControl.hostId(), provider = agentControl.liveThread(threadId)?.providerId
+        if (hostId && provider && threadId !== watcherThreadHere()) watcher.wakes.threadsRestarted(provider, [{ hostId, threadId }], 'resumed')
+      } } : {} }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: resumeSetting,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
@@ -724,10 +734,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     control: { host: () => agentControl.watcherSnapshot(), thread: id => agentControl.liveThread(id), deliverWakeUp: (id, news, given) => agentControl.deliverWakeUp(id, news, given) },
     enabled: () => options.settings().restartStoppedThreads, watcherThreadId: watcherThreadHere, tool: babysitTool,
     preservesDormantThread: id => agentHost.preservesDormantThread(id),
-    restarted: (provider, threadIds) => {
+    restarted: (provider, threadIds, cause) => {
       const hostId = agentControl.hostId(), own = watcherThreadHere()
-      if (watcher && hostId) watcher.wakes.threadsRestarted(provider, threadIds.filter(id => id !== own).map(threadId => ({ hostId, threadId })))
-    } }) : undefined
+      if (watcher && hostId) watcher.wakes.threadsRestarted(provider, threadIds.filter(id => id !== own).map(threadId => ({ hostId, threadId })), cause)
+    },
+    // Watched threads that stopped with work left are restarted once Sotto starts and when Watcher's limit resets (#2234),
+    // unless their queue or a resume note already carries them on.
+    ...watcher ? { watched: () => agentControl.hostId() ? watcher.watchedThreadIds() : undefined,
+      waiting: (id: string) => agentControl.hasQueuedFollowups(id) || restartResume?.resuming(id) === true } : {} }) : undefined
   if (limitRestart) agentControl.useLimitRestart(limitRestart)
   // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
   // The switch is read at every sweep, so turning it off stops the next one without a restart. Watcher's own conversation

@@ -69,10 +69,10 @@ async function streamed(records: number): Promise<{ signaturesPerChunk: number[]
     p.adapter.log.add(session, { id: 'reply', role: 'assistant', text: 'First', createdAt: new Date().toISOString() })
     p.adapter.mark(session); p.adapter.publish(true)
     await pass(1_000)
-    const control = p.control as unknown as { certifiedActivitySignature: (record: AgentActivity) => string }
-    const native = control.certifiedActivitySignature
+    const revisions = (p.control as unknown as { revisions: { certifiedActivitySignature: (record: AgentActivity) => string } }).revisions
+    const native = revisions.certifiedActivitySignature
     let signatures = 0
-    control.certifiedActivitySignature = record => { signatures++; return native(record) }
+    revisions.certifiedActivitySignature = record => { signatures++; return native(record) }
     const updates: AgentThreadDetailUpdate[] = []
     const off = p.control.subscribeThreadDetail(update => { updates.push(update) })
     const signaturesPerChunk: number[] = []
@@ -87,7 +87,7 @@ async function streamed(records: number): Promise<{ signaturesPerChunk: number[]
         await pass(50)
         signaturesPerChunk.push(signatures)
       }
-    } finally { off(); control.certifiedActivitySignature = native }
+    } finally { off(); revisions.certifiedActivitySignature = native }
     const added = updates.some(update => 'activityDeltas' in update && update.activityDeltas.some(item => 'record' in item && item.record.id === `${session}-new`))
     return { signaturesPerChunk, updates, added }
   } finally { await until(p.stop()); vi.clearAllTimers() }

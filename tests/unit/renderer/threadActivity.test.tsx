@@ -64,23 +64,52 @@ describe('settled activity in the transcript', () => {
     const { transcript } = mount(stateWith({ activities: settled() }))
     const messages = transcript.querySelectorAll('.thread-message')
     expect(messages).toHaveLength(2)
-    const work = within(transcript).getByRole('region', { name: 'Worked for 2m 04s · 3 steps' })
+    const work = within(transcript).getByRole('region', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
     // DOM order: the user's message, the folded work, then the answer.
     expect(messages[0]!.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(work.compareDocumentPosition(messages[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const summary = within(work).getByRole('button', { name: 'Worked for 2m 04s · 3 steps' })
+    const summary = within(work).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
     expect(summary).toHaveAttribute('aria-expanded', 'false')
     expect(within(transcript).queryByRole('button', { name: /npm run lint/ })).not.toBeInTheDocument()
     expect(messages[1]).toHaveTextContent('Done. The preview plays a two-second sample')
 
     fireEvent.click(summary)
-    // Opened, the group carries only its counts and opens with the fold, and its failure folds with the rest of its rows.
-    const group = within(work).getByRole('region', { name: 'Ran 2 commands, changed 1 file' })
-    const counts = within(group).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })
-    expect(counts).toHaveAttribute('aria-expanded', 'true')
+    // Opened, the one group's rows stand straight under the line with no line of their own, and its failure folds with the
+    // rest of its rows.
+    const group = within(work).getByRole('region', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })
+    expect(within(group).queryByRole('button', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })).not.toBeInTheDocument()
     expect(within(group).getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
-    fireEvent.click(counts)
-    expect(within(group).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
+    fireEvent.click(summary)
+    expect(within(work).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
+  })
+
+  it('says an edit once: the press beside the line goes while the fold is open, and the count while the row is', () => {
+    const { transcript } = mount(stateWith({ activities: settled() }))
+    const changed = (): HTMLElement | null => within(transcript).queryByRole('button', { name: 'Edited voice.ts, 1 line added, 1 line removed' })
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
+    expect(changed()).toBeInTheDocument()
+    fireEvent.click(work)
+    expect(changed()).not.toBeInTheDocument()
+    const row = within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' })
+    expect(row.querySelector('.thread-lines')).toHaveTextContent('+1 −1')
+    fireEvent.click(row)
+    expect(row.querySelector('.thread-lines')).not.toBeInTheDocument()
+    expect(row).toHaveAccessibleName('Edited src/voice.ts, 1 line added, 1 line removed, completed')
+    fireEvent.click(work)
+    expect(changed()).toBeInTheDocument()
+  })
+
+  it('keeps the total beside the line when the fold holds several changed files', () => {
+    const { transcript } = mount(stateWith({ activities: [...settled(), activity({ id: 'second', kind: 'file-change', title: 'Edit', changes: [{ path: 'src/other.ts', kind: 'edit', diff: '@@ -1 +1 @@\n-old\n+new\n' }] })] }))
+    fireEvent.click(within(transcript).getByRole('button', { name: /^Worked for/u }))
+    expect(within(transcript).getByRole('button', { name: 'Changed 2 files, 2 lines added, 2 lines removed' })).toBeInTheDocument()
+  })
+
+  it('says what the turn changed beside its line, with the lines it added and removed', () => {
+    const { transcript } = mount(stateWith({ activities: settled() }))
+    const changed = within(transcript).getByRole('button', { name: 'Edited voice.ts, 1 line added, 1 line removed' })
+    expect(changed).toHaveAttribute('aria-expanded', 'false')
+    expect(changed.querySelector('.thread-lines')).toHaveTextContent('+1 −1')
   })
 
   it('folds replies written on the way, and times a turn with no lifecycle record from its messages', () => {
@@ -96,8 +125,8 @@ describe('settled activity in the transcript', () => {
     expect([...transcript.querySelectorAll('.thread-message')].map(message => message.textContent)).toEqual([
       expect.stringContaining('Check the parser.'), expect.stringContaining('The parser is fine.'),
     ])
-    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · 1 step' }))
-    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · 1 step' })
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' }))
+    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' })
     expect(work).toHaveTextContent('Looking at the parser first.')
     expect(within(work).getByRole('button', { name: 'Ran 1 command' })).toBeVisible()
   })
@@ -105,44 +134,139 @@ describe('settled activity in the transcript', () => {
   it('opens by keyboard to the exact command, output and diff, with one copy path per block', async () => {
     const user = userEvent.setup()
     const { transcript } = mount(stateWith({ activities: settled() }))
-    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps' })
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
     work.focus()
     await user.keyboard('{Enter}')
     expect(work).toHaveAttribute('aria-expanded', 'true')
-    expect(within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })).toHaveAttribute('aria-expanded', 'true')
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     row.focus()
     await user.keyboard(' ')
     expect(row).toHaveAttribute('aria-expanded', 'true')
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
-    expect(within(details).getByLabelText('command code block')).toHaveTextContent('npm test -- --run')
+    // What ran is said once, by the open row; its body leads with what came back, then where it ran, outside the thread's folder.
+    expect(row).toHaveTextContent('npm test -- --run')
+    expect(within(details).queryByLabelText('command code block')).toBeNull()
+    expect(details).not.toHaveTextContent('npm test')
     expect(within(details).getByLabelText('output code block')).toHaveTextContent('PASS 12 tests')
     expect(details).toHaveTextContent('In D:\\work')
-    expect(details).toHaveTextContent('Reported by Codex')
-    // The duration is stated once, in the row.
+    // The duration is stated once, in the row; where it came from is its tooltip and the row's description, not more words in view.
     expect(details).not.toHaveTextContent('4.2s')
-    expect(within(details).getAllByRole('button', { name: /^Copy/ })).toHaveLength(2)
+    expect(details).not.toHaveTextContent('Reported by Codex')
+    expect(row.querySelector('[title="Reported by Codex"]')).toHaveTextContent(/^4\.2s$/u)
+    expect(row.querySelector('.tt-visually-hidden')).toHaveTextContent('Reported by Codex')
+    expect(row).toHaveAccessibleDescription('Reported by Codex')
+    // Copy command sits at the end of the command's own line, the row's next control, and what came back keeps its own Copy.
+    const copy = row.closest('li')!.querySelector(':scope > .thread-activity__copy-command button')!
+    expect(copy).toHaveAccessibleName('Copy command')
+    expect(row.querySelector('.thread-activity__copy-slot')).not.toBeNull()
+    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['Copy output code'])
+    await user.tab()
+    expect(copy).toHaveFocus()
 
-    await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, completed' }))
-    expect(within(transcript).getByLabelText('diff code block')).toHaveTextContent('-old +new')
+    await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' }))
+    expect(within(transcript).getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: old.*Added: new/u)
+  })
+
+  it('keeps the block for a script of several lines, which the row can only name by its first', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'script', command: 'cd app\nnpm ci', output: 'added 12 packages', durationMs: 900 }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    const row = within(transcript).getByRole('button', { name: /^cd app npm ci/u })
+    await user.click(row)
+    const details = document.getElementById(row.getAttribute('aria-controls')!)!
+    expect(within(details).getByLabelText('command code block')).toHaveTextContent('cd app npm ci')
+    expect(within(transcript).queryByRole('button', { name: 'Copy command' })).toBeNull()
+  })
+
+  it('leads a described command’s row with what it was for, and shows a quick step’s time neither folded nor open', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ workingDirectory: 'D:\\Projects\\voice', activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'read', command: 'cat src/policy.ts', cwd: 'd:/Projects/voice/', durationMs: 40, output: 'export class RequestPolicy {}',
+        text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }) }),
+      activity({ id: 'test', command: 'npm test', durationMs: 6_100, output: 'PASS' }),
+      activity({ id: 'peek', command: 'cat src/request.ts', durationMs: 30, output: 'export {}' }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    // Folded, the row says only what it was for, as Claude's summaries do; its name says the command too, and its time, and
+    // the command is the row's tooltip.
+    const row = within(transcript).getByRole('button', { name: 'Read the request policy, cat src/policy.ts, completed in 0.0s' })
+    expect(row).toHaveTextContent(/^Read the request policy$/u)
+    expect(row.querySelector('.thread-activity__command')).toBeNull()
+    expect(row.closest('li')).toHaveAttribute('title', 'cat src/policy.ts')
+    expect(row).not.toHaveAccessibleDescription()
+    // A command with no description names itself, and folded, one too long for its row gives way in its file's folders first,
+    // so it is drawn in parts.
+    const own = within(transcript).getByRole('button', { name: 'cat src/request.ts, completed in 0.0s' })
+    const command = own.querySelector('.thread-activity__subject--mono')!
+    expect(command.textContent!.replace(/‎/gu, '')).toBe('cat src/request.ts')
+    expect(command).toHaveAttribute('data-cut')
+    expect([...command.children].map(part => [part.className.replace('thread-activity__command-', ''), part.textContent!.replace(/‎/gu, '')])).toEqual([
+      ['verb', 'cat '], ['folders', 'src/'], ['name', 'request.ts'],
+    ])
+    expect(own.closest('li')).not.toHaveAttribute('title')
+    // Under a second the folded row shows no time; a slow step keeps its own.
+    expect(row.querySelector('.thread-activity__meta')).toHaveTextContent(/^$/u)
+    expect(within(transcript).getByRole('button', { name: 'npm test, completed in 6.1s' })).toHaveTextContent('6.1s')
+    await user.click(row)
+    // Open, the row says what it was for and the command whole. Under a second its time is still only in its name, and where
+    // the time came from, the thread's own provider, is said only to assistive tech; the body says none of it again.
+    expect(row).toHaveTextContent(/^Read the request policycat src\/policy\.ts/u)
+    expect(row.closest('li')).not.toHaveAttribute('title')
+    expect(row.querySelector('.thread-activity__meta > :not(.tt-visually-hidden)')).toBeNull()
+    expect(row).toHaveAccessibleDescription('Reported by Codex')
+    expect(row).toHaveAccessibleName('Read the request policy, cat src/policy.ts, completed in 0.0s')
+    const details = document.getElementById(row.getAttribute('aria-controls')!)!
+    expect(details).not.toHaveTextContent('Read the request policy')
+    expect(within(details).getByLabelText('output code block')).toHaveTextContent('export class RequestPolicy')
+    // It ran in the thread's own folder, however that folder is spelt, so the body does not name it.
+    expect(details).not.toHaveTextContent(/\bIn\b/u)
+    expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
+    expect(row.closest('li')!.querySelector(':scope > .thread-activity__copy-command')).toContainElement(within(transcript).getByRole('button', { name: 'Copy command' }))
+  })
+
+  it('holds a long output at twelve lines and says how many more there are, on a press that shows the rest', async () => {
+    const user = userEvent.setup()
+    const long = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join('\n')
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'long', command: 'cat long.txt', durationMs: 40, output: `${long}\n` }),
+      activity({ id: 'near', command: 'cat near.txt', durationMs: 40, output: Array.from({ length: 14 }, (_, index) => `near ${index + 1}`).join('\n') }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    await user.click(within(transcript).getByRole('button', { name: /^cat long\.txt/u }))
+    const more = within(transcript).getByRole('button', { name: 'Show 28 more lines' })
+    expect(more.closest('.thread-activity__output')).toHaveAttribute('data-held')
+    await user.click(more)
+    // The press shows the rest in place and takes focus into it; nothing is left to press.
+    expect(within(transcript).queryByRole('button', { name: /more lines?$/u })).toBeNull()
+    const output = within(transcript).getByLabelText('output code block')
+    expect(output).toHaveFocus()
+    expect(output).toHaveTextContent('line 40')
+    expect(output.closest('.thread-activity__output')).not.toHaveAttribute('data-held')
+    // Two lines more than the twelve are not worth a press: that output shows whole.
+    await user.click(within(transcript).getByRole('button', { name: /^cat near\.txt/u }))
+    expect(within(transcript).queryByRole('button', { name: /more lines?$/u })).toBeNull()
   })
 
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
     const user = userEvent.setup()
     const { transcript } = mount(stateWith({ activities: settled() }))
-    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps' })
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
     await user.click(work)
-    const summary = within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     await user.click(row)
-    const copy = within(document.getElementById(row.getAttribute('aria-controls')!)!).getAllByRole('button', { name: /^Copy/ })[0]!
+    const copy = within(transcript).getByRole('button', { name: 'Copy command' })
     copy.focus()
     await user.keyboard('{Escape}')
     expect(row).toHaveAttribute('aria-expanded', 'false')
     expect(row).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
-    expect(summary).toHaveFocus()
     await user.keyboard('{Escape}')
     expect(work).toHaveAttribute('aria-expanded', 'false')
     expect(work).toHaveFocus()
@@ -160,12 +284,14 @@ describe('the running turn', () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { transcript } = mount(stateWith({ status: 'running', activities: running() }))
     const liveRow = within(transcript).getByTestId('thread-activity-live')
-    // The line carries the wait in words; assistive tech hears how far the turn has got instead.
-    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveTextContent('Combing the desert')
-    // The light draws a lit copy of the word, so the copy follows the word.
-    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveAttribute('data-word', 'Combing the desert')
-    // The words stand alone: no clock beside them.
+    // The line names the step it is on; assistive tech hears how far the turn has got instead.
+    const words = liveRow.querySelector('.thread-activity-live__word')!
+    expect(words.textContent).toBe('Running ⁨npm test⁩')
+    // The light draws a lit copy of the words, so the copy follows them.
+    expect(words).toHaveAttribute('data-word', words.textContent)
+    // No clock beside them and no count.
     expect(liveRow.querySelector('[data-elapsed]')).toBeNull()
+    expect(liveRow).not.toHaveTextContent('2 steps')
     const line = within(liveRow).getByRole('button', { name: 'Working, 2 steps so far' })
     expect(line).toHaveAttribute('aria-expanded', 'false')
     expect(within(transcript).queryByRole('button', { name: 'npm test, Running' })).not.toBeInTheDocument()
@@ -177,6 +303,9 @@ describe('the running turn', () => {
     const steps = document.getElementById(line.getAttribute('aria-controls')!)!
     const test = within(steps).getByRole('button', { name: 'npm test, Running' })
     expect(test).toHaveTextContent('Running 8s')
+    // The step running now is marked as the plan marks its item in progress, and no other row is.
+    expect(steps.querySelectorAll('.thread-activity__row[data-now]')).toHaveLength(1)
+    expect(test.closest('.thread-activity__row')).toHaveAttribute('data-now')
     expect(within(steps).getByRole('button', { name: 'npm ci, completed in 9.0s' })).toBeVisible()
     act(() => { vi.advanceTimersByTime(1_000) })
     expect(test).toHaveTextContent('Running 9s')
@@ -263,7 +392,7 @@ describe('the running turn', () => {
     })
     expect(within(transcript).queryByTestId('thread-activity-live')).not.toBeInTheDocument()
     // The steps were left open, so the finished turn's fold starts open.
-    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · 9 steps' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · 9 steps · Ran 9 commands' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
@@ -295,8 +424,8 @@ describe('thinking as it streams', () => {
       activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: 'Summary' }),
     ] }))
     await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
-    // The group opens with the fold.
-    expect(within(transcript).getByRole('button', { name: '1 reasoning summary, thought 2 times' })).toHaveAttribute('aria-expanded', 'true')
+    // The group is all the fold holds, so its rows stand under the line, and it keeps its counts as its name.
+    expect(within(transcript).getByRole('region', { name: '1 reasoning summary, thought 2 times' })).toBeVisible()
     const quiet = within(transcript).getByRole('group', { name: 'Thinking, completed in 1.2s' })
     expect(quiet.closest('.thread-activity__row')).toHaveAttribute('data-kind', 'reasoning')
   })
@@ -308,11 +437,11 @@ describe('honest detail', () => {
     const { transcript } = mount(stateWith({ activities: [
       activity({ id: 'agents', kind: 'subagent', title: 'spawnAgent', text: 'Check the WAV parser', status: 'completed',
         agents: [{ id: 'codex-agent-7f3e', status: 'running', message: 'Reading parser' }, { id: 'codex-agent-99aa', status: 'errored' }] }),
-      activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Checking the parser**' }),
+      activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Checking the parser**\n\nThe WAV header comes first.' }),
       activity({ id: 'lost', command: 'git status', status: 'unknown', truncated: true, output: 'On branch' }),
     ] }))
     await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
-    expect(within(transcript).getByRole('button', { name: 'Ran 1 command, 1 agent action, 1 reasoning summary' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('region', { name: 'Ran 1 command, 1 agent action, 1 reasoning summary' })).toBeVisible()
     await user.click(within(transcript).getByRole('button', { name: 'Spawn agent, 2 agents, completed' }))
     const agents = within(transcript).getByRole('list', { name: 'Agents' })
     expect(agents).toHaveTextContent('Agent 1RunningReading parserAgent 2Failed')
@@ -320,12 +449,18 @@ describe('honest detail', () => {
     expect(within(agents).queryAllByRole('button')).toHaveLength(0)
     expect(within(agents).queryAllByRole('link')).toHaveLength(0)
 
-    await user.click(within(transcript).getByRole('button', { name: 'Reasoning summary, Checking the parser, completed' }))
-    expect(within(transcript).getByText('Checking the parser').tagName).toBe('STRONG')
+    // The row reads as the summary's heading, with no "Reasoning summary" run into it; assistive tech still hears what it is.
+    // Open, the body says the rest and not the heading again.
+    const why = within(transcript).getByRole('button', { name: 'Reasoning summary, Checking the parser, completed' })
+    expect(why).toHaveTextContent(/^Checking the parser$/u)
+    await user.click(why)
+    const said = document.getElementById(why.getAttribute('aria-controls')!)!
+    expect(said).toHaveTextContent(/^The WAV header comes first\.$/u)
 
     const unknown = within(transcript).getByRole('button', { name: 'git status, Outcome unknown' })
     await user.click(unknown)
-    expect(document.getElementById(unknown.getAttribute('aria-controls')!)).toHaveTextContent('Time not recorded · Some details were not kept.')
+    expect(document.getElementById(unknown.getAttribute('aria-controls')!)).toHaveTextContent('Some details were not kept.')
+    expect(unknown).toHaveAccessibleDescription('Time not recorded')
   })
 
   it('restores activity with earlier history only when that page is shown', () => {

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  MODELS_DRAWN, PROVIDER_SLOT, SERIES_SLOTS, assignSlots, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
+  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldRun, keptDays, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
   type ChartFigure, type SeriesCandidate,
 } from '../../../src/renderer/src/features/usage/usageChartSeries'
 import { activityRow, field, tokens } from '../../fixtures/renderer/usageReads'
@@ -76,6 +76,14 @@ describe('Usage chart series', () => {
     expect(totalPlan('tokens', 'lines', days)).toMatchObject({ stacked: false, peak: 110, series: [{ name: 'Input and output', values: [110, 0] }] })
   })
 
+  it('keeps a day whose tokens are partly or not reported as a lower bound or unknown, so its figure says so', () => {
+    const days = [{ prompts: 1, input: 100, output: 10, tokensKnown: true, tokensPartial: true }, { prompts: 1, input: 0, output: 0, tokensKnown: false, tokensPartial: false }]
+    const plan = totalPlan('tokens', 'bars', days)
+    expect(sumFigures(plan.series.map(item => item.figures[0]!))).toEqual({ value: 110, known: true, partial: true })
+    expect(sumFigures(plan.series.map(item => item.figures[1]!))).toMatchObject({ known: false })
+    expect(totalPlan('prompts', 'bars', days).series[0]!.figures[0]).toEqual(wholeFigure(1))
+  })
+
   it('lists every series with its range total, or with one day value', () => {
     const choice = chooseSeries('model', models.slice(0, 2))
     const chart = splitPlan({ kind: 'lines', choice, totals: whole([15, 9]), values: wholeMap([['a', [10, 4]], ['b', [5, 5]]]), slots: new Map() })
@@ -119,5 +127,64 @@ describe('Usage chart series', () => {
     expect(remainder(sumFigures([day, measureFigure('tokens', reported)]), [measureFigure('tokens', reported)])).toMatchObject({ value: 1000, known: true, partial: true })
     // Prompts carry no records, and Other is as whole as the total.
     expect(remainder(wholeFigure(10), [wholeFigure(4)])).toEqual({ value: 6, known: true, partial: false })
+  })
+
+  it('folds a long run of empty days in a sparse range into the room of two, keeping every day in order', () => {
+    const busy = Array.from({ length: 30 }, (_, at) => [25, 26, 28, 29].includes(at))
+    const { stretches, room, start, width } = chartStretches(busy, QUIET_RUN)
+    expect(stretches[0]).toEqual({ kind: 'quiet', from: 0, to: 24 })
+    // A gap of one day between busy days stays a day of its own.
+    expect(stretches.slice(1)).toEqual([25, 26, 27, 28, 29].map(at => ({ kind: 'day', at })))
+    expect(room).toBe(QUIET_ROOM + 5)
+    expect(start).toHaveLength(30)
+    expect(start[25]).toBeCloseTo(QUIET_ROOM / room)
+    expect(width[25]).toBeCloseTo(1 / room)
+    expect(start[29]! + width[29]!).toBeCloseTo(1)
+    // Not asked to fold, or with no run long enough, each day keeps an equal share.
+    expect(chartStretches(busy, 0).room).toBe(30)
+    expect(chartStretches([true, false, false, false, false, true], QUIET_RUN).room).toBe(6)
+  })
+
+  it('folds only days reported as complete zeroes, never days whose tokens nothing reported', () => {
+    // Thirty days: work on the last two, the ten before them reported as nothing, and the eighteen before those unreported.
+    const days = Array.from({ length: 30 }, (_, at) => at >= 28 ? { prompts: 1, input: 100, output: 10, tokensKnown: true, tokensPartial: false }
+      : at >= 18 ? { prompts: 0, input: 0, output: 0, tokensKnown: true, tokensPartial: false }
+      : { prompts: 0, input: 0, output: 0, tokensKnown: false, tokensPartial: false })
+    const kept = keptDays(totalPlan('tokens', 'bars', days).series, 30)
+    expect(kept.slice(0, 18).every(Boolean)).toBe(true)
+    expect(kept.slice(18, 28).some(Boolean)).toBe(false)
+    expect(chartStretches(kept, QUIET_RUN).stretches.filter(stretch => stretch.kind === 'quiet')).toEqual([{ kind: 'quiet', from: 18, to: 27 }])
+    // Prompts are always counted whole, so their empty days fold.
+    expect(keptDays(totalPlan('prompts', 'bars', days).series, 30).filter(Boolean)).toHaveLength(2)
+  })
+
+  it('folds only a sparse range longer than a week, and draws a busier one day by day', () => {
+    expect(foldRun(7, true)).toBe(0)
+    expect(foldRun(30, true)).toBe(QUIET_RUN)
+    expect(foldRun(30, false)).toBe(0)
+    expect(foldRun(90, false)).toBe(0)
+    // Thirty days with the work in the last fifteen and more than a few busy days: every day keeps its share.
+    const busy = Array.from({ length: 30 }, (_, at) => at >= 15 && ![18, 22, 23].includes(at))
+    expect(chartStretches(busy, foldRun(30, false)).room).toBe(30)
+  })
+
+  it('scales the chart to a round top with two or three gridlines at a round step', () => {
+    expect(chartScale(28, 10, true)).toEqual({ top: 30, ticks: [10, 20, 30] })
+    expect(chartScale(26 * 1.15, 10, true)).toEqual({ top: 30, ticks: [10, 20, 30] })
+    // A quiet range keeps its floor, and prompts step in whole numbers.
+    expect(chartScale(2, 10, true)).toEqual({ top: 10, ticks: [5, 10] })
+    expect(chartScale(4, 1, true)).toEqual({ top: 4, ticks: [2, 4] })
+    expect(chartScale(1_200_000, 1e5, false)).toEqual({ top: 1_500_000, ticks: [500_000, 1_000_000, 1_500_000] })
+    expect(chartScale(0, 1e5, false)).toEqual({ top: 100_000, ticks: [50_000, 100_000] })
+  })
+
+  it('names where the range starts and ends, where a fold ends and each week back from the end, never two dates crowded together', () => {
+    expect(axisMarks(7, null)).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(axisMarks(30, null)).toEqual([0, 8, 15, 22, 29])
+    const busy = Array.from({ length: 30 }, (_, at) => at >= 15)
+    // Folded: the start, the first day of work, a week before the end and the end; the week inside the fold is not named.
+    expect(axisMarks(30, chartStretches(busy, QUIET_RUN))).toEqual([0, 15, 22, 29])
+    // A long range steps by several weeks.
+    expect(axisMarks(90, null)).toEqual([0, 26, 47, 68, 89])
   })
 })

@@ -117,10 +117,6 @@ msgstr "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}}"
 msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 msgstr "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "{count, plural, one {{tips} tip hidden or used.} other {{tips} tips hidden or used.}}"
-msgstr "{count, plural, one {{tips} tip hidden or used.} other {{tips} tips hidden or used.}}"
-
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr "{count, plural, one {# provider} other {# providers}}"
@@ -1749,6 +1745,10 @@ msgstr "Code surface"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Collapsed"
 msgstr "Collapsed"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
+msgstr "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Color and border intensity."
@@ -3597,10 +3597,6 @@ msgstr "No speech models were returned."
 msgid "No supported open-source themes found. Try a broader search."
 msgstr "No supported open-source themes found. Try a broader search."
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips are hidden."
-msgstr "No tips are hidden."
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr "None of them can go yet."
@@ -4993,10 +4989,6 @@ msgstr "Show every picture and video an agent makes"
 msgid "Show floating widget when idle"
 msgstr "Show floating widget when idle"
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show hidden tips again"
-msgstr "Show hidden tips again"
-
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Show in menu bar"
 msgstr "Show in menu bar"
@@ -5004,6 +4996,14 @@ msgstr "Show in menu bar"
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
 msgstr "Show or hide the focused pane’s terminal drawer."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar"
+msgstr "Show or hide the sidebar"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar already uses {keys}. Pick other keys."
+msgstr "Show or hide the sidebar already uses {keys}. Pick other keys."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show providers"
@@ -5058,11 +5058,6 @@ msgstr "Show thread"
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show thread {thread}"
 msgstr "Show thread {thread}"
-
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips"
-msgstr "Show tips"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Show Watcher’s room"

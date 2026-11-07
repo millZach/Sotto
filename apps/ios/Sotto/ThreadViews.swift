@@ -754,7 +754,15 @@ private struct Conversation: View {
         let last = pending.isEmpty && model.failedReplies[ref.id] == nil ? rows.last?.id : nil
         return VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
             if detail?.earlierAvailable == true || thread?.earlierAvailable == true {
-                Button("Show earlier messages") { Task { await model.earlier(ref) } }
+                // Under a step window, how many steps lie above it (ADR-0194): a picture thread's few long turns hold most of them.
+                Button { Task { await model.earlier(ref) } } label: {
+                    VStack(spacing: 2) {
+                        Text("Show earlier messages")
+                        if let steps = detail?.earlierSteps, steps > 0 {
+                            Text(verbatim: StepRun.count(steps)).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                    }
+                }
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                     .frame(maxWidth: .infinity)
                     .disabled(!online)
@@ -3272,14 +3280,78 @@ struct RequestSheet: View {
 
     private func questionField(_ item: Question, showsTitle: Bool, enabled: Bool) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            if showsTitle {
-                Text(verbatim: item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+            if showsTitle && isSkipped(item) {
+                skippedRow(item, enabled: enabled)
+            } else {
+                if showsTitle {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        Text(verbatim: item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // A question of several its provider lets the user skip on its own has a Skip of its own (ADR-0135).
+                        if skipsOnItsOwn(item) {
+                            Button("Skip") { answers[item.id] = .skip; if focus == item.id { focus = nil } }
+                                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                                .accessibilityLabel(String(localized: "Skip this question: \(item.question)", comment: "%@ is the question's own words"))
+                                .accessibilityIdentifier("request-skip-\(item.id)")
+                                .disabled(!enabled)
+                        }
+                    }
+                }
+                if let reason = item.unavailableReason {
+                    Text(verbatim: reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                choices(item).disabled(!enabled)
             }
-            if let reason = item.unavailableReason {
-                Text(verbatim: reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            }
-            choices(item).disabled(!enabled)
         }
+    }
+
+    /// A question skipped on its own folds to one row saying the agent decides, with a way back to answering it (Zach's
+    /// pick, November 6, 2026).
+    private func skippedRow(_ item: Question, enabled: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        let provider = Words.provider(owner?.providerID)
+        return HStack(alignment: .center, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                Text(String(localized: "Skipped. \(provider) will use its own judgement.", comment: "Under a skipped question. %@ is the agent's name, such as Claude Code."))
+                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            Button("Answer it") { answers[item.id] = nil }
+                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                .accessibilityIdentifier("request-unskip-\(item.id)")
+                .disabled(!enabled)
+        }
+        .padding(Space.s3)
+        .background(Palette.code, in: shape)
+        .accessibilityIdentifier("request-skipped-\(item.id)")
+    }
+
+    private func isSkipped(_ item: Question) -> Bool { answers[item.id]?.skipped == true }
+    /// One question of several that its provider lets the user skip while answering the rest.
+    private func skipsOnItsOwn(_ item: Question) -> Bool {
+        (current?.questions?.count ?? 0) > 1 && item.skippable == true && item.unavailableReason == nil
+    }
+    /// What the user has chosen or written for a question, starting again when it was skipped.
+    private func draft(_ item: Question) -> QuestionAnswer {
+        answers[item.id].flatMap { $0.skipped == true ? nil : $0 } ?? QuestionAnswer()
+    }
+    private func hasAnswer(_ item: Question) -> Bool {
+        guard !isSkipped(item) else { return false }
+        return !(answers[item.id]?.optionIds.isEmpty ?? true) || !(answers[item.id]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    /// Every question at once: the request's own skip where the provider takes one, or each question skipped where only
+    /// that is offered.
+    private func skipsAll(_ request: AgentRequest) -> Bool {
+        guard let questions = request.questions, !questions.isEmpty else { return false }
+        return request.skippable == true || questions.allSatisfy { $0.skippable == true && $0.unavailableReason == nil }
+    }
+    /// The questions Skip the rest would skip: those still open, once another has an answer.
+    private func rest(_ request: AgentRequest) -> [Question] {
+        let questions = request.questions ?? []
+        guard questions.contains(where: hasAnswer) else { return [] }
+        return questions.filter { skipsOnItsOwn($0) && !isSkipped($0) && !hasAnswer($0) }
     }
 
     /// A question's choices and its own-answer box.
@@ -3311,7 +3383,7 @@ struct RequestSheet: View {
     }
 
     private func pick(_ option: RequestOption, in item: Question, chosen: Bool) {
-        var answer = answers[item.id] ?? QuestionAnswer()
+        var answer = draft(item)
         if item.multiSelect {
             if chosen { answer.optionIds.removeAll { $0 == option.id } } else { answer.optionIds.append(option.id) }
         } else {
@@ -3330,7 +3402,7 @@ struct RequestSheet: View {
     /// Opens the box for the user's own words. For a single choice it takes the place of the option chosen; for
     /// several it sits beside them, and closing it takes its words back out.
     private func toggleOwn(_ item: Question) {
-        var answer = answers[item.id] ?? QuestionAnswer()
+        var answer = draft(item)
         if item.multiSelect && writingOwn(item) {
             writing.remove(item.id)
             answer.text = nil
@@ -3348,7 +3420,7 @@ struct RequestSheet: View {
 
     private func ownAnswer(_ item: Question) -> some View {
         let text = Binding(get: { answers[item.id]?.text ?? "" }, set: { value in
-            var answer = answers[item.id] ?? QuestionAnswer()
+            var answer = draft(item)
             answer.text = value
             if !item.multiSelect && !value.isEmpty { answer.optionIds = [] }
             answers[item.id] = answer
@@ -3405,6 +3477,7 @@ struct RequestSheet: View {
     private func ready(_ request: AgentRequest) -> Bool {
         if let questions = request.questions, !questions.isEmpty {
             return questions.allSatisfy { q in
+                if answers[q.id]?.skipped == true { return q.skippable == true || request.skippable == true }
                 // A required question this iPhone can't answer blocks sending; its reason says why.
                 if q.unavailableReason != nil { return q.required == false }
                 let chosen = !(answers[q.id]?.optionIds.isEmpty ?? true)
@@ -3426,14 +3499,52 @@ struct RequestSheet: View {
         }
     }
 
+    /// Skip the rest, once a question has an answer, and the request's whole Skip (ADR-0135, November 6, 2026). Skip sends
+    /// at once, as on the computer; Skip the rest only marks the open questions skipped, for Send answer to send.
+    @ViewBuilder private func skipLine(_ current: AgentRequest) -> some View {
+        let unanswered = rest(current)
+        let all = skipsAll(current) && !(current.questions ?? []).allSatisfy(isSkipped)
+        if !unanswered.isEmpty || all {
+            HStack(spacing: Space.s2) {
+                if !unanswered.isEmpty {
+                    Button("Skip the rest") { for item in unanswered { answers[item.id] = .skip }; focus = nil }
+                        .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                        .accessibilityIdentifier("request-skip-rest")
+                }
+                Spacer(minLength: 0)
+                if all {
+                    Group {
+                        if (current.questions?.count ?? 0) > 1 { Button("Skip all") { skipAll(current) } } else { Button("Skip") { skipAll(current) } }
+                    }
+                    .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                    .accessibilityIdentifier("request-skip-all")
+                }
+            }
+            .disabled(!model.canAnswer(current, at: place))
+        }
+    }
+
+    private func skipAll(_ current: AgentRequest) {
+        for item in current.questions ?? [] { answers[item.id] = .skip }
+        sendAnswer(current)
+    }
+
     /// Not now and Send answer stay in reach under a question, whatever its length.
     @ViewBuilder private var footer: some View {
         if let current, current.kind != "permission", current.supported, model.mayAnswer(at: place) {
             VStack(spacing: Space.s2) {
                 sendingLine(current)
+                skipLine(current)
                 HStack(spacing: Space.s2) {
                     Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true))
-                    Button("Send answer") { sendAnswer(current) }
+                    // Every question skipped sends a skip, so the button says so (ADR-0135).
+                    Group {
+                        if let questions = current.questions, !questions.isEmpty, questions.allSatisfy(isSkipped) {
+                            if questions.count > 1 { Button("Skip all") { sendAnswer(current) } } else { Button("Skip") { sendAnswer(current) } }
+                        } else {
+                            Button("Send answer") { sendAnswer(current) }
+                        }
+                    }
                         .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
                         .disabled(!model.canAnswer(current, at: place) || !ready(current))
                         .accessibilityIdentifier("request-send-answer")

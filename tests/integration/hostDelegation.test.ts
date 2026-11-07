@@ -20,7 +20,7 @@ import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { DesktopDelegationRelay, type RelayHostConnection } from '../../src/main/agents/delegationRelayDesktop'
-import type { TellWatcherAsk } from '../../src/shared/tellWatcher'
+import { isReadyToMergeAsk, type TellWatcherAsk } from '../../src/shared/tellWatcher'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
@@ -197,7 +197,7 @@ it('carries a host thread\'s message for Watcher to a recorded desktop, with the
   const { socket, hello } = await f.desktop(true, false, false, true)
   expect(hello.features).toContain('watcher-tell')
   const asks: TellWatcherAsk[] = []
-  socket.subscribeWatcherTell((askId, ask) => { asks.push(ask); void socket.answerWatcherTell(askId, { status: 'told', requestOpened: ask.userMessage?.named === true }) })
+  socket.subscribeWatcherTell((askId, ask) => { if (isReadyToMergeAsk(ask)) return; asks.push(ask); void socket.answerWatcherTell(askId, { status: 'told', requestOpened: ask.userMessage?.named === true }) })
   await f.reply(parent.threadId, 'Synthetic reply')
   await f.command({ type: 'manual-send', threadId: parent.threadId, draftId: randomUUID(), text: 'Tell watcher to look at this' })
   const told = await f.tellWatcher(parent.threadId, 'Zach asks you to look.')

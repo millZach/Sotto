@@ -46,7 +46,8 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
 }
 
 const state = (page: Page): Promise<AgentState> => agentState(page)
-const row = (page: Page, title: string): Locator => page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true })
+// The first is the row; below a 1000 pixel window the rail's tile for it stands behind the sidebar over the thread.
+const row = (page: Page, title: string): Locator => page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).first()
 const scopedThread = (snapshot: AgentState, threadId: string): string => snapshot.hostId ? hostEntityKey(snapshot.hostId, threadId) : threadId
 const pending = async (page: Page, threadId: string): Promise<string[] | undefined> => {
   const snapshot = await state(page)
@@ -64,6 +65,8 @@ async function open(page: Page, title: string): Promise<void> {
 
 /** The row, and the collapsed rail's button for it, both say what the thread waits on; the rail carries it in its title. */
 async function expectWaiting(page: Page, title: string, waiting: 'question' | 'approval', label: string, capture: string): Promise<void> {
+  // Below a 1000 pixel window the rail stands, and the rows are read in the sidebar Expand opens over the thread.
+  if (await page.evaluate(() => innerWidth < 1000)) await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   const status = row(page, title).locator('.thread-nav__status')
   // The visible words, after the provider's name that only a screen reader hears.
   await expect(status).toHaveAttribute('title', label)
@@ -83,6 +86,7 @@ async function expectWaiting(page: Page, title: string, waiting: 'question' | 'a
 }
 
 async function expectClear(page: Page, title: string): Promise<void> {
+  if (await page.evaluate(() => innerWidth < 1000 && document.querySelector('aside.thread-nav[data-over]') === null)) await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   const status = row(page, title).locator('.thread-nav__status')
   await expect(status).not.toHaveAttribute('data-state', 'needs')
   await expect(status).not.toHaveAttribute('data-waiting')

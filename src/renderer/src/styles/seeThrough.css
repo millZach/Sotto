@@ -25,7 +25,7 @@
 }
 
 /* The room's own layers, which paint the canvas over the page on a solid window. */
-:root[data-glass] :is(.app-shell, .thread-workspace__compose > .thread-pane__meta) {
+:root[data-glass] :is(.app-shell, .thread-workspace__actions, .thread-workspace__compose > .thread-pane__meta) {
   background: transparent;
 }
 
@@ -33,4 +33,16 @@
    card keeps its solid colour; the composer's own glass then shows the room through it. */
 :root[data-glass] .watcher-pane {
   --tt-card: var(--tt-card-solid);
+}
+
+/* What stands over other things in Tools keeps the solid sidebar, as a side sheet does: Tools laid over the panes in a
+   narrow window, so the thread's header does not read through its bar, and in a docked panel the file head that stays
+   at the top of Changes and the file tree laid over the files, so the lines scrolled under them do not read through.
+   The panel docked beside the panes stays glass. */
+:root[data-glass] .tools-panel[data-mode='overlay'] {
+  --tools-bg: var(--theme-sidebar);
+}
+
+:root[data-glass] :is(.changes-file__head, .changes-tree) {
+  background: var(--theme-sidebar);
 }

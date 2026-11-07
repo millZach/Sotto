@@ -189,14 +189,26 @@ import UIKit
     /// the tap reports success and the app never sees it (#1320). So when nothing has happened after a first look and
     /// `untouched` says the control still reads as it did before the press, it is pressed once more; `untouched` keeps a
     /// press that only landed late from being undone by the second.
+    ///
+    /// The first wait running out doesn't say the press was lost. Just after a sheet or menu opens, one look at the app can
+    /// take 7 to 30 seconds on CI, so the eight seconds can end inside the one look the wait made (#2107). Pressing again
+    /// then shut the menu the first press had opened, or failed on a control the new sheet now covered (#2090). So before
+    /// pressing again, `done` is looked at once more, and the control must still be there to press, not covered.
     @discardableResult
     private func press(_ control: XCUIElement, until done: NSPredicate, timeout: TimeInterval = 20,
                        untouched: () -> Bool = { true }) -> XCTWaiter.Result {
         control.tap()
         let first = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: min(8, timeout))
-        if first == .completed { return first }
-        if untouched() { control.tap() }
+        if first == .completed || done.evaluate(with: nil) { return .completed }
+        if untouched() && control.exists && control.isHittable { control.tap() }
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: timeout)
+    }
+    /// Presses one of a question's answers and waits for it to read as chosen. The app marks it on its next update, and with
+    /// Watcher writing above the card that update can come after a look made straight after the tap: twice on CI the answer
+    /// read unchosen 0.01 seconds after the app went idle (#1948).
+    private func choose(_ answer: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(press(answer, until: NSPredicate { _, _ in answer.isSelected }), .completed, "The chosen answer is marked",
+                       file: file, line: line)
     }
     /// Generous on purpose: it ends as soon as the element goes, and a loaded CI simulator can take seconds just to look.
     private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 20) -> Bool {
@@ -598,7 +610,9 @@ import UIKit
 
         // Three drags up the page and three back as the thread goes on working. The app reads what each did.
         let distance: CGFloat = 180
-        let x = size.width - 32, middle = size.height * 0.45
+        // Stay in the page's empty margin. A press over reply text can select words and open Add to prompt instead of
+        // scrolling (run 42170206822, attempt 2); then the five remaining drags are compared with six directions.
+        let x = size.width - 8, middle = size.height * 0.45
         let origin = window.coordinate(withNormalizedOffset: .zero)
         let towardEnd = [false, false, false, true, true, true]
         for down in towardEnd {
@@ -1046,8 +1060,7 @@ import UIKit
         let option = app.buttons["request-option-j"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
         reveal(option)
-        option.tap()
-        XCTAssertTrue(option.isSelected, "The chosen answer is marked")
+        choose(option)
         XCTAssertTrue(send.isEnabled)
         capture("question-glow-sheet")
         send.tap()
@@ -1563,8 +1576,7 @@ import UIKit
         let choice = app.buttons["A fresh account for each run"]
         revealInWatcher(choice)
         capture("watcher-card-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         let send = app.buttons["watcher-card-send"]
         revealInWatcher(send)
         XCTAssertTrue(send.isEnabled)
@@ -1603,8 +1615,7 @@ import UIKit
         XCTAssertEqual(XCTWaiter.wait(for: [more], timeout: 20), .completed, "Watcher keeps writing")
         stays(choice, "The card's answer")
         capture("watcher-card-held-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         // Send answer sits at the card's foot; the card is kept whole above the box without the reader scrolling to it.
         let send = app.buttons["watcher-card-send"]
         stays(send, "Send answer")
@@ -1663,8 +1674,7 @@ import UIKit
         XCTAssertTrue(waitUntilGone(permission), "The permission leaves Watcher's page once the laptop answers it")
         stays(choice, "The question's answer, once the permission under it has gone,")
         capture("watcher-two-cards-held-dark")
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        choose(choice)
         let send = app.buttons["watcher-card-send"]
         stays(send, "Send answer")
         send.tap()
@@ -1792,7 +1802,7 @@ import UIKit
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
-        XCTAssertTrue(asking.label.contains("Codex asks before every command, even one that only reads, and before every edit."),
+        XCTAssertTrue(asking.label.contains("Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."),
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)
@@ -1947,24 +1957,28 @@ import UIKit
         XCTAssertFalse(sol.exists || opus.exists || legacy.exists, "Closed providers show none of their models")
         capture("settings-sheet-closed-dark")
 
-        codex.tap()
+        // Each press goes through `press`, which presses again only while the row still reads Closed: twice on CI the
+        // simulator dropped the press on Claude, on target and seconds after the sheet had settled, and Claude stayed
+        // closed (#1320).
+        let closed: (XCUIElement) -> () -> Bool = { row in { (row.value as? String) == "Closed" } }
+        press(codex, until: NSPredicate { _, _ in sol.exists }, untouched: closed(codex))
         XCTAssertTrue(sol.waitForExistence(timeout: 5), "A press opens a provider")
         XCTAssertEqual(codex.value as? String, "Open")
-        claude.tap()
+        press(claude, until: NSPredicate { _, _ in opus.exists }, untouched: closed(claude))
         XCTAssertTrue(opus.waitForExistence(timeout: 5), "A press on another opens it")
         XCTAssertTrue(waitUntilGone(sol), "and closes the first: one open at a time")
         XCTAssertEqual(codex.value as? String, "Closed")
         XCTAssertEqual(claude.value as? String, "Open")
         XCTAssertTrue(legacy.exists, "Its older models wait under Legacy")
         XCTAssertFalse(opus5.exists, "closed")
-        legacy.tap()
+        press(legacy, until: NSPredicate { _, _ in opus5.exists }, untouched: closed(legacy))
         XCTAssertTrue(opus5.waitForExistence(timeout: 5), "Legacy opens inside its provider")
         XCTAssertEqual(legacy.value as? String, "Open")
         capture("settings-sheet-legacy-dark")
-        codex.tap()
+        press(codex, until: NSPredicate { _, _ in !opus5.exists && !opus.exists }, untouched: closed(codex))
         XCTAssertTrue(waitUntilGone(opus5), "Opening another provider closes Legacy with its own")
         XCTAssertTrue(waitUntilGone(opus))
-        claude.tap()
+        press(claude, until: NSPredicate { _, _ in opus.exists }, untouched: closed(claude))
         XCTAssertTrue(opus.waitForExistence(timeout: 5))
         XCTAssertFalse(opus5.exists, "and Legacy opens closed again")
 

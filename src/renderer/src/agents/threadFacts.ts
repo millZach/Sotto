@@ -122,16 +122,14 @@ export function elapsedLabel(since: number, now: number): string {
   return `${Math.floor(hours / 24)} d`
 }
 
-/** "12s", "4m 05s", "2h 07m": a working thread's clock, counted in whole seconds so it can tick. */
+/**
+ * "3 min", "2 h": how long a working thread has been at it, in the words Needs you gives a wait, so the sidebar says a
+ * time one way. Nothing under a minute: the row's Working says it has just begun, and a clock counting seconds beside
+ * every running thread read as timers racing each other.
+ */
 export function workingLabel(since: number, now: number): string {
-  if (!Number.isFinite(since) || !Number.isFinite(now)) return ''
-  const seconds = Math.max(0, Math.floor((now - since) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 48) return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`
-  return `${Math.floor(hours / 24)}d`
+  if (!Number.isFinite(since) || !Number.isFinite(now) || now - since < 60_000) return ''
+  return elapsedLabel(since, now)
 }
 
 /**
@@ -554,8 +552,10 @@ function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, 
   })
 }
 
-/** How many Needs you entries stand before the rest are counted in one line (ADR-0135). */
+/** How many approvals and questions stand in Needs you before the rest are counted in one line (ADR-0135). */
 export const NEEDS_YOU_SHOWN_MAX = 3
+/** How many failed turns stand under them before the rest are counted too (Zach's pick C, November 5, 2026). */
+export const NEEDS_YOU_FAILED_SHOWN_MAX = 2
 export type NeedsYouKind = 'approval' | 'question' | 'failed'
 
 /** One thread in the sidebar's Needs you queue: what it waits for, since when, and what a press there may do. */
@@ -568,6 +568,8 @@ export interface NeedsYouEntry {
   readonly waitingSince: number
   /** "12 min", "2 h": how long it has waited, from its stamp alone; empty without one. */
   readonly wait: string
+  /** It has waited a minute or more by its stamp, so its wait is worth saying in the card's line. */
+  readonly waited: boolean
   /** Answer its own request in the card the entry pops open, dismiss its own failure, or open the thread where a
    * delegated thread below it waits (ADR-0135, October 29 amendment). */
   readonly action: 'answer' | 'dismiss' | 'open'
@@ -577,7 +579,7 @@ export interface NeedsYouQueue {
   readonly entries: readonly NeedsYouEntry[]
   readonly shown: readonly NeedsYouEntry[]
   readonly overflow: { readonly approval: number; readonly question: number; readonly failed: number; readonly total: number }
-  /** The oldest blocking wait in words, for the heading; empty when nothing blocking carries a stamp. */
+  /** The longest wait of an approval or question in words, for the heading; empty when none has waited a minute. */
   readonly oldestBlockingWait: string
 }
 
@@ -601,6 +603,7 @@ export function describeNeedsYou(rows: readonly ThreadRow[], now: number): Needs
     return {
       row, kind, request, waitingSince,
       wait: Number.isFinite(waitingSince) ? elapsedLabel(waitingSince, now) : '',
+      waited: Number.isFinite(waitingSince) && now - waitingSince >= 60_000,
       action: delegated ? 'open' : kind === 'failed' ? 'dismiss' : request !== undefined ? 'answer' : 'open',
     }
   }).sort((first, second) => {
@@ -610,11 +613,15 @@ export function describeNeedsYou(rows: readonly ThreadRow[], now: number): Needs
       : Number.isFinite(entry.row.activityAt) ? entry.row.activityAt : Number.POSITIVE_INFINITY
     return (at(first) - at(second)) || first.row.thread.id.localeCompare(second.row.thread.id)
   })
-  const rest = entries.slice(NEEDS_YOU_SHOWN_MAX)
-  const oldestBlocking = entries.find(entry => entry.kind !== 'failed' && entry.wait !== '')
+  // What holds an agent still stands first, three of it, and failed turns rest under it, two of them (Zach's pick C,
+  // November 5, 2026); the rest are counted.
+  const blocking = entries.filter(entry => entry.kind !== 'failed'), failures = entries.filter(entry => entry.kind === 'failed')
+  const shown = [...blocking.slice(0, NEEDS_YOU_SHOWN_MAX), ...failures.slice(0, NEEDS_YOU_FAILED_SHOWN_MAX)]
+  const rest = entries.filter(entry => !shown.includes(entry))
+  const oldestBlocking = blocking.filter(entry => entry.waited).reduce<NeedsYouEntry | undefined>((oldest, entry) => oldest === undefined || entry.waitingSince < oldest.waitingSince ? entry : oldest, undefined)
   return {
     entries,
-    shown: entries.slice(0, NEEDS_YOU_SHOWN_MAX),
+    shown,
     overflow: {
       approval: rest.filter(entry => entry.kind === 'approval').length,
       question: rest.filter(entry => entry.kind === 'question').length,

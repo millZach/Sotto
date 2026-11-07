@@ -30,6 +30,19 @@
 @media (min-resolution: 2dppx) { .threads-view .thread-pane { --threads-pane-edge: inset 0 .5px 0 color-mix(in oklab, var(--tt-accent) 50%, transparent); } }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] { box-shadow: var(--threads-pane-edge); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
+/* The other panes keep every control in its place and step back with their titles: the Git action loses its outline and
+   its words and Watch take the muted ink, so the window has one outlined control, the focused pane's, and two panes side
+   by side read as one row of presses and one quieter row. Nothing moves or goes: the pointer over that header, or the
+   focus inside it, gives the row its full ink, and a thread Watcher watches stays lit. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action, .git-action__more) { border-color: transparent; }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action__quick, .watch-toggle:not([aria-pressed='true'])) { color: var(--tt-text-muted); }
+/* The rest of that header steps back with them: its name takes the muted ink, and the provider's mark and the pull
+   request's state colour rest in it too, so the only colour across the top of the window is the focused pane's. The
+   layout's symbols, already muted, are drawn a step toward the room by letting it through, keeping 4.5:1 and more on every
+   built-in theme by day and 5:1 by night, and naming no room token in an ink, so the audited inks still cover it. Each
+   keeps its place and its press, and the pointer or the focus on the header gives the row its own ink back. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(h2, .thread-workspace__title > .provider-mark, .branch-toolbar__pr > svg) { color: var(--tt-text-muted); }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) .thread-workspace__actions > :is(.pane-action, .pane-menu > .pane-action):not([aria-pressed='true'], [aria-expanded='true']) { color: color-mix(in srgb, var(--tt-text-muted) 82%, transparent); }
 
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
@@ -77,21 +90,10 @@
    1000px, its padding tightens, so panes of an even split start their transcripts level. */
 @container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
   .threads-view .thread-pane .thread-workspace__head { padding-left: 14px; }
-  .threads-view .thread-pane .working-copy__trigger { max-width: 160px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px calc(22px + var(--thread-compose-height, 0px)); }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
-  .threads-view .thread-pane .thread-message[data-role='user'] { margin-left: 24px; }
-}
-
-/* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. With the header's
-   controls down to the Git action, Watch, ··· and close (ADR-0163), a pane of a two-pane split at 1600 keeps the title,
-   project and folder whole, so the project goes only below 560px. */
-@container thread-pane (max-width: 560px) {
-  .threads-view .thread-pane .thread-workspace__crumb { display: none; }
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
+  .threads-view .thread-pane .thread-message[data-role='user'] { --bubble-inset: 24px; }
 }
 
 /* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps

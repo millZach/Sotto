@@ -2,6 +2,7 @@ import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
+import { boundedRecord } from './boundedRecord'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
@@ -20,7 +21,7 @@ import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 export const AGENT_GET = 'sotto:agents:get'
@@ -62,6 +63,8 @@ const id = z.string().min(1).max(512)
 const dynamicNoteDigestSchema = z.string().regex(/^[0-9a-f]{16}$/u)
 /** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
+/** How many steers a thread names as not taken (#1408): enough to settle every one an outbox could still hold. */
+export const NOT_TAKEN_MESSAGE_IDS_MAX = 20
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
 /** The longest text a message, a prompt or a follow-up carries. */
@@ -412,7 +415,11 @@ export const agentRequestSchema = z.object({
     /** Its written answer is a **secret answer** (#2153): the agent asked for it masked, as Codex's `isSecret` does. Every
      *  client masks it, Sotto never saves its words, and it carries no images. Older clients drop the mark and show a
      *  plain field. */
-    secret: z.literal(true).optional() })).max(100).optional(),
+    secret: z.literal(true).optional(),
+    /** This one question may be skipped while the others are answered (ADR-0135, November 6, 2026): its provider is told the
+     *  user skipped it, or it is left out where that is how the provider takes an unanswered question. The adapter adds it;
+     *  a host that predates it marks none, so no client offers a question's own Skip there. */
+    skippable: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   /** A **confirmation** (CONTEXT.md): a permission with nothing to fill in and nothing named to act on beyond its words, answered
    * Allow once or Deny above the composer, the way a question is (issue #2149). The adapter adds it; a request without it,
@@ -439,7 +446,11 @@ export const agentRequestSchema = z.object({
    * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
   since: z.string().datetime().optional(),
 })
-export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
+/** At most this many questions answered in one answer: far more than any question card asks (#2273). */
+export const AGENT_QUESTION_ANSWERS_MAX = 1_000
+/** One question's answer: its choices and words, or `skipped` for a `skippable` question the user skipped, with neither. */
+export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional(), skipped: z.literal(true).optional() }).strict()
+  .refine(answer => !answer.skipped || (answer.optionIds.length === 0 && !answer.text), 'A skipped question takes no answer.'), AGENT_QUESTION_ANSWERS_MAX)
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 const handoverCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 /**
@@ -527,6 +538,12 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a reply the provider made of its own API error, such as Claude Code's "You've hit your limit" (#2234), from
+   * the provider's own marking of it, never from its text. Watcher's room shows no such reply while Restart stopped
+   * threads is on: the room's band is the one notice. An older reader drops the field and shows the reply.
+   */
+  providerError: z.literal(true).optional().catch(undefined),
   /**
    * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
    * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
@@ -725,6 +742,8 @@ export const agentThreadSchema = z.object({
   scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
+  /** Host-owned snooze (ADR-0175): null when awake, absent on older hosts and stable. */
+  snoozedUntil: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
   nativeSessionStarted: z.boolean().optional(),
   /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
@@ -793,6 +812,11 @@ export const agentThreadSchema = z.object({
   historySaveNotice: z.string().max(600).optional(),
   /** A native request refused because Sotto could not show it; never a pending request or an approval. */
   requestNotice: z.string().max(600).optional(),
+  /**
+   * Sotto's message IDs of the newest steers the provider admitted but never took, because the turn they were sent into
+   * ended first (#1408). Not sent, and never sent again: the coordinator settles each one's delivery from this. Newest last.
+   */
+  notTakenMessageIds: z.array(id).max(NOT_TAKEN_MESSAGE_IDS_MAX).optional().catch(undefined),
   /** Changes only on a confirmed native rewind; cached activity must not cross it. */
   historyEpoch: z.string().optional(),
 })
@@ -826,6 +850,8 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
  * is left waiting to reconcile, so a window may say that nothing changed; the option chips read this exact sentence.
  */
 export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
+/** A steer the provider admitted whose turn ended before taking it (#1408): it was not sent. */
+export const STEER_NOT_TAKEN = 'The turn ended before it took this steer, so nothing was sent. Send it again as a new message.'
 /** What main answers when the provider did not say whether it took an action; Sotto keeps it and checks it later. */
 export const PROVIDER_RESULT_UNCONFIRMED = 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.'
 /** What main answers when a folder sent as existing is not there, so nothing was added and no folder was made. */
@@ -1281,6 +1307,11 @@ export const agentThreadDetailSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** True when older messages are still in the thread store; the pane offers Show earlier messages. */
   earlierAvailable: z.boolean().optional(),
+  /**
+   * The steps above a phone's **step window** (ADR-0194), as its host last cut it. Only a client that accepts
+   * `step-window` is sent it; no desktop is.
+   */
+  earlierSteps: z.number().int().nonnegative().optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
@@ -1318,6 +1349,9 @@ export const agentThreadDetailDeltaSchema = z.object({
 export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
+
+/** Whether a thread is Watcher's own: its conversation or the history it keeps. */
+export const isWatcherKind = (thread: Pick<AgentThread, 'kind'>): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
@@ -1408,6 +1442,20 @@ function threadShell(thread: AgentThread): AgentThread {
 export function agentShell(state: AgentState): AgentState {
   return { ...state, host: { ...state.host, threads: state.host.threads.map(threadShell) } }
 }
+/**
+ * At most this many ignored items, and nested repositories, in one removal's confirmation (#2273). Each list is the
+ * folder's own, sent back whole, so the caps sit far above real folders: 62 checkouts on the development machine had at
+ * most 90 ignored items (November 5, 2026).
+ */
+export const WORKTREE_CONFIRMED_ITEMS_MAX = 10_000
+export const WORKTREE_CONFIRMED_REPOSITORIES_MAX = 1_000
+/** What the user confirmed goes with a worktree folder (ADR-0041), as Remove worktree and Delete thread… send it. */
+const worktreeConfirmations = {
+  confirmedIgnored: z.array(z.string()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
+  confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
+  confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(),
+    kind: z.enum(['worktree', 'repository']) }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
+}
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   // `newThreadRuntimeMode: null` puts the default back to the provider's own: unlike undefined, JSON carries it to a host.
@@ -1471,7 +1519,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
    */
   z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('delete-thread'), threadId: id, ...worktreeConfirmations }).strict(),
   z.object({ type: z.literal('preview-clear-threads'), olderThanDays: clearThreadsAgeSchema }).strict(),
   z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
@@ -1526,7 +1574,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Remove the thread's own worktree folder and keep its branch (ADR-0041). `withUncommittedChanges`
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('preview-reclaim-thread-worktree'), threadId: id }).strict(),
-  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
    * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`
@@ -1588,6 +1636,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
       || value.fastMode !== undefined || value.speed !== undefined, 'Choose a thread setting to change.'),
+  z.object({ type: z.literal('snooze-thread'), threadId: id, until: z.string().datetime().nullable() }).strict(),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
@@ -1623,6 +1672,8 @@ export interface AgentBridge {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, with its checks and what the surface may do; null when the thread has none. */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press; null where it has no GitHub remote. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>

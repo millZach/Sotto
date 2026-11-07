@@ -43,7 +43,9 @@ async function fixture() {
     workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   }
   const sent = (text: string) => workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text.includes(text)).length
-  const send = (delivery: 'now' | 'queue', text: string) => call('send_to_thread', { requestId, retryKey: randomUUID(), target, delivery, text })
+  // A send that says GO MERGE carries its mark (#2229); nothing here asks GitHub, so only the merge train could hold it.
+  const send = (delivery: 'now' | 'queue', text: string) => call('send_to_thread', { requestId, retryKey: randomUUID(), target, delivery, text,
+    ...text.includes('GO MERGE') ? { goMerge: { pullRequest: 'https://github.com/synthetic/project/pull/1' } } : {} })
   const settled = () => Boolean(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.workspaceSettledAt)
   await finish()
   // Settled after its first turn, as Settle finished threads or the user settles a thread that is done.

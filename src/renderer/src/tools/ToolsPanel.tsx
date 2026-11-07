@@ -3,7 +3,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { Copy, FileDiff, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -39,6 +39,7 @@ import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
 import { useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
+import { readPullRequestBase } from './ChangesBasePicker'
 import { PullRequestSurface } from './PullRequestSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
@@ -61,6 +62,14 @@ import './toolsRail.css'
 const FEEDBACK_MS = 1_600
 const RESIZE_STEP = 24
 const OVERLAY_GUTTER = 48
+/**
+ * Beside a pane narrower than this, a comparison or a pull request and the conversation are both too cramped to read, so
+ * Changes and the Pull request surface fill the workspace over the thread, as in an 820px window, until they close. A
+ * panel the user sized keeps its width and its place. The Pull request surface is Zach's pick B of November 5, 2026
+ * (ADR-0110 and ADR-0182, their November 5 narrow-window amendments).
+ */
+const COVER_MIN_PANE_WIDTH = 400
+const COVERING_SURFACES: ReadonlySet<ToolSurfaceId> = new Set(['changes', 'pull-request'])
 
 export interface ToolsPanelProps {
   readonly focusedThreadId: string | null
@@ -134,7 +143,7 @@ function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thre
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: FileDiff, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
 /** A surface's name where its rail word is shortened. */
 const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request` }
 /** A surface's whole name: its rail word, or the longer name where the rail word is shortened. */
@@ -165,7 +174,7 @@ function ToolsRailTabs({ value, live, attention, onChange }: { readonly value: T
   readonly attention: Partial<Record<ToolSurfaceId, boolean>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   const { t, i18n } = useLingui()
   return <div className="tools-rail__tabs" role="tablist" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} aria-orientation="vertical">
-    {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable"
+    {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable" data-surface={surface.id}
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
       aria-label={SURFACE_NAMES[surface.id] ? i18n._(SURFACE_NAMES[surface.id]!) : undefined}
       aria-description={live[surface.id]} title={live[surface.id] ? `${surfaceName(surface.id)}: ${live[surface.id]}` : surfaceName(surface.id)}
@@ -320,16 +329,20 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     return () => observer.disconnect()
   }, [open])
 
+  const measured = available !== null && available > 0 ? available : null
+  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
+  const coversThread = !chrome.expanded && !chrome.resized && COVERING_SURFACES.has(chrome.surface) && measured !== null && measured - preferred < COVER_MIN_PANE_WIDTH
+  const fills = chrome.expanded || coversThread
   // Keep mounted conversations (and their state) out of keyboard navigation while the tool fills the workspace.
   const covered = useRef<HTMLElement[]>([])
   useLayoutEffect(() => {
-    if (!open || !chrome.expanded) return
+    if (!open || !fills) return
     const area = workspaceArea(aside.current)
     covered.current = area ? [...area.children].filter((element): element is HTMLElement => element instanceof HTMLElement && !element.contains(aside.current)) : []
     const previous = covered.current.map(element => element.inert)
     covered.current.forEach(element => { element.inert = true })
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
-  }, [open, chrome.expanded])
+  }, [open, fills])
 
   // Files, Changes and Agents read a paired host's thread on that host. Its browser and test iPhone stay on that machine,
   // so nothing here starts them for it; its terminal runs over SSH where that is on (ADR-0183; Owl only).
@@ -397,13 +410,11 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
     <PhonePlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   </>
-  const measured = available !== null && available > 0 ? available : null
-  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
-  const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
+  const overlay = chrome.expanded || coversThread || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
   // The page wears how the panel stands: docked beside the panes or over them, and nothing while it is shut.
   useMark('tools', open ? overlay ? 'overlay' : 'docked' : null)
   if (!open) return player
-  const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
+  const width = chrome.expanded && measured !== null ? measured : coversThread && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
   const pinned = (chrome.surface !== 'agents' || delegationOn) && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
   const surfaceLabel = surfaceName(chrome.surface)
@@ -468,6 +479,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
+    // Changes compares against the pull request's own target branch, by the ref that stands for it in this working copy;
+    // one it does not have is asked for by name, and Changes says it is not a branch here rather than compare another.
+    onReviewChanges={baseBranch => { void readPullRequestBase(window.sotto?.agents?.gitRefs, thread.id, baseBranch).then(base => store.showBranchChanges(changesFor, thread.id, base ?? baseBranch)) }}
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.
@@ -497,7 +511,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
         <ToolsRailTabs value={chrome.surface} live={live} attention={attention} onChange={surface => store.setSurface(surface)} />
         <div className="tools-rail__foot">
           {thread && (chrome.surface !== 'agents' || delegationOn) ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t({ message: `Pin to ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' })} title={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Pin to this thread`} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
-          <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? t`Restore tools panel` : t`Expand tools panel`} title={chrome.expanded ? t({ message: 'Restore', comment: 'Returns the expanded tools panel to its width.' }) : t`Expand to fill the workspace`} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>
+          {/* Changes and the Pull request surface already fill a workspace too narrow to share, so expanding would change nothing. */}
+          {coversThread ? null : <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? t`Restore tools panel` : t`Expand tools panel`} title={chrome.expanded ? t({ message: 'Restore', comment: 'Returns the expanded tools panel to its width.' }) : t`Expand to fill the workspace`} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>}
           <button type="button" className="files-icon tt-focusable" aria-label={t`Close tools panel`} title={t({ message: 'Close', comment: 'Closes the tools panel.' })} onClick={close}><X size={16} aria-hidden="true" /></button>
         </div>
       </div>

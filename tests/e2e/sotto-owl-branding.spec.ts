@@ -63,10 +63,12 @@ async function textContrast(element: Locator): Promise<number> {
 
 /** Where every control in the top row and the search field sit, by accessible name. */
 async function rowGeometry(page: Page, row: Locator): Promise<Geometry[]> {
+  // Below a 1000 pixel window the sidebar stands as the rail, which has no search field (ADR-0110, November 5, 2026).
+  const search = page.getByRole('searchbox', { name: 'Search threads' })
   const controls = [
     ...await row.getByRole('radio').all(),
     ...await row.getByRole('button').all(),
-    page.getByRole('searchbox', { name: 'Search threads' }),
+    ...await search.isVisible() ? [search] : [],
   ]
   return Promise.all(controls.map(async control => {
     const box = (await control.boundingBox())!
@@ -145,7 +147,12 @@ test.describe('Sotto Owl branding on the built app', () => {
         for (const [width, height] of SIZES) {
           await resizeContentWindow(launched, width, height)
           await settle(page)
-          result[`threads-${width}x${height}`] = await checkBrand(row, track)
+          // Below a 1000 pixel window the sidebar stands as the rail (ADR-0110, November 5, 2026), which carries the mark
+          // alone above Expand sidebar on either track, as a collapsed sidebar always has; the top row is the panel's.
+          if (await sidebar.locator('.thread-nav__rail').isVisible()) {
+            await expect(sidebar.locator('.thread-nav__rail > .thread-nav__glyph')).toBeVisible()
+            result[`threads-${width}x${height}`] = { brand: 'rail mark' }
+          } else result[`threads-${width}x${height}`] = await checkBrand(row, track)
           // The toolbar and search beside the brand sit exactly where the stable build puts them.
           const key = `${appearance}-${width}x${height}`, where = await rowGeometry(page, row)
           if (track === 'stable') geometry.set(key, where)
@@ -156,6 +163,8 @@ test.describe('Sotto Owl branding on the built app', () => {
           if (width === 1280) await row.screenshot({ path: resolve(evidenceRoot, `header-${track}-${appearance}.png`), animations: 'disabled' })
         }
 
+        // Help's sidebar stands as the rail below a 1000 pixel window too, so its top row is read at a wide one.
+        await resizeContentWindow(launched, 1280, 800)
         await openPage(page, 'Help')
         await expect(page.getByRole('heading', { level: 1, name: 'Help' })).toBeVisible()
         await expect(page.locator('.thread-nav__top').getByRole('img', { name: 'Sotto Owl' })).toHaveCount(track === 'owl' ? 1 : 0)

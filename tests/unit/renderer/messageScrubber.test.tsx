@@ -127,6 +127,26 @@ describe('the message scrubber', () => {
     expect(ticks().map(tick => tick.style.top)).toEqual(tickPlaces(5, VIEW).places.map(place => `${place}px`))
   })
 
+  it('shows at rest only the ticks around the messages on screen, fading out above and below them', () => {
+    // Turns 500 pixels tall, with the sixth to eighth messages sent on screen (Zach's pick C, November 5, 2026).
+    const real = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('thread-workspace__transcript')) return { top: 0, bottom: VIEW } as DOMRect
+      const sent = this.matches('.thread-message[data-role="user"]') ? /^u(\d+)$/u.exec(this.dataset.messageId ?? '') : null
+      if (sent) { const top = (Number(sent[1]) - 6) * 500 + 50; return { top, bottom: top + 40 } as DOMRect }
+      return real.call(this)
+    })
+    mount(conversation(20))
+    const near = () => ticks().map(tick => Number(tick.style.getPropertyValue('--near')))
+    expect(ticks().filter(tick => tick.hasAttribute('data-in-view')).map(tick => tick.dataset.index)).toEqual(['5', '6', '7'])
+    expect(near().slice(5, 8)).toEqual([1, 1, 1])
+    // A tick away is nine pixels down the column, on a 20-pixel curve; far off, a tick does not show at all.
+    expect(near()[4]).toBeCloseTo(Math.exp(-81 / 800), 3)
+    expect(near()[8]).toBeCloseTo(Math.exp(-81 / 800), 3)
+    expect(near()[4]).toBeGreaterThan(near()[2]!)
+    expect(near()[19]).toBe(0)
+  })
+
   it('shows only on a long conversation of three or more sent messages, and not on stable', () => {
     contentHeight = 2 * VIEW - 1
     mount(conversation(5))

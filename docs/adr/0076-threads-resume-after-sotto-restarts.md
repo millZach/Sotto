@@ -2,6 +2,8 @@
 
 October 26, 2026 amendment: on Owl, with `restart-stopped-threads` on, [ADR-0144](0144-stopped-threads-restart-when-their-limit-resets.md) supersedes decision 1. The note runs under "Restart stopped threads", which also restarts threads a usage limit stopped, and shows tagged "Restarted". The record, the note's words and three in a row stand.
 
+November 5, 2026 amendment (#2234): a watched thread this record carries is not also restarted for work left (ADR-0144 decision 12); its resume note goes as above. A watched thread that sat idle on a failed turn when Sotto closed, which this record never held, is restarted under ADR-0144 with its own note.
+
 ## Status
 
 Accepted October 12, 2026, by the owner's choice, as an Owl feature (ADR-0072). The owner asked for "a setting that

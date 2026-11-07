@@ -56,13 +56,21 @@ export interface PullRequestObservation {
   remarks?: string
   /** Whether every check the base branch requires passed on `head`, as babysitting reads it (ADR-0061). */
   requiredPassed?: boolean
+  /**
+   * Where Sotto can read which checks a merge needs: how many of them are still to finish on `head`, one GitHub has not
+   * made yet included, and how many other checks, which no merge waits on, are still running (#2116).
+   */
+  pendingChecks?: { required: number; optional: number }
 }
 /**
  * What a pull request says that needs Watcher (#1190), beyond the evidence it keeps: a conflict, a review asking for
  * changes, its required checks passing on a head, and how many times its comments or reviews moved since Sotto first read
  * them. In memory only, like evidence; `observedAt` keeps a late read from undoing a newer one.
  */
-interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string; observedAt: string }
+interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string
+  /** What `pendingChecks` said of `head`: words for the news, never a reason to wake Watcher. */
+  pending?: { head: string; required: number; optional: number }
+  observedAt: string }
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks' | 'bug-bot-review'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
@@ -122,6 +130,13 @@ export class WatcherEvidenceStore {
    * only: after a restart a pass counts from Sotto's first read of it.
    */
   private readonly passing = new Map<string, Map<string, { head: string | undefined; since: string }>>()
+  /**
+   * Each pull request in the merge train by thread and pull request key (#2229): since when, the first time Sotto saw its
+   * checks pass or its thread said READY TO MERGE, and that READY TO MERGE's head. A pull request stays in the train when
+   * its checks run again after a push, so the train can say that a merge now would land in the middle of them. In memory
+   * only, like the passes: after a restart a pull request joins again at its next pass or READY TO MERGE.
+   */
+  private readonly trains = new Map<string, Map<string, { since: string; ready?: { head: string; at: string } }>>()
   /** The thread keys written since `removeMissing` last ran, which the next run may have to let go of. */
   private readonly written = new Set<string>()
   /** Each pull request's life by thread and pull request key (#1146): whether its merge or close is news, and its flips. */
@@ -171,6 +186,30 @@ export class WatcherEvidenceStore {
     else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
     while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
     if (passing.size) { this.passing.set(key, passing); this.written.add(key) } else this.passing.delete(key)
+    if (item.checksState === 'passed') this.joinTrain(key, slot.replace(/^(?:pr:|host:github:)/u, '').replace(/:checks$/u, ''), item.observedAt)
+  }
+  private joinTrain(key: string, pr: string, at: string): Map<string, { since: string; ready?: { head: string; at: string } }> {
+    const train = this.trains.get(key) ?? new Map<string, { since: string; ready?: { head: string; at: string } }>()
+    if (!train.has(pr)) train.set(pr, { since: at })
+    while (train.size > EVIDENCE_CACHE_MAX) train.delete(train.keys().next().value!)
+    this.trains.set(key, train); this.written.add(key)
+    return train
+  }
+  /** A thread said its pull request is READY TO MERGE at `head` (#2229): it joins the train, if it had not, and keeps the newest such word. */
+  noteReady(target: WatcherThreadTarget, url: string, head: string, at: string): void {
+    const pr = pullRequestKey(url) ?? url, entry = this.joinTrain(targetKey(target), pr, at).get(pr)!
+    if (!entry.ready || Date.parse(entry.ready.at) <= Date.parse(at)) entry.ready = { head, at }
+  }
+  /** Since when a pull request has been in the merge train, and the newest READY TO MERGE its thread sent, or undefined while it is not in it. */
+  trainOf(target: WatcherThreadTarget, url: string): { readonly since: string; readonly ready?: { readonly head: string; readonly at: string } } | undefined {
+    return this.trains.get(targetKey(target))?.get(pullRequestKey(url) ?? url)
+  }
+  /** The commit a pull request is on, as Sotto last read it from GitHub; undefined when no read says. */
+  headOf(target: WatcherThreadTarget, url: string): string | undefined {
+    const link = pullRequestKey(url) ?? url, entries = this.entries.get(targetKey(target))
+    for (const prefix of ['pr:', 'host:github:']) { const head = entries?.get(`${prefix}${link}:checks`)?.headId; if (head) return head }
+    for (const prefix of ['pr:', 'host:github:']) { const head = entries?.get(`${prefix}${link}`)?.headId; if (head) return head }
+    return undefined
   }
   /**
    * Since when a pull request's checks have passed on the commit it is on, as Sotto first saw them pass, or undefined
@@ -285,6 +324,21 @@ export class WatcherEvidenceStore {
     for (const fact of this.attentionFacts(target)) byPr.set(fact.pr, (byPr.get(fact.pr) ?? new Set()).add(fact.kind))
     return byPr
   }
+  /**
+   * How many checks each pull request's newest commit still waits on, by pull request, for the words a wake-up carries
+   * (#2116): those its base branch's rules require and the others. Only on the commit evidence last read it on.
+   */
+  pendingChecks(target: WatcherThreadTarget): Map<string, { required: number; optional: number }> {
+    const key = targetKey(target), heads = new Map<string, Set<string>>(), pending = new Map<string, { required: number; optional: number }>()
+    for (const item of this.entries.get(key)?.values() ?? []) if (item.source === 'github' && item.url && item.headId) {
+      const pr = pullRequestKey(item.url) ?? item.url
+      heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
+    }
+    for (const [pr, said] of this.attending.get(key) ?? []) {
+      if (said.pending && (!heads.get(pr)?.size || heads.get(pr)!.has(said.pending.head))) pending.set(pr, { required: said.pending.required, optional: said.pending.optional })
+    }
+    return pending
+  }
   /** The facts evidence does not hold, so a change to them is a change too. */
   attentionIdentity(target: WatcherThreadTarget): string[] {
     return this.attentionFacts(target).filter(fact => BESIDE_EVIDENCE.has(fact.kind) || fact.returns > 0).map(fact => fact.key).sort()
@@ -294,6 +348,7 @@ export class WatcherEvidenceStore {
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
     for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
+    for (const key of this.trains.keys()) if (!targets.has(key)) this.trains.delete(key)
     for (const key of this.lives.keys()) if (!targets.has(key)) this.lives.delete(key)
     for (const key of this.unlinked.keys()) if (!targets.has(key)) this.unlinked.delete(key)
     this.written.clear()
@@ -306,12 +361,12 @@ export class WatcherEvidenceStore {
   removeMissingOf(moved: Iterable<string>, listed: (key: string) => boolean): void {
     for (const key of [...this.written, ...moved]) {
       if (listed(key)) continue
-      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.lives.delete(key); this.unlinked.delete(key)
+      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.trains.delete(key); this.lives.delete(key); this.unlinked.delete(key)
     }
     this.written.clear()
   }
   /** Every thread key the store holds anything for, for verifying mode. */
-  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
+  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.trains.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
     const turn = thread.lastTurn
@@ -373,7 +428,7 @@ export class WatcherEvidenceStore {
    * that changed. A read older than the one kept says nothing new, as evidence ignores a late answer for an earlier head.
    */
   private attend(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
-    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined && read.requiredPassed === undefined) return false
+    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined && read.requiredPassed === undefined && read.pendingChecks === undefined) return false
     const key = targetKey(target), pr = pullRequestKey(read.url) ?? read.url
     const byPr = this.attending.get(key) ?? new Map<string, PullRequestAttention>()
     const before = byPr.get(pr) ?? { remarksMoved: 0, observedAt: read.observedAt }, after = { ...before, observedAt: read.observedAt }
@@ -383,6 +438,8 @@ export class WatcherEvidenceStore {
     if (read.requiredPassed !== undefined) { if (read.requiredPassed && read.head) after.requiredPassedHead = read.head; else delete after.requiredPassedHead }
     // A read of another commit, whatever it says of its checks, ends the pass of the one before.
     else if (read.head && after.requiredPassedHead !== undefined && after.requiredPassedHead !== read.head) delete after.requiredPassedHead
+    if (read.pendingChecks && read.head) after.pending = { head: read.head, ...read.pendingChecks }
+    else if (read.head && after.pending && (read.requiredPassed !== undefined || after.pending.head !== read.head)) delete after.pending
     // The first read of its remarks is where they stand, not news; each move after it is.
     if (read.remarks !== undefined) { if (before.remarks !== undefined && before.remarks !== read.remarks) after.remarksMoved++; after.remarks = read.remarks }
     byPr.set(pr, after)

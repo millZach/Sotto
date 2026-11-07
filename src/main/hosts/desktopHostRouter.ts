@@ -31,7 +31,7 @@ import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type Host
 import { NEW_THREAD_DEFAULT_FIELDS } from '../../shared/newThreadDefaults'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { needsConfirmationReceipt, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
+import { needsConfirmationReceipt, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -65,6 +65,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /**
    * The host's confirmation receipt for one merge, close or auto-merge, by the host's own IDs, or null from a host that
    * takes the press without one (#1691). Absent on this computer, whose window's confirmation is the confirmation.
@@ -437,7 +438,12 @@ export class DesktopHostRouter {
      * Where the window's Settle of a thread keeps which of its delegated threads elsewhere it settled, and which it could
      * not, for its Restore and a later Settle (#1316 part 3). Absent, they are kept in memory.
      */
-    cascadedSettles?: CascadedSettles } = {}) {
+    cascadedSettles?: CascadedSettles
+    /**
+     * Told each state built to answer a command as it is built (#306): the main window's broadcaster numbers it against
+     * its broadcasts then, before the microtasks that pass until it is encoded. Read and kept by reference, never copied.
+     */
+    replyBuilt?: (state: AgentState) => void } = {}) {
     this.held = heldProvidersOption(options)
     this.cascadedSettles = options.cascadedSettles ?? new CascadedSettles()
   }
@@ -835,7 +841,9 @@ export class DesktopHostRouter {
    * its top level. A publication may still be waiting behind the coordinator's publish window when a command answers, so
    * the answer is built afresh rather than taken from `lastPublished()`, which could miss the command's effect (#306).
    */
-  private reply(): AgentState { return this.build(connection => commandView(connection.service)) }
+  private reply(): AgentState { return this.numbered(this.commandShell()) }
+  /** The state a command's answer is made from, not yet numbered: an answer that remakes its `host` numbers what it sends. */
+  private commandShell(): AgentState { return this.build(connection => commandView(connection.service)) }
   /**
    * Publishes every host's state as it is now and answers a command with that publication. It is built from each host's
    * live state in this same turn, so it holds the command's own effect, and the answer costs no second build (#1760).
@@ -844,8 +852,10 @@ export class DesktopHostRouter {
    */
   private emitted(): AgentState {
     this.emit()
-    return this.published ? { ...this.published } : this.reply()
+    return this.published ? this.numbered({ ...this.published }) : this.reply()
   }
+  /** `state`, which answers a command, told to whoever numbers replies as it is built (#306). */
+  private numbered(state: AgentState): AgentState { this.options.replyBuilt?.(state); return state }
   /**
    * One host's threads as the router last published them. The host-update and start-at-boot questions ask this on every
    * change; reading every host's shell afresh for it copied the whole state twice per waiting host per update. Before
@@ -1331,6 +1341,12 @@ export class DesktopHostRouter {
     if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its pull requests.`)
     return connection.gitPullRequest({ ...request, threadId: id! })
   }
+  async gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitPullRequestList) throw new Error(t`Pull requests are unavailable on this host.`)
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its pull requests.`)
+    return connection.gitPullRequestList({ ...request, threadId: id! })
+  }
   /** The words of a started thread's handover, read on the thread's own host when the user asks to read them (#1028). */
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     const { connection, id } = this.target(threadId)
@@ -1762,8 +1778,9 @@ export class DesktopHostRouter {
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {
-    const shell = this.reply()
-    return { ...withoutHistory ? agentShell(shell) : shell, ...outcome }
+    // Numbered as sent: without its history the answer has a `host` of its own, which is what its revision is kept by (#306).
+    const shell = this.commandShell()
+    return this.numbered({ ...withoutHistory ? agentShell(shell) : shell, ...outcome })
   }
   /**
    * Clear now (ADR-0140): this computer's own settled threads, listed or cleared by its own coordinator, with every thread ID

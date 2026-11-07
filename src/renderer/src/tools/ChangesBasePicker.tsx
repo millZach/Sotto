@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ArrowRight, Check, ChevronDown, Cloud } from 'lucide-react'
+import { Check, ChevronDown, Cloud } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { GitRef, GitRefsPage, GitRefsRequest } from '../../../shared/gitRefs'
 
@@ -38,8 +38,25 @@ export function choiceValue(choice: BaseChoice, selected: string | null): string
 }
 
 /**
- * The base Branch changes compares against, T3's comparison target: the branch it compares, an arrow, and the
- * base as a button that opens the list. The list starts with **Automatic** (the base Sotto works out), then each
+ * The ref that stands for a pull request's target branch: the primary remote's copy where there is one, since that is
+ * what the pull request merges into and a local branch of the same name may be behind it, else the local branch. Null
+ * when the working copy has neither, so the caller can say so rather than compare against another branch.
+ */
+export function pullRequestBase(refs: readonly GitRef[], baseBranch: string): string | null {
+  const choice = baseChoices(refs).find(item => item.id === baseBranch)
+  return choice === undefined ? null : choice.remote ?? choice.local
+}
+
+/** Reads the working copy's branches for the ref that stands for a pull request's target branch (`pullRequestBase`). */
+export async function readPullRequestBase(read: RefsReader | undefined, threadId: string, baseBranch: string): Promise<string | null> {
+  if (!read || baseBranch === '') return null
+  const page = await read({ threadId, query: baseBranch, includeMatchingRemoteRefs: true, limit: 200 }).catch(() => null)
+  return page === null ? null : pullRequestBase(page.refs, baseBranch)
+}
+
+/**
+ * The base Branch changes compares against, T3's comparison target: after the scope on Changes' line of chrome,
+ * "against" and the base as a button that opens the list. The list starts with **Automatic** (the base Sotto works out), then each
  * branch with a **Use remote version** switch where both a local and a remote copy exist and a mark where only the
  * remote one does.
  */
@@ -97,8 +114,8 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
     items[next]?.focus()
   }
   return <div className="changes-base">
-    <span className="changes-base__head" title={head}><bdi>{head}</bdi></span>
-    <ArrowRight size={13} aria-hidden="true" className="changes-base__arrow" />
+    {/* The branch compared is the panel's foot's, and the button's name and tooltip, so the line does not say it twice. */}
+    <span className="changes-base__against" aria-hidden="true">{t({ message: 'against', comment: 'After the scope of Changes and before the base branch it compares with, as in "Branch changes against origin/main".' })}</span>
     <button ref={trigger} type="button" className="changes-base__trigger tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       aria-label={selected === null
         ? t({ message: `Change the base. Comparing ${head} with ${shownBase}, chosen automatically`, comment: '{head} and {shownBase} are branch names.' })

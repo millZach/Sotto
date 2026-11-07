@@ -84,6 +84,28 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try Commands.answer(threadID: "t", request: req, currentRequests: [req], answers: ["q": QuestionAnswer(text: "unsupported")]))
         XCTAssertThrowsError(try Commands.answer(threadID: "t", request: req, currentRequests: [req]))
     }
+    /// A question skipped on its own (ADR-0135, November 6, 2026) goes as `skipped` on its answer, only where the computer
+    /// marked it skippable; every question skipped goes as the request's own skip where the request takes one.
+    func testSkippedQuestionsGoAsTheirOwnAnswerShape() throws {
+        let questions = #""questions":[{"id":"a","question":"Fix it now?","options":[{"id":"wait","label":"Wait"}],"multiSelect":false,"allowFreeText":false,"skippable":true},{"id":"b","question":"Which key?","options":[{"id":"k","label":"Staging"}],"multiSelect":false,"allowFreeText":false,"skippable":true}]"#
+        let req = try request(#"{"id":"r","kind":"question","text":"Two","options":[],"skippable":true,"# + questions + "}")
+        XCTAssertEqual(req.skippable, true); XCTAssertEqual(req.questions?.map(\.skippable), [true, true])
+        let partial = try Commands.answer(threadID: "t", request: req, currentRequests: [req], answers: ["a": QuestionAnswer(optionIds: ["wait"]), "b": .skip])
+        XCTAssertEqual(partial["questionAnswers"]["a"]["optionIds"], .array([.string("wait")]))
+        XCTAssertEqual(partial["questionAnswers"]["b"], .object(["optionIds": .array([]), "skipped": .bool(true)]))
+        XCTAssertEqual(partial["skipped"], .null)
+        let all = try Commands.answer(threadID: "t", request: req, currentRequests: [req], answers: ["a": .skip, "b": .skip])
+        XCTAssertEqual(all["skipped"], .bool(true)); XCTAssertEqual(all["questionAnswers"], .null)
+        XCTAssertThrowsError(try Commands.answer(threadID: "t", request: req, currentRequests: [req], answers: ["a": QuestionAnswer(optionIds: ["wait"], skipped: true), "b": .skip]))
+        // Grok Build takes no skip of the whole request, so every question goes skipped on its own.
+        let grok = try request(#"{"id":"r","kind":"question","text":"Two","options":[],"# + questions + "}")
+        let each = try Commands.answer(threadID: "t", request: grok, currentRequests: [grok], answers: ["a": .skip, "b": .skip])
+        XCTAssertEqual(each["skipped"], .null); XCTAssertEqual(each["questionAnswers"]["b"]["skipped"], .bool(true))
+        // A computer that predates the mark offers no Skip of a question's own, and refuses one.
+        let older = try request(#"{"id":"r","kind":"question","text":"One","options":[],"questions":[{"id":"a","question":"Fix it now?","options":[{"id":"wait","label":"Wait"}],"multiSelect":false,"allowFreeText":false}]}"#)
+        XCTAssertNil(older.questions?.first?.skippable); XCTAssertNil(older.skippable)
+        XCTAssertThrowsError(try Commands.answer(threadID: "t", request: older, currentRequests: [older], answers: ["a": .skip]))
+    }
     /// A secret answer (#2153): the mark is read when a computer sends it, and a question without it is not secret.
     func testSecretQuestionMarkIsReadAndOptional() throws {
         let secret = try request(#"{"id":"r","kind":"question","text":"Token","options":[],"questions":[{"id":"q","question":"Paste the fake token","options":[],"multiSelect":false,"allowFreeText":true,"prose":true,"secret":true}]}"#)

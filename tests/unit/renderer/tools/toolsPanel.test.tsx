@@ -388,6 +388,14 @@ describe('shared tools panel', () => {
     expect(store.getSnapshot().open).toBe(false)
   })
 
+  it('says in its tooltip what a press does, and while Tools is hidden what it holds', () => {
+    const store = new ToolsPanelStore()
+    render(<ToolsToggle threadId="grok-previews" focused store={store} state={threadsStateFixture()} />)
+    expect(toggle()).toHaveAttribute('title', 'Show Tools · Browser, files, changes and more')
+    act(() => store.setOpen(true))
+    expect(toggle()).toHaveAttribute('title', 'Hide Tools')
+  })
+
   it('returns focus straight to the Tools symbol when Close is activated, docked, pinned or overlaid', async () => {
     const { store, rerender } = setup({ inPane: true })
     const closeFromKeyboard = (): void => {
@@ -490,6 +498,48 @@ describe('shared tools panel', () => {
     expect(store.getSnapshot().width).toBe(696)
     fireEvent.keyDown(handle, { key: 'Home' })
     expect(store.getSnapshot().width).toBe(380)
+  })
+  it('opens Changes over the thread where a comparison and the conversation are too narrow side by side, with the room the thread would keep', async () => {
+    const { store } = setup()
+    const area = document.querySelector('.thread-workspace__body') as HTMLElement
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 820 })
+    act(() => { store.setSurface('files'); store.setOpen(true) })
+    // Files keeps its place beside a 361px thread.
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'docked'))
+    act(() => store.setSurface('changes'))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'overlay'))
+    expect(panel().style.getPropertyValue('--tools-width')).toBe('820px')
+    // It fills the workspace already, so there is nothing to expand, and the thread under it takes no keys.
+    expect(within(panel()).queryByRole('button', { name: 'Expand tools panel' })).toBeNull()
+    const under = [...area.children].filter(element => !element.contains(panel())) as HTMLElement[]
+    expect(under.length).toBeGreaterThan(0)
+    expect(under.every(element => element.inert)).toBe(true)
+    // A panel the user sized keeps its width and its place.
+    act(() => store.setWidth(400))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'docked'))
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1200 })
+  })
+  it('opens the Pull request surface over the thread by the same rule (pick B for the narrow window), and beside it where there is room', async () => {
+    const { store } = setup()
+    const area = document.querySelector('.thread-workspace__body') as HTMLElement
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 820 })
+    act(() => { store.setSurface('pull-request'); store.setOpen(true) })
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'overlay'))
+    expect(panel().style.getPropertyValue('--tools-width')).toBe('820px')
+    expect(within(panel()).queryByRole('button', { name: 'Expand tools panel' })).toBeNull()
+    const under = [...area.children].filter(element => !element.contains(panel())) as HTMLElement[]
+    expect(under.length).toBeGreaterThan(0)
+    expect(under.every(element => element.inert)).toBe(true)
+    // Escape closes it, and the thread takes its keys again.
+    fireEvent.keyDown(panel(), { key: 'Escape' })
+    await waitFor(() => expect(store.getSnapshot().open).toBe(false))
+    expect(under.every(element => !element.inert)).toBe(true)
+    // At 1280 it stands beside the thread, with Expand at the rail's foot.
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1280 })
+    act(() => store.setOpen(true))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'docked'))
+    expect(within(panel()).getByRole('button', { name: 'Expand tools panel' })).toBeInTheDocument()
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1200 })
   })
   it('moves along the rail with the arrow keys, Home and End, as a single tab stop', async () => {
     const { store } = setup()

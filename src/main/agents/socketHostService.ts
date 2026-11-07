@@ -16,7 +16,7 @@ import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
+import { gitPullRequestListResultSchema, gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
 import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
@@ -49,7 +49,7 @@ import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, ty
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
-import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
+import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
@@ -245,8 +245,8 @@ export class SocketHostService implements HostService {
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
-  private readonly tellListeners = new Set<(askId: string, ask: TellWatcherAsk) => void>()
-  private readonly heldTells: { readonly askId: string; readonly ask: TellWatcherAsk }[] = []
+  private readonly tellListeners = new Set<(askId: string, ask: WatcherTellPush) => void>()
+  private readonly heldTells: { readonly askId: string; readonly ask: WatcherTellPush }[] = []
   /** Who hears the host say a delegation it holds for one of this desktop's callers moved (#1316 part 2). */
   private readonly remoteNewsListeners = new Set<(caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
@@ -407,7 +407,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -1421,6 +1421,10 @@ export class SocketHostService implements HostService {
     if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
   }
+  async gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    if (!this.features.includes('git-pull-request-list')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    return this.read(gitPullRequestListResultSchema, await this.call({ op: 'git-pull-request-list', request }))
+  }
   /** The host lists `pull-request-confirmation`: it takes a merge, close or auto-merge only with its own confirmation receipt (#1691). */
   get supportsPullRequestConfirmation(): boolean { return this.features.includes('pull-request-confirmation') }
   /**
@@ -1553,7 +1557,7 @@ export class SocketHostService implements HostService {
     await this.call({ op: 'delegation-relay-answer', askId, result: answer }, undefined, undefined, 10000)
   }
   /** The host's threads reach this desktop's Watcher: each message they send it comes here (`watcher-tell`). */
-  subscribeWatcherTell(listener: (askId: string, ask: TellWatcherAsk) => void): () => void {
+  subscribeWatcherTell(listener: (askId: string, ask: WatcherTellPush) => void): () => void {
     this.tellListeners.add(listener)
     for (const held of this.heldTells.splice(0)) { try { listener(held.askId, held.ask) } catch { /* A listener's failure is its own. */ } }
     return () => { this.tellListeners.delete(listener) }

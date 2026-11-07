@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 
 import type { AgentRequest } from '../../../../shared/agents'
-import { EMPTY_SELECTION, requestMode, textOnly, type RequestAnswer, type RequestEntry } from './requestAnswers'
+import { EMPTY_SELECTION, isSkipped, requestMode, textOnly, type RequestAnswer, type RequestEntry } from './requestAnswers'
 
 /** The words a receipt uses for an answer written in the user's own words, which Sotto never repeats. */
 export const OWN_WORDS = 'in your own words'
@@ -31,18 +31,40 @@ export function chosenWords(request: AgentRequest, entry: Pick<RequestEntry, 'ch
   if (mode !== 'structured') return null
   if (entry.choice === 'skip') return SKIPPED
   const labels: string[] = []
-  let own = false
+  let own = false, skipped = 0
   for (const question of request.questions ?? []) {
     const selection = entry.selections[question.id]
     if (selection === undefined) continue
+    if (isSkipped(selection)) { skipped++; continue }
     for (const id of selection.optionIds) {
       const option = question.options.find(item => item.id === id)
       if (option !== undefined) labels.push(plainLabel(option.label))
     }
     if ((selection.other || textOnly(question)) && selection.text.trim() !== '') own = true
   }
-  if (labels.length === 0) return own ? OWN_WORDS : null
-  return own ? `${labels.join(', ')}, and ${OWN_WORDS}` : labels.join(', ')
+  const chosen = labels.length === 0 ? own ? OWN_WORDS : null : own ? `${labels.join(', ')}, and ${OWN_WORDS}` : labels.join(', ')
+  if (skipped === 0) return chosen
+  // Questions skipped one at a time are counted after what was chosen (Zach's pick, November 6, 2026), and never named.
+  if (chosen === null) return SKIPPED
+  return t({ message: `${chosen}, and skipped ${skipped}`, comment: 'What the user answered on a card of several questions and how many they skipped, as in “Wait for the rewrite, and skipped 2”.' })
+}
+
+/**
+ * How many choices the user made on a request's card: one for a permission's choice or a single option, each option
+ * picked across its questions and one more for an answer of their own. Zero when the card offered nothing it could name.
+ */
+export function chosenCount(request: AgentRequest, entry: Pick<RequestEntry, 'choice' | 'selections'>): number {
+  const mode = requestMode(request)
+  if (mode !== 'structured') return chosenWords(request, entry) === null ? 0 : 1
+  if (entry.choice === 'skip') return 0
+  let count = 0
+  for (const question of request.questions ?? []) {
+    const selection = entry.selections[question.id]
+    if (selection === undefined) continue
+    count += selection.optionIds.filter(id => question.options.some(option => option.id === id)).length
+    if ((selection.other || textOnly(question)) && selection.text.trim() !== '') count++
+  }
+  return count
 }
 
 /** The same words for an answer as it is sent: what the card's choice or selections were, read back from the answer itself. */
@@ -52,12 +74,22 @@ export function answerWords(request: AgentRequest, answer: RequestAnswer): strin
   if (mode === 'legacy-options') return chosenWords(request, { choice: answer.answer, selections: {} })
   if (answer.skipped) return SKIPPED
   const selections = Object.fromEntries(Object.entries(answer.questionAnswers ?? {}).map(([id, given]) =>
-    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '' }]))
+    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '', ...(given.skipped ? { skipped: true as const } : {}) }]))
   return chosenWords(request, { choice: null, selections })
 }
 
+/** How many choices an answer carries as it is sent, read back from the answer itself (`chosenCount`). */
+export function answerCount(request: AgentRequest, answer: RequestAnswer): number {
+  const mode = requestMode(request)
+  if (mode !== 'structured') return answerWords(request, answer) === null ? 0 : 1
+  if (answer.skipped) return 0
+  const selections = Object.fromEntries(Object.entries(answer.questionAnswers ?? {}).map(([id, given]) =>
+    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '' }]))
+  return chosenCount(request, { choice: null, selections })
+}
+
 const ANSWERED_KEPT = 200
-interface Answered { readonly words: string | null; readonly sent: boolean; readonly gone: boolean }
+interface Answered { readonly words: string | null; readonly sent: boolean; readonly gone: boolean; readonly count?: number | undefined }
 /**
  * What this window sent for each request it answered, by thread and request, in the card's own words, and whether
  * main took the answer, from whichever place sent it: Watcher's conversation, the thread's own card, or its composer.
@@ -72,11 +104,11 @@ class AnsweredChoices {
   private size = 0
   private readonly listeners = new Set<() => void>()
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
-  note(threadId: string, requestId: string, words: string | null, sent: boolean): void {
+  note(threadId: string, requestId: string, words: string | null, sent: boolean, count?: number): void {
     const thread = this.threads.get(threadId) ?? new Map<string, Answered>()
     const before = thread.get(requestId)
-    const next: Answered = { words: words ?? before?.words ?? null, sent: sent || before?.sent === true, gone: false }
-    if (before !== undefined && before.words === next.words && before.sent === next.sent && !before.gone) return
+    const next: Answered = { words: words ?? before?.words ?? null, sent: sent || before?.sent === true, gone: false, count: count ?? before?.count }
+    if (before !== undefined && before.words === next.words && before.sent === next.sent && before.count === next.count && !before.gone) return
     if (before === undefined) this.size++
     thread.set(requestId, next)
     this.threads.set(threadId, thread)
@@ -105,6 +137,11 @@ class AnsweredChoices {
   sent(threadId: string, requestId: string): string | null | undefined {
     const answered = this.threads.get(threadId)?.get(requestId)
     return answered?.sent ? answered.words : undefined
+  }
+  /** How many choices that answer carried, where the place that sent it counted them. */
+  choices(threadId: string, requestId: string): number | undefined {
+    const answered = this.threads.get(threadId)?.get(requestId)
+    return answered?.sent ? answered.count : undefined
   }
   clear(): void { this.threads.clear(); this.size = 0 }
   private dropOldest(): void {

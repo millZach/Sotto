@@ -28,6 +28,10 @@ export interface WatcherControlHooks {
    * answer did not go.
    */
   requestAnswering?(threadId: string, requestId: string, by: 'user' | 'sotto'): () => void
+  /** Whether an answer names a card of Watcher's own question (#2228), which no provider holds. */
+  ownQuestion?(threadId: string, requestId: string): boolean
+  /** The user's answer on such a card, from this window or a phone: null when it went, else what to tell the user. */
+  answerOwnQuestion?(threadId: string, answer: Extract<AgentCommand, { type: 'answer' }>): Promise<string | null>
   beforeDispatch(command: AgentHostCommand, draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand
   /** A provider accepted the persisted action, or could have written it. Never called for an unsaved intent. */
   dispatched?(command: AgentHostCommand): void
@@ -59,6 +63,11 @@ export interface WatcherControlHooks {
     readonly speed?: AgentSpeed | null | undefined; readonly fastMode?: boolean | undefined }, validate: (wanted: WatcherNextTurnOptions) => void): boolean
   /** Whether this thread's queue waits for Watcher's kept choice to go first. */
   holdsQueue?(threadId: string): boolean
+  /**
+   * Whether Watcher's provider is limited or failing, so what is queued for Watcher's own thread waits (#2234): the user's
+   * message waits for the reset and goes first. A restart note never waits for it.
+   */
+  holdsWatcherQueue?(threadId: string): boolean
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void

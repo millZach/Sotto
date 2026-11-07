@@ -1,6 +1,6 @@
 # Splitting up AgentControl
 
-`AgentControl` in `src/main/agents/control.ts` is about 7,100 lines. This plan moves out the parts that hold their own state and call back the least, under a size budget (ADR-0190), then stops at a checkpoint. It removes about 1,400 lines. The send path, about 2,400 lines, gets its own design after that.
+`AgentControl` in `src/main/agents/control.ts` is about 7,100 lines. This plan moves out the parts that hold their own state and call back the least, under a size budget (ADR-0190), then stops at a checkpoint. It removes about 1,250 lines. The send path, about 2,400 lines, gets its own design after that.
 
 Zach picked this plan on November 4, 2026. It changes nothing a user sees.
 
@@ -14,11 +14,13 @@ Every part of the class shares `state`, `dependencies`, `disposed` and the outbo
 | 2 | State and detail publishers (`coalesce…`) | ~150 | 0 | 0% |
 | 3 | Client updates | ~285 | 6 | 9% |
 | 4 | Thread titles | ~140 | 8 | 13% |
-| 5 | Thread detail | ~255 | 3 | 11% |
-| 6 | Broadcast | ~250 | 15 (10 to thread detail) | about 10% |
+| 5 | Detail revisions | ~100 | 1 | 11% |
+| 6 | Broadcast, with detail delivery | ~400 | to be measured | about 10% |
 | 7 | Saved file: reading and writing `agents.json` and Watcher's file | ~340 | 4 | 18% |
 
 Saved file comes last because it reads the most shared state (39 fields), and tests replace its `persist` method 26 times.
+
+PR 5 was "Thread detail, ~255 lines" until November 5. Reading it closely showed two parts. The revision a detail stands at, and what it was read from, is touched outside its own methods only by the privacy reset, broadcast's pruning, `dispose` and the diff's signature, so it moved on its own. The rest — the snapshots each window holds, the detail listeners and the revisions published — is read and written all through `broadcastDetail` and `detailUpdate`, so it moves with broadcast in PR 6. How messages are presented (`presentedMessages` and its caches) calls into Watcher's section and stays until Watcher's section moves.
 
 ## Rules for every move
 
@@ -31,7 +33,7 @@ Saved file comes last because it reads the most shared state (39 fields), and te
 
 ## Checkpoint after PR 7
 
-The file should be about 5,700 lines, which alone does not fix it. Check whether moved modules stayed small, whether agents and tests found them easier to work in, and how many conflicts the moves caused.
+The file should be about 5,850 lines, which alone does not fix it. Check whether moved modules stayed small, whether agents and tests found them easier to work in, and how many conflicts the moves caused.
 
 Out of this plan until then:
 

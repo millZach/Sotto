@@ -51,8 +51,8 @@ describe('Cursor’s questions', () => {
   it('shows each question with its options, which are the only answers it takes', () => {
     expect(pending.request).toMatchObject({ kind: 'question', text: 'Pick', options: [] })
     expect(pending.request.questions).toEqual([
-      { id: 'q1', question: 'Which color?', options: [{ id: 'b', label: 'Blue' }, { id: 'r', label: 'Red' }], multiSelect: false, allowFreeText: false, required: false },
-      { id: 'q2', question: 'Which sizes?', options: [{ id: 's', label: 'Small' }, { id: 'l', label: 'Large' }], multiSelect: true, allowFreeText: false, required: false }])
+      { id: 'q1', question: 'Which color?', options: [{ id: 'b', label: 'Blue' }, { id: 'r', label: 'Red' }], multiSelect: false, allowFreeText: false, required: false, skippable: true },
+      { id: 'q2', question: 'Which sizes?', options: [{ id: 's', label: 'Small' }, { id: 'l', label: 'Large' }], multiSelect: true, allowFreeText: false, required: false, skippable: true }])
   })
   it('answers the chosen option IDs, and skips a question left unanswered', () => {
     expect(cursorAnswer(pending, '', undefined, { q1: { optionIds: ['r'] }, q2: { optionIds: ['s', 'l'] } }))

@@ -128,6 +128,11 @@ const migrations = [{
   // alone, never its words, so it stays hidden however many come after and through a messages-reset. Null for every other.
   version: 9,
   sql: 'ALTER TABLE wake_ups ADD COLUMN hidden INTEGER;',
+}, {
+  // A reply the provider made of its own API error (#2234), marked by the provider and never read from its text, so
+  // Watcher's room still leaves it out after a restart. Null for every other message.
+  version: 10,
+  sql: 'ALTER TABLE messages ADD COLUMN provider_error INTEGER;',
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -236,6 +241,7 @@ function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
     ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
     ...(ownChange?.success ? { watcherOwnChange: ownChange.data } : {}),
     ...(observedChanges?.success ? { watcherObservedChanges: observedChanges.data } : {}),
+    ...(row.provider_error === 1 || row.provider_error === 1n ? { providerError: true as const } : {}),
   }
 }
 
@@ -1310,11 +1316,12 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
       const row = prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
       const position = row?.last === null || row?.last === undefined ? 0 : Number(row.last) + 1
       const { message } = event
-      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments, watcher_own_change, watcher_observed_changes, turn_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments, watcher_own_change, watcher_observed_changes, turn_message_id, provider_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(threadId, position, message.id, message.role, message.text, message.createdAt,
           message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments),
           message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
-          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null)
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null,
+          message.providerError === true ? 1 : null)
       return
     }
     case 'message-text-appended':
@@ -1324,11 +1331,12 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
     case 'message-replaced': {
       const { message } = event
       // Native history has no Sotto mark. An omitted field must not erase history-owned observation.
-      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ?, watcher_own_change = COALESCE(?, watcher_own_change), watcher_observed_changes = COALESCE(?, watcher_observed_changes), turn_message_id = COALESCE(turn_message_id, ?) WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ?, watcher_own_change = COALESCE(?, watcher_own_change), watcher_observed_changes = COALESCE(?, watcher_observed_changes), turn_message_id = COALESCE(turn_message_id, ?), provider_error = COALESCE(?, provider_error) WHERE thread_id = ? AND message_id = ?')
         .run(message.role, message.text, message.createdAt, message.commandId ?? null,
           message.attachments === undefined ? null : JSON.stringify(message.attachments),
           message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
-          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null, threadId, message.id)
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null,
+          message.providerError === true ? 1 : null, threadId, message.id)
       return
     }
     case 'message-aliased': {

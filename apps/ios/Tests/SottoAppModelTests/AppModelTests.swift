@@ -479,6 +479,40 @@ final class AppModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testSnoozedGroupsAndBadgeWakeTogether() async throws {
+        let (model, ref) = try fixture()
+        model.phase(.active); await model.waitForActivation()
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        var source = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(HostConnection.shell)) as? [String: Any])
+        var host = try XCTUnwrap(source["host"] as? [String: Any])
+        var threads = try XCTUnwrap(host["threads"] as? [[String: Any]])
+        threads[0]["snoozedUntil"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(1))
+        host["threads"] = threads; source["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: source))))
+        XCTAssertEqual(model.focusThreads().snoozed.map(\.ref), [ref])
+        XCTAssertTrue(model.focusThreads().recent.isEmpty)
+        XCTAssertEqual(model.threadsBadge, 0)
+        // No new shell arrives: the phone's own clock invalidates its cached grouping.
+        await until { model.focusThreads().snoozed.isEmpty }
+        XCTAssertEqual(model.focusThreads().recent.map(\.ref), [ref])
+        // A later snooze still arms the clock after the first expired through a synchronous list read.
+        threads[0]["snoozedUntil"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(1))
+        host["threads"] = threads; source["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: source))))
+        XCTAssertEqual(model.focusThreads().snoozed.map(\.ref), [ref])
+        await until { model.focusThreads().snoozed.isEmpty }
+        XCTAssertEqual(model.focusThreads().recent.map(\.ref), [ref])
+        // Even a stale snooze field never hides a new request or its badge.
+        threads[0]["snoozedUntil"] = "2099-01-01T00:00:00Z"
+        threads[0]["requests"] = [["id":"ask", "kind":"permission", "text":"Approve?", "options":[]]]
+        host["threads"] = threads; source["host"] = host
+        try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: source))))
+        XCTAssertEqual(model.focusThreads().questions.map(\.ref), [ref])
+        XCTAssertTrue(model.focusThreads().snoozed.isEmpty)
+        XCTAssertEqual(model.threadsBadge, 1)
+        model.phase(.background)
+    }
+
     @MainActor func testDamagedComputerInReadableIndexExplainsPairingAgain() throws {
         let (_, ref) = try fixture()
         TestKeychain.items[ComputerStore.account(ref.hostID)] = Data("incompatible computer".utf8)

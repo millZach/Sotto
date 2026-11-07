@@ -6,6 +6,11 @@ export const WATCHER_GROUPS = ['Needs you', 'Ready for review', 'Working', 'Land
 export const watcherGroupSchema = z.enum(WATCHER_GROUPS)
 export type WatcherGroup = z.infer<typeof watcherGroupSchema>
 export const WATCHER_QUIET_MS = 20 * 60 * 1_000
+/**
+ * How long a watched thread rests, its turn ended with nothing running or asked, with a pull request of its own still open,
+ * before Watcher hears it is at rest (#2307). The same twenty minutes as quiet, which is the working thread's.
+ */
+export const WATCHER_AT_REST_MS = WATCHER_QUIET_MS
 
 /** Observation times belong to the observer, not to a provider's republished snapshot. */
 export interface WatcherObservation {
@@ -43,10 +48,10 @@ export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
     let group: WatcherGroup = 'Idle'
     const project = state.host.projects.find(project => project.id === thread.projectId && project.hostId === thread.hostId)
     if (!isThreadClosed(thread)) {
-      // A settled thread was put aside: only a question or permission still waits on the user there, not an error or a
-      // prototype. A prototype waiting for review needs the user like a question does (ADR-0108), whatever else it does.
+      // A settled thread was put aside: only a question or permission still waits on the user there, not an error. A
+      // prototype is never Needs you on its own (ADR-0108, November 6, 2026): the question card that links it asks the user.
       const settled = isWorkspaceThreadSettled(thread, project)
-      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed' || thread.prototypeReady)) group = 'Needs you'
+      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed')) group = 'Needs you'
       else if (!settled) {
         const landingAt = Date.parse(observation?.landing?.observedAt ?? '')
         const landing = available && observation?.fresh && observation.landing?.fresh && Number.isFinite(landingAt) && landingAt <= now

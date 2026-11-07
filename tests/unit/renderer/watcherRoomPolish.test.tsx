@@ -151,18 +151,25 @@ describe('the takeover line', () => {
     const line = await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent === 'You took over Footer links. Watcher stopped sending to it.')
     expect(within(line).getByRole('button', { name: 'Open Footer links beside Watcher' })).toBeInTheDocument()
     expect(line.closest('.sotto-line')?.querySelector('time')).toHaveAttribute('dateTime', taken.takeover.at)
-    // A thread taken over is not Watcher's to stop.
-    expect(screen.queryByRole('button', { name: /^Stop all threads Watcher started/ })).toBeNull()
+    // A thread taken over is not Watcher's to stop: Stop all keeps its place, with nothing to stop.
+    expect(screen.getByRole('button', { name: 'Stop all threads Watcher started. None is running.' })).toHaveAttribute('aria-disabled', 'true')
   })
 })
 
 describe('Stop all', () => {
-  it('shows only while a thread Watcher started runs', async () => {
+  it('says how many it stops while a thread Watcher started runs, and keeps its place, unavailable, while none does', async () => {
     const view = renderRoom(roomState())
     await paneReady()
-    expect(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })
+    expect(button).toHaveTextContent('Stop all1')
+    expect(button).not.toHaveAttribute('aria-disabled')
     act(() => view.publish(roomState({ observedAt: new Date(NOW + 1_000).toISOString(), watchedThreads: roomState().watchedThreads.map(row => ({ ...row, status: 'idle' })) })))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Stop all threads Watcher started/ })).toBeNull())
+    const idle = await screen.findByRole('button', { name: 'Stop all threads Watcher started. None is running.' })
+    expect(idle).toHaveAttribute('aria-disabled', 'true')
+    expect(idle).toHaveTextContent(/^Stop all$/)
+    fireEvent.click(idle)
+    expect(view.bridge.prepareStopAll).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('asks first, naming each thread, stops through main’s preview, says what came of each, and Escape returns to the button', async () => {
@@ -182,8 +189,8 @@ describe('Stop all', () => {
     expect(done).toHaveTextContent('Stopped.')
     fireEvent.keyDown(within(done).getByRole('button', { name: 'Close' }), { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Stopped Footer links.' })).toBeNull())
-    // Its threads stopped, so Stop all is gone, and focus goes back along the header to All threads.
-    await waitFor(() => expect(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ })).toHaveFocus())
+    // Its threads stopped, so Stop all has nothing left to stop, and focus goes back to it, unavailable.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop all threads Watcher started. None is running.' })).toHaveFocus())
   })
 
   it('answers Escape while its stop runs, and keeps what came of each thread for the button’s next press', async () => {

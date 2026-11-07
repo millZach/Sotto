@@ -17,8 +17,8 @@ import { shownWords, type LaterWords } from '../interfaceWords'
 import { shownCount } from '../../state/interfaceNumbers'
 import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
-  answerProgress, blocksSending, docksAtComposer, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
-  permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, SKIP_ANSWER, structuredAnswer, textOnly, useRequestEntry,
+  answerProgress, blocksSending, docksAtComposer, EMPTY_SELECTION, everySkipped, isRequired, isSkipped, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, skipAllAnswer, SKIPPED_SELECTION, skipsEachQuestion, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
 import './requests.css'
@@ -78,7 +78,12 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   useEffect(() => secretIds !== '[]' ? store.holdSecrets(entryOwner, request.id, JSON.parse(secretIds) as string[]) : undefined, [store, entryOwner, request.id, secretIds])
   const imagesKey = `${entryOwner}\n${request.id}`
   const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
-  const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }
+  const setImages = (next: AgentAttachmentHandle[]): void => {
+    if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey)
+    showImages(next)
+    // Images answer the question they go in, so one the user had skipped is theirs to answer again (ADR-0176).
+    if (next.length && carrier && isSkipped(entry.selections[carrier.id])) store.select(entryOwner, request.id, carrier.id, EMPTY_SELECTION)
+  }
   // Send waits for images still being added, counted outside the card so leaving the thread and coming back still
   // waits; any that finish once the card is gone are kept for its return, unless the answer has gone.
   const [staging, setStaging] = useState(() => (cardStaging.get(imagesKey) ?? 0) > 0)
@@ -123,9 +128,19 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   const carrier = answerImages && imagesSupported === true && mode === 'structured' ? answerImageCarrier(request) : undefined
   const takesImages = carrier !== undefined
   const imagesIn = takesImages && images.length ? carrier.id : undefined
-  const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections, imagesIn) : null
+  const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections, imagesIn, request.skippable === true) : null
   const remaining = questions.filter(question => question.id !== imagesIn && blocksSending(question, entry.selections[question.id])).length
-  const touched = images.length > 0 || questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
+  const touched = images.length > 0 || questions.some(question => isSkipped(entry.selections[question.id]) || answerProgress(question, entry.selections[question.id]) !== 'empty')
+  // A Skip on each question (ADR-0135, November 6, 2026): those skipped, and Skip the rest once one is answered, which skips
+  // every question still open that can be skipped on its own.
+  const skippedCount = questions.filter(question => question.skippable === true && isSkipped(entry.selections[question.id])).length
+  const allSkipped = everySkipped(questions, entry.selections) && images.length === 0
+  const skipAll = mode === 'structured' ? skipAllAnswer(request) : null
+  // The question images go in is answered by them, so it is not skipped while they are there (ADR-0176).
+  const skipsOwn = (question: StructuredQuestion): boolean => skipsEachQuestion(questions, question) && !(images.length > 0 && question.id === carrier?.id)
+  const rest = questions.filter(question => skipsOwn(question) && !isSkipped(entry.selections[question.id])
+    && answerProgress(question, entry.selections[question.id]) !== 'complete')
+  const skipRest = rest.length > 0 && questions.some(question => answerProgress(question, entry.selections[question.id]) === 'complete')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
   // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
   const skipping = mode === 'structured' && questions.length > 0 && !touched && questions.every(question => !isRequired(question))
@@ -141,7 +156,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
         {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
       : entry.phase === 'failed' ? <p className="agent-request__error tt-paragraph" role="alert">{entry.error}</p>
         : entry.phase === 'sending' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Sending…</Trans></p>
-          : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status">{entry.choice === 'skip' ? t`Question skipped.` : t`Answer sent.`}</p>
+          : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status">{entry.choice === 'skip' ? plural(questions.length || 1, { one: 'Question skipped.', other: 'Questions skipped.' })
+            : skippedCount > 0 ? plural(skippedCount, { one: 'Answers sent. You skipped # question.', other: 'Answers sent. You skipped # questions.' }) : t`Answer sent.`}</p>
             : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
   const questionCount = questions.length
@@ -149,6 +165,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
     providerId={providerId}
     linkMissing={index === 0 && request.linkMissing === true}
     selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
+    skippable={skipsOwn(question)}
     onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
     data-placement={docked ? 'composer' : undefined} data-collapsed={docked && collapsed || undefined}
@@ -197,7 +214,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
         if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault()
       }} onSubmit={(event: FormEvent) => {
         event.preventDefault()
-        if (answer && !staging) send(null, takesImages && images.length ? { ...answer, attachments: images } : answer)
+        if (answer && !staging) send(answer.skipped ? 'skip' : null, takesImages && images.length ? { ...answer, attachments: images } : answer)
       }}>
         <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{plural(questionCount, { one: 'Question', other: '# questions' })}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
@@ -205,12 +222,20 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
         {takesImages ? <ScreenshotInput target={ownerId} attachments={images} onChange={setImages} disabled={disabled} supported replyBox={false} reads={reads}>{fields}</ScreenshotInput> : fields}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
-            : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
+            : skipping ? t`Choose an answer, or skip` : remaining === 0 && skippedCount > 0 && !allSkipped ? t`Ready to send · ${{ skipped: shownCount(skippedCount) }} skipped`
+              : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
+          {skipRest ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'}
+            onClick={event => {
+              const form = event.currentTarget.closest('form')
+              for (const question of rest) store.select(entryOwner, request.id, question.id, SKIPPED_SELECTION)
+              // The button leaves with the questions it skipped, so focus goes on to sending.
+              requestAnimationFrame(() => form?.querySelector<HTMLButtonElement>('button[type="submit"]')?.focus())
+            }}>{t({ message: 'Skip the rest', comment: 'Skips every question on the card not yet answered.' })}</Button> : null}
           {/* Any question its provider lets the user decline offers Skip, unless the send button already skips (ADR-0135). */}
-          {request.skippable && !skipping ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'} aria-pressed={entry.choice === 'skip' || undefined}
-            onClick={() => send('skip', SKIP_ANSWER)}>{plural(questionCount, { one: 'Skip question', other: 'Skip questions' })}</Button> : null}
-          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null || staging}>{entry.phase === 'sending' ? t`Sending…`
-            : skipping ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
+          {skipAll && !skipping && !allSkipped ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'} aria-pressed={entry.choice === 'skip' || undefined}
+            onClick={() => send('skip', skipAll)}>{plural(questionCount, { one: 'Skip question', other: 'Skip questions' })}</Button> : null}
+          <Button type="submit" variant={skipping || allSkipped ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null || staging}>{entry.phase === 'sending' ? t`Sending…`
+            : skipping || allSkipped ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}><Trans>Question</Trans></strong></div>
@@ -404,9 +429,11 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
   </div></>
 }
 
-function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner, linkMissing = false, providerId }: {
+function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner, linkMissing = false, providerId, skippable = false }: {
   readonly name: string; readonly question: StructuredQuestion; readonly selection: typeof EMPTY_SELECTION
   readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
+  /** The question has its own Skip, as one of several its provider lets the user skip one at a time (ADR-0135). */
+  readonly skippable?: boolean
   /** The message's links, shown under this question's words: the first question's, when a form has several. */
   readonly links?: readonly string[]
   /** The question's pages, shown with the links: the first question's, when a form has several (ADR-0085). */
@@ -430,9 +457,26 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   }
   const textId = `${name}-text`
   const prompt = question.question
+  const skipped = skippable && isSkipped(selection)
+  const legend = <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
+    {optional && !skipped ? <span className="agent-request__optional"><Trans comment="Marks a question that need not be answered.">Optional</Trans></span> : null}
+    {/* A first legend's controls are not disabled with their fieldset, so Skip says so itself. */}
+    {skippable && !skipped ? <button type="button" className="agent-request__skip tt-focusable" disabled={disabled} aria-label={t`Skip this question: ${prompt}`}
+      onClick={() => { onChange(SKIPPED_SELECTION); requestAnimationFrame(() => field.current?.querySelector<HTMLButtonElement>('.agent-request__clear')?.focus()) }}>{t({ message: 'Skip', comment: 'Skips one question on a card of several.' })}</button> : null}</legend>
+  // A skipped question folds to one line saying the agent decides, with a way back to answering it (Zach's pick, November 6, 2026).
+  if (skipped) {
+    const agent = providerId ? PROVIDER_LABELS[providerId] : t(UNNAMED_AGENT)
+    return <fieldset ref={field} className="agent-request__question" data-skipped="true" disabled={disabled}>
+      {legend}
+      <p className="agent-request__skipped tt-paragraph"><span><strong><Trans comment="Says a question on the card was skipped.">Skipped.</Trans></strong>{' '}
+        {t({ message: `${agent} will use its own judgement.`, comment: 'After a skipped question. {agent} is the coding agent’s name, such as Claude Code.' })}</span>
+        <button type="button" className="agent-request__clear tt-focusable" aria-label={t`Answer this question: ${prompt}`}
+          onClick={() => { onChange(EMPTY_SELECTION); requestAnimationFrame(() => field.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')?.focus()) }}>
+          {t({ message: 'Answer it', comment: 'Brings back a skipped question so it can be answered.' })}</button></p>
+    </fieldset>
+  }
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
-    <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
-      {optional ? <span className="agent-request__optional"><Trans comment="Marks a question that need not be answered.">Optional</Trans></span> : null}</legend>
+    {legend}
     <MessageLinks links={links} pages={pages} owner={owner} linkMissing={linkMissing} />
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
       {question.multiSelect && !onlyText ? <span className="agent-request__note"><Trans>Choose any that apply.</Trans></span> : null}

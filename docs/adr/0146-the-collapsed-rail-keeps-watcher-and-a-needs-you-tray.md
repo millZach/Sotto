@@ -10,6 +10,8 @@ Amended October 28, 2026: rounded trays in their own colours replace the rail's 
 
 Amended October 29, 2026, by ADR-0135's amendment of the same day: while the Needs you queue is on, a waiting tile pops its thread's Needs you card beside the rail instead of opening the thread, and that card answers through the same store as the pane. "The rail opens threads and answers nothing" holds for the tiles themselves.
 
+Amended November 5, 2026, by Zach's pick of variant C: the rail is 64px, each tile is its provider's mark and status ring, and the waiting and moving threads sit in a tray for each project under its name. It replaces Drake's two letters and the group of Watcher's threads (below, "November 5, 2026 amendment: provider mark, project trays").
+
 Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need by putting waiting threads first, in the same Needs you queue order the card uses, with an amber edge (a tray until the October 27 amendment). Nothing in ADR-0004 changes: the rail opens threads and answers nothing.
 
 ## Context
@@ -51,3 +53,21 @@ A thread that waits on the user, watched or not, takes the attention colour on i
 Drake did not like the hairlines that split the rail's parts. Of ten ways to draw the split, he took two further, a tray and a tint, and picked the tinted tray, then asked that each group take its own colour. This supersedes the October 27 amendment's "no box" in one respect: a part now sits in a box. Amber still means only that something waits, because a tray is a faint wash, never the attention colour on a tile's edge.
 
 The hairlines go, the one under Watcher's tile included. Each of the rail's parts (Watcher's threads, the other moving threads, the resting threads) that holds two or more tiles sits in a rounded tray, a 7% wash and a 1px edge at 22% in that tray's colour. A part with one tile stands bare. Trays take four theme-derived colours in turn, `--tt-rail-group-1` to `-4` (`tokens.css`): the accent, then the accent turned round the hue wheel at its own lightness and chroma. A grey accent such as Graphite's borrows the Owl night's blue, and a turned hue that lands on red, orange or amber turns further so a tray never reads as an error or as waiting. On Citrine the trays are yellow, blue, green and pink. Not picked: wider gaps, a short dash, a dot, a faded rule, a spine down the group, round tiles, a segmented stack, smaller tiles, and the tinted tiles without a tray.
+
+## November 5, 2026 amendment: provider mark, project trays
+
+Zach chose this. The design pass asked what a tile on the collapsed rail should show at the 820 x 560 minimum window, where six of the capture's 22 tiles fitted above the foot, two letters each, and the thread on screen stood far below them among the resting ones. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/rail-tiles/index.html`, kept outside the repository, each at 820 x 560 in the real window with Split AgentControl open and 22 threads in four projects: A, the rail as it stood, 52px with two letters a tile (Drake's pick in the decision above); B, a 96px rail with the thread's name in each tile, two lines while it waits or works and one once it rests; and C, a 64px rail with the provider's mark in each tile and the waiting and moving threads grouped by project. He picked C. The prototype's stylesheets are Sotto's own at commit `fd7e62643`. Zach's pick replaces Drake's two letters, and with them the group of Watcher's threads from the October 27 amendment; the records above stay as Drake decided them.
+
+**What changed.** While the feature is on, the rail is, from the top:
+
+1. **Expand sidebar** and **Watcher's tile**, as before.
+2. A **project tray** (CONTEXT.md) for each project that has a thread waiting on the user or moving, with the project's name at its head, cut short when it is long. The projects come in the order of their first tile, so the project of the first thread in the Needs you queue leads. Inside a tray, what waits on the user comes first, in the queue's order and edged in the attention colour, then what is moving.
+3. One tray at the foot for the resting threads, as smaller tiles, after every project's.
+
+Each tile is its thread's provider mark (Claude, Codex, Grok and the rest) with its status ring, in place of the letters, the resting ones smaller. A thread Watcher watches sits in its own project's tray with the owl at its corner, its tooltip ending "Watched by Watcher", and shows even once settled; there is no separate group for Watcher's threads. Every tile keeps its press, its menu, the title as its accessible name, and the current look for the focused thread. Its tooltip is the title, the project and its status, and the keys reaching it name the same words beside the rail. Each project tray is a group named for its project. The rail is 64px, so at an 820px window the thread keeps 756px; on a Mac it stays 80px, where the window's buttons need the room.
+
+**Colour.** Sotto keeps no colour for a project, and the prototype took each tray's colour from where it fell on the rail, which would have given a project a different colour as other projects came and went. So every project tray takes the same theme role, the first of the rail's group colours (`--tt-rail-group-1`), and the resting tray the muted ink, and the project's name at the head tells one tray from the next. The prototype also edged each resting tile in its project's colour; that edge is not drawn. The October 28 amendment's wash and edge stand; its colours in turn do not.
+
+**What it costs.** A tile says where a thread is and who runs it, not which thread it is: three Claude threads in one project look the same until the pointer or the keys reach one. What waits comes first only inside its project, so a waiting thread in a second project sits below the first project's moving ones. The thread loses 12px at the minimum window. A project name much longer than "sotto-site" is cut.
+
+While the feature is off the rail is exactly what it was: 52px, one letter a tile.

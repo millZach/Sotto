@@ -1,11 +1,13 @@
 import { z } from 'zod'
+import { watcherHoldSchema } from './watcherHold'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema, watcherToolSchemas } from './watcher'
 import { workerPlacementReceiptSchema } from './workerMachine'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
+import { WATCHER_QUESTIONS_KEPT, watcherQuestionSchema } from './watcherQuestions'
 import { agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
+import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, WATCHER_OVERRIDE_REASON_MAX, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -21,6 +23,8 @@ export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
 export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
 /** New Watcher: a new conversation on the current Watcher's own provider, model, effort and permissions (ADR-0073). */
 export const WATCHER_START_NEW = 'sotto:watcher:start-new'
+/** Try now on the band while Watcher's provider is failing (#2234): what Sotto holds for Watcher goes at once. */
+export const WATCHER_TRY_NOW = 'sotto:watcher:try-now'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /**
  * The machines for the room's machines line and Settings, under Watcher (#1032, Owl `cross-machine-work`): Watcher's own
@@ -39,6 +43,15 @@ const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission
 export const watcherNextTurnOptionsSchema = z.object({ modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).nullable(),
   speed: agentSpeedSchema.nullable().optional() }).strict()
 export type WatcherNextTurnOptions = z.infer<typeof watcherNextTurnOptionsSchema>
+/**
+ * What held a GO MERGE that went anyway (#2229): the train pull requests whose required checks were running, by number
+ * where it has one and the title of their thread, the base branch when its newest commit's checks had failed, and Watcher's reason.
+ */
+export const watcherMergeTurnOverrideSchema = z.object({ operationId: z.uuid(),
+  running: z.array(z.object({ number: z.number().int().positive().optional(), url: z.string().max(2_048).optional(), title: z.string().max(200) }).strict()).max(100),
+  baseFailed: z.object({ branch: z.string().min(1).max(255), head: z.string().min(1).max(64) }).strict().optional(),
+  reason: z.string().min(1).max(WATCHER_OVERRIDE_REASON_MAX) }).strict()
+export type WatcherMergeTurnOverride = z.infer<typeof watcherMergeTurnOverrideSchema>
 export const watcherRoomStateSchema = z.object({
   current: watcherIdentitySchema.nullable(),
   currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(), speed: agentSpeedSchema.nullable().optional(),
@@ -87,6 +100,11 @@ export const watcherRoomStateSchema = z.object({
    */
   nextTurnOptions: watcherNextTurnOptionsSchema.optional(),
   /**
+   * While Watcher's own provider is limited or failing (#2234), what holds it and how much news waits for it: the room's
+   * band. Absent while nothing holds Watcher, while Restart stopped threads is off, and from older hosts.
+   */
+  hold: watcherHoldSchema.optional(),
+  /**
    * What the replacement that made the current Watcher carried over (#1735), for the new Watcher's note while it has said
    * nothing: whether the last one's card was closed, how many of the user's messages moved to its queue paused, whether the
    * user's last message to the last one went unconfirmed, whether what the user left in its message box moved to the new
@@ -109,6 +127,12 @@ export const watcherRoomStateSchema = z.object({
    */
   receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).max(1_000).optional(),
   /**
+   * Each GO MERGE Watcher sent this run while the merge train held its turn (#2229): what held it, as facts the window
+   * words in the interface language, and Watcher's reason, which its receipt card shows. Kept in memory as the send's own
+   * `goMerge` is, so a restart has none.
+   */
+  receiptOverrides: z.array(watcherMergeTurnOverrideSchema).max(1_000).optional(),
+  /**
    * Watcher's conversation against the point where Sotto compacts it (#1189): its context in tokens as its provider last
    * reported it, null when unreported, whether its provider can compact it, and whether a compaction is under way.
    */
@@ -129,6 +153,12 @@ export const watcherRoomStateSchema = z.object({
    * user's own answer from that card. A wake-up outside the window main holds places nothing.
    */
   asks: z.array(watcherAskSchema.extend({ messageId: z.string(), wakeUpMessageId: z.string() }).strict()).optional(),
+  /**
+   * The current Watcher's own questions (#2228), open and answered, oldest first: each is a card in its conversation after
+   * the turn that asked, which never holds Watcher's turn, and once answered one line with the user's choice. Absent while
+   * Watcher has asked nothing, and from older hosts.
+   */
+  questions: z.array(watcherQuestionSchema).max(WATCHER_QUESTIONS_KEPT).optional(),
   /**
    * The archived work Watcher's conversation, shown back past what the record keeps, read back from Watcher's archive
    * (#1759): its receipts, where each goes, its requests and where this run placed its starts. Kept apart from the
@@ -364,6 +394,8 @@ export interface WatcherBridge {
    * the current Watcher itself, and offers the last one's handover. Older stand-ins omit it; the real Owl preload supplies it.
    */
   startNew?(): Promise<WatcherRoomResult>
+  /** Try now while Watcher's provider is failing (#2234): what Sotto holds goes at once. Older stand-ins omit it. */
+  tryNow?(): Promise<WatcherRoomResult>
   /** Each machine's facts, load and work placed but not started (#1032). Only while Work across machines is on. */
   readMachines?(): Promise<WatcherMachinesRead>
   /**

@@ -100,3 +100,9 @@ the whole file was still written.
 On `usageStreamWrites.perf.test.ts`, a reply streaming 150 usage frames over a 3.8 MB ledger of forty threads wrote
 19,004,865 bytes in five writes before and 473,680 in five after, in each of three rounds
 (`docs/perf/2026-10-30-usage-ledger-per-thread.md`).
+
+## Amended November 5, 2026: the measures with figures lead
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/usage-order/`, kept outside the repository, and picked B.
+
+The Overview's index keeps the C · Focus measures and their order, but a measure with nothing to show now follows the measures with figures, as one line each ("Room left" over "No limits read", "Tokens" over "No tokens in this range"), so the index opens on what is known; the arrow keys follow the order drawn, and at the minimum window two such lines share the grid's last row (`50e7bd36a`). In the Room left view only a subscription with a current reading gets a ring; a provider with none is a line under the rings, with its mark, its name and why ("No reading from this computer", "Sotto can't read these limits yet"), under a hairline when rings stand above it. The index draws its small rings beside Room left only when two or more subscriptions have readings, since a lone ring repeated its own figure and an empty one said nothing. Subscriptions still gives every provider its section.

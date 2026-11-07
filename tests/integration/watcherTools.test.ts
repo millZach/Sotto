@@ -9,12 +9,13 @@ import { queueHold } from '../../src/main/agents/watcherSendHolds'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
-import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import { isWatcherNews, watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
+import type { BaseBranchChecks } from '../../src/main/agents/watcherComputedState'
+import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_NOT_GIT_REASON, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -31,7 +32,7 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true, options: { compactAt?: () => number } = {}) {
+async function fixture(history = true, options: { compactAt?: () => number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks> } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -114,7 +115,8 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(await f.tools.mcpServer(result.target.threadId)).toBeUndefined()
   expect(await f.tools.mcpServer(f.id)).toMatchObject({ name: 'sotto_threads' })
-  expect(f.tools.definitions.map(item => item.name).sort()).toEqual(Object.keys(watcherToolSchemas).sort())
+  // Sotto's own question card (#2228) joins the shared tools; it asks a paired host nothing, so it is not among them.
+  expect(f.tools.definitions.map(item => item.name).sort()).toEqual([...Object.keys(watcherToolSchemas), 'ask_user'].sort())
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
 })
 
@@ -985,13 +987,13 @@ it('keeps showing a kept change whose result the provider never gave, and sends 
 it('changes Watcher’s provider at rest when its only queued send waits for the user’s review, not a working thread', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
-  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic GO MERGE' })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued follow-up' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   // The worker's turn ends without confirming it finished: its queue waits for the user, and the send with it, for good.
   const worker = f.native(first.target.threadId)
   worker.status = 'idle'; worker.lastTurn = { id: randomUUID(), status: 'interrupted' }
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === 'Synthetic GO MERGE')?.status).toBe('paused'))
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === 'Synthetic queued follow-up')?.status).toBe('paused'))
   await f.finish(f.id)
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
@@ -1213,6 +1215,9 @@ const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined
   const item = queued(f).find(candidate => candidate.threadId === f.id && candidate.wakeUp)
   return item && (watcherWakeUpNote(item.news ?? []) ?? '')
 }
+/** Whether Watcher's waiting wake-up holds evidence news: its line is only what changed, which the note works out as it goes (#2232). */
+const waitingEvidence = (f: Awaited<ReturnType<typeof fixture>>): boolean => queued(f).some(candidate => candidate.threadId === f.id && candidate.wakeUp
+  && (candidate.news ?? []).some(item => isWatcherNews(item) && item.events.some(event => event.kind === 'evidence-changed')))
 
 it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
@@ -1237,6 +1242,8 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   await vi.waitFor(() => expect(master().some(command => command.type === 'send' && command.watcherNews?.includes(expected))).toBe(true))
   const sent = master().find(command => command.type === 'send' && command.watcherNews?.includes(expected))!
   expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
+  // A question's news says what it asks, in the worker's words, worked out as it goes and saved nowhere (#2230).
+  if (kind === 'question') expect(sent.type === 'send' && sent.watcherNews).toContain('Its question, in the worker\'s words: "private_worker_question_82ac".')
   // Sent, Watcher's conversation shows neither the message nor the news.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
@@ -1526,7 +1533,7 @@ it('never sends a thread’s own facts alone after a pull request’s wake-up th
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
   const moves = async (count: number) => {
@@ -1577,7 +1584,7 @@ it('loses no news that came while a wake-up was sent when saving its acknowledge
   await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp && item.status === 'dispatching')).toBe(false))
   await f.finish(f.id)
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 20_000 })
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))).toBe(true), { timeout: 20_000 })
 }, 40_000)
 
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
@@ -1929,7 +1936,7 @@ it.each(['working-copy-as-base', 'base-as-working-copy'])('refuses a %s choice b
   const copy = choices.choices.find(item => item.kind === 'existing-worktree')!, base = choices.baseRefs[0]!
   const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
   const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
-  const input = role === 'working-copy-as-base' ? { ...f.start(), baseRefChoiceId: copy.choiceId }
+  const input = role === 'working-copy-as-base' ? { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: copy.choiceId }
     : { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: base.choiceId } }
   expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
   expect(f.control.watcherRecord()).toEqual(record)
@@ -1944,10 +1951,75 @@ it('passes a valid branch choice to creation and retains it in the receipt', asy
   if (choices.status !== 'ok' || !('baseRefs' in choices)) throw new Error('copy read refused')
   const base = choices.baseRefs.find(item => item.name === 'main')!
   const create = vi.spyOn(f.control, 'commandFromWatcher')
-  expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: base.choiceId }))
-    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId } })
+  expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: base.choiceId }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId }, sharedReason: 'Synthetic reason the user gave.' })
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', baseBranch: 'main' }), expect.anything())
   create.mockRestore()
+})
+
+// #2235: Watcher's threads start in their own new worktree in a Git project, and the shared checkout needs a reason.
+it('starts a thread in a new worktree in a Git project unless Watcher gives a reason to share the checkout', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const create = vi.spyOn(f.control, 'commandFromWatcher')
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const started = await f.call('start_thread', unnamed)
+  expect(started).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(started).not.toHaveProperty('sharedReason')
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent' }), expect.anything())
+  // Shared without a reason is refused before anything is admitted.
+  const record = f.control.watcherRecord()
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  expect(f.control.watcherRecord()).toEqual(record)
+  // A reason alone starts it on the shared checkout, and the result gives the reason back for Watcher's reply.
+  const reason = 'The user asked for this research thread on the shared checkout.'
+  expect(await f.call('start_thread', { ...unnamed, retryKey: randomUUID(), sharedReason: reason }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: reason })
+  expect(create.mock.calls.filter(([command]) => command.type === 'create-thread').at(-1)?.[0]).toMatchObject({ workingCopy: 'shared' })
+  // A reason beside another working copy explains nothing, so the result leaves it out.
+  const named = await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' }, sharedReason: reason })
+  expect(named).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'new-worktree' } } })
+  expect(named).not.toHaveProperty('sharedReason')
+  create.mockRestore()
+})
+
+it('treats the project’s own checkout as the shared checkout, and starts nothing shared it cannot tell is safe', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const choices = await f.call('list_working_copies', { project: f.start().project })
+  if (choices.status !== 'ok' || !('choices' in choices)) throw new Error('copy read refused')
+  const own = choices.choices.find(item => item.kind === 'existing-worktree')!
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId } }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('give sharedReason') })
+  const reason = 'The user asked for this one on the checkout itself.'
+  const started = await f.call('start_thread', { ...unnamed, workingCopy: { kind: 'existing-worktree', choiceId: own.choiceId }, sharedReason: reason })
+  expect(started).toMatchObject({ status: 'ok', sharedReason: reason })
+  // read_operation gives the reason back too, as for a start whose answer came too late for its client.
+  if (started.status !== 'ok' || !('receipt' in started)) throw new Error('start refused')
+  expect(await f.call('read_operation', { operationId: started.receipt.operationId })).toMatchObject({ status: 'ok', sharedReason: reason })
+  // When Sotto cannot tell whether the project is Git, the shared checkout is refused without a reason.
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockRejectedValue(new Error('synthetic-git-unreadable'))
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: true })
+})
+
+it('answers a retry of a start that named no working copy as it was first answered, even once the project has Git', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  const first = await f.call('start_thread', unnamed)
+  expect(first).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  await initializeGitRepository(f.project.path)
+  const again = await f.call('start_thread', unnamed)
+  expect(again).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
+  if (first.status !== 'ok' || again.status !== 'ok' || !('receipt' in first) || !('receipt' in again)) throw new Error('start refused')
+  expect(again.receipt.operationId).toBe(first.receipt.operationId)
+})
+
+it('starts a thread in the folder of a project that is not a Git repository, and says why', async () => {
+  const f = await fixture()
+  const { workingCopy: _named, ...unnamed } = f.start(); void _named
+  expect(await f.call('start_thread', unnamed)).toMatchObject({ status: 'ok', effectiveChoices: { workingCopy: { kind: 'shared' } }, sharedReason: WATCHER_NOT_GIT_REASON })
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok', sharedReason: WATCHER_NOT_GIT_REASON })
 })
 
 it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
@@ -1963,7 +2035,7 @@ it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after sna
     const record = f.control.watcherRecord(), selected = f.control.shell().activeThreadId
     expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: choice.choiceId } }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
-    expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: first.baseRefs[0]!.choiceId }))
+    expect(await f.call('start_thread', { ...f.start(), sharedReason: 'Synthetic reason the user gave.', baseRefChoiceId: first.baseRefs[0]!.choiceId }))
       .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
     expect(f.control.watcherRecord()).toEqual(record)
     expect(f.control.shell().activeThreadId).toBe(selected)
@@ -2312,13 +2384,13 @@ it('tells pull request news again when the thread’s own facts change while its
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const entered = deferred<void>(), release = deferred<void>()
   f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Sotto observed changed evidence'))
+    && command.watcherNews?.includes('Pull request #5: checks failed on its newest commit.'))
   try {
     const finishing = f.finish(f.id)
     await entered.promise
@@ -2338,7 +2410,7 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const { read } = pullRequestNews(f, started.target.threadId)
   f.service.pullRequestObserved(read)
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(waitingEvidence(f)).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!, news = waitingNews(f)
   const ids = f.control.watcherRecord().wakeEventIds
@@ -2364,7 +2436,10 @@ it('keeps the decisions, rules and issues Watcher gives, list by list, and reads
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const kept = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
   if (kept.status !== 'ok') throw new Error('keep refused')
-  expect([texts(kept.kept.decisions), texts(kept.kept.rules), texts(kept.kept.issues)]).toEqual([['Merge #1186 once CI is green?'], ['Full test suites run in CI, not on the laptop.'], []])
+  // keep_state gives back only what it changed (#2231); read_state gives the whole state.
+  expect(kept).toEqual({ status: 'ok', changed: [{ list: 'decisions', id: 'd1', change: 'added', text: 'Merge #1186 once CI is green?' },
+    { list: 'rules', id: 'r2', change: 'added', text: 'Full test suites run in CI, not on the laptop.' }],
+  counts: { decisions: { open: 1, closed: 0 }, rules: { open: 1, closed: 0 }, issues: { open: 0, closed: 0 } } })
   // A list left out stays as it was.
   await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
@@ -2438,8 +2513,67 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   expect(texts(read.kept.decisions)).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
 })
 
+// #2229: a GO MERGE is checked against the merge train and the base branch before it goes, and goes past them only with
+// Watcher's reason, which its receipt carries for the user.
+it('refuses a GO MERGE while another train pull request runs its required checks or main is red, and sends it with a reason the receipt shows', async () => {
+  let base: BaseBranchChecks = { branch: 'main', head: 'd'.repeat(40), state: 'passed' }
+  const asked: string[] = []
+  const f = await fixture(true, { baseBranchChecks: async url => { asked.push(url); return base } })
+  const first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok' || !('target' in second)) throw new Error('start refused')
+  const url = (number: number) => `https://github.com/synthetic/project/pull/${number}`
+  const link = (threadId: string, number: number) => {
+    const links = [{ url: url(number), number, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+    const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+    host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
+    showLinks(f, threadId, links)
+  }
+  await f.finish(first.target.threadId); await f.finish(second.target.threadId)
+  link(first.target.threadId, 5); link(second.target.threadId, 7)
+  const observed = Date.now(), at = (ago: number) => new Date(observed - ago).toISOString()
+  f.service.pullRequestObserved({ url: url(5), head: '5'.repeat(40), observedAt: at(3_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  // #7 passed, joined the train, then took a push: its required checks run again on the new head.
+  f.service.pullRequestObserved({ url: url(7), head: '6'.repeat(40), observedAt: at(2_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  f.service.pullRequestObserved({ url: url(7), head: '7'.repeat(40), observedAt: at(1_000), availability: 'available', checks: 'pending', checkCount: 3, state: 'open', requiredPassed: false, pendingChecks: { required: 2, optional: 1 } })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.mergeQueue.map(item => [item.pullRequest.number, item.requiredChecks, item.head])).toEqual([[5, 'passed', '5'.repeat(40)], [7, 'running', '7'.repeat(40)]])
+  const send = (goMerge?: object, text = 'GO MERGE #5') => f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text, ...goMerge ? { goMerge } : {} })
+  // Said without its mark, it never goes unchecked.
+  expect(await send()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('Mark it with goMerge') })
+  expect(await send(undefined, 'Synthetic note.\nGO MERGE #5 once you are green.')).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  const held = await send({ pullRequest: url(5) })
+  expect(held).toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD' })
+  if (held.status !== 'refused') throw new Error('sent')
+  expect(held.message).toContain('#7 in “Synthetic worker” has its required checks running.')
+  expect(held.message).toContain('goMerge.overrideReason')
+  expect(asked).toEqual([url(5)])
+  // Main red holds every merge turn, its own pull request's too.
+  base = { ...base, state: 'failed' }
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on its newest commit, dddddddddddd.') })
+  base = { ...base, state: 'passed' }
+  const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
+  const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
+  const sent = await f.call('send_to_thread', call)
+  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has its required checks running.'], overrideReason: reason } })
+  if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('refused')
+  // A retry answers as the send did, and the room carries the reason for its receipt card.
+  expect(await f.call('send_to_thread', call)).toEqual(sent)
+  expect(f.service.state().receiptOverrides).toEqual([{ operationId: sent.receipt.operationId, running: [{ number: 7, title: 'Synthetic worker' }], reason }])
+  // The worker is sent the words alone: the mark is Sotto's.
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === 'GO MERGE #5')).toBe(true))
+  // Nothing holds #7's own turn once main is green: its own running checks are its own.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'ok', goMerge: { held: [] } })
+  // A send that only mentions GO MERGE is no GO MERGE, and goes as it is.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Do not merge yet. Wait for GO MERGE.' }))
+    .toMatchObject({ status: 'ok' })
+})
+
 // October 24, 2026: Watcher kept "waiting on you" in its notes and went on saying it after the user answered.
-it('works out what waits on the user from live data at each read: open cards, a delegated thread’s card and a prototype to review', async () => {
+it('works out what waits on the user from live data at each read: open cards and a delegated thread’s card, never a prototype on its own', async () => {
   const f = await fixture()
   const started = await f.call('start_thread', f.start()), other = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started) || other.status !== 'ok' || !('target' in other)) throw new Error('start refused')
@@ -2461,16 +2595,19 @@ it('works out what waits on the user from live data at each read: open cards, a 
   })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual([
+  const listed = [
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
     { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-below', delegatedThreadId: 'synthetic-delegated-below' },
-    { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
-  ])
-  expect(JSON.stringify(read)).not.toContain('synthetic private')
-  // The owl panel reads the same live list (Zach's pick A).
-  expect(f.service.state().state?.waitingOnUser).toEqual(read.waitingOnUser)
-  // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
+  ]
+  // A question card's own words come with its row, read only (#2230); a permission request's never do.
+  expect(read.waitingOnUser).toEqual([{ ...listed[0], asks: { question: 'synthetic private question', choices: [] } }, listed[1],
+    { ...listed[2], asks: { question: 'synthetic private question below', choices: [] } }])
+  expect(JSON.stringify(read)).not.toContain('synthetic private command')
+  // The owl panel reads the same live list (Zach's pick A), which carries no card's words.
+  expect(f.service.state().state?.waitingOnUser).toEqual(listed)
+  // A prototype is not on the list (ADR-0108, November 6, 2026): the question card that links it asks the user.
+  // The user answers: the next read says nothing waits on them, whatever the notes say.
   open = false
   const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (after.status !== 'ok') throw new Error('read refused')
@@ -2498,7 +2635,7 @@ it('lists a card once when the thread holding it is watched and a watched thread
   ]
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  expect(read.waitingOnUser).toEqual(expected)
+  expect(read.waitingOnUser).toEqual([expected[0], { ...expected[1], asks: { question: 'synthetic', choices: [] } }])
   expect(f.service.state().state?.waitingOnUser).toEqual(expected)
 })
 
@@ -2539,18 +2676,94 @@ it('changes kept lines one at a time through keep_state, and refuses plainly whe
   const first = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { add: [{ list: 'issues', text: '#1490 composer drops pasted images' },
     { list: 'issues', text: '#1501 widget flicker' }] }))
   if (first.status !== 'ok') throw new Error('keep refused')
-  expect(first.kept.issues.map(line => [line.id, line.text])).toEqual([['i1', '#1490 composer drops pasted images'], ['i2', '#1501 widget flicker']])
+  expect(first.changed.map(line => [line.id, line.change, line.text])).toEqual([['i1', 'added', '#1490 composer drops pasted images'], ['i2', 'added', '#1501 widget flicker']])
   const closed = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] }))
   if (closed.status !== 'ok') throw new Error('keep refused')
-  expect(closed.kept.issues[0]).toMatchObject({ id: 'i1', closedNote: 'done: #1490 fixed by #1509', closedAt: expect.any(String) })
+  expect(closed).toMatchObject({ changed: [{ list: 'issues', id: 'i1', change: 'closed' }], counts: { issues: { open: 1, closed: 1 } } })
   // read_state gives the closed line until it clears, and flags no closed line.
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
   expect(read.kept.issues.map(line => line.id)).toEqual(['i1', 'i2'])
+  expect(read.kept.issues[0]).toMatchObject({ closedNote: 'done: #1490 fixed by #1509', closedAt: expect.any(String) })
+  // openOnly leaves the closed line out.
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true }))
+  if (open.status !== 'ok') throw new Error('read refused')
+  expect(open.kept.issues.map(line => line.id)).toEqual(['i2'])
   await f.call('keep_state', { decisions: Array.from({ length: 30 }, (_, at) => `Open question ${at + 1}`) })
   expect(await f.call('keep_state', { add: [{ list: 'decisions', text: 'One more question' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
     message: expect.stringContaining('Close the lines that are done or drop ones no longer needed') })
   expect(await f.call('keep_state', { edit: [{ id: 'r7', text: 'Nothing' }] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+})
+
+// #2231: every result stays in Watcher's conversation, so keep_state gives only its change and a repeat read_state only what changed.
+it('gives a keep_state change in under 1 KB, and a repeat read_state with nothing changed in under 2 KB', async () => {
+  const f = await fixture(), threads: WatcherThreadTarget[] = []
+  for (let at = 0; at < 4; at++) {
+    const started = await f.call('start_thread', f.start())
+    if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+    threads.push(started.target)
+  }
+  // A state as full as the audit found it: every rule the list holds, near the longest a line may be, decisions and issues.
+  const long = (kind: string, at: number) => `${kind} ${at + 1}: ${'synthetic words the user said about how threads start, merge and get checked, '.repeat(4)}`.slice(0, 280).trim()
+  await f.call('keep_state', { rules: Array.from({ length: WATCHER_KEPT_ITEMS_MAX }, (_, at) => long('Rule', at)),
+    decisions: Array.from({ length: 12 }, (_, at) => long('Decision', at)), issues: Array.from({ length: 25 }, (_, at) => long('Issue', at)) })
+  await f.call('keep_state', { close: Array.from({ length: 10 }, (_, at) => ({ id: `i${WATCHER_KEPT_ITEMS_MAX + 12 + at + 1}`, note: `done: #${2_000 + at} merged` })) })
+  const size = (result: unknown) => Buffer.byteLength(JSON.stringify(result))
+  const added = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { add: [{ list: 'decisions', text: long('Decision', 12) }] }))
+  expect(added).toMatchObject({ status: 'ok', changed: [{ list: 'decisions', id: 'd68', change: 'added' }], counts: { rules: { open: WATCHER_KEPT_ITEMS_MAX, closed: 0 }, issues: { open: 15, closed: 10 } } })
+  expect(size(added)).toBeLessThan(1_024)
+  const closed = await f.call('keep_state', { close: [{ id: 'd68', note: 'done: the user chose the first' }] })
+  expect(size(closed)).toBeLessThan(1_024)
+
+  const whole = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (whole.status !== 'ok' || !whole.changeCursor) throw new Error('read refused')
+  expect(size(whole)).toBeGreaterThan(15_000)
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: whole.changeCursor }))
+  if (open.status !== 'ok' || !open.changeCursor) throw new Error('read refused')
+  // Only the closed lines left: openOnly names them gone, and gives nothing else again.
+  expect(open).toMatchObject({ watching: [], mergeQueue: [], waitingOnUser: [], staleNotes: [], kept: { decisions: [], rules: [], issues: [] },
+    gone: { kept: [...Array.from({ length: 10 }, (_, at) => `i${WATCHER_KEPT_ITEMS_MAX + 12 + at + 1}`), 'd68'].sort() } })
+  expect(open.unchanged).toMatchObject({ watching: threads.length, kept: WATCHER_KEPT_ITEMS_MAX + 12 + 15 })
+  const again = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: open.changeCursor }))
+  if (again.status !== 'ok' || !again.changeCursor) throw new Error('read refused')
+  expect(again).toMatchObject({ watching: [], kept: { decisions: [], rules: [], issues: [] } })
+  expect(again.gone).toEqual({})
+  expect(size(again)).toBeLessThan(2_048)
+
+  // One line edited: the next read gives that line and nothing else of the kept state.
+  await f.call('keep_state', { edit: [{ id: 'r13', text: 'Rule 1, as the user changed it.' }] })
+  const edited = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: again.changeCursor }))
+  if (edited.status !== 'ok') throw new Error('read refused')
+  expect(edited.kept).toEqual({ decisions: [], rules: [expect.objectContaining({ id: 'r13', text: 'Rule 1, as the user changed it.' })], issues: [], updatedAt: expect.any(String) })
+
+  // A cursor Sotto does not hold gives the whole state, and so does any cursor once Watcher's conversation was compacted.
+  const unknown = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: randomUUID() }))
+  if (unknown.status !== 'ok' || !unknown.changeCursor) throw new Error('read refused')
+  expect(unknown).toMatchObject({ sinceUnknown: true })
+  expect(unknown.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
+  expect(unknown.watching).toHaveLength(threads.length)
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  const compacted = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: unknown.changeCursor }))
+  if (compacted.status !== 'ok') throw new Error('read refused')
+  expect(compacted).toMatchObject({ sinceUnknown: true })
+  expect(compacted.kept.rules).toHaveLength(WATCHER_KEPT_ITEMS_MAX)
+  expect(f.service.stateNote()).toBeUndefined()
+})
+
+
+// #2236: the rules list holds WATCHER_KEPT_RULES_MAX, and a whole read with every rule at its longest stays readable.
+it('keeps every rule the rules list holds, and reads them all back in one result well under what providers save to files', async () => {
+  const f = await fixture()
+  for (let at = 0; at < 4; at++) await f.call('start_thread', f.start())
+  const long = (kind: string, at: number) => `${kind} ${at + 1}: ${'synthetic words the user said about how threads start, merge and get checked, '.repeat(4)}`.slice(0, 280).trim()
+  expect(await f.call('keep_state', { rules: Array.from({ length: WATCHER_KEPT_RULES_MAX }, (_, at) => long('Rule', at)),
+    decisions: Array.from({ length: 12 }, (_, at) => long('Decision', at)), issues: Array.from({ length: 25 }, (_, at) => long('Issue', at)) })).toMatchObject({ status: 'ok' })
+  expect(await f.call('keep_state', { add: [{ list: 'rules', text: 'One rule past the list.' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
+    message: expect.stringContaining('do not drop, merge or close one to make room') })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.kept.rules).toHaveLength(WATCHER_KEPT_RULES_MAX)
+  expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(40_000)
 })
 
 it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {
@@ -2578,6 +2791,22 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
   expect(second.nextCursor).toBeNull()
   expect([...first.mergeQueue, ...second.mergeQueue].map(item => item.pullRequest.number)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
   expect(first.mergeQueue).toHaveLength(100)
+  // A later page reads with its first page's openOnly, and a compaction between pages starts the read again (#2231).
+  await f.call('keep_state', { add: [{ list: 'issues', text: '#1490 composer drops pasted images' }, { list: 'issues', text: '#1501 widget flicker' }] })
+  await f.call('keep_state', { close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] })
+  const open = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true }))
+  if (open.status !== 'ok' || open.nextCursor === null) throw new Error('expected a second page')
+  const openSecond = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: open.nextCursor }))
+  if (openSecond.status !== 'ok') throw new Error('read refused')
+  expect(openSecond.kept.issues.map(line => line.id)).toEqual(['i2'])
+  const delta = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { openOnly: true, changedSince: openSecond.changeCursor! }))
+  if (delta.status !== 'ok') throw new Error('read refused')
+  expect(delta).toMatchObject({ mergeQueue: [], kept: { issues: [] }, nextCursor: null })
+  const whole = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (whole.status !== 'ok' || whole.nextCursor === null) throw new Error('expected a second page')
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
+  expect(await f.call('read_state', { cursor: whole.nextCursor })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED', restartCursor: 'restart' })
+  expect(f.service.stateNote()).toContain('call read_state')
 })
 
 it('saves none of Watcher’s kept words with Keep local history off', async () => {

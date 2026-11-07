@@ -10,6 +10,7 @@ import type { WatcherIdentity } from '../../../src/shared/watcher'
 import type { WatcherBridge, WatcherRoomResult, WatcherRoomState } from '../../../src/shared/watcherRoom'
 import type { AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
+import { receiptRow } from '../../../src/renderer/src/watcher/WatcherAsks'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -20,6 +21,8 @@ import { placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/
 import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../../../src/renderer/src/agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
+import { placeQuestions } from '../../../src/renderer/src/watcher/WatcherQuestions'
+import { watcherQuestionRequestId, WATCHER_QUESTION_FIELD, type WatcherQuestion } from '../../../src/shared/watcherQuestions'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
@@ -327,13 +330,86 @@ describe('what a receipt says was chosen', () => {
     expect(answerWords(permission('p'), { answer: 'Deny', approved: false, permissionChoice: 'no' })).toBe('Deny')
     expect(receiptWords('Footer links', OWN_WORDS)).toBe('You answered Footer links in your own words.')
     expect(receiptWords('Footer links', undefined)).toBe('Footer links no longer waits on you.')
+    expect(receiptWords('Fix login on staging', 'Wait for the rewrite, and skipped 2')).toBe('You answered Fix login on staging: Wait for the rewrite, and skipped 2.')
     // A title named from a first message keeps its full stop; the line does not say it twice.
     expect(receiptWords('Pick the badge colour.', 'Blue')).toBe('You answered Pick the badge colour: Blue.')
     expect(receiptWords('Pick the badge colour.', undefined)).toBe('Pick the badge colour no longer waits on you.')
   })
 
+  it('says the answer in one row: who answered which thread, then the one choice, the user’s own words or how many choices', () => {
+    expect(receiptRow('Crash Sim', 'Free real recordings, Engines per vehicle, Crashes, Explosions and fire, Arena background, Record the game’s sound', 6))
+      .toEqual({ lead: 'You answered Crash Sim', detail: '6 choices', answered: true })
+    expect(receiptRow('Visual gate flake', 'Allow once', 1)).toEqual({ lead: 'You answered Visual gate flake', detail: 'Allow once', answered: true })
+    // Sent from a place that did not count the choices: the words, which the row shortens if it must.
+    expect(receiptRow('Footer links', 'Blue', undefined)).toEqual({ lead: 'You answered Footer links', detail: 'Blue', answered: true })
+    expect(receiptRow('Footer links', OWN_WORDS, 1)).toEqual({ lead: 'You answered Footer links', detail: 'in your own words', answered: true })
+    expect(receiptRow('Footer links', null, undefined)).toEqual({ lead: 'You answered Footer links', detail: null, answered: true })
+    expect(receiptRow('Pick the badge colour.', undefined, undefined)).toEqual({ lead: 'Pick the badge colour no longer waits on you', detail: null, answered: false })
+  })
+
   it('places each request once, under the newest wake-up that named it', () => {
     const placed = placeAsks([place('a', 'm1'), place('b', 'm1'), place('a', 'm2')])
     expect([...placed].map(([message, asks]) => [message, asks.map(ask => ask.requestCardId)])).toEqual([['m1', ['b']], ['m2', ['a']]])
+  })
+})
+
+/**
+ * Watcher's own question (#2228, Zach's pick A): Sotto's card where Watcher asked, which never holds Watcher. It counts in
+ * Needs you, and once answered one line in its own words takes its place.
+ */
+describe('Watcher’s own question in its conversation', () => {
+  const asked = (patch: Partial<WatcherQuestion> = {}): WatcherQuestion => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: 'watcher',
+    question: 'Settle Footer links? Its pull request merged.', options: [{ label: 'Settle it', description: 'Stop watching it.' }, { label: 'Keep watching' }],
+    state: 'open', at: new Date(NOW - 20_000).toISOString(), ...patch })
+  /** Watcher kept working after it asked: a news reply came after the question. */
+  const carriedOn = (): AgentState => {
+    const state = agentState()
+    state.host.threads.find(thread => thread.id === 'watcher')!.messages.push({ id: 'watcher-3', role: 'assistant', text: 'Council separation is green. Sent GO MERGE.', createdAt: new Date(NOW - 10_000).toISOString() })
+    return state
+  }
+
+  it('puts the card where Watcher asked, with news after it, and sends the user’s choice as the answer to Watcher’s card', async () => {
+    const question = asked()
+    const view = renderRoom({ ...roomState([]), questions: [question] }, carriedOn())
+    const card = await screen.findByRole('region', { name: 'Question from Watcher' })
+    expect(card).toHaveTextContent('Watcher asks')
+    expect(card).toHaveTextContent('Watcher keeps working while this waits')
+    const before = document.querySelector('[data-message-id="watcher-2"]')!, after = document.querySelector('[data-message-id="watcher-3"]')!
+    expect(before.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(within(card).getByRole('radio', { name: /Settle it/ }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Send answer' }))
+    await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: 'watcher',
+      requestId: watcherQuestionRequestId(question.id), questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: ['choice-1'] } } })))
+  })
+
+  it('gives way to one line with the user’s choice once answered', async () => {
+    renderRoom({ ...roomState([]), questions: [asked({ state: 'answered', choice: 'Settle it' })] }, carriedOn())
+    expect(await screen.findByText('You answered: Settle it.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Question from Watcher' })).toBeNull()
+  })
+
+  it('counts in Needs you, where its row says Watcher asks and goes to the card', async () => {
+    renderRoom({ ...roomState([]), questions: [asked()] }, carriedOn())
+    const card = await screen.findByRole('region', { name: 'Question from Watcher' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Show (what needs you|the \d+ things that need you)$/ }))
+    const row = await screen.findByRole('button', { name: 'Go to Watcher’s question in this conversation: Settle Footer links? Its pull request merged.' })
+    expect(row).toHaveTextContent('Watcher asks')
+    fireEvent.click(row)
+    expect(card).toHaveFocus()
+  })
+
+  it('gives every waiting question of Watcher’s its own row, however many wait', async () => {
+    const ids = ['1', '2', '3', '4', '5', '6'].map(n => `${n}f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b`)
+    renderRoom({ ...roomState([]), questions: ids.map((id, index) => asked({ id, question: `Question ${index + 1}?` })) }, carriedOn())
+    await screen.findAllByRole('region', { name: 'Question from Watcher' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Show the \d+ things that need you$/ }))
+    for (const index of [1, 2, 3, 4, 5, 6]) expect(await screen.findByRole('button', { name: `Go to Watcher’s question in this conversation: Question ${index}?` })).toBeInTheDocument()
+  })
+
+  it('places each question after the last message shown from before Watcher asked', () => {
+    const messages = carriedOn().host.threads.find(thread => thread.id === 'watcher')!.messages
+    const placed = placeQuestions(messages, [asked(), asked({ id: '4e2b7d3f-6c8e-4f9a-8b1c-2d3e4f5a6b7c', at: new Date(NOW - 90_000).toISOString() })])
+    expect([...placed].map(([message, questions]) => [message, questions.length])).toEqual([['watcher-2', 1], ['watcher-1', 1]])
   })
 })

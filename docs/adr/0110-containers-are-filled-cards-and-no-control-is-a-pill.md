@@ -16,6 +16,12 @@ Amended October 26, 2026: one light comes back at the highest effort, the effort
 
 Amended October 30, 2026: a card says its status in words, with no coloured edge and no tint, and labels are written in sentence case (below, "Status in words, labels in sentence case").
 
+Amended November 5, 2026, by Zach's pick of variant C: below a 1000 pixel window decision 5's floor gives way to the collapsed rail, and the sidebar opens over the thread (below, "November 5, 2026 amendment: over the thread when narrow"). His pick of October 22 stays in the record above.
+
+Amended November 5, 2026, by Zach's pick of variant B of a second prototype: by day a ready Merge is a clearer mint wash inside an edge of the green itself (below, "November 5, 2026 amendment: a ready Merge in the checklist's green").
+
+Amended November 5, 2026, by Zach's pick of variant B: where the thread beside Changes would be under 400 pixels, Changes covers the workspace (below, "November 5, 2026 amendment: Changes over the thread when narrow"). Amended again that day by his pick of B for the Pull request surface: it covers the workspace by the same rule (in the same section).
+
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
 ## Context
@@ -66,3 +72,35 @@ Keyboard users keep a visible path: the composer's buttons, chips and the branch
 Amended October 30, 2026, from the desktop UI review (#1830, #1829). Six kinds of card still drew a 2 or 3 pixel coloured stripe down their left edge to say their status: the request card (the attention colour, the warning colour while an answer is unconfirmed, and its recovered answers), the ready prototype (the accent), a question lifted out of a folded reply (the attention colour), the client update card (the update colour, the error colour when one failed), a provider's refusal (the error colour) and a thread's error and notice lines. The docked questions box above the composer drew a warning outline for an unconfirmed answer. Each card already says the same in its heading, its sentence and its buttons, and the sidebar says a thread needs you. Zach picked **no stripe and no tint** from `look-fixes-prototype.html` on the tag `prototype/ui-hillclimb-desktop`: those cards are plain fills like every other card, and their words and buttons carry the urgency. An error still sets its sentence in the error colour, at 4.5:1 on its fill. `themeTokens.test.ts` fails if any of those cards draws a left edge or a coloured border again.
 
 Labels are written in sentence case, as the words are written: no stylesheet turns them into capitals. The Dictate room's stats and day headings, the theme editor's colour groups and first-run setup's step line were the last tracked capitals ("TODAY", "STEP 1 OF 10 · WELCOME"); they now read "Today" and "Step 1 of 10" (ADR-0063 has the rest of setup's change). `themeTokens.test.ts` fails on any `text-transform: uppercase` in a renderer stylesheet.
+
+## November 5, 2026 amendment: over the thread when narrow
+
+Zach chose this. Decision 5's 260 pixel floor left the thread 560 of an 820 pixel window, two thirds of it, and reviewers of the design pass read the narrow window as a sidebar with a thread beside it. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/sidebar-820/index.html`, kept outside the repository, at every width from 820 to 1280: A, the floor as it stands; B, the rail on its own below 1000 pixels, with Expand pushing the thread over; and C, the same rail, with Expand opening the sidebar over the thread. He picked C. The prototype's window is the real renderer's DOM and stylesheets from the design pass's build at commit `f723761a3`.
+
+**What changed.** Decision 5 holds from a 1000 pixel window up. Below it:
+
+- The sidebar stands as the collapsed rail, whatever the user last chose, and the thread takes the rest of the window: 768 pixels of an 820 pixel window. A choice to collapse or expand is kept for the wider window and comes back when the window crosses the line again.
+- **Expand sidebar**, or **Ctrl+Shift+B** (**Cmd+Shift+B** on a Mac), opens the whole sidebar over the thread at 280 pixels: search, Needs you, the folders, Settled and the foot. The thread under it does not move or rewrap. The rest of the window is dimmed.
+- It takes the focus, on the thread on screen or else the search, and Tab stays inside it. Choosing a thread, opening one beside, starting a new one, Escape, **Collapse sidebar**, the same keys again or a press beside it closes it, and the focus goes back to where it was, or to Expand. A focus that moves out of it, such as F6 to the pane, closes it too.
+- Where Tools has the sidebar's column at the narrowest windows, the keys still open the sidebar over the field.
+- From 1000 pixels up the keys collapse and expand the sidebar as its buttons do. They stand down where one of dictation's shortcuts or a thread shortcut the user saved uses them, and Settings › Keyboard lists them under Fixed & elsewhere and refuses them to every thread shortcut. Ctrl+Shift+B is clear of dictation's defaults on every platform, the popup's Alt+Shift+Space and every thread shortcut's default.
+
+**Why.** Every thread stays one press or one key away while the thread keeps the window. B gave the thread the same room but Expand still pushed it over; C never takes it.
+
+**What it costs.** A second way the sidebar can stand, and while it is open the thread is behind it. Below 1000 pixels a dragged width is not shown until the window widens again; it is kept, not forgotten. Settings keeps its column at the width the sidebar would have, so below 1000 pixels the left column changes between Threads and Settings, where it otherwise stays the same box.
+
+## November 5, 2026 amendment: a ready Merge in the checklist's green
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/merge-plate/`, kept outside the repository, and picked B.
+
+A ready **Merge** in the Pull request surface is a light wash of the green the merge checklist's ticks are drawn in, over the surface, with a green edge and a green merge mark and the panel's own text on it, where it was the primary's plate in the text colour. It is still the one filled control in the surface, its words read at 4.5:1 or better on the wash in every theme, and hover and press deepen the wash rather than brightening a plate. This is the one exception to decision 2's "the primary keeps its plate in the text colour"; every other primary keeps it. The blocked Merge, hatched with its sentence, and a read in flight dimming a ready one are unchanged.
+
+**By day.** Zach chose this: later on November 5 he tried two answers for the light look in the design pass's prototype `sotto-council/prototypes/merge-day/`, kept outside the repository, and picked B. A was his earlier pick above, merge-plate B as it stood, whose 18% of the dark green over a near-white surface read as a grey sage, a control at rest. In B a ready Merge by day is a more colourful mint wash, the status green raised to a light tint, inside an edge of the green itself, about twice as strong as the edge it replaces (6.3:1 against the panel), with hover and press tints that deepen it the same way. Its words are the panel's text at weight 600, in both modes. The dark look's wash, edge and tints are unchanged. The values are tokens in `tokens.css` (`--tt-success-wash`, `-hover`, `-press` and `--tt-success-edge`).
+
+## November 5, 2026 amendment: Changes over the thread when narrow
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/changes-820/`, kept outside the repository, and picked B. At an 820 pixel window Changes stood beside the conversation, about 360 pixels for the thread and 400 for the lines, and reviewers found both cramped: prose wrapped at forty characters, code at thirty, and the bar's labels were cut.
+
+Where the thread beside Changes would be under 400 pixels, Changes covers the whole workspace, as Expand does, and the thread under it takes no keys until Changes closes, by Close, Escape or the Tools button. Expand is hidden there, since it would change nothing. Only Changes does this, and not once the user has sized the panel, so at 1280 and 1600 every surface keeps its place, and every other surface keeps its place at 820. This is the "over the thread in a narrow window" of [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md) decision 2, reached sooner for Changes alone.
+
+**The Pull request surface, November 5, 2026.** Zach chose this: the same day he tried both answers for the Pull request surface in the design pass's prototype `sotto-council/prototypes/pr-820/`, kept outside the repository, and picked B. A was the surface beside the thread at 820 pixels, about 360 pixels left for the thread. B was the rule above. The Pull request surface now covers the workspace exactly as Changes does: where the thread beside it would be under 400 pixels, it fills the workspace, the thread under it takes no keys until it closes, by Close, Escape or the Tools button, and Expand is hidden. A panel the user sized keeps its width beside the thread, and 1280 and 1600 are unchanged. Changes and the Pull request surface are the two that do this; every other surface keeps its place at 820.

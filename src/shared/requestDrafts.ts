@@ -9,7 +9,8 @@ export const requestDraftOwnerSchema = z.object({ kind: z.enum(['thread', 'perso
 export type RequestDraftOwner = z.infer<typeof requestDraftOwnerSchema>
 export const requestDraftTargetSchema = requestDraftOwnerSchema.extend({ requestId: id, questions: agentRequestSchema.shape.questions.unwrap().min(1) }).strict()
 export type RequestDraftTarget = z.infer<typeof requestDraftTargetSchema>
-const questionSelectionSchema = z.object({ optionIds: z.array(id).max(100), other: z.boolean(), text: z.string().max(24_000) }).strict()
+/** One question's draft: its choices and words, or `skipped` when the user skipped it on its own (ADR-0135, November 6, 2026). */
+const questionSelectionSchema = z.object({ optionIds: z.array(id).max(100), other: z.boolean(), text: z.string().max(24_000), skipped: z.literal(true).optional() }).strict()
 export type QuestionSelection = z.infer<typeof questionSelectionSchema>
 export const requestDraftSchema = z.object({
   target: requestDraftTargetSchema, revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -27,7 +28,8 @@ export const requestDraftSchema = z.object({
     if (!question || question.unavailableReason !== undefined || new Set(selection.optionIds).size !== selection.optionIds.length
       || selection.optionIds.some(optionId => !question.options.some(option => option.id === optionId))
       || (!question.multiSelect && selection.optionIds.length + Number(selection.other) > 1)
-      || (!question.allowFreeText && (selection.other || selection.text.length > 0))) {
+      || (!question.allowFreeText && (selection.other || selection.text.length > 0))
+      || (selection.skipped && (question.skippable !== true || selection.optionIds.length > 0 || selection.other || selection.text.length > 0))) {
       context.addIssue({ code: 'custom', message: 'Selections must belong to their original question.' })
     }
   }

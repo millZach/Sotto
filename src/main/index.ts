@@ -330,7 +330,7 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
+import { githubBaseBranchChecks, githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
@@ -1097,7 +1097,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, councilEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
@@ -1165,7 +1165,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
-    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches, baseBranchChecks: githubBaseBranchChecks } : {}), log: code => { logOperational(code) } },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
@@ -1184,7 +1184,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Which delegated threads elsewhere the window's Settles settled, for their Restores, after a restart too (#1316 part 3).
   const cascadedSettles = crossMachineEnabled ? new CascadedSettles(userDataPath) : undefined
   await cascadedSettles?.load()
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  // What crosses to the main window, made before the router so each command reply is numbered as the router builds it (#306).
+  const agentStateBroadcaster = new AgentStateBroadcaster()
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { replyBuilt: agentStateBroadcaster.replyBuilt, watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
     // What the user's Stop on a thread here left on other machines, which the window says once the cancels answer (#1316 part 3).
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
@@ -1214,7 +1216,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
   // A thread on a paired host reaches this computer's Watcher over its connection here (ADR-0073, November 2, 2026).
   const localWatcher = localRuntime.watcher
-  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask)) : undefined
+  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask), (target, ready) => localWatcher.threadReady(target, ready)) : undefined
   watcherTells?.useHosts(hostRouter)
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
@@ -1238,7 +1240,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
     mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
-    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
+    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request), gitPullRequestList: request => agentControl.gitPullRequestList(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).
@@ -1330,6 +1332,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
     const hostId = agentControl.hostId()
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
+  }, async (threadId, ready) => {
+    const hostId = agentControl.hostId()
+    return hostId ? await localWatcher.threadReady({ hostId, threadId }, ready) : { status: 'refused', reason: 'no-watcher' }
   }) : undefined
   if (tellTools) quitHandles.tellWatcherTools = tellTools
   // Lets an ordinary thread's agent ask the Council, or start a Climb's setup, when the user's own message there asks for one
@@ -1499,7 +1504,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
 
   // Only the threads the main window has declared viewed receive their messages.
-  const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
     hostRouter.scheduleRequestDraftReconcile(requestDrafts)
@@ -2562,7 +2566,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], machinesEnabled: crossMachineEnabled,
-        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
+        holdEnabled: owlFeatures['restart-stopped-threads'], watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),
@@ -2792,7 +2796,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         if (nativeFixtureRoot && process.env['SOTTO_E2E_CERTIFIED_DETAIL_OBSERVATION'] === '1') {
           // The native test observes the real private tracker, never a renderer copy or a fixture
           // certificate. No production accessor or diagnostic channel is introduced.
-          const tracked = (agentControl as unknown as { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> }).certifiedDetailRevisions
+          const tracked = (agentControl as unknown as { revisions: { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> } }).revisions.certifiedDetailRevisions
           let ownedThreads = 0, reusedRecords = 0
           for (const [threadId, detail] of tracked) {
             if (isImmutableActivities(detail.activities)) ownedThreads++

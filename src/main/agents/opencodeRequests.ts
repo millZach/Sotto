@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, skipSentenceFits } from './nativeRequests'
 
 /**
  * OpenCode's two things only the user can settle (ADR-0004, ADR-0087): a permission its rules set to ask about
@@ -96,6 +96,18 @@ function fieldOptions(field: Field): readonly { value: string; label: string; de
     ...(option.description ? { description: option.description } : {}) }))
 }
 
+/**
+ * Whether a field may be skipped on its own: one that may be left out, or a text field that takes typed words and asks for
+ * no format the skip sentence would break. A required yes-or-no, number or choice field may not (ADR-0135, November 6, 2026).
+ */
+function skippableField(field: Field): boolean {
+  if (field.required === false) return true
+  const raw = field as Record<string, unknown>
+  const length = (key: string): number | undefined => typeof raw[key] === 'number' ? raw[key] : undefined
+  return field.type === 'string' && (field.custom === true || fieldOptions(field).length === 0) && raw.pattern === undefined && raw.format === undefined
+    && skipSentenceFits(length('minLength'), length('maxLength'))
+}
+
 /** One form as a question card, or undefined when Sotto cannot draw it and cancels it instead. */
 export function opencodeFormPending(threadId: string, form: OpenCodeForm): Extract<OpenCodePending, { kind: 'form' }> | undefined {
   if (!form.fields.every(drawable)) return undefined
@@ -109,6 +121,7 @@ export function opencodeFormPending(threadId: string, form: OpenCodeForm): Extra
       multiSelect: field.type === 'multiselect',
       allowFreeText: field.type !== 'boolean' && (field.custom === true || options.length === 0),
       required: field.required !== false,
+      ...(skippableField(field) ? { skippable: true as const } : {}),
     }
   })
   const request: AgentRequest = { id: `opencode-form-${form.id}`, kind: 'question', text: questions[0]!.question, options: [], questions, skippable: true }
@@ -129,6 +142,8 @@ export function opencodeFormAnswer(pending: Extract<OpenCodePending, { kind: 'fo
   const result: Record<string, string | number | boolean | string[]> = {}
   for (const field of fields) {
     const given = supplied[field.key]
+    // A skipped field is left out when it may be, and otherwise carries the skip sentence as its words.
+    if (skippedQuestion(supplied, field.key)) { if (field.required !== false) result[field.key] = QUESTION_SKIPPED; continue }
     const options = fieldOptions(field)
     const chosen = (given?.optionIds ?? []).map(id => options[Number(id.slice('option-'.length))]!.value)
     // Text typed beside a chosen option is the user's own answer, and only text that says something counts.

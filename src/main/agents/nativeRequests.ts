@@ -24,12 +24,37 @@ export function unreadableRequest(provider: string): string {
 
 /** Validate against the original native request, never against renderer-provided choices. */
 /** What a provider that takes words with a declined question is told when the user skips it (ADR-0135, October 27, 2026). */
+/**
+ * What Muse is told when Watcher asks with its own question tool, which would hold Watcher's turn until the user answered
+ * (#2228). The question reaches no one and nothing is answered for the user: the tool is closed to Watcher, as Claude
+ * Code's and Codex's are at launch, and Watcher asks again with Sotto's ask_user. Grok Build's and Cursor's cancels carry
+ * no words.
+ */
+export const WATCHER_QUESTION_TOOL_CLOSED = 'This question tool is closed to Watcher, so the question reached no one and nothing was answered. Ask the user with ask_user on sotto_threads instead: it shows them a card and returns at once.'
 export const QUESTION_SKIPPED = 'The user skipped this question. Proceed using your own judgement.'
+const QUESTION_NOT_SKIPPABLE = 'This question cannot be skipped on its own. Answer it, or skip the whole form.'
+/** Whether one question was skipped in this answer. */
+export const skippedQuestion = (supplied: AgentQuestionAnswers | undefined, questionId: string): boolean => supplied?.[questionId]?.skipped === true
+/**
+ * Whether a form field that must be answered can carry the skip sentence as its words: a field that takes typed words with
+ * no format to match, whose length limits the sentence fits. A required yes-or-no, number or choice field cannot, so it has
+ * no Skip of its own and only the whole form's Skip declines it (Zach's pick, November 6, 2026).
+ */
+export function skipSentenceFits(minLength?: number, maxLength?: number): boolean {
+  return QUESTION_SKIPPED.length >= (minLength ?? 0) && QUESTION_SKIPPED.length <= (maxLength ?? Number.POSITIVE_INFINITY)
+}
 export function questionValues(request: AgentRequest, supplied: AgentQuestionAnswers): Record<string, string[]> {
   const questions = request.questions ?? []
   if (!questions.length || Object.keys(supplied).some(id => !questions.some(question => question.id === id))) throw new Error('The question changed. Review its original request.')
   return Object.fromEntries(questions.flatMap(question => {
     const answer = supplied[question.id]
+    // A question the user skipped on its own (ADR-0135, November 6, 2026) is answered with the skip sentence. An adapter
+    // whose provider takes no words leaves it out instead, as its own clients send a question the user passed over.
+    if (answer?.skipped) {
+      if (!question.skippable) throw new Error(QUESTION_NOT_SKIPPABLE)
+      if (answer.optionIds.length || answer.text?.trim()) throw new Error('A skipped question takes no answer.')
+      return [[question.id, [QUESTION_SKIPPED]]]
+    }
     if (question.required === false && (!answer || (answer.optionIds.length === 0 && !answer.text?.trim()))) return []
     if (question.unavailableReason) throw new Error(question.unavailableReason)
     if (!answer || !Array.isArray(answer.optionIds) || new Set(answer.optionIds).size !== answer.optionIds.length) throw new Error('Answer every question once.')

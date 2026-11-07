@@ -70,10 +70,10 @@ p.worker-role__none { margin: 0; }
 .worker-role__defaults li[data-use='true'] > span:last-child { color: var(--tt-accent-text); }
 .worker-role__defaults li[data-off='true'] > span:nth-of-type(2) { color: var(--tt-text-muted); }
 .worker-role__defaults li[data-off='true'] .provider-mark { opacity: .55; }
-.worker-role__defaults .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.worker-role__defaults .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.worker-role__defaults .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
-.worker-role__defaults .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.worker-role__defaults .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex-mark); }
+.worker-role__defaults .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude-mark); }
+.worker-role__defaults .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok-mark); }
+.worker-role__defaults .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin-mark); }
 
 /* Orchestrating's drawing of Watcher's composer: the same three chips, for reading only. */
 .worker-role__mirror { display: grid; align-content: start; gap: 8px; min-width: 0; }
@@ -84,9 +84,9 @@ p.worker-role__none { margin: 0; }
 .worker-role__chip--speed:not([data-speed='standard']) { color: var(--tt-accent-text); }
 .worker-role__chip--speed > small { align-self: flex-end; margin: 0 0 6px -5px; font-size: var(--tt-type-micro); font-weight: 700; line-height: 1; }
 .worker-role__chip > span:not(.provider-mark) { overflow: hidden; text-overflow: ellipsis; }
-.worker-role__chip .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.worker-role__chip .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.worker-role__chip .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.worker-role__chip .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex-mark); }
+.worker-role__chip .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude-mark); }
+.worker-role__chip .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok-mark); }
 .worker-role__caption { display: flex; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 1.5; }
 .worker-role__caption > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
 

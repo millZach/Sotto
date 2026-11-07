@@ -286,6 +286,19 @@ npx vitest run tests/integration/codexNewestTurnLive.test.ts --maxWorkers=1 --di
 SOTTO_CODEX_TURNS_LIVE=1 npx vitest run tests/integration/codexNewestTurnLive.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
+## Codex permission modes live check
+
+`tests/integration/codexApprovalPolicyLive.test.ts` is gated by `SOTTO_CODEX_POLICY_LIVE=1`. It starts the installed Codex app-server in a throwaway `CODEX_HOME`, so it needs no sign-in and never reads the user's own Codex threads, and it runs no model turn. For each of a Codex thread's four permission modes it starts an ephemeral thread with the adapter's own policy and moves another thread to it with `thread/settings/update`, and checks Codex reports the same approval policy, reviewer and sandbox back. Codex 0.165 and newer refuse `approval_policy = "untrusted"` in its configuration and on the command line, and Ask for approval sends `untrusted` on requests, so run this after a Codex update (#2185). It last passed on Codex CLI 0.167.0 on forge, November 5, 2026:
+
+```powershell
+$env:SOTTO_CODEX_POLICY_LIVE = '1'
+npx vitest run tests/integration/codexApprovalPolicyLive.test.ts --maxWorkers=1
+```
+
+```sh
+SOTTO_CODEX_POLICY_LIVE=1 npx vitest run tests/integration/codexApprovalPolicyLive.test.ts --maxWorkers=1
+```
+
 ## Gated assertions
 
 A shared runner interleaves two vitest workers with everything else on the host, so an absolute
@@ -689,10 +702,6 @@ The workflow journey in `tests/unit/renderer/subagents.test.tsx` holds the first
 ## Main freeze nightly
 
 `.github/workflows/main-freeze.yml` (**Main freeze**) runs every night at 07:00 UTC on `main`, and when started by hand from the Actions tab. On `windows-latest` with Node 24.22.1 and the long temporary path, it runs `npm ci`, `npm run build` and `npx playwright test tests/e2e/main-freeze.spec.ts` with `SOTTO_PERF_BENCH=1` and `SOTTO_PERF_ASSERT=1`, the switch every stopwatch budget takes. The spec builds the owner's history in the app (`tests/fixtures/ownerScale.ts`): about 250 threads on this computer with provider sessions, a Watcher record with a current Watcher, 5 standing watches on the threads that stream, 160 requests and 150 operations, so Watcher's wake-up pass runs through the timed cases, 256 answer retirements and a paired headless host with 40 threads. It fails when main's longest stall or its count of stalls of 100 ms or more passes `FREEZE_LIMITS` in the spec, while nothing, one or three threads stream, and when the window drew fewer than 5 frames a second in a case, which means it was not on screen and its keystroke times would measure Chromium's throttling. Run by hand without `SOTTO_PERF_ASSERT=1`, such a case prints `"valid": false` and why instead of failing. It keeps `test-results/` for 14 days. It is a timing backstop on real Electron, never a pull request's gate: pull requests meet the counting gate, `ownerScaleWorkBudget.perf.test.ts`, in the default suite. A red nightly run is fixed like a red gate on `main`: count the work per update with the gate, then profile main. The limits only tighten. On a Windows development machine the workflow stays unverified until GitHub runs it.
-
-## Tip sources weekly
-
-`.github/workflows/tip-sources.yml` (**Tip sources**) runs every Monday at 09:00 UTC on `main`, and when started by hand from the Actions tab. On `ubuntu-latest` with Node 24.22.1 and no install, it runs `node scripts/check-tip-sources.mjs`, which reads each provider documentation page in `src/renderer/src/agents/tipSources.json` and looks for the sentence its tip rests on (ADR-0159). When a page has lost its sentence or answers 404 or 410, the job opens an issue titled "Tips rest on provider documentation that changed", or comments on the one already open, listing each tip, its page and the sentence; it needs only `issues: write`. A page it cannot reach for any other reason is a warning in the log, never an issue. It is not a pull request's gate. `tests/unit/scripts/checkTipSources.test.ts` covers the reading and the report, and `tests/unit/renderer/threadTips.test.tsx` holds every documentation tip to a source and every source to a tip.
 
 ## Sotto Owl for Mac
 

@@ -31,8 +31,8 @@ describe('thread detail over the socket', () => {
    * published once nobody does.
    */
   async function streamingHost() {
-    const stream: { current: AgentThreadDetail; quiet: AgentThreadDetail; reads: number; emit: (update: AgentThreadDetailUpdate) => void } = { current: { threadId: 'streaming', revision: 1, messages: [message('Hello')] },
-      quiet: { threadId: 'quiet', revision: 1, messages: [message('Quiet')] }, reads: 0, emit: () => undefined }
+    const stream: { current: AgentThreadDetail; quiet: AgentThreadDetail; reads: number; widened: number; earlier?: AgentThreadDetail; emit: (update: AgentThreadDetailUpdate) => void } = { current: { threadId: 'streaming', revision: 1, messages: [message('Hello')] },
+      quiet: { threadId: 'quiet', revision: 1, messages: [message('Quiet')] }, reads: 0, widened: 0, emit: () => undefined }
     const published = new Set<string>()
     const service: HostService = {
       shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
@@ -42,6 +42,13 @@ describe('thread detail over the socket', () => {
         stream.reads++; return structuredClone(stream.current)
       },
       command: (command, identity) => {
+        // Show earlier messages widens the thread's window to what the test set aside as its earlier history.
+        if (command.type === 'load-earlier-messages' && command.threadId === 'streaming') {
+          stream.widened++
+          const earlier = stream.earlier
+          if (earlier) stream.current = earlier
+          return Promise.resolve(fixture.host.service.state())
+        }
         if (command.type === 'observe-threads') {
           const targets: string[] = command.threadIds.filter(id => id === 'streaming' || id === 'quiet')
           for (const id of [...published]) if (!targets.includes(id)) published.delete(id)
@@ -190,6 +197,158 @@ describe('thread detail over the socket', () => {
     } finally { phone.frames.close(); await client.close(); await server.close() }
   })
 
+  it('sends a phone that accepts step-window the newest steps, keeps its window\'s top while the thread works, and moves it back on earlier-steps (ADR-0194)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    // Five turns of a question, a run of 90 steps and an answer: 450 steps, as a long picture thread holds in a few turns.
+    const at = (second: number) => new Date(Date.UTC(2026, 10, 5, 12, 0, 0) + second * 1000).toISOString()
+    const messages: AgentThreadDetail['messages'] = [], activities: AgentActivity[] = []
+    let clock = 0
+    for (let turn = 0; turn < 5; turn++) {
+      messages.push({ id: `ask-${turn}`, role: 'user', text: 'Go on', createdAt: at(clock++) })
+      for (let step = 0; step < 90; step++) activities.push(agentActivitySchema.parse({ id: `step-${turn}-${step}`, turnId: `ask-${turn}`, sequence: activities.length + 1, kind: 'command', status: 'completed', title: 'Ran', command: 'node shoot.js', startedAt: at(clock++) }))
+      messages.push({ id: `answer-${turn}`, role: 'assistant', text: 'Done', createdAt: at(clock++) })
+    }
+    const steps = (detail: unknown) => (detail as AgentThreadDetail).activities?.length ?? 0
+    const phone = await rawPeer(server.descriptor.port, session())
+    try {
+      stream.current = { threadId: 'streaming', revision: 2, messages, activities }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(2)
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'activity-summaries', 'step-window'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === 2)).toBe(true)
+      const opened = phone.messages.find(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === 2)!.detail as AgentThreadDetail
+      // The newest 200 steps reach seventy steps into turn 2's run, so the window starts at turn 2's question.
+      expect(opened.messages[0]?.id).toBe('ask-2')
+      expect(steps(opened)).toBe(200)
+      expect(opened).toMatchObject({ earlierAvailable: true, earlierSteps: 250 })
+      // The desktop still holds every step.
+      expect(client.threadDetail('streaming')?.activities).toHaveLength(450)
+
+      // The cap drops the oldest step for a new one: the phone is told of both, and holds nothing the removal takes.
+      const fresh = agentActivitySchema.parse({ id: 'step-new', turnId: 'ask-4', sequence: 451, kind: 'command', status: 'running', title: 'Ran', command: 'node shoot.js', startedAt: at(clock++) })
+      const old = { ...activities[1]!, status: 'failed' as const }
+      stream.current = { threadId: 'streaming', revision: 3, messages, activities: [...activities.slice(1), fresh] }
+      stream.emit({ threadId: 'streaming', baseRevision: 2, revision: 3, messageDeltas: [{ id: 'answer-0', appendText: '!' }], activityDeltas: [{ id: 'step-0-0', removed: true }, { record: old }, { record: fresh }] })
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail-delta')).toBe(true)
+      const delta = phone.messages.find(item => item.event === 'detail-delta')!.delta as AgentThreadDetailDelta
+      expect(delta.messageDeltas).toEqual([])
+      expect(delta.activityDeltas.map(item => 'record' in item ? item.record.id : item.id)).toEqual(['step-0-0', 'step-new'])
+
+      // A whole sent later starts where the phone's window started, so its page loses nothing at the top.
+      stream.current = { ...stream.current, revision: 4 }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === 4)).toBe(true)
+      const later = phone.messages.find(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === 4)!.detail as AgentThreadDetail
+      expect(later.messages[0]?.id).toBe('ask-2')
+      expect(steps(later)).toBe(201)
+
+      // Show earlier messages: 200 more than the 201 the phone holds reach fifty into turn 0's run, at the revision it holds.
+      const wider = (await phone.call('earlier', { op: 'earlier-steps', threadId: 'streaming' }) as { result: AgentThreadDetail }).result
+      expect(wider.revision).toBe(4)
+      expect(wider.messages[0]?.id).toBe('ask-0')
+      expect(steps(wider)).toBe(401)
+      expect(wider).toMatchObject({ earlierAvailable: true, earlierSteps: 49 })
+      // A read from there sends the same window.
+      expect(steps((await phone.call('read', { op: 'detail', threadId: 'streaming' }) as { result: AgentThreadDetail }).result)).toBe(401)
+      // Once more, and the window reaches the thread's top: it is sent whole, with nothing above it.
+      const top = (await phone.call('earlier-again', { op: 'earlier-steps', threadId: 'streaming' }) as { result: AgentThreadDetail }).result
+      expect(steps(top)).toBe(450)
+      expect(top.earlierAvailable).toBeUndefined()
+      expect(top.earlierSteps).toBeUndefined()
+    } finally { phone.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('widens the thread\'s own window when a phone\'s step window already reaches its top (ADR-0194)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const at = (second: number) => new Date(Date.UTC(2026, 10, 5, 12, 0, 0) + second * 1000).toISOString()
+    const turn = (index: number, steps: number, from: number): { messages: AgentThreadDetail['messages']; activities: AgentActivity[] } => ({
+      messages: [{ id: `ask-${index}`, role: 'user', text: 'Go on', createdAt: at(from) }, { id: `answer-${index}`, role: 'assistant', text: 'Done', createdAt: at(from + steps + 1) }],
+      activities: Array.from({ length: steps }, (_, step) => agentActivitySchema.parse({ id: `step-${index}-${step}`, turnId: `ask-${index}`, sequence: from + step + 1, kind: 'command', status: 'completed', title: 'Ran', startedAt: at(from + step + 1) })) })
+    const older = turn(0, 300, 0), newer = turn(1, 50, 400)
+    const phone = await rawPeer(server.descriptor.port, session())
+    try {
+      stream.current = { threadId: 'streaming', revision: 2, messages: newer.messages, activities: newer.activities, earlierAvailable: true }
+      stream.earlier = { threadId: 'streaming', revision: 3, messages: [...older.messages, ...newer.messages], activities: [...older.activities, ...newer.activities] }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(2)
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'activity-summaries', 'step-window'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail')).toBe(true)
+      // Fifty steps, all the window holds: the phone has them all, and the store has more.
+      expect(phone.messages.find(item => item.event === 'detail')!.detail).toMatchObject({ earlierAvailable: true })
+      expect(stream.widened).toBe(0)
+      const read = (await phone.call('earlier', { op: 'earlier-steps', threadId: 'streaming' }) as { result: AgentThreadDetail }).result
+      expect(stream.widened).toBe(1)
+      // The widened thread is cut 250 steps back, inside turn 0's run, so the window starts at turn 0's question.
+      expect(read.messages[0]?.id).toBe('ask-0')
+      expect(read.activities).toHaveLength(250)
+      expect(read).toMatchObject({ earlierAvailable: true, earlierSteps: 100 })
+    } finally { phone.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('cuts a phone\'s window once a thread\'s steps arrive after its messages, and counts the steps deltas brought (ADR-0194)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const at = (second: number) => new Date(Date.UTC(2026, 10, 5, 12, 0, 0) + second * 1000).toISOString()
+    const messages: AgentThreadDetail['messages'] = [{ id: 'ask', role: 'user', text: 'Go on', createdAt: at(0) }]
+    const step = (index: number) => agentActivitySchema.parse({ id: `step-${index}`, turnId: 'ask', sequence: index + 1, kind: 'command', status: 'completed', title: 'Ran', startedAt: at(index + 1) })
+    const phone = await rawPeer(server.descriptor.port, session())
+    const wholes = (revision: number) => phone.messages.filter(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === revision).map(item => item.detail as AgentThreadDetail)
+    try {
+      // A stored thread is published with its messages first, its steps a moment later.
+      stream.current = { threadId: 'streaming', revision: 2, messages }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(2)
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'activity-summaries', 'step-window'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      await expect.poll(() => wholes(2).length).toBe(1)
+      stream.current = { threadId: 'streaming', revision: 3, messages, activities: Array.from({ length: 450 }, (_, index) => step(index)) }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => wholes(3).length).toBe(1)
+      expect(wholes(3)[0]!.activities).toHaveLength(200)
+
+      // Three hundred more stream in as deltas; the next press counts the 500 the phone holds, not the 200 it was cut to.
+      let revision = 3
+      for (let index = 450; index < 750; index++) {
+        stream.current = { ...stream.current, revision: revision + 1, activities: [...stream.current.activities!, step(index)] }
+        stream.emit({ threadId: 'streaming', baseRevision: revision, revision: ++revision, messageDeltas: [], activityDeltas: [{ record: step(index) }] })
+      }
+      await expect.poll(() => phone.messages.filter(item => item.event === 'detail-delta').length).toBeGreaterThan(0)
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(revision)
+      await new Promise(resolve => setTimeout(resolve, AGENT_STATE_PUBLISH_INTERVAL_MS * 3))
+      const wider = (await phone.call('earlier', { op: 'earlier-steps', threadId: 'streaming' }) as { result: AgentThreadDetail }).result
+      expect(wider.activities).toHaveLength(700)
+      expect(wider.earlierSteps).toBe(50)
+    } finally { phone.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('widens a thread of short turns as often as it takes to add 200 steps (ADR-0194)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const at = (second: number) => new Date(Date.UTC(2026, 10, 5, 12, 0, 0) + second * 1000).toISOString()
+    // 600 turns of a question and one step; the thread's window holds the newest 300 and widens by 20 turns.
+    const turns = Array.from({ length: 600 }, (_, turn) => ({ message: { id: `ask-${turn}`, role: 'user' as const, text: 'Go on', createdAt: at(turn * 2) },
+      step: agentActivitySchema.parse({ id: `step-${turn}`, turnId: `ask-${turn}`, sequence: turn + 1, kind: 'command', status: 'completed', title: 'Ran', startedAt: at(turn * 2 + 1) }) }))
+    let from = 300
+    const windowOf = (revision: number): AgentThreadDetail => ({ threadId: 'streaming', revision, messages: turns.slice(from).map(turn => turn.message),
+      activities: turns.slice(from).map(turn => turn.step), ...(from > 0 ? { earlierAvailable: true } : {}) })
+    const phone = await rawPeer(server.descriptor.port, session())
+    try {
+      stream.current = windowOf(2)
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(2)
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'activity-summaries', 'step-window'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail')).toBe(true)
+      expect((phone.messages.find(item => item.event === 'detail')!.detail as AgentThreadDetail).activities).toHaveLength(200)
+      let revision = 2
+      Object.defineProperty(stream, 'earlier', { configurable: true, get: () => { from = Math.max(0, from - 20); return windowOf(++revision) } })
+      // 200 held and 100 more in the window: the press widens five times, twenty turns each, to reach 400.
+      const wider = (await phone.call('earlier', { op: 'earlier-steps', threadId: 'streaming' }) as { result: AgentThreadDetail }).result
+      expect(stream.widened).toBe(5)
+      expect(wider.activities).toHaveLength(400)
+    } finally { phone.frames.close(); await client.close(); await server.close() }
+  })
+
   it('pushes what changed as a delta the client applies and passes on, and the whole thread to a client that never asked for deltas', async () => {
     const { stream, server, client, updates, session } = await streamingHost()
     try {
@@ -206,7 +365,7 @@ describe('thread detail over the socket', () => {
       const legacy = await rawPeer(server.descriptor.port, session())
       try {
         // This detail-only service has no native Check implementation, so it must not advertise answer-check.
-        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'background-refresh', 'provider-opencode', 'activity-bodies', 'provider-cursor', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'command-changed-thread-records'] } })
+        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'background-refresh', 'provider-opencode', 'activity-bodies', 'provider-cursor', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'command-changed-thread-records', 'step-window'] } })
         await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
         stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
         stream.emit(delta(2, 3, '!'))

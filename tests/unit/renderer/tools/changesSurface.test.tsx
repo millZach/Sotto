@@ -2,7 +2,7 @@ import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Checkpoint } from '../../../../src/shared/checkpoints'
 import type { GitChange, GitChangesBridge, GitReview, GitReviewFile } from '../../../../src/shared/gitChanges'
 import type { GitRef } from '../../../../src/shared/gitRefs'
@@ -11,7 +11,7 @@ import type { AgentState } from '../../../../src/shared/agents'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
-import { baseChoices } from '../../../../src/renderer/src/tools/ChangesBasePicker'
+import { baseChoices, readPullRequestBase } from '../../../../src/renderer/src/tools/ChangesBasePicker'
 import { inWorkingCopy } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { changesChord } from '../../../../src/renderer/src/tools/changesShortcut'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -19,6 +19,7 @@ import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/s
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
+import { diffLine } from '../../../fixtures/renderer/diffLineText'
 
 // Outside the app provider the diff settings are their defaults; a test that needs another says so.
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -26,7 +27,8 @@ vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal =>
   useOptionalApp: vi.fn(() => null),
 }))
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null) })
+beforeEach(() => { Element.prototype.scrollTo = function scrollTo() { /* jsdom has no layout */ } })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null); delete (Element.prototype as Partial<Element>).scrollTo })
 
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
@@ -39,7 +41,7 @@ const WORKING: GitReviewFile[] = [
 const checkpoint = (id: string, status: Checkpoint['status'], reason?: string): Checkpoint => ({ id, threadId: 'visual-gate', createdAt: '2026-09-23T10:00:00.000Z', status, files: [{ path: 'src/app.ts', change: 'modified' }], supported: true, ...(reason ? { reason } : {}) })
 const TURN_ONE = '11111111-1111-4111-8111-111111111111', TURN_TWO = '22222222-2222-4222-8222-222222222222'
 
-function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository'; truncated?: boolean; checkpoints?: Checkpoint[] } = {}) {
+function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository'; truncated?: boolean; checkpoints?: Checkpoint[]; branchFiles?: GitReviewFile[]; hiddenWhitespace?: { additions: number; deletions: number } } = {}) {
   let reviewFiles = options.files ?? WORKING
   let revision = 'r1'
   const listed = (): GitChange[] => reviewFiles.map(file => ({ path: file.path, status: file.status }))
@@ -48,9 +50,10 @@ function fakeGit(options: { files?: GitReviewFile[]; listError?: 'not-repository
     list: vi.fn(async (): Promise<ToolsResult<never>> => options.listError
       ? { ok: false, error: { code: options.listError, message: 'no repo' } }
       : { ok: true, value: { workspace, branch: 'feature/changes', revision, files: listed(), truncated: options.truncated ?? false } as never }),
-    review: vi.fn(async ({ scope }): Promise<ToolsResult<GitReview>> => scope.kind === 'working'
+    review: vi.fn(async ({ scope, ignoreWhitespace }): Promise<ToolsResult<GitReview>> => scope.kind === 'working'
       ? { ok: true, value: { workspace, revision, scope: { kind: 'working' }, files: reviewFiles, truncated: false } }
-      : { ok: true, value: { workspace, revision, scope: { kind: 'branch', base: scope.base ?? 'origin/main', automatic: scope.base === null, head: 'feature/changes' }, files: [reviewFile('src/trail.ts', 'added', { kind: 'text', patch: 'diff --git a/src/trail.ts b/src/trail.ts\n--- /dev/null\n+++ b/src/trail.ts\n@@ -0,0 +1 @@\n+trail\n' }, 1, 0)], truncated: false } }),
+      : { ok: true, value: { workspace, revision, scope: { kind: 'branch', base: scope.base ?? 'origin/main', automatic: scope.base === null, head: 'feature/changes' }, files: options.branchFiles ?? [reviewFile('src/trail.ts', 'added', { kind: 'text', patch: 'diff --git a/src/trail.ts b/src/trail.ts\n--- /dev/null\n+++ b/src/trail.ts\n@@ -0,0 +1 @@\n+trail\n' }, 1, 0)], truncated: false,
+        ...(ignoreWhitespace && options.hiddenWhitespace ? { hiddenWhitespace: options.hiddenWhitespace } : {}) } }),
     copyPath: vi.fn(async ({ path }) => ({ ok: true as const, value: { workspace, path, absolutePath: `D:/work/workshop/${path}` } })),
     reveal: vi.fn(async ({ path }) => ({ ok: true as const, value: { workspace, path, absolutePath: `D:/work/workshop/${path}` } })),
     watch: vi.fn(async () => ({ ok: true as const, value: undefined })),
@@ -82,17 +85,30 @@ function setup(git = fakeGit(), state = threadsStateFixture()) {
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 const block = (path: string) => panel().querySelector<HTMLElement>(`.changes-file[data-file-path="${path}"]`)!
 
+type Pressing = ReturnType<typeof userEvent.setup>
+const viewRow = (name: string): HTMLElement => {
+  const row = [...panel().querySelectorAll<HTMLElement>('.changes-view [role^="menuitem"]')].find(item => item.textContent === name)
+  expect(row, name).toBeDefined()
+  return row!
+}
+const openView = async (user: Pressing): Promise<void> => { await user.click(within(panel()).getByRole('button', { name: 'View options' })) }
+/** Presses one row of the View menu and puts the menu away. */
+const pressView = async (user: Pressing, name: string): Promise<void> => { await openView(user); await user.click(viewRow(name)); await user.keyboard('{Escape}') }
+/** Whether a row of the View menu is on. */
+const viewOn = async (user: Pressing, name: string): Promise<boolean> => { await openView(user); const on = viewRow(name).getAttribute('aria-checked') === 'true'; await user.keyboard('{Escape}'); return on }
+
 describe('Changes as T3’s diff', () => {
   it('shows the working tree as file blocks with counts, and offers no staging or commit of its own', async () => {
     const git = fakeGit()
     setup(git)
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     expect(git.bridge.review).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, scope: { kind: 'working' }, ignoreWhitespace: false })
     expect(within(panel()).getByRole('combobox', { name: 'Diff scope' })).toHaveValue('working')
     // Header counts are the sum of every file's; a binary file counts nothing.
-    expect(panel().querySelector('.changes-summary .changes-counts--chrome')).toHaveTextContent('+2 −1')
-    // The same totals wait at the head of the view bar, which CSS shows in a panel too narrow for them on the chrome.
-    expect(panel().querySelector('.changes-bar .changes-counts--bar')).toHaveTextContent('+2 −1')
+    expect(panel().querySelector('.changes-bar .changes-counts--total')).toHaveTextContent('+2 −1')
+    // They are said once: the line of chrome over them says what is compared, and does not repeat them.
+    expect(panel().querySelector('.changes-summary .changes-counts')).toBeNull()
+    expect(panel().querySelector('.changes-summary .changes-lead__fact')).toHaveTextContent('Against HEAD')
     expect([...panel().querySelectorAll('.changes-file')].map(item => item.getAttribute('data-file-path'))).toEqual(['docs/new.md', 'logo.png', 'src/app.ts'])
     expect(within(block('src/app.ts')).getByRole('img', { name: 'Modified' })).toHaveTextContent('M')
     expect(within(block('logo.png')).getByText('Binary file: no text diff.')).toBeInTheDocument()
@@ -125,7 +141,7 @@ describe('Changes as T3’s diff', () => {
     const reason = 'Sotto set aside a checkpoint file it could not read as checkpoints.json.corrupt-fixture and kept the rest.'
     vi.mocked(git.bridge.checkpoints!).mockResolvedValue({ ok: true, value: { supported: true, checkpoints: [], reason } })
     setup(git)
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     fireEvent.click(within(panel()).getByRole('button', { name: 'Checkpoints' }))
     expect(await within(panel()).findByText(reason)).toBeInTheDocument()
   })
@@ -133,9 +149,9 @@ describe('Changes as T3’s diff', () => {
   it('collapses one file or all of them, copies a path, and opens a file in Files from its name', async () => {
     const user = userEvent.setup()
     const { git, store, files } = setup()
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Collapse src/app.ts' }))
-    expect(within(panel()).queryByText('export const ready = true')).toBeNull()
+    expect(within(panel()).queryByText(diffLine('export const ready = true'))).toBeNull()
     expect(within(block('src/app.ts')).getByRole('button', { name: 'Expand src/app.ts' })).toHaveAttribute('aria-expanded', 'false')
     await user.click(within(panel()).getByRole('button', { name: 'Collapse all files' }))
     expect(panel().querySelectorAll('.changes-file[data-collapsed]')).toHaveLength(3)
@@ -152,7 +168,7 @@ describe('Changes as T3’s diff', () => {
   it('puts an open linked file away when a file is opened from its name, so Files shows the file pressed', async () => {
     const user = userEvent.setup()
     const { store } = setup()
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     act(() => store.showLinkedFile('visual-gate', 'docs/plan.md'))
     expect(await within(panel()).findByRole('region', { name: 'Preview of plan.md' })).toBeInTheDocument()
     act(() => store.setSurface('changes'))
@@ -172,21 +188,23 @@ describe('Changes as T3’s diff', () => {
     await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
     expect(git.bridge.review).toHaveBeenNthCalledWith(1, expect.objectContaining({ ignoreWhitespace: true }))
     await waitFor(() => expect(panel().querySelectorAll('.changes-file[data-collapsed]')).toHaveLength(3))
-    expect(within(panel()).getByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(panel()).getByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(true)
     // A file the user opens stays open, and a layout they choose outlasts a return to Changes.
     await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Expand src/app.ts' }))
-    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    await pressView(user, 'Stacked diff view')
     act(() => { store.setSurface('files') })
     act(() => { store.setSurface('changes') })
-    expect(await within(panel()).findByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
+    await within(panel()).findByRole('button', { name: 'View options' })
+    expect(await viewOn(user, 'Stacked diff view')).toBe(true)
     await waitFor(() => expect(block('src/app.ts')).not.toHaveAttribute('data-collapsed'))
     // A setting changed in Settings is followed: here whitespace is shown again, and the layout goes back to Split.
     vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: { ...settings, diffHideWhitespace: false } } as unknown as AppContextValue))
     act(() => { store.setSurface('files') })
     act(() => { store.setSurface('changes') })
-    expect(await within(panel()).findByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(panel()).getByRole('button', { name: 'Hide whitespace changes' })).toBeInTheDocument()
+    await within(panel()).findByRole('button', { name: 'View options' })
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(false)
   })
 
   it('waits for settings on a cold start, so the first read already hides whitespace and there is no second', async () => {
@@ -209,20 +227,172 @@ describe('Changes as T3’s diff', () => {
     expect(git.bridge.review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ignoreWhitespace: true }))
   })
 
+  it('marks the words that changed and colours the code, and reads a document as words', async () => {
+    const doc = 'diff --git a/docs/plan.md b/docs/plan.md\n--- a/docs/plan.md\n+++ b/docs/plan.md\n@@ -1,3 +1,3 @@ The plan\n ## The plan\n-Nothing is scheduled for the first cut yet.\n+Five pull requests are scheduled for the first cut yet.\n tail\n'
+    const git = fakeGit({ files: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }), reviewFile('docs/plan.md', 'modified', { kind: 'text', patch: doc })] })
+    setup(git)
+    const code = await waitFor(() => { const found = block('src/app.ts'); expect(found).not.toBeNull(); return found })
+    await within(code).findByText(diffLine('export const ready = true'))
+    expect([...code.querySelectorAll('.changes-word')].map(word => word.textContent)).toEqual(['false', 'true'])
+    await waitFor(() => expect(code.querySelector('[data-kind="add"] .hljs-keyword')).toHaveTextContent('export'))
+    // The hunk head says where the part starts, on one quiet line, and keeps Git's own words for a pointer.
+    const head = code.querySelector('[data-kind="hunk"]')!
+    expect(head).toHaveAttribute('title', '@@ -3,3 +3,3 @@ export')
+    expect(head.querySelector('.changes-hunk__section')).toHaveTextContent('export')
+
+    const words = block('docs/plan.md')
+    const grid = words.querySelector('.changes-diff__rows')!
+    expect(grid).toHaveAttribute('data-reading', 'document')
+    expect(words.querySelector('[data-kind="context"] [data-shape="heading-2"]')).toHaveTextContent('## The plan')
+    // An edited line reads once: what went struck out, then what came, and one row quotes both lines.
+    const edited = words.querySelector('[data-kind="edited"]')!
+    expect([...edited.querySelectorAll('del')].map(word => word.textContent)).toEqual(['Removed: Nothing is'])
+    expect([...edited.querySelectorAll('ins')].map(word => word.textContent)).toEqual(['Added: Five pull requests are'])
+    expect(edited).toHaveAttribute('aria-label', 'Removed line 2: Nothing is scheduled for the first cut yet.; Added line 2: Five pull requests are scheduled for the first cut yet.')
+    // One number for a line of a document, for more room for its words.
+    expect(edited.querySelectorAll('.changes-line__number')).toHaveLength(1)
+  })
+
+  it('goes from file to file with Previous and Next, and draws one file at a time when asked', async () => {
+    const user = userEvent.setup()
+    setup()
+    await within(panel()).findByText(diffLine('export const ready = true'))
+    const previous = within(panel()).getByRole('button', { name: 'Previous file' }), next = within(panel()).getByRole('button', { name: 'Next file' })
+    expect(previous).toBeDisabled()
+    await pressView(user, 'One file at a time')
+    expect(panel().querySelectorAll('.changes-file')).toHaveLength(1)
+    expect(block('docs/new.md')).not.toBeNull()
+    await user.click(next)
+    expect(block('logo.png')).not.toBeNull()
+    await user.click(next)
+    expect(block('src/app.ts')).not.toBeNull()
+    expect(next).toBeDisabled()
+    await pressView(user, 'One file at a time')
+    expect(panel().querySelectorAll('.changes-file')).toHaveLength(3)
+  })
+
+  it('keeps the View menu open through each press, and Escape hands focus back to its button', async () => {
+    const user = userEvent.setup()
+    setup()
+    await within(panel()).findByText(diffLine('export const ready = true'))
+    const button = within(panel()).getByRole('button', { name: 'View options' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    await user.click(button)
+    expect(within(panel()).getByRole('menu', { name: 'View options' })).toBeInTheDocument()
+    expect(viewRow('Stacked diff view')).toHaveFocus()
+    expect(viewRow('Stacked diff view')).toHaveAttribute('role', 'menuitemradio')
+    expect(viewRow('File tree')).toHaveAttribute('role', 'menuitemcheckbox')
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(viewRow('Split diff view')).toHaveAttribute('aria-checked', 'true')
+    expect(viewRow('Stacked diff view')).toHaveAttribute('aria-checked', 'false')
+    await user.keyboard('{Escape}')
+    expect(within(panel()).queryByRole('menu')).toBeNull()
+    expect(button).toHaveFocus()
+  })
+
+  it('says beside the totals when they leave whitespace out, and writes every line count one way', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ files: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 2957, 1230)] }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    const totals = panel().querySelector<HTMLElement>('.changes-counts--total')!
+    expect(totals).toHaveTextContent('+2,957 −1,230')
+    expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2,957 −1,230')
+    expect(totals.title).toBe('2,957 lines added, 1,230 removed')
+    expect(panel().querySelector('.changes-whitespace')).toBeNull()
+    await pressView(user, 'Hide whitespace changes')
+    expect(panel().querySelector('.changes-bar .changes-whitespace')).toHaveTextContent('without whitespace')
+    expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))
+  })
+
+  it('counts every line, as GitHub does, when Git counted the whitespace lines it hid, and says how many hid', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ branchFiles: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 2957, 1230)], hiddenWhitespace: { additions: 3, deletions: 3 } }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await pressView(user, 'Hide whitespace changes')
+    // The pull request reads +2,960 -1,233: the bar does too, and its note says the lines below leave six out.
+    await waitFor(() => expect(panel().querySelector('.changes-counts--total')).toHaveTextContent('+2,960 −1,233'))
+    expect(panel().querySelector('.changes-bar .changes-whitespace')).toHaveTextContent('6 whitespace lines hidden')
+    expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('2,960 lines added, 1,233 removed. 3 added and 3 removed change only whitespace and are hidden below.')
+    // A file's own head still counts the lines it shows.
+    expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2,957 −1,230')
+  })
+
+  it('says nothing beside the totals when hiding whitespace hid no line', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ branchFiles: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 12, 4)], hiddenWhitespace: { additions: 0, deletions: 0 } }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await pressView(user, 'Hide whitespace changes')
+    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--total')!.title).toBe('12 lines added, 4 removed'))
+    expect(panel().querySelector('.changes-whitespace')).toBeNull()
+  })
+
+  it('opens the tree over the lines from All files, and it goes on a pick, on Escape or when focus leaves', async () => {
+    const user = userEvent.setup()
+    setup()
+    await within(panel()).findByText(diffLine('export const ready = true'))
+    expect(within(panel()).queryByRole('button', { name: /^All files/u })).toBeNull()
+    await pressView(user, 'File tree')
+    const review = panel().querySelector('.changes-review')!
+    // The button says which file is in view to a screen reader and opens them all; the file's head says it on screen.
+    const allFiles = within(panel()).getByRole('button', { name: 'All files, 1 of 3' })
+    expect(allFiles).toHaveTextContent('All files')
+    expect(block('docs/new.md')!.querySelector('.changes-file__head .changes-jump__place')).toHaveTextContent('1 of 3')
+    expect(panel().querySelectorAll('.changes-jump__place')).toHaveLength(1)
+    expect(review).not.toHaveAttribute('data-tree-over')
+    await user.click(allFiles)
+    expect(review).toHaveAttribute('data-tree-over')
+    expect(allFiles).toHaveAttribute('aria-expanded', 'true')
+    expect(within(within(panel()).getByRole('listbox', { name: 'Files in this comparison' })).getByRole('option', { selected: true })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(review).not.toHaveAttribute('data-tree-over')
+    expect(allFiles).toHaveFocus()
+    await user.click(allFiles)
+    // Each file in the tree says how much it changed, the side that did alone.
+    expect(within(panel()).getByRole('option', { name: 'new.md, Untracked, 1 added, 0 removed, in docs/' }).querySelector('.changes-tree__counts')).toHaveTextContent(/^\+1$/u)
+    await user.click(within(panel()).getByRole('option', { name: 'app.ts, Modified, 1 added, 1 removed, in src/' }))
+    expect(review).not.toHaveAttribute('data-tree-over')
+    await user.click(allFiles)
+    within(panel()).getByRole('button', { name: 'Refresh diff' }).focus()
+    await waitFor(() => expect(review).not.toHaveAttribute('data-tree-over'))
+  })
+
+  it('filters a long tree, and keeps a long name on one row with its ending whole, so like names read apart', async () => {
+    const user = userEvent.setup()
+    const many = Array.from({ length: 9 }, (_, index) => reviewFile(`src/walCheckpointWorkerPart${index}.ts`, 'modified', { kind: 'text', patch: PATCH }))
+    setup(fakeGit({ files: many }))
+    await within(panel()).findByRole('group', { name: many[0]!.path })
+    await pressView(user, 'File tree')
+    const tree = within(panel()).getByRole('listbox', { name: 'Files in this comparison' })
+    expect(within(tree).getAllByRole('option')).toHaveLength(9)
+    const name = tree.querySelector('.changes-name')!
+    expect(name).toHaveTextContent('walCheckpointWorkerPart0.ts')
+    // Short of room it gives up letters from its middle: its last words and ending are never cut.
+    expect(name.querySelector('.changes-name__tail')).toHaveTextContent('WorkerPart0.ts')
+    expect(name.querySelector('.changes-name__head')).toHaveTextContent('walCheckpoint')
+    await user.type(within(panel()).getByRole('searchbox', { name: 'Filter files' }), 'part3')
+    expect(within(tree).getAllByRole('option')).toHaveLength(1)
+    await user.clear(within(panel()).getByRole('searchbox', { name: 'Filter files' }))
+    await user.type(within(panel()).getByRole('searchbox', { name: 'Filter files' }), 'nothing')
+    expect(within(tree).getByText('No files match.')).toBeInTheDocument()
+  })
+
   it('draws stacked or split, wraps or not, hides whitespace through Git, and shows a file tree', async () => {
     const user = userEvent.setup()
     const patch = 'diff --git a/src/old.ts b/src/app.ts\nold mode 100644\nnew mode 100755\nsimilarity index 75%\nrename from src/old.ts\nrename to src/app.ts\nindex abc123..def456 100755\n--- a/src/old.ts\n+++ b/src/app.ts\n@@ -10,4 +20,5 @@\n keep\n-old one\n-old two\n+new one\n+new two\n+new three\n tail\n@@ -30 +40 @@\n-old end\n\\ No newline at end of file\n+new end\n'
     const git = fakeGit({ files: [{ ...reviewFile('src/app.ts', 'renamed', { kind: 'text', patch }, 4, 3), originalPath: 'src/old.ts' }] })
     setup(git)
     const file = await waitFor(() => { const found = block('src/app.ts'); expect(found).not.toBeNull(); return found })
-    await within(file).findByText('new three')
+    await within(file).findByText(diffLine('new three'))
     expect(within(file).getByText('src/old.ts').closest('.changes-note')).toHaveTextContent('Renamed from src/old.ts')
     // The head names the file and the rename; the rows keep only the mode change Git reported.
     expect([...file.querySelectorAll('.changes-line[data-kind="meta"]')].map(row => row.textContent)).toEqual(['old mode 100644', 'new mode 100755'])
-    const split = within(panel()).getByRole('button', { name: 'Split diff view' })
-    expect(within(panel()).getByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
-    await user.click(split)
-    expect(split).toHaveAttribute('aria-pressed', 'true')
+    expect(await viewOn(user, 'Stacked diff view')).toBe(true)
+    await pressView(user, 'Split diff view')
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
     expect(file.querySelector('.changes-split__head')).toHaveTextContent('HEADWorking tree')
     const rows = [...file.querySelectorAll('.changes-split__row')].map(row => [...row.children].map(cell => [
       cell.querySelector('.changes-line__number')!.textContent, cell.querySelector('.changes-line__text')!.textContent?.trim(),
@@ -238,22 +408,24 @@ describe('Changes as T3’s diff', () => {
     ])
     const note = [...file.querySelector('.changes-diff__rows')!.children].findIndex(row => row.getAttribute('data-kind') === 'note')
     expect(file.querySelector('.changes-diff__rows')!.children[note - 1]).toHaveTextContent('old end')
-    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    await pressView(user, 'Stacked diff view')
     expect(file.querySelector('.changes-split__row')).toBeNull()
 
     const files = panel().querySelector('.changes-files')!
-    expect(files).toHaveAttribute('data-wrap')
-    await user.click(within(panel()).getByRole('button', { name: 'Disable line wrapping' }))
+    // Code starts unwrapped, one row a line; Wrap long lines wraps it.
     expect(files).not.toHaveAttribute('data-wrap')
-    expect(within(panel()).getByRole('button', { name: 'Enable line wrapping' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Wrap long lines')).toBe(false)
+    await pressView(user, 'Wrap long lines')
+    expect(files).toHaveAttribute('data-wrap')
+    expect(await viewOn(user, 'Wrap long lines')).toBe(true)
 
-    await user.click(within(panel()).getByRole('button', { name: 'Hide whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await waitFor(() => expect(git.bridge.review).toHaveBeenLastCalledWith(expect.objectContaining({ ignoreWhitespace: true })))
-    expect(await within(panel()).findByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(true)
 
-    await user.click(within(panel()).getByRole('button', { name: 'Show file tree' }))
+    await pressView(user, 'File tree')
     const tree = within(panel()).getByRole('listbox', { name: 'Files in this comparison' })
-    expect(within(tree).getByRole('option', { name: 'app.ts, Renamed, in src/' })).toBeInTheDocument()
+    expect(within(tree).getByRole('option', { name: 'app.ts, Renamed, 4 added, 3 removed, in src/' })).toHaveTextContent('+4 −3')
   })
 
   it('compares the branch against the automatic base or one picked from Branch and Remote', async () => {
@@ -268,7 +440,7 @@ describe('Changes as T3’s diff', () => {
     Object.assign(window, { sotto: { agents: { gitRefs: read } } })
     try {
       setup(git)
-      await within(panel()).findByText('export const ready = true')
+      await within(panel()).findByText(diffLine('export const ready = true'))
       await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
       await within(panel()).findByText('trail')
       expect(git.bridge.review).toHaveBeenLastCalledWith(expect.objectContaining({ scope: { kind: 'branch', base: null } }))
@@ -298,39 +470,39 @@ describe('Changes as T3’s diff', () => {
     const user = userEvent.setup()
     const git = fakeGit({ checkpoints: [checkpoint(TURN_TWO, 'ready'), checkpoint(TURN_ONE, 'ready')] })
     setup(git)
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     const scope = within(panel()).getByRole('combobox', { name: 'Diff scope' })
     expect(within(scope).getAllByRole('option').map(option => option.textContent)).toEqual(['Working tree', 'Branch changes', 'Latest turn', 'Turn 2', 'Turn 1'])
     await user.selectOptions(scope, 'latest')
     expect(await within(panel()).findByText('THREE')).toBeInTheDocument()
     expect(git.bridge.inspectCheckpoint).toHaveBeenLastCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, checkpointId: TURN_TWO })
     expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2 −2')
-    await user.click(within(panel()).getByRole('button', { name: 'Hide whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await waitFor(() => expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+1 −1'))
-    await user.click(within(panel()).getByRole('button', { name: 'Show whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await user.selectOptions(scope, `turn:${TURN_ONE}`)
     expect(await within(panel()).findByText('deux')).toBeInTheDocument()
     expect(git.bridge.review).not.toHaveBeenCalledWith(expect.objectContaining({ scope: expect.objectContaining({ kind: 'turn' }) }))
     cleanup()
 
     setup(fakeGit({ checkpoints: [checkpoint(TURN_ONE, 'unavailable', 'This turn changed Git history or staging. Review and restore it with Git.')] }))
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'latest')
     expect(await within(panel()).findByText('Turn 1’s checkpoint is unavailable, so its changes cannot be shown. This turn changed Git history or staging. Review and restore it with Git.')).toBeInTheDocument()
     cleanup()
 
     setup(fakeGit())
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'latest')
     expect(await within(panel()).findByText('No completed turns yet.')).toBeInTheDocument()
   })
 
   it('refreshes on a new revision without dropping what is shown, and explains a folder outside Git', async () => {
     const { git, store } = setup()
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     act(() => git.change([reviewFile('src/app.ts', 'modified', { kind: 'text', patch: 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+refreshed\n' })], 'r2'))
     // While the refreshed comparison loads, the reader keeps the lines already on screen.
-    expect(within(panel()).getByText('export const ready = true')).toBeInTheDocument()
+    expect(within(panel()).getByText(diffLine('export const ready = true'))).toBeInTheDocument()
     expect(await within(panel()).findByText('refreshed')).toBeInTheDocument()
     expect(panel().querySelectorAll('.changes-file')).toHaveLength(1)
     await userEvent.click(within(panel()).getByRole('button', { name: 'Refresh diff' }))
@@ -351,7 +523,7 @@ describe('Changes as T3’s diff', () => {
     expect(await within(panel()).findByText('The working copy matches HEAD.')).toBeInTheDocument()
     cleanup()
     setup(fakeGit({ truncated: true }))
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     expect(within(panel()).getByRole('tab', { name: 'Changes' })).toHaveAccessibleDescription('3+ changed files')
   })
 
@@ -390,7 +562,7 @@ describe('the Changes shortcut', () => {
     expect(store.getSnapshot().open).toBe(false)
     fireEvent.keyDown(window, { key: 'd', ctrlKey: true })
     expect(store.getSnapshot()).toMatchObject({ open: true, surface: 'changes' })
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     act(() => store.setSurface('files'))
     fireEvent.keyDown(window, { key: 'd', ctrlKey: true })
     expect(store.getSnapshot()).toMatchObject({ open: true, surface: 'changes' })
@@ -446,6 +618,30 @@ describe('diff rows and base choices', () => {
     ])
   })
 
+  it('stands a pull request’s target branch for its origin copy, else its local branch, else nothing', async () => {
+    const ref = (name: string, remote?: string): GitRef => ({ name, ...(remote ? { remote } : {}), current: false, isDefault: false, worktreePath: null })
+    const read = vi.fn(async () => ({ refs: [ref('main'), ref('release'), ref('origin/main', 'origin'), ref('origin/release', 'origin'), ref('release-notes'), ref('origin/hotfix', 'origin')], isRepository: true, hasRemote: true, nextCursor: null, total: 6 }))
+    // A pull request into release compares against origin/release, not the branch Sotto would work out on its own.
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBe('origin/release')
+    expect(read).toHaveBeenCalledWith({ threadId: 'thread-1', query: 'release', includeMatchingRemoteRefs: true, limit: 200 })
+    await expect(readPullRequestBase(read, 'thread-1', 'hotfix')).resolves.toBe('origin/hotfix')
+    read.mockResolvedValueOnce({ refs: [ref('release')], isRepository: true, hasRemote: false, nextCursor: null, total: 1 })
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBe('release')
+    await expect(readPullRequestBase(read, 'thread-1', 'gone')).resolves.toBeNull()
+    read.mockRejectedValueOnce(new Error('offline'))
+    await expect(readPullRequestBase(read, 'thread-1', 'release')).resolves.toBeNull()
+    await expect(readPullRequestBase(undefined, 'thread-1', 'release')).resolves.toBeNull()
+  })
+
+  it('opens Review in Changes on the branch against the base it is given', () => {
+    const git = fakeGit()
+    const store = new ToolsPanelStore()
+    store.showBranchChanges(git.bridge, 'thread-1', 'origin/release')
+    expect(store.changes.thread('thread-1')?.scope).toEqual({ kind: 'branch', base: 'origin/release' })
+    store.showBranchChanges(git.bridge, 'thread-2')
+    expect(store.changes.thread('thread-2')?.scope).toEqual({ kind: 'branch', base: null })
+  })
+
   it('keeps watching the active working copy when an earlier activation finishes late', async () => {
     const git = fakeGit()
     const store = new ChangesStore()
@@ -496,7 +692,7 @@ describe('Changes for a thread on a paired host (ADR-0025, October 5 amendment)'
     const user = userEvent.setup()
     const git = fakeGit({ checkpoints: [checkpoint(TURN_ONE, 'ready')] })
     setup(git, onForge())
-    await within(panel()).findByText('export const ready = true')
+    await within(panel()).findByText(diffLine('export const ready = true'))
     const scope = within(panel()).getByRole('combobox', { name: 'Diff scope' })
     expect(within(scope).getAllByRole('option').map(option => option.textContent)).toEqual(['Working tree', 'Branch changes'])
     expect(within(panel()).queryByRole('button', { name: 'Checkpoints' })).toBeNull()

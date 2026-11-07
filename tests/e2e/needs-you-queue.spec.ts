@@ -40,6 +40,8 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
     BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
   }, [width, height] as const)
   await expect.poll(() => page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
+  // Below a 1000 pixel window the rail stands, and the sidebar these checks read opens over the thread (ADR-0110, November 5, 2026).
+  if (width < 1000) await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
 }
 async function theme(page: Page, appearance: 'dark' | 'light'): Promise<void> {
   await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
@@ -82,6 +84,10 @@ test('the queue gathers what needs you and settles a short approval and a failur
   // The entry says what it needs; what it asks is the card's (October 29, 2026).
   await expect(queue(page)).not.toContainText('Run the build?')
   await expect(queue(page).getByRole('button', { name: 'Allow', exact: true })).toHaveCount(0)
+  // A failed turn rests under what holds an agent, its presses shown to the pointer or the keys (November 5, 2026).
+  const failed = queue(page).locator('.needs-you__entry[data-rest]')
+  await expect(failed).toContainText('Turn failed in')
+  await failed.hover()
   await expect(queue(page).getByRole('button', { name: 'Dismiss Needs attention on Tidy the docs index', exact: true })).toBeVisible()
   expect(sidebar(page).locator('.thread-nav__indicators')).toHaveCount(0)
   expect(sidebar(page).locator('.thread-nav__attention')).toHaveCount(0)
@@ -130,6 +136,7 @@ test('the queue gathers what needs you and settles a short approval and a failur
   await expect(card(page, 'Workshop')).toHaveCount(0)
   await expect(answer).toHaveCount(0)
 
+  await failed.hover()
   await queue(page).getByRole('button', { name: 'Dismiss Needs attention on Tidy the docs index', exact: true }).click()
   await expect.poll(async () => (await agentState(page)).host.threads.find(thread => thread.title === 'Tidy the docs index')?.failureSeen).toBe(true)
   await expect(queue(page)).toHaveCount(0)

@@ -41,11 +41,42 @@ msgstr "(file deleted)"
 msgid "(file did not exist)"
 msgstr "(file did not exist)"
 
+#. placeholder {0}: list.pullRequests.length
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "{0, plural, other {The # most recently updated of {total}.}}"
+msgstr "{0, plural, other {The # most recently updated of {total}.}}"
+
+#. {added} and {removed} are counts of lines in a pull request.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "{added} added, {removed} removed"
+msgstr "{added} added, {removed} removed"
+
+#. The line totals of a pull request, which count every line, whitespace changes included.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "{added} lines added, {removed} removed, counting whitespace changes, as GitHub does."
+msgstr "{added} lines added, {removed} removed, counting whitespace changes, as GitHub does."
+
+#. {added} and {removed} are counts of lines.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{added} lines added, {removed} removed, not counting whitespace changes."
+msgstr "{added} lines added, {removed} removed, not counting whitespace changes."
+
+#. {added} and {removed} are counts of lines.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{added} lines added, {removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher."
+msgstr "{added} lines added, {removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher."
+
+#. {added}, {removed}, {hiddenAdded} and {hiddenRemoved} are counts of lines.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{added} lines added, {removed} removed. {hiddenAdded} added and {hiddenRemoved} removed change only whitespace and are hidden below."
+msgstr "{added} lines added, {removed} removed. {hiddenAdded} added and {hiddenRemoved} removed change only whitespace and are hidden below."
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{additions, plural, other {{added} lines added, {removed} removed}}"
 msgstr "{additions, plural, other {{added} lines added, {removed} removed}}"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/DiffBlock.tsx
 msgid "{additions} added, {deletions} removed"
 msgstr "{additions} added, {deletions} removed"
 
@@ -56,6 +87,15 @@ msgstr "{agentCount, plural, one {# agent} other {# agents}}"
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{allWorking, plural, other {# working}}"
 msgstr "{allWorking, plural, other {# working}}"
+
+#. A count of a pull request's checks.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{approvalCount} need approval"
+msgstr "{approvalCount} need approval"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
+msgstr "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{aside, plural, one {{done} of {total} done, # does not block} other {{done} of {total} done, # do not block}}"
@@ -101,10 +141,23 @@ msgstr "{done} of {total} done"
 msgid "{failed, plural, other {# failed}}"
 msgstr "{failed, plural, other {# failed}}"
 
+#. A count of a pull request's checks.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failedCount} failed"
+msgstr "{failedCount} failed"
+
 #. {failure} says why the latest read of the pull request failed, in a sentence.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "{failure} What shows below is from the last read."
 msgstr "{failure} What shows below is from the last read."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+msgstr "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
+msgstr "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
 
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "{found, plural, other {{total} matches}}"
@@ -118,13 +171,17 @@ msgstr "{idleMinutes, plural, other {{sessionMinutes} min · ends after # minute
 msgid "{interrupted, plural, other {# interrupted}}"
 msgstr "{interrupted, plural, other {# interrupted}}"
 
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{left, plural, one {# line left before this can merge.} other {# lines left before this can merge.}}"
-msgstr "{left, plural, one {# line left before this can merge.} other {# lines left before this can merge.}}"
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{lines, plural, one {{count} whitespace line hidden} other {{count} whitespace lines hidden}}"
+msgstr "{lines, plural, one {{count} whitespace line hidden} other {{count} whitespace lines hidden}}"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comments. Send it or delete one first.}}"
 msgstr "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comments. Send it or delete one first.}}"
+
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "{more, plural, one {# more file} other {# more files}}"
+msgstr "{more, plural, one {# more file} other {# more files}}"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{more, plural, other {{name} and # more are still running}}"
@@ -194,6 +251,16 @@ msgstr "{name} was cancelled: {description}"
 msgid "{name}, {state}"
 msgstr "{name}, {state}"
 
+#. {name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{name}, {state}, {additions} added, {deletions} removed"
+msgstr "{name}, {state}, {additions} added, {deletions} removed"
+
+#. {name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts; {folder} its folder.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{name}, {state}, {additions} added, {deletions} removed, in {folder}"
+msgstr "{name}, {state}, {additions} added, {deletions} removed, in {folder}"
+
 #. {name} is a file name; {state} its Git status, as in Modified; {folder} its folder.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{name}, {state}, in {folder}"
@@ -238,6 +305,16 @@ msgstr "{pageHost} at {width} by {height}"
 msgid "{passed} passed, {skipped} skipped"
 msgstr "{passed} passed, {skipped} skipped"
 
+#. A count of a pull request's checks.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{passedCount} passed"
+msgstr "{passedCount} passed"
+
+#. Which file of a comparison is in view, as in "3 of 30".
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "{place} of {total}"
+msgstr "{place} of {total}"
+
 #. Which match of the found ones is selected, as in "3 of 12".
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "{position} of {total}"
@@ -246,6 +323,11 @@ msgstr "{position} of {total}"
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "{queued, plural, other {# waiting to start}}"
 msgstr "{queued, plural, other {# waiting to start}}"
+
+#. {repository} is a GitHub repository, as in owner/name.
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "{repository} has no open pull requests."
+msgstr "{repository} has no open pull requests."
 
 #: src/renderer/src/tools/GitActions.tsx
 msgid "{restoring, plural, one {Restore this file and remove this completed turn from the native conversation.} other {Restore these {restoringCount} files and remove this completed turn from the native conversation.}}"
@@ -266,6 +348,15 @@ msgstr "{reveal}: {name}"
 msgid "{reveal}: working folder"
 msgstr "{reveal}: working folder"
 
+#. A count of a pull request's checks: running or queued.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{runningCount} running"
+msgstr "{runningCount} running"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
+msgstr "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
+
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "{sessionMinutes, plural, other {{shownMinutes} min}}"
 msgstr "{sessionMinutes, plural, other {{shownMinutes} min}}"
@@ -274,6 +365,11 @@ msgstr "{sessionMinutes, plural, other {{shownMinutes} min}}"
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "{size} · Read only"
 msgstr "{size} · Read only"
+
+#. A count of a pull request's checks.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{skippedCount} skipped"
+msgstr "{skippedCount} skipped"
 
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "{steps, plural, other {# recorded steps}}"
@@ -301,6 +397,10 @@ msgstr "{total, plural, one {# agent} other {# agents}}"
 msgid "{total, plural, other {{completed} of # finished}}"
 msgstr "{total, plural, other {{completed} of # finished}}"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{total} checks passed"
+msgstr "{total} checks passed"
+
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{working, plural, one {# agent is working} other {# agents are working}}"
 msgstr "{working, plural, one {# agent is working} other {# agents are working}}"
@@ -318,6 +418,11 @@ msgstr "{working, plural, other {# working}}"
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "#{number} · <0>{headBranch}</0> to <1>{baseBranch}</1> <2>{state}</2>"
 msgstr "#{number} · <0>{headBranch}</0> to <1>{baseBranch}</1> <2>{state}</2>"
+
+#. {number} is a pull request's number.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "#{number} is not linked to this thread"
+msgstr "#{number} is not linked to this thread"
 
 #. {branch} is a Git branch name.
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -347,6 +452,15 @@ msgstr "A browser request is waiting for your answer"
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "A browser task is working"
 msgstr "A browser task is working"
+
+#. Said of a pull request in the list of open ones.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "A check failed"
+msgstr "A check failed"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "a check is approved on GitHub"
+msgstr "a check is approved on GitHub"
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "A cloud iPhone request is waiting for your answer"
@@ -421,7 +535,7 @@ msgid "Added to the draft for this thread"
 msgstr "Added to the draft for this thread"
 
 #. Read before an added line of a diff.
-#: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/DiffBlock.tsx
 msgid "Added: "
 msgstr "Added: "
 
@@ -446,6 +560,11 @@ msgstr "After the turn"
 #: src/renderer/src/tools/GitActions.tsx
 msgid "After turn"
 msgstr "After turn"
+
+#. After the scope of Changes and before the base branch it compares with, as in "Branch changes against origin/main".
+#: src/renderer/src/tools/ChangesBasePicker.tsx
+msgid "against"
+msgstr "against"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Against HEAD"
@@ -489,6 +608,16 @@ msgstr "All {total} passed"
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "All agents"
 msgstr "All agents"
+
+#. Opens the list of a comparison's files over its lines in Changes, where the panel has no room for it beside them.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "All files"
+msgstr "All files"
+
+#. Opens the list of a comparison's files over its lines, in a narrow panel; it shows which file is in view, as in "All files, 3 of 30".
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "All files, {place} of {total}"
+msgstr "All files, {place} of {total}"
 
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
@@ -534,6 +663,7 @@ msgid "Anything running in this shell stopped. Its output stays here until you c
 msgstr "Anything running in this shell stopped. Its output stays here until you close it."
 
 #. A pull request's review approved it.
+#. Said of a pull request in the list of open ones: its review approved it.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Approved"
 msgstr "Approved"
@@ -594,9 +724,18 @@ msgstr "Back"
 msgid "Back to {backTo}"
 msgstr "Back to {backTo}"
 
+#. {backTo} is the number of the thread's own pull request.
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "Back to #{backTo}"
+msgstr "Back to #{backTo}"
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Back to all agents"
 msgstr "Back to all agents"
+
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "Back to this thread's pull request"
+msgstr "Back to this thread's pull request"
 
 #. Heads the side of a split diff that shows the base branch.
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -614,6 +753,11 @@ msgstr "Before merging"
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Before the turn"
 msgstr "Before the turn"
+
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Behind {base}"
+msgstr "Behind {base}"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Binary file: no text diff."
@@ -705,6 +849,11 @@ msgstr "Browser paused"
 msgid "Browser viewport size"
 msgstr "Browser viewport size"
 
+#. Says what the Tools panel holds, after Show Tools in the pane header button's tooltip.
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Browser, files, changes and more"
+msgstr "Browser, files, changes and more"
+
 #: src/renderer/src/tools/browserSteps.ts
 msgid "Browsing paused"
 msgstr "Browsing paused"
@@ -718,6 +867,11 @@ msgstr "Build"
 msgid "Can read and screenshot this page."
 msgstr "Can read and screenshot this page."
 
+#. The Merge button while something still blocks the merge. {number} is the pull request's number.
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "Can't merge #{number} yet"
+msgstr "Can't merge #{number} yet"
+
 #. Closes the comment on a page element and goes back to pointing.
 #: src/renderer/src/tools/AgentContinue.tsx
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -727,6 +881,11 @@ msgstr "Can read and screenshot this page."
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#. A check on a pull request was cancelled.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Cancelled"
+msgstr "Cancelled"
 
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Cannot see this page until you share it."
@@ -750,7 +909,11 @@ msgstr "Change the base. Comparing {head} with {shownBase}"
 msgid "Change the base. Comparing {head} with {shownBase}, chosen automatically"
 msgstr "Change the base. Comparing {head} with {shownBase}, chosen automatically"
 
+#. The files a pull request changes, which fold away.
+#. The list of files a pull request changes.
 #: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/PullRequestDetails.tsx
+#: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Changed files"
 msgstr "Changed files"
 
@@ -773,6 +936,12 @@ msgstr "Changes could not read Git."
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Changes is not available in this window."
 msgstr "Changes is not available in this window."
+
+#. A line of the merge checklist: a reviewer asked for changes.
+#. Said of a pull request in the list of open ones: a reviewer asked for changes.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Changes requested"
+msgstr "Changes requested"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Changes were asked for"
@@ -804,6 +973,10 @@ msgstr "Checked out from the branch picker"
 msgid "Checked out PR #{number}."
 msgstr "Checked out PR #{number}."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checking for conflicts"
+msgstr "Checking for conflicts"
+
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Checkout pull request"
 msgstr "Checkout pull request"
@@ -825,13 +998,38 @@ msgstr "Checkpoints"
 msgid "Checkpoints are unavailable in this window."
 msgstr "Checkpoints are unavailable in this window."
 
+#. A pull request's checks, listed in a fold.
+#. The list of a pull request's checks.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "Checks"
+msgstr "Checks"
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Checks passing"
-msgstr "Checks passing"
+msgid "Checks could not be read"
+msgstr "Checks could not be read"
+
+#. Said of a pull request in the list of open ones.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks passed"
+msgstr "Checks passed"
+
+#. Said of a pull request in the list of open ones.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks running"
+msgstr "Checks running"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks skipped"
+msgstr "Checks skipped"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Checks waiting their turn"
 msgstr "Checks waiting their turn"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks: {passed} passed, {skipped} skipped"
+msgstr "Checks: {passed} passed, {skipped} skipped"
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Choose a model with image support before adding a browser screenshot."
@@ -960,6 +1158,11 @@ msgstr "Codex copies this agent’s own conversation, task included, into a new 
 msgid "Collapse {path}"
 msgstr "Collapse {path}"
 
+#. Folds every file of a comparison in Changes.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Collapse all"
+msgstr "Collapse all"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Collapse all files"
 msgstr "Collapse all files"
@@ -999,8 +1202,13 @@ msgid "Conflicted"
 msgstr "Conflicted"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Conflicts with {base}. Resolve them in the branch and push"
-msgstr "Conflicts with {base}. Resolve them in the branch and push"
+msgid "Conflicts not checked"
+msgstr "Conflicts not checked"
+
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Conflicts with {base}"
+msgstr "Conflicts with {base}"
 
 #. {agent} is a subagent's title.
 #: src/renderer/src/tools/AgentContinue.tsx
@@ -1022,6 +1230,22 @@ msgstr "Continue this agent as its own thread"
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Convert to draft"
 msgstr "Convert to draft"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Copied"
+msgstr "Copied"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Copy diff"
+msgstr "Copy diff"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Copy diff, once the rest arrives"
+msgstr "Copy diff, once the rest arrives"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Copy failed"
+msgstr "Copy failed"
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Copy link"
@@ -1049,6 +1273,10 @@ msgstr "Copy path: {path}"
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Copy working folder path"
 msgstr "Copy working folder path"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Copy works once the rest arrives"
+msgstr "Copy works once the rest arrives"
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Could not capture this selection. Try again."
@@ -1088,6 +1316,7 @@ msgid "Could not go there."
 msgstr "Could not go there."
 
 #: src/renderer/src/tools/PullRequestDialogs.tsx
+#: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Could not link the pull request."
 msgstr "Could not link the pull request."
 
@@ -1124,6 +1353,10 @@ msgstr "Could not open the test iPhone."
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Could not read that pull request. Check the reference and your gh sign-in."
 msgstr "Could not read that pull request. Check the reference and your gh sign-in."
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Could not read the open pull requests from GitHub. Check your gh sign-in and connection, then refresh."
+msgstr "Could not read the open pull requests from GitHub. Check your gh sign-in and connection, then refresh."
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Could not read the pull request from GitHub. Check your gh sign-in and connection, then refresh."
@@ -1234,6 +1467,11 @@ msgstr "Description"
 msgid "Device"
 msgstr "Device"
 
+#. Names the box that shows one change to a file in the transcript.
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Diff"
+msgstr "Diff"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Diff scope"
 msgstr "Diff scope"
@@ -1245,10 +1483,6 @@ msgstr "Diff view"
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Disable auto-merge"
 msgstr "Disable auto-merge"
-
-#: src/renderer/src/tools/ChangesSurface.tsx
-msgid "Disable line wrapping"
-msgstr "Disable line wrapping"
 
 #: src/renderer/src/tools/FilesSurface.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -1320,10 +1554,6 @@ msgstr "Enable auto-merge"
 msgid "Enable auto-merge?"
 msgstr "Enable auto-merge?"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
-msgid "Enable line wrapping"
-msgstr "Enable line wrapping"
-
 #: src/renderer/src/tools/IPhoneSurface.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "End session"
@@ -1381,6 +1611,11 @@ msgstr "Exited with code {code}"
 msgid "Expand {path}"
 msgstr "Expand {path}"
 
+#. Opens every file of a comparison in Changes.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Expand all"
+msgstr "Expand all"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Expand all files"
 msgstr "Expand all files"
@@ -1397,8 +1632,10 @@ msgstr "Expand to fill the workspace"
 msgid "Expand tools panel"
 msgstr "Expand tools panel"
 
+#. A check on a pull request failed.
 #. A subagent's state.
 #: src/renderer/src/tools/AgentsSurface.tsx
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Failed"
 msgstr "Failed"
 
@@ -1413,6 +1650,7 @@ msgid "Failing"
 msgstr "Failing"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/ChangesViewMenu.tsx
 msgid "File tree"
 msgstr "File tree"
 
@@ -1455,6 +1693,10 @@ msgstr "Files is busy. Try again shortly."
 #: src/renderer/src/tools/FilesSurface.tsx
 msgid "Files is not available in this window."
 msgstr "Files is not available in this window."
+
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Filter files"
+msgstr "Filter files"
 
 #. Placeholder of the field that finds text in a terminal's output.
 #: src/renderer/src/tools/terminalSearch.ts
@@ -1524,6 +1766,14 @@ msgstr "GitHub did not let Sotto read every check"
 msgid "GitHub did not let Sotto read the checks"
 msgstr "GitHub did not let Sotto read the checks"
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "GitHub did not list the files."
+msgstr "GitHub did not list the files."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "GitHub finishes checking for conflicts"
+msgstr "GitHub finishes checking for conflicts"
+
 #. {when} is a time, or a date and time.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "GitHub is limiting requests from your gh sign-in until {when}. Nothing was lost. Refresh after {when}."
@@ -1579,10 +1829,6 @@ msgstr "Hide"
 msgid "Hide Council"
 msgstr "Hide Council"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
-msgid "Hide file tree"
-msgstr "Hide file tree"
-
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Hide phone"
 msgstr "Hide phone"
@@ -1605,6 +1851,16 @@ msgstr "Hide the browser; the agent keeps working"
 msgid "Hide the cloud iPhone; the agent keeps working"
 msgstr "Hide the cloud iPhone; the agent keeps working"
 
+#. Folds away the checks that passed or were skipped.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Hide the ones that finished"
+msgstr "Hide the ones that finished"
+
+#. Folds away the checks that passed.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Hide the ones that passed"
+msgstr "Hide the ones that passed"
+
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Hide the test iPhone over the thread"
 msgstr "Hide the test iPhone over the thread"
@@ -1613,7 +1869,11 @@ msgstr "Hide the test iPhone over the thread"
 msgid "Hide the test iPhone; the agent keeps working"
 msgstr "Hide the test iPhone; the agent keeps working"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Hide Tools"
+msgstr "Hide Tools"
+
+#: src/renderer/src/tools/ChangesViewMenu.tsx
 msgid "Hide whitespace changes"
 msgstr "Hide whitespace changes"
 
@@ -1630,6 +1890,15 @@ msgstr "Interrupted"
 msgid "iPhone · cloud"
 msgstr "iPhone · cloud"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "it is marked ready for review"
+msgstr "it is marked ready for review"
+
+#. Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "it is up to date with {base}"
+msgstr "it is up to date with {base}"
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "It is waiting for your answer. Open it to answer there; nothing is answered from here."
 msgstr "It is waiting for your answer. Open it to answer there; nothing is answered from here."
@@ -1642,6 +1911,10 @@ msgstr "It is waiting for your approval. Open it to answer there; nothing is ans
 msgid "It still needs an approving review"
 msgstr "It still needs an approving review"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "It was never marked ready for review"
+msgstr "It was never marked ready for review"
+
 #: src/renderer/src/tools/AgentContinue.tsx
 msgid "It’s still working. Continue it once it finishes."
 msgstr "It’s still working. Continue it once it finishes."
@@ -1649,6 +1922,11 @@ msgstr "It’s still working. Continue it once it finishes."
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Its agent reported an error. Open it to see what happened."
 msgstr "Its agent reported an error. Open it to see what happened."
+
+#. Ends the sentence "You can merge once ...". Several are joined into one list. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "its conflicts with {base} are resolved"
+msgstr "its conflicts with {base} are resolved"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Its lines are further down. Show all to see them."
@@ -1714,6 +1992,11 @@ msgstr "Let the agent in this thread read the test iPhone and take screenshots"
 msgid "Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes."
 msgstr "Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes."
 
+#. Where a part of a diff starts in the file; {line} is a line number.
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Line {line}"
+msgstr "Line {line}"
+
 #. {text} is the line of code itself.
 #: src/renderer/src/tools/diffSelection.ts
 msgid "Line {number}: {text}"
@@ -1737,6 +2020,10 @@ msgstr "Link copied"
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Link pull request"
 msgstr "Link pull request"
+
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Link to this thread"
+msgstr "Link to this thread"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Linked by you"
@@ -1844,6 +2131,10 @@ msgstr "Make the test iPhone medium"
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Make the test iPhone small"
 msgstr "Make the test iPhone small"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Mark it ready for review when the work is done"
+msgstr "Mark it ready for review when the work is done"
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Markdown files open here up to 512 KB. Nothing was opened."
@@ -1969,6 +2260,15 @@ msgstr "Move the test iPhone. Drag, or use the arrow keys; hold Shift to move fu
 msgid "Native builds can run on a cloud iPhone. Add a run.cloud key in Settings > Cloud iPhone."
 msgstr "Native builds can run on a cloud iPhone. Add a run.cloud key in Settings > Cloud iPhone."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Needs a review"
+msgstr "Needs a review"
+
+#. A check on a pull request waits for someone to approve it on GitHub.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Needs approval"
+msgstr "Needs approval"
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Needs attention"
 msgstr "Needs attention"
@@ -1980,6 +2280,11 @@ msgstr "Needs your answer"
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Needs your approval"
 msgstr "Needs your approval"
+
+#. A check on a pull request finished without passing or failing.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Neutral"
+msgstr "Neutral"
 
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
@@ -2002,6 +2307,16 @@ msgstr "New worktree"
 #: src/renderer/src/tools/AgentContinue.tsx
 msgid "New worktree from {branch}"
 msgstr "New worktree from {branch}"
+
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Next file"
+msgstr "Next file"
+
+#. {next.path} is a file's path.
+#. placeholder {0}: next.path
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Next file: {0}"
+msgstr "Next file: {0}"
 
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "Next match"
@@ -2027,6 +2342,7 @@ msgstr "No agents spawned in this thread yet."
 msgid "No app on the test iPhone"
 msgstr "No app on the test iPhone"
 
+#. Said of a pull request in the list of open ones.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "No checks"
 msgstr "No checks"
@@ -2043,13 +2359,17 @@ msgstr "No completed turns yet."
 msgid "No conflicts"
 msgstr "No conflicts"
 
-#: src/renderer/src/tools/PullRequestSurface.tsx
+#: src/renderer/src/tools/PullRequestDetails.tsx
 msgid "No description."
 msgstr "No description."
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "No diff is available for this file."
 msgstr "No diff is available for this file."
+
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "No files match."
+msgstr "No files match."
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "No line changes."
@@ -2062,6 +2382,10 @@ msgstr "No matches"
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "No matching refs."
 msgstr "No matching refs."
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "No open pull request matches that search."
+msgstr "No open pull request matches that search."
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "No preview for this file."
@@ -2112,9 +2436,18 @@ msgstr "None yet. A pull request the Git action creates is linked here, and so i
 msgid "Not a draft"
 msgstr "Not a draft"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not approved"
+msgstr "Not approved"
+
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Not checked: {uncheckedList}"
 msgstr "Not checked: {uncheckedList}"
+
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not compared with {base}"
+msgstr "Not compared with {base}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "not connected"
@@ -2165,6 +2498,10 @@ msgstr "Once this thread is on a branch with a pull request, this lists what sta
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "One commit on {base}"
 msgstr "One commit on {base}"
+
+#: src/renderer/src/tools/ChangesViewMenu.tsx
+msgid "One file at a time"
+msgstr "One file at a time"
 
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Only a thread that has not started can take a worktree of its own."
@@ -2220,6 +2557,26 @@ msgstr "Open {check} on GitHub"
 msgid "Open {name}"
 msgstr "Open {name}"
 
+#. {name} is a check's name; {word} is its state, as in Failed.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open {name} in the browser. {word}"
+msgstr "Open {name} in the browser. {word}"
+
+#. {name} is a check's name; {word} is its state, as in Failed; {took} how long it took.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open {name} in the browser. {word}, {took}"
+msgstr "Open {name} in the browser. {word}, {took}"
+
+#. {name} is a check's name; {word} is its state, as in Failed.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open {name} on GitHub. {word}"
+msgstr "Open {name} on GitHub. {word}"
+
+#. {name} is a check's name; {word} is its state, as in Failed; {took} how long it took.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open {name} on GitHub. {word}, {took}"
+msgstr "Open {name} on GitHub. {word}, {took}"
+
 #. {path} is a file's path.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Open {path}"
@@ -2229,6 +2586,11 @@ msgstr "Open {path}"
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Open {path} in Files"
 msgstr "Open {path} in Files"
+
+#. {path} is a file's path; {added} and {removed} are counts of lines.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open {path} on GitHub. {added} added, {removed} removed"
+msgstr "Open {path} on GitHub. {added} added, {removed} removed"
 
 #. {title} is a thread's title.
 #: src/renderer/src/tools/delegatedRoster.ts
@@ -2278,6 +2640,10 @@ msgstr "Open a thread to use its terminal."
 msgid "Open a thread to use its test iPhone."
 msgstr "Open a thread to use its test iPhone."
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open all checks on GitHub"
+msgstr "Open all checks on GitHub"
+
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Open another page"
 msgstr "Open another page"
@@ -2290,19 +2656,33 @@ msgstr "Open as thread"
 msgid "Open check"
 msgstr "Open check"
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open files on GitHub"
+msgstr "Open files on GitHub"
+
 #: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Open in system browser"
 msgstr "Open in system browser"
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Open in the browser"
+msgstr "Open in the browser"
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Open it to see where it stands."
 msgstr "Open it to see where it stands."
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Open on GitHub"
 msgstr "Open on GitHub"
+
+#. The fold listing every open pull request of the repository.
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Open pull requests"
+msgstr "Open pull requests"
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Open review"
@@ -2329,6 +2709,11 @@ msgstr "Open the workflow {name}: {progress}, {status}"
 #: src/renderer/src/tools/delegatedRoster.ts
 msgid "Open to answer"
 msgstr "Open to answer"
+
+#. {author} is a GitHub user name.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Opened by {author}."
+msgstr "Opened by {author}."
 
 #. {threadTitle} is a thread's title.
 #: src/renderer/src/tools/webLinks.tsx
@@ -2360,6 +2745,11 @@ msgstr "Page to annotate"
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Pages"
 msgstr "Pages"
+
+#. A check on a pull request passed.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Passed"
+msgstr "Passed"
 
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Paste a pull request URL or enter 123 / #123."
@@ -2467,6 +2857,16 @@ msgstr "Preview of {name}"
 msgid "Previous assignment · {status}"
 msgstr "Previous assignment · {status}"
 
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Previous file"
+msgstr "Previous file"
+
+#. {previous.path} is a file's path.
+#. placeholder {0}: previous.path
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Previous file: {0}"
+msgstr "Previous file: {0}"
+
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "Previous match"
 msgstr "Previous match"
@@ -2502,10 +2902,21 @@ msgstr "Pull request linked."
 msgid "Pull request URL or #42"
 msgstr "Pull request URL or #42"
 
+#: src/renderer/src/tools/OpenPullRequests.tsx
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Pull requests are not available in this window."
 msgstr "Pull requests are not available in this window."
+
+#. Says what the Council is, after Show Council in the pane header button’s tooltip (ADR-0177).
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Puts one question to threads on several providers"
+msgstr "Puts one question to threads on several providers"
+
+#. A check on a pull request has not started.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Queued"
+msgstr "Queued"
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Read {name} again"
@@ -2535,6 +2946,14 @@ msgstr "Reading changes…"
 #: src/renderer/src/tools/GitActions.tsx
 msgid "Reading checkpoints…"
 msgstr "Reading checkpoints…"
+
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Reading it changes nothing. Link it to merge it or change it from here."
+msgstr "Reading it changes nothing. Link it to merge it or change it from here."
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Reading the open pull requests…"
+msgstr "Reading the open pull requests…"
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Reading the pull request…"
@@ -2585,6 +3004,10 @@ msgstr "Refresh Files first."
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Refresh folder"
 msgstr "Refresh folder"
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Refresh open pull requests"
+msgstr "Refresh open pull requests"
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Refresh pull request"
@@ -2637,7 +3060,7 @@ msgid "Removed line {number}: {text}"
 msgstr "Removed line {number}: {text}"
 
 #. Read before a removed line of a diff.
-#: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/DiffBlock.tsx
 msgid "Removed: "
 msgstr "Removed: "
 
@@ -2691,6 +3114,10 @@ msgstr "Resize tools panel"
 msgid "Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started."
 msgstr "Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Resolve them in the branch and push"
+msgstr "Resolve them in the branch and push"
+
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Resolving pull request..."
 msgstr "Resolving pull request..."
@@ -2742,18 +3169,22 @@ msgstr "Revert files and conversation"
 msgid "Revert needs recovery."
 msgstr "Revert needs recovery."
 
-#. A line of the merge checklist: the pull request's review.
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Review"
-msgstr "Review"
-
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Review approved"
 msgstr "Review approved"
 
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Review in Changes"
+msgstr "Review in Changes"
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Reviewers wait until it is ready"
 msgstr "Reviewers wait until it is ready"
+
+#. A check on a pull request is running now.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Running"
+msgstr "Running"
 
 #. A cloud iPhone session is running.
 #: src/renderer/src/tools/IPhoneSurface.tsx
@@ -2783,6 +3214,14 @@ msgstr "Screenshot to message"
 msgid "scrolled the page"
 msgstr "scrolled the page"
 
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Search open pull requests by title, number, author or branch"
+msgstr "Search open pull requests by title, number, author or branch"
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Search pull requests"
+msgstr "Search pull requests"
+
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Search refs"
 msgstr "Search refs"
@@ -2794,6 +3233,10 @@ msgstr "Search refs..."
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "Search terminal output"
 msgstr "Search terminal output"
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "See them all on GitHub"
+msgstr "See them all on GitHub"
 
 #. {modes} is a list to choose from: Element or Region of the page.
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -2833,7 +3276,23 @@ msgstr "Send Ctrl+C (stop the running command)"
 msgid "Share with agent"
 msgstr "Share with agent"
 
+#. {count} is how many checks passed or were skipped.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Show {count} finished"
+msgstr "Show {count} finished"
+
+#. {count} is how many checks passed.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Show {count} passed"
+msgstr "Show {count} passed"
+
+#. {checks} says how its checks stand, as in Checks passed.
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Show #{number}: {title}. {checks}. {added} added, {removed} removed"
+msgstr "Show #{number}: {title}. {checks}. {added} added, {removed} removed"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/DiffBlock.tsx
 msgid "Show all"
 msgstr "Show all"
 
@@ -2846,9 +3305,14 @@ msgstr "Show at {width} x {height}"
 msgid "Show Council"
 msgstr "Show Council"
 
+#. {checks} says how its checks stand, as in Checks passed.
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "Show draft #{number}: {title}. {checks}. {added} added, {removed} removed"
+msgstr "Show draft #{number}: {title}. {checks}. {added} added, {removed} removed"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "Show file tree"
-msgstr "Show file tree"
+msgid "Show every file in this comparison"
+msgstr "Show every file in this comparison"
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Show in File Explorer"
@@ -2896,6 +3360,11 @@ msgstr "Show the browser for {title}: {actionText}"
 msgid "Show the cloud iPhone in Tools"
 msgstr "Show the cloud iPhone in Tools"
 
+#. Tooltip on the mark at the edge of Changes where a line of code runs on past the panel; a press scrolls to its end.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "Show the end of this line"
+msgstr "Show the end of this line"
+
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Show the test iPhone in Tools"
 msgstr "Show the test iPhone in Tools"
@@ -2904,9 +3373,9 @@ msgstr "Show the test iPhone in Tools"
 msgid "Show the test iPhone over the thread"
 msgstr "Show the test iPhone over the thread"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
-msgid "Show whitespace changes"
-msgstr "Show whitespace changes"
+#: src/renderer/src/tools/ToolsToggle.tsx
+msgid "Show Tools"
+msgstr "Show Tools"
 
 #. {pinnedTitle} is a thread's title.
 #: src/renderer/src/tools/ToolsToggle.tsx
@@ -2914,8 +3383,14 @@ msgid "Showing {pinnedTitle}, pinned"
 msgstr "Showing {pinnedTitle}, pinned"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/DiffBlock.tsx
 msgid "Showing {shownCount} of {lineCount} lines."
 msgstr "Showing {shownCount} of {lineCount} lines."
+
+#. {shown} and {all} are counts of files.
+#: src/renderer/src/tools/PullRequestDetails.tsx
+msgid "Showing the {shown} first of {all} files."
+msgstr "Showing the {shown} first of {all} files."
 
 #: src/renderer/src/tools/FileTree.tsx
 msgid "Showing the first 1,000 items"
@@ -2934,14 +3409,27 @@ msgstr "Shrink the browser to a pill"
 msgid "Size: {sizeLabel}"
 msgstr "Size: {sizeLabel}"
 
+#. A check on a pull request was skipped.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Skipped"
+msgstr "Skipped"
+
 #. A size of the phone player.
 #: src/renderer/src/tools/phonePlayerStore.ts
 msgid "Small"
 msgstr "Small"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Some checks could not be read"
+msgstr "Some checks could not be read"
+
 #: src/renderer/src/tools/TerminalViewProblem.tsx
 msgid "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
 msgstr "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "someone approves it"
+msgstr "someone approves it"
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Sotto cannot read this file from here. Nothing was opened."
@@ -3016,7 +3504,7 @@ msgstr "Source"
 msgid "Spawned agents"
 msgstr "Spawned agents"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/ChangesViewMenu.tsx
 msgid "Split diff view"
 msgstr "Split diff view"
 
@@ -3025,7 +3513,7 @@ msgstr "Split diff view"
 msgid "Squash"
 msgstr "Squash"
 
-#: src/renderer/src/tools/ChangesSurface.tsx
+#: src/renderer/src/tools/ChangesViewMenu.tsx
 msgid "Stacked diff view"
 msgstr "Stacked diff view"
 
@@ -3232,6 +3720,14 @@ msgstr "The draft for this thread is not available."
 msgid "The draft is full. Shorten it before adding browser feedback."
 msgstr "The draft is full. Shorten it before adding browser feedback."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "the failing check passes"
+msgstr "the failing check passes"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "the failing checks pass"
+msgstr "the failing checks pass"
+
 #. Where a new thread runs, when the paired host has no name.
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "The host"
@@ -3274,6 +3770,14 @@ msgstr "The pinned thread is no longer listed."
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "The preview could not load."
 msgstr "The preview could not load."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "the running check finishes"
+msgstr "the running check finishes"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "the running checks finish"
+msgstr "the running checks finish"
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "The selected thread is no longer listed."
@@ -3469,6 +3973,10 @@ msgstr "This page is private. Share it with the agent in this thread."
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "This page is private. The agent cannot see it"
 msgstr "This page is private. The agent cannot see it"
+
+#: src/renderer/src/tools/OpenPullRequests.tsx
+msgid "This project has no GitHub remote, so it has no pull requests to list."
+msgstr "This project has no GitHub remote, so it has no pull requests to list."
 
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
@@ -3678,6 +4186,7 @@ msgstr "tried to work in the page"
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
+#: src/renderer/src/tools/OpenPullRequests.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 #: src/renderer/src/tools/TerminalSurface.tsx
@@ -3794,6 +4303,15 @@ msgstr "Use this tool on the host. Replies and permission answers remain availab
 msgid "Uses the browser without asking"
 msgstr "Uses the browser without asking"
 
+#. Opens the choices of how Changes draws a comparison.
+#: src/renderer/src/tools/ChangesViewMenu.tsx
+msgid "View"
+msgstr "View"
+
+#: src/renderer/src/tools/ChangesViewMenu.tsx
+msgid "View options"
+msgstr "View options"
+
 #. A merge checklist line's state, said before its words.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Waiting"
@@ -3841,6 +4359,11 @@ msgstr "What the agent did on the test iPhone"
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "When Sotto last read it"
 msgstr "When Sotto last read it"
+
+#. Beside a comparison's line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.
+#: src/renderer/src/tools/ChangesSurface.tsx
+msgid "without whitespace"
+msgstr "without whitespace"
 
 #: src/renderer/src/tools/browserSteps.ts
 msgid "worked in the page"
@@ -3897,3 +4420,12 @@ msgstr "Wrap lines: off"
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Wrap lines: on"
 msgstr "Wrap lines: on"
+
+#: src/renderer/src/tools/ChangesViewMenu.tsx
+msgid "Wrap long lines"
+msgstr "Wrap long lines"
+
+#. {list} is what has to happen first, as in "the failing checks pass and someone approves it".
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "You can merge once {list}."
+msgstr "You can merge once {list}."

@@ -38,3 +38,7 @@ The iPhone showed a thread's pull request only as a chip under its title: the nu
 - A pull request is reachable only from its thread on the phone; there is no list of them all.
 - The chip's dot shows only after the sheet has been opened once while the phone is running. Before that the chip has no dot, rather than a guess.
 - The pull request read asks GitHub for the changed files and each check run's times on every read, the desktop's included. It adds no request and no host.
+
+## November 4, 2026 amendment: the desktop shows them too
+
+"The desktop's Pull request surface does not show them yet" in the Decision no longer holds. The surface now shows both fields, in its **Changed files** and **Checks** folds (see ADR-0027's November 4 amendments). The fields and the read are unchanged, and everything here about the iPhone stands.
