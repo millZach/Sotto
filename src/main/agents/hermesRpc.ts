@@ -3,7 +3,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import { z } from 'zod'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+import { findCli, type CliLookupOptions } from './cliLookup'
 
 /** The local Owl client is pinned to the build tested with this adapter. */
 export const HERMES_CLI_VERSION = '0.23.0'
@@ -56,7 +56,7 @@ const OUTPUT_LIMIT = 64 * 1024
 /** Read the CLI version before starting a gateway. */
 export async function readHermesVersion(executable: string, env: NodeJS.ProcessEnv, prefixArgs: readonly string[] = []): Promise<string> {
   const stdout = await new Promise<string>(resolve => {
-    execFile(executable, [...prefixArgs, '--version'], { env: withCliPath(env, executable), windowsHide: true, shell: false, timeout: 30_000,
+    execFile(executable, [...prefixArgs, '--version'], { env, windowsHide: true, shell: false, timeout: 30_000,
       killSignal: 'SIGKILL', maxBuffer: OUTPUT_LIMIT, encoding: 'utf8' },
     (error, out) => resolve(error ? '' : typeof out === 'string' ? out : ''))
   })
@@ -89,7 +89,8 @@ export class HermesRpc {
   readonly closed: Promise<void>
   constructor(executable: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
     private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void) {
-    this.child = spawn(executable, [...args], { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    // The absolute launcher selects Hermes's Python. Adding its venv to PATH makes the toolchain probe report that private Python.
+    this.child = spawn(executable, [...args], { cwd, env, windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())

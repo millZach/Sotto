@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { keylessServers } from '../ownModelServers/deepseekPatch'
 import { hermesEnvironment } from './hermesRpc'
-import { withCliPath } from './cliLookup'
 
 /** Check availability without reading the secret. Hermes's key_cmd captures it directly from Keychain. */
 export function hermesRefuselessAvailable(): Promise<boolean> {
@@ -61,7 +60,7 @@ export class HermesRuntime {
   }
   private python(executable: string, script: string, args: string[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
-      execFile(join(dirname(executable), 'python'), ['-c', script, ...args], { cwd: this.root, env: withCliPath(this.env(), executable),
+      execFile(join(dirname(executable), 'python'), ['-c', script, ...args], { cwd: this.root, env: this.env(),
         timeout: 65_000, maxBuffer: 4096 }, error => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve())
     })
   }
@@ -70,7 +69,8 @@ export class HermesRuntime {
     if (this.child) return Promise.resolve()
     this.stopping = false
     const child = spawn(executable, ['gateway', 'run', '--quiet', '--no-supervise', '--external-supervisor'], {
-      cwd: this.root, env: withCliPath(this.env(), executable), stdio: 'ignore', detached: process.platform !== 'win32', windowsHide: true,
+      // Keep the user's toolchain on PATH; the launcher's shebang already selects Hermes's own interpreter.
+      cwd: this.root, env: this.env(), stdio: 'ignore', detached: process.platform !== 'win32', windowsHide: true,
     })
     this.child = child
     this.closedWork = new Promise(resolve => {
