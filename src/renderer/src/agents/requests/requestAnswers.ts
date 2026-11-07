@@ -20,14 +20,26 @@ export interface RequestAnswer {
 /** Skips a `skippable` question: the provider is told so and the turn goes on without an answer. */
 export const SKIP_ANSWER: RequestAnswer = { answer: '', skipped: true }
 
-/** One question's in-progress choice. `other` marks the free-text choice as picked. */
+/** One question's in-progress choice. `other` marks the free-text choice as picked; `skipped`, a question skipped on its own. */
 export interface QuestionSelection {
   readonly optionIds: readonly string[]
   readonly other: boolean
   readonly text: string
+  readonly skipped?: true | undefined
 }
 
 export const EMPTY_SELECTION: QuestionSelection = { optionIds: [], other: false, text: '' }
+/** A question the user skipped on its own (ADR-0135, November 6, 2026): nothing chosen, nothing written. */
+export const SKIPPED_SELECTION: QuestionSelection = { ...EMPTY_SELECTION, skipped: true }
+
+export function isSkipped(selection: QuestionSelection | undefined): boolean {
+  return selection?.skipped === true
+}
+
+/** Whether a card shows a Skip on each question: only where it has several, as one question's Skip is the card's own. */
+export function skipsEachQuestion(questions: readonly StructuredQuestion[], question: StructuredQuestion): boolean {
+  return questions.length > 1 && question.skippable === true && !isUnavailable(question)
+}
 
 /** How the card renders a request: its questions inline, the native choices, or the legacy composer answer. */
 export function requestMode(request: AgentRequest): 'structured' | 'permission' | 'legacy-options' | 'legacy-text' {
@@ -76,7 +88,7 @@ export function pickOther(question: StructuredQuestion, selection: QuestionSelec
 export type AnswerProgress = 'empty' | 'partial' | 'complete'
 
 export function answerProgress(question: StructuredQuestion, selection: QuestionSelection | undefined): AnswerProgress {
-  if (!selection || isUnavailable(question)) return 'empty'
+  if (!selection || isUnavailable(question) || isSkipped(selection)) return 'empty'
   const text = selection.text.trim().length > 0
   if (textOnly(question)) return question.allowFreeText && text ? 'complete' : 'empty'
   // A picked Other with no text is incomplete even when options are also chosen.
@@ -91,6 +103,7 @@ export function isAnswered(question: StructuredQuestion, selection: QuestionSele
 
 /** Whether this question still stands between the form and sending. */
 export function blocksSending(question: StructuredQuestion, selection: QuestionSelection | undefined): boolean {
+  if (isSkipped(selection) && question.skippable === true) return false
   const progress = answerProgress(question, selection)
   return progress === 'partial' || (progress === 'empty' && isRequired(question))
 }
@@ -100,10 +113,12 @@ export function blocksSending(question: StructuredQuestion, selection: QuestionS
  * question images go in (ADR-0176): images answer it, so it never holds the form back, and main adds their note to it.
  */
 export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): AgentQuestionAnswers | null {
-  const answers: Record<string, { optionIds: string[]; text?: string }> = {}
+  const answers: Record<string, { optionIds: string[]; text?: string; skipped?: true }> = {}
   for (const question of questions) {
     const selection = selections[question.id]
     if (question.id !== imagesIn && blocksSending(question, selection)) return null
+    // Images answer the question they go in, even one the user had skipped (ADR-0176).
+    if (isSkipped(selection) && question.skippable === true && question.id !== imagesIn) { answers[question.id] = { optionIds: [], skipped: true }; continue }
     if (!isAnswered(question, selection)) continue
     const text = selection!.text.trim()
     const useText = question.allowFreeText && text.length > 0 && (textOnly(question) || selection!.other)
@@ -115,9 +130,27 @@ export function buildQuestionAnswers(questions: readonly StructuredQuestion[], s
   return answers
 }
 
-export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): RequestAnswer | null {
+/**
+ * The form's answer. Every question skipped is the card's own skip where the request takes one, so the provider hears the
+ * skip it already knows; a request without one, such as Grok Build's, sends each question skipped (ADR-0135).
+ */
+export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string, skippable?: boolean): RequestAnswer | null {
+  if (skippable && imagesIn === undefined && everySkipped(questions, selections)) return SKIP_ANSWER
   const questionAnswers = buildQuestionAnswers(questions, selections, imagesIn)
   return questionAnswers === null ? null : { answer: '', questionAnswers }
+}
+
+/** Every question on the form skipped on its own. */
+export function everySkipped(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): boolean {
+  return questions.length > 0 && questions.every(question => isSkipped(selections[question.id]))
+}
+
+/** The answer that skips every question: the card's own skip, or each question skipped where only that is offered. */
+export function skipAllAnswer(request: AgentRequest): RequestAnswer | null {
+  if (request.skippable) return SKIP_ANSWER
+  const questions = request.questions ?? []
+  if (!questions.length || !questions.every(question => question.skippable === true && !isUnavailable(question))) return null
+  return { answer: '', questionAnswers: Object.fromEntries(questions.map(question => [question.id, { optionIds: [], skipped: true as const }])) }
 }
 
 export function permissionAnswer(choice: PermissionChoice): RequestAnswer {

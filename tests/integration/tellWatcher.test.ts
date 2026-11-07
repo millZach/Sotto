@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { tellWatcherTools } from '../../src/main/agents/tellWatcherTools'
-import { TELL_WATCHER_LIMIT, TELL_WATCHER_TOOL } from '../../src/shared/tellWatcher'
+import { READY_TO_MERGE_TOOL, TELL_WATCHER_LIMIT, TELL_WATCHER_TOOL } from '../../src/shared/tellWatcher'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -23,7 +23,8 @@ async function fixture() {
   let tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   const toolServer = tellWatcherTools(workspace.host, { toldUserMessage: id => service.toldUserMessage(id) },
-    (threadId, words, userMessage) => service.threadTold({ hostId: f.control.hostId()!, threadId }, { words, ...userMessage ? { userMessage } : {} }))
+    (threadId, words, userMessage) => service.threadTold({ hostId: f.control.hostId()!, threadId }, { words, ...userMessage ? { userMessage } : {} }),
+    (threadId, ready) => service.threadReady({ hostId: f.control.hostId()!, threadId }, ready))
   cleanups.push(async () => { service.close(); await tools.close(); await toolServer.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()
   await f.control.commandShell({ type: 'connect', provider: 'codex' })
@@ -69,11 +70,15 @@ async function fixture() {
     const result = await toolServer.call(threadId, TELL_WATCHER_TOOL, { message })
     return { text: result.content.map(part => part.type === 'text' ? part.text : '').join(''), isError: result.isError === true }
   }
+  const readyToMerge = async (threadId: string, input: unknown) => {
+    const result = await toolServer.call(threadId, READY_TO_MERGE_TOOL, input)
+    return { text: result.content.map(part => part.type === 'text' ? part.text : '').join(''), isError: result.isError === true }
+  }
   const userSays = async (threadId: string, text: string) => {
     expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text })).error).toBeNull()
   }
   const requestIn = (note: string) => /Use requestId ([0-9a-f-]{36}) for what it asks/u.exec(note)?.[1]
-  return { ...f, workspace, opened, ready, endTurn, tell, userSays, notes, requestIn, toolServer, get service() { return service },
+  return { ...f, workspace, opened, ready, endTurn, tell, readyToMerge, userSays, notes, requestIn, toolServer, get service() { return service },
     // A restart builds the service and its tools together: tools left on the closed service refuse every Watcher send.
     restart: async () => {
       service.close(); await tools.close()
@@ -253,4 +258,23 @@ it('keeps a message still queued across a restart, and its request with it', asy
   await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('"Queued while Watcher works."'))).toBe(true), { timeout: 15_000 })
   const requestId = f.requestIn(f.notes(id).find(note => note.includes('"Queued while Watcher works."'))!)!
   expect(f.control.watcherRecord().requests.find(request => request.id === requestId)?.state).toBe('active')
+})
+
+// #2229: a worker's READY TO MERGE is a fact Sotto carries, so it reaches Watcher even when a turn's news leaves its reply out.
+it('wakes Watcher with a worker’s READY TO MERGE, its pull request and head and none of its words, and opens no request', async () => {
+  const f = await fixture(), { id, worker } = await f.ready()
+  const url = 'https://github.com/synthetic/project/pull/2229', head = 'a1b2c3d4'.repeat(5)
+  expect(await f.readyToMerge(worker, { pullRequest: 'not a pull request', head })).toMatchObject({ isError: true, text: expect.stringContaining('GitHub URL') })
+  expect(await f.readyToMerge(worker, { pullRequest: url, head: 'a1b2c3d' })).toMatchObject({ isError: true, text: expect.stringContaining('40-character') })
+  const before = f.service.state().requests.length
+  const ready = await f.readyToMerge(worker, { pullRequest: url, head: head.toUpperCase() })
+  expect(ready).toMatchObject({ isError: false, text: expect.stringContaining('Wait for its GO MERGE') })
+  await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('ready_to_merge'))).toBe(true), { timeout: 15_000 })
+  const note = f.notes(id).find(item => item.includes('ready_to_merge'))!
+  // The head is read as GitHub writes it, and Sotto says what its own reads hold beside it.
+  expect(note).toContain(`its pull request ${url} is READY TO MERGE at ${head}`)
+  expect(note).toContain('Sotto does not hold it in the merge train')
+  expect(f.service.state().requests).toHaveLength(before)
+  // Not one of the three messages a thread may send Watcher in ten minutes.
+  for (let sent = 0; sent < TELL_WATCHER_LIMIT; sent++) expect(await f.tell(worker, `Synthetic note ${sent}`)).toMatchObject({ isError: false })
 })

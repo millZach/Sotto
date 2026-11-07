@@ -90,7 +90,7 @@ describe('the Needs you queue (ADR-0135)', () => {
     return queueOf(state).entries.find(entry => entry.row.thread.id === 'visual-gate')!.action
   }
 
-  it('orders blocking first then oldest, shows three and counts the rest by kind', () => {
+  it('orders blocking first then oldest, shows three of those and two failures, and counts the rest by kind', () => {
     let state = stateFixture()
     state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, since: ago(12) }] }))
     state = edit(state, 'weekly-note', thread => ({ ...thread, requests: [{ id: 'w1', kind: 'permission', text: 'Run it?', options: [], since: ago(30) }] }))
@@ -105,9 +105,17 @@ describe('the Needs you queue (ADR-0135)', () => {
       ['grok-previews', 'failed', 'dismiss', '3 h'],
       ['wav-stall', 'failed', 'dismiss', '9 min'],
     ])
-    expect(queue.shown.map(entry => entry.row.thread.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links'])
-    expect(queue.overflow).toEqual({ approval: 0, question: 0, failed: 2, total: 2 })
-    expect(queue.oldestBlockingWait).toBe('30 min')
+    // Three approvals and questions stand and two failures under them (Zach's pick C, November 5, 2026).
+    expect(queue.shown.map(entry => entry.row.thread.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links', 'grok-previews', 'wav-stall'])
+    expect(queue.overflow).toEqual({ approval: 0, question: 0, failed: 0, total: 0 })
+    // The heading's wait is the longest of an approval or a question, here the question's.
+    expect(queue.oldestBlockingWait).toBe('47 min')
+    state = edit(state, 'benchmark', thread => ({ ...thread, settledOverride: null, settledAt: null, requests: [{ id: 'r1', kind: 'permission', text: 'Publish?', options: [], since: ago(0) }] }))
+    state = edit(state, 'notes-cleanup', thread => ({ ...thread, settledOverride: null, settledAt: null, status: 'error', failureSince: ago(2) }))
+    const fuller = queueOf(state)
+    expect(fuller.shown.map(entry => entry.row.thread.id)).toEqual(['weekly-note', 'visual-gate', 'benchmark', 'grok-previews', 'wav-stall'])
+    expect(fuller.overflow).toEqual({ approval: 0, question: 1, failed: 1, total: 2 })
+    expect(fuller.entries.find(entry => entry.row.thread.id === 'benchmark')).toMatchObject({ wait: 'just now', waited: false })
   })
 
   it('surfaces settled requests and never finished, prototype or seen-failure threads', () => {

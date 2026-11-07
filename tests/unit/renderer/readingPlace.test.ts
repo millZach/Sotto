@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MessageRows, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
+import { MessageRows, revealLift, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
 
 /**
  * The rows a transcript draws keep themselves in the order shown (#1452). What that costs is counted as the page would do
@@ -152,5 +152,42 @@ describe('a key pressed in the transcript', () => {
       expect(press('Enter', target(html)), html).toBe(false)
       expect(press('PageDown', target(html)), html).toBe(true)
     }
+  })
+})
+
+describe('how far a press lifts the transcript to show what it opened', () => {
+  const view = { top: 40, bottom: 500 }
+
+  it('leaves the control where it was when the end of what opened shows', () => {
+    expect(revealLift(view, { top: 200 }, { top: 230, bottom: 480 })).toBe(0)
+    expect(revealLift(view, { top: 200 }, { top: 230, bottom: 500.4 })).toBe(0)
+  })
+
+  it('lifts what opened mostly in view far enough for its end to show too', () => {
+    // An opened document diff whose last lines ran on under the composer, though most of it showed.
+    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 540 })).toBe(40)
+    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 900 })).toBe(100 - 40 - 4)
+  })
+
+  it('lifts what opened under the composer far enough for its end to show', () => {
+    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 700 })).toBe(200)
+  })
+
+  it('never lifts the control past the top of the view', () => {
+    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 1_400 })).toBe(470 - 40 - 4)
+    expect(revealLift(view, { top: 45 }, { top: 75, bottom: 300 })).toBe(0)
+  })
+
+  it('never leaves another disclosure cut through by the top of the view', () => {
+    // A step pressed inside a running turn's opened steps, with the working line above it: a lift of 60 would put the top
+    // of the view through the line, so the line goes past the top whole.
+    const line = { top: 80, bottom: 112 }
+    expect(revealLift(view, { top: 300 }, { top: 330, bottom: 560 }, [line])).toBe(112 - 40)
+    // Where taking it past would take the pressed step past the top too, what opened still ends in view, since the step
+    // stays on screen; only a fold too tall to end in view anyway stops short with the line whole.
+    expect(revealLift(view, { top: 110 }, { top: 140, bottom: 560 }, [{ top: 75, bottom: 107 }])).toBe(60)
+    expect(revealLift(view, { top: 110 }, { top: 140, bottom: 700 }, [{ top: 75, bottom: 107 }])).toBe(75 - 40 - 4)
+    // A line the edge does not cross changes nothing.
+    expect(revealLift(view, { top: 300 }, { top: 330, bottom: 560 }, [{ top: 200, bottom: 232 }])).toBe(60)
   })
 })

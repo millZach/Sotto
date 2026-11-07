@@ -37,7 +37,7 @@ const DESKS: ReadonlyArray<readonly [string, Rgba]> = [['white', { r: 255, g: 25
 function glassRoom(mode: Mode, desk: Rgba, contrast = 100): Map<string, string> {
   // Glass paints at the Contrast chosen, but never under its floor (appearance.ts).
   const painted = Math.max(contrast, GLASS_CONTRAST_FLOOR)
-  const declarations = withPaintedLayers(rootDeclarations(mode, GLASS_THEME_ID, { glass: true, contrast: painted }, tokenBlocks))
+  const declarations = withPaintedLayers(rootDeclarations(mode, GLASS_THEME_ID, { glass: true, contrast: painted }, tokenBlocks), mode)
   const room = over(resolveColor('--tt-glass-room', declarations), desk)
   declarations.set('--tt-canvas', formatOklch(rgbToOklch(room)))
   return declarations

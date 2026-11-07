@@ -4,6 +4,8 @@
 
 Accepted October 30, 2026, by Zach's pick A, "Snap", of the before/after prototype on the tag `prototype/type-radius-scale` (`docs/prototypes/type-radius-scale/type-radius-scale-prototype.html`), for #1833. **Number provisional until merge** (docs/agents/domain.md).
 
+Amended November 5, 2026, by Zach's pick of variant B: a thread's messages read on the lead step (below, "November 5, 2026 amendment: a thread's messages a step up").
+
 Amends [ADR-0011](0011-main-window-themes-replace-the-accent.md): stylesheets read tokens for their text sizes and corners as well as their colours. Amends [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) decision 2: its corner sizes are now named steps, and its no-pill check reads each step at the size it draws.
 
 ## Context
@@ -57,7 +59,7 @@ Full is `50%`, never a large pixel radius, so it draws a dot or a ring and never
 
 ## Consequences
 
-- The look stays. At the 820 × 560 minimum and at 1600 × 1000 most text moves half a pixel. The changes that show are the rare large sizes (the phone pairing code 36 to 28, Memory's title 30 and 27 to 28, Usage's large ring figure 34 to 28, Settings' section title 26 to 28 and its sidebar title 25 and 24 to 22), a 17 px line going to 16 (the Dictate room's sentence among them), 12 px corners going to 10 (35 of them, onboarding's and the theme studio's cards most), and the composer's card: the full composer's from 16 px to 14, and Zach's two-row composer's from 18 px to 20. A line that wrapped at 12.5 px can fit at 12, which moves what is under it. `docs/verification/type-radius-scale.md` has the before and after.
+- The look stays. At the 820 × 560 minimum and at 1600 × 1000 most text moves half a pixel. The changes that show are the rare large sizes (the phone pairing code 36 to 28, Memory's title 30 and 27 to 28, Usage's large ring figure 34 to 28, Settings' section title 26 to 28 and its sidebar title 25 and 24 to 22), a 17 px line going to 16 (the Dictate room's sentence among them), 12 px corners going to 10 (35 of them, onboarding's and the theme studio's cards most), and the composer's card: the full composer's from 16 px to 14, and Zach's two-row composer's from 18 px to 20. A line that wrapped at 12.5 px can fit at 12, which moves what is under it. `docs/verification/type-radius-scale.md` has the before and after. Later changes that show: a thread's messages from the reading step to lead, 15 to 16 px, and code in Changes from the small step to caption, 13 to 12 px (the November 5, 2026 amendments below).
 - The Windows design captures shift by these amounts and are retaken on Windows.
 - A new stylesheet writes a step, or names its reason in the test's exception list. A number the scale lacks is a change to the scale, not a literal.
 - Shadows are not part of this decision: 151 declarations with 64 values are left as they are.
@@ -69,3 +71,15 @@ Full is `50%`, never a large pixel radius, so it draws a dot or a ring and never
 - **C, Fluent.** Windows' five sizes and three corners. Every 13 px label grows to 14 and every 15 px reading line shrinks to 14, which flattens the hierarchy, and cards lose their soft corner.
 - **`--tt-text-*` names, as the issue suggested.** They collide with the text colour tokens.
 - **Leaving the widget on the mapping.** Its Esc key would grow 2 px inside a capsule whose fixed width is measured to hold the longest status line.
+
+## November 5, 2026 amendment: a thread's messages a step up
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/reading-size/`, kept outside the repository, and picked B. Reviewers of the design pass had called a long thread dense and small to read over hours.
+
+A thread's messages, its replies and the messages the user sent, read on `--tt-type-lead`, 16 px, where they were on the reading step, 15 px, at the same 1.6 line height. Their headings and inline code go a step up with them: a first-level heading on the figure step, a second-level on the heading step, the rest on the lead step, and inline code on the body step. The line is 38em, about 85 characters, where it was 42em; a paragraph, list or quote has 16 px after it, where it had 14, and a list item 6 px, where it had 5. The composer, code blocks, tables, Worked for lines, names and times stay on their steps, and so do Watcher's conversation and every other rich-text surface. No step changes size: this moves what uses the steps, not the scale.
+
+## November 5, 2026 amendment: code in Changes on the caption step, one row a line
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/code-size/`, kept outside the repository, and picked B.
+
+Code in the Changes diff reads on `--tt-type-caption`, 12 px, where it was on the small step, 13 px, at the same line height (`4de101f47`). It runs one row a line, as an editor shows it: a line longer than the panel runs past its edge and its file scrolls sideways. A line that is only a comment still wraps, inside the part of the file in view and hanging inside its indent. **Wrap long lines** in View now starts off; turned on, it wraps code as before, and it is still kept for the session as ADR-0027 has it. A document always wraps, whatever View says, and the transcript's own diff box still wraps. Only where code is drawn changes: no step changes size.

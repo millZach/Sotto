@@ -95,7 +95,9 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
     question ? plural(question, { one: `${{ answers: shownCount(question) }} answer`, other: `${{ answers: shownCount(question) }} answers` }) : '',
     failed ? t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many threads whose last turn failed wait beyond those shown.' }) : '',
   ].filter(Boolean))
-  const more = shownCount(queue.overflow.total), oldest = queue.oldestBlockingWait, failedThreads = failures.length, failedCount = shownCount(failedThreads)
+  const more = shownCount(queue.overflow.total), longest = queue.oldestBlockingWait, failedThreads = failures.length, failedCount = shownCount(failedThreads)
+  // What holds an agent still leads, each on one line with its press in view; failed turns rest under it in muted ink, their
+  // presses shown to the pointer and the keys (Zach's pick C, November 5, 2026).
   return <section ref={card} className="needs-you" aria-labelledby={headingId} onFocusCapture={event => {
     const item = (event.target as HTMLElement).closest<HTMLElement>('[data-entry-id]')
     if (item?.dataset.entryId) focusedEntry.current = { id: item.dataset.entryId, index: [...item.parentElement!.children].indexOf(item) }
@@ -105,21 +107,21 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
     <div className="needs-you__head">
       <h2 id={headingId} className="needs-you__heading"><Trans comment="The heading over the threads that wait on the user.">Needs you</Trans></h2>
       <span className="needs-you__count">{shownCount(queue.entries.length)}</span>
-      {oldest ? <span className="needs-you__oldest">{t({ message: `oldest ${oldest}`, comment: '{oldest} is how long the longest wait has lasted, such as 4 min.' })}</span> : null}
+      {longest ? <span className="needs-you__longest">{t({ message: `longest wait ${longest}`, comment: '{longest} is how long the longest approval or question has waited, such as 26 min.' })}</span> : null}
+      {failures.length >= 2 ? <Button variant="ghost" className="needs-you__dismiss-all" aria-label={plural(failedThreads, { one: `Dismiss Needs attention on ${{ threads: failedCount }} thread`, other: `Dismiss Needs attention on ${{ threads: failedCount }} threads` })}
+        aria-disabled={failures.some(item => dismissing.has(item.threadId)) || undefined}
+        onClick={() => dismiss(failures, true)}>{t({ message: `Dismiss ${failedCount} failed`, comment: '{failedCount} is how many threads whose last turn failed.' })}</Button> : null}
     </div>
     <ul className="needs-you__entries">
       {shown.map(entry => <NeedsYouEntryView key={entry.row.thread.id} entry={entry} state={state} command={command}
         dismissing={dismissing.has(entry.row.thread.id)} popped={popped === entry.row.thread.id}
         onPop={next => setPopped(next ? entry.row.thread.id : null)} onOpen={open} onDismiss={dismiss} panes={panes} />)}
     </ul>
-    {queue.overflow.total > 0 || failures.length >= 2 ? <div className="needs-you__foot">
-      {queue.overflow.total > 0 && !expanded ? <span className="needs-you__overflow">{t({ message: `+ ${more} more waiting (${overflowKinds})`, comment: '{more} is how many more threads wait; {overflowKinds} says what for, such as 2 approvals, 1 answer.' })}</span> : null}
-      {queue.overflow.total > 0 ? <Button ref={toggle} variant="ghost" aria-expanded={expanded}
+    {queue.overflow.total > 0 ? <div className="needs-you__foot">
+      <span className="needs-you__overflow">{expanded ? null : t({ message: `+ ${more} more: ${overflowKinds}`, comment: '{more} is how many more threads wait; {overflowKinds} says what for, such as 2 approvals, 1 answer.' })}</span>
+      <Button ref={toggle} variant="ghost" aria-expanded={expanded}
         aria-label={expanded ? t`Show fewer waiting threads` : t`Show all waiting threads`} onClick={() => setExpanded(value => !value)}>
-        {expanded ? t`Show fewer` : t`Show all`}</Button> : null}
-      {failures.length >= 2 ? <Button variant="ghost" aria-label={plural(failedThreads, { one: `Dismiss Needs attention on ${{ threads: failedCount }} thread`, other: `Dismiss Needs attention on ${{ threads: failedCount }} threads` })}
-        aria-disabled={failures.some(item => dismissing.has(item.threadId)) || undefined}
-        onClick={() => dismiss(failures, true)}>{t({ message: `Dismiss ${failedCount} failed`, comment: '{failedCount} is how many threads whose last turn failed.' })}</Button> : null}
+        {expanded ? t`Show fewer` : t`Show all`}</Button>
     </div> : null}
   </section>
 }
@@ -140,13 +142,24 @@ type EntryProps = {
 export function popWords(entry: NeedsYouEntry): { readonly label: string; readonly name: string } {
   const title = entry.row.thread.title
   if (entry.kind === 'failed') return { label: tNow({ message: 'Show why', comment: 'Shows why a thread\'s last turn failed.' }), name: tNow`Show why ${title} needs attention` }
-  return { label: tNow`Open to answer`, name: entry.kind === 'approval' ? tNow`Open to answer the approval in ${title}` : tNow`Open to answer the question in ${title}` }
+  return { label: tNow({ message: 'Answer', comment: 'Pops open the approval or question a waiting thread holds, to answer it.' }), name: entry.kind === 'approval' ? tNow`Open to answer the approval in ${title}` : tNow`Open to answer the question in ${title}` }
+}
+
+/** What a press on an entry's title opens, and which wait it is: an approval, a question or a failed turn. */
+function entryName(entry: NeedsYouEntry): string {
+  const title = entry.row.thread.title, waitingIn = entry.row.waitingIn
+  if (entry.kind === 'failed') return waitingIn ? tNow`Open ${title}, a turn failed in ${waitingIn}` : tNow`Open ${title}, its last turn failed`
+  if (entry.kind === 'approval') return waitingIn ? tNow`Open ${title}, needs your approval in ${waitingIn}` : tNow`Open ${title}, needs your approval`
+  return waitingIn ? tNow`Open ${title}, needs your answer in ${waitingIn}` : tNow`Open ${title}, needs your answer`
 }
 
 /**
- * One waiting thread: its title and wait, what it needs in the row's own words, and one press. The ask itself is not
- * drawn here (Zach, October 29, 2026): its own request and its failure pop open in a card over the sidebar, a failure
- * also offers Dismiss, and a wait in a delegated thread opens the thread it is reached from.
+ * One waiting thread on one line. An approval or a question holds its agent still, so it says so with the amber ring and
+ * keeps Answer in view, which pops its card open over the sidebar; a failed turn blocks nothing, so it reads "Turn failed
+ * in" its thread in muted ink, with Dismiss and Show why for the pointer and the keys (Zach's pick C, November 5, 2026).
+ * Which wait it is stands in the line's tooltip and the title's spoken name. A wait in a delegated thread only opens the
+ * thread it is reached from, so its press is Open thread rather than Answer (ADR-0135). The ask itself is never drawn here
+ * (October 29, 2026).
  */
 function NeedsYouEntryView({ entry, state, command, dismissing, popped, panes, onPop, onOpen, onDismiss }: EntryProps): ReactNode {
   const { t } = useLingui()
@@ -155,35 +168,37 @@ function NeedsYouEntryView({ entry, state, command, dismissing, popped, panes, o
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const settled = row.settledBy === 'thread' || row.settledBy === 'project'
   const waitingIn = row.waitingIn
+  const blocking = entry.kind !== 'failed'
   const item = useRef<HTMLLIElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const cardId = useId()
   const pops = entry.action !== 'open'
   const words = popWords(entry)
   const close = (focusTrigger: boolean): void => { onPop(false); if (focusTrigger) trigger.current?.focus() }
-  return <li ref={item} className="needs-you__entry" data-kind={entry.kind} data-entry-id={row.thread.id}>
-    <div className="needs-you__top">
-      <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
-      <button type="button" className="needs-you__title tt-focusable" aria-label={t`Open ${title}`} title={title}
+  const need = waitingIn ? `${row.stateLabel} · ${t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is where the thread waits, such as the name of the thread it delegated to.' })}` : row.stateLabel
+  const press = blocking ? 'secondary' : 'ghost'
+  return <li ref={item} className="needs-you__entry" data-kind={entry.kind} data-entry-id={row.thread.id} data-rest={blocking ? undefined : true}>
+    <div className="needs-you__line" title={need}>
+      {blocking
+        ? <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+        : <span className="thread-nav__ring" data-rest aria-hidden="true" />}
+      {blocking ? null : <span className="needs-you__failed" aria-hidden="true">{t({ message: 'Turn failed in', comment: 'Comes before the name of a thread whose last turn failed, in the Needs you card: Turn failed in Streaming WAV stall.' })}</span>}
+      <button type="button" className="needs-you__title tt-focusable" aria-label={entryName(entry)} title={`${title} · ${need}`}
         aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined}
         onClick={event => onOpen(entry, event.ctrlKey || event.metaKey)}
         onKeyDown={event => { if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); onOpen(entry, true) } }}>
         {title}
       </button>
-      {entry.wait ? <span className="needs-you__wait">{entry.wait}</span> : null}
-    </div>
-    <div className="needs-you__need">
-      <span className="needs-you__status">{row.stateLabel}</span>
-      {waitingIn ? <span><Trans comment="{waitingIn} is where the thread waits, such as the name of the thread it delegated to.">Waiting in {waitingIn}</Trans></span> : null}
       {settled ? <span className="needs-you__tag">{t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' })}</span> : null}
+      {blocking && entry.waited ? <span className="needs-you__wait">{entry.wait}</span> : null}
       <span className="needs-you__actions">
-        {entry.action === 'dismiss' ? <Button variant="secondary" aria-label={t`Dismiss Needs attention on ${title}`}
+        {entry.action === 'dismiss' ? <Button variant={press} aria-label={t`Dismiss Needs attention on ${title}`}
           aria-disabled={dismissing || undefined} onClick={() => { if (!dismissing) onDismiss([entryFailure(entry)]) }}><Trans>Dismiss</Trans></Button> : null}
         {pops
-          ? <Button ref={trigger} variant="secondary" aria-label={words.name} aria-haspopup="dialog" aria-expanded={popped} aria-controls={popped ? cardId : undefined}
+          ? <Button ref={trigger} variant={press} aria-label={words.name} aria-haspopup="dialog" aria-expanded={popped} aria-controls={popped ? cardId : undefined}
             onClick={() => onPop(!popped)} onKeyDown={event => { if (popped && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>{words.label}</Button>
-          : <Button variant="secondary" aria-label={entry.kind === 'failed' ? t`Open ${title}` : t`Open ${title} to answer`} onClick={() => onOpen(entry, false)}>
-            {entry.kind === 'failed' ? t({ message: 'Open', comment: 'Opens the thread.' }) : t`Open to answer`}</Button>}
+          : <Button variant={press} aria-label={t`Open ${title}`} onClick={() => onOpen(entry, false)}>
+            {t({ message: 'Open thread', comment: 'Opens the thread a Needs you entry is reached from, such as a wait in a thread it delegated to.' })}</Button>}
       </span>
     </div>
     {popped && pops ? <NeedsYouCard id={cardId} entry={entry} state={state} command={command} anchor={() => item.current} trigger={() => trigger.current} placement="below"

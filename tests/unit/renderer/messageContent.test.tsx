@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentAttachmentPreviewDataSchema } from '../../../src/shared/agents'
-import { AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, localFilePath, safeLinkUrl } from '../../../src/renderer/src/agents/MessageContent'
+import { AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, localFilePath, safeLinkUrl, sidewaysMore } from '../../../src/renderer/src/agents/MessageContent'
 import { ThreadWebLinks } from '../../../src/renderer/src/tools/webLinks'
 import { SentSkillsContext } from '../../../src/renderer/src/agents/sentSkills'
 import { renderedPlainText } from '../../../src/renderer/src/agents/richActions'
@@ -154,6 +154,18 @@ describe('rich message Markdown', () => {
 })
 
 describe('code blocks', () => {
+  it('says which edge of a block holds the rest of a line that runs past it', () => {
+    expect(sidewaysMore(0, 600, 600)).toBeUndefined()
+    expect(sidewaysMore(0, 601, 600)).toBeUndefined()
+    expect(sidewaysMore(0, 900, 600)).toBe('end')
+    expect(sidewaysMore(150, 900, 600)).toBe('start end')
+    expect(sidewaysMore(300, 900, 600)).toBe('start')
+    // A block whose lines all fit carries no mark, and its code stays one keyboard stop that names it.
+    render(<MessageContent text={'```ts\nconst a = 1\n```'} />)
+    const block = screen.getByLabelText('ts code block').closest('.rich-code__body')
+    expect(block).not.toHaveAttribute('data-more')
+  })
+
   it('uses the main-owned copy-only path when browser clipboard permission is denied', async () => {
     const user = userEvent.setup()
     const browserCopy = stubClipboard(async () => { throw new Error('Browser clipboard denied') })

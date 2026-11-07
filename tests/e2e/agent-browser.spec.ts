@@ -94,7 +94,7 @@ test('agents and users share the real browser page, permissions, feedback and vi
         await screenshot(launched, `player-${key}`, false)
         await player.getByRole('button', { name: 'Move the browser into Tools' }).click()
         await expect(panel.locator('.browser-viewport')).toBeVisible()
-        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
+        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
         const expectedBounds = await panel.locator('.browser-viewport').evaluate(element => { const rect = element.getBoundingClientRect(); const x = Math.round(rect.left), y = Math.round(rect.top); return { x, y, width: Math.round(rect.right) - x, height: Math.round(rect.bottom) - y } })
         expect(expectedBounds.height).toBeGreaterThan(100)
         await expect.poll(() => launched.app.evaluate(({ BrowserWindow, WebContentsView }) => {

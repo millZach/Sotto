@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { contrast, over, parseTokenBlocks, resolveColor, type Rgba } from './themeTokenResolver'
+import { contrast, over, parseTokenBlocks, resolveColor, type Mode, type Rgba } from './themeTokenResolver'
 
 /**
  * The text the main window really paints, on the surfaces it really sits on (#936). Each pair names its ink and the
@@ -34,13 +34,18 @@ const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-over
 /** Changes lines: context on the code background, and added and removed lines with their tint over it. */
 const context = ['code-bg'] as const, added = ['code-bg', '--changes-added'] as const, removed = ['code-bg', '--changes-removed'] as const
 const lines = [context, added, removed] as const
+/** The same lines' washes over the sunken fill a tag at a line's end takes. */
+const tagLines = [['surface-sunken'], ['surface-sunken', '--changes-added'], ['surface-sunken', '--changes-removed']] as const
+/** The words that changed, with the stronger wash over their line's. */
+const wordAdded = [...added, '--changes-word-added'] as const, wordRemoved = [...removed, '--changes-word-removed'] as const
+/** What a line's words are drawn in: the code's own ink, and syntax colour on the keys Changes draws them. */
+const CHANGES_CODE_INKS = ['--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', 'text', 'text-muted'] as const
 const RICH_CODE_INKS = ['--rich-code-keyword', '--rich-code-string', '--rich-code-number', '--rich-code-title', '--rich-code-type', '--rich-code-comment', '--rich-code-meta'] as const
 const RICH_TEXT_INKS = ['--rich-text', '--rich-strong', '--rich-muted', '--rich-link-hover'] as const
 
 export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Body and secondary text: titles, labels, message bodies (a user's bubble is secondary text), keycaps.
   ...['text', 'text-2'].flatMap(ink => each(ink, [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['kbd'], ...hovered, ...glass], 'body and secondary text')),
-  pair('text-2', ['code-bg', 'accent-wash'], 'Changes hunk header'),
   // Muted text: timestamps on the current and hovered rows and in the bubble, subtitles on a highlighted choice,
   // metadata on cards, menus and glass, Changes line numbers, and ghost buttons on the bubble and warning card.
   ...each('text-muted', [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['warning-surface'], [followups], ...hovered, ...glass], 'muted text'),
@@ -53,6 +58,32 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),
   ...lines.map(line => pair('text', [...line, picked], 'picked line number')),
+  // The words that changed keep a neutral ink on their stronger wash, in code and in documents, and the body ink on a picked line (changes.css).
+  ...each('--changes-word-ink-added', [wordAdded, [...wordAdded, hover]], 'added words'),
+  ...each('--changes-word-ink-removed', [wordRemoved, [...wordRemoved, hover]], 'removed words'),
+  // A document's edited line read once has no wash of its own: in code its words' washes sit on the code background, and its sign takes the warning ink.
+  // What such a line keeps reads in the secondary ink, as do the words that went from it, and so does a picked document line's context.
+  // A document has no wash at all: the words that came read in the body ink over the code background, hovered or picked, and a reworked paragraph's old wording in the secondary ink.
+  ...each('--changes-word-ink-added', [[...context, '--changes-word-added'], [...context, hover, '--changes-word-added']], 'added words in an edited line'),
+  ...each('--changes-ink-removed', [context, [...context, hover], [...context, picked]], 'what went in a document: removed words and a removed paragraph'),
+  ...each('text-2', [context, [...context, hover], [...context, picked]], 'what an edited line keeps, and a reworked paragraph as it was, its struck words too'),
+  ...each('text', [[...context, picked, '--changes-word-picked-added'], [...context, picked, '--changes-word-picked-removed']], 'changed words on a picked edited line'),
+  ...each('text', [context, [...context, hover], [...context, picked]], 'words that came in a document'),
+  // Modified is one amber in both modes (changes.css): an edited line's sign, and a file's M on its head and in the tree.
+  ...each('--changes-modified', [context, [...context, hover]], 'edited line sign'),
+  ...each('--changes-modified', [['code-bg'], ['canvas'], ['surface'], ['sidebar'], ['sidebar', hover], ['surface-overlay'], ['surface-elevated']], 'modified file badge'),
+  // The tab where a line of code runs on past the edge, on its line's own colour, pointed at.
+  ...each('text', [[...context, 'hover-strong'], [...added, 'hover-strong'], [...removed, 'hover-strong'], [...context, hover, 'hover-strong']], 'runs-on tab, pointed at'),
+  // The runs-on arrow is a tag in the sunken fill with its line's wash over it: muted at rest, the secondary ink on a pointed
+  // line, the body's on a picked one.
+  ...tagLines.flatMap(line => [pair('text-muted', line, 'runs-on arrow at rest'), pair('text-2', [...line, hover], 'runs-on arrow on a pointed line'), pair('text', [...line, picked], 'runs-on arrow on a picked line')]),
+  // A picked line's accent wash is the line's own background, so the words' lighter wash sits over it.
+  ...each('text', [[...added, picked, '--changes-word-picked-added'], [...removed, picked, '--changes-word-picked-removed']], 'changed words on a picked line'),
+  // A document's lines: body ink on an added line, the removed ink, nearly the body's, on a removed one.
+  pair('text', added, 'added line of a document'),
+  ...each('--changes-ink-removed', [['code-bg'], ['code-bg', hover], ['code-bg', picked]], 'removed paragraph of a document'),
+  // Inside the changed words syntax colour gives way to the body ink, so it only ever sits on the line's wash.
+  ...CHANGES_CODE_INKS.flatMap(ink => each(ink, [context, added, removed], 'syntax colour in a diff')),
   ...each('success', [added, [...added, hover]], 'added line sign'),
   pair('--changes-picked-add', [...added, picked], 'picked added line sign'),
   ...each('error-text', [removed, [...removed, hover]], 'removed line sign'),
@@ -93,22 +124,39 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   pair('terminal-foreground', ['terminal-background'], 'terminal'), pair('terminal-foreground', ['terminal-selection'], 'terminal selection'),
 ]
 
-function stylesheetProperty(path: string, name: string): string {
+function stylesheetProperty(path: string, name: string, mode: Mode): string {
   const block = parseTokenBlocks(readFileSync(join(process.cwd(), path), 'utf8')).find(candidate => candidate.declarations.has(name))
   if (!block) throw new Error(`${path} declares no ${name}`)
-  return block.declarations.get(name)!
+  return inMode(block.declarations.get(name)!, mode)
 }
 
-/** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them. */
-export function withPaintedLayers(declarations: Map<string, string>): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name))
-  for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name))
+/** A value with its light-dark() choices made, as the browser makes them under the root's colour scheme. */
+export function inMode(value: string, mode: Mode): string {
+  const at = value.indexOf('light-dark(')
+  if (at < 0) return value
+  const open = at + 'light-dark'.length
+  let depth = 0, comma = -1, end = -1
+  for (let index = open; index < value.length && end < 0; index++) {
+    const character = value[index]
+    if (character === '(') depth++
+    else if (character === ')') { depth--; if (depth === 0) end = index }
+    else if (character === ',' && depth === 1 && comma < 0) comma = index
+  }
+  if (comma < 0 || end < 0) throw new Error(`Unsupported light-dark(): ${value}`)
+  const chosen = mode === 'light' ? value.slice(open + 1, comma) : value.slice(comma + 1, end)
+  return inMode(value.slice(0, at) + chosen.trim() + value.slice(end + 1), mode)
+}
+
+/** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them, in the mode the root is painted in. */
+export function withPaintedLayers(declarations: Map<string, string>, mode: Mode): Map<string, string> {
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-word-ink-added', '--changes-word-ink-removed', '--changes-word-picked-added', '--changes-word-picked-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', '--changes-modified', '--changes-ink-removed']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name, mode))
+  for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name, mode))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')
-  declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups))
-  declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs'))
-  declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink'))
-  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash'))
+  declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups, mode))
+  declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs', mode))
+  declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink', mode))
+  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash', mode))
   return declarations
 }
 

@@ -20,12 +20,15 @@
 .branch-toolbar__branch[data-busy] { cursor: progress; }
 
 /* The pull request badge: the state icon in its colour and the number, the title in the tooltip. */
-.branch-toolbar__pr { gap: 4px; font-size: var(--tt-type-caption); }
+.branch-toolbar__pr { flex: none; gap: 4px; font-size: var(--tt-type-caption); }
 .branch-toolbar__pr:disabled { cursor: default; }
 .branch-toolbar__pr[data-state='open'] > svg { color: var(--tt-success); }
 .branch-toolbar__pr[data-state='draft'] > svg { color: var(--tt-text-muted); }
 .branch-toolbar__pr[data-state='merged'] > svg { color: var(--tt-accent-text); }
 .branch-toolbar__pr[data-state='closed'] > svg { color: var(--tt-error); }
+/* A new thread has no pull request of its own yet: the number is its checkout's branch's, so before the first send the mark
+   rests in the line's muted ink rather than in its state's colour, until the pointer or the focus comes to the header. */
+.thread-pane[data-greeting] > .thread-workspace__head:not(:hover, :focus-within) .branch-toolbar__pr > svg { color: inherit; }
 
 /* The Workspace list and the picker's panel open upward over the composer, anchored to their chip. */
 .branch-toolbar__menu, .branch-toolbar__picker { position: relative; min-width: 0; }
@@ -85,6 +88,8 @@
 .branch-toolbar[data-header] { flex-wrap: nowrap; margin: 0; }
 .branch-toolbar[data-header] :is(.branch-toolbar__end, .branch-toolbar__picker) { flex: 0 1 auto; }
 .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(160px, 100%); }
+/* A branch's name reads whole while the row has the room. */
+.branch-toolbar[data-header] .branch-toolbar__branch { max-width: min(260px, 100%); }
 .branch-toolbar[data-header] :is(.branch-toolbar__list, .branch-toolbar__panel) { top: calc(100% + 6px); bottom: auto; }
 .branch-toolbar[data-header] .branch-toolbar__panel { display: flex; flex-direction: column; overflow: hidden; }
 .branch-toolbar[data-header] .branch-toolbar__panel > :not(.branch-toolbar__refs) { flex: none; }

@@ -19,17 +19,18 @@
 
 /* ---------- Watching a thread ---------- */
 /* Watcher's own controls ease their hover as the shared buttons do, so a wash or an edge settles in instead of snapping. */
-/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. The lit fill is the accent
+/* Watch in a thread's pane header: a quiet button with no edge at rest, lit in the accent while Watcher watches the thread. The lit fill is the accent
    mixed into the surface under it, so it is solid and its text is measured against what shows. In the Threads workspace
    it keeps its word at every pane width, so nothing in the header moves as a divider is dragged (ADR-0163); a narrow pane
    beside Watcher keeps the owl alone. */
-.watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control);
+.watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid transparent; border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-.watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
-.watch-toggle:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
+.watch-toggle:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watch-toggle:active:not(:disabled):not([aria-pressed='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-@container thread-pane (width < 520px) { .watcher-beside .watch-toggle { padding: 0 7px; } .watcher-beside .watch-toggle__text { display: none; } }
+/* In a narrow pane the owl alone says Watch, and the thread's name keeps the room. */
+@container thread-pane (width < 720px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
 /* The owl at the end of a row in All threads: a ring when not watched, lit when watched. It spans the row's first two lines. */
@@ -90,6 +91,21 @@
 .watcher-room__stopped > p:not(.agent-error) { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 /* Watcher's replies are signed with the owl, in the name's own colour. */
 .thread-message__who:has(> .watcher-owl) { display: inline-flex; align-items: center; gap: 6px; }
+/* A reply to news that finished as it should carries its work as one quiet mark after the time: the chevron alone, which
+   opens the work, with its words as its name and tooltip. Who wrote it and when lead the header. */
+.watcher-pane .thread-message__work[data-mark] { justify-content: center; width: 24px; padding: 0; }
+/* Watcher's replies written within five minutes of the one before, with nothing drawn between them, read as one message
+   under the first one's header (the owner's ask on November 6, 2026). A reply that carries its own work keeps its header.
+   As with a thread's later replies, the name and time stay for assistive tech and wait beside Copy, showing with it on
+   hover or focus; the gap between the two closes to a paragraph's. */
+.watcher-pane .thread-transcript__content > .thread-message[data-role='assistant']:not([data-from]) + .thread-message[data-close]:not(:has(> header .thread-message__work)) { margin-top: -22px; }
+.watcher-pane .thread-transcript__content > .thread-message[data-role='assistant']:not([data-from]) + .thread-message[data-close]:not(:has(> header .thread-message__work)) > header {
+  position: absolute; bottom: 0; left: 34px; height: 28px; margin: 0; opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+}
+.watcher-pane .thread-transcript__content > .thread-message[data-role='assistant']:not([data-from]) + .thread-message[data-close]:not(:has(> header .thread-message__work)):has(> .thread-message__copy):is(:hover, :focus-within) > header { opacity: 1; }
+.watcher-pane .thread-transcript__content > .thread-message[data-role='assistant']:not([data-from]) + .thread-message[data-close]:not(:has(> header .thread-message__work)):has(> .thread-message__copy:is([data-copied], [aria-expanded='true'])) > header { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .watcher-pane .thread-message[data-close] > header { transition: none; } }
+:root[data-reduced-motion='on'] .watcher-pane .thread-message[data-close] > header { transition: none; }
 
 /* Watcher's pane fills the room; with a thread beside it, the two share the width with the divider between them. */
 .watcher-room[data-beside] .thread-pane.watcher-pane { right: auto; width: calc((100% - 9px) * var(--watcher-share)); }
@@ -113,6 +129,29 @@
   mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
 .watcher-room__stars { position: absolute; top: 0; left: 0; width: calc(320px + var(--owl-sky-inset)); max-width: 100%; height: 92px; overflow: hidden; }
 .watcher-pane > :is(.watcher-head, .watcher-status) { position: relative; }
+
+/* ---------- The conversation's column ---------- */
+/* Its scroll bar stands just past the column's right edge, thin, rather than at the window's far edge over the night
+   (the owner's ask on November 6, 2026): the scroll box ends 16px past the column, and the column keeps its width and its
+   place, so the scene, which sets itself by the composer, does not move. The margin it leaves on the right still scrolls
+   the conversation under the wheel (ThreadTranscript). The left margin, where the message scrubber stands, is the box's
+   own padding, as before. */
+.watcher-pane { --watcher-bar-gap: 16px; --watcher-column-end: max(8px, calc((100% - 760px) / 2 - var(--watcher-bar-gap))); }
+.watcher-pane > .thread-transcript > .thread-transcript__viewport > .thread-workspace__transcript { margin-right: var(--watcher-column-end); padding-right: var(--watcher-bar-gap); }
+/* A narrow or short pane gives the composer more of the width than the column (splitWorkspace.css), so the bar keeps to
+   the pane's edge there, beside the card rather than under its glass. */
+@container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
+  .watcher-pane > .thread-transcript { --watcher-column-end: 2px; }
+}
+/* Nothing of the conversation shows under the composer (the owner's ask on November 6, 2026): the words run on under the
+   card, as they always have, and end inside it, as a thread's do (ADR-0125's note of November 4, 2026); the scroll bar's
+   lane keeps its whole height. A clip, not a fill or a mask, so it paints nothing over the scene. */
+.watcher-pane:not([data-questions]) > .thread-transcript > .thread-transcript__viewport {
+  --thread-foot-end: calc(var(--thread-prompt-foot, 20px) + var(--tt-radius-card));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--thread-foot-end)), calc(100% - var(--watcher-column-end)) calc(100% - var(--thread-foot-end)),
+    calc(100% - var(--watcher-column-end)) 100%, calc(100% - var(--watcher-column-end) - var(--watcher-bar-gap)) 100%,
+    calc(100% - var(--watcher-column-end) - var(--watcher-bar-gap)) calc(100% - var(--thread-foot-end)), 0 calc(100% - var(--thread-foot-end)));
+}
 
 /* ---------- Watcher's header ---------- */
 .watcher-head { padding-left: 14px; }
@@ -182,6 +221,33 @@
 .watcher-context__title { display: block; }
 .watcher-context__aside { display: block; color: var(--tt-text-muted); }
 .watcher-context__none { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+
+/* ---------- The hold band ---------- */
+/* Zach's pick A, November 5, 2026 (#2234): while Watcher's own provider is limited or failing, one band under the strip,
+   in the limit restart band's style (restartStopped.css) and the conversation's column. Quiet: no warning tone. */
+.watcher-pane > .watcher-hold { position: relative; }
+.watcher-hold { z-index: 5; display: grid; flex: none; grid-template-columns: 14px minmax(0, 1fr); gap: 0 10px;
+  margin: 0 max(24px, calc((100% - 760px) / 2)) 8px; padding: 8px 12px 9px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row);
+  background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-hold { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
+}
+.watcher-hold > svg { margin-top: 3px; color: var(--tt-text-muted); }
+.watcher-hold__body { min-width: 0; }
+.watcher-hold__words { margin: 0; }
+.watcher-hold__words strong { color: var(--tt-text); font-weight: 600; }
+.watcher-hold__acts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; }
+.watcher-hold__acts:empty { display: none; }
+.watcher-hold__link { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; font-size: var(--tt-type-caption);
+  text-decoration: underline; text-underline-offset: 3px; }
+.watcher-hold__link[aria-disabled='true'] { color: var(--tt-text-muted); cursor: progress; }
+.watcher-hold__meta { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.watcher-hold__held { margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.watcher-hold__error { margin: 4px 0 0; color: var(--tt-error-text); font-size: var(--tt-type-caption); }
+.watcher-hold__details { margin-top: 4px; font-size: var(--tt-type-caption); }
+.watcher-hold__details > summary { width: fit-content; border-radius: var(--tt-radius-mark); color: var(--tt-link); }
+.watcher-hold__details > pre { max-height: 7.5em; margin: 4px 0 2px; padding: 6px 8px; overflow: auto; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken);
+  color: var(--tt-text-2); font-family: var(--tt-font-mono); white-space: pre-wrap; }
 
 /* ---------- The needs-you and machines strip ---------- */
 /* Drake's pick B, November 5, 2026: one quiet strip. The needs-you count opens the requests; machine activity sits
@@ -365,6 +431,12 @@
 .watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-tag); background: var(--tt-code-bg); color: var(--tt-code-text);
   font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 
+/* Watcher's permissions stand in the composer's right-hand group, so in a narrow room their list, as wide as its lines
+   need, would open from the chip's left edge past the window's. There it opens back from the chip's right edge instead. */
+@container thread-pane (width < 1000px) {
+  .watcher-pane .thread-prompt .thread-chip-menu__list--foot { right: 0; left: auto; }
+}
+
 /* ---------- New Watcher ---------- */
 /* Zach's pick A of the New Watcher prototype: first in the composer's footer, where an ordinary thread says where it runs.
    Like the composer's other controls it is a text button (ADR-0113), in the secondary text with its icon, and a faint dot
@@ -501,9 +573,44 @@
 .watcher-question-mark__chip > .watcher-row__ring { width: 8px; height: 8px; }
 
 /* ---------- Stop all ---------- */
-/* At the end of Watcher's header, only while threads Watcher started are running: a quiet pill like
-   Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */
-.watcher-stop-all { position: relative; display: flex; }
+/* At the end of Watcher's header: a quiet pill like Watch, whose stop square takes the error ink only on hover, since a
+   press asks first, with how many it stops after its word. While none of Watcher's threads runs it keeps its place,
+   unavailable: no count, the muted ink and nothing on hover (the owner's ask on November 6, 2026). Narrow panes keep the
+   square and the count. A hairline sets it apart from Move threads, which moves work rather than stopping it. */
+.watcher-stop-all { position: relative; display: flex; align-items: center; }
+.watcher-move-threads + .watcher-stop-all::before { flex: none; width: 1px; height: 18px; margin: 0 10px 0 4px; background: var(--tt-hairline); content: ''; }
+.watcher-stop-all__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.watcher-stop-all__button:is(:hover, [aria-expanded='true']) > .watcher-stop-all__count { color: var(--tt-text-2); }
+.watcher-stop-all__button[aria-disabled='true'] { border-color: var(--tt-hairline); color: var(--tt-text-muted); cursor: default; }
+.watcher-stop-all__button[aria-disabled='true']:is(:hover, :active) { border-color: var(--tt-hairline); background: transparent; color: var(--tt-text-muted); }
+.watcher-stop-all__button[aria-disabled='true']:hover > svg { color: inherit; }
+/* The answered line, once answered, is one row (the owner's ask on November 6, 2026): the check, who answered which
+   thread, what was chosen or how many choices, and Open, each part keeping one line and the thread's name giving way
+   first. The whole sentence, every choice in it, waits above the row as its tooltip while the pointer or the keyboard is
+   on it. These follow the answered line's first rules above, which they take the place of. Watcher's own answered
+   question (#2228) is its words alone, so they stay on its line rather than wait above it. */
+.watcher-ask-receipt { position: relative; flex-wrap: nowrap; align-items: center; gap: 0 8px; min-width: 0; }
+.watcher-ask-receipt__mark { flex: none; color: var(--watcher-ready-ink); }
+.watcher-ask-receipt__lead { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-ask-receipt__detail { flex: none; max-width: 40%; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.watcher-ask-receipt__detail::before { margin-right: 8px; content: '·'; }
+.watcher-ask-receipt > .watcher-ask__open { margin-left: 2px; }
+.watcher-ask-receipt:not([data-watcher-question]) > .watcher-ask-receipt__words { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 2; display: none; flex: none; width: max-content; max-width: min(520px, 100%); padding: 6px 10px 7px;
+  border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm);
+  color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; text-shadow: none; pointer-events: none; }
+.watcher-ask-receipt:not([data-watcher-question]):is(:hover, :focus-within) > .watcher-ask-receipt__words { display: block; }
+/* With the Watcher and Teams tabs, the lit tab already says Watcher: the room's name is said once, by the tab, and the
+   heading stays for assistive tech (the owner's ask on November 6, 2026). */
+.watcher-room .watcher-head:has(.watcher-head__tabs) h1 { position: absolute; width: 1px; min-width: 0; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* While the way off the page shares the header's row, All threads keeps its count and Stop all says how many it stops, so
+   below 900 pixels All threads keeps its icon and count, and beside Move threads Stop all keeps its square and count,
+   its word being its name and tooltip. Where the row stands in the window's corner instead, the header keeps its words. */
+@container thread-pane (width < 900px) {
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-stop-all) .watcher-head__list-text { display: none; }
+  .watcher-head:has(.watcher-head__way) .watcher-move-threads + .watcher-stop-all::before { margin: 0 8px 0 2px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-move-threads) .watcher-stop-all__text { display: none; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__way):has(.watcher-move-threads) .watcher-stop-all__button { padding: 0 9px 0 8px; }
+}
 .watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }

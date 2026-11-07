@@ -26,7 +26,7 @@ export function agentActivitySignature(record: AgentActivity): string {
     // A failed change reread as one the user denied (#2159) keeps its status, so the mark itself is what changed.
     record.denied === true ? '1' : '',
     (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
-    (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
+    (record.steps ?? []).map(step => `${step.text.length}:${step.status}:${size(step.active)}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
     // A picture the step captured (ADR-0170) is named by its digest; a record that gained one is sent again.
     ...record.media ? [record.media.map(item => item.callouts ? `${item.digest}:${item.callouts.length}` : item.digest).join('~')] : [],

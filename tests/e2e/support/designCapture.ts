@@ -48,6 +48,9 @@ async function waitForStableFrame(page: Page): Promise<void> {
     // captured at whatever phase the screenshot happens to land on, so pin
     // them all to the start of their cycle; finite ones are awaited below.
     for (const animation of document.getAnimations()) {
+      // One that follows a scroll, such as the sidebar rows' fades at its edges, already shows what the scroll says;
+      // pinned to its start it would draw those rows faded out.
+      if (!(animation.timeline instanceof DocumentTimeline)) continue
       const pinEndTime = animation.effect?.getComputedTiming().endTime
       const finite = typeof pinEndTime === 'number' && Number.isFinite(pinEndTime) && pinEndTime <= 1000
       if (finite) continue

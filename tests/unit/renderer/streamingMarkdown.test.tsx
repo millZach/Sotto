@@ -24,10 +24,14 @@ afterEach(() => {
   parses.sources.length = 0
 })
 
-/** The rendered blocks alone: the link feedback, and the whitespace between blocks that CSS discards, are not markup. */
+/**
+ * The rendered blocks alone: the link feedback, the whitespace between blocks that CSS discards, and the mark of a code
+ * block still being written, which is the caret's as `data-streaming` is, are not markup.
+ */
 function blocks(container: HTMLElement): string {
   const message = container.querySelector('.rich-message')!.cloneNode(true) as HTMLElement
   message.querySelector('.rich-message__feedback')!.remove()
+  for (const code of message.querySelectorAll('[data-writing]')) code.removeAttribute('data-writing')
   for (const node of [...message.childNodes]) if (node.nodeType === Node.TEXT_NODE && !node.textContent!.trim()) node.remove()
   return message.innerHTML
 }
@@ -186,6 +190,17 @@ describe('the caret and the busy state', () => {
   it('puts the caret on the last item of a list being written', () => {
     const { container } = render(<MessageContent text={'Steps:\n\n- first\n- second'} streaming />)
     expect(container.querySelector(listCaret)).toHaveTextContent('second')
+  })
+
+  it('puts the caret on a code block until its fence closes', () => {
+    const open = 'The seam:\n\n```ts\nexport interface PermissionLedger {\n  observe(thread: AgentThread): readonly AgentRe'
+    const view = render(<MessageContent text={open} streaming />)
+    const writing = (): Element | null => view.container.querySelector('.rich-code[data-writing]')
+    expect(writing()).toHaveTextContent('readonly AgentRe')
+    view.rerender(<MessageContent text={`${open}quest[]\n}\n\`\`\`\n\nAnd then`} streaming />)
+    expect(writing()).toBeNull()
+    view.rerender(<MessageContent text={open} />)
+    expect(writing()).toBeNull()
   })
 
   it('carries the busy state only while writing, and drops the caret when finished', () => {

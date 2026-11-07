@@ -16,6 +16,7 @@ import { quickAction } from './gitActionButton.logic'
 import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
 import { useOptionalApp } from '../state/AppContext'
 import { ProviderMark } from './ProviderMark'
+import { useWhereFit } from './headerWhereFit'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { messageLinks } from './requests/messageLinks'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
@@ -58,6 +59,7 @@ import { continueChoiceFor, continueModels, continueStore, providerDefaults, use
 import { useOwlFeature } from '../state/owlFeature'
 import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 import { isPutAway, moveSheetStore, useMoveMachines, useMovesOffered } from '../watcher/MoveThreads'
+import { useHeaderFocusName } from './RailFocusName'
 
 type Command = AgentConnection['command']
 
@@ -279,6 +281,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Where the Git action draws its notice: above the composer, in the pane's own flow. */
   const [gitNoticeSlot, setGitNoticeSlot] = useState<HTMLElement | null>(null)
   const [branchSlot, setBranchSlot] = useState<HTMLSpanElement | null>(null)
+  // The project leaves the header before the branch's name is cut (ADR-0182).
+  const whereFit = useWhereFit()
   /** Where a new thread's greeting stands, directly above the composer. */
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
@@ -448,6 +452,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const paneChrome = chrome ?? NO_CHROME
   const handle = paneChrome.handle
   const pressedControl = useRef(false)
+  const headerName = useHeaderFocusName()
   const close: PaneClose | undefined = paneChrome.close ?? (onClose ? { label: t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' }), title: t`Close pane`, keys: undefined, run: onClose } : undefined)
   // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
   const typeAhead = slimOn ? focusAnswerComposer : undefined
@@ -467,7 +472,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
     {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
-          A press on a control inside it, such as the working copy, stays that control's. */}
+          A press on a control inside it, such as the working copy, stays that control's. The name is served first and
+          what stands beside it takes what is left (ADR-0182, November 4 amendment). */}
       <div className="thread-workspace__title" data-pane-handle={handle ? '' : undefined} draggable={handle && !renaming ? true : undefined}
         onPointerDown={handle ? event => { pressedControl.current = (event.target as Element).closest(INSIDE_CONTROL) !== null } : undefined}
         onDragStart={handle ? event => { if (pressedControl.current || renaming) { event.preventDefault(); return } handle.start(event) } : undefined}
@@ -478,16 +484,20 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2 title={thread.title}>{thread.title}</h2>}
+        {/* What is left of the row after the name: the project and the working copy, then the branch controls, each giving way whole as this box narrows. */}
+        <span className="thread-workspace__where" ref={whereFit}>
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
         <span className="thread-workspace__branches" ref={setBranchSlot} />
+        </span>
       </div>
       {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows or takes focus: the Git action (once
           the host has read a repository's status), Watch, the Council (Owl only), Tools, the Terminal drawer, the ··· menu
           and, in a split, close (ADR-0163, ADR-0182, ADR-0177). */}
-      <div className="thread-workspace__actions">
+      {/* A symbol the keys reach is named under the header, as the pointer's tooltip names it. */}
+      <div className="thread-workspace__actions" onFocus={headerName.onFocus} onBlur={headerName.onBlur} onKeyDown={headerName.onKeyDown}>
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
@@ -500,6 +510,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
         {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}
           aria-keyshortcuts={close.keys} title={close.title} onClick={close.run}><X size={16} aria-hidden="true" /></button> : null}
+        {headerName.name}
       </div>
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}

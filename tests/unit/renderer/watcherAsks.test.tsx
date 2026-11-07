@@ -10,6 +10,7 @@ import type { WatcherIdentity } from '../../../src/shared/watcher'
 import type { WatcherBridge, WatcherRoomResult, WatcherRoomState } from '../../../src/shared/watcherRoom'
 import type { AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
+import { receiptRow } from '../../../src/renderer/src/watcher/WatcherAsks'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -329,9 +330,21 @@ describe('what a receipt says was chosen', () => {
     expect(answerWords(permission('p'), { answer: 'Deny', approved: false, permissionChoice: 'no' })).toBe('Deny')
     expect(receiptWords('Footer links', OWN_WORDS)).toBe('You answered Footer links in your own words.')
     expect(receiptWords('Footer links', undefined)).toBe('Footer links no longer waits on you.')
+    expect(receiptWords('Fix login on staging', 'Wait for the rewrite, and skipped 2')).toBe('You answered Fix login on staging: Wait for the rewrite, and skipped 2.')
     // A title named from a first message keeps its full stop; the line does not say it twice.
     expect(receiptWords('Pick the badge colour.', 'Blue')).toBe('You answered Pick the badge colour: Blue.')
     expect(receiptWords('Pick the badge colour.', undefined)).toBe('Pick the badge colour no longer waits on you.')
+  })
+
+  it('says the answer in one row: who answered which thread, then the one choice, the user’s own words or how many choices', () => {
+    expect(receiptRow('Crash Sim', 'Free real recordings, Engines per vehicle, Crashes, Explosions and fire, Arena background, Record the game’s sound', 6))
+      .toEqual({ lead: 'You answered Crash Sim', detail: '6 choices', answered: true })
+    expect(receiptRow('Visual gate flake', 'Allow once', 1)).toEqual({ lead: 'You answered Visual gate flake', detail: 'Allow once', answered: true })
+    // Sent from a place that did not count the choices: the words, which the row shortens if it must.
+    expect(receiptRow('Footer links', 'Blue', undefined)).toEqual({ lead: 'You answered Footer links', detail: 'Blue', answered: true })
+    expect(receiptRow('Footer links', OWN_WORDS, 1)).toEqual({ lead: 'You answered Footer links', detail: 'in your own words', answered: true })
+    expect(receiptRow('Footer links', null, undefined)).toEqual({ lead: 'You answered Footer links', detail: null, answered: true })
+    expect(receiptRow('Pick the badge colour.', undefined, undefined)).toEqual({ lead: 'Pick the badge colour no longer waits on you', detail: null, answered: false })
   })
 
   it('places each request once, under the newest wake-up that named it', () => {

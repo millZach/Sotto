@@ -182,7 +182,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     // The line above Merge, the sidebar's state word and the creature's pose.
     const line = panel.getByRole('group', { name: /^Babysitting since \d/u })
     await expect(line).toContainText('Started by you. Sotto sends this thread a wake-up when #74 needs it.')
-    const merge = panel.getByRole('button', { name: 'Merge #74', exact: true })
+    const merge = panel.getByRole('button', { name: /^(?:Can't merge|Merge) #74/u })
     expect((await line.boundingBox())!.y).toBeLessThan((await merge.boundingBox())!.y)
     await expect(status).toHaveText(/Babysitting #74$/u)
     const pose = pane(page).locator('.thread-monitor[data-ornament="babysitting"]')

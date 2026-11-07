@@ -21,7 +21,7 @@ import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 export const AGENT_GET = 'sotto:agents:get'
@@ -415,7 +415,11 @@ export const agentRequestSchema = z.object({
     /** Its written answer is a **secret answer** (#2153): the agent asked for it masked, as Codex's `isSecret` does. Every
      *  client masks it, Sotto never saves its words, and it carries no images. Older clients drop the mark and show a
      *  plain field. */
-    secret: z.literal(true).optional() })).max(100).optional(),
+    secret: z.literal(true).optional(),
+    /** This one question may be skipped while the others are answered (ADR-0135, November 6, 2026): its provider is told the
+     *  user skipped it, or it is left out where that is how the provider takes an unanswered question. The adapter adds it;
+     *  a host that predates it marks none, so no client offers a question's own Skip there. */
+    skippable: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   /** A **confirmation** (CONTEXT.md): a permission with nothing to fill in and nothing named to act on beyond its words, answered
    * Allow once or Deny above the composer, the way a question is (issue #2149). The adapter adds it; a request without it,
@@ -444,7 +448,9 @@ export const agentRequestSchema = z.object({
 })
 /** At most this many questions answered in one answer: far more than any question card asks (#2273). */
 export const AGENT_QUESTION_ANSWERS_MAX = 1_000
-export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict(), AGENT_QUESTION_ANSWERS_MAX)
+/** One question's answer: its choices and words, or `skipped` for a `skippable` question the user skipped, with neither. */
+export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional(), skipped: z.literal(true).optional() }).strict()
+  .refine(answer => !answer.skipped || (answer.optionIds.length === 0 && !answer.text), 'A skipped question takes no answer.'), AGENT_QUESTION_ANSWERS_MAX)
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 const handoverCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 /**
@@ -532,6 +538,12 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a reply the provider made of its own API error, such as Claude Code's "You've hit your limit" (#2234), from
+   * the provider's own marking of it, never from its text. Watcher's room shows no such reply while Restart stopped
+   * threads is on: the room's band is the one notice. An older reader drops the field and shows the reply.
+   */
+  providerError: z.literal(true).optional().catch(undefined),
   /**
    * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
    * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
@@ -1660,6 +1672,8 @@ export interface AgentBridge {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, with its checks and what the surface may do; null when the thread has none. */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press; null where it has no GitHub remote. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
-import { activityLabel, heldAction, currentAction, fenced, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns, statusText, timingNote, turnChanges, turnHeadline, HELD_AFTER_MS } from '../../../src/renderer/src/agents/threadActivityView'
+import {
+  activityLabel, activityLineCounts, changesLineCounts, commandCut, diffLineCounts, heldAction, currentAction, fenced, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, onlyAMoment, openActivityLabel, placeActivities, quietTurn, recordsLineCounts, splitTurns, statusText, timingNote, turnChanges, turnHeadline, HELD_AFTER_MS, workSummary,
+} from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
 const message = (id: string, role: AgentMessage['role'] = 'assistant'): AgentMessage => ({ id, role, text: id, createdAt: at })
@@ -11,6 +13,81 @@ let sequence = 0
 const record = (patch: Partial<AgentActivity> & Pick<AgentActivity, 'id'>): AgentActivity =>
   ({ turnId: 't1', sequence: sequence++, kind: 'command', status: 'completed', title: 'Command', ...patch })
 const turn = (patch: Partial<AgentActivity> = {}): AgentActivity => record({ id: `turn-${patch.turnId ?? 't1'}`, kind: 'turn', title: 'Turn', ...patch })
+
+describe('a finished turn\'s record', () => {
+  const edit = (id: string, diff: string | undefined, patch: Partial<AgentActivity> = {}): AgentActivity =>
+    record({ id, kind: 'file-change', title: 'Edit', changes: [{ path: `${id}.ts`, kind: 'update', ...(diff === undefined ? {} : { diff }) }], ...patch })
+
+  it('says what the turn did from what it reported', () => {
+    expect(workSummary([record({ id: 'c1' }), record({ id: 'c2' }), record({ id: 't1', kind: 'tool', title: 'Read' }), record({ id: 't2', kind: 'tool', title: 'Grep' }), record({ id: 't3', kind: 'tool', title: 'Read' })]))
+      .toBe('Ran 2 commands, used Read and Grep')
+    expect(workSummary([record({ id: 'p', kind: 'plan', title: 'Plan', steps: [{ text: 'a', status: 'completed' }, { text: 'b', status: 'pending' }] })])).toBe('Plan 1 of 2 done')
+  })
+
+  it('names two tools and counts the rest, and counts tools it has no short name for', () => {
+    const tools = ['Read', 'Grep', 'Glob', 'WebFetch'].map(title => record({ id: title, kind: 'tool', title }))
+    expect(workSummary(tools)).toBe('Used Read, Grep and 2 more')
+    expect(workSummary([record({ id: 'x', kind: 'tool', title: 'mcp__sotto_browser__browser_open' })])).toBe('Used Browser open')
+    expect(workSummary([record({ id: 'y', kind: 'tool', title: 'Tool' }), record({ id: 'z', kind: 'tool', title: 'Tool' })])).toBe('Used 2 tools')
+    expect(workSummary([record({ id: 'w', kind: 'tool', title: 'A name far too long to sit on the line' })])).toBe('Used 1 tool')
+  })
+
+  it('tells a turn that only thought for a moment from one that did work or took its time', () => {
+    const thought = record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary' })
+    const quick = turn({ durationMs: 6_000 })
+    expect(onlyAMoment(quick, at, [], [quick, thought])).toBe(true)
+    expect(onlyAMoment(quick, at, [], [quick, thought, record({ id: 'c' })])).toBe(false)
+    expect(onlyAMoment(turn({ durationMs: 40_000 }), at, [], [thought])).toBe(false)
+    expect(onlyAMoment(turn({ durationMs: 6_000, status: 'failed' }), at, [], [thought])).toBe(false)
+    // With no record of how long it ran, the turn is timed from its message to its last reply or record.
+    expect(onlyAMoment(undefined, at, ['2026-09-12T10:00:04.000Z'], [thought])).toBe(true)
+    expect(onlyAMoment(undefined, undefined, [], [thought])).toBe(false)
+  })
+
+  it('tells a quick turn of one step or none from one that took its time, took more steps or did not finish', () => {
+    expect(quietTurn(turn({ durationMs: 3_000 }), at, [], 1)).toBe(true)
+    expect(quietTurn(turn({ durationMs: 14_999 }), at, [], 0)).toBe(true)
+    expect(quietTurn(turn({ durationMs: 15_000 }), at, [], 1)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000 }), at, [], 2)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000, status: 'failed' }), at, [], 1)).toBe(false)
+    expect(quietTurn(turn({ durationMs: 3_000, status: 'interrupted' }), at, [], 0)).toBe(false)
+    // With no record of how long it ran, the turn is timed from its message to its last reply or record.
+    expect(quietTurn(undefined, at, ['2026-09-12T10:00:04.000Z'], 1)).toBe(true)
+    expect(quietTurn(undefined, undefined, [], 0)).toBe(false)
+  })
+
+  it('leaves out thinking and files, and says nothing of a failed step', () => {
+    expect(workSummary([record({ id: 'r', kind: 'reasoning', title: 'Thinking' }), edit('e', '+a')])).toBe('')
+    expect(workSummary([record({ id: 'c', status: 'failed' })])).toBe('Ran 1 command')
+  })
+
+  it('counts a diff\'s lines as they are drawn, without its file header', () => {
+    expect(diffLineCounts('--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,2 @@\n keep\n-old\n+new\n+more')).toEqual({ added: 2, removed: 1 })
+    // Claude and Grok report an edit as its whole before and after text.
+    expect(diffLineCounts('--- before\none\ntwo\n+++ after\nthree')).toEqual({ added: 1, removed: 2 })
+    expect(diffLineCounts('+++plus\n---minus')).toEqual({ added: 1, removed: 1 })
+  })
+
+  it('has no count when any part of it cannot be known', () => {
+    expect(activityLineCounts(edit('a', '+x\n-y'))).toEqual({ added: 1, removed: 1 })
+    expect(activityLineCounts(edit('b', undefined))).toBeNull()
+    expect(activityLineCounts(edit('c', '+x', { status: 'failed' }))).toBeNull()
+    expect(activityLineCounts(edit('d', '+x', { cut: { diffs: [{ index: 0, bytes: 900 }] } }))).toBeNull()
+    expect(recordsLineCounts([edit('e', '+x'), edit('f', '+y\n-z'), record({ id: 'g' })])).toEqual({ added: 2, removed: 1 })
+    expect(recordsLineCounts([edit('e', '+x'), edit('h', undefined)])).toBeNull()
+    expect(recordsLineCounts([record({ id: 'g' })])).toBeNull()
+  })
+
+  it('adds up every edit of a file, and each file, only when all of them can say', () => {
+    const group = (records: AgentActivity[]) => [{ key: 'k', turnId: 't1', anchorMessageId: null, records }]
+    const whole = turnChanges(group([edit('a', '+x'), { ...edit('b', '+y\n-z'), changes: [{ path: 'a.ts', kind: 'update', diff: '+y\n-z' }] }, edit('c', '+w')]))
+    expect(whole.map(change => change.lines)).toEqual([{ added: 2, removed: 1 }, { added: 1, removed: 0 }])
+    expect(changesLineCounts(whole)).toEqual({ added: 3, removed: 1 })
+    const partial = turnChanges(group([edit('a', '+x'), edit('b', undefined)]))
+    expect(partial[1]!.lines).toBeUndefined()
+    expect(changesLineCounts(partial)).toBeUndefined()
+  })
+})
 
 describe('placing activity in the transcript', () => {
   const messages = [message('u1', 'user'), message('a1'), message('u2', 'user'), message('a2')]
@@ -163,6 +240,15 @@ describe('the newest turn the placement reads', () => {
     expect(placeActivities(messages, messages, activities).newestTurnEnded).toBeUndefined()
     // Another turn runs, but the newest turn's own lifecycle says nothing yet.
     expect(placeActivities(messages, messages, [news]).newestTurnEnded).toBeUndefined()
+  })
+
+  it('says the newest turn was cut short when its own lifecycle failed, stopped or lost its outcome, and nothing of it runs', () => {
+    for (const status of ['failed', 'interrupted', 'unknown'] as const) {
+      expect(placeActivities(messages, messages, [{ ...activities[0]!, status }]).newestTurnCutShort).toBe(true)
+    }
+    // A completed turn may be followed by one the provider began on its own, which may be writing now.
+    expect(placeActivities(messages, messages, activities).newestTurnCutShort).toBeUndefined()
+    expect(placeActivities(messages, messages, [{ ...activities[0]!, status: 'running' }]).newestTurnCutShort).toBeUndefined()
   })
 
   it('reads work a provider leaves running after its turn ended as saying nothing about which turn is going', () => {
@@ -341,7 +427,8 @@ describe('activity wording', () => {
     expect(activityLabel(record({ id: 'f', kind: 'file-change', title: 'File changes', changes: [{ path: 'src/a.ts', kind: 'add' }] }))).toMatchObject({ lead: 'Created', subject: 'src/a.ts', preview: '' })
     expect(activityLabel(record({ id: 'f2', kind: 'file-change', title: 'File changes', changes: [{ path: 'a.ts', kind: 'update' }, { path: 'b.ts', kind: 'add' }] }))).toMatchObject({ lead: 'Edited', preview: 'and 1 more file' })
     expect(activityLabel(record({ id: 's', kind: 'subagent', title: 'spawnAgent', agents: [{ id: 'x', status: 'running' }] }))).toMatchObject({ subject: 'Spawn agent', preview: '1 agent' })
-    expect(activityLabel(record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary', text: '\n**Checking tests**\nmore' })).preview).toBe('Checking tests')
+    // A reasoning summary reads as its heading, without "Reasoning summary" run into it.
+    expect(activityLabel(record({ id: 'r', kind: 'reasoning', title: 'Reasoning summary', text: '\n**Checking tests**\nmore' }))).toMatchObject({ subject: 'Checking tests', preview: '' })
     expect(activityLabel(record({ id: 'e', kind: 'status', title: 'Codex is retrying', error: 'Stream closed\ntrace' })).preview).toBe('Stream closed')
     expect(activityLabel(record({ id: 't', kind: 'tool', title: 'fixture / inspect', text: '## Reading `src/a.ts`' })).preview).toBe('Reading src/a.ts')
   })
@@ -476,5 +563,28 @@ describe('file changes that did not go through', () => {
     const groups = groupsOf([denied(), stopped, unseen])
     expect(turnChanges(groups).map(item => item.path)).toEqual(['src/stopped.ts', 'src/unseen.ts'])
     expect(summary(groups)).toBe('Changed 2 files')
+  })
+})
+
+describe('where a folded row’s command gives way', () => {
+  const parts = (command: string): string[][] | undefined => commandCut(command)?.map(part => [part.role, part.text])
+
+  it('cuts in the folders of every file it names, keeping the command’s verb and each file’s name', () => {
+    expect(parts('cat tests/unit/main/workspaceControl.test.ts | head -n 80')).toEqual([
+      ['verb', 'cat '], ['folders', 'tests/unit/main/'], ['name', 'workspaceControl.test.ts'], ['tail', ' | head -n 80'],
+    ])
+    expect(parts('rg -c "this\\.(a|b)" src/main/agents/control.ts')).toEqual([
+      ['verb', 'rg'], ['args', ' -c "this\\.(a|b)" '], ['folders', 'src/main/agents/'], ['name', 'control.ts'],
+    ])
+    expect(parts('type D:\\Projects\\sotto\\README.md')).toEqual([['verb', 'type '], ['folders', 'D:\\Projects\\sotto\\'], ['name', 'README.md']])
+    // Two files: both lose their folders before the second is cut, so "npm tes…" and "tests/integration/wor…" never show.
+    expect(parts('npm test -- tests/integration/threadStoreWorker.test.ts tests/integration/workspaceStoreWorker.test.ts')).toEqual([
+      ['verb', 'npm test'], ['args', ' -- '], ['folders', 'tests/integration/'], ['name', 'threadStoreWorker.test.ts'],
+      ['between', ' '], ['folders', 'tests/integration/'], ['name', 'workspaceStoreWorker.test.ts'],
+    ])
+  })
+
+  it('leaves a command that names no file in a folder to be cut at its end', () => {
+    for (const command of ['npm test', 'rg -n policy src', 'rg -l x src/main src/host', 'cat README.md', 'ls 2>/dev/null', 'node --import=./a/b.mjs run']) expect(commandCut(command), command).toBeNull()
   })
 })

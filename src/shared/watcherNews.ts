@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TELL_WATCHER_WORDS_BYTES_MAX } from './tellWatcher'
+import { readyToMergeSchema, TELL_WATCHER_WORDS_BYTES_MAX } from './tellWatcher'
 import { WATCHER_QUESTION_LABEL_MAX, WATCHER_QUESTION_WORDS_MAX } from './watcherQuestions'
 import { watcherThreadTargetSchema } from './watcher'
 
@@ -13,8 +13,8 @@ export const WATCHER_BATCH_MAX_MS = 5_000
  */
 export const WATCHER_ORDINARY_BATCH_MS = 20_000
 export const WATCHER_ORDINARY_BATCH_MAX_MS = 60_000
-/** The kinds that keep the short batch: the user's answer, a failure, a send that may not have gone or a thread's own message. */
-export const WATCHER_URGENT_KINDS: ReadonlySet<string> = new Set(['needs-user', 'turn-failed', 'taken-over', 'delivery-changed', 'thread-told', 'user-answered'])
+/** The kinds that keep the short batch: the user's answer, a failure, a send that may not have gone, a thread's own message or its READY TO MERGE. */
+export const WATCHER_URGENT_KINDS: ReadonlySet<string> = new Set(['needs-user', 'turn-failed', 'taken-over', 'delivery-changed', 'thread-told', 'thread-ready', 'user-answered'])
 /** How much of a finished turn's reply its news carries (#1190), so Watcher need not read the thread for it. */
 export const WATCHER_NEWS_REPLY_CHARS = 500
 export const WATCHER_NEWS_BYTES_MAX = 16 * 1_024
@@ -41,6 +41,9 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * as Sotto's record has it. `opened` says that message names Watcher and Sotto opened the request `requestId` names for
  * this one turn, to start threads and send and nothing else; otherwise the news grants nothing. These words are the only
  * ones an event keeps, so a restart cannot lose a message the thread was told got through.
+ * `thread-ready` comes once for each READY TO MERGE a thread sent with `ready_to_merge` (#2229), watched or not: `ready`
+ * names the pull request and the head the worker says is ready, and nothing of the worker's words. It is saved the way
+ * `thread-told` is, since nothing else holds it. It grants nothing: whose turn it is to merge stays Watcher's call.
  * `at-rest` comes once for each place a watched thread stands while it rests (#2307): twenty minutes after its last progress,
  * with its turn ended, nothing running and nothing asked of the user, and a pull request of its own still open. `revision`
  * is that place, its newest turn and each open pull request's head and whether its checks have finished, so a change in
@@ -51,7 +54,7 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled',
-    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'user-answered', 'at-rest']),
+    'request-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'thread-ready', 'user-answered', 'at-rest']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
@@ -60,9 +63,15 @@ export const watcherEventSchema = z.object({
   delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(), endedWithoutAnswer: z.literal(true).optional(),
   swarm: z.object({ id: z.uuid(), count: z.number().int().positive(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative() }).strict().optional(),
   restartedBy: z.string().min(1).max(64).optional(),
+  /**
+   * Why Sotto restarted a `threads-restarted` thread other than a limit's reset (#2234): its last turn stopped with work
+   * left, or Sotto closed while it worked and its resume note went (ADR-0076).
+   */
+  restartCause: z.enum(['work-left', 'resumed']).optional(),
   moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),
   told: z.object({ words: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX), userWords: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX).optional(),
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),
+  ready: readyToMergeSchema.optional(),
   answered: z.object({ questionId: z.uuid(), question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX), choice: z.string().min(1).max(WATCHER_QUESTION_LABEL_MAX),
     settle: z.literal(true).optional() }).strict().optional(),
 }).strict()

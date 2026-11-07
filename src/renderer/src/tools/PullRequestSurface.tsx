@@ -1,26 +1,31 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
-  AlarmClock, AlarmClockOff, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
+  AlarmClock, AlarmClockOff, ArrowLeft, Ban, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
-import { branchPullRequestUrl, isPullRequestLimited, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { branchPullRequestUrl, isPullRequestLimited, pullRequestAddress, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 import { PR_ICONS } from '../agents/BranchToolbar'
+import { foldOnEscape } from '../agents/ThreadActivity'
 import { writeClipboard } from '../agents/richActions'
 import { menuEntries } from '../agents/gitActionButton.logic'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
-import { babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
+import { babysitClock, babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
 import { useBabysitEndingsDismissed } from './babysitEndingsDismissed'
 import { useRestartStopped } from '../agents/RestartStopped'
+import { shownCount } from '../state/interfaceNumbers'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
+import { OpenPullRequests } from './OpenPullRequests'
+import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestFilesPeek, PullRequestLineCounts, RunningMark, UnlinkedDock } from './PullRequestDetails'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, limitedWords, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
-  resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checksInOrder, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
+  mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
+  footCut, type FootRow,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
 import './pullRequestSurface.css'
@@ -29,7 +34,7 @@ type Command = (command: AgentCommand) => Promise<AgentState | null>
 /** `at: 'babysit'`: a refused Stop, said in the babysitting line beside the Stop it answers rather than above the checklist. */
 type Notice = { readonly text: string; readonly tone: 'status' | 'error'; readonly at?: 'babysit' }
 type Busy = GitPullRequestAction | 'unlink' | 'create-pr' | 'babysit'
-const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: CircleDashed, todo: Circle, unknown: CircleHelp, open: CircleAlert }
+const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: RunningMark, todo: Circle, unknown: CircleHelp, open: CircleAlert }
 /** Said before a line's words, since its colour and icon are not read. */
 const LINE_STATE: Record<LineTone, MessageDescriptor> = {
   done: msg({ message: 'Done', comment: 'A merge checklist line\'s state, said before its words.' }),
@@ -50,19 +55,25 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
 /**
  * The Pull request surface in Tools (ADR-0027): the merge checklist. The branch's pull request, or one linked to
  * the thread, read from GitHub through the host's gh when it opens and on Refresh, as five lines (checks, review,
- * up to date with the base, no conflicts, ready for review), each done or carrying the one press that fixes it.
+ * up to date with the base, no conflicts, ready for review), each done or carrying the one press that fixes it. What
+ * blocks the merge leads, each line whole; a line that is done has done its job and gives way to one quiet row.
  * One large Merge, in the method chosen beside it, is enabled only when no line holds it back; Merge when ready
- * arms GitHub's auto-merge instead. The description and the linked pull requests fold below, and the rest is in
- * the ··· menu. Nothing happens from viewing: every change is a press, and the merge, turning on auto-merge,
- * closing and Update with rebase ask first. ToolsPanel keys it by the thread, so another thread starts it afresh:
- * nothing of one thread's pull request, choice or notice carries over.
+ * arms GitHub's auto-merge instead. The plain answer stays on top and the rest is folded below it, a press away: the
+ * description, every check, the changed files, the linked pull requests and the repository's open pull requests; the
+ * rest is in the ··· menu. Nothing happens from viewing: every change is a press,
+ * and the merge, turning on auto-merge, closing and Update with rebase ask first. A pull request chosen from the open
+ * ones that this thread does not know is read only, until it is linked. ToolsPanel keys it by the thread, so another
+ * thread starts it afresh: nothing of one thread's pull request, choice or notice carries over.
  *
  * Babysitting (ADR-0061, variant C): while the thread babysits the pull request shown, a line docked above Merge says
  * since when, who started it and what Sotto does, with Stop; Babysit pull request is in the ··· menu when nothing
  * babysits it, where the thread's host can (`babysit`). Once babysitting ended on its own, the line says so and why.
  */
-export function PullRequestSurface({ thread, command, onStatus, babysit }: {
+export function PullRequestSurface({ thread, command, onStatus, babysit, onReviewChanges }: {
   readonly thread: AgentThread; readonly command: Command | undefined; readonly onStatus: (message: string) => void
+  /** Opens Changes on this thread's branch against its base. Absent where the window has no Changes to open. */
+  /** Opens Changes on the branch against the pull request's own target branch, the one it would merge into. */
+  readonly onReviewChanges?: ((baseBranch: string) => void) | undefined
   /** The thread's host babysits pull requests, and the name its agent goes by. Absent where it cannot. */
   readonly babysit?: { readonly agent: string } | undefined
 }): ReactNode {
@@ -77,7 +88,10 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const [confirming, setConfirming] = useState<ConfirmedAction | null>(null)
   const [linking, setLinking] = useState(false)
   const [descriptionOpen, setDescriptionOpen] = useState(false)
+  const [checksOpen, setChecksOpen] = useState(false)
+  const [filesOpen, setFilesOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
+  const [openListOpen, setOpenListOpen] = useState(false)
   const [preferred, choosePreferred] = usePullRequestMergeMethod()
   // Worked out for every ending the thread holds, before a read of GitHub says which one shows.
   const endings = useBabysitEndingsDismissed()
@@ -85,10 +99,14 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const babysitShown = !useRestartStopped()
   const generation = useRef(0)
   const surface = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)
   const hintId = useId()
   const branchUrl = branchPullRequestUrl(thread) ?? null
   const links = thread.pullRequests ?? []
+  /** The thread's own pull request, the one this surface shows until another is chosen. */
+  const ownUrl = branchUrl ?? links.at(-1)?.url ?? null
   // Which pull requests are linked, not what they last said: a read that brings a link's title up to date must not read again.
   const linkKey = links.map(link => link.url).join('|')
 
@@ -169,8 +187,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
     try { await writeClipboard(url); onStatus(t`Link copied`) } catch { onStatus(t`Could not copy the link. Open on GitHub and copy the address from your browser.`) }
   }
   const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
-  /** A linked pull request opens here; the view starts again at its top line. */
-  const show = (url: string): void => { setChosen(url); setDescriptionOpen(false); requestAnimationFrame(() => top.current?.focus()) }
+  /** A linked or listed pull request opens here; the view starts again at its top line. */
+  const show = (url: string | null): void => { setChosen(url === ownUrl ? null : url); setDescriptionOpen(false); setChecksOpen(false); setFilesOpen(false); if (body.current) body.current.scrollTop = 0; requestAnimationFrame(() => top.current?.focus()) }
   const linkDialog = linking && command ? <LinkPullRequestDialog threadId={thread.id} command={command} onClose={() => setLinking(false)}
     onLinked={text => { setLinking(false); setNotice({ text, tone: 'status' }) }} /> : null
   /** `docked`: the notice is a refused Stop that the babysitting line shows instead. */
@@ -180,7 +198,16 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
     {failure && detail ? <p className="pr-surface__notice tt-paragraph" data-tone="error" role="alert">{t({ message: `${failure} What shows below is from the last read.`, comment: '{failure} says why the latest read of the pull request failed, in a sentence.' })}</p> : null}
   </>
   const linked = <LinkedFold thread={thread} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
+  const openList = <OpenPullRequests threadId={thread.id} shownUrl={detail?.url ?? null} open={openListOpen} onToggle={() => setOpenListOpen(value => !value)} onShow={show} />
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh pull request`} title={t`Refresh pull request`} data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
+
+  // What the closed folds can show under their heads where the panel has room, most needed first: the checks that still
+  // stand, the description's whole first paragraph, the most changed files, and more of them.
+  const peeks = useMemo(() => detail ? peeksOf(detail) : NO_PEEKS, [detail])
+  const anyOpen = descriptionOpen || checksOpen || filesOpen || linksOpen || openListOpen
+  const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, detail)
+  const peeking = (peek: Peek): boolean => { const at = peeks.indexOf(peek); return at > -1 && at < peeksShown }
+  useWholeRowFoot(body, detail !== null)
 
   if (!detail) {
     return <div ref={surface} className="pr-surface" aria-busy={loading || busy !== null}>
@@ -189,12 +216,15 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         <div className="tools-chrome__actions">{refresh}</div>
       </div>
       {noticeLine()}
-      <div className="pr-surface__body">
+      <div ref={body} className="pr-surface__body">
         {loading ? <p className="files-preview__loading" role="status">{t`Reading the pull request…`}</p>
           : failure ? <div className="files-problem" role="status"><strong>{failure}</strong><button type="button" className="files-link tt-focusable" onClick={() => void load()}>{t`Try again`}</button></div>
             : <NoPullRequest thread={thread} busy={busy} command={command} onLink={() => setLinking(true)}
               onCreate={actionId => void send({ type: 'git-action', threadId: thread.id, actionId, action: 'create_pr' }, 'create-pr', t`Sotto could not confirm this Git command.`).then(() => setNotice(current => current?.tone === 'status' ? null : current))} />}
-        {!loading && !failure && (links.length > 0 || thread.worktree?.git?.pullRequest) ? linked : null}
+        <div className="pr-surface__others">
+          {!loading && !failure && (links.length > 0 || thread.worktree?.git?.pullRequest) ? linked : null}
+          {!loading && thread.worktree?.git?.hasRemote ? openList : null}
+        </div>
       </div>
       {linkDialog}
     </div>
@@ -214,6 +244,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const confirmation = confirming ? confirmationFor(confirming, detail.number, selected, detail.baseBranch) : null
   // Babysitting is offered on an open pull request this thread knows, where its host can and nothing babysits it yet.
   const babysat = babysitShown && babysittingOf(thread, detail.url) !== undefined
+  // A pull request chosen from the repository's list that this thread does not know: the host refuses a press on it (ADR-0027), so none is offered until it is linked.
+  const known = detail.branch || detail.linked !== null
   const offerBabysit = Boolean(babysitShown && babysit && command && open && (detail.linked || detail.branch) && !babysat)
   // An ending the user dismissed here stays on the record, and away from this surface, until a later one replaces it.
   const ending = babysitShown ? babysitEndedOf(thread, detail.url) : undefined
@@ -230,7 +262,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const stopRefused = notice?.at === 'babysit' && line?.kind === 'babysitting' ? notice.text : null
   const dock = <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} refused={stopRefused}
     onStop={() => void babysitting(detail.url, detail.number, false)} onDismiss={dismissEnding} />
-  const menu: PaneMenuItem[][] = [[
+  const menu: PaneMenuItem[][] = !known ? [[
+    { id: 'copy', label: t`Copy link`, icon: <Copy size={15} aria-hidden="true" />, run: () => void copyLink(detail.url) },
+  ]] : [[
     ...(open ? [detail.draft ? { id: 'ready', label: t`Ready for review`, disabled: running, run: () => void act('ready') }
       : { id: 'draft', label: t`Convert to draft`, disabled: running, run: () => void act('draft') }] : []),
     ...(open && behind && detail.canUpdateBranch ? [{ id: 'rebase', label: t`Update with rebase`, disabled: running, run: () => setConfirming('update-with-rebase') }] : []),
@@ -245,7 +279,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
     ...(detail.state === 'closed' ? [{ id: 'reopen', label: t`Reopen pull request`, disabled: running, run: () => void act('reopen') }] : []),
   ]]
   const busyLabel = (pending: Busy): string => i18n._(BUSY_LABEL[pending]!)
-  const fix = (line: ChecklistLine, press: LineFix): ReactNode => {
+  const fix = (press: LineFix): ReactNode => {
     switch (press.kind) {
       case 'open-check': {
         const check = press.name
@@ -258,18 +292,52 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
           <ExternalLink size={14} aria-hidden="true" />{t`Open review`}</Button>
       }
       case 'update-branch': return <Button variant="secondary" disabled={running} onClick={() => void act('update-branch')}>{busy === 'update-branch' ? busyLabel('update-branch') : t`Update branch`}</Button>
-      case 'ready': return <Button variant="secondary" disabled={running} onClick={() => void act('ready')}>{busy === 'ready' ? busyLabel('ready') : line.label}</Button>
+      case 'ready': return <Button variant="secondary" disabled={running} onClick={() => void act('ready')}>{busy === 'ready' ? busyLabel('ready') : t`Ready for review`}</Button>
     }
   }
   const baseBranch = detail.baseBranch, number = detail.number
   const autoMethod = detail.autoMerge?.method ? mergeLabel(detail.autoMerge.method).toLowerCase() : null
-  const when = mergedWhen(detail.mergedAt)
+  // When it merged, written as the thread's own times are: "2:02 pm" today, "Oct 7, 2:02 pm" before.
+  const when = detail.mergedAt ? babysitClock(detail.mergedAt) || null : null
+  const backTo = ownUrl ? pullRequestAddress(ownUrl)?.number ?? null : null
+  const back = backTo === null ? t`Back to this thread's pull request` : t({ message: `Back to #${backTo}`, comment: '{backTo} is the number of the thread\'s own pull request.' })
+  /** Merge, or what took its place. */
+  const mergeDock = (
+    <div className="pr-surface__dock">
+      {open && known ? dock : null}
+      {!known ? <UnlinkedDock number={detail.number} disabled={running || !command} onLink={() => void send({ type: 'git-link-pull-request', threadId: thread.id, reference: detail.url }, 'unlink', t`Could not link the pull request.`, load)} />
+        : detail.state === 'merged' ? <div className="pr-surface__finished" data-state="merged"><CircleCheck size={20} aria-hidden="true" />
+        <div><strong><Trans comment="{baseBranch} is a Git branch name, as in main.">Merged into <bdi>{baseBranch}</bdi></Trans></strong>{when ? <span>{when}</span> : null}</div></div>
+        : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
+          <div><strong>{t`Closed without merging`}</strong></div>
+          <Button variant="secondary" disabled={running} onClick={() => void act('reopen')}>{busy === 'reopen' ? busyLabel('reopen') : t({ message: 'Reopen', context: 'pull request', comment: 'Reopens a closed pull request.' })}</Button></div>
+          : detail.autoMerge ? <div className="pr-surface__finished" data-state="auto"><RunningMark size={20} aria-hidden="true" />
+            <div><strong>{t`Auto-merge is on`}</strong><span>{autoMethod ? t({ message: `GitHub merges this with ${autoMethod} when every line is done.`, comment: '{autoMethod} is the merge method, as in "squash and merge".' }) : t`GitHub merges this when every line is done.`}</span></div>
+            <Button variant="secondary" aria-label={t`Turn off auto-merge`} disabled={running} onClick={() => void act('disable-auto-merge')}>{busy === 'disable-auto-merge' ? busyLabel('disable-auto-merge') : t({ message: 'Turn off', comment: 'Turns off auto-merge.' })}</Button></div>
+            : <>
+              <div className="pr-surface__merge">
+                <Button variant={ready ? 'primary' : 'secondary'} className="pr-surface__merge-go" data-blocked={!ready || undefined} aria-disabled={!ready || running || undefined} aria-describedby={hintId}
+                  onClick={() => { if (ready && !running) setConfirming('merge') }}>
+                  {ready ? <GitMerge size={17} aria-hidden="true" /> : <Ban size={16} aria-hidden="true" />}
+                  {busy === 'merge' ? busyLabel('merge') : ready ? t({ message: `Merge #${number}`, comment: '{number} is the pull request\'s number.' }) : t({ message: `Can't merge #${number} yet`, comment: 'The Merge button while something still blocks the merge. {number} is the pull request\'s number.' })}</Button>
+                {allowed.length > 1 ? <MergeMethodMenu allowed={allowed} selected={selected} base={detail.baseBranch} disabled={running} onChoose={choosePreferred} /> : null}
+              </div>
+              <p id={hintId} className="pr-surface__hint tt-paragraph">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? t`This repository allows no merge method. Change that on GitHub.` : <>{mergeWaitsFor(lines)}{autoMerge
+                ? <> <button type="button" className="pr-surface__textlink tt-focusable" disabled={running} onClick={() => setConfirming('enable-auto-merge')}>{t`Merge when ready`}</button></> : null}</>}</p>
+            </>}
+      {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
+          merge, that it is still babysat, which Stop can end now. */}
+      {!open && known ? dock : null}
+    </div>
+  )
 
   return <div ref={surface} className="pr-surface" aria-busy={running}>
     <div className="tools-chrome pr-surface__top">
       <span className="pr-surface__lead">
+        {chosen ? <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} onClick={() => show(null)}><ArrowLeft size={15} aria-hidden="true" /></button> : null}
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
-        <h2 ref={top} tabIndex={-1} className="pr-surface__name"><span className="pr-surface__number">#{detail.number}</span> {detail.title}</h2>
+        {/* Always its number: a narrow pane's header gives the thread's pull request number up first (ADR-0182). */}
+        <span className="pr-surface__number">#{detail.number}</span>
         <span className="pr-surface__tag">{stateLabel(detail)}</span>
       </span>
       <div className="tools-chrome__actions">
@@ -279,45 +347,50 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
       </div>
     </div>
     {noticeLine(stopRefused !== null)}
-    <div className="pr-surface__body">
+    <div ref={body} className="pr-surface__body"><div ref={content} className="pr-surface__content">
+      {/* The title is the pull request's name, so it leads the surface whole, under the line the window's own buttons share. */}
+      <h2 ref={top} tabIndex={-1} className="pr-surface__title"><span className="tt-visually-hidden">#{detail.number}</span>{' '}<bdi>{detail.title}</bdi></h2>
+      {/* A pull request that has ended says so first: the checklist is only what it was by then. */}
+      {!open && known ? mergeDock : null}
       <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={clear ? 'done' : undefined}>{checklistCount(lines)}</small></h3>
-      <ol className="pr-surface__lines" aria-label={t`Merge checklist`}>{lines.map(line => {
+      <ol className="pr-surface__lines" aria-label={t`Merge checklist`}>{linesInOrder(lines).map(line => {
         const Icon = LINE_ICONS[line.tone]
+        if (line.tone === 'done') {
+          const said = line.brief ?? line.label
+          return <li key={line.id} className="pr-surface__line" data-tone="done" title={line.why}>
+            <Icon size={14} aria-hidden="true" />
+            <span><span className="tt-visually-hidden">{i18n._(LINE_STATE.done)}: </span>{said}{said === line.why ? null : <span className="tt-visually-hidden">. {line.why}</span>}</span>
+          </li>
+        }
+        const pressable = line.fix && (known || line.fix.kind === 'open-check' || line.fix.kind === 'open-review')
         return <li key={line.id} className="pr-surface__line" data-tone={line.tone}>
           <Icon size={18} aria-hidden="true" />
           <div className="pr-surface__line-text"><strong><span className="tt-visually-hidden">{i18n._(LINE_STATE[line.tone])}: </span>{line.label}</strong><span className="pr-surface__why">{line.why}</span></div>
-          {line.fix ? <span className="pr-surface__fix">{fix(line, line.fix)}</span> : null}
+          {pressable && line.fix ? <span className="pr-surface__fix">{fix(line.fix)}</span> : null}
         </li>
       })}</ol>
-      <div className="pr-surface__dock">
-        {open ? dock : null}
-        {detail.state === 'merged' ? <div className="pr-surface__finished" data-state="merged"><CircleCheck size={20} aria-hidden="true" />
-          <div><strong><Trans comment="{baseBranch} is a Git branch name, as in main.">Merged into <bdi>{baseBranch}</bdi></Trans></strong>{when ? <span>{when}</span> : null}</div></div>
-          : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
-            <div><strong>{t`Closed without merging`}</strong></div>
-            <Button variant="secondary" disabled={running} onClick={() => void act('reopen')}>{busy === 'reopen' ? busyLabel('reopen') : t({ message: 'Reopen', context: 'pull request', comment: 'Reopens a closed pull request.' })}</Button></div>
-            : detail.autoMerge ? <div className="pr-surface__finished" data-state="auto"><CircleDashed size={20} aria-hidden="true" />
-              <div><strong>{t`Auto-merge is on`}</strong><span>{autoMethod ? t({ message: `GitHub merges this with ${autoMethod} when every line is done.`, comment: '{autoMethod} is the merge method, as in "squash and merge".' }) : t`GitHub merges this when every line is done.`}</span></div>
-              <Button variant="secondary" aria-label={t`Turn off auto-merge`} disabled={running} onClick={() => void act('disable-auto-merge')}>{busy === 'disable-auto-merge' ? busyLabel('disable-auto-merge') : t({ message: 'Turn off', comment: 'Turns off auto-merge.' })}</Button></div>
-              : <>
-                <div className="pr-surface__merge">
-                  <Button variant="primary" className="pr-surface__merge-go" aria-disabled={!ready || running || undefined} aria-describedby={hintId}
-                    onClick={() => { if (ready && !running) setConfirming('merge') }}>
-                    <GitMerge size={17} aria-hidden="true" />{busy === 'merge' ? busyLabel('merge') : t({ message: `Merge #${number}`, comment: '{number} is the pull request\'s number.' })}</Button>
-                  {allowed.length > 1 ? <MergeMethodMenu allowed={allowed} selected={selected} base={detail.baseBranch} disabled={running} onChoose={choosePreferred} /> : null}
-                </div>
-                <p id={hintId} className="pr-surface__hint tt-paragraph">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? t`This repository allows no merge method. Change that on GitHub.` : <>{linesLeft(lines)}{autoMerge
-                  ? <> <button type="button" className="pr-surface__textlink tt-focusable" disabled={running} onClick={() => setConfirming('enable-auto-merge')}>{t`Merge when ready`}</button></> : null}</>}</p>
-              </>}
-        {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
-            merge, that it is still babysat, which Stop can end now. */}
-        {!open ? dock : null}
+      {open || !known ? mergeDock : null}
+      {/* This pull request's own folds share one card, so the surface ends where they do, however little or much is open. */}
+      <div className="pr-surface__folds">
+        <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body, peeking('description'))} whole={peeking('description')} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
+          <PullRequestDescription detail={detail} />
+        </Fold>
+        {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} aside={<PullRequestChecksSummary checks={detail.checks} />}
+          peek={peeking('checks') ? <PullRequestChecksPeek checks={detail.checks} /> : undefined} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
+          <PullRequestChecks url={detail.url} checks={detail.checks} />
+        </Fold> : null}
+        {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
+          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} whole /> : undefined}
+          peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} all={detail.changedFiles} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
+          <PullRequestFiles detail={detail} onReview={detail.branch && onReviewChanges ? () => onReviewChanges(detail.baseBranch) : undefined} />
+        </Fold> : null}
       </div>
-      <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
-        {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet tt-paragraph">{t`No description.`}</p>}
-      </Fold>
-      {linked}
-    </div>
+      {/* Other pull requests, the thread's and the repository's: lists that lead elsewhere, on a card of their own under this one's. */}
+      <div className="pr-surface__others">
+        {linked}
+        {openList}
+      </div>
+    </div></div>
     {linkDialog}
     {confirmation && confirming ? <ConfirmationDialog title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirm} cancelLabel={t`Cancel`} danger={confirmation.danger}
       fallbackFocusRef={top} onCancel={() => setConfirming(null)}
@@ -388,13 +461,141 @@ function NoPullRequest({ thread, busy, command, onCreate, onLink }: {
   </div>
 }
 
-/** A part of the surface that folds away: the description, the linked pull requests. */
-function Fold({ label, count, open, onToggle, children }: { readonly label: string; readonly count?: number; readonly open: boolean; readonly onToggle: () => void; readonly children: ReactNode }): ReactNode {
+type Peek = 'checks' | 'description' | 'files' | 'more-files'
+const NO_PEEKS: readonly Peek[] = []
+/** The peeks this pull request has something for, most needed first. */
+function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
+  const peeks: Peek[] = []
+  if (checksInOrder(detail.checks).standing.length) peeks.push('checks')
+  // Only where the paragraph says more than the sentence the head already shows.
+  if (descriptionPreview(detail.body, true) !== descriptionPreview(detail.body)) peeks.push('description')
+  if (detail.files?.length) peeks.push('files')
+  // Last, where there is room to spare once every other peek shows: more of the files, the record of what it changes.
+  if ((detail.files?.length ?? 0) > PEEK_ROWS) peeks.push('more-files')
+  return peeks
+}
+
+/** What the surface's foot never draws in half: each row, line and press, and each block of the description. */
+const FOOT_ROWS = ['.pr-surface__title', '.pr-surface__heading', '.pr-surface__line', '.pr-surface__hint', '.pr-surface__finished', '.pr-surface__babysit',
+  '.pr-surface__fold-head', '.pr-surface__fold-preview', '.pr-surface__peek-row', '.pr-surface__fold-actions', '.pr-surface__from', '.pr-surface__quiet',
+  '.pr-surface__check-row', '.pr-surface__check-more', '.pr-surface__files-folder', '.pr-surface__file', '.pr-surface__link-open', '.pr-surface__link-add',
+  '.pr-surface__list-tools', '.pr-surface__open-row', '.pr-surface__list-failed', '.pr-surface__none p', '.pr-surface__none-actions',
+  '.pr-surface__description :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, tr)'].join(', ')
+
+/**
+ * The surface ends on a whole row. Where more is below, the foot would cut a row through its words, and a fade there
+ * only greyed them; instead the body stops drawing at the top of the row the foot would cut (a tall paragraph, at its
+ * last whole line), and the card under it dissolves over the row's own top space, so the card reads as going on below
+ * and every row in view reads whole. A docked Merge is a foot too: what passes under it stops above it the same way.
+ * At the end of the surface the foot holds only the body's last space, so nothing stops early. Measured on scroll and
+ * as the body or what it holds changes size, and written straight onto the body's mask, so a scroll renders nothing.
+ * `shown` changes when the body itself does: the surface draws one body for no pull request and another for one.
+ */
+function useWholeRowFoot(body: RefObject<HTMLDivElement | null>, shown: boolean): void {
+  useEffect(() => {
+    const element = body.current
+    if (!element) return
+    let frame = 0
+    const rowsOf = (outside: HTMLElement | null): FootRow[] => {
+      const rows: FootRow[] = []
+      for (const row of element.querySelectorAll<HTMLElement>(FOOT_ROWS)) {
+        if (outside?.contains(row)) continue
+        const box = row.getBoundingClientRect()
+        if (box.height <= 0) continue
+        const style = getComputedStyle(row)
+        const line = parseFloat(style.lineHeight)
+        rows.push({ top: box.top, bottom: box.bottom, padTop: parseFloat(style.paddingTop) || 0, padBottom: parseFloat(style.paddingBottom) || 0,
+          line: Number.isFinite(line) ? line : (parseFloat(style.fontSize) || 0) * 1.2 })
+      }
+      return rows
+    }
+    const set = (name: string, value: string): void => { if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value) }
+    const measure = (): void => {
+      frame = 0
+      const box = element.getBoundingClientRect()
+      if (box.height <= 0) return
+      const px = (y: number): string => `${Math.max(0, Math.round((y - box.top) * 10) / 10)}px`
+      // A docked Merge stuck at the foot: the rows passing under it stop above it, and it is the foot.
+      const dock = element.querySelector<HTMLElement>('.pr-surface__dock')
+      const docked = dock && getComputedStyle(dock).position === 'sticky' ? dock.getBoundingClientRect() : null
+      const stuck = docked !== null && docked.top > box.top && docked.bottom > box.bottom - 2
+      const under = stuck ? footCut(rowsOf(dock), docked.top) : null
+      const foot = stuck ? { at: box.bottom, soft: 0 } : footCut(rowsOf(null), box.bottom)
+      set('--pr-dock-cut', under ? px(under.at) : '0px')
+      set('--pr-dock-cut-end', under ? px(under.at + under.soft) : '0px')
+      set('--pr-dock-top', under && docked ? px(docked.top) : '0px')
+      set('--pr-foot-cut', px(foot.at))
+      set('--pr-foot-cut-end', px(foot.at + foot.soft))
+    }
+    const later = (): void => { if (!frame) frame = requestAnimationFrame(measure) }
+    measure()
+    element.addEventListener('scroll', later, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(later)
+    observer?.observe(element)
+    if (element.firstElementChild) observer?.observe(element.firstElementChild)
+    return () => { element.removeEventListener('scroll', later); observer?.disconnect(); if (frame) cancelAnimationFrame(frame) }
+  }, [body, shown])
+}
+
+/**
+ * How many of the closed folds' peeks the body has room for, up to `most`: as many as leave it without a scroll, tried
+ * before the frame is drawn, so a peek never shows only to go. A count found too tall is not tried again until the body
+ * is taller or what it holds changes (`changed`, or the content growing or shrinking by itself). While a fold is open
+ * (`held`) the count holds, so opening one never moves the heads above it. A body not laid out has no room.
+ */
+function usePeeksThatFit(body: RefObject<HTMLDivElement | null>, content: RefObject<HTMLDivElement | null>, most: number, held: boolean, changed: unknown): number {
+  const [shown, setShown] = useState(0)
+  const [resized, setResized] = useState(0)
+  /** For each count found too tall, the body's height then. */
+  const tooTall = useRef(new Map<number, number>())
+  /** The content's height once the count last settled, so its own change can be told from a peek's. */
+  const settled = useRef(-1)
+  const seen = useRef(changed)
+  useLayoutEffect(() => {
+    const element = body.current, inner = content.current
+    if (!element || !inner || held) return
+    if (seen.current !== changed) { seen.current = changed; tooTall.current.clear() }
+    const room = element.clientHeight
+    if (room <= 0) return
+    if (shown > most) { setShown(most); return }
+    if (element.scrollHeight > room + 1) {
+      if (shown > 0) { tooTall.current.set(shown, room); setShown(shown - 1); return }
+    } else if (shown < most && (tooTall.current.get(shown + 1) ?? -1) < room) { setShown(shown + 1); return }
+    settled.current = inner.offsetHeight
+  }, [body, content, most, held, changed, shown, resized])
+  useEffect(() => {
+    const element = body.current, inner = content.current
+    if (!element || !inner || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      // Content that grew or shrank by itself (a line settled, a notice came) may leave room a peek could not have had.
+      if (inner.offsetHeight !== settled.current) tooTall.current.clear()
+      setResized(value => value + 1)
+    })
+    observer.observe(element)
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [body, content, changed])
+  return Math.min(shown, most)
+}
+
+/**
+ * A part of the surface that folds away: the description, the checks, the files, the linked pull requests. Its head
+ * says what a closed fold holds. `preview` and `peek` are only for the eye: the head's name stays what a press opens.
+ * `whole`: the preview is the description's whole first paragraph rather than its first sentence.
+ */
+function Fold({ label, count, aside, preview, whole, peek, open, onToggle, children }: {
+  readonly label: string; readonly count?: number | undefined; readonly aside?: ReactNode; readonly preview?: string; readonly whole?: boolean
+  readonly peek?: ReactNode; readonly open: boolean; readonly onToggle: () => void; readonly children: ReactNode
+}): ReactNode {
   const id = useId()
   const Chevron = open ? ChevronDown : ChevronRight
-  return <div className="pr-surface__fold">
+  // Escape that nothing inside answered folds it and puts the focus back on its heading.
+  return <div className="pr-surface__fold" onKeyDown={foldOnEscape(open, onToggle)}>
     <button type="button" className="pr-surface__fold-head tt-focusable" aria-expanded={open} aria-controls={open ? id : undefined} onClick={onToggle}>
-      <Chevron size={15} aria-hidden="true" />{label}{count !== undefined ? <>{' '}<span className="pr-surface__quiet">{count}</span></> : null}
+      <Chevron size={15} aria-hidden="true" />{label}{count !== undefined ? <>{' '}<span className="pr-surface__quiet">{shownCount(count)}</span></> : null}
+      {preview && !open ? <bdi className="pr-surface__fold-preview" data-whole={whole || undefined} aria-hidden="true">{preview}</bdi> : null}
+      {aside ? <>{' '}<span className="pr-surface__fold-aside">{aside}</span></> : null}
+      {peek && !open ? peek : null}
     </button>
     {open ? <div id={id} className="pr-surface__fold-body">{children}</div> : null}
   </div>
@@ -450,6 +651,13 @@ function MergeMethodMenu({ allowed, selected, base, disabled, onChoose }: {
   const button = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const method = mergeLabel(selected)
+  // The menu opens up, over the lines. A short checklist leaves no room there, so it opens down instead, before it is seen.
+  const [below, setBelow] = useState(false)
+  useLayoutEffect(() => {
+    if (!open) { setBelow(false); return }
+    const menu = list.current?.getBoundingClientRect(), body = list.current?.closest('.pr-surface__body')?.getBoundingClientRect()
+    if (menu && body && menu.top < body.top) setBelow(true)
+  }, [open])
   useEffect(() => {
     if (!open) return
     list.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus()
@@ -472,7 +680,7 @@ function MergeMethodMenu({ allowed, selected, base, disabled, onChoose }: {
       }}>
       {MERGE_METHOD_SHORT[selected]}<ChevronDown size={14} aria-hidden="true" />
     </Button>
-    {open ? <div ref={list} className="pr-surface__method-list" role="menu" aria-label={t`Merge method`}
+    {open ? <div ref={list} className="pr-surface__method-list" data-below={below || undefined} role="menu" aria-label={t`Merge method`}
       onKeyDown={event => {
         if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); close(); return }
         const entries = [...(list.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])]

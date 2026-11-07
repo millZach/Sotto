@@ -378,7 +378,8 @@
 .journal-stats__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
 
 .journal-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.journal-figure { min-width: 0; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; }
+/* A label that wraps splits evenly, rather than leaving one word ("wpm") alone on its last line. */
+.journal-figure { min-width: 0; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; text-wrap: balance; }
 
 .journal-figure b {
   display: block;

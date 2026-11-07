@@ -88,7 +88,17 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     linux
       ? { title: t`Global shortcut`, body: <p className="tt-paragraph">{copy.settingsGlobalShortcutDescription}</p> }
       : { title: t`Shortcut conflicts`, body: <p className="tt-paragraph"><Trans>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</Trans></p> },
-    { title: t`Transcription`, body: <p className="tt-paragraph"><Trans>A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</Trans></p> },
+    // What a speech model is and where it is chosen, then the models one by one, then what choosing one costs.
+    { title: t`Transcription`, body: <>
+      <p className="tt-paragraph"><Trans>A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model.</Trans></p>
+      <ul className="help-topic__list">
+        <li><Trans><b>Parakeet Ultra</b>, by Moondream. Setup suggests it.</Trans></li>
+        <li><Trans><b>Parakeet v3</b> or <b>v2</b>, by NVIDIA.</Trans></li>
+        {/* Shown on every Mac, so it names where it holds: Core ML models run only on Apple silicon (ADR-0094). */}
+        {mac ? <li><Trans>On a Mac with Apple silicon, the <b>Core ML models</b> that FluidAudio keeps.</Trans></li> : null}
+      </ul>
+      <p className="tt-paragraph"><Trans>Each Parakeet model is downloaded once, about 670 MB, when you choose it. Settings shows whether the chosen one is ready.</Trans></p>
+    </> },
   ]
   const watcherTopics: Topic[] = [
     { id: 'help-watcher', title: t`How Watcher works`, body: <>
@@ -111,15 +121,15 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     <div ref={view} className="management-view help-view">
       <h1><Trans>Help</Trans></h1>
       <div className="help-grid">
-        <div className="tt-panel help-topics">
-          <p className="tt-instrument help-topics__group"><Trans>Getting started</Trans></p>
-          <TopicList topics={gettingStarted} />
-          {watcher ? <><p className="tt-instrument help-topics__group">Watcher</p>
-          <TopicList topics={watcherTopics} /></> : null}
-          <p className="tt-instrument help-topics__group"><Trans>Privacy</Trans></p>
-          <TopicList topics={privacy} />
-          <p className="tt-instrument help-topics__group"><Trans>Troubleshooting</Trans></p>
-          <TopicList topics={troubleshooting} />
+        <div className="help-topics">
+          <p className="help-topics__group"><Trans>Getting started</Trans></p>
+          <div className="help-topics__card"><TopicList topics={gettingStarted} /></div>
+          {watcher ? <><p className="help-topics__group">Watcher</p>
+          <div className="help-topics__card"><TopicList topics={watcherTopics} /></div></> : null}
+          <p className="help-topics__group"><Trans>Privacy</Trans></p>
+          <div className="help-topics__card"><TopicList topics={privacy} /></div>
+          <p className="help-topics__group"><Trans>Troubleshooting</Trans></p>
+          <div className="help-topics__card"><TopicList topics={troubleshooting} /></div>
         </div>
         <div className="help-aside">
           <section className="tt-panel">

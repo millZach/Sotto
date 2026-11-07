@@ -65,7 +65,7 @@ describe('main-window theme tokens', () => {
   })
 
   it.each(combinations)('%s mode of %s keeps every text pair the window paints at 4.5:1', (mode, id) => {
-    const declarations = withPaintedLayers(rootDeclarations(mode, id, {}, tokenBlocks))
+    const declarations = withPaintedLayers(rootDeclarations(mode, id, {}, tokenBlocks), mode)
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
@@ -295,7 +295,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/workerRoles.css',
       'src/renderer/src/features/settings/workerMachine.css',
       'src/renderer/src/features/settings/watcherCompaction.css',
-      'src/renderer/src/features/settings/threadTips.css',
       'src/renderer/src/features/settings/cloudSpeechModels.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/threadShortcuts.css',

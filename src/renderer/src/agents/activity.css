@@ -4,7 +4,10 @@
 
 .thread-activity { margin: 0 0 24px; }
 /* A finished turn folds its work to one line above the final reply, with a rule between the two. */
-.thread-work { margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+.thread-work { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+/* The fold's line and what the turn changed share a row; everything else takes a row of its own. */
+.thread-work > :not(.thread-work__summary, .thread-changes) { flex: 0 0 100%; min-width: 0; }
+.thread-work__headline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-message + .thread-work { margin-top: -8px; }
 .thread-work__summary {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px;
@@ -14,6 +17,22 @@
 .thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
 .thread-work__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-work__body { padding: 8px 0 4px; }
+/* In a long thread these lines repeat all the way down, so a closed one is a caption to the reply under it: a size down, with
+   no rule. The rule comes back with the open fold, where it has work to do, between the work and the reply. Watcher's
+   conversation keeps its own. Being the smallest words between the replies, it takes the second ink rather than the muted
+   one, so what the work did reads at a glance and the line still sits well under the replies; hover takes it to full ink. */
+.thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) { margin-bottom: 4px; border-bottom-color: transparent; }
+.thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > :is(.thread-work__summary, .thread-changes) { margin-bottom: 0; }
+.thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > .thread-changes > .thread-changes__summary { margin-bottom: 0; }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { font-size: var(--tt-type-small); }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { color: var(--tt-text-2); }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary:is(:hover, :active), .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary:is(:hover, :active) { color: var(--tt-text); }
+/* What a disclosure opens. It holds its children's margins in, so they do not jump when the slide ends. */
+.thread-fold { display: flow-root; flex: 0 0 100%; min-width: 0; }
+/* A change's added and removed lines, in Changes' inks. */
+.thread-lines { flex: none; font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-lines__added { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
+.thread-lines__removed { color: var(--tt-error-text); }
 .thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
 /* A question a folded reply asked, quoted under the fold so it is read; its words say the reply wanted the user. */
 .thread-lifted { display: grid; justify-items: start; gap: 6px; margin: -6px 0 24px; padding: 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
@@ -48,6 +67,8 @@ button.thread-activity__summary:active:not(:disabled) { background: var(--tt-hov
 
 .thread-activity__rows { margin: 2px 0 0 1px; padding: 0 0 0 10px; border-left: 1px solid var(--tt-hairline); list-style: none; }
 .thread-activity[data-live] .thread-activity__rows { margin-top: 0; }
+/* With no line of their own, a fold's rows stand as close under the Worked for line as they would under theirs. */
+.thread-activity[data-bare] > .thread-activity__rows { margin-top: -8px; }
 .thread-activity__row { margin: 0; }
 .thread-activity__toggle {
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 14px; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 3px 6px;
@@ -60,13 +81,53 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity__lead { color: var(--tt-text-muted); }
 .thread-activity__subject { color: var(--tt-text-2); }
-.thread-activity__subject--mono { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+.thread-activity__subject--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .thread-activity__preview { color: var(--tt-text-muted); }
+/* A command its provider described reads as what it was for alone, as Claude's summaries do; its command shows once the row
+   is open (ADR-0134, November 6 amendment). What it was for is cut at its end only when it is longer than the row. */
+.thread-activity__label[data-purpose] { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 14px; }
+.thread-activity__label[data-purpose] > * { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-activity__label[data-purpose] > .thread-activity__subject { flex-shrink: 0; max-width: 100%; }
+.thread-activity__toggle:has(> .thread-activity__label[data-purpose]) { align-items: start; }
+.thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__label { padding-block: 3px; }
+.thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
+.thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__meta { min-height: 25px; }
+/* An open row's command under what it was for, in the code face a size smaller. It keeps the second ink, as finished steps
+   do, so code reads as clearly as the words about it. */
+.thread-activity__command { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+/* A folded command with no description, too long for its room, gives way where it says least, so its verb and the files it
+   acts on stay in view: npm test -- …threadStoreWorker.test.ts …workspaceStoreWorker.test.ts. First the folders of every file it names,
+   from their start, each down to a sliver for the ellipsis; then what follows the last file; then the files after the
+   first; then its flags and pattern; the first file's name last, each at its end. The verb never gives way. A command that
+   names no file is cut at its end. Each step's weight is large enough that the next gives up nothing until it has to, since any shrink at all would draw an
+   ellipsis. No part has a cap of its own, which would cut a command that has the room. The working line's own command is
+   still cut at its end (ADR-0134, November 4 amendment). */
+.thread-activity__label [data-cut] { display: flex; direction: ltr; unicode-bidi: isolate; }
+.thread-activity__label [data-cut] span { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.thread-activity__label [data-cut] .thread-activity__command-verb { flex-shrink: 0; }
+.thread-activity__label [data-cut] .thread-activity__command-args { flex-shrink: 1e5; }
+/* A later file and its folders go together and are clipped rather than cut, so their two ellipses never stand side by side. */
+.thread-activity__label [data-cut] .thread-activity__command-more { display: flex; flex-shrink: 1e10; text-overflow: clip; }
+.thread-activity__label [data-cut] .thread-activity__command-tail { flex-shrink: 1e15; min-width: 1ch; }
+.thread-activity__label [data-cut] .thread-activity__command-folders { flex-shrink: 1e20; min-width: 1ch; direction: rtl; }
+/* The rows read like the plan's checklist: finished steps in the second ink, and the step running now in full ink a weight
+   up with its mark in the accent, the way the plan marks its item in progress. Its clock stays quiet beside it. */
+.thread-activity__row[data-now] > .thread-activity__toggle { color: var(--tt-text); }
+.thread-activity__row[data-now] > .thread-activity__toggle > .thread-activity__icon { color: var(--tt-activity); }
+.thread-activity__row[data-now] > .thread-activity__toggle .thread-activity__subject { color: var(--tt-text); font-weight: 500; }
 .thread-activity__meta { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.thread-activity__meta[data-status='running'][data-connected] { color: var(--tt-activity); }
 .thread-activity__meta[data-status='failed'] { color: var(--tt-error); }
 .thread-activity__row[data-status='failed'] .thread-activity__icon { color: var(--tt-error); }
 .thread-activity__clock { font-variant-numeric: tabular-nums; }
+/* An open row says its whole name, a command included, so its body never repeats it. Its marks stay on the first line. */
+.thread-activity__row[data-open] > .thread-activity__toggle { align-items: start; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label { padding-block: 3px; white-space: normal; overflow-wrap: anywhere; }
+.thread-activity__row[data-open] > .thread-activity__toggle > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__meta { min-height: 25px; }
+/* Open, what a described command was for reads whole, and the command stands whole under it, so what ran reads before what
+   came back. */
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] { flex-direction: column; align-items: stretch; gap: 2px; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label[data-purpose] > * { max-width: none; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 
 .thread-activity__pulse { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
 .thread-activity__pulse:not([data-connected]) { background: var(--tt-text-muted); }
@@ -80,10 +141,55 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details { display: grid; gap: 8px; margin: 2px 0 12px 30px; min-width: 0; }
 .thread-activity__details .rich-message { font-size: var(--tt-type-body); line-height: 1.6; }
 .thread-activity__details .rich-code { margin: 0; }
+/* What came back is a well with no outline, as every container is (ADR-0110), so it reads as the step's evidence rather than
+   another box. Output still arriving from a host holds twelve lines in view and scrolls for the rest. */
+.thread-activity__details .rich-code[data-language='output'] { border-color: transparent; }
 .thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); }
+.thread-activity__details .rich-code[data-language='output'] .rich-code__scroll { max-height: calc(12lh + 18px); }
+/* The row above says what ran, so what came back needs no bar naming it "output": the output starts at the well's top, with
+   Copy in its corner on the well's own fill, and the lines keep clear of it. Assistive tech still hears "output code
+   block" and "Copy output code". Output still on its way keeps its bar, which says so. */
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) { position: relative; }
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) > .rich-code__bar {
+  position: absolute; z-index: 1; top: 3px; right: 3px; gap: 6px; min-height: 0; padding: 0; border-radius: var(--tt-radius-sm); background: var(--rich-block);
+}
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__language {
+  position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0);
+}
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__status:not(:empty) { padding-left: 8px; }
+.thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 9px 44px 12px 14px; max-height: calc(12lh + 21px); }
+/* What a finished command printed shows whole, or, when it is long, its first twelve lines with the last fading and a press
+   under the well that says how many more there are. The well never scrolls up and down inside the transcript's own scroll. */
+.thread-activity__output { display: grid; justify-items: start; gap: 2px; min-width: 0; }
+.thread-activity__output > .rich-message { justify-self: stretch; min-width: 0; }
+.thread-activity__details .thread-activity__output .rich-code[data-language='output'] .rich-code__scroll { max-height: none; }
+.thread-activity__details .thread-activity__output[data-held] .rich-code[data-language='output'] .rich-code__scroll {
+  max-height: calc(12lh + 9px); overflow-y: hidden; padding-bottom: 0;
+  mask-image: linear-gradient(to bottom, currentColor calc(100% - 1lh), transparent);
+}
+/* The press's words line up with the lines above them. */
+.thread-activity__output-more { margin-left: 8px; }
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
 .thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+/* The way to copy an open row's command sits at the end of the command's own line, wherever it wraps, instead of on a line of
+   its own under what came back. The row's button cannot hold another, so the slot at the end of the command keeps the room
+   and names the anchor, and Copy, the row's next sibling, is placed on it. Each row scopes the name, so a row nested in
+   another finds its own. Focus goes from the row to Copy, then into what came back. */
+.thread-activity__row { position: relative; anchor-scope: --step-command; }
+.thread-activity__copy-slot { display: inline-block; width: 30px; height: 1lh; vertical-align: top; anchor-name: --step-command; }
+.thread-activity__copy-command {
+  position: absolute; position-anchor: --step-command; top: anchor(center); left: calc(anchor(left) + 6px); translate: 0 -50%;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.thread-activity__copy {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--tt-radius-mark);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, color 120ms ease;
+}
+.thread-activity__copy-status { color: var(--tt-text-muted); font-size: var(--tt-type-small); white-space: nowrap; }
+.thread-activity__copy:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-activity__copy:active { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.thread-activity__copy-status:empty { display: none; }
 .thread-activity__text { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error { margin: 0; color: var(--tt-error); font-size: var(--tt-type-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error--turn { margin: 2px 0 4px; }
@@ -91,13 +197,15 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__open > .thread-activity__details:last-child { margin-bottom: 12px; }
 .thread-activity__open > .thread-activity__details:not(:last-child) { margin-bottom: 6px; }
 .thread-activity__change { display: grid; gap: 6px; min-width: 0; }
-/* A plan reads as a checklist: a mark per step, done steps quietened and struck through. */
+/* A plan reads as a checklist with three different marks: a tick and quiet words for done, the running accent and full-strength
+   words a weight up for the step in progress, so where the work is reads at a glance, a hollow ring for what is to come. Done steps stay as easy to read again as the rest. */
 .thread-activity__steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
 .thread-activity__steps li { display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: baseline; gap: 8px; color: var(--tt-text-2); }
-.thread-activity__step-mark { width: 11px; height: 11px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; }
+.thread-activity__step-mark { width: 11px; height: 11px; margin-left: 1px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; align-self: center; }
+.thread-activity__step-done { align-self: center; color: var(--tt-text-muted); }
 .thread-activity__steps li[data-status='running'] .thread-activity__step-mark { border-color: var(--tt-activity); background: var(--tt-activity); }
-.thread-activity__steps li[data-status='completed'] .thread-activity__step-mark { border-color: var(--tt-text-muted); background: var(--tt-text-muted); }
-.thread-activity__steps li[data-status='completed'] .thread-activity__step-text { color: var(--tt-text-muted); text-decoration: line-through; }
+.thread-activity__steps li[data-status='running'] .thread-activity__step-text { color: var(--tt-text); font-weight: 500; }
+.thread-activity__steps li[data-status='completed'] .thread-activity__step-text { color: var(--tt-text-muted); }
 .thread-activity__step-text { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__agents { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
 .thread-activity__agents li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
@@ -110,43 +218,57 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 /* The working line at the end of a running turn: the working words, with the turn's steps folded under them. */
 .thread-activity-live { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; min-height: 32px; margin: 0 0 24px; color: var(--tt-text-2); font-size: var(--tt-type-body); }
 .thread-activity-live__line {
-  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px;
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px;
   border: 0; border-radius: var(--tt-radius-row); background: transparent; color: inherit; font: inherit; text-align: left;
 }
 button.thread-activity-live__line { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 button.thread-activity-live__line:hover { background: var(--tt-hover); }
 button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-hover-strong); }
-.thread-activity-live__state { flex: none; font-variant-numeric: tabular-nums; }
-/* Words change in place, so the line's own width must not shift with them. */
-.thread-activity-live__word { position: relative; display: inline-block; }
+.thread-activity-live__line > svg { flex: none; }
+.thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
+/* One line, cut at its end, with the light still crossing its letters: a step's name can be a long command. */
+.thread-activity-live__word { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What the line's words are for comes first, and what is running for it sits beside them, smaller and still: the command a
+   described step runs, or the step a reasoning summary led to. The step leads with its row's mark from the opened steps,
+   so the two read as what the work is for and the step doing it, not as one sentence, and a command is set apart from the
+   prose in the code face. The words keep their room and the step takes what is left, never less than a few letters, and a
+   command is cut at its end. On a line too narrow for both the step goes, since the opened steps name it. */
+.thread-activity-live:has(.thread-activity-live__now) { container-type: inline-size; }
+.thread-activity-live__now { display: grid; grid-template-columns: minmax(0, max-content) minmax(10ch, 1fr); align-items: center; column-gap: 14px; min-width: 0; }
+.thread-activity-live__now:has(.thread-activity-live__detail:empty) { grid-template-columns: minmax(0, max-content); }
+.thread-activity-live__step { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); }
+.thread-activity-live__mark { flex: none; }
+.thread-activity-live__detail { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
+.thread-activity-live__detail[data-code] { font-family: var(--tt-font-mono); }
+.thread-activity-live__step:has(> .thread-activity-live__detail:empty) { display: none; }
+@container (max-width: 560px) {
+  .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
+  .thread-activity-live__step { display: none; }
+}
+/* Below a 1000px window, where the sidebar stands as the rail, the line keeps only what the work is for (ADR-0134,
+   November 5 amendment): the rail gives the thread nearly the width a wide window's column has, so the line alone
+   cannot tell the minimum window apart. */
+@media (max-width: 999.98px) {
+  .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
+  .thread-activity-live__step { display: none; }
+}
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
-.thread-activity-live__steps > .thread-activity { margin: 0; }
-
-/* A tip under the working words (ADR-0159; Zach's pick, variant B of docs/prototypes/thread-tips-prototype.html with a
-   lightbulb for the word "Tip"): hooked to the words, muted and a size down, with Try it and Hide after its words. */
-.thread-tip { display: flex; flex-basis: 100%; align-items: flex-start; gap: 6px; min-width: 0; margin: -6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
-.thread-tip__hook { flex: none; width: 10px; height: 13px; margin-top: 1px; border-bottom: 1px solid var(--tt-hairline); border-left: 1px solid var(--tt-hairline); border-bottom-left-radius: var(--tt-radius-tag); }
-/* Centred on the first line's words: 1px of padding over the text, then half of what the 20.25px line leaves round 14px. */
-.thread-tip__bulb { flex: none; margin-top: 4px; color: var(--tt-text-2); }
-.thread-tip__text { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
-.thread-tip code { padding: 0 4px; border: 1px solid var(--tt-code-border, var(--tt-border-faint)); border-radius: var(--tt-radius-tag); background: var(--tt-code-bg, var(--tt-surface)); color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
-.thread-tip kbd { padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-tag); color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); }
-.thread-tip .tt-shortcut { display: inline-flex; gap: 2px; align-items: baseline; }
-/* The shared shortcut chip is 24px tall; in a tip it keeps inside the line, so the words stay level with the lightbulb. */
-.thread-tip .tt-shortcut kbd { padding: 0 4px; line-height: 1.35; }
-.thread-tip__actions { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; vertical-align: middle; }
-.thread-tip__try {
-  min-height: 24px; padding: 0 4px; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); font-weight: 600;
-  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
-}
-.thread-tip__try:hover { color: var(--tt-text); }
-/* `min-height: 0` lets go of every button's 30px floor, which made the first line taller than the words. */
-.thread-tip__hide { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); }
-.thread-tip__hide:hover { background: var(--tt-hover); color: var(--tt-text); }
+/* When the provider sent a plan, its items stand above the working line while the turn runs (Zach's pick, C of the
+   working-view prototype, ADR-0134's November 5 amendment "the plan stays in view"): the opened plan's own checklist, a
+   size smaller, one line an item, with its tick, its accent dot and its ring. At the minimum window it is the same list;
+   each item is cut at its end there, and the opened plan reads it whole. */
+.thread-activity__steps.thread-activity-live__plan { flex-basis: 100%; min-width: 0; gap: 4px; margin: 0 0 4px; font-size: var(--tt-type-small); }
+.thread-activity-live__plan .thread-activity__step-text { overflow: hidden; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .thread-tip { animation: thread-tip-in .3s ease-out; }
+  :root:not([data-reduced-motion='on']) .thread-activity-live__plan .thread-activity__step-text { transition: color 220ms ease; }
 }
-@keyframes thread-tip-in { from { opacity: 0; } }
+.thread-activity-live__steps > .thread-activity { margin: 0; }
+/* Once the steps are open the checklist above the line reads each item whole, as the opened plan did, since its row among
+   the steps does not open it again. */
+.thread-activity-live[data-expanded] > .thread-activity-live__plan .thread-activity__step-text { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+/* The reply a running turn writes after its steps stands under the working line (ThreadTranscript.tsx). The place it is
+   drawn into takes no box of its own, so the reply sits in the transcript's column as any reply does. */
+.thread-transcript__writing { display: contents; }
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }
@@ -157,14 +279,44 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
    keep their muted ink; a lit copy of them in the accent at its most vivid shows only inside the moving band, so the
    letters themselves light up at full strength on every theme rather than taking a tint, with no halo (Zach's pick,
    variant A of docs/prototypes/working-words-glow-strength-prototype.html). Under reduced motion the words hold still
-   and the dot stays, still. */
+   and the dot stays, still.
+   The band is shaped so that any one frame reads as light passing rather than some words picked out: about ten letters
+   wide whatever the line's length, rather than a share of it that lit several whole words at once on a long line, with
+   a short core at full strength and long eased edges, slanted, so letters brighten towards the middle and fade on both
+   sides; and the muted words fade out as the lit copy fades in, so lit letters keep the words' weight instead of
+   drawing twice, heavier, over them.
+   The mask is twice the words' width plus the band, so the band starts just before the first letter and ends just past
+   the last. */
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word { color: var(--tt-text-muted); }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word {
+    --glow-band: 10.5em;
+    --glow-04: color-mix(in srgb, black 4%, transparent); --glow-16: color-mix(in srgb, black 16%, transparent);
+    --glow-50: color-mix(in srgb, black 50%, transparent); --glow-84: color-mix(in srgb, black 84%, transparent);
+    --glow-96: color-mix(in srgb, black 96%, transparent);
+    --glow-lit: linear-gradient(110deg, transparent calc(50% - var(--glow-band) * .5), var(--glow-04) calc(50% - var(--glow-band) * .44),
+      var(--glow-16) calc(50% - var(--glow-band) * .35), var(--glow-50) calc(50% - var(--glow-band) * .26), var(--glow-84) calc(50% - var(--glow-band) * .17),
+      black calc(50% - var(--glow-band) * .08), black calc(50% + var(--glow-band) * .08), var(--glow-84) calc(50% + var(--glow-band) * .17),
+      var(--glow-50) calc(50% + var(--glow-band) * .26), var(--glow-16) calc(50% + var(--glow-band) * .35), var(--glow-04) calc(50% + var(--glow-band) * .44),
+      transparent calc(50% + var(--glow-band) * .5));
+    --glow-unlit: linear-gradient(110deg, black calc(50% - var(--glow-band) * .5), var(--glow-96) calc(50% - var(--glow-band) * .44),
+      var(--glow-84) calc(50% - var(--glow-band) * .35), var(--glow-50) calc(50% - var(--glow-band) * .26), var(--glow-16) calc(50% - var(--glow-band) * .17),
+      transparent calc(50% - var(--glow-band) * .08), transparent calc(50% + var(--glow-band) * .08), var(--glow-16) calc(50% + var(--glow-band) * .17),
+      var(--glow-50) calc(50% + var(--glow-band) * .26), var(--glow-84) calc(50% + var(--glow-band) * .35), var(--glow-96) calc(50% + var(--glow-band) * .44),
+      black calc(50% + var(--glow-band) * .5));
+    color: transparent;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::before,
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
-    content: attr(data-word); position: absolute; inset: 0; color: var(--tt-working-light); pointer-events: none; white-space: nowrap;
-    -webkit-mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
-    mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+    content: attr(data-word); position: absolute; inset: 0; overflow: hidden; pointer-events: none; text-overflow: ellipsis; white-space: nowrap;
     animation: thread-activity-glow 4.2s cubic-bezier(.45, 0, .55, 1) infinite;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::before {
+    color: var(--tt-text-muted);
+    -webkit-mask: var(--glow-unlit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat; mask: var(--glow-unlit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
+    color: var(--tt-working-light);
+    -webkit-mask: var(--glow-lit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat; mask: var(--glow-lit) 100% 0 / calc(200% + var(--glow-band)) 100% no-repeat;
   }
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] > .thread-activity-live__line:has(.thread-activity-live__word) > .thread-activity__pulse { display: none; }
 }
@@ -203,14 +355,16 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity__rows > .thread-browser > .thread-browser__steps { margin-left: 30px; }
 
 /* What a finished turn changed, beside its folded work. */
-.thread-changes { margin: -4px 0 8px; }
+.thread-changes { display: contents; }
 .thread-changes__summary {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; margin-left: -6px; padding: 0 8px 0 6px;
-  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); text-align: left;
+  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 32px; margin: 0 0 8px; padding: 0 8px 0 6px;
+  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-body); text-align: left;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-changes__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
 .thread-changes__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.thread-changes__words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-changes__file { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .thread-changes__list { display: grid; gap: 10px; margin: 4px 0 10px; padding: 0 0 0 20px; list-style: none; min-width: 0; }
 .thread-changes__list li { display: grid; gap: 6px; min-width: 0; }
 .thread-changes__list .rich-code { margin: 0; }

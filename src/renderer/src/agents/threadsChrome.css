@@ -5,12 +5,21 @@
 .threads-view { position: relative; }
 /* Rendered once per page, not once per pane, and outside the panes' stacking so a split never covers it. */
 .threads-view__winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; height: 44px; padding-right: 6px; -webkit-app-region: no-drag; }
+/* A short upright hairline, the sidebar foot's, between what acts on the pane and what acts on the window. */
+.threads-view__winctl:has(.app-controls)::before { content: ''; flex: none; width: 1px; height: 18px; margin-right: 6px; background: var(--tt-hairline); }
 /* The strip's controls are as tall as the strip; here they are three keys inside a 44px row. */
 .threads-view__winctl .app-controls { align-self: center; }
 .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 34px; min-height: 30px; height: 30px; border-radius: var(--tt-radius-control); }
 /* How much of the pane header's right end the controls take. The header reads this to pad itself, so the
    thread title never runs under them; macOS paints its own controls beside the sidebar and needs no inset. */
 .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(116px + var(--main-freeze-room, 0px)); }
+/* In a smaller window the keys are a little narrower, and the room they give goes to the thread's name. Up to 1100px a lone
+   pane is narrow enough that a long name is still short of its cap (ADR-0182), so it takes that room; in a wider window the
+   capped name would leave it empty beside the buttons. */
+@media (max-width: 1100px) {
+  .threads-view:not(.threads-view--mac) { --threads-winctl-inset: calc(100px + var(--main-freeze-room, 0px)); }
+  .threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 30px; }
+}
 /* With the tools panel open it, not the last pane, meets the window's corner: the rail's top stays empty under
    the controls, and each surface's line of chrome keeps the rest of their room plus a 20px gap, so the surface's
    own last action never reads as one of the window's buttons. The pane it displaced takes its own back. An
@@ -20,6 +29,9 @@
 /* Linux keeps the title area but has no buttons to reserve room for. */
 [data-platform='linux'] .threads-view { --threads-winctl-inset: var(--main-freeze-room, 0px); }
 .threads-view[data-tools='docked'] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
+/* Beside an open panel the pane is away from the window's corner, so its header ends 12px from the panel as a split pane's
+   does from its divider, rather than keeping the 24px that parts it from the window's buttons. The 12px go to the name. */
+.threads-view[data-tools='docked'] .thread-pane[data-under-controls] > .thread-workspace__head { padding-right: 12px; }
 
 /* Before agent state arrives, and for as long as an agent error stands, the page is one sentence. It is still a
    window that has to move, and one that needs a way to Settings. */
@@ -38,6 +50,7 @@
   --foot-lit: color-mix(in srgb, var(--tt-text) 12%, transparent);
   display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px; margin: auto var(--thread-nav-inset) 0; padding: 12px 2px 10px;
 }
+@media (max-height: 640px) { .thread-nav__foot { padding-block: 6px; } }
 .thread-nav__foot .thread-nav__seg { --room-tile: 30px; gap: 2px; }
 .thread-nav__foot .thread-nav__seg [role='tab'] { width: 30px; padding: 0; border-radius: var(--tt-radius-row); background: transparent; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__foot .thread-nav__seg [role='tab']:hover:not([aria-selected='true']) { background: var(--foot-hover); }
@@ -52,5 +65,11 @@
 .thread-nav__foot .thread-nav__page { border-radius: var(--tt-radius-row); }
 .thread-nav__foot .thread-nav__page:hover { background: var(--foot-hover); }
 .thread-nav__foot .thread-nav__page[aria-current='page'] { background: var(--foot-lit); }
+/* The open room and the open page also carry a short bar under their icon, in the text colour as their tint is, so which
+   one is open reads at a glance (the owner's ask on November 6, 2026). The same row in Watcher's header carries it too. */
+:is(.thread-nav__foot, .watcher-head__way) :is(.thread-nav__seg [role='tab'][aria-selected='true'], .thread-nav__page[aria-current='page']) { position: relative; }
+:is(.thread-nav__foot, .watcher-head__way) :is(.thread-nav__seg [role='tab'][aria-selected='true'], .thread-nav__page[aria-current='page'])::after {
+  position: absolute; bottom: 3px; left: 50%; width: 12px; height: 2px; border-radius: var(--tt-radius-full); background: var(--tt-text); content: ''; transform: translateX(-50%); pointer-events: none;
+}
 .thread-nav__foot .update-control { margin-left: auto; border-radius: var(--tt-radius-row); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__foot .update-control:hover:not([aria-disabled='true']) { background: var(--foot-hover); }

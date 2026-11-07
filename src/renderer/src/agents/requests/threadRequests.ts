@@ -3,7 +3,7 @@ import { t } from '@lingui/core/macro'
 import { hostForThread, isThreadBusy, type AgentCommand, type AgentRequest, type AgentState, type AgentThread } from '../../../../shared/agents'
 import type { RequestDraftOwner } from '../../../../shared/requestDrafts'
 import type { ThreadRow } from '../threadFacts'
-import { answeredChoices, answerWords } from './answeredChoices'
+import { answerCount, answeredChoices, answerWords } from './answeredChoices'
 import type { RequestAnswer, SubmitOutcome } from './requestAnswers'
 
 /** The window's one way of sending a command to main, as every surface that answers a request receives it. */
@@ -31,7 +31,7 @@ export function threadRequestBlocked(row: ThreadRow, state: AgentState): string 
 export function threadRequestSubmit(command: RequestCommand, thread: Pick<AgentThread, 'id'>, request: AgentRequest, noteAnswered: boolean): (answer: RequestAnswer) => Promise<SubmitOutcome> {
   return answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
     // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
-    if (noteAnswered && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
+    if (noteAnswered && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true, answerCount(request, answer))
     return result === null ? null : { error: result.error }
   })
 }

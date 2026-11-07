@@ -1,10 +1,10 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
-import { changeFailed, isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
+import { changeFailed, isTerminalActivity, REASONING_SUMMARY_TITLE, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { isVisualMessage, type AgentMessage, type AgentRequest, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -42,6 +42,12 @@ export interface ActivityPlacement {
    * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
    */
   readonly newestTurnEnded?: true
+  /**
+   * The newest turn's own lifecycle failed, stopped or ended in a way Sotto could not tell, and none of its own runs, so
+   * nothing in it is being written now, whatever the thread's status still says. A turn that completed is left out: the
+   * provider may have begun one of its own after it, such as Claude's report, with no record yet. Absent otherwise.
+   */
+  readonly newestTurnCutShort?: true
 }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
@@ -177,19 +183,21 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
+  const newest = newestTurn(messages, sorted, anchors, named, places)
+  return { after, unshown, before, leading, trailing, ...newest.ended ? { newestTurnEnded: true as const } : {}, ...newest.cutShort ? { newestTurnCutShort: true as const } : {} }
 }
 
 /**
- * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), and whether it was cut short
+ * (`ActivityPlacement.newestTurnCutShort`), read over every message the
  * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
  * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
  * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
  * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
  * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
  */
-function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
-  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
+function newestTurn(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): { readonly ended: boolean; readonly cutShort: boolean } {
   const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
   const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
   const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
@@ -197,12 +205,14 @@ function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly Age
   for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
   for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
   const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
-  let ended = false, going = false, another = false
+  let ended = false, cut = false, going = false, another = false
   for (const [turnId, status] of lifecycles) {
-    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
-    else if (status === 'running') another = true
+    if (own.has(turnId)) {
+      if (status === 'running') going = true
+      else { if (isTerminalActivity(status)) ended = true; if (status !== 'completed') cut = true }
+    } else if (status === 'running') another = true
   }
-  return ended && !going && another
+  return { ended: ended && !going && another, cutShort: cut && !going }
 }
 
 
@@ -327,6 +337,219 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
 }
 
+/** A file's name or a command kept in its own direction inside a sentence of either direction (ADR-0123). */
+const isolated = (text: string): string => `\u2068${text}\u2069`
+
+const SHELL_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  powershell: ['-command', '-c'], pwsh: ['-command', '-c'], cmd: ['/c', '/k'], bash: ['-c', '-lc'], sh: ['-c', '-lc'], zsh: ['-c', '-lc'],
+}
+
+/**
+ * The command a shell was asked to run, without the shell: `"C:\\…\\powershell.exe" -Command 'npm test'` reads as `npm test`,
+ * and so do `cmd /c npm test` and `bash -lc 'npm test'`. Anything else comes back as it was.
+ */
+export function innerCommand(command: string): string {
+  const text = oneLine(command)
+  const parts = /^(?:"([^"]+)"|'([^']+)'|(\S+))\s*(.*)$/u.exec(text)
+  if (parts === null) return text
+  const name = (parts[1] ?? parts[2] ?? parts[3])!.split(/[\\/]/u).at(-1)!.toLowerCase().replace(/\.exe$/u, '')
+  const flags = Object.hasOwn(SHELL_FLAGS, name) ? SHELL_FLAGS[name]! : undefined
+  if (flags === undefined) return text
+  const words = parts[4]!.split(' ')
+  const at = words.findIndex(word => flags.includes(word.toLowerCase()))
+  if (at < 0) return text
+  const rest = words.slice(at + 1).join(' ').trim()
+  // One pair of matching outer quotes comes off. Inside PowerShell's single quotes, two quotes stand for one.
+  const quote = rest.charAt(0)
+  if (rest.length < 2 || (quote !== "'" && quote !== '"') || !rest.endsWith(quote)) return rest || text
+  const inner = rest.slice(1, -1)
+  return (quote === "'" ? inner.replaceAll("''", "'") : inner) || text
+}
+
+const fileName = (path: string): string => isolated(path.split(/[\\/]/u).filter(Boolean).at(-1) ?? path)
+
+/** A tool that reads a file, by the name its provider gives it: Claude's Read, read_file, Grok's "Read file". */
+const READ_TOOL = /^(?:read|view|open)(?:[ _-]?file)?$/iu
+/** A provider that says what it reads in the title itself: "Read src/app.ts". */
+const READ_TITLE = /^read(?:ing)?\s+(\S.*)$/iu
+
+/** A running step in the working line's words: what the provider reported, and never a guess at what it means. */
+function runningWords(record: AgentActivity): string {
+  const label = activityLabel(record)
+  switch (record.kind) {
+    case 'command': {
+      if (!record.command) return label.subject
+      const command = isolated(innerCommand(record.command))
+      return t({ message: `Running ${command}`, comment: 'The working line while a command runs; {command} is the command, such as npm test.' })
+    }
+    case 'file-change': {
+      const changes = record.changes
+      if (!changes?.length) return label.subject
+      const name = fileName(changes[0]!.path)
+      const more = changes.length - 1
+      return more > 0
+        ? t({ message: `Editing ${name} and ${{ more: shownCount(more) }} more`, comment: 'The working line while files change; {name} is the first file\'s name, such as control.ts.' })
+        : t({ message: `Editing ${name}`, comment: 'The working line while a file changes; {name} is the file\'s name, such as control.ts.' })
+    }
+    case 'subagent': return label.subject
+    default: {
+      const titled = record.kind === 'tool' ? READ_TITLE.exec(record.title)?.[1] : undefined
+      const read = titled ?? (record.kind === 'tool' && READ_TOOL.test(record.title) ? label.preview : '')
+      if (read) {
+        const name = fileName(read)
+        return t({ message: `Reading ${name}`, comment: 'The working line while a tool reads a file; {name} is the file\'s name, such as threads.css.' })
+      }
+      const subject = label.subject.startsWith('mcp__') ? label.subject.split('__').at(-1)! : label.subject
+      return [subject, label.preview].filter(Boolean).join(' ')
+    }
+  }
+}
+
+/** What the working line says while a step runs or a reply arrives (ADR-0134, November 4 amendment). */
+export interface WorkingNow {
+  /** The line's own words, which the light crosses: what the work is for when the provider said, else the step itself. */
+  readonly words: string
+  /** Smaller beside them, what is running for it: the step, or the command a step the provider described runs. Empty when the words say it all. */
+  readonly detail: string
+  /** The detail is a command, set in the code face. */
+  readonly code: boolean
+  /** What kind of step the detail names, so it carries the same mark as its row in the opened steps; a reply being written is `reply`. */
+  readonly step?: AgentActivity['kind'] | 'reply'
+  /** All of it as one sentence for assistive tech, with the command even when the line leaves it to the opened steps. */
+  readonly spoken: string
+  /**
+   * The step the line names, when it names one rather than a reply or a wait. With the steps open that step has its own row,
+   * so the line leaves it there and carries the turn's words.
+   */
+  readonly stepId?: string
+}
+
+/**
+ * What a command is for, in the provider's words: Claude sends a `description` with every shell command it runs. The working
+ * line leads with it, and so does the command's row among the opened steps, with the command beside it.
+ */
+export function stepDescription(record: AgentActivity): string {
+  if (record.kind !== 'command') return ''
+  const described = activityInput(record)?.description
+  return typeof described === 'string' ? oneLine(described) : ''
+}
+
+/** A reasoning summary's own heading, the bold first line Codex starts each one with. Nothing else in it is read. */
+const SUMMARY_HEADING = /^\s*\*\*([^*\n]{1,160})\*\*\s*(?:\n|$)/u
+
+/**
+ * A reasoning summary's text without its heading, which its row already says; the whole text when it has none. Empty when
+ * the heading is all it holds.
+ */
+export function summaryBody(record: Pick<AgentActivity, 'title' | 'text'>): string {
+  const text = record.text ?? ''
+  if (record.title !== REASONING_SUMMARY_TITLE) return text
+  const heading = SUMMARY_HEADING.exec(text)
+  return heading ? text.slice(heading[0].length).trim() : text
+}
+
+/**
+ * The heading of the reasoning summary that led to the work running now. Only a summary with nothing finished after it counts,
+ * so a heading from earlier in the turn never speaks for later work.
+ */
+function reasoningNow(steps: readonly AgentActivity[]): string {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const record = steps[index]!
+    if (record.kind === 'reasoning') {
+      const heading = record.title === REASONING_SUMMARY_TITLE ? SUMMARY_HEADING.exec(record.text ?? '')?.[1] : undefined
+      return heading ? oneLine(heading) : ''
+    }
+    if (record.kind !== 'plan' && record.status !== 'running') return ''
+  }
+  return ''
+}
+
+/**
+ * What the working line says the turn is doing now, from its steps alone: the newest step running, else the reply being
+ * written, with what it is for when the provider said so. Null when neither is known, which is what thinking and a gap
+ * between steps are, since a provider reports its tool calls and not the thinking between them; the Spaceballs words carry
+ * that wait (ADR-0134, November 4 amendment). A plan's record stays running for the whole turn, so it never counts as the
+ * step, and the line never repeats the plan's item, since the plan's checklist stands above the line (ADR-0134, November 5
+ * amendment, "the plan stays in view"). What the work is for comes from a command's own description, then from the
+ * reasoning summary that led to it. While a request waits on the
+ * user, a permission outranking a question as everywhere else, the line says that instead. Reads without copying.
+ */
+export function workingNow(steps: readonly AgentActivity[], replyId?: string, waitingOn?: AgentRequest['kind']): WorkingNow | null {
+  // A turn held on the user's answer is neither running a step nor writing: the line says what it waits for.
+  if (waitingOn !== undefined) {
+    const waiting = waitingOn === 'permission'
+      ? t({ message: 'Waiting for your permission', comment: 'The working line while a permission request waits on the user, above its card.' })
+      : t({ message: 'Waiting for your answer', comment: 'The working line while a question waits on the user, above its card.' })
+    return { words: waiting, detail: '', code: false, spoken: waiting }
+  }
+  const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
+  const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
+  if (running === undefined && !replying) return null
+  const doing = running ? runningWords(running) : t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
+  const described = running ? stepDescription(running) : ''
+  const purpose = described || (running ? reasoningNow(steps) : '')
+  const named = running ? { stepId: running.id } : {}
+  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing, ...named }
+  const step = running?.kind ?? 'reply'
+  // A command sits beside the words as itself, in the code face: its mark already says it runs.
+  const command = running?.kind === 'command' && running.command ? isolated(innerCommand(running.command)) : ''
+  return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', '), ...named }
+}
+
+/**
+ * One part of a command cut around the files it names. `verb` is the command itself, its program and a subcommand such as
+ * `npm test` or `git diff`, and `args` what follows it before the first file: flags and a pattern. `folders` are a file's
+ * folders and `name` its own name, `between` what stands between one file and the next, and `tail` what follows the last file,
+ * such as `| head -n 80`.
+ */
+export interface CommandPart { readonly text: string; readonly role: 'verb' | 'args' | 'folders' | 'name' | 'between' | 'tail' }
+
+/** The program and, when the next word is a plain word rather than a flag, a path or a quote, its subcommand. */
+const COMMAND_VERB = /^\s*[^\s"'|<>&;()]+(?:\s+[a-z][\w:.-]*(?=\s|$))?/iu
+
+/** An argument that names a file in a folder, `src/main/control.ts`: a separator, then a name with an extension. */
+const COMMAND_FILE = /(?<=^|\s)([^\s"'|<>&;()-][^\s"'|<>&;()]*[\\/])([^\s\\/"'|<>&;()]+\.[\w-]+)(?=$|[\s|<>&;)])/gu
+
+/**
+ * Where a command among the opened steps gives way when its row has no room for it whole: first in the folders of every file
+ * it names, then in what follows the last file, then in the files after the first, then in its flags and pattern, and the
+ * first file's name last, never its verb, so the command and the file it acts on stay readable:
+ * `npm test -- …threadStore.test.ts …workspace.test.ts`.
+ * Null for a command that names no file in a folder, which is cut at its end. The working line's own command is always cut at
+ * its end (ADR-0134, November 4 amendment); this is for the rows.
+ */
+export function commandCut(command: string): readonly CommandPart[] | null {
+  const text = command.replace(/^\u2068|\u2069$/gu, '')
+  const files = [...text.matchAll(COMMAND_FILE)]
+  if (!files.length) return null
+  const parts: CommandPart[] = []
+  const first = files[0]!
+  const head = text.slice(0, first.index)
+  const verb = COMMAND_VERB.exec(head)?.[0] ?? ''
+  // Flags and a pattern give way at their end; a bare space after the verb is part of it.
+  const args = head.slice(verb.length)
+  if (args.trim()) { if (verb) parts.push({ text: verb, role: 'verb' }); parts.push({ text: args, role: 'args' }) } else if (head) parts.push({ text: head, role: 'verb' })
+  files.forEach((found, index) => {
+    const end = found.index + found[0].length
+    const next = files[index + 1]?.index
+    parts.push({ text: found[1]!, role: 'folders' }, { text: found[2]!, role: 'name' })
+    if (next !== undefined) parts.push({ text: text.slice(end, next), role: 'between' })
+    else if (end < text.length) parts.push({ text: text.slice(end), role: 'tail' })
+  })
+  return parts
+}
+
+/** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
+export const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
+
+/** How far a plan has got, "3 of 7 done", when the turn has a plan to measure by; empty when it has none. */
+export function planProgress(steps: readonly AgentActivity[]): string {
+  const plan = newestPlan(steps)?.steps
+  if (!plan) return ''
+  const done = plan.filter(step => step.status === 'completed').length, total = plan.length
+  return t({ message: `${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`, comment: 'A plan\'s steps: 2 of 5 done.' })
+}
+
 /**
  * How long one action holds the turn before the thread says so. Below this, nothing is shown.
  *
@@ -405,6 +628,16 @@ function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' |
   const start = record.startedAt ? Date.parse(record.startedAt) : Number.NaN
   const end = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : undefined
+}
+
+/** Under a second a step's time says nothing at a glance, so a folded row leaves it to the open one. */
+const QUICK_STEP_MS = 1_000
+
+/** A finished step that took under a second, by the time its provider or Sotto recorded. */
+export function quickStep(record: AgentActivity): boolean {
+  if (record.status !== 'completed') return false
+  const duration = recordDuration(record)
+  return duration !== undefined && duration < QUICK_STEP_MS
 }
 
 /**
@@ -633,6 +866,9 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
     case 'status':
       return { lead: '', subject: record.title, mono: false, preview: plainLine(record.error ?? record.text) }
     default: {
+      // A reasoning summary reads as what it says, without its title in front: the row's mark already says it is the model's reasoning.
+      const summary = record.kind === 'reasoning' && record.title === REASONING_SUMMARY_TITLE ? plainLine(record.text) : ''
+      if (summary) return { lead: '', subject: summary, mono: false, preview: '' }
       const input = activityInput(record)
       return { lead: '', subject: record.kind === 'tool' ? toolName(record.title) : record.title, mono: false, preview: input ? inputPreview(input) : plainLine(record.text) }
     }
@@ -725,6 +961,103 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+/** How many lines a change added and removed, as its diff shows them. */
+export interface LineCounts { readonly added: number; readonly removed: number }
+
+const addCounts = (a: LineCounts, b: LineCounts): LineCounts => ({ added: a.added + b.added, removed: a.removed + b.removed })
+
+/**
+ * The added and removed lines of a reported diff, counted as `displayDiff` draws them, so the count and the diff a press opens
+ * agree. A unified diff's own file header is not a line of the file.
+ */
+export function diffLineCounts(diff: string): LineCounts {
+  const lines = displayDiff(diff).split('\n')
+  let added = 0, removed = 0
+  for (let at = 0; at < lines.length; at++) {
+    const line = lines[at]!
+    if (line.startsWith('--- ') && lines[at + 1]?.startsWith('+++ ')) { at++; continue }
+    if (line.startsWith('+')) added++
+    else if (line.startsWith('-')) removed++
+  }
+  return { added, removed }
+}
+
+const recordCounts = new WeakMap<AgentActivity, LineCounts | null>()
+
+/**
+ * The lines a file-change record added and removed, or null when Sotto cannot say all of it: a file with no reported diff, a
+ * diff its host sent cut (only its start), or a change that did not go through. A partial count would read as the whole one, so
+ * there is none. Records are shared across updates, so each one's diffs are read once.
+ */
+export function activityLineCounts(record: AgentActivity): LineCounts | null {
+  if (record.kind !== 'file-change' || record.status === 'failed') return null
+  let counts = recordCounts.get(record)
+  if (counts === undefined) {
+    const changes = activityChanges(record)
+    counts = changes.length && changes.every((change, index) => change.diff && !changeDiffIsCut(record, index))
+      ? changes.map(change => diffLineCounts(change.diff!)).reduce(addCounts) : null
+    recordCounts.set(record, counts)
+  }
+  return counts
+}
+
+/** The lines every file change in the records added and removed, or null when any of them cannot say. */
+export function recordsLineCounts(records: readonly AgentActivity[]): LineCounts | null {
+  let total: LineCounts | null = null
+  for (const record of records) {
+    if (record.kind !== 'file-change' || record.status === 'failed') continue
+    const counts = activityLineCounts(record)
+    if (counts === null) return null
+    total = total === null ? counts : addCounts(total, counts)
+  }
+  return total
+}
+
+/** Assistive tech's words for a line count: the marks on screen are not words. */
+export function spokenLineCounts({ added, removed }: LineCounts): string {
+  return [
+    added ? plural(added, { one: `${{ lineCount: shownLineCount(added) }} line added`, other: `${{ lineCount: shownLineCount(added) }} lines added` }) : '',
+    removed ? plural(removed, { one: `${{ lineCount: shownLineCount(removed) }} line removed`, other: `${{ lineCount: shownLineCount(removed) }} lines removed` }) : '',
+  ].filter(Boolean).join(', ')
+}
+
+/** A tool's name without the MCP server's prefix: "mcp__sotto_browser__browser_open" reads as "Browser open". */
+const shortToolName = (title: string): string => toolName(title.replace(/^mcp__.+?__/u, ''))
+/** A name longer than this would take the line over, so the line counts the tools instead. */
+const TOOL_NAME_LIMIT = 24
+
+/** Which tools a turn used, by name where the provider gives short ones: "used Read and Grep", "used Read, Grep and 3 more". */
+function toolsPart(records: readonly AgentActivity[]): string {
+  const tools = records.length
+  if (!tools) return ''
+  const names = [...new Set(records.map(record => shortToolName(record.title)))]
+  if (names.slice(0, 2).some(name => name === 'Tool' || name.length > TOOL_NAME_LIMIT)) return plural(tools, { one: `used ${{ toolCount: shownCount(tools) }} tool`, other: `used ${{ toolCount: shownCount(tools) }} tools` })
+  const first = names[0]!, second = names[1]
+  if (second === undefined) return t({ message: `used ${first}`, comment: 'One part of a list of what a turn did, starting lowercase; {first} is a tool\'s name, such as Read.' })
+  const more = names.length - 2
+  if (more === 0) return t({ message: `used ${first} and ${second}`, comment: 'One part of a list of what a turn did, starting lowercase; {first} and {second} are tools\' names.' })
+  return t({ message: `used ${first}, ${second} and ${{ more: shownCount(more) }} more`, comment: 'One part of a list of what a turn did, starting lowercase; {first} and {second} are tools\' names.' })
+}
+
+/**
+ * What a finished turn did, after its line's count of steps: "Ran 5 commands, used Read and Grep, plan 3 of 7 done". Counts and
+ * names the provider reported, nothing estimated. The files it changed have their own line beside it, and a thought did nothing
+ * to anything, so neither is here; a turn that did nothing else has no words.
+ */
+export function workSummary(records: readonly AgentActivity[]): string {
+  const steps = records.filter(isStep)
+  const commands = steps.filter(record => record.kind === 'command').length
+  const actions = steps.filter(record => record.kind === 'subagent').length
+  const progress = planProgress(steps)
+  const did = [
+    commands ? plural(commands, { one: `ran ${{ commandCount: shownCount(commands) }} command`, other: `ran ${{ commandCount: shownCount(commands) }} commands` }) : '',
+    toolsPart(steps.filter(record => record.kind === 'tool')),
+    actions ? plural(actions, { one: `${{ actionCount: shownCount(actions) }} agent action`, other: `${{ actionCount: shownCount(actions) }} agent actions` }) : '',
+    progress ? t({ message: `plan ${progress}`, comment: 'One part of a list of what a turn did, starting lowercase; {progress} is how far its plan got, such as 3 of 7 done.' }) : '',
+  ].filter(Boolean).join(', ')
+  return did.charAt(0).toUpperCase() + did.slice(1)
+}
+
 /** The record and change a turn's diff came from, when its host sent the diff cut (ADR-0025, October 18 amendment). */
 export interface TurnDiffSource { readonly record: AgentActivity; readonly index: number }
 
@@ -732,6 +1065,10 @@ export interface TurnChange {
   readonly path: string
   /** How the file was first touched: a file created then edited still reads as created. */
   readonly verb: string
+  /** The same, as the provider named it, so a line can put the verb and the file in one sentence (`changeLeadKind`). */
+  readonly kind: string
+  /** The lines every diff of the file added and removed, absent when any part of the file cannot say (`activityLineCounts`). */
+  readonly lines?: LineCounts
   /** Every diff reported for the path, in the order they happened. */
   readonly diffs: readonly string[]
   /** Beside `diffs`, where each cut diff came from; only a change with a cut diff has it. */
@@ -753,13 +1090,15 @@ export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
  * denied or that failed stays among the turn's steps and is not one of them (#2159).
  */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
-  const files = new Map<string, { path: string; verb: string; diffs: string[]; sources?: (TurnDiffSource | undefined)[] }>()
+  const files = new Map<string, { path: string; verb: string; kind: string; diffs: string[]; lines?: LineCounts; sources?: (TurnDiffSource | undefined)[] }>()
+  const unsure = new Set<string>()
   const seenByPath = new Map<string, Set<string>>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
     if (record.kind !== 'file-change' || changeFailed(record)) continue
     for (const [index, change] of activityChanges(record).entries()) {
-      const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), diffs: [] }
+      const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), kind: change.kind, diffs: [] }
+      if (!change.diff || changeDiffIsCut(record, index)) unsure.add(change.path)
       const seenDiffs = seenByPath.get(change.path) ?? new Set<string>()
       seenByPath.set(change.path, seenDiffs)
       // A cut diff is only its start, so two edits that open alike are told apart by how long each was whole.
@@ -767,6 +1106,7 @@ export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChan
       if (change.diff && seen && !seenDiffs.has(seen)) {
         seenDiffs.add(seen)
         file.diffs.push(change.diff)
+        file.lines = addCounts(file.lines ?? { added: 0, removed: 0 }, diffLineCounts(change.diff))
         if (changeDiffIsCut(record, index)) {
           file.sources ??= file.diffs.slice(0, -1).map(() => undefined)
           file.sources.push({ record, index })
@@ -775,7 +1115,20 @@ export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChan
       files.set(change.path, file)
     }
   }
+  for (const path of unsure) delete files.get(path)?.lines
   return [...files.values()]
+}
+
+/** Every changed file's lines together, or undefined when any file cannot say. */
+export function changesLineCounts(changes: readonly TurnChange[]): LineCounts | undefined {
+  if (!changes.length || changes.some(change => change.lines === undefined)) return undefined
+  return changes.map(change => change.lines!).reduce(addCounts)
+}
+
+/** The verb a file's own row would lead with, for a line that names that one file. */
+export const changeLeadKind = (kind: string): ActivityLeadKind => {
+  const verb = changeVerbOf(kind)
+  return verb === 'created' || verb === 'deleted' || verb === 'wrote' || verb === 'moved' ? verb : 'edited'
 }
 
 /** How long a cut diff was whole: its own size when the host cut it, else the size of the tool input it is drawn from. */
@@ -853,6 +1206,30 @@ export function newsWorkLabel(turn: AgentActivity | undefined, threadRunning: bo
 export function workHeadline(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
   const durationMs = workDuration(turn, startedAt, moments)
   return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
+}
+
+/** Under this, a turn that only thought took a moment: a question answered from what the thread already knew. */
+const MOMENT_MS = 15_000
+/**
+ * Whether a finished turn only thought, and briefly: it ended as it should, in under fifteen seconds, and every step it took
+ * was the model's reasoning, so it ran, read, changed and started nothing. Its Worked for line then says nothing the reply
+ * under it does not. Arguments as `workHeadline` takes them, and the turn's records.
+ */
+export function onlyAMoment(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[], records: readonly AgentActivity[]): boolean {
+  if ((turn?.status ?? 'completed') !== 'completed') return false
+  const took = workDuration(turn, startedAt, moments)
+  return took !== undefined && took < MOMENT_MS && records.every(record => !isStep(record) || record.kind === 'reasoning')
+}
+
+/**
+ * Whether a finished turn was quick: it ended as it should, in under fifteen seconds, with one step or none. Its closed
+ * Worked for line then keeps its room but shows nothing until the pointer is over the turn or the keyboard reaches it
+ * (Zach's pick C, November 6 2026, ADR-0134). Arguments as `workHeadline` takes them, and how many steps the line counts.
+ */
+export function quietTurn(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[], steps: number): boolean {
+  if ((turn?.status ?? 'completed') !== 'completed' || steps > 1) return false
+  const took = workDuration(turn, startedAt, moments)
+  return took !== undefined && took < MOMENT_MS
 }
 
 function workDuration(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[]): number | undefined {

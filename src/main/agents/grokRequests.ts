@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion } from './nativeRequests'
 import { browserRequestText } from './browserRequests'
 import { inputFields, toolInputCard, type ToolInputCard } from './requestInput'
 
@@ -69,7 +69,7 @@ export function grokPending(wireId: string | number, method: string, value: unkn
     if (!parsed.success) return
     const question = parsed.data
     return { wireId, threadId, toolCallId: question.toolCallId, question, request: { id, kind: 'question', text: question.questions.map(q => q.question).join('\n'), options: question.questions.length === 1 ? question.questions[0]!.options.map(option => ({ id: option.label, label: option.label })) : [],
-      questions: question.questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, options: q.options.map(option => ({ id: option.label, ...option })), multiSelect: q.multiSelect ?? false, allowFreeText: true, prose: true as const })), context: { toolCallId: question.toolCallId } } }
+      questions: question.questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, options: q.options.map(option => ({ id: option.label, ...option })), multiSelect: q.multiSelect ?? false, allowFreeText: true, prose: true as const, skippable: true as const })), context: { toolCallId: question.toolCallId } } }
   }
   return undefined
 }
@@ -89,8 +89,12 @@ export function grokAnswer(pending: GrokPending, answer: string, approved?: bool
     supplied = Object.fromEntries(questions.map((question, index) => { const value = values[question.question] ?? ''; return [String(index), question.options.some(option => option.label === value) ? { optionIds: [value] } : { optionIds: [], text: value }] }))
   }
   questionValues(pending.request, supplied)
-  return { outcome: 'accepted', answers: Object.fromEntries(questions.map((question, index) => [question.question, [...supplied[String(index)]!.optionIds, ...(supplied[String(index)]!.text?.trim() ? ['Other'] : [])]])),
+  // A skipped question goes as Grok's own Other answer, its note the skip sentence: Grok's `cancelled` may end the turn, and
+  // this keeps it going with the model told (ADR-0135, November 6, 2026).
+  const words = (index: number): string | undefined => skippedQuestion(supplied, String(index)) ? QUESTION_SKIPPED : supplied[String(index)]!.text?.trim() ? supplied[String(index)]!.text : undefined
+  return { outcome: 'accepted', answers: Object.fromEntries(questions.map((question, index) => [question.question, [...supplied[String(index)]!.optionIds, ...(words(index) ? ['Other'] : [])]])),
     annotations: Object.fromEntries(questions.flatMap((question, index) => {
+      if (skippedQuestion(supplied, String(index))) return [[question.question, { notes: QUESTION_SKIPPED }]]
       const answer = supplied[String(index)]!; const preview = !question.multiSelect && answer.optionIds.length === 1 ? question.options.find(option => option.label === answer.optionIds[0])?.preview : undefined
       return preview || answer.text?.trim() ? [[question.question, { ...(preview ? { preview } : {}), ...(answer.text?.trim() ? { notes: answer.text } : {}) }]] : []
     })) }

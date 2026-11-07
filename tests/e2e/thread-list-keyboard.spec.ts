@@ -210,19 +210,37 @@ test('the thread list is one Tab stop with a row menu, and F6 goes round the sid
     await expect(row).toBeFocused()
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
 
-    // At the minimum window the row and its menu are whole.
+    // At the minimum window the rail stands, and Ctrl+Shift+B opens the sidebar over the thread (ADR-0110, November 5,
+    // 2026), where the row and its menu are whole and Tab goes round inside it until Escape gives the focus back.
     await size(launched, 820, 560)
-    await row.focus()
-    await capture(page, 'focused-row-820x560', async () => { await expect(row).toBeFocused() })
+    const composer = page.locator('section.thread-pane[data-focused] .thread-workspace__compose [contenteditable="true"]').first()
+    await composer.focus()
+    await page.keyboard.press('Control+Shift+B')
+    const over = page.getByRole('dialog', { name: 'Thread sidebar', exact: true })
+    await expect(over).toBeVisible()
+    const overRow = over.getByRole('button', { name: 'Streaming WAV stall', exact: true })
+    await overRow.focus()
+    await capture(page, 'focused-row-820x560', async () => { await expect(overRow).toBeFocused() })
     await page.keyboard.press('Shift+F10')
     await expect(menu).toBeVisible()
     await insideWindow(page, menu)
     await capture(page, 'row-menu-820x560', async () => { await expect(menu).toBeVisible(); await insideWindow(page, menu) })
     await page.keyboard.press('Escape')
-    await expect(row).toBeFocused()
-    const narrow = await tabWalk(page)
-    expect(narrow.filter(stop => stop.list).map(stop => stop.name)).toEqual(['Streaming WAV stall'])
-    expect(narrow.length).toBe(walk.length)
+    await expect(overRow).toBeFocused()
+    await expect(over).toBeVisible()
+    await over.getByRole('searchbox', { name: 'Search threads' }).focus()
+    const inside: { name: string; list: boolean; sidebar: boolean }[] = []
+    for (let press = 0; press < walk.length + 4; press += 1) {
+      await page.keyboard.press('Tab')
+      const here = await focused(page)
+      expect(here.composer).toBe(false)
+      expect(await over.evaluate(node => node.contains(document.activeElement))).toBe(true)
+      inside.push({ name: here.name, list: here.list, sidebar: here.sidebar })
+    }
+    expect([...new Set(inside.filter(stop => stop.list).map(stop => stop.name))]).toEqual(['Streaming WAV stall'])
+    await page.keyboard.press('Escape')
+    await expect(over).toBeHidden()
+    await expect(composer).toBeFocused()
   } finally {
     await closeSotto(launched)
   }

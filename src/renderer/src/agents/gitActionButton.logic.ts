@@ -4,7 +4,7 @@ import type { GitActionProgress, GitStackedAction } from '../../../shared/gitAct
 import type { GitChangedFile } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
 import { leftToRight } from './interfaceWords'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 
 /**
  * T3 Code's Git action, decided from the status alone (ADR-0027): what the button says, what a press
@@ -158,7 +158,7 @@ export const fileCount = (count: number): string => plural(count, { one: `${{ fi
 /** `+12 −3`, or nothing for a file whose lines were not counted. */
 export function lineCounts(file: Pick<GitChangedFile, 'insertions' | 'deletions'>): string | null {
   if (file.insertions === null || file.deletions === null) return null
-  return `+${file.insertions} −${file.deletions}`
+  return `+${shownLineCount(file.insertions)} −${shownLineCount(file.deletions)}`
 }
 
 /** Git's letter for a changed file, and its name in the interface language, read when shown. */

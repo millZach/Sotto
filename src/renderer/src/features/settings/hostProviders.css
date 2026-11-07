@@ -19,10 +19,10 @@
 .host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
 .host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-text-2); }
 .host-provider__mark .provider-mark { fill: currentColor; }
-.host-provider__mark .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.host-provider__mark .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.host-provider__mark .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
-.host-provider__mark .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.host-provider__mark .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex-mark); }
+.host-provider__mark .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude-mark); }
+.host-provider__mark .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok-mark); }
+.host-provider__mark .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin-mark); }
 .host-provider__mark .provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
 .host-provider__mark .provider-mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
 .hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }

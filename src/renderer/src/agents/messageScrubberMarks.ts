@@ -191,6 +191,34 @@ export function swell(places: readonly number[], y: number | null, sigma = SWELL
   return places.map(place => Math.exp(-((place - y) ** 2) / (2 * sigma * sigma)))
 }
 
+/** How far the resting ticks show either side of the messages on screen, down the column. */
+export const REST_SIGMA_PX = 20
+/** A tick fainter than this at rest does not show at all, so the mark ends rather than trailing off for ever. */
+const REST_FLOOR = 0.06
+
+/**
+ * How much of each tick shows at rest, from 1 beside the messages on screen to 0 away from them (Zach's pick C, November
+ * 5, 2026): the ticks of the messages on screen show whole, and the ones above and below fade out on a normal curve of
+ * their distance down the column from the nearest of them. With none on screen, none shows. Reached by the pointer or the
+ * keyboard, the column ignores this and shows every tick.
+ */
+export function restingFade(places: readonly number[], onScreen: readonly number[], sigma = REST_SIGMA_PX): number[] {
+  let top = Number.POSITIVE_INFINITY
+  let foot = Number.NEGATIVE_INFINITY
+  for (const index of onScreen) {
+    const place = places[index]
+    if (place === undefined) continue
+    top = Math.min(top, place)
+    foot = Math.max(foot, place)
+  }
+  if (top > foot) return places.map(() => 0)
+  return places.map(place => {
+    const gap = place < top ? top - place : place > foot ? place - foot : 0
+    const shown = Math.exp(-(gap * gap) / (2 * sigma * sigma))
+    return shown < REST_FLOOR ? 0 : Math.round(shown * 1000) / 1000
+  })
+}
+
 /** The lane the ticks use: the column's margin, up to the widest lane, or none when the margin is too narrow to reach. */
 export function scrubberLane(margin: number): number {
   return margin < SCRUBBER_NARROWEST_LANE_PX ? 0 : Math.min(SCRUBBER_LANE_PX, margin)

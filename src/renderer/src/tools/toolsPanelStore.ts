@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
 import type { BrowserPage, BrowserTask, BrowserBridge } from '../../../shared/browser'
+import type { GitChangesBridge } from '../../../shared/gitChanges'
 import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
@@ -139,6 +140,15 @@ export class ToolsPanelStore {
    * Opens the Pull request surface for a thread, as the pull request badge under its composer asks. A panel
    * pinned to another thread is pinned to this one instead, since the press names this thread's pull request.
    */
+  /**
+   * Opens Changes on a thread's branch against `base`, as Review in Changes asks from the Pull request surface with the
+   * ref that stands for the pull request's target branch; null is the base Sotto works out.
+   */
+  showBranchChanges(bridge: GitChangesBridge | undefined, threadId: string, base: string | null = null): void {
+    this.changes.activate(bridge, threadId)
+    this.changes.setScope(bridge, threadId, { kind: 'branch', base })
+    this.update({ open: true, surface: 'changes' })
+  }
   showPullRequest(threadId: string): void {
     const pinned = this.chrome.pinnedThreadId
     this.update({ open: true, surface: 'pull-request', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })

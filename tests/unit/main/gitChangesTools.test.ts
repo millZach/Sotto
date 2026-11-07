@@ -90,6 +90,9 @@ describe('Working tree: the working copy against HEAD, untracked files included'
     expect(all.files.map(item => item.path)).toEqual(['changed.txt', 'deleted.txt'])
     const quiet = unwrap(await f.service.review({ ...f.target, scope: { kind: 'working' }, ignoreWhitespace: true }))
     expect(quiet.files.map(item => item.path)).toEqual(['deleted.txt'])
+    // What hiding left out, counted, so the totals can read as GitHub counts them; nothing is counted with it shown.
+    expect(quiet.hiddenWhitespace).toEqual({ additions: 1, deletions: 1 })
+    expect(all.hiddenWhitespace).toBeUndefined()
   }, 20000)
 
   it('follows a rename, refreshes on content changes without crossing watch identity, and says when a folder is not a repository', async () => {

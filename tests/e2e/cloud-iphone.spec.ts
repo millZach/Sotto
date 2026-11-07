@@ -125,7 +125,7 @@ test('an agent asks for a cloud iPhone, the user starts it in the thread, and th
         await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
         const placed = await phone.boundingBox(); expect(placed).not.toBeNull()
         expect(placed!.x + placed!.width).toBeLessThanOrEqual(width); expect(placed!.y + placed!.height).toBeLessThanOrEqual(height)
-        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
+        await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
         await screenshot(launched, `running-${width}x${height}-${mode}`)
       }
     }

@@ -9,8 +9,8 @@ import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
  * Resolves tokens.css the way the browser cascade does for the main window
  * root: the stylesheet's blocks for one mode, then the theme roles and
  * contrast strength applyAppearance writes inline. Colours are computed
- * through var(), oklch() (relative `oklch(from …)` too) and color-mix() in
- * srgb or oklab, so contrast is checked on the colours actually painted
+ * through var(), oklch() (relative `oklch(from …)` too, with `none` for a
+ * missing channel) and color-mix() in srgb, oklab or oklch, so contrast is checked on the colours actually painted
  * rather than on raw declarations.
  */
 
@@ -19,6 +19,8 @@ export interface Rgba {
   readonly r: number; readonly g: number; readonly b: number; readonly a: number
   /** A relative colour's own OKLab, kept outside the sRGB gamut, which a color-mix() in oklab reads as the browser does. */
   readonly oklab?: { readonly L: number; readonly A: number; readonly B: number }
+  /** A relative colour's own OKLCH, NaN where a channel is `none`, which a color-mix() in oklch fills from the other colour. */
+  readonly oklch?: { readonly L: number; readonly C: number; readonly h: number }
 }
 
 export const TOKENS_PATH = join(process.cwd(), 'src/renderer/src/styles/tokens.css')
@@ -157,6 +159,7 @@ function colorMix(space: string, first: Rgba, firstPercent: number | null, secon
   const alpha = first.a * w1 + second.a * w2
   const scale = sum < 100 ? sum / 100 : 1
   if (alpha === 0) return { r: 0, g: 0, b: 0, a: 0 }
+  if (space === 'oklch') return oklchMix(first, w1, second, w2, alpha, scale)
   if (space === 'srgb') {
     const channel = (key: 'r' | 'g' | 'b'): number => (first[key] * first.a * w1 + second[key] * second.a * w2) / alpha
     return { r: channel('r'), g: channel('g'), b: channel('b'), a: alpha * scale }
@@ -166,6 +169,27 @@ function colorMix(space: string, first: Rgba, firstPercent: number | null, secon
   const labSecond = second.a === 0 ? toLab(first) : toLab(second)
   const component = (key: keyof Lab): number => (labFirst[key] * first.a * w1 + labSecond[key] * second.a * w2) / alpha
   return fromLab({ L: component('L'), A: component('A'), B: component('B') }, alpha * scale)
+}
+
+/**
+ * color-mix() in oklch, as CSS Color 4 interpolates it: a channel missing (`none`) in one colour takes the other's,
+ * L and C are premultiplied by alpha, and hue goes the shorter way round.
+ */
+function oklchMix(first: Rgba, w1: number, second: Rgba, w2: number, alpha: number, scale: number): Rgba {
+  const [a, b] = [first.oklch ?? rgbToOklch(first), second.oklch ?? rgbToOklch(second)]
+  const pick = (key: 'L' | 'C' | 'h'): [number, number] => {
+    const [x, y] = [a[key], b[key]]
+    return [Number.isNaN(x) ? y : x, Number.isNaN(y) ? x : y]
+  }
+  const [l1, l2] = pick('L')
+  const [c1, c2] = pick('C')
+  let [h1, h2] = pick('h')
+  if (h2 - h1 > 180) h1 += 360
+  else if (h1 - h2 > 180) h2 += 360
+  const premultiplied = (x: number, y: number): number => (x * first.a * w1 + y * second.a * w2) / alpha
+  const color = { L: premultiplied(l1, l2), C: premultiplied(c1, c2), h: (((h1 * w1 + h2 * w2) % 360) + 360) % 360 }
+  const radians = (color.h * Math.PI) / 180
+  return { ...oklchToRgb(color), a: alpha * scale, oklab: { L: color.L, A: color.C * Math.cos(radians), B: color.C * Math.sin(radians) } }
 }
 
 export function resolveColor(name: string, declarations: ReadonlyMap<string, string>, depth = 0): Rgba {
@@ -182,7 +206,7 @@ export function parseColorValue(raw: string, declarations: ReadonlyMap<string, s
   if (value === 'black') return { r: 0, g: 0, b: 0, a: 1 }
   const variable = /^var\((--[a-z0-9-]+)\)$/u.exec(value)
   if (variable !== null) return resolveColor(variable[1]!, declarations, depth + 1)
-  const mixed = /^color-mix\(in (srgb|oklab), ([\s\S]+)\)$/u.exec(value)
+  const mixed = /^color-mix\(in (srgb|oklab|oklch), ([\s\S]+)\)$/u.exec(value)
   if (mixed !== null) {
     const args = splitTopLevel(mixed[2]!, ',')
     if (args.length !== 2) throw new Error(`Unsupported color-mix: ${value}`)
@@ -227,10 +251,12 @@ function relativeOklch(body: string, declarations: ReadonlyMap<string, string>, 
   const painted = literal === null ? parseColorValue(origin, declarations, depth + 1) : null
   const { L, C, h } = literal?.color ?? rgbToOklch(painted!)
   const scope = { l: L, c: C, h }
-  const [lightness, chroma, hue] = channels.map(channel => evaluateChannel(substituteVariables(channel, declarations, depth), scope))
+  // A channel written `none` is missing: painted on its own it counts as zero, and a color-mix() in oklch fills it.
+  const [lightness, chroma, hue] = channels.map(channel => channel === 'none' ? Number.NaN : evaluateChannel(substituteVariables(channel, declarations, depth), scope))
   const color = { L: Math.min(1, Math.max(0, lightness!)), C: Math.max(0, chroma!), h: ((hue! % 360) + 360) % 360 }
-  const radians = (color.h * Math.PI) / 180
-  return { ...oklchToRgb(color), a: literal?.alpha ?? painted!.a, oklab: { L: color.L, A: color.C * Math.cos(radians), B: color.C * Math.sin(radians) } }
+  const zero = { L: Number.isNaN(color.L) ? 0 : color.L, C: Number.isNaN(color.C) ? 0 : color.C, h: Number.isNaN(color.h) ? 0 : color.h }
+  const radians = (zero.h * Math.PI) / 180
+  return { ...oklchToRgb(zero), a: literal?.alpha ?? painted!.a, oklab: { L: zero.L, A: zero.C * Math.cos(radians), B: zero.C * Math.sin(radians) }, oklch: color }
 }
 
 /** Custom properties substitute as text, so a channel expression may come from another token. */
