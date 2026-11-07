@@ -76,8 +76,10 @@ export async function usageDashboardHarness() {
     const link = currentPage().getByRole('link', { name: 'Usage', exact: true })
     await expect(link).toBeVisible(); await link.click()
     await expect(currentPage().getByRole('heading', { name: 'Usage', exact: true })).toBeVisible()
-    await expect(currentPage().getByRole('tablist', { name: 'Usage measures', exact: true })).toBeVisible()
-    await expect(currentPage().locator('[aria-label="Usage"]').getByRole('tabpanel').first()).not.toHaveAttribute('aria-busy', 'true')
+    // Before any computer has counted anything, one card stands in place of the tabs (#1834).
+    const measures = currentPage().getByRole('tablist', { name: 'Usage measures', exact: true })
+    await expect(measures.or(currentPage().getByRole('region', { name: 'No usage yet', exact: true }))).toBeVisible()
+    await expect(currentPage().locator('[aria-label="Usage"] .usage-panel')).not.toHaveAttribute('aria-busy', 'true')
   }
   const resize = async (width: number, height: number): Promise<void> => {
     await currentApp().evaluate(({ BrowserWindow }, size) => {
