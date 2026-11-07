@@ -257,7 +257,7 @@ function wakeState(watcher: WatcherService) {
     seen: wakes.seen, latestEvidence: wakes.latestEvidence, toldLocal: wakes.toldLocal, localAt: wakes.localAt, owedWorkSettled: wakes.owedWorkSettled,
     settling: wakes.settling, waking: wakes.waking, toldAttention: wakes.toldAttention, carriedAttention: wakes.carriedAttention, turnsEnded: wakes.turnsEnded,
     carrying: wakes.carrying, ripened: wakes.ripened, openCards: [...(wakes.openCards as Map<string, { owner: string; cards: Map<string, unknown> }>)].map(([key, held]) => [key, held.owner, [...held.cards]]).sort(),
-    openPrototypes: wakes.openPrototypes, reobserved: wakes.reobserved, delegatedOwner: wakes.delegatedOwner, lookedAt: wakes.lookedAt, sawThreads: wakes.sawThreads,
+    reobserved: wakes.reobserved, delegatedOwner: wakes.delegatedOwner, lookedAt: wakes.lookedAt, sawThreads: wakes.sawThreads,
     misses: wakes.misses, retries: wakes.retries, consumedRetries: wakes.consumedRetries, watcherResting: wakes.watcherResting, lastNewsAt: wakes.lastNewsAt,
     evidence: { entries: inner(evidence.entries!), attending: inner(evidence.attending!), returning: inner(evidence.returning!), passing: inner(evidence.passing!) } }
 }

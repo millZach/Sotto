@@ -36,6 +36,8 @@ export interface WatcherRoom {
   readonly handover: WatcherHandoverCalls | null
   /** New Watcher: a new Watcher on the current one's own choices, with the last one's handover offered. Null where the bridge offers none. */
   readonly startNew: (() => Promise<WatcherRoomResult>) | null
+  /** Try now on the band while Watcher's provider is failing (#2234). Null where the bridge offers none. */
+  readonly tryNow: (() => Promise<WatcherRoomResult>) | null
   /** Takes a result's state when main sent one and hands back the refusal's words, or null. */
   readonly settle: (result: WatcherRoomResult) => string | null
   /** Stop all: main's preview of what it would stop, then the stop that preview confirms. Null without a bridge. */
@@ -171,10 +173,11 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMachines } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, tryNow, readMachines } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
       readMachines: readMachines === undefined ? null : () => readMachines.call(bridge),
       startNew: startNew === undefined ? null : () => startNew.call(bridge),
+      tryNow: tryNow === undefined ? null : () => tryNow.call(bridge),
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
         read: () => readHandover.call(bridge),
@@ -220,6 +223,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     unwatchThread: manage.watch?.unwatchThread ?? null,
     handover: manage.handover,
     startNew: manage.startNew,
+    tryNow: manage.tryNow,
     readMachines: manage.readMachines,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
   }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, settle, bridge, manage])

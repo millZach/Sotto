@@ -11,7 +11,7 @@ import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSc
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_TRY_NOW, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
   WATCHER_READ_MACHINES, WATCHER_MACHINES_RENDERER_ARGUMENT, watcherMachinesReadSchema, WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
   watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
@@ -612,6 +612,7 @@ export function createSottoBridge(
       continueWithHandover: request => invokeParsed(renderer, WATCHER_CONTINUE_HANDOVER, watcherRoomResultSchema, watcherContinueHandoverRequestSchema.parse(request)),
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
       startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
+      tryNow: () => invokeParsed(renderer, WATCHER_TRY_NOW, watcherRoomResultSchema),
       ...(watcherMachinesEnabled ? { readMachines: () => invokeParsed(renderer, WATCHER_READ_MACHINES, watcherMachinesReadSchema) } : {}),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),

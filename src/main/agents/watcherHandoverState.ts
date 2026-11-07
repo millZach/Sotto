@@ -1,4 +1,4 @@
-import type { WatcherKeptState, WatcherMergeQueueItem, WatcherPullRequestSummary, WatcherStateThread, WatcherWaitingOnUser } from '../../shared/watcher'
+import { WATCHER_KEPT_RULES_MAX, type WatcherKeptState, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStateThread, type WatcherWaitingOnUser } from '../../shared/watcher'
 
 /**
  * What a new Watcher's handover says beside the last one's words (#1735). Zach, October 28, 2026: "the handoff should note
@@ -44,17 +44,19 @@ const PENDING: Record<WatcherHandoverStateInput['pending'][number]['state'], str
   queued: 'queued behind its turn', dispatching: 'sending now', uncertain: 'not confirmed yet',
 }
 const ACTION: Record<WatcherHandoverStateInput['pending'][number]['action'], string> = { start: 'A start of', send: 'A send to', stop: 'A stop of', settle: 'A settle of' }
-const WAITS_FOR: Record<WatcherWaitingOnUser['waitsFor'], string> = { question: 'a question', permission: 'a permission', 'prototype-review': 'a prototype to review' }
+const WAITS_FOR: Record<WatcherWaitingOnUser['waitsFor'], string> = { question: 'a question', permission: 'a permission' }
 
-/** One list, at most `ROWS_MAX` rows, then `more` for the rest, which says how many there are and where to read them. */
-function list(heading: string, rows: readonly string[], more: (rest: number) => string = rest => `And ${rest} more.`): string[] {
+/** One list, at most `most` rows, then `more` for the rest, which says how many there are and where to read them. */
+function list(heading: string, rows: readonly string[], more: (rest: number) => string = rest => `And ${rest} more.`, most = ROWS_MAX): string[] {
   if (!rows.length) return []
-  const shown = rows.slice(0, ROWS_MAX).map(row => `- ${row}`)
-  return [heading, ...shown, ...rows.length > ROWS_MAX ? [`- ${more(rows.length - ROWS_MAX)}`] : [], '']
+  const shown = rows.slice(0, most).map(row => `- ${row}`)
+  return [heading, ...shown, ...rows.length > most ? [`- ${more(rows.length - most)}`] : [], '']
 }
 const inReadState = (rest: number) => `And ${rest} more. read_state lists them all.`
 
 /** The section, or an empty string when there is nothing to say. Each part appears only when it has something in it. */
+/** What a train row adds about its required checks: nothing once they passed, since the pull request's own summary says so. */
+const TRAIN_CHECKS: Readonly<Record<WatcherMergeQueueItem['requiredChecks'], string>> = { passed: '', running: ', its required checks running', failed: '', unknown: '' }
 export function watcherHandoverState(input: WatcherHandoverStateInput): string {
   const carried = input.carried
   const lines = [
@@ -75,10 +77,11 @@ export function watcherHandoverState(input: WatcherHandoverStateInput): string {
       rest => `And ${rest} more, by operation: ${input.pending.slice(ROWS_MAX).map(row => row.operationId).join(', ')}.`),
     ...list('The threads you watch and what each waits on:', input.watching.map(row => [`${named(row.title)}${row.host ? ` on ${one(row.host)}` : ''}: ${one(row.waitsOn)}`,
       ...row.pullRequests.length ? [`Open pull requests: ${row.pullRequests.map(pullRequest).join('; ')}.`] : []].join(' ')), inReadState),
-    ...list('The merge queue, oldest passing checks first:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}`), inReadState),
+    ...list('The merge train, in the order each joined it:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}${TRAIN_CHECKS[row.requiredChecks]}`), inReadState),
     ...list('What waits on the user now:', input.waitingOnUser.map(row => `${named(row.title)} waits for ${WAITS_FOR[row.waitsFor]}`), inReadState),
     ...list('Decisions the user left pending, as kept:', input.kept.decisions.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
-    ...list('Standing rules the user gave, as kept:', input.kept.rules.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
+    // Every open rule, however many the list holds (#2236): the user's rules are what a new Watcher must not lose.
+    ...list('Standing rules the user gave, as kept:', input.kept.rules.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState, WATCHER_KEPT_RULES_MAX),
     ...list('Issues filed, as kept:', input.kept.issues.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
   ]
   if (!lines.length) return ''

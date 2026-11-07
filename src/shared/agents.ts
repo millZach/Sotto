@@ -2,6 +2,7 @@ import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
+import { boundedRecord } from './boundedRecord'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
@@ -441,7 +442,9 @@ export const agentRequestSchema = z.object({
    * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
   since: z.string().datetime().optional(),
 })
-export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
+/** At most this many questions answered in one answer: far more than any question card asks (#2273). */
+export const AGENT_QUESTION_ANSWERS_MAX = 1_000
+export const agentQuestionAnswersSchema = boundedRecord(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict(), AGENT_QUESTION_ANSWERS_MAX)
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 const handoverCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 /**
@@ -529,6 +532,12 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on a reply the provider made of its own API error, such as Claude Code's "You've hit your limit" (#2234), from
+   * the provider's own marking of it, never from its text. Watcher's room shows no such reply while Restart stopped
+   * threads is on: the room's band is the one notice. An older reader drops the field and shows the reply.
+   */
+  providerError: z.literal(true).optional().catch(undefined),
   /**
    * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
    * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
@@ -1427,6 +1436,20 @@ function threadShell(thread: AgentThread): AgentThread {
 export function agentShell(state: AgentState): AgentState {
   return { ...state, host: { ...state.host, threads: state.host.threads.map(threadShell) } }
 }
+/**
+ * At most this many ignored items, and nested repositories, in one removal's confirmation (#2273). Each list is the
+ * folder's own, sent back whole, so the caps sit far above real folders: 62 checkouts on the development machine had at
+ * most 90 ignored items (November 5, 2026).
+ */
+export const WORKTREE_CONFIRMED_ITEMS_MAX = 10_000
+export const WORKTREE_CONFIRMED_REPOSITORIES_MAX = 1_000
+/** What the user confirmed goes with a worktree folder (ADR-0041), as Remove worktree and Delete thread… send it. */
+const worktreeConfirmations = {
+  confirmedIgnored: z.array(z.string()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
+  confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
+  confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(),
+    kind: z.enum(['worktree', 'repository']) }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
+}
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   // `newThreadRuntimeMode: null` puts the default back to the provider's own: unlike undefined, JSON carries it to a host.
@@ -1490,7 +1513,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
    */
   z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('delete-thread'), threadId: id, ...worktreeConfirmations }).strict(),
   z.object({ type: z.literal('preview-clear-threads'), olderThanDays: clearThreadsAgeSchema }).strict(),
   z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
@@ -1545,7 +1568,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Remove the thread's own worktree folder and keep its branch (ADR-0041). `withUncommittedChanges`
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('preview-reclaim-thread-worktree'), threadId: id }).strict(),
-  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
    * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`

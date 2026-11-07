@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import type { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
-import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
+import { agentCommandSchema, agentQuestionAnswersSchema, type AgentCommand, WORKTREE_CONFIRMED_ITEMS_MAX, WORKTREE_CONFIRMED_REPOSITORIES_MAX } from '../../../src/shared/agents'
+import { boundedRecords } from '../../../src/shared/boundedRecord'
 import { HOST_DESKTOP_FEATURES, HOST_FEATURE_LIST_MAX, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostHealthFeatures, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 import { CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
@@ -418,5 +420,60 @@ describe('remote command allow-list', () => {
       expect(refuse({ type, threadId: 'thread' }), type).toBeNull()
       expect(refuse({ type, threadId: 'thread', projectId: 'project' } as unknown as AgentCommand), type).toBe('forbidden')
     }
+  })
+})
+
+type Definition = { type: string; checks?: { _zod: { def: { check: string } } }[]; [key: string]: unknown }
+const definition = (schema: unknown): Definition => (schema as { _zod: { def: Definition } })._zod.def
+/**
+ * The collections a paired client may send that have no bound: an array without a maximum, or a record, set or map not
+ * made by `boundedRecord`. Each makes one issue per bad entry, so one frame of them could exhaust the host (#2273).
+ */
+function unboundedCollections(root: z.ZodType): string[] {
+  const found: string[] = []
+  const seen = new Set<unknown>()
+  const visit = (schema: unknown, path: string): void => {
+    if (!schema || seen.has(schema)) return
+    seen.add(schema)
+    const def = definition(schema)
+    const checks = (def.checks ?? []).map(check => check._zod.def.check)
+    if (boundedRecords.has(schema as z.ZodType)) { visit(definition(def.out).valueType, path + '{}'); return }
+    switch (def.type) {
+      case 'array': if (!checks.includes('max_length') && !checks.includes('length_equals')) found.push(path); visit(def.element, path + '[]'); return
+      case 'record': case 'set': case 'map': found.push(path); return
+      case 'object': for (const [key, value] of Object.entries(def.shape as object)) visit(value, path + '.' + key); if (def.catchall) visit(def.catchall, path + '.*'); return
+      case 'union': (def.options as unknown[]).forEach((option, index) => visit(option, `${path}|${index}`)); return
+      case 'intersection': visit(def.left, path); visit(def.right, path); return
+      case 'tuple': (def.items as unknown[]).forEach((item, index) => visit(item, `${path}[${index}]`)); if (def.rest) visit(def.rest, path + '[...]'); return
+      case 'optional': case 'nullable': case 'default': case 'prefault': case 'readonly': case 'nonoptional': case 'catch': visit(def.innerType, path); return
+      case 'pipe': visit(def.in, path); visit(def.out, path); return
+      case 'lazy': visit((def.getter as () => unknown)(), path); return
+    }
+  }
+  visit(root, 'request')
+  return found
+}
+
+describe('collections a paired client sends (#2273)', () => {
+  it('bounds every array and record in a request', () => {
+    expect(unboundedCollections(hostRequestSchema)).toEqual([])
+  })
+  it('refuses an oversized list with one issue for the list, not one for each entry', () => {
+    const request = (command: Record<string, unknown>) => hostRequestSchema.safeParse({ v: 1, id: 'id', session: 'session', op: 'command', command })
+    const repository = { path: 'nested/', changeCount: 0, kind: 'repository' }
+    expect(request({ type: 'reclaim-thread-worktree', threadId: 'thread', confirmedRepositories: new Array(WORKTREE_CONFIRMED_REPOSITORIES_MAX).fill(repository) }).success).toBe(true)
+    expect(request({ type: 'delete-thread', threadId: 'thread', confirmedIgnored: new Array(WORKTREE_CONFIRMED_ITEMS_MAX).fill('build/') }).success).toBe(true)
+    for (const [field, entries] of [['confirmedRepositories', WORKTREE_CONFIRMED_REPOSITORIES_MAX], ['confirmedItems', WORKTREE_CONFIRMED_ITEMS_MAX], ['confirmedIgnored', WORKTREE_CONFIRMED_ITEMS_MAX]] as const) {
+      const command = agentCommandSchema.safeParse({ type: 'reclaim-thread-worktree', threadId: 'thread', [field]: new Array(entries * 10).fill(0) })
+      expect(command.error?.issues, field).toHaveLength(1)
+      expect(command.error?.issues[0], field).toMatchObject({ code: 'too_big', path: [field] })
+    }
+  })
+  it('counts an answer record\'s keys before it reads any of them', () => {
+    const answers = (count: number, value: unknown) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`question-${index}`, value]))
+    expect(agentQuestionAnswersSchema.safeParse(answers(1_000, { optionIds: ['yes'] })).success).toBe(true)
+    const refused = agentQuestionAnswersSchema.safeParse(answers(100_000, 0))
+    expect(refused.error?.issues).toHaveLength(1)
+    expect(refused.error?.issues[0]).toMatchObject({ code: 'too_big', maximum: 1_000 })
   })
 })

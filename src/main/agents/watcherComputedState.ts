@@ -9,18 +9,65 @@ import { WATCHER_KEPT_LISTS, WATCHER_KEPT_UNTOUCHED_MS, type WatcherKeptState, t
  * flagged, so a stale note is seen rather than trusted. Every sentence here is Sotto's; nothing a thread said reaches it.
  */
 
-/** One open pull request of a watched thread, with what the merge queue reads of it; `draft` undefined when Sotto cannot say. */
-export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean | undefined; readonly checksPassedAt?: string }
+/**
+ * One open pull request of a watched thread, with what the merge train reads of it; `draft` undefined when Sotto cannot
+ * say. `head` is the commit Sotto last read it on, `pending` how many of its required and other checks were still to
+ * finish on that head (#2116), and `train` since when it has been in the train and the newest READY TO MERGE its thread sent (#2229).
+ */
+export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean | undefined; readonly checksPassedAt?: string
+  readonly url?: string; readonly head?: string; readonly pending?: { readonly required: number; readonly optional: number }
+  readonly train?: { readonly since: string; readonly ready?: { readonly head: string; readonly at: string } } }
 
 /**
- * The merge queue: every open pull request of a watched thread whose summary is not stale, that is not a draft and whose
- * checks passed, in the order Sotto first saw them pass, oldest first, by number when two passed at once. One not known to
- * be a draft or not is left out.
+ * Where a pull request's required checks stand, as the train reads them: passed once every check passed, or once only
+ * checks no merge waits on are still running; running while any other check runs, since without the rules' counts a
+ * running check may be required; unknown when Sotto's read says nothing.
+ */
+export function requiredChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'pending'>): WatcherMergeQueueItem['requiredChecks'] {
+  const checks = pr.summary.checks
+  if (checks === 'passed' || checks === 'failed') return checks
+  if (checks === 'pending') return pr.pending?.required === 0 ? 'passed' : 'running'
+  return 'unknown'
+}
+
+/**
+ * The merge queue, which is Watcher's merge train (#2229): every open pull request of a watched thread that is not a draft
+ * and that has joined the train, by its checks passing (#1274) or its thread's READY TO MERGE, in the order it joined,
+ * oldest first, by number when two joined at once. It stays in the train while its checks run again after a push, so the
+ * train says whose required checks are running, which a merge now would land in the middle of. One not known to be a
+ * draft or not is left out, and so is one whose summary is stale (#2102) until Sotto reads it again.
  */
 export function watcherMergeQueue(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeQueueItem[] {
-  return threads.flatMap(thread => thread.open.flatMap(pr => pr.summary.state === 'open' && pr.summary.stale !== true && pr.summary.checks === 'passed' && pr.draft === false && pr.checksPassedAt
-    ? [{ target: thread.target, title: thread.title, pullRequest: pr.summary, checksPassedAt: pr.checksPassedAt }] : []))
-    .sort((a, b) => Date.parse(a.checksPassedAt) - Date.parse(b.checksPassedAt) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
+  return threads.flatMap(thread => thread.open.flatMap(pr => {
+    const since = pr.train?.since ?? (pr.summary.checks === 'passed' ? pr.checksPassedAt : undefined)
+    if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false || since === undefined) return []
+    const ready = pr.train?.ready
+    const url = pr.url ?? pr.summary.url
+    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: requiredChecksOf(pr),
+      ...pr.checksPassedAt && pr.summary.checks === 'passed' ? { checksPassedAt: pr.checksPassedAt } : {},
+      ...pr.head ? { head: pr.head } : {}, ...pr.pending ? { checksRunning: pr.pending } : {},
+      ...ready ? { readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } } : {} }]
+  })).sort((a, b) => Date.parse(a.inTrainSince) - Date.parse(b.inTrainSince) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
+}
+
+/** The checks on the newest commit of the branch a pull request merges into, as GitHub reports them when a GO MERGE asks. */
+export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown' }
+
+/**
+ * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose required
+ * checks are running, which the merge would land in the middle of, and the base branch when its newest commit's checks
+ * failed (AGENTS.md: a red run on main is fixed before anything else merges). Nothing holds it when both are clear; a
+ * base branch GitHub could not be asked about holds nothing, and the GO MERGE says so.
+ */
+export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: string, base: BaseBranchChecks | undefined): { readonly running: readonly WatcherMergeQueueItem[]; readonly baseFailed?: BaseBranchChecks } {
+  const going = pullRequestAddress(url), goingKey = pullRequestKey(url)
+  const sameRepository = (item: WatcherMergeQueueItem) => {
+    const address = item.url !== undefined ? pullRequestAddress(item.url) : null
+    return going !== null && address !== null && address.owner.toLowerCase() === going.owner.toLowerCase() && address.name.toLowerCase() === going.name.toLowerCase()
+  }
+  // A check that failed early leaves the rest running: required checks still running hold the turn whatever else failed.
+  const running = queue.filter(item => (item.requiredChecks === 'running' || (item.checksRunning?.required ?? 0) > 0) && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
+  return { running, ...base?.state === 'failed' ? { baseFailed: base } : {} }
 }
 
 /** A thread a kept note may name: who it is, what it is called, and whether it is settled or watched. */

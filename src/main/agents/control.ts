@@ -9,7 +9,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
 import { readVideo } from './shownMedia'
-import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -37,7 +37,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
-import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadReadPurpose } from './host'
+import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
@@ -47,6 +47,7 @@ import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, 
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { ClientUpdates } from './clientUpdates'
 import { ThreadTitles } from './threadTitles'
+import { DetailRevisions } from './detailRevisions'
 // Tests still import this from here; the follow-up that moves them removes this line.
 export { TITLE_WRITE_CLOSING_WAIT_MS } from './threadTitles'
 import { ProviderClients } from './providerClients'
@@ -61,7 +62,7 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
+import { applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
 import { AGENT_STATE_BROADCAST_INTERVAL_MS, realPublishScheduler, type PublishScheduler } from './statePublishers'
 // Tests still import these from here; the follow-up that moves them removes this line.
 export { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes, type CoalescedAgentStatePublisher, type CoalescedThreadDetailPublisher, type PublishScheduler } from './statePublishers'
@@ -94,7 +95,8 @@ import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type Watch
 import { answerImageCarrier, isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
 import { attachedFileRelativePath, attachedFilesNote, saveAttachedFiles } from './attachedFiles'
 import { isResumeNoteText } from '../../shared/restartResume'
-import { isLimitRestartNoteText } from '../../shared/limitRestart'
+import { isLimitRestartNoteText, type ScheduledRestart } from '../../shared/limitRestart'
+import { failedTurnReason } from '../../shared/threadFailures'
 import type { LimitRestart } from './limitRestart'
 import { ThreadProductEvents, type ProductEventRecorder } from '../productEvents/threadEvents'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
@@ -1098,6 +1100,8 @@ export class AgentControl {
   private readonly clients: ProviderClients
   private readonly clientUpdates: ClientUpdates
   private readonly titles: ThreadTitles
+  /** Each shown thread's detail revision, and what it was read from. */
+  private readonly revisions: DetailRevisions
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -1213,23 +1217,6 @@ export class AgentControl {
   private broadcastPending = false
   /** Each detail listener, and whether it is sent appends (`AgentActivityAppend`) or every changed record whole. */
   private readonly detailListeners = new Map<(update: AgentThreadDetailUpdate) => void, { readonly appends: boolean }>()
-  /**
-   * Per thread: the version of the messages last handed out (see `detailMessageKeys`), the signature of the activity beside
-   * them, and the revision that stands for both.
-   */
-  private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
-  private readonly detailRevisions = new Map<string, { messages: number; activities: string; revision: number }>()
-  private readonly certifiedDetailSignatures = new WeakMap<AgentActivity, string>()
-  private readonly certifiedDetailRevisions = new Map<string, { messages: number; activities: readonly AgentActivity[]; revision: number }>()
-  /**
-   * Per thread: each message's ID and its text, shown and attachment lengths as the last revision read them, and a version
-   * that moves whenever one of them did. A publish hands every message over as a new copy, so they are compared by value,
-   * in place, rather than written into a history-sized signature on every broadcast. Kept and dropped with the revisions.
-   */
-  private readonly detailMessageKeys = new Map<string, { epoch: string; ids: string[]; lengths: number[]; version: number }>()
-  private detailMessageVersions = 0
-  /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
-  private readonly certifiedDetailCounters = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
   /**
    * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
@@ -1359,6 +1346,7 @@ export class AgentControl {
       state: () => this.state, disposed: () => this.disposed, history: thread => this.threadHistory(thread),
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), persist: () => this.persist(), dependencies,
     })
+    this.revisions = new DetailRevisions({ dependencies, shownLength: thread => this.detailShownLength(thread) })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -2447,76 +2435,8 @@ export class AgentControl {
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []),
     ])].filter(id => this.threadById(id) !== undefined)
   }
-  /**
-   * A revision that changes exactly when a thread's messages do. Built from identity and length rather
-   * than the text itself: a streaming chunk must bump it without the cost of copying every message.
-   */
-  private detailRevision(thread: AgentThread, activities = this.paneActivities(thread)): number {
-    const messages = this.detailMessagesVersion(thread)
-    if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
-      const held = this.certifiedDetailRevisions.get(thread.id)
-      if (held && held.messages === messages && held.activities === activities) return held.revision
-      if (held && held.messages === messages && held.activities.length === activities!.length
-        && held.activities.every((record, index) => record === activities![index]
-          || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) {
-        // The same records under new identities, as a store read gives them back: they stand for this revision from now
-        // on, or every later publish would compare each of them by signature again, for every long thread on screen.
-        this.certifiedDetailRevisions.set(thread.id, { ...held, activities: activities! })
-        return held.revision
-      }
-      // Retain the legacy signature only across a certified/mutable transition. Ordinary certified
-      // publishes compare the owned record identities, without building a signature at all.
-      const legacy = this.detailRevisions.get(thread.id)
-      const unchanged = !held && legacy?.messages === messages && legacy.activities === this.certifiedActivitiesSignature(activities!)
-      const revision = (held?.revision ?? legacy?.revision ?? this.certifiedDetailCounters.get(thread.id) ?? 0) + (unchanged ? 0 : 1)
-      this.certifiedDetailRevisions.set(thread.id, { messages, activities: activities!, revision })
-      this.certifiedDetailCounters.set(thread.id, revision)
-      return revision
-    }
-    const certified = this.certifiedDetailRevisions.get(thread.id)
-    if (certified) {
-      this.detailRevisions.set(thread.id, { revision: certified.revision, messages: certified.messages, activities: this.certifiedActivitiesSignature(certified.activities) })
-      this.certifiedDetailRevisions.delete(thread.id)
-    }
-    let activitySignature = activities && this.activityDetailSignatures.get(activities)
-    if (activitySignature === undefined) {
-      activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
-      if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
-    }
-    const held = this.detailRevisions.get(thread.id)
-    if (held && held.messages === messages && held.activities === activitySignature) return held.revision
-    const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
-    this.detailRevisions.set(thread.id, { messages, activities: activitySignature, revision })
-    if (this.dependencies.streamingPublishCost === true) this.certifiedDetailCounters.set(thread.id, revision)
-    return revision
-  }
-  private certifiedActivitiesSignature(activities: readonly AgentActivity[]): string {
-    return activities.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
-  }
-  /**
-   * The version of a thread's messages as a detail shows them: it moves exactly when a message's ID, text length, shown
-   * length or attachment count moves, or the history epoch or message count does. The held key is brought up to date in
-   * place, so an unchanged history makes nothing and a streaming chunk rewrites one number.
-   */
-  private detailMessagesVersion(thread: AgentThread): number {
-    const shownLength = this.detailShownLength(thread)
-    const messages = thread.messages, epoch = thread.historyEpoch ?? ''
-    let key = this.detailMessageKeys.get(thread.id), changed = false
-    if (!key || key.epoch !== epoch) { key = { epoch, ids: [], lengths: [], version: 0 }; this.detailMessageKeys.set(thread.id, key); changed = true }
-    const { ids, lengths } = key
-    for (let index = 0; index < messages.length; index++) {
-      const message = messages[index]!, at = index * 3
-      const text = message.text.length, shown = shownLength ? shownLength(message) : text, attachments = message.attachments?.length ?? 0
-      if (index >= ids.length) { ids.push(message.id); lengths.push(text, shown, attachments); changed = true; continue }
-      if (ids[index] !== message.id) { ids[index] = message.id; changed = true }
-      if (lengths[at] !== text) { lengths[at] = text; changed = true }
-      if (lengths[at + 1] !== shown) { lengths[at + 1] = shown; changed = true }
-      if (lengths[at + 2] !== attachments) { lengths[at + 2] = attachments; changed = true }
-    }
-    if (ids.length !== messages.length) { ids.length = messages.length; lengths.length = messages.length * 3; changed = true }
-    if (changed) key.version = ++this.detailMessageVersions
-    return key.version
-  }
+  /** A revision that changes exactly when a thread's messages do (`DetailRevisions`). */
+  private detailRevision(thread: AgentThread, activities = this.paneActivities(thread)): number { return this.revisions.revision(thread, activities) }
   /**
    * How long a message is as a detail shows it, when that can differ from its text: shorter, or -1 when it is not shown.
    * A wake-up of delegation news alone is left out by its own mark, so that is read from the message rather than from a
@@ -2533,12 +2453,6 @@ export class AgentControl {
       return message => shown.get(message.id) ?? -1
     }
     return thread.hiddenWakeUpMessageIds?.length ? hiddenWakeUpShownLength : undefined
-  }
-  private certifiedActivitySignature = (record: AgentActivity): string => {
-    if (!isImmutableActivity(record)) return agentActivitySignature(record)
-    let signature = this.certifiedDetailSignatures.get(record)
-    if (signature === undefined) { signature = agentActivitySignature(record); this.certifiedDetailSignatures.set(record, signature) }
-    return signature
   }
   /**
    * Hears every viewed thread's detail as it changes. `appends`: the listener applies `AgentActivityAppend`, so a record
@@ -2963,7 +2877,7 @@ export class AgentControl {
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
     this.hiddenShown.clear()
-    if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear(); this.detailMessageKeys.clear() }
+    this.revisions.privacyChanged()
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
     const cleanup = [
@@ -3143,11 +3057,7 @@ export class AgentControl {
     if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
-    if (this.dependencies.streamingPublishCost === true) {
-      for (const threadId of this.certifiedDetailRevisions.keys()) if (!targets.includes(threadId)) this.certifiedDetailRevisions.delete(threadId)
-      for (const threadId of this.detailRevisions.keys()) if (!targets.includes(threadId)) this.detailRevisions.delete(threadId)
-      for (const threadId of this.detailMessageKeys.keys()) if (!targets.includes(threadId)) this.detailMessageKeys.delete(threadId)
-    }
+    this.revisions.keepOnly(targets)
     if (!this.detailListeners.size) return
     for (const threadId of targets) {
       const thread = this.threadById(threadId)!
@@ -3164,7 +3074,7 @@ export class AgentControl {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
       const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: pane }, revision,
-        this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
+        this.dependencies.streamingPublishCost === true ? this.revisions.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
         // The pane's own records, when they are certified and in the order the delta reached: frozen, never edited, and the
@@ -3251,6 +3161,8 @@ export class AgentControl {
    * Sotto's waiting wake-up is the exception (ADR-0061 decision 14): babysitting is not background work, so it keeps
    * the thread out of the watched set and its session open to the reaper; the send starts the session again.
    */
+  /** Whether anything waits in a thread's follow-up queue: the user's prompts, Sotto's news or a restart note (#2234). */
+  hasQueuedFollowups(threadId: string): boolean { return this.followupStore.peek().items.some(item => item.threadId === threadId) }
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
@@ -3792,6 +3704,21 @@ export class AgentControl {
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
   /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
   cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
+  /** The limit restart that stands for a thread, as clients read it, for Watcher's hold on its own thread (#2234). */
+  scheduledRestart(threadId: string): ScheduledRestart | undefined { return this.limitRestart?.scheduled(threadId) }
+  /**
+   * Why a thread's last turn failed (#2234): as the failure record kept it, or from the turn's stored record when the
+   * snapshot carries no activities, as for a thread no window shows. Read once a failure, not on every update.
+   */
+  failureReason(threadId: string): string | undefined {
+    const kept = this.failuresSeen.reasonOf(threadId)
+    if (kept !== undefined) return kept
+    const thread = this.threadById(threadId)
+    // The workspace host reads a thread's stored activities as its history source does; another host reads none here.
+    const stored = this.dependencies.host as AgentHost & Partial<Pick<ThreadHistorySource, 'activities'>>
+    const activities = thread && stored.activities?.(threadId, thread.historyEpoch)
+    return thread && activities ? failedTurnReason({ activities: activities as AgentThread['activities'], lastTurn: thread.lastTurn }) : undefined
+  }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {
       this.thread(command.threadId)
@@ -4221,7 +4148,9 @@ export class AgentControl {
     // A user's message may wait behind a card, but only the card can answer it. A phone carries its user origin with it.
     if ((!origin || origin.phoneOrigin) && !reconcilingDraft
       && (command.type === 'manual-send' && (waitingOnCard || this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId)
-        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))
+        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item))
+        // While Watcher's provider is limited or failing, the user's message to Watcher waits in its queue and goes first (#2234).
+        || this.watcherHooks?.holdsWatcherQueue?.(actionThreadId) === true)
         || command.type === 'steer' && waitingOnCard)) {
       const queued = { ...command, type: 'queue-followup' as const, draftId: command.draftId ?? randomUUID() }
       if (origin) this.watcherOrigins.set(queued, origin)
@@ -4375,7 +4304,11 @@ export class AgentControl {
             ...(origin?.operationId ? { watcherOperationId: origin.operationId, messageId: this.watcher.operations.find(item => item.id === origin.operationId)?.messageId } : {}),
             // A phone's follow-up keeps the phone it came from, so it goes under that phone's guard and origin (#1229).
             ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}),
-            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !this.waitsOnRequest(thread) ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
+            // A message to Watcher while its provider is limited or failing follows the failed turn the room's band told of,
+            // so it goes when the hold ends rather than waiting for a review (#2234).
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...((thread.status === 'idle'
+              || thread.status === 'error' && !isThreadTurnRunning(thread) && this.watcherHooks?.holdsWatcherQueue?.(thread.id) === true)
+              && !this.waitsOnRequest(thread) ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
         }
@@ -4538,6 +4471,8 @@ export class AgentControl {
         ? head.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId) : this.followupReady(threadId, head))
       const first = news && news !== head && !headActs() ? news : head
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
+      // While Watcher's provider is limited or failing, what is queued for Watcher waits; a restart note goes (#2234).
+      if (first !== echoed && first.status === 'queued' && !first.news?.some(isAnyRestartNews) && this.watcherHooks?.holdsWatcherQueue?.(threadId)) continue
       // A delegation's hidden news follows only its own thread's turn, never the review a queue waits for.
       const terminalBlocked = !isDelegationOnlyWakeUp(first) && unreviewed(first)
       // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it. It never changes and never
@@ -6670,8 +6605,7 @@ export class AgentControl {
     this.detailSnapshots.clear()
     this.hiddenShown.clear(); this.hiddenShownTargets = new Set()
     if (this.watcherMessageDisplay?.retain(undefined, [])) this.presentedCache = new WeakMap()
-    this.certifiedDetailRevisions.clear()
-    this.certifiedDetailCounters.clear()
+    this.revisions.close()
   }
 }
 

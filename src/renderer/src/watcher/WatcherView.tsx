@@ -48,6 +48,9 @@ import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
+import { WatcherHoldBand } from './WatcherHoldBand'
+import { TurnFailureWordsContext } from '../agents/OwnServerTurn'
+import { useRestartStopped } from '../agents/RestartStopped'
 import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
 import { BESIDE_FILE_ID, BESIDE_PANE_ID, BesideDivider, BesideLinkedFile, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
@@ -418,20 +421,26 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const teamsBridge = useTeamsBridge()
   const teamsState = useTeamsState(teamsBridge)
   const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
+  // Each GO MERGE that went while the merge train held its turn (#2229), with Watcher's reason, kept in memory as main keeps it.
+  const receiptOverrides = room?.state?.receiptOverrides
+  const overridesById = useMemo(() => receiptOverrides?.length ? new Map(receiptOverrides.map(({ operationId, ...override }) => [operationId, override] as const)) : undefined, [receiptOverrides])
   // Watcher's own questions (#2228), where Watcher asked: the room hands the same list until one changes.
   const ownQuestions = room?.state?.questions
   const questionsPlaced = useMemo(() => ownQuestions?.length ? placeQuestions(messages, ownQuestions) : undefined, [messages, ownQuestions])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, overrides: overridesById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, overridesById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
+  // A turn of Watcher's that fails posts no reply while Restart stopped threads is on: the room's band is the one notice,
+  // with the error under its Details (#2234).
+  const failureWords = !useRestartStopped()
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
-  return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
+  return <TurnFailureWordsContext.Provider value={failureWords}><BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
     <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
         error={error} now={now} watcherHeader={header} watcherEmpty={empty}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
     </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
-  </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
+  </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider></TurnFailureWordsContext.Provider>
 }
 
 /** Room left above a failed turn's line when it is brought into view, so the line does not sit flush on the edge. */
@@ -446,8 +455,8 @@ const FAILURE_MARGIN_PX = 12
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
-  // What it waits on: its request's card, or the strip of a prototype waiting for review (ADR-0108).
-  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind], .prototype-ready') : null
+  // What it waits on: its request's card.
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
   if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return
@@ -717,6 +726,8 @@ export function WatcherView({ now: fixedNow }: {
       {needs.length > 0 || asked.length > 0 ? <WatcherGlance entries={needs} questions={asked} onQuestion={focusWatcherQuestion} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
       {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
     </div> : null}
+    {/* While Watcher's own provider is limited or failing, one band under the strip (#2234, Zach's pick A). */}
+    <WatcherHoldBand room={room} now={fixedNow} />
     {askedIds.length > 0 ? <WatcherQuestionMark paneId={WATCHER_PANE_ID} open={askedIds} /> : null}
   </>
   let watcherContent: ReactNode
@@ -737,12 +748,10 @@ export function WatcherView({ now: fixedNow }: {
   const sceneShown = roomOpen && (current === null || watcherRow !== undefined)
   const owls = useWatchedOwls(room?.state ?? null, state)
   // Watcher's own owl glows while something waits on the user (Zach, October 27, 2026): a question or permission of
-  // Watcher's own, or a thread in Needs you for a question, a permission or a prototype to review. A failed turn alone
-  // lights it no more than it lights a thread owl.
-  // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
-  // before a prototype that also waits.
+  // Watcher's own, or a thread in Needs you for a question or a permission. A failed turn alone lights it no more than it
+  // lights a thread owl, and a prototype never does on its own (ADR-0108, November 6, 2026).
   const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || asked.length > 0 || needs.some(({ facts }) =>
-    facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
+    facts.request !== undefined || facts.thread.requests.length > 0)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
   const linkedFile = state === null ? null : view.file

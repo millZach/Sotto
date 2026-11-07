@@ -28,7 +28,7 @@ import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, L
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import { Fold, FOLD_MS } from './Fold'
 import { BrowserLinesStore } from './browserLine'
-import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
+import { OwnServerTurnContext, TurnFailureReason, TurnFailureWordsContext, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
 import { threadHostName } from './HostBadge'
 import { isDrawableVisual, VisualCard } from './VisualCard'
@@ -457,11 +457,13 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
   const stepsOpen = useStepsOpen()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
+  // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
+  const failureWords = useContext(TurnFailureWordsContext)
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
   const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
     ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
+    : drawn(message) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
       delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
       named={namedReply === undefined || message.role !== 'assistant' || isWakeUpMessage(message) || message.id === namedReply} close={close?.has(message.id)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />

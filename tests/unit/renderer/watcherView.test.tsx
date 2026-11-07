@@ -612,32 +612,21 @@ describe("Watcher's room", () => {
     expect(count).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('names a thread whose prototype waits for review in the needs-you line, and the Overview opens its first page (ADR-0108)', async () => {
+  it('leaves a thread whose prototype has no question out of the needs-you line and Needs you (ADR-0108, November 6, 2026)', async () => {
     const state = stateWithWatcher()
-    const pages = [{ token: 'f'.repeat(32), kind: 'file' as const, name: 'settings-prototype.html', start: 'settings-prototype.html' },
-      { token: 's'.repeat(32), kind: 'server' as const, name: 'localhost:8075', start: '' }]
+    const pages = [{ token: 'f'.repeat(32), kind: 'file' as const, name: 'settings-prototype.html', start: 'settings-prototype.html' }]
     state.host.threads.find(thread => thread.id === 'grok-previews')!.prototypeReady = { source: 'reply:grok-previews-2', pages }
-    const openQuestionPage = vi.fn(async () => ({ ok: true as const }))
-    const before = window.sotto
-    window.sotto = { ...before, openQuestionPage } as unknown as NonNullable<typeof window.sotto>
-    try {
-      renderRoom(state, roomState())
-      await paneReady()
-      fireEvent.click(screen.getByRole('button', { name: 'Show 3 threads that need you' }))
-      const line = screen.getByRole('dialog', { name: 'Threads that need you' })
-      const name = within(line).getByRole('button', { name: 'Open Grok voice previews to review its prototype' })
-      expect(name.closest('li')).toHaveTextContent('prototype to review')
-      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
-      const list = within(screen.getByRole('dialog', { name: 'All threads' }))
-      const row = list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).closest('li')!
-      expect(row.closest('section')).toHaveAccessibleName('Needs you, 3 threads')
-      expect(row).toHaveTextContent('Prototype to review')
-      const open = within(row).getByRole('button', { name: 'Open the prototype, settings-prototype.html' })
-      expect(open).toHaveTextContent('Open the prototype')
-      fireEvent.click(open)
-      expect(openQuestionPage).toHaveBeenCalledExactlyOnceWith({ threadId: 'grok-previews', token: pages[0]!.token })
-      await waitFor(() => expect(openQuestionPage).toHaveBeenCalledTimes(1))
-    } finally { if (before === undefined) delete window.sotto; else window.sotto = before }
+    renderRoom(state, roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
+    const line = screen.getByRole('dialog', { name: 'Threads that need you' })
+    expect(within(line).queryByRole('button', { name: /Grok voice previews/ })).toBeNull()
+    expect(line).not.toHaveTextContent('prototype')
+    fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+    const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+    const row = list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).closest('li')!
+    expect(row.closest('section')).not.toHaveAccessibleName('Needs you, 2 threads')
+    expect(within(row).queryByRole('button', { name: /Open the prototype/ })).toBeNull()
   })
 
   it('counts the names past five in the needs-you line, and the count opens All threads with focus coming back to it', async () => {

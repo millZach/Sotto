@@ -5,9 +5,9 @@ import { samePlainData } from './agentStateBroadcast'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './statePublishers'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'state' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew'> & Partial<Pick<WatcherService, 'machines'>>
-/** Every room call, and the machines read only while Work across machines is on (#1032). */
-export type RoomBridge = Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'tryNow'> & Partial<Pick<WatcherService, 'machines'>>
+/** Every room call, the machines read only while Work across machines is on (#1032), and Try now only while Restart stopped threads is (#2234). */
+export type RoomBridge = Required<Omit<WatcherBridge, 'onChanged' | 'readMachines' | 'tryNow'>> & Pick<WatcherBridge, 'readMachines' | 'tryNow'>
 
 /**
  * The window's room updates (#1450): each carries what changed since the last one the window was sent, a list's
@@ -93,6 +93,8 @@ export function createWatcherRoomDesktop(options: {
   streamingPublishCost: boolean
   /** Work across machines (#1032, Owl `cross-machine-work`), read once at start: offers the machines read. */
   machinesEnabled?: boolean
+  /** Restart stopped threads (ADR-0144, Owl `restart-stopped-threads`), read once at start: offers Try now on Watcher's hold (#2234). */
+  holdEnabled?: boolean
   watcher?: RoomService | undefined
   send(state: WatcherRoomState | WatcherRoomUpdate): boolean
   schedule?: PublishScheduler
@@ -113,6 +115,7 @@ export function createWatcherRoomDesktop(options: {
     continueWithHandover: async request => watcher?.continueWithHandover(request) ?? unavailable(),
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
     startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
+    ...options.holdEnabled === true ? { tryNow: async () => watcher?.tryNow() ?? unavailable() } : {},
     ...options.machinesEnabled === true ? { readMachines: async () => watcher?.machines ? watcherMachinesReadSchema.parse(await watcher.machines()) : unavailable() } : {},
   }
   // Keep the legacy callback/replies, without a publisher or updates, when either owner is absent: the room, whole, on every change.
@@ -144,6 +147,7 @@ export function createWatcherRoomDesktop(options: {
       continueWithHandover: request => reply(() => bridge.continueWithHandover(request)),
       dismissHandover: () => reply(() => bridge.dismissHandover()),
       startNew: () => reply(() => bridge.startNew()),
+      ...bridge.tryNow ? { tryNow: () => reply(() => bridge.tryNow!()) } : {},
       ...bridge.readMachines ? { readMachines: bridge.readMachines } : {},
     },
     dispose: () => { unsubscribe(); publisher.dispose() },

@@ -7,7 +7,7 @@ import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCH
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
-import { foldWatcherEvents, foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { RESTART_SUMMARY, foldWatcherEvents, foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
 import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
@@ -115,31 +115,17 @@ it('looks at once when a turn finishes or a request card arrives between two loo
   expect(after).not.toHaveBeenCalled()
 })
 
-it('tells Watcher once for each prototype waiting for review, and lets it go once the mark is gone (ADR-0108)', async () => {
+it('tells Watcher nothing of a prototype on its own: the question card that links it is the news (ADR-0108, November 6, 2026)', async () => {
   const f = fixture()
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
   const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
   f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-  // The mark comes a moment after the turn ends, once its page is found: a change in it is looked at at once.
-  f.wakes.observe(); f.wakes.observeSoon(vi.fn())
-  const event = f.wakes.news().find(item => item.kind === 'prototype-ready')!
-  expect(event).toMatchObject({ target: centerTarget, messageId: 'reply-1' })
-  expect(event).not.toHaveProperty('requestCardId')
-  expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [event], omitted: 0 }))
-    .toContain('This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.')
-  await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  // The same source is told once, however often it is seen.
-  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-  expect(f.delivered.flatMap(news => news.events).filter(item => item.kind === 'prototype-ready')).toHaveLength(1)
-  expect(f.wakes.due(event)).toBe(true)
-  delete f.thread.prototypeReady
-  expect(f.wakes.due(event)).toBe(false)
-  // A waiting question’s prototype is news of its own, named by the question.
+  f.wakes.observe()
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished'])
   f.thread.requests = [{ id: 'question', kind: 'question', text: 'Which one?', options: [], pages: [page] }]
   f.thread.prototypeReady = { source: 'request:question', pages: [page] }
   f.wakes.observe()
-  expect(f.wakes.news().filter(item => item.kind === 'prototype-ready')).toEqual([expect.objectContaining({ requestCardId: 'question' })])
+  expect(f.wakes.news().map(event => event.kind)).toEqual(['turn-finished', 'needs-user'])
 })
 
 it('looks at once when the Watcher record is replaced, and owes nothing once closed', async () => {
@@ -2284,21 +2270,6 @@ describe('news that a card or prototype no longer waits on the user', () => {
     f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.wakes.drained(); await f.advance(WATCHER_BATCH_MAX_MS)
     expect(f.delivered.map(kinds)).toEqual([['needs-user'], ['request-closed'], ['request-closed']])
   })
-
-  it('tells Watcher a prototype it was told of no longer waits on review, but not when its thread was settled', async () => {
-    const f = fixture()
-    finish(f.thread)
-    const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
-    f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toEqual([expect.objectContaining({ target: centerTarget, messageId: 'reply-1' })])
-    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.')
-    f.thread.prototypeReady = { source: 'reply:reply-2', pages: [page] }
-    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    delete f.thread.prototypeReady; f.thread.workspaceSettledAt = new Date(f.now()).toISOString(); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
-    expect(events(f).filter(event => event.kind === 'prototype-closed')).toHaveLength(1)
-  })
 })
 
 it('makes one merge fact and at most one wake-up from alternating open and merged reads of one merged pull request (#1146)', async () => {
@@ -2464,6 +2435,31 @@ it('tells Watcher of every thread a usage limit’s reset restarted, watched or 
   // News of a thread that has since gone is no longer due.
   f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'unwatched')
   expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
+})
+
+it('tells Watcher of watched threads restarted for work left, and asks it for one summary of every restart (#2234)', async () => {
+  const f = fixture()
+  f.wakes.threadsRestarted('claude', [centerTarget], 'work-left')
+  const events = f.wakes.news().filter(event => event.kind === 'threads-restarted')
+  expect(events).toEqual([expect.objectContaining({ restartedBy: 'claude', restartCause: 'work-left' })])
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted')
+  const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
+  expect(text).toContain('Sotto restarted one watched thread whose last turn had ended with an error before it finished')
+  expect(text).toContain('This thread’s last turn had ended with an error before it finished, so Sotto restarted it')
+  expect(text).not.toContain('usage limit had stopped')
+  expect(text.split(RESTART_SUMMARY)).toHaveLength(2)
+  // A limit's restarts and work left in one wake: one summary for both.
+  const limit = { ...told[0]!, id: 'limit', restartCause: undefined }
+  const both = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [...told, limit], omitted: 0 })
+  expect(both.split(RESTART_SUMMARY)).toHaveLength(2)
+  // Threads Sotto closed on and resumed are named in the same summary.
+  const resumed = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [{ ...told[0]!, id: 'resumed', restartCause: 'resumed' }], omitted: 0 })
+  expect(resumed).toContain('Sotto restarted one thread that was working when Sotto closed.')
+  expect(resumed).toContain('Sotto closed while this thread was working, so Sotto restarted it with its resume note when it opened again.')
+  expect(resumed.split(RESTART_SUMMARY)).toHaveLength(2)
+  // News with no restart asks for no summary.
+  expect(watcherNewsText({ source: 'watcher', watcher: centerTarget, events: [], omitted: 0 })).not.toContain(RESTART_SUMMARY)
 })
 
 it('tells Watcher of each move the user made as it ends, watched or not, settled here or not (#1178)', async () => {

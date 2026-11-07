@@ -37,6 +37,11 @@ export interface OwnServerTurnActions {
 export type TryAgainBy = 'send' | 'put-back'
 
 export const OwnServerTurnContext = createContext<OwnServerTurnActions | null>(null)
+/**
+ * Whether a failed turn's error shows under its Failed line. Watcher's room says it false while Restart stopped threads
+ * is on (#2234): a turn of Watcher's that fails posts no reply, and the room's band carries the error under Details.
+ */
+export const TurnFailureWordsContext = createContext(true)
 export const useOwnServerTurnActions = (): OwnServerTurnActions | null => useContext(OwnServerTurnContext)
 
 type Command = AgentConnection['command']
@@ -113,8 +118,9 @@ export function useOwnServerTurns(row: ThreadRow, state: AgentState, command: Co
  */
 export function TurnFailureReason({ turn }: { readonly turn: AgentActivity | undefined }): ReactNode {
   const actions = useOwnServerTurnActions()
+  const shown = useContext(TurnFailureWordsContext)
   const own = turn?.status === 'failed' ? turn.ownServer : undefined
-  if (turn === undefined) return null
+  if (turn === undefined || !shown) return null
   if (actions === null || own?.failure === undefined) return turn.error ? <p className="thread-activity__error thread-activity__error--turn">{turn.error}</p> : null
   return <OwnServerFailure server={{ ...own, failure: own.failure }} newest={actions.newestFailure === turn.id} actions={actions} />
 }

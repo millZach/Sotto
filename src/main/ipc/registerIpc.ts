@@ -1,7 +1,7 @@
 import { DICTATION_TIMING, dictationTimingMarkSchema, type DictationTimingMark } from '../../shared/dictationTiming'
 import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_TRY_NOW, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
   watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
@@ -435,7 +435,7 @@ export interface RecoveryNoticeIpcService {
 export interface RegisterIpcDependencies {
   readonly dictationTiming?: { mark(mark: DictationTimingMark): void }
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines' | 'tryNow'>> & Pick<WatcherBridge, 'readMachines' | 'tryNow'>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -635,6 +635,9 @@ export function registerIpc(
       register(WATCHER_CONTINUE_HANDOVER, watcherContinueHandoverRequestSchema, 1, request => watcher.continueWithHandover(request))
       register(WATCHER_DISMISS_HANDOVER, noPayloadSchema, 0, () => watcher.dismissHandover())
       register(WATCHER_START_NEW, noPayloadSchema, 0, () => watcher.startNew())
+      // Only while Restart stopped threads is on (#2234): stable registers no Try now.
+      const tryNow = watcher.tryNow
+      if (tryNow) register(WATCHER_TRY_NOW, noPayloadSchema, 0, () => tryNow.call(watcher))
       // Only while Work across machines is on (#1032): Stable registers no machines read.
       const readMachines = watcher.readMachines
       if (readMachines) register(WATCHER_READ_MACHINES, noPayloadSchema, 0, () => readMachines.call(watcher))

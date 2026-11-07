@@ -42,6 +42,7 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     startNew: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
+    tryNow: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
   }
   // The window's room: an update put back together as the preload does, or the room itself without the publish window.
   const send = vi.fn((payload: WatcherRoomState | WatcherRoomUpdate) => {

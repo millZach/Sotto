@@ -11,7 +11,6 @@ const WHY = {
   question: msg({ message: 'question', comment: 'Why a thread needs the user, after its name' }),
   permission: msg({ message: 'permission', comment: 'Why a thread needs the user, after its name' }),
   failed: msg`last turn failed`,
-  prototype: msg`prototype to review`,
 } as const satisfies Record<WaitKind, unknown>
 
 /** What a press on a name does when the thread's request has its card in Watcher's conversation. */
@@ -100,7 +99,7 @@ export function WatcherGlance({ entries, questions = [], onQuestion, onOpen, onS
         return <li key={thread.id}>
           <button type="button" className="watcher-glance__name tt-focusable" aria-label={here ? goToAskLabel(thread.title, kind) : openAtRequestLabel(thread.title, kind)} title={thread.title}
             onClick={event => { if (!(here && !event.shiftKey && onJump?.(thread.id, requestId) === true)) press.onClick(event); setOpen(false) }} onKeyDown={press.onKeyDown}>
-            <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : kind === 'prototype' ? 'prototype' : 'needs'} aria-hidden="true" />
+            <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : 'needs'} aria-hidden="true" />
             <span className="watcher-glance__title">{thread.title}</span>
             <span className="watcher-glance__why" aria-hidden="true">{i18n._(WHY[kind])}</span>
           </button>

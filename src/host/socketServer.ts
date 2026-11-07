@@ -311,6 +311,8 @@ const answerDecisionId = (clientId: string, commandId: string): string =>
  */
 const MESSAGES_PER_SECOND = 100
 const EVENT_PAGES_PER_SECOND = 100
+/** Characters an event page's request may take and still be paced rather than counted: far above any valid one. */
+const EVENT_PAGE_REQUEST_MAX = 32 * 1024
 /**
  * How long a phone's shell whose only news is Watcher's conversation waits after the last shell to that phone. Watcher
  * writing its reply changes its page with every word, and its page rides on every shell a phone with Watcher is pushed,
@@ -417,7 +419,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-tell' || options.tellWatcher !== undefined)
+    && (feature !== 'watcher-tell' && feature !== 'watcher-ready' || options.tellWatcher !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
@@ -1453,6 +1455,8 @@ export async function startSocketServer(options: SocketServerOptions) {
           const tellPeer = peer
           peer.tellWatcher ??= { clientId: peer.client.clientId,
             push: (askId, ask) => !tellPeer.frames.isClosed && authenticated(tellPeer) && push(tellPeer, { v: 1, event: 'watcher-tell-ask', askId, ask }) }
+          // A READY TO MERGE (#2229) goes only to a desktop that said it reads one.
+          peer.tellWatcher.ready = (request.accepts?.includes('watcher-ready') ?? false) && offers(peer, 'watcher-ready')
           options.tellWatcher.desktopConnected(peer.tellWatcher)
         }
         // A desktop that relays this host's delegations to other machines (#1316): asks go to it from now on.
@@ -1865,21 +1869,28 @@ export async function startSocketServer(options: SocketServerOptions) {
   const onMessage = (peer: Peer, text: string): void => {
     let raw: unknown
     try { raw = JSON.parse(text) } catch { peer.frames.close(); return }
+    const now = Date.now()
+    // The message budget is spent before the request is checked against the protocol, so a client sending more than its
+    // budget is closed without the host checking what it sent (#2273). An unreadable request still spends it, so a client
+    // cannot loop on one for free. Only an event page is paced instead, and only a request small enough to be one is
+    // checked before it spends anything.
+    const spendMessage = (): boolean => {
+      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
+      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return false }
+      return true
+    }
+    const eventPage = text.length <= EVENT_PAGE_REQUEST_MAX && typeof raw === 'object' && raw !== null && (raw as { op?: unknown }).op === 'events'
+    if (!eventPage && !spendMessage()) return
+    if (peer.inFlight >= 32) { peer.frames.close(); return }
     const parsed = hostRequestSchema.safeParse(raw)
     const envelope = parsed.success ? parsed.data : hostRequestEnvelopeSchema.safeParse(raw).data
     if (!envelope) { peer.frames.close(); return }
-    const now = Date.now()
-    // An unreadable request still spends the message budget, so a client cannot loop on one for free.
     let wait = 0
-    if (parsed.success && parsed.data.op === 'events') {
+    if (eventPage && parsed.success) {
       if (now >= peer.pageWindow + 1000) { peer.pageWindow = now; peer.pages = 0 }
       if (peer.pages >= EVENT_PAGES_PER_SECOND) { peer.pageWindow += 1000; peer.pages = 0 }
       peer.pages++; wait = peer.pageWindow - now
-    } else {
-      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
-      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return }
-    }
-    if (peer.inFlight >= 32) { peer.frames.close(); return }
+    } else if (eventPage && !spendMessage()) return
     // A request from this session that the host cannot read, such as a client of a newer Sotto version
     // sending an operation or field this one does not know, is refused by its id rather than by closing
     // the socket: the client can then say what happened instead of reconnecting into the same refusal.
