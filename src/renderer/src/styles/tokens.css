@@ -181,6 +181,10 @@
   --tt-card-solid: var(--theme-surface-raised);
   --tt-card-inset: var(--theme-canvas);
   --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
+  /* The composer's card and its faint ink: the card's and the faint ink's, unless a theme's block parts them (the Sotto
+     theme by day does, so the composer keeps the card it was drawn on). */
+  --tt-composer-card: var(--tt-card);
+  --tt-composer-text-faint: var(--tt-text-faint);
   /* A segmented control is a sunken track with the chosen segment raised out of it: the overlay by night, the
      surface by day (set in the light block below). */
   --tt-segment-on: var(--theme-surface-overlay);
@@ -203,6 +207,10 @@
   /* What the transcript writes in the muted tier, names, times and folded work, a step nearer the body, because it is read
      for a long time at small sizes. threads.css sets it as the transcript's muted tier; the composer stays on its quiet tier. */
   --tt-transcript-muted: color-mix(in oklab, var(--tt-text-quiet) 80%, var(--tt-text));
+  /* The weight of the small secondary words, the times, counts, statuses and Worked for lines read at the caption and small
+     steps: regular by night, and a step heavier by day (set in the light block below), where strokes that thin render
+     lighter than their ink (Zach's pick B, ADR-0024 November 7 amendment). */
+  --tt-weight-quiet: 400;
   /* What the reading surface reads: the theme's own inks and rules, unless a block below softens them. */
   --tt-reading-text: var(--tt-text);
   --tt-reading-text-2: var(--tt-text-2);
@@ -462,6 +470,8 @@
   /* By day the raised surface is barely off the canvas, so a card is the canvas with a little of the text in it. */
   --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
   --tt-card-solid: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  /* Small secondary words a step heavier by day (see the token above). */
+  --tt-weight-quiet: 500;
   --tt-segment-on: var(--theme-surface);
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
@@ -581,13 +591,30 @@
   --tt-code-text: var(--tt-reading-code-text);
   color: var(--tt-text);
 }
-/* By day the rules a reader's eye follows go a step darker. */
+/* By day the rules a reader's eye follows go a step darker. A card is the canvas with 7% of the text, not 4%, so its edge
+   and the room-coloured lines between its rows show without an outline (Zach's pick B, ADR-0110 November 7 amendment).
+   The faint ink takes a little of the text so it still reads 4.5:1 on that card. The composer keeps the card and the
+   faint ink it was drawn in (below). */
 :root[data-theme='light'][data-theme-id='t3-code'] {
   --tt-reading-hairline: color-mix(in srgb, var(--tt-border-faint) 88%, var(--theme-text));
   --tt-reading-field-border: color-mix(in srgb, var(--tt-field-border) 88%, var(--theme-text));
+  --tt-card: color-mix(in oklab, var(--theme-text) 7%, var(--theme-canvas));
+  --tt-card-solid: color-mix(in oklab, var(--theme-text) 7%, var(--theme-canvas));
+  --tt-composer-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-composer-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-faint: color-mix(in oklab, var(--tt-composer-text-faint) 92%, var(--theme-text));
 }
+/* By day Changes divides its files, heads and hunks with the reading hairline, so the rules show on the light sidebar
+   (Zach's pick B, ADR-0110 November 7 amendment). */
+:root[data-theme='light'] .changes-surface { --tt-hairline: var(--tt-reading-hairline); }
 /* The composer keeps exactly the inks it had: its secondary text stays on the quiet tier, and so do the menus it opens. */
 .thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices { --tt-text-muted: var(--tt-text-quiet); }
+/* And the card and faint ink it was drawn in, where a theme parts them from the room's (the Sotto theme by day). */
+:root[data-theme='light'][data-theme-id='t3-code'] :is(.thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices) {
+  --tt-card: var(--tt-composer-card);
+  --tt-card-solid: var(--tt-composer-card);
+  --tt-text-faint: var(--tt-composer-text-faint);
+}
 /* The reading surface: a thread's transcript, and not Watcher's conversation. */
 .thread-pane:not(.watcher-pane) .thread-transcript {
   --tt-text: var(--tt-reading-text);

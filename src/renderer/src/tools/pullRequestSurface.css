@@ -33,11 +33,12 @@
   --pr-dock-cut: 0px; --pr-dock-cut-end: 0px; --pr-dock-top: 0px; --pr-foot-cut: 100%; --pr-foot-cut-end: 100%;
   mask-image: linear-gradient(to bottom, black var(--pr-dock-cut), transparent var(--pr-dock-cut-end), transparent var(--pr-dock-top), black var(--pr-dock-top),
     black var(--pr-foot-cut), transparent var(--pr-foot-cut-end)); scroll-padding-bottom: 24px; }
-.pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
+.pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: var(--tt-weight-quiet); }
 
-/* The checklist. */
+/* The checklist. Its small secondary words, here and in the folds below (the count, a done line, a fold's count and
+   aside, a peek, a folder), take the quiet weight, a step heavier by day (ADR-0024 November 7 amendment). */
 .pr-surface__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: var(--tt-type-lead); font-weight: 550; }
-.pr-surface__heading small { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
+.pr-surface__heading small { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: var(--tt-weight-quiet); }
 .pr-surface__heading small[data-tone='done'] { color: var(--tt-success); }
 .pr-surface__lines { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
 /* A line still open is whole and leads, on the one card they share (ADR-0110: filled, with no outline, its rows divided
@@ -49,7 +50,7 @@
 .pr-surface__line:not([data-tone='done']):has(+ [data-tone='done']) { margin-bottom: 8px; }
 .pr-surface__line:not([data-tone='done']) > svg { color: var(--tt-text-muted); }
 /* A line that is done has done its job: a tick and its words, in a row that takes no more than it must. */
-.pr-surface__line[data-tone='done'] { display: inline-flex; align-items: center; gap: 6px; padding: 3px 16px 3px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.35; }
+.pr-surface__line[data-tone='done'] { display: inline-flex; align-items: center; gap: 6px; padding: 3px 16px 3px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: var(--tt-weight-quiet); line-height: 1.35; }
 .pr-surface__line[data-tone='done'] > svg { flex: none; color: var(--tt-success); }
 .pr-surface__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
 .pr-surface__line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
@@ -70,11 +71,11 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__check-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
 .pr-surface__check:is([data-status='failure'], [data-status='cancelled'], [data-status='action-required']) .pr-surface__check-name { color: var(--tt-text); font-weight: 500; }
 .pr-surface__check-name { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
-.pr-surface__check-group { color: var(--tt-text-muted); font-weight: 400; }
+.pr-surface__check-group { color: var(--tt-text-muted); font-weight: var(--tt-weight-quiet); }
 .pr-surface__check-why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; }
-.pr-surface__check-word { color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.pr-surface__check-word { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: var(--tt-weight-quiet); white-space: nowrap; }
 .pr-surface__check[data-status='failure'] .pr-surface__check-word, .pr-surface__check[data-status='cancelled'] .pr-surface__check-word { color: var(--tt-error-text); }
-.pr-surface__check-time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pr-surface__check-time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: var(--tt-weight-quiet); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .pr-surface__check-go { color: var(--tt-text-muted); }
 .pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
 .pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
@@ -159,14 +160,14 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__others .pr-surface__fold-body { padding-top: 4px; }
 .pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 12px 14px 35px; }
 .pr-surface__fold-body[data-wide] { justify-items: stretch; padding-left: 12px; }
-.pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: 400; }
+.pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: var(--tt-weight-quiet); }
 /* What a closed Description holds: its first lines, under its name, in at most two lines. */
 .pr-surface__fold-preview { display: -webkit-box; flex: 1 0 100%; min-width: 0; padding-left: 23px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Where the panel has room, it is its whole first paragraph, in up to four. */
 .pr-surface__fold-preview[data-whole] { -webkit-line-clamp: 4; }
 /* Where the panel has room, a closed fold's head also shows the first few of what it holds: the checks that still stand,
    the most changed files. Quieter than the list it opens to, and one press with the head, which opens that list. */
-.pr-surface__peek { display: grid; flex: 1 0 100%; gap: 3px; min-width: 0; margin-top: 6px; padding-left: 23px; font-size: var(--tt-type-small); font-weight: 400; line-height: 1.4; }
+.pr-surface__peek { display: grid; flex: 1 0 100%; gap: 3px; min-width: 0; margin-top: 6px; padding-left: 23px; font-size: var(--tt-type-small); font-weight: var(--tt-weight-quiet); line-height: 1.4; }
 .pr-surface__peek-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; color: var(--tt-text-2); }
 .pr-surface__peek[data-of='checks'] .pr-surface__peek-row { grid-template-columns: 13px minmax(0, 1fr) auto 7ch; column-gap: 8px; }
 .pr-surface__peek-row > svg { color: var(--tt-text-muted); }
@@ -201,7 +202,7 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
    down the whole list, the folder's with them. */
 .pr-surface__files { display: grid; gap: 10px; justify-self: stretch; margin: 0 -6px 0 0; padding: 0; list-style: none; }
 .pr-surface__files ul { margin: 0; padding: 0; list-style: none; }
-.pr-surface__files-folder { display: flex; align-items: center; gap: 12px; min-height: 24px; padding: 0 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.pr-surface__files-folder { display: flex; align-items: center; gap: 12px; min-height: 24px; padding: 0 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: var(--tt-weight-quiet); }
 /* A long folder gives way from its start, so the part nearest its files stays, as the Changes tree's does. */
 .pr-surface__files-folder > span:first-child { flex: 1; min-width: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .pr-surface__files-folder > .pr-surface__file-go { width: 13px; }
