@@ -40,7 +40,7 @@ import type { AgentControl, HostThreadsChange, HostThreadsView, WatcherDraft } f
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
 import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
-import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
+import { WatcherWakeUp, watcherBackgroundWorkCount, watcherRosterWork, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
 import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
@@ -1552,16 +1552,17 @@ export class WatcherService implements WatcherControlHooks {
     if (isThreadTurnRunning(thread)) refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
     // Sub-agents still working, or not yet known to have ended, count, as the wake-up's work-settled news counts them. The refusal
     // names what it counted in that count's own pieces: the larger of background tasks and those agents once, since both
-    // can describe the same sub-agents, then the monitors.
-    const backgroundTasks = thread.backgroundWork?.length ?? 0
-    const workingAgents = (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)
-    const monitors = thread.monitoring?.length ?? 0
+    // can describe the same sub-agents, then the monitors. Tasks and monitors are named by their labels (#2323).
+    const backgroundTasks = thread.backgroundWork ?? []
+    const workingAgents = watcherRosterWork(thread)
+    const monitors = thread.monitoring ?? []
     if (watcherBackgroundWorkCount(thread) > 0) {
+      const labels = (items: readonly { label: string }[]) => items.map(item => `“${item.label}”`).join(', ')
       const counted = [
-        backgroundTasks >= workingAgents && backgroundTasks
-          ? `${backgroundTasks} background task${backgroundTasks === 1 ? '' : 's'}`
+        backgroundTasks.length >= workingAgents && backgroundTasks.length
+          ? `${backgroundTasks.length} background task${backgroundTasks.length === 1 ? '' : 's'} (${labels(backgroundTasks)})`
           : workingAgents ? `${workingAgents} agent${workingAgents === 1 ? '' : 's'} still working or not known to have ended` : '',
-        monitors ? `${monitors} monitor${monitors === 1 ? '' : 's'}` : '',
+        monitors.length ? `${monitors.length} monitor${monitors.length === 1 ? '' : 's'} (${labels(monitors)})` : '',
       ].filter(Boolean).join(', ')
       refuse('BACKGROUND_WORK_RUNNING', `This thread still has background work: ${counted}. Stop it explicitly before settling.`)
     }
@@ -1592,8 +1593,9 @@ export class WatcherService implements WatcherControlHooks {
     if (request) return `requests[${request.id}].kind=${request.kind}`
     const task = thread.backgroundWork?.[0]
     if (task) return `backgroundWork[${task.id}].type=${task.type}`
-    if (thread.subagentSummary?.working) return `subagentSummary.working=${thread.subagentSummary.working}`
-    if (thread.subagentSummary?.unknown) return `subagentSummary.unknown=${thread.subagentSummary.unknown}`
+    // A Claude thread's roster counts toward none of its work (`watcherRosterWork`, #2323).
+    if (watcherRosterWork(thread) && thread.subagentSummary?.working) return `subagentSummary.working=${thread.subagentSummary.working}`
+    if (watcherRosterWork(thread) && thread.subagentSummary?.unknown) return `subagentSummary.unknown=${thread.subagentSummary.unknown}`
     const monitor = thread.monitoring?.[0]
     if (monitor) return `monitoring[${monitor.id}]`
   }

@@ -114,6 +114,19 @@ describe('retained subagent roster', () => {
     store.close(); store.open()
     expect(store.assignments({ threadId: 'thread', agentId: 'agent' }).assignments[0]!.result).toBe('Recovered result')
   })
+  // #2323: Claude stamped a failed launch 2 ms after its call, Sotto stamped the call on receipt 6 ms after, and the
+  // failure, older than the start on the record, was dropped, leaving the agent counted forever.
+  it.each(['running', 'unknown'] as const)('takes an ending stamped earlier than a %s start, whose clock was Sotto\'s', async state => {
+    const { store } = await fixture()
+    store.ingest('thread', [observation({ observedAt: at(6), startedAt: at(6) })])
+    if (state === 'unknown') { store.close(); store.open() }
+    expect(store.summary('thread')).toMatchObject(state === 'unknown' ? { unknown: 1 } : { working: 1 })
+    const ended = store.ingest('thread', [observation({ observedAt: at(2), startedAt: at(6), status: 'failed', completedAt: at(2), message: 'Concurrent subagent limit reached.' })])
+    expect(ended?.summary).toMatchObject({ working: 0, unknown: 0, failed: 1 })
+    // A running sighting stamped before the ending cannot bring it back.
+    expect(store.ingest('thread', [observation({ observedAt: at(1), title: 'Late running sighting' })])).toBeUndefined()
+    expect(store.summary('thread')).toMatchObject({ working: 0, unknown: 0, failed: 1 })
+  })
   it('uses indexed cursors to page roster and assignment history without duplicates', async () => {
     const { store } = await fixture()
     store.ingest('thread', Array.from({ length: 123 }, (_, i) => observation({ id: `agent-${i}`, status: 'completed' })))

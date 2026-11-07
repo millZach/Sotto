@@ -229,7 +229,10 @@ export class SubagentStore {
         if (record?.fingerprint === hash) continue
         const status = observedSubagentStatus(observation.status)
         if (prior && terminal(prior.status) && !terminal(status)) continue
-        if (record && observation.observedAt && observation.observedAt < String(record.observed_at)) continue
+        // An assignment ends once, and its ending can carry the provider's clock while its start carried Sotto's, a few
+        // milliseconds later (#2323), so an ending of one not yet ended is never too old to take.
+        const ends = terminal(status) && (!prior || !terminal(prior.status))
+        if (!ends && record && observation.observedAt && observation.observedAt < String(record.observed_at)) continue
         // Replayed cached history is not evidence a disconnected assignment is alive.
         if (prior?.status === 'unknown' && status === 'running' && (!observation.observedAt || observation.observedAt <= String(record!.observed_at))) continue
         const observedAt = observation.observedAt ?? new Date().toISOString()
