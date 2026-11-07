@@ -2358,6 +2358,9 @@ describe('news that a card or prototype no longer waits on the user', () => {
     // The user stops the turn while the question waits: the card goes with it.
     f.thread.requests = []; f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'interrupted' }
     f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    // A closing wakes no one by itself (#2226): it goes with the thread's next turn end.
+    expect(f.delivered).toHaveLength(1)
+    await turnEnds(f, 'turn-2')
     expect(events(f).filter(event => event.kind === 'request-closed')).toEqual([expect.objectContaining({ requestCardId: 'asked', endedWithoutAnswer: true })])
     expect(events(f).find(event => event.kind === 'request-closed')).not.toHaveProperty('answeredByUser')
     expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question ended without an answer: its turn ended and Sotto saw no answer from the user. It no longer waits on them.')
@@ -2599,7 +2602,8 @@ it('tells Watcher of watched threads restarted for work left, and asks it for on
   f.wakes.threadsRestarted('claude', [centerTarget], 'work-left')
   const events = f.wakes.news().filter(event => event.kind === 'threads-restarted')
   expect(events).toEqual([expect.objectContaining({ restartedBy: 'claude', restartCause: 'work-left' })])
-  await f.advance(WATCHER_BATCH_MAX_MS)
+  // It rides with the restarted turn's end (#2226).
+  finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
   const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted')
   const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
   expect(text).toContain('Sotto restarted one watched thread whose last turn had ended with an error before it finished')
