@@ -527,7 +527,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, ...options.teams ? { teamMessageGoing: () => options.teams!.userMessageGoing() } : {}, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...restartStopped ? { holdNews: true } : {}, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},
@@ -711,7 +711,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const resumeSetting = (): boolean => restartStopped ? options.settings().restartStoppedThreads : options.settings().resumeThreadsAfterRestart
   const restartResume = options.resumeAfterRestart === true
     ? new RestartResume({ directory, control: agentControl, enabled: resumeSetting,
-      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id) }) : undefined
+      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id),
+      // Watcher hears the threads it resumed with the rest of a restart's news, for its one summary (#2234).
+      ...restartStopped && watcher ? { resumed: (threadId: string) => {
+        const hostId = agentControl.hostId(), provider = agentControl.liveThread(threadId)?.providerId
+        if (hostId && provider && threadId !== watcherThreadHere()) watcher.wakes.threadsRestarted(provider, [{ hostId, threadId }], 'resumed')
+      } } : {} }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: resumeSetting,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
@@ -725,10 +730,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     control: { host: () => agentControl.watcherSnapshot(), thread: id => agentControl.liveThread(id), deliverWakeUp: (id, news, given) => agentControl.deliverWakeUp(id, news, given) },
     enabled: () => options.settings().restartStoppedThreads, watcherThreadId: watcherThreadHere, tool: babysitTool,
     preservesDormantThread: id => agentHost.preservesDormantThread(id),
-    restarted: (provider, threadIds) => {
+    restarted: (provider, threadIds, cause) => {
       const hostId = agentControl.hostId(), own = watcherThreadHere()
-      if (watcher && hostId) watcher.wakes.threadsRestarted(provider, threadIds.filter(id => id !== own).map(threadId => ({ hostId, threadId })))
-    } }) : undefined
+      if (watcher && hostId) watcher.wakes.threadsRestarted(provider, threadIds.filter(id => id !== own).map(threadId => ({ hostId, threadId })), cause)
+    },
+    // Watched threads that stopped with work left are restarted once Sotto starts and when Watcher's limit resets (#2234),
+    // unless their queue or a resume note already carries them on.
+    ...watcher ? { watched: () => agentControl.hostId() ? watcher.watchedThreadIds() : undefined,
+      waiting: (id: string) => agentControl.hasQueuedFollowups(id) || restartResume?.resuming(id) === true } : {} }) : undefined
   if (limitRestart) agentControl.useLimitRestart(limitRestart)
   // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
   // The switch is read at every sweep, so turning it off stops the next one without a restart. Watcher's own conversation

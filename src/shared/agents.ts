@@ -533,6 +533,12 @@ export const agentMessageSchema = z.object({
    */
   wakeUp: z.literal(true).optional().catch(undefined),
   /**
+   * Set on a reply the provider made of its own API error, such as Claude Code's "You've hit your limit" (#2234), from
+   * the provider's own marking of it, never from its text. Watcher's room shows no such reply while Restart stopped
+   * threads is on: the room's band is the one notice. An older reader drops the field and shows the reply.
+   */
+  providerError: z.literal(true).optional().catch(undefined),
+  /**
    * Set beside `wakeUp` on a wake-up that carried only news of the thread's delegations (ADR-0081, October 19, 2026), from
    * the host's own record of the send. The agent read it; no window or phone shows it. An older reader drops the field and
    * shows the wake-up as Sotto's.

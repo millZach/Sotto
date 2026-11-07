@@ -5,7 +5,7 @@ import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews,
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
-import { limitRestartNewsSchema, limitRestartNote, type LimitRestartNews } from '../../shared/limitRestart'
+import { WORK_LEFT_RESTART_NOTE, limitRestartNewsSchema, limitRestartNote, type LimitRestartNews } from '../../shared/limitRestart'
 import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT, type WatcherNewsDetail, type WatcherNewsHeld } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
@@ -87,7 +87,7 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
  */
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const limit = news.find(isLimitRestartNews)
-  const restart = limit ? limitRestartNoteFor(limit.provider) : news.some(isRestartNews) ? RESUME_NOTE : ''
+  const restart = limit ? limit.cause === 'work-left' ? WORK_LEFT_RESTART_NOTE : limitRestartNoteFor(limit.provider) : news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
   const delegation = news.filter(isDelegationNews).map(item => delegationNewsText(item)).join('\n\n')
   if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''

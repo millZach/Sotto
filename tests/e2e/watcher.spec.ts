@@ -55,6 +55,8 @@ const checksEvidence = evidenceDirectory('artifacts/check-queue-view')
 const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 /** Moving threads, part 2 (#1178): Move threads, its sheet and each move's card. */
 const movesEvidence = evidenceDirectory('artifacts/move-threads-window')
+/** The band while Watcher's own provider is limited or failing (#2234, pick A): captures for its note. */
+const holdEvidence = evidenceDirectory('artifacts/watcher-hold')
 /** Watcher's own question (#2228, Zach's pick A): its card where it asked, its row in Needs you and its answered line. */
 const questionEvidence = evidenceDirectory('artifacts/watcher-own-question')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -329,7 +331,8 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button',
       '.watcher-machines__name', '.watcher-machines__count', '.watcher-machines__words', '.watcher-machines__more', '.receipt-card__placement',
       '.watcher-machine-panel h2', '.watcher-machine-panel dt', '.watcher-machine-panel dd', '.watcher-machine-panel p', '.watcher-machine-panel__title',
-      '.watcher-machine-panel__who', '.watcher-machine-panel__link', '.watcher-question-mark__chip']
+      '.watcher-machine-panel__who', '.watcher-machine-panel__link', '.watcher-question-mark__chip',
+      '.watcher-hold__words', '.watcher-hold__words strong', '.watcher-hold__link', '.watcher-hold__meta', '.watcher-hold__held', '.watcher-hold__details > summary', '.watcher-hold__details > pre']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -424,7 +427,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence, holdEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -437,13 +440,15 @@ test.describe("Watcher's room on the built app", () => {
     const fresh = /^new-watcher-/u
     const machines = /^machines-/u
     const moves = /^moves-/u
+    const hold = /^hold-/u
     const question = /^own-question-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key) && !moves.test(key) && !question.test(key))],
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key) && !moves.test(key) && !question.test(key) && !hold.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
       [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))],
       [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))], [machinesEvidence, [...recorded].filter(([key]) => machines.test(key))],
-      [movesEvidence, [...recorded].filter(([key]) => moves.test(key))], [questionEvidence, [...recorded].filter(([key]) => question.test(key))]] as const
+      [movesEvidence, [...recorded].filter(([key]) => moves.test(key))], [questionEvidence, [...recorded].filter(([key]) => question.test(key))],
+      [holdEvidence, [...recorded].filter(([key]) => hold.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1450,6 +1455,69 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Escape')
         // Visual gate flake is still running, so Stop all stays, now for it alone.
         await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
+      })
+    })
+  })
+
+  test('while Watcher’s provider is limited or failing, one band under the strip is the one notice, at every size (#2234)', async () => {
+    // Watcher hit Claude Code's weekly limit; it resets in four days. Then, apart, Claude Code stops answering.
+    const reset = new Date(E2E_THREADS_NOW + 4 * 24 * 60 * 60_000 + 20 * 60_000).toISOString()
+    const limited = { kind: 'limited' as const, provider: 'claude', since: at(90), resetsAt: reset, tries: 0, held: 37, pullRequests: 6 }
+    const failing = { kind: 'failing' as const, provider: 'claude', since: at(79), nextTryAt: at(-3), lastTryAt: at(3), tries: 16, held: 12, pullRequests: 2,
+      detail: 'request to api.anthropic.com failed, reason: write EPROTO 28940000:error:0A00010B:SSL routines:ssl3_get_record:wrong version number' }
+    // The turn that met the failure posts no reply: its error is only under the band's Details.
+    const failedTurn: AgentActivity = { id: 'watcher-failed-turn', kind: 'turn', title: 'Turn', turnId: 'watcher-reply', afterMessageId: 'watcher-reply', sequence: 1, status: 'failed', startedAt: at(80), completedAt: at(79),
+      error: 'request to api.anthropic.com failed, reason: write EPROTO' } as AgentActivity
+    // The reply Claude Code made of its own error, which Watcher's room leaves out.
+    const errorReply: AgentMessage = { id: 'watcher-limit-reply', role: 'assistant', text: 'You’ve hit your weekly limit · resets Thursday 1pm', providerError: true,
+      createdAt: new Date(Date.UTC(2026, 6, 12, 19, 34)).toISOString() }
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, activities: [failedTurn], messages: [errorReply], more: () => ({ hold: limited }) })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const band = watcherPane(page).getByRole('group', { name: /^Watcher’s Claude Code limit resets /u })
+        await expect(band).toContainText('Sotto is holding 37 news until then.')
+        await expect(band.getByRole('button', { name: 'Try now' })).toHaveCount(0)
+        await expect(watcherPane(page).getByText('write EPROTO')).toHaveCount(0)
+        await expect(watcherPane(page).getByText('You’ve hit your weekly limit')).toHaveCount(0)
+        // From the keyboard: What's held opens and says where the news came from, and that a message goes first.
+        const what = band.getByRole('button', { name: 'What’s held' })
+        await what.focus()
+        await page.keyboard.press('Enter')
+        await expect(what).toHaveAttribute('aria-expanded', 'true')
+        await expect(band).toContainText('6 from pull requests, 31 from threads. Watcher gets it in one message at the reset. A message you send goes first.')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the limited band at ${width}x${height}` }).toEqual([])
+          await captureInto(holdEvidence, launched, `hold-limited-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `hold-limited-${appearance}-${width}x${height}`)
+        }
+        // The composer still takes a message.
+        await expect(page.locator('#watcher-prompt')).toBeVisible()
+        await seedRoom(page, { current: true, activities: [failedTurn], messages: [errorReply], more: () => ({ hold: failing }) })
+        await openRoom(page)
+        await resizeContentWindow(launched, 1280, 800)
+        const down = watcherPane(page).getByRole('group', { name: 'Claude Code isn’t answering.' })
+        await expect(down).toContainText('Sotto holds news and tries again every few minutes. Holding 12 so far.')
+        await expect(down).toContainText('Failing since')
+        await expect(down.locator('details')).not.toHaveAttribute('open', '')
+        await down.getByText('Details', { exact: true }).click()
+        await expect(down.locator('pre')).toHaveText(failing.detail)
+        await expect(watcherPane(page).locator('.thread-activity__error--turn')).toHaveCount(0)
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the failing band at ${width}x${height}` }).toEqual([])
+          await captureInto(holdEvidence, launched, `hold-failing-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `hold-failing-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        await down.getByRole('button', { name: 'Try now' }).click()
+        await expect(down).toContainText('Last try')
       })
     })
   })

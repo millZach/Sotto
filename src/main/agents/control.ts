@@ -37,7 +37,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
-import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadReadPurpose } from './host'
+import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
@@ -95,7 +95,8 @@ import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type Watch
 import { answerImageCarrier, isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
 import { attachedFileRelativePath, attachedFilesNote, saveAttachedFiles } from './attachedFiles'
 import { isResumeNoteText } from '../../shared/restartResume'
-import { isLimitRestartNoteText } from '../../shared/limitRestart'
+import { isLimitRestartNoteText, type ScheduledRestart } from '../../shared/limitRestart'
+import { failedTurnReason } from '../../shared/threadFailures'
 import type { LimitRestart } from './limitRestart'
 import { ThreadProductEvents, type ProductEventRecorder } from '../productEvents/threadEvents'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
@@ -3155,6 +3156,8 @@ export class AgentControl {
    * Sotto's waiting wake-up is the exception (ADR-0061 decision 14): babysitting is not background work, so it keeps
    * the thread out of the watched set and its session open to the reaper; the send starts the session again.
    */
+  /** Whether anything waits in a thread's follow-up queue: the user's prompts, Sotto's news or a restart note (#2234). */
+  hasQueuedFollowups(threadId: string): boolean { return this.followupStore.peek().items.some(item => item.threadId === threadId) }
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
@@ -3696,6 +3699,21 @@ export class AgentControl {
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
   /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
   cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
+  /** The limit restart that stands for a thread, as clients read it, for Watcher's hold on its own thread (#2234). */
+  scheduledRestart(threadId: string): ScheduledRestart | undefined { return this.limitRestart?.scheduled(threadId) }
+  /**
+   * Why a thread's last turn failed (#2234): as the failure record kept it, or from the turn's stored record when the
+   * snapshot carries no activities, as for a thread no window shows. Read once a failure, not on every update.
+   */
+  failureReason(threadId: string): string | undefined {
+    const kept = this.failuresSeen.reasonOf(threadId)
+    if (kept !== undefined) return kept
+    const thread = this.threadById(threadId)
+    // The workspace host reads a thread's stored activities as its history source does; another host reads none here.
+    const stored = this.dependencies.host as AgentHost & Partial<Pick<ThreadHistorySource, 'activities'>>
+    const activities = thread && stored.activities?.(threadId, thread.historyEpoch)
+    return thread && activities ? failedTurnReason({ activities: activities as AgentThread['activities'], lastTurn: thread.lastTurn }) : undefined
+  }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {
       this.thread(command.threadId)
@@ -4125,7 +4143,9 @@ export class AgentControl {
     // A user's message may wait behind a card, but only the card can answer it. A phone carries its user origin with it.
     if ((!origin || origin.phoneOrigin) && !reconcilingDraft
       && (command.type === 'manual-send' && (waitingOnCard || this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId)
-        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))
+        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item))
+        // While Watcher's provider is limited or failing, the user's message to Watcher waits in its queue and goes first (#2234).
+        || this.watcherHooks?.holdsWatcherQueue?.(actionThreadId) === true)
         || command.type === 'steer' && waitingOnCard)) {
       const queued = { ...command, type: 'queue-followup' as const, draftId: command.draftId ?? randomUUID() }
       if (origin) this.watcherOrigins.set(queued, origin)
@@ -4279,7 +4299,11 @@ export class AgentControl {
             ...(origin?.operationId ? { watcherOperationId: origin.operationId, messageId: this.watcher.operations.find(item => item.id === origin.operationId)?.messageId } : {}),
             // A phone's follow-up keeps the phone it came from, so it goes under that phone's guard and origin (#1229).
             ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}),
-            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !this.waitsOnRequest(thread) ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
+            // A message to Watcher while its provider is limited or failing follows the failed turn the room's band told of,
+            // so it goes when the hold ends rather than waiting for a review (#2234).
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...((thread.status === 'idle'
+              || thread.status === 'error' && !isThreadTurnRunning(thread) && this.watcherHooks?.holdsWatcherQueue?.(thread.id) === true)
+              && !this.waitsOnRequest(thread) ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
         }
@@ -4442,6 +4466,8 @@ export class AgentControl {
         ? head.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId) : this.followupReady(threadId, head))
       const first = news && news !== head && !headActs() ? news : head
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
+      // While Watcher's provider is limited or failing, what is queued for Watcher waits; a restart note goes (#2234).
+      if (first !== echoed && first.status === 'queued' && !first.news?.some(isAnyRestartNews) && this.watcherHooks?.holdsWatcherQueue?.(threadId)) continue
       // A delegation's hidden news follows only its own thread's turn, never the review a queue waits for.
       const terminalBlocked = !isDelegationOnlyWakeUp(first) && unreviewed(first)
       // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it. It never changes and never
