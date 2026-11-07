@@ -3161,6 +3161,21 @@ msgstr "Copy the {sourceName} sign-in page address"
 msgid "Copy the code {code}"
 msgstr "Copy the code {code}"
 
+#. The accessible name of the button that copies the command an opened step ran.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Copy the command"
+msgstr "Copy the command"
+
+#. The accessible name of the button that copies what an opened step printed.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy the output"
+msgstr "Copy the output"
+
+#. Copies what an opened step printed, once all of it has arrived.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy the output, once the rest arrives"
+msgstr "Copy the output, once the rest arrives"
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Copy works once the rest arrives"
 msgstr "Copy works once the rest arrives"
@@ -10365,6 +10380,7 @@ msgstr "worked on the cloud iPhone"
 #. A thread row's state: its agent is working.
 #. A turn that is running.
 #. A turn that is running.
+#. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
 #: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/ThreadActivity.tsx
@@ -10403,6 +10419,11 @@ msgstr "Working folder"
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Working folder unavailable."
 msgstr "Working folder unavailable."
+
+#. {took} is how long the running turn has worked so far, such as 2m 14s.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Working for {took}"
+msgstr "Working for {took}"
 
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Working in the background."

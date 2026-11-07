@@ -259,8 +259,10 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
   </span>
 }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false }: {
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false, lines }: {
   code: string; language: string | undefined
+  /** Draws only the code's first lines, as a step's long output does until a press shows the rest; Copy still takes it whole. */
+  readonly lines?: number | undefined
   readonly cut?: CodeBlockCut | undefined
   /** The reply is still writing this block: its fence has not closed, so its last line carries the reply's caret. */
   readonly writing?: boolean | undefined
@@ -285,7 +287,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     const pre = scroll.current
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
-  const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
+  const drawnCode = useMemo(() => lines === undefined ? code : code.split('\n').slice(0, lines).join('\n'), [code, lines])
+  const highlighted = useMemo(() => highlight(drawnCode, language, highlighter), [drawnCode, language, highlighter])
   // Lines that run past the block's edge fade there, so a reader sees there is more; the attribute is written on the
   // element, so scrolling sideways draws nothing again in React.
   useLayoutEffect(() => {
@@ -315,9 +318,13 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
         {BLOCK_RUN[runState].icon}<span>{i18n._(BLOCK_RUN[runState].text)}</span>
       </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
-        aria-label={cut
-          ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
-          : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
+        aria-label={language === 'output'
+          // What an opened step printed, in its well beside the command's own Copy, so the name says which it copies.
+          ? cut ? t({ message: 'Copy the output, once the rest arrives', comment: 'Copies what an opened step printed, once all of it has arrived.' })
+            : t({ message: 'Copy the output', comment: 'The accessible name of the button that copies what an opened step printed.' })
+          : cut
+            ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
+            : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
         title={cut ? t`Copy works once the rest arrives` : t`Copy code`} onClick={copy}>
         {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
