@@ -265,3 +265,9 @@ Every fold still stays closed until pressed, as the November 4 amendments have i
 Zach has not been asked about this yet. It came from the design pass of November 5, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
 - **Changed files stands under its folders.** Opened, the fold groups the files by folder, as the file tree in **Changes** does: the files at the repository's top first, then the folder that changed most, each folder a quiet line with the lines its files add and remove between them, and its files under it by name alone, the most changed first, at the body's size, their counts in columns that line up with the folder's. The closed head's preview is still the most changed files across every folder, as the amendment above has it.
+
+## Amendment, November 7, 2026: Linked pull requests previews its records
+
+Zach chose B: on November 6 he looked at the follow-up mock-ups' `layout.html`, kept outside the repository in `sotto-council/prototypes/followups/`, and picked B for its third item.
+
+A closed **Linked pull requests** now shows its records under its head by the November 5 amendment's rule: up to three, each with its number, title and state, the state in its own colour, and a quiet line for how many more, kept only while the body does not scroll. It comes after the changed files and before more of them, so a smaller panel drops it first among the four. Its records are the thread's own (ADR-0061), so showing them reads nothing. **Open pull requests** stays as the November 4 choice has it: it is read from GitHub only on a press, so its closed fold shows nothing. With no pull request shown, where the folds sit with the surface's top, nothing is previewed.

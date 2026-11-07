@@ -6157,6 +6157,10 @@ msgstr "Open image"
 msgid "Open image · Right-click to copy"
 msgstr "Open image · Right-click to copy"
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Open in another pane"
+msgstr "Open in another pane"
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open in mail app"
 msgstr "Open in mail app"

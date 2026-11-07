@@ -1040,6 +1040,34 @@ describe('the drill-in under the merge checklist', () => {
     await opened()
     expect(peeks()[1]).toMatch(/26 more files$/u)
   })
+  it('previews the linked pull requests under their closed fold only while the body has room, and never the open ones', async () => {
+    // As above: 400 pixels and 60 more for each peek.
+    let room = 0
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? 400 + 60 * this.querySelectorAll('.pr-surface__peek').length : 0 })
+    const linkedThread = thread({ pullRequests: [{ number: 76, url: 'https://github.com/o/r/pull/76', title: 'Mention the greeting in the README', state: 'merged', draft: false, source: 'linked', linkedAt: '2026-09-23T00:00:00.000Z' }] })
+    const read = detail({ files: [{ path: 'src/a.ts', additions: 1, deletions: 1 }], changedFiles: 1 })
+    const linkedPeek = (): Element | null => document.querySelector('.pr-surface__peek[data-of="links"]')
+    // Room for the files' peek alone: Linked says its count and nothing more.
+    room = 470
+    mount({ detail: read, thread: linkedThread })
+    await opened()
+    expect(document.querySelector('.pr-surface__peek[data-of="files"]')).not.toBeNull()
+    expect(linkedPeek()).toBeNull()
+    cleanup()
+    // Room for both: each linked pull request's number, title and state, the branch's own first, for the eye only.
+    room = 1000
+    mount({ detail: read, thread: linkedThread })
+    await opened()
+    expect([...linkedPeek()!.querySelectorAll('.pr-surface__peek-row')].map(row => row.textContent)).toEqual(['#74Make the greeting friendlierOpen', '#76Mention the greeting in the READMEMerged'])
+    expect(linkedPeek()).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByRole('button', { name: 'Linked pull requests 2' })).toHaveAttribute('aria-expanded', 'false')
+    // Open pull requests is read only on a press, so its closed fold previews nothing.
+    expect(screen.getByRole('button', { name: 'Open pull requests' }).querySelector('.pr-surface__peek')).toBeNull()
+    // Opened, the fold's list takes the peek's place.
+    fireEvent.click(screen.getByRole('button', { name: 'Linked pull requests 2' }))
+    expect(linkedPeek()).toBeNull()
+  })
   it('holds the peeks through a resize while a fold is open, and fits them again once every fold is closed', async () => {
     // As above: 400 pixels, 60 more for each peek and 10 for each file a peek lists.
     let room = 1000
