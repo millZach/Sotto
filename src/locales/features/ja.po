@@ -184,6 +184,10 @@ msgstr ""
 msgid "{authority} (memory does not grant permission)"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "{branch} is red: checks failed on its newest commit, {head}."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{busiestCount, plural, one {{shown} prompt} other {{shown} prompts}}"
 msgstr ""
@@ -587,6 +591,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name} hasn't reported its limits on {host} yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "{name} in “{title}” has its required checks running."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -1106,6 +1114,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "A project is a folder your agents work in, usually a Git repository. Threads start in it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "A pull request in “{title}” has its required checks running."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -3842,6 +3854,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Merge order"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Merge turn given early. {held} Watcher’s reason: {reason}"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx

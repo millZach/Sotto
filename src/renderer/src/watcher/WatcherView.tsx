@@ -420,11 +420,14 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const teamsBridge = useTeamsBridge()
   const teamsState = useTeamsState(teamsBridge)
   const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
+  // Each GO MERGE that went while the merge train held its turn (#2229), with Watcher's reason, kept in memory as main keeps it.
+  const receiptOverrides = room?.state?.receiptOverrides
+  const overridesById = useMemo(() => receiptOverrides?.length ? new Map(receiptOverrides.map(({ operationId, ...override }) => [operationId, override] as const)) : undefined, [receiptOverrides])
   // Watcher's own questions (#2228), where Watcher asked: the room hands the same list until one changes.
   const ownQuestions = room?.state?.questions
   const questionsPlaced = useMemo(() => ownQuestions?.length ? placeQuestions(messages, ownQuestions) : undefined, [messages, ownQuestions])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, overrides: overridesById, moves: movesPlaced, proposals: proposalsPlaced, teammates, questions: questionsPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, overridesById, movesPlaced, proposalsPlaced, teammates, questionsPlaced])
   // A turn of Watcher's that fails posts no reply while Restart stopped threads is on: the room's band is the one notice,
   // with the error under its Details (#2234).
   const failureWords = !useRestartStopped()

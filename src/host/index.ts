@@ -245,7 +245,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(runtime.delegation && crossMachineEnabled
         ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
       ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
-      ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }))] : []),
+      ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }),
+        (threadId, ready) => tellWatcherRelay.tell({ threadId, ready }))] : []),
     ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).

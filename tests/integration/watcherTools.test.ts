@@ -14,6 +14,7 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
+import type { BaseBranchChecks } from '../../src/main/agents/watcherComputedState'
 import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_NOT_GIT_REASON, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -31,7 +32,7 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true, options: { compactAt?: () => number } = {}) {
+async function fixture(history = true, options: { compactAt?: () => number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks> } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -986,13 +987,13 @@ it('keeps showing a kept change whose result the provider never gave, and sends 
 it('changes Watcher’s provider at rest when its only queued send waits for the user’s review, not a working thread', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
-  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic GO MERGE' })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued follow-up' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   // The worker's turn ends without confirming it finished: its queue waits for the user, and the send with it, for good.
   const worker = f.native(first.target.threadId)
   worker.status = 'idle'; worker.lastTurn = { id: randomUUID(), status: 'interrupted' }
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === 'Synthetic GO MERGE')?.status).toBe('paused'))
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === 'Synthetic queued follow-up')?.status).toBe('paused'))
   await f.finish(f.id)
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
@@ -2486,6 +2487,65 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   expect(read).not.toHaveProperty('pendingSettles')
   // The kept words are as Watcher gave them: the flags sit beside them and change nothing kept.
   expect(texts(read.kept.decisions)).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
+})
+
+// #2229: a GO MERGE is checked against the merge train and the base branch before it goes, and goes past them only with
+// Watcher's reason, which its receipt carries for the user.
+it('refuses a GO MERGE while another train pull request runs its required checks or main is red, and sends it with a reason the receipt shows', async () => {
+  let base: BaseBranchChecks = { branch: 'main', head: 'd'.repeat(40), state: 'passed' }
+  const asked: string[] = []
+  const f = await fixture(true, { baseBranchChecks: async url => { asked.push(url); return base } })
+  const first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok' || !('target' in second)) throw new Error('start refused')
+  const url = (number: number) => `https://github.com/synthetic/project/pull/${number}`
+  const link = (threadId: string, number: number) => {
+    const links = [{ url: url(number), number, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+    const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+    host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
+    showLinks(f, threadId, links)
+  }
+  await f.finish(first.target.threadId); await f.finish(second.target.threadId)
+  link(first.target.threadId, 5); link(second.target.threadId, 7)
+  const observed = Date.now(), at = (ago: number) => new Date(observed - ago).toISOString()
+  f.service.pullRequestObserved({ url: url(5), head: '5'.repeat(40), observedAt: at(3_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  // #7 passed, joined the train, then took a push: its required checks run again on the new head.
+  f.service.pullRequestObserved({ url: url(7), head: '6'.repeat(40), observedAt: at(2_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  f.service.pullRequestObserved({ url: url(7), head: '7'.repeat(40), observedAt: at(1_000), availability: 'available', checks: 'pending', checkCount: 3, state: 'open', requiredPassed: false, pendingChecks: { required: 2, optional: 1 } })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.mergeQueue.map(item => [item.pullRequest.number, item.requiredChecks, item.head])).toEqual([[5, 'passed', '5'.repeat(40)], [7, 'running', '7'.repeat(40)]])
+  const send = (goMerge?: object, text = 'GO MERGE #5') => f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text, ...goMerge ? { goMerge } : {} })
+  // Said without its mark, it never goes unchecked.
+  expect(await send()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('Mark it with goMerge') })
+  expect(await send(undefined, 'Synthetic note.\nGO MERGE #5 once you are green.')).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  const held = await send({ pullRequest: url(5) })
+  expect(held).toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD' })
+  if (held.status !== 'refused') throw new Error('sent')
+  expect(held.message).toContain('#7 in “Synthetic worker” has its required checks running.')
+  expect(held.message).toContain('goMerge.overrideReason')
+  expect(asked).toEqual([url(5)])
+  // Main red holds every merge turn, its own pull request's too.
+  base = { ...base, state: 'failed' }
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on its newest commit, dddddddddddd.') })
+  base = { ...base, state: 'passed' }
+  const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
+  const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
+  const sent = await f.call('send_to_thread', call)
+  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has its required checks running.'], overrideReason: reason } })
+  if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('refused')
+  // A retry answers as the send did, and the room carries the reason for its receipt card.
+  expect(await f.call('send_to_thread', call)).toEqual(sent)
+  expect(f.service.state().receiptOverrides).toEqual([{ operationId: sent.receipt.operationId, running: [{ number: 7, title: 'Synthetic worker' }], reason }])
+  // The worker is sent the words alone: the mark is Sotto's.
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === 'GO MERGE #5')).toBe(true))
+  // Nothing holds #7's own turn once main is green: its own running checks are its own.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'ok', goMerge: { held: [] } })
+  // A send that only mentions GO MERGE is no GO MERGE, and goes as it is.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Do not merge yet. Wait for GO MERGE.' }))
+    .toMatchObject({ status: 'ok' })
 })
 
 // October 24, 2026: Watcher kept "waiting on you" in its notes and went on saying it after the user answered.

@@ -419,7 +419,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-tell' || options.tellWatcher !== undefined)
+    && (feature !== 'watcher-tell' && feature !== 'watcher-ready' || options.tellWatcher !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
@@ -1455,6 +1455,8 @@ export async function startSocketServer(options: SocketServerOptions) {
           const tellPeer = peer
           peer.tellWatcher ??= { clientId: peer.client.clientId,
             push: (askId, ask) => !tellPeer.frames.isClosed && authenticated(tellPeer) && push(tellPeer, { v: 1, event: 'watcher-tell-ask', askId, ask }) }
+          // A READY TO MERGE (#2229) goes only to a desktop that said it reads one.
+          peer.tellWatcher.ready = (request.accepts?.includes('watcher-ready') ?? false) && offers(peer, 'watcher-ready')
           options.tellWatcher.desktopConnected(peer.tellWatcher)
         }
         // A desktop that relays this host's delegations to other machines (#1316): asks go to it from now on.

@@ -66,6 +66,7 @@ import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import type { BaseBranchChecks } from './watcherComputedState'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import { LimitRestart } from './limitRestart'
@@ -255,6 +256,8 @@ export interface AgentRuntimeOptions {
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'pullRequestState' | 'log'> & {
     /** GitHub's open pull requests' branches, which Clear settled threads after asks before a thread goes (ADR-0140). */
     readonly openPullRequestBranches?: (repositoryRoot: string, github?: SharedGitHub) => Promise<ReadonlySet<string>>
+    /** The checks on the newest commit of a pull request's base branch, which Watcher asks once per GO MERGE (#2229). */
+    readonly baseBranchChecks?: (url: string, github?: SharedGitHub) => Promise<BaseBranchChecks>
   }
   /**
    * Babysitting (ADR-0061). `agentTool` is the desktop's switch, read live: while it is on, this computer's Claude Code,
@@ -522,12 +525,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
-  const pullRequestState = options.worktreeCleanup?.pullRequestState
+  const pullRequestState = options.worktreeCleanup?.pullRequestState, baseBranchChecks = options.worktreeCleanup?.baseBranchChecks
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, ...options.teams ? { teamMessageGoing: () => options.teams!.userMessageGoing() } : {}, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...restartStopped ? { holdNews: true } : {}, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...restartStopped ? { holdNews: true } : {}, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {},
+      ...baseBranchChecks && github ? { baseBranchChecks: (url: string) => baseBranchChecks(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},

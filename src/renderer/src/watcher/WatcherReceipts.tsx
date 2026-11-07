@@ -7,7 +7,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
-import type { WatcherTakeover } from '../../../shared/watcherRoom'
+import type { WatcherMergeTurnOverride, WatcherTakeover } from '../../../shared/watcherRoom'
 import type { ThreadMoveCard, ThreadMoveProposal } from '../../../shared/threadMoves'
 import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
@@ -63,6 +63,8 @@ export interface WatcherConversation {
   readonly teammates?: ReadonlyMap<string, readonly TeammateMessage[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
   readonly placements?: ByOperation<WorkerPlacementReceipt> | undefined
+  /** Each GO MERGE that went while the merge train held its turn, by operation ID (#2229): what held it and Watcher's reason, this run's only. */
+  readonly overrides?: ByOperation<MergeTurnOverride> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -107,6 +109,27 @@ export function placementLine(placement: WorkerPlacementReceipt | undefined): st
   return name ? t`Not your default, ${name}. Watcher says why in its reply.` : t`Not your default machine. Watcher says why in its reply.`
 }
 
+/** What held a GO MERGE that went anyway, as main's facts, and Watcher's reason (#2229). */
+export type MergeTurnOverride = Omit<WatcherMergeTurnOverride, 'operationId'>
+/**
+ * The line under a GO MERGE that went out of the merge train's turn (#2229, Zach's pick A on November 5, 2026): what held
+ * it and Watcher's reason, which the user sees here as well as in Watcher's reply. Worded here from main's facts, so it
+ * follows the interface language; Watcher's reason is its own words, as it wrote them.
+ */
+export function overrideLine(override: MergeTurnOverride | undefined): string | null {
+  if (override === undefined) return null
+  const branch = override.baseFailed?.branch, head = override.baseFailed?.head
+  const held = [
+    ...branch !== undefined && head !== undefined ? [t`${branch} is red: checks failed on its newest commit, ${head}.`] : [],
+    // A pull request's number is its name, not a quantity, so it is not formatted as one.
+    ...override.running.map(({ number, url, title }) => {
+      const name = number !== undefined ? `#${number}` : url ?? ''
+      return name ? t`${name} in “${title}” has its required checks running.` : t`A pull request in “${title}” has its required checks running.`
+    })].join(' ')
+  const reason = override.reason
+  return t`Merge turn given early. ${held} Watcher’s reason: ${reason}`
+}
+
 /**
  * One receipt card (Zach's pick on October 16, 2026, cards A): what Watcher did and to which thread, whose name opens it
  * beside Watcher; where that thread stands now; then its provider, its computer and its project. The name is a link only
@@ -122,6 +145,7 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
   const title = facts.title ?? (operation.action === 'start' ? t`a new thread` : t`a thread no longer here`)
   const unconfirmed = operation.deliveryState === 'uncertain'
   const placed = operation.action === 'start' ? placementLine(conversation.placements?.get(operation.id)) : null
+  const early = operation.action === 'send' ? overrideLine(conversation.overrides?.get(operation.id)) : null
   return <li className="receipt-card" data-receipt-id={operation.id} data-delivery={operation.deliveryState}>
     <div className="receipt-card__top">
       <Icon size={15} aria-hidden="true" className="receipt-card__glyph" />
@@ -143,6 +167,7 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
       {unconfirmed ? <span className="receipt-card__unconfirmed"><Trans>Not confirmed yet</Trans></span> : null}
     </p>
     {placed !== null ? <p className="receipt-card__placement tt-paragraph">{placed}</p> : null}
+    {early !== null ? <p className="receipt-card__placement tt-paragraph" data-merge-turn="early">{early}</p> : null}
   </li>
 }
 

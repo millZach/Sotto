@@ -114,6 +114,13 @@ export class WatcherEvidenceStore {
    * only: after a restart a pass counts from Sotto's first read of it.
    */
   private readonly passing = new Map<string, Map<string, { head: string | undefined; since: string }>>()
+  /**
+   * Each pull request in the merge train by thread and pull request key (#2229): since when, the first time Sotto saw its
+   * checks pass or its thread said READY TO MERGE, and that READY TO MERGE's head. A pull request stays in the train when
+   * its checks run again after a push, so the train can say that a merge now would land in the middle of them. In memory
+   * only, like the passes: after a restart a pull request joins again at its next pass or READY TO MERGE.
+   */
+  private readonly trains = new Map<string, Map<string, { since: string; ready?: { head: string; at: string } }>>()
   /** The thread keys written since `removeMissing` last ran, which the next run may have to let go of. */
   private readonly written = new Set<string>()
   /** Each pull request's life by thread and pull request key (#1146): whether its merge or close is news, and its flips. */
@@ -163,6 +170,30 @@ export class WatcherEvidenceStore {
     else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
     while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
     if (passing.size) { this.passing.set(key, passing); this.written.add(key) } else this.passing.delete(key)
+    if (item.checksState === 'passed') this.joinTrain(key, slot.replace(/^(?:pr:|host:github:)/u, '').replace(/:checks$/u, ''), item.observedAt)
+  }
+  private joinTrain(key: string, pr: string, at: string): Map<string, { since: string; ready?: { head: string; at: string } }> {
+    const train = this.trains.get(key) ?? new Map<string, { since: string; ready?: { head: string; at: string } }>()
+    if (!train.has(pr)) train.set(pr, { since: at })
+    while (train.size > EVIDENCE_CACHE_MAX) train.delete(train.keys().next().value!)
+    this.trains.set(key, train); this.written.add(key)
+    return train
+  }
+  /** A thread said its pull request is READY TO MERGE at `head` (#2229): it joins the train, if it had not, and keeps the newest such word. */
+  noteReady(target: WatcherThreadTarget, url: string, head: string, at: string): void {
+    const pr = pullRequestKey(url) ?? url, entry = this.joinTrain(targetKey(target), pr, at).get(pr)!
+    if (!entry.ready || Date.parse(entry.ready.at) <= Date.parse(at)) entry.ready = { head, at }
+  }
+  /** Since when a pull request has been in the merge train, and the newest READY TO MERGE its thread sent, or undefined while it is not in it. */
+  trainOf(target: WatcherThreadTarget, url: string): { readonly since: string; readonly ready?: { readonly head: string; readonly at: string } } | undefined {
+    return this.trains.get(targetKey(target))?.get(pullRequestKey(url) ?? url)
+  }
+  /** The commit a pull request is on, as Sotto last read it from GitHub; undefined when no read says. */
+  headOf(target: WatcherThreadTarget, url: string): string | undefined {
+    const link = pullRequestKey(url) ?? url, entries = this.entries.get(targetKey(target))
+    for (const prefix of ['pr:', 'host:github:']) { const head = entries?.get(`${prefix}${link}:checks`)?.headId; if (head) return head }
+    for (const prefix of ['pr:', 'host:github:']) { const head = entries?.get(`${prefix}${link}`)?.headId; if (head) return head }
+    return undefined
   }
   /**
    * Since when a pull request's checks have passed on the commit it is on, as Sotto first saw them pass, or undefined
@@ -301,6 +332,7 @@ export class WatcherEvidenceStore {
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
     for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
+    for (const key of this.trains.keys()) if (!targets.has(key)) this.trains.delete(key)
     for (const key of this.lives.keys()) if (!targets.has(key)) this.lives.delete(key)
     for (const key of this.unlinked.keys()) if (!targets.has(key)) this.unlinked.delete(key)
     this.written.clear()
@@ -313,12 +345,12 @@ export class WatcherEvidenceStore {
   removeMissingOf(moved: Iterable<string>, listed: (key: string) => boolean): void {
     for (const key of [...this.written, ...moved]) {
       if (listed(key)) continue
-      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.lives.delete(key); this.unlinked.delete(key)
+      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.trains.delete(key); this.lives.delete(key); this.unlinked.delete(key)
     }
     this.written.clear()
   }
   /** Every thread key the store holds anything for, for verifying mode. */
-  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
+  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.trains.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
     const turn = thread.lastTurn

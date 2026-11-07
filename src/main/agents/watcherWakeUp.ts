@@ -825,11 +825,7 @@ export class WatcherWakeUp {
     const observedAt = new Date(this.now()).toISOString()
     const event = this.withPassReads((): WatcherEvent => {
       // A thread that moved took its watch with it before it settled, so the request is found on the new thread.
-      const watching = (target: WatcherThreadTarget) => {
-        const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
-        return eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
-      }
-      const one = watching(move.source) ?? (move.movedTo ? watching(move.movedTo) : undefined)
+      const one = this.watching(move.source) ?? (move.movedTo ? this.watching(move.movedTo) : undefined)
       return { kind: 'thread-moved', target: move.source, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt, moveId: move.moveId, moveOutcome: move.outcome, machine: move.machine.slice(0, 200), ...move.movedTo ? { movedTo: move.movedTo } : {},
         id: observationDigest(['thread-moved', move.moveId]) }
@@ -844,8 +840,7 @@ export class WatcherWakeUp {
   toldEvent(target: WatcherThreadTarget, id: string, told: NonNullable<WatcherEvent['told']>, opened: string | undefined): WatcherEvent | undefined {
     if (!this.started || this.closed) return undefined
     return this.withPassReads((): WatcherEvent => {
-      const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
-      const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      const one = this.watching(target)
       return { kind: 'thread-told', target, requestId: opened ?? one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), told, id }
     })
@@ -857,11 +852,30 @@ export class WatcherWakeUp {
   answeredEvent(target: WatcherThreadTarget, id: string, answered: NonNullable<WatcherEvent['answered']>): WatcherEvent | undefined {
     if (!this.started || this.closed) return undefined
     return this.withPassReads((): WatcherEvent => {
-      const eligible = answered.settle ? (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped) : []
-      const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      const one = answered.settle ? this.watching(target) : undefined
       return { kind: 'user-answered', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), answered, id }
     })
+  }
+  /**
+   * A thread's READY TO MERGE (#2229): news whether or not a request watches the thread, under the request that watches
+   * it, else none. It opens no request. Undefined when Watcher's news is not running, so the thread is told it did not get through.
+   */
+  readyEvent(target: WatcherThreadTarget, id: string, ready: NonNullable<WatcherEvent['ready']>): WatcherEvent | undefined {
+    if (!this.started || this.closed) return undefined
+    return this.withPassReads((): WatcherEvent => {
+      const one = this.watching(target)
+      return { kind: 'thread-ready', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+        observedAt: new Date(this.now()).toISOString(), ready, id }
+    })
+  }
+  /**
+   * The request news of a thread Sotto tells unasked goes under (a move, a thread's message, its READY TO MERGE): the one
+   * whose standing watch keeps the thread, else the newest it takes part in, else none. Read inside `withPassReads`.
+   */
+  private watching(target: WatcherThreadTarget) {
+    const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+    return eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
   }
   /** Saved messages from threads go out: just made, or back from a restart that found them untold. */
   tellSaved(events: readonly WatcherEvent[]): void {

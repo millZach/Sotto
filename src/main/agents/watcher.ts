@@ -28,9 +28,9 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherPromptTurn, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
-  type WatcherStateWaiting, type WatcherWaitingOnUser } from '../../shared/watcher'
+  type WatcherStateWaiting, type WatcherWaitingOnUser, type WatcherGoMerge, type WatcherGoMergeReceipt } from '../../shared/watcher'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
-import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
+import type { WatcherMergeTurnOverride, WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -42,7 +42,7 @@ import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
-import { watcherMergeQueue, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -62,7 +62,7 @@ import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
-import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
+import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -316,6 +316,15 @@ type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readon
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
+/** What a GO MERGE's check gives its send (#2229): the result's words for Watcher, and the facts its receipt card words when it went past a hold. */
+type MergeTurnChecked = { readonly receipt: WatcherGoMergeReceipt; readonly override?: Omit<WatcherMergeTurnOverride, 'operationId'> }
+/**
+ * Watcher's GO MERGE, as its sends give it: a line that opens with it in capitals, the way the merge workflow writes it
+ * (#2229). A send that only mentions it, as "wait for GO MERGE", is not one.
+ */
+const GO_MERGE_WORDS = /^[\s>*_-]*GO MERGE\b/mu
+const GO_MERGE_UNMARKED = 'This send says GO MERGE. Mark it with goMerge and the pull request it gives its turn to, so Sotto checks the merge train and the base branch before it goes. Nothing was sent.'
+const MERGE_TURN_NEXT = 'Wait for news that those checks finished or that the base branch is green again, then send the GO MERGE. If this merge cannot wait, send it again with goMerge.overrideReason saying why in a sentence the user can read: Sotto shows it on the send’s receipt, and your reply must say it too.'
 /**
  * Whether a Watcher check whose first prompt is unconfirmed holds its machine's queue only while its thread is working
  * (#1312). A delegated check holds until its brief is seen to arrive or proved never started; a Watcher start has no such
@@ -677,6 +686,16 @@ export class WatcherService implements WatcherControlHooks {
   /** Where each recent start was placed, for its receipt (#1032). In memory only, as `roleStarts` is. */
   private readonly placements = new Map<string, WorkerPlacementReceipt>()
   /**
+   * What each recent GO MERGE went past and Watcher's reason, for its receipt and its card (#2229). In memory only, as
+   * `placements` is, so the record keeps its shape; after a restart Watcher's reply still says why.
+   */
+  private readonly goMerges = new Map<string, WatcherGoMergeReceipt>()
+  /**
+   * The GO MERGEs among them that went past what held their turn, as facts for their receipt cards. Replaced whole when
+   * one is added, so a room build hands on the same list and reads no operation history for it.
+   */
+  private goMergeOverrides: WatcherMergeTurnOverride[] = []
+  /**
    * Recent starts another machine answered with their thread (#1032): its creation confirmed while their first prompt may
    * still be unconfirmed. In memory only, as `placements` is; read by the working threads warning alone.
    */
@@ -780,6 +799,11 @@ export class WatcherService implements WatcherControlHooks {
      * would refuse (#2019). Absent where GitHub is not asked, and then those records alone hold the settle. It rejects when it cannot ask.
      */
     pullRequestState?: (url: string) => Promise<{ readonly state: 'open' | 'closed' | 'merged'; readonly headRefOid: string | null }>
+    /**
+     * Asks GitHub for the checks on the newest commit of the branch a pull request merges into, once per GO MERGE (#2229).
+     * Absent where GitHub is not asked, and then the base branch holds no GO MERGE. It rejects when it cannot ask.
+     */
+    baseBranchChecks?: (url: string) => Promise<BaseBranchChecks>
     /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer holds a settle. Read once at start. */
     babysittingRetired?: boolean
     /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at the default, 250K (#2233). */
@@ -1200,6 +1224,7 @@ export class WatcherService implements WatcherControlHooks {
     return event => {
       // Composed as the wake-up goes, so this is when the turn a thread's message starts is about to begin.
       if (event.kind === 'thread-told') { this.toldNewsGoes(event.id); return undefined }
+      if (event.kind === 'thread-ready') return this.readyDetail(event)
       snapshot ??= this.snapshot()
       const index = this.hosts.index(snapshot)
       const thread = index ? index.thread(event.target) : snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
@@ -1270,6 +1295,24 @@ export class WatcherService implements WatcherControlHooks {
       this.wakes.tellSaved([event])
       this.publish()
       return { status: 'told', requestOpened: created !== undefined }
+    })
+  }
+  /**
+   * A thread's READY TO MERGE (#2229): news that wakes Watcher, watched thread or not, and the pull request's place in
+   * the merge train. It opens no request and grants nothing: the pull request and head are the worker's to name, and
+   * whether Sotto's own reads agree is said beside them. Saved before the thread is told, as a thread's message is.
+   */
+  threadReady(target: WatcherThreadTarget, ready: ReadyToMerge): Promise<TellWatcherAnswer> {
+    return this.transaction(async (): Promise<TellWatcherAnswer> => {
+      const current = this.view().current
+      if (this.closed || this.options.workerHost || !current || sameTarget(current.target, target)) return { status: 'refused', reason: 'no-watcher' }
+      const event = this.wakes.readyEvent(target, randomUUID(), ready)
+      if (!event) return { status: 'refused', reason: 'no-watcher' }
+      await this.toldSaved.add(event).catch(() => undefined)
+      this.wakes.evidence.noteReady(target, ready.pullRequest, ready.head, event.observedAt)
+      this.wakes.tellSaved([event])
+      this.publish()
+      return { status: 'told', requestOpened: false }
     })
   }
   /** The current Watcher's own questions for the room and the phone, open and answered, the same array until one changes. */
@@ -1418,7 +1461,9 @@ export class WatcherService implements WatcherControlHooks {
     const queued = this.options.control.restoredWatcherEvents().filter(carriesWords), saved = await this.toldSaved.load()
     const told = new Set(this.view().wakeEventIds ?? []), queuedIds = new Set(queued.map(event => event.id))
     this.toldToRetell = saved.filter(event => !queuedIds.has(event.id) && !told.has(event.id))
-    // The user's answers to Watcher's own questions open no request, so only a thread's own messages are owed a turn here.
+    // A READY TO MERGE still owed puts its pull request back in the train (#2229).
+    for (const event of [...queued, ...this.toldToRetell]) if (event.kind === 'thread-ready' && event.ready) this.wakes.evidence.noteReady(event.target, event.ready.pullRequest, event.ready.head, event.observedAt)
+    // READY TO MERGE and the user's answers to Watcher's own questions open no request, so only a thread's own messages are owed a turn here.
     const owed = [...queued, ...this.toldToRetell].filter(event => event.kind === 'thread-told')
     for (const event of owed) this.toldNews.set(event.id, event.told?.opened ? { requestId: event.requestId } : {})
     const requests = new Set(owed.map(event => event.requestId))
@@ -2287,7 +2332,9 @@ export class WatcherService implements WatcherControlHooks {
       ...this.placements.size ? { receiptPlacements: record.operations.flatMap(operation => {
         const placement = this.placements.get(operation.id)
         return placement ? [{ operationId: operation.id, placement }] : []
-      }) } : {} }
+      }) } : {},
+      // Each GO MERGE this run that went past what held its turn, with Watcher's reason (#2229), from memory as its receipt's is.
+      ...this.goMergeOverrides.length ? { receiptOverrides: this.goMergeOverrides } : {} }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
@@ -2516,11 +2563,19 @@ export class WatcherService implements WatcherControlHooks {
     return rows.map(row => {
       const thread = threadOf(row.target), evidence = this.wakes.evidence.read(row.target, Boolean(thread && this.connected(thread)))
       const since = (url: string | undefined) => url === undefined ? undefined : this.wakes.evidence.checksPassedSince(row.target, url)
+      // What the merge train reads of each (#2229): its address, head, pending checks and place, each only when Sotto holds it.
+      let pending: Map<string, { required: number; optional: number }> | undefined
+      const train = (url: string | undefined): Pick<WatcherOpenPullRequest, 'url' | 'head' | 'pending' | 'train'> => {
+        if (url === undefined) return {}
+        const head = this.wakes.evidence.headOf(row.target, url), place = this.wakes.evidence.trainOf(row.target, url)
+        const counts = (pending ??= this.wakes.evidence.pendingChecks(row.target)).get(pullRequestKey(url) ?? url)
+        return { url, ...head ? { head } : {}, ...counts ? { pending: counts } : {}, ...place ? { train: place } : {} }
+      }
       const open: WatcherOpenPullRequest[] = thread
         ? watcherOpenPullRequests(threadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
-          .map(({ pr, summary }) => ({ summary, draft: pr.draft, ...withSince(since(pr.url)) }))
+          .map(({ pr, summary }) => ({ summary, draft: pr.draft, ...withSince(since(pr.url)), ...train(pr.url) }))
         // Evidence does not say whether a pull request is a draft, so one read only from it is never queued.
-        : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: undefined, ...withSince(since(summary.url)) }))
+        : watcherPullRequestSummaries(evidence).filter(summary => summary.state === 'open').map(summary => ({ summary, draft: undefined, ...withSince(since(summary.url)), ...train(summary.url) }))
       return { ...row, open }
     })
   }
@@ -2572,6 +2627,22 @@ export class WatcherService implements WatcherControlHooks {
   private currentCarried(): WatcherCarried | null {
     const carried = this.carried, current = this.view().current
     return carried && current && key(carried.to) === key(current.target) ? carried : null
+  }
+  /**
+   * What Sotto's own reads say beside a thread's READY TO MERGE (#2229), as the news goes: the pull request's place in the
+   * train, the head Sotto last read it on, and its required checks. Nothing here is the worker's.
+   */
+  private readyDetail(event: WatcherEvent): string | undefined {
+    const ready = event.ready
+    if (!ready) return undefined
+    const wanted = pullRequestKey(ready.pullRequest), queue = this.liveState().mergeQueue
+    const at = queue.findIndex(item => item.url !== undefined && pullRequestKey(item.url) === wanted)
+    if (at === -1) return 'Sotto does not hold it in the merge train: it is not an open pull request of a watched thread that Sotto knows is not a draft. Read read_state before giving it a turn.'
+    const item = queue[at]!, short = (head: string) => head.slice(0, 12)
+    const head = item.head === undefined ? 'Sotto has not read its head from GitHub yet.'
+      : item.head === ready.head ? `Sotto last read it on that head, ${short(item.head)}.` : `Sotto last read it on ${short(item.head)}, not the head this names.`
+    const checks = { passed: 'Its required checks passed.', running: 'Its required checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
+    return `It is ${at + 1} of ${queue.length} in the merge train. ${head} ${checks}`
   }
   /**
    * What read_state works out from live data at its first page (#1274), and a new Watcher's handover tells it (#1735): the
@@ -4528,6 +4599,13 @@ export class WatcherService implements WatcherControlHooks {
         const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
         if (stopped) return stopped
       }
+      if (name === 'send_to_thread') {
+        // A GO MERGE is checked against the merge train before it goes (#2229). Its mark is the desktop's alone, so the send
+        // is admitted, matched to its retries and sent on without it.
+        const { goMerge, ...sent } = parsed.data as WatcherToolInput<'send_to_thread'>
+        if (!goMerge && GO_MERGE_WORDS.test(sent.text)) refuse('INVALID_INPUT', GO_MERGE_UNMARKED)
+        if (goMerge) return await this.mutate(threadId, name, sent, undefined, undefined, progress, undefined, undefined, await this.askBeforeGoMerge(goMerge))
+      }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
@@ -4562,7 +4640,8 @@ export class WatcherService implements WatcherControlHooks {
       if (!thread && entry.landed) void this.releaseMove(entry.landed)
     }
   }
-  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
+  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string,
+    mergeTurn?: () => MergeTurnChecked): Promise<unknown> {
     // Outside the transaction, so a slow answer from GitHub holds up no other Watcher call.
     const settleGuard = name === 'settle_thread' ? await this.askBeforeSettle((input as WatcherToolInput<'settle_thread'>).target) : undefined
     const admitted = await this.transaction(async () => {
@@ -4618,6 +4697,8 @@ export class WatcherService implements WatcherControlHooks {
       // A slash command sent as text never confirms, and its thread would then hold every later send (#1222). The master
       // refuses it before routing, so a paired host is never asked and never answers with a code an older desktop lacks.
       if (!imported && name === 'send_to_thread' && startsWithSlashCommand((input as WatcherToolInput<'send_to_thread'>).text)) refuse('SLASH_COMMAND', SLASH_COMMAND_REFUSAL)
+      // A new GO MERGE, after its retries matched: refused here while the train holds it and Watcher gave no reason (#2229).
+      const goMerge = !imported && name === 'send_to_thread' ? mergeTurn?.() : undefined
       const turn = turnOf()
       if (imported && request.remoteOrigin) this.checkRemoteAuthority(imported, request.remoteOrigin.master, request.remoteOrigin.clientId, request.standingWatchId)
       // This host closes its copy of a paired request once the threads it holds have settled, but cannot see the master's
@@ -4784,6 +4865,7 @@ export class WatcherService implements WatcherControlHooks {
         ...(start ? { creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID() } : {}),
         ...(send && (input as WatcherToolInput<'send_to_thread'>).expectedTurnId ? { expectedTurnId: (input as WatcherToolInput<'send_to_thread'>).expectedTurnId } : {}),
         ...(send && (input as WatcherToolInput<'send_to_thread'>).expectedLastUserMessageId ? { expectedLastUserMessageId: (input as WatcherToolInput<'send_to_thread'>).expectedLastUserMessageId } : {}) }
+      if (goMerge) this.rememberGoMerge(operation.id, goMerge.receipt, goMerge.override)
       if (imported && (imported.generation !== (previous?.generation ?? assignment?.generation ?? 0) || record.operations.some(item => item.id === imported.id
         || ['receiptId', 'cardId', 'draftId', 'messageId', 'creationReceiptId', 'firstPromptReceiptId'].some(field => {
           const name = field as 'receiptId' | 'cardId' | 'draftId' | 'messageId' | 'creationReceiptId' | 'firstPromptReceiptId'
@@ -5140,6 +5222,51 @@ ${operation.draftId}`)
     for (const kept of this.steerFallbacks.keys()) { if (this.steerFallbacks.size <= ROLE_STARTS_KEPT) break; this.steerFallbacks.delete(kept) }
   }
   /** What a send that asked to steer did instead, said in its result. In memory only: a retry after a restart has none. */
+  private rememberGoMerge(operationId: string, receipt: WatcherGoMergeReceipt, override: Omit<WatcherMergeTurnOverride, 'operationId'> | undefined): void {
+    this.goMerges.set(operationId, receipt)
+    for (const kept of this.goMerges.keys()) { if (this.goMerges.size <= ROLE_STARTS_KEPT) break; this.goMerges.delete(kept) }
+    if (override) this.goMergeOverrides = [...this.goMergeOverrides, { operationId, ...override }].slice(-ROLE_STARTS_KEPT)
+  }
+  /** One optional field rather than a union, so the remote result's spreads stay a type TypeScript can represent. */
+  private goMergeBlock(operationId: string): { goMerge?: WatcherGoMergeReceipt } {
+    const goMerge = this.goMerges.get(operationId)
+    return goMerge ? { goMerge } : {}
+  }
+  /**
+   * Asks GitHub once for the checks on the branch a GO MERGE merges into, outside the transaction so a slow answer holds
+   * up no other call (#2229), and gives the check the send's admission makes: what holds the merge turn now, from the
+   * merge train as read_state works it out and that answer. Held, it refuses unless Watcher gave its reason, which then
+   * goes with the receipt. A base branch GitHub could not be asked about holds nothing, and the receipt says so.
+   */
+  private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => MergeTurnChecked> {
+    const ask = this.options.baseBranchChecks
+    let base: BaseBranchChecks | undefined, unread: string | undefined
+    if (ask) {
+      try {
+        base = await ask(goMerge.pullRequest)
+        if (base.state === 'unknown') unread = `Sotto could not read the checks on ${base.branch}’s newest commit, so they held nothing.`
+      } catch { unread = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
+    }
+    return () => {
+      const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
+      const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
+      const held = [...holds.baseFailed ? [`${holds.baseFailed.branch} is red: checks failed on its newest commit, ${holds.baseFailed.head.slice(0, 12)}.`] : [],
+        ...holds.running.map(item => `${name(item)} has its required checks running.`)]
+      const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
+        : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
+      const note = [unread, outside].filter(Boolean).join(' ') || undefined
+      if (held.length && !goMerge.overrideReason) {
+        const shown = held.slice(0, 8), more = held.length - shown.length
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+      }
+      const reason = held.length ? goMerge.overrideReason : undefined
+      return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },
+        // The same facts for the receipt card, which words them in the interface language.
+        ...reason ? { override: { reason, running: holds.running.map(item => ({ title: item.title.slice(0, 200),
+          ...item.pullRequest.number !== undefined ? { number: item.pullRequest.number } : item.url !== undefined ? { url: item.url } : {} })),
+          ...holds.baseFailed ? { baseFailed: { branch: holds.baseFailed.branch.slice(0, 255), head: holds.baseFailed.head.slice(0, 12) } } : {} } } : {} }
+    }
+  }
   private fallbackBlock(operationId: string): { note: string } | Record<string, never> {
     const note = this.steerFallbacks.get(operationId)
     return note ? { note } : {}
@@ -5264,7 +5391,7 @@ ${operation.draftId}`)
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
         ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
     }
-    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery, ...this.fallbackBlock(operation.id) }
+    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery, ...this.fallbackBlock(operation.id), ...this.goMergeBlock(operation.id) }
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
   }
 
@@ -5392,7 +5519,7 @@ ${operation.draftId}`)
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.view().operations.find(item => item.id === operation.id)!),
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.sharedReasonBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined || workerWaitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
           ...waitingThere && waitingOn ? { check: this.checkOf.get(operation.id)!.away!.place! } : {} } : {}),
-        ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
+        ...(name === 'send_to_thread' ? { ...this.fallbackBlock(operation.id), ...this.goMergeBlock(operation.id) } : {}) } : parsed
     } catch (error) {
       if (!sent) await this.releaseMove(landed)
       // Sent, but the answer was lost: the host may be holding a check in its queue, so it is followed as one waiting there,
