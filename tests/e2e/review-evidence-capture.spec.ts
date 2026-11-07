@@ -568,11 +568,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('reading-copy', copyShows, '', { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    // A reply after the first is headed by nothing; its name and time show beside its copy control.
-    const reply = transcript(page).locator('.thread-message[data-role="assistant"][data-named="no"]').filter({ hasText: 'threadTitles' }).first()
+    // A reply after the first is headed by its name and time, as the first is (Zach's pick B, November 7, 2026).
+    const reply = transcript(page).locator('.thread-message[data-role="assistant"]').filter({ hasText: 'threadTitles' }).first()
     await reply.locator('.thread-message__copy').focus()
     await reply.evaluate(element => element.scrollIntoView({ block: 'center' }))
-    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, with its name and time beside it.')
+    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, which is headed by its name and time.')
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
