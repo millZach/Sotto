@@ -10365,6 +10365,7 @@ msgstr ""
 #. A thread row's state: its agent is working.
 #. A turn that is running.
 #. A turn that is running.
+#. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
 #: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/ThreadActivity.tsx
@@ -10402,6 +10403,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Working folder unavailable."
+msgstr ""
+
+#. {took} is how long the running turn has worked so far, such as 2m 14s.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Working for {took}"
 msgstr ""
 
 #: src/renderer/src/agents/threadFacts.ts

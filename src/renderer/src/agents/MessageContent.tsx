@@ -259,8 +259,10 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
   </span>
 }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false }: {
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false, lines }: {
   code: string; language: string | undefined
+  /** Draws only the code's first lines, as a step's long output does until a press shows the rest; Copy still takes it whole. */
+  readonly lines?: number | undefined
   readonly cut?: CodeBlockCut | undefined
   /** The reply is still writing this block: its fence has not closed, so its last line carries the reply's caret. */
   readonly writing?: boolean | undefined
@@ -285,7 +287,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     const pre = scroll.current
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
-  const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
+  const drawnCode = useMemo(() => lines === undefined ? code : code.split('\n').slice(0, lines).join('\n'), [code, lines])
+  const highlighted = useMemo(() => highlight(drawnCode, language, highlighter), [drawnCode, language, highlighter])
   // Lines that run past the block's edge fade there, so a reader sees there is more; the attribute is written on the
   // element, so scrolling sideways draws nothing again in React.
   useLayoutEffect(() => {
