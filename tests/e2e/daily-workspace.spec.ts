@@ -163,7 +163,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
     // Changes reads the working tree against HEAD; there is no staging to do first (ADR-0027).
     await panel.getByRole('button', { name: 'Expand greeting.txt', exact: true }).click()
-    await expect(panel.getByRole('group', { name: 'greeting.txt' })).toContainText('Hello, daily workspace')
+    // A document's edited line settles, once the diff is near view, into one row whose added words sit apart from the
+    // kept ones, so read the row's name rather than its text: before it settles the text reads whole and after it never does.
+    await expect(panel.getByRole('group', { name: 'greeting.txt' }).getByRole('row', { name: 'Removed line 1: Hello; Added line 1: Hello, daily workspace', exact: true })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Stage file', exact: true })).toHaveCount(0)
     // Changes reads the file directly; the pane's Git status is a separate, periodically refreshed record.
     // Use the working-copy Refresh control so this journey does not depend on the background poll's phase.
