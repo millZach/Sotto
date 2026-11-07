@@ -73,3 +73,11 @@ The Consequences' line on `calc-size()` still holds. The floor also reads the ti
 Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
 Tools, the Council and the Terminal drawer are their symbols alone at every width, with the word in the tooltip and for a screen reader, as before this pass; Tools keeps its dot. Earlier steps of the same pass drew words beside them in a pane 1100px or wider, which made them grow and shrink as a pane was resized, against ADR-0163's decision 5, and those words are gone. Watch has no edge at rest, so the Git action is the one outlined control, and a little space after Watch parts the thread's presses from the layout's buttons. The symbols, their order and every decision above are unchanged.
+
+## Amendment, November 7, 2026: the pane out of focus shows its buttons only when asked
+
+Zach chose B: on November 6 he looked at the follow-up mock-ups' `layout.html`, kept outside the repository in `sotto-council/prototypes/followups/`, and picked B for its first item.
+
+In a split, the panes out of focus keep every button of decision 1, each in its place, but show them only while the pointer is over that pane's header or the focus is inside it. They are hidden, not removed, so decision 3 holds: every pane carries the same buttons, nothing in a header moves as focus moves, Tab still reaches each one and shows the row, and a button whose menu is open stays shown. Close stays on every pane. The window so shows one row of presses, the focused pane's, where it showed the set once per pane. One pane at a time (tabs) and a single pane are unchanged.
+
+In the sidebar, the thread open in another pane no longer carries an outline: its row shows a two-pane mark where its time was, and says "Open in another pane" to a screen reader and in its tooltip. The focused thread keeps the filled row, and a resting row stays one line. The outline had no decision behind it; this records its replacement here because the panes are here.

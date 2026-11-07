@@ -183,6 +183,10 @@ msgstr ""
 msgid "{more, plural, one {# more file} other {# more files}}"
 msgstr ""
 
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "{more, plural, one {# more pull request} other {# more pull requests}}"
+msgstr ""
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{more, plural, other {{name} and # more are still running}}"
 msgstr ""

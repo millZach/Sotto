@@ -374,6 +374,9 @@
 .thread-nav__row--details .thread-nav__ring[data-state='working']:not([data-unseen], [data-background]) { border: 1.5px solid color-mix(in srgb, var(--tt-activity) 26%, transparent); border-top-color: var(--tt-activity); background: none; mask: none; }
 .thread-nav__row--details .thread-nav__ring[data-background] svg { width: 12px; height: 12px; }
 .thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; font-size: var(--tt-type-small); line-height: 18px; visibility: visible; }
+/* A thread open in another pane shows the two-pane mark in its time's place, in the secondary ink (Zach's pick B of
+   `layout` item 1, ADR-0182, November 7, 2026). */
+.thread-nav .thread-nav__row--details .thread-nav__time.thread-nav__beside { display: flex; align-items: center; justify-content: flex-end; color: var(--tt-text-2); }
 .thread-nav__metadata { display: contents; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after the words. */
 .thread-nav__provider { grid-area: 2 / 1; display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; }

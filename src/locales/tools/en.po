@@ -183,6 +183,10 @@ msgstr "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comment
 msgid "{more, plural, one {# more file} other {# more files}}"
 msgstr "{more, plural, one {# more file} other {# more files}}"
 
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "{more, plural, one {# more pull request} other {# more pull requests}}"
+msgstr "{more, plural, one {# more pull request} other {# more pull requests}}"
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{more, plural, other {{name} and # more are still running}}"
 msgstr "{more, plural, other {{name} and # more are still running}}"

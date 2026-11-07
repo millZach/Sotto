@@ -59,15 +59,21 @@
 .usage-seg button:is([aria-selected='true'], [aria-checked='true']) { background: var(--usage-seg-on); color: var(--tt-text); box-shadow: var(--tt-shadow-sm); }
 .usage-seg--small { padding: 3px; border-radius: var(--tt-radius-control); }
 .usage-seg--small button { height: 24px; min-height: 24px; padding: 0 10px; border-radius: var(--tt-radius-tag); font-size: var(--tt-type-caption); }
-.usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
-/* One group: the filters share a fill, parted by the room's 2px, with the group's corners at its two ends. */
-.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px 0 13px; border: 1px solid transparent; border-radius: 0; background: var(--tt-card); color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-.usage-filter:hover, .usage-filter[aria-expanded='true'] { background: color-mix(in srgb, var(--tt-accent-surface) 38%, var(--tt-card)); color: var(--tt-text); }
+.usage-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The filters and the chart's Show and Bars or Lines are text buttons with no fill, so the figures and the chart lead and
+   the controls sit quietly in their places (Zach's pick B of `layout` item 2, ADR-0083, November 7, 2026). The pointer,
+   an open menu and a press give a soft wash; the chosen option of a group takes the full ink and a heavier weight. */
+.usage-filter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, color 120ms ease; }
+.usage-filter:hover, .usage-filter[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .usage-filter:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); }
 .usage-filter svg { color: var(--tt-text-muted); }
-.usage-filter:first-child { border-start-start-radius: var(--tt-radius-control); border-end-start-radius: var(--tt-radius-control); }
-.usage-filter:last-child { border-start-end-radius: var(--tt-radius-control); border-end-end-radius: var(--tt-radius-control); }
 .usage-filter:focus-visible { position: relative; z-index: 1; }
+.usage-seg--text { gap: 2px; padding: 0; background: transparent; }
+.usage-seg.usage-seg--text button { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; height: 28px; min-height: 28px; padding: 0 10px; font-size: var(--tt-type-small); }
+.usage-seg.usage-seg--text button:hover:not(:disabled) { background: var(--tt-hover); }
+.usage-seg.usage-seg--text button:is([aria-checked='true']) { background: transparent; box-shadow: none; color: var(--tt-text); font-weight: 600; }
+/* Each option keeps the width of its chosen weight, so choosing one moves nothing beside it. */
+.usage-seg--text button::after { content: attr(data-label); height: 0; overflow: hidden; font-weight: 600; visibility: hidden; pointer-events: none; }
 .usage-dates { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; margin-top: 12px; }
 .usage-dates label { display: flex; align-items: center; gap: 9px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .usage-dates input { min-height: 32px; padding: 4px 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); color-scheme: inherit; }

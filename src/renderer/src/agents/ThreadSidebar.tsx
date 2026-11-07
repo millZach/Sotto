@@ -257,7 +257,12 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       <StatusRing row={row} finished={finished} background={background} queued={inQueue} />
       {/* A double-click on the name renames, as F2 and the menu's Rename do. */}
       <span ref={titleBox} className="thread-nav__title" onDoubleClick={canRename ? () => setRenaming(true) : undefined}>{shownTitle}</span>
-      {snoozedUntil !== undefined
+      {/* A thread on screen in another pane says so where its time was, with the two-pane mark; the focused one keeps the
+          filled row (Zach's pick B of `layout` item 1, ADR-0182, November 7, 2026). */}
+      {open && !current
+        ? <span id={timeId} className="thread-nav__time thread-nav__beside" title={t`Open in another pane`}><Columns2 size={13} aria-hidden="true" />
+          <span className="tt-visually-hidden">{t`Open in another pane`}</span></span>
+        : snoozedUntil !== undefined
         ? <time id={timeId} className="thread-nav__time" dateTime={new Date(snoozedUntil).toISOString()} title={new Date(snoozedUntil).toLocaleString()}>
           {t({ message: `Until ${wakes}`, comment: '{wakes} is when a snoozed thread wakes, such as "Mon 9:00 am".' })}</time>
         : <RowTime row={row} live={liveClock} id={timeId} />}

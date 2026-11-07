@@ -181,6 +181,15 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__peek-name > bdi:last-child { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; }
 .pr-surface__peek-word { color: var(--tt-text-muted); white-space: nowrap; }
 .pr-surface__peek-row:is([data-status='failure'], [data-status='cancelled']) .pr-surface__peek-word { color: var(--tt-error-text); }
+/* A linked pull request reads as its number, its title and, just after it, its state in the state's own ink (Zach's
+   pick B of `layout` item 3, ADR-0027, November 7, 2026). */
+.pr-surface__peek[data-of='links'] .pr-surface__peek-row { grid-template-columns: minmax(0, max-content) auto; justify-content: start; column-gap: 8px; }
+.pr-surface__peek[data-of='links'] .pr-surface__peek-name { gap: 6px; }
+.pr-surface__peek[data-of='links'] .pr-surface__peek-name > bdi:last-child { flex: 0 1 auto; color: var(--tt-text-2); }
+.pr-surface__peek-number { flex: none; color: var(--tt-text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pr-surface__peek[data-of='links'] .pr-surface__peek-word { font-size: var(--tt-type-caption); }
+.pr-surface__peek-word[data-state='open'] { color: var(--tt-success); }
+.pr-surface__peek-word[data-state='merged'] { color: var(--tt-activity); }
 .pr-surface__peek-time { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .pr-surface__peek .pr-surface__counts { display: inline-grid; font-size: var(--tt-type-small); grid-template-columns: repeat(2, minmax(6ch, max-content)); text-align: right; }
 .pr-surface__checks-summary { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 10px; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }

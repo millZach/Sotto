@@ -166,6 +166,12 @@ const OTHERS = [
   { number: 1617, title: 'Put the to-do list under the threads and let it unroll from the window\'s corner', author: 'mira', headRefName: 'feat/to-do-corner', minutes: 410, additions: 5_274, deletions: 21, changedFiles: 63, rollup: 'SUCCESS', reviewDecision: 'CHANGES_REQUESTED' },
 ]
 
+/** An earlier pull request of the same work, merged: the one `pr-linked` links to the thread beside its own. */
+export const EVIDENCE_EARLIER_PULL = 1598
+export const EVIDENCE_EARLIER_URL = `${GITHUB_URL}/pull/${EVIDENCE_EARLIER_PULL}`
+const EARLIER = { number: EVIDENCE_EARLIER_PULL, title: 'Move the thread store\'s writes behind one writer', author: 'zach', headRefName: 'refactor/store-writer', minutes: 1_440,
+  additions: 412, deletions: 268, changedFiles: 11, rollup: 'SUCCESS', reviewDecision: 'APPROVED' }
+
 /** The scripted gh's record of the pull request at one moment of its life, written where the running gh reads it. */
 export async function writePullRequestMoment(repository: EvidenceRepository, moment: PullRequestMoment): Promise<void> {
   const others = OTHERS.map(({ minutes, ...other }) => ({ ...other, url: `${GITHUB_URL}/pull/${other.number}`, state: 'OPEN', baseRefName: 'main', updatedAt: ago(minutes), body: '',
@@ -178,5 +184,6 @@ export async function writePullRequestMoment(repository: EvidenceRepository, mom
     reviewDecision: moment === 'ready' || moment === 'merged' ? 'APPROVED' : 'REVIEW_REQUIRED',
     reviews: moment === 'ready' || moment === 'merged' ? [{ state: 'APPROVED', url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}#pullrequestreview-1`, author: { login: 'mira' } }] : [],
     ...STANDING[moment],
-  }, ...others] }))
+  }, ...others, (({ minutes, ...earlier }) => ({ ...earlier, url: `${GITHUB_URL}/pull/${earlier.number}`, state: 'MERGED', mergedAt: ago(minutes), baseRefName: 'main', updatedAt: ago(minutes), body: '',
+    files: repository.files.slice(0, earlier.changedFiles).map(file => ({ ...file })) }))(EARLIER)] }))
 }
