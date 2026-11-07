@@ -41,3 +41,7 @@ Watcher's night scene drew its sky and hills under the conversation's column at 
 - The scene in the column still reads quieter than in the margins, as dotted hills and stars; the margins are unchanged.
 - The scene no longer measures the conversation, so a scroll or a streamed word costs it nothing.
 - Watcher's owl's flight changes far fewer glyphs from frame to frame (about 24 of 63 on a crossing, mostly its wings beating) and costs no more renderer time than the flight it replaced. `docs/verification/watcher-owl-flight.md` has the captures before and after, by night, by day, in Vellum and with motion reduced.
+
+## Amendment: the scene stays as it is (November 6, 2026)
+
+Zach chose this. On November 6, 2026 the design pass showed him five other ASCII scenes for Watcher's room beside this one, in its prototype `C:\Users\zache\AppData\Local\sotto-council\prototypes\watcher-room\`, kept outside the repository, and he keeps today's night scene unchanged. The same day he picked the room's tidied controls over it ([ADR-0152](0152-watchers-room-is-its-conversation.md), amendment of November 6, 2026), none of which changes the scene's files or how it is drawn: its words end inside the composer's card, and its scroll bar stands at the column's edge, without moving the column the scene sets itself by.

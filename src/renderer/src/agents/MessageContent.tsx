@@ -18,6 +18,7 @@ import { isMarkdownPath } from '../../../shared/files'
 import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { DiffBlock } from '../tools/DiffBlock'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
@@ -211,6 +212,25 @@ function clippingAncestor(element: HTMLElement): HTMLElement | null {
   return null
 }
 
+/**
+ * Which sides of a code block hold lines cut off by its edge: `end`, `start`, both, or none. A pixel of slack keeps a
+ * line that ends at the edge, or a fractional width, from reading as more.
+ */
+export function sidewaysMore(scrollLeft: number, scrollWidth: number, clientWidth: number): string | undefined {
+  const hidden = scrollWidth - clientWidth
+  if (hidden <= 1) return undefined
+  const sides = [scrollLeft > 1 ? 'start' : '', scrollLeft < hidden - 1 ? 'end' : ''].filter(Boolean)
+  return sides.length ? sides.join(' ') : undefined
+}
+
+function markSidewaysMore(pre: HTMLElement): void {
+  const more = sidewaysMore(Math.abs(pre.scrollLeft), pre.scrollWidth, pre.clientWidth)
+  const holder = pre.parentElement
+  if (!holder) return
+  if (more === undefined) delete holder.dataset.more
+  else if (holder.dataset.more !== more) holder.dataset.more = more
+}
+
 /** The gap between the command's chip and its Run button, as in the prototype. */
 const RUN_GAP_PX = 7
 
@@ -239,9 +259,11 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
   </span>
 }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
+  /** The reply is still writing this block: its fence has not closed, so its last line carries the reply's caret. */
+  readonly writing?: boolean | undefined
   /** Offers Run beside Copy when the block holds shell input (ADR-0139). */
   readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
@@ -264,6 +286,18 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
+  // Lines that run past the block's edge fade there, so a reader sees there is more; the attribute is written on the
+  // element, so scrolling sideways draws nothing again in React.
+  useLayoutEffect(() => {
+    const pre = scroll.current
+    if (!pre) return
+    const mark = (): void => markSidewaysMore(pre)
+    mark()
+    pre.addEventListener('scroll', mark, { passive: true })
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(mark)
+    resize?.observe(pre)
+    return () => { pre.removeEventListener('scroll', mark); resize?.disconnect() }
+  }, [highlighted, cut?.keep])
   const command = run && !cut ? runnableBlock(code, language) : null
   const [runState, pressRun] = useRunState(run, command)
   const { i18n, t } = useLingui()
@@ -272,7 +306,7 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
   const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
   const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showOutcome('copied'), () => showOutcome('failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
-  return <div className="rich-code" data-language={language} data-cut={cut?.keep}>
+  return <div className="rich-code" data-language={language} data-cut={cut?.keep} data-writing={writing || undefined}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
@@ -288,10 +322,12 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
         {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
     </div>
-    <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={t({ message: `${label} code block`, comment: '{label} is the code\'s language, such as TypeScript, or the word "Code".' })}
-      onScroll={anchorEnd ? event => { const pre = event.currentTarget; fromEnd.current = pre.scrollHeight - pre.clientHeight - pre.scrollTop } : undefined}>
-      <code className={language ? `hljs language-${language}` : 'hljs'}>{cut?.keep === 'end' ? <>{marker}{'\n'}</> : null}{highlighted}{cut?.keep === 'start' ? <>{'\n'}{marker}</> : null}</code>
-    </pre>
+    <div className="rich-code__body">
+      <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={t({ message: `${label} code block`, comment: '{label} is the code\'s language, such as TypeScript, or the word "Code".' })}
+        onScroll={anchorEnd ? event => { const pre = event.currentTarget; fromEnd.current = pre.scrollHeight - pre.clientHeight - pre.scrollTop } : undefined}>
+        <code className={language ? `hljs language-${language}` : 'hljs'}>{cut?.keep === 'end' ? <>{marker}{'\n'}</> : null}{highlighted}{cut?.keep === 'start' ? <>{'\n'}{marker}</> : null}</code>
+      </pre>
+    </div>
   </div>
 })
 
@@ -307,7 +343,9 @@ function MarkdownCodeBlock({ source, language, start, end }: { source: string; l
   const run = useRunCommand()
   const { text, streaming } = useContext(MarkdownSourceContext)
   const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
-  return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
+  // A finished diff is drawn the way Changes draws one. Until its fence closes it stays text, so a chunk reads nothing.
+  if (language === 'diff' && complete) return <DiffBlock diff={source} />
+  return <CodeBlock code={source} language={language} run={complete ? run : undefined} writing={!complete} />
 }
 
 /** What a link to a Markdown file does: a press opens it in the side panel, and its menu offers the folder and the path. */

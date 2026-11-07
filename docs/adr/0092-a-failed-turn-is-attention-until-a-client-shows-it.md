@@ -2,6 +2,8 @@
 
 Accepted October 19, 2026. A thread whose last turn failed said **Needs attention** in amber in the sidebar, and nothing cleared it but a later turn that finished. Zach reported that nothing let him acknowledge or clear it, and that the pane often did not say why the turn had failed: the banner showed the provider's latest error, which may belong to another thread, and older failed threads had none. He decided the behaviour on October 19, 2026, from the prototype `docs/prototypes/needs-attention-clear-prototype.html`, variant A. This records that decision. It extends ADR-0046, which made the host's coordinator the owner of what clients have seen, and changes no part of it.
 
+Amended November 5, 2026, by Zach's pick of variant C of the design pass's sidebar rows prototype: once a failure is seen its row rests on one line, and says Done to a screen reader rather than on screen (below, "November 5, 2026 amendment: a resting row says Done without showing it").
+
 ## Decision
 
 **Opening a thread counts as seeing its failure.** A thread whose status is `error` and which asks nothing, a failed thread, says **Needs attention** until a client shows it. After that its row reads **Done**: no amber, no dot. What a client shows is what it observes, exactly as for **Finished unread** (ADR-0046): the desktop window's panes and pinned Tools thread while the window has the focus, and the thread a paired iPhone has open. A thread that fails while a client shows it is seen at once.
@@ -26,3 +28,11 @@ Accepted October 19, 2026. A thread whose last turn failed said **Needs attentio
 - A desktop that predates this ignores the field and the feature, and its rows say Needs attention as before. An updated desktop connected to a host that predates it sends that host nothing for Dismiss all. Its message says the host runs an older Sotto, that its threads still say Needs attention, and to update it in Settings > Hosts. A host that is out of reach is told the same way, with "Connect to it again".
 - Most failures from before this change have no reason on their turn record, and some have no turn record at all. They get the notice's plain words rather than a reason. Recording a reason for every failure path in every adapter is left for later.
 - A mark for a thread that is later forgotten stays in `agents.json` until newer marks push it past the limit. It names nothing but the thread and its turn.
+
+## November 5, 2026 amendment: a resting row says Done without showing it
+
+Zach chose this. In the design pass's prototype `sotto-council/prototypes/sidebar-rows/index.html`, kept outside the repository, he compared three ways the Threads sidebar's rows could read: A, every row two lines as they stood, a seen failure's row reading Done under its name; B, every row one line, with Done and Working gone from the screen; and C, the resting rows stepping back to one line while working and waiting rows keep two. He picked C (ADR-0135, "November 5, 2026 amendment: resting rows step back").
+
+**What changed.** The decision above said that once a failure is seen "its row reads Done: no amber, no dot". Its row now rests: one line, its name in the text ink and its time in the muted ink, with no ring, no provider mark and no word. Done stays in what a screen reader hears, at the head of the row's description. What counts as seen, Dismiss all, the pane's explanation and everything else in this record are unchanged, and an unseen failure still says Needs attention on two lines.
+
+**What it costs.** A sighted user no longer reads Done on a seen failure's row; it reads as finished by having stepped back.

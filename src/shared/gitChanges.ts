@@ -47,6 +47,12 @@ export const gitReviewSchema = z.object({
   ]),
   files: z.array(gitReviewFileSchema).max(GIT_REVIEW_MAX_FILES),
   truncated: z.boolean(),
+  /**
+   * Read with whitespace changes hidden: the lines that hiding left out of the files' counts, added and removed, so the
+   * totals can be set beside what GitHub counts, which is every line. Absent when whitespace shows, or from a host
+   * that does not count them.
+   */
+  hiddenWhitespace: z.object({ additions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative() }).strict().optional(),
 }).strict()
 export const gitWatchRequestSchema = toolTargetSchema.extend({ enabled: z.boolean() })
 export const gitChangedSchema = toolTargetSchema.extend({ revision: z.string() })

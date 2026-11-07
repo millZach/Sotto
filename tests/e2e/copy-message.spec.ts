@@ -104,3 +104,56 @@ test('the control fits the minimum window without sideways scroll', async () => 
     await page.screenshot({ path: resolve(shots, 'reply-focus-820-dark.png') })
   } finally { await app.close() }
 })
+
+// Zach's pick B (November 5, 2026): a sent message ends at its words, and its control shows just under the bubble's
+// bottom-left corner, in the gap before the next row, without moving anything.
+test('a sent message ends at its words and shows its control just under its corner', async () => {
+  const { app, page } = await launch()
+  try {
+    const log = transcript(page)
+    const bubble = log.locator('.thread-message[data-role="user"]:not([data-from])').first()
+    const control = bubble.getByRole('button', { name: 'Copy message as Markdown' })
+    await bubble.scrollIntoViewIfNeeded()
+    const measure = () => bubble.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const words = element.querySelector('.rich-message')!.getBoundingClientRect()
+      const copy = element.querySelector('.thread-message__copy')!.getBoundingClientRect()
+      const next = element.nextElementSibling!.getBoundingClientRect()
+      // Measured from the bubble's top, so a scroll that brings it into view changes nothing here.
+      return { height: box.height, words: words.bottom - box.top, copyTop: copy.top - box.top, copyBottom: copy.bottom - box.top, copyLeft: copy.left - box.left, next: next.top - box.top }
+    })
+    const rest = await measure()
+    await expect(control).toHaveCSS('opacity', '0')
+    // The bubble is its words and its padding; the control sits under it and clear of the next row.
+    expect(rest.height - rest.words).toBeLessThanOrEqual(14)
+    expect(rest.copyTop).toBeGreaterThanOrEqual(rest.height)
+    expect(rest.copyBottom).toBeLessThanOrEqual(rest.next)
+    // 9 pixels in from the bubble's edge, inside its 1 pixel border, as the prototype places it.
+    expect(rest.copyLeft).toBeCloseTo(10, 0)
+
+    // The pointer can travel down from the words to the control, and nothing moves when it shows.
+    await bubble.hover()
+    await expect(control).toHaveCSS('opacity', '1')
+    const box = (await bubble.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height + 15)
+    await expect(control).toHaveCSS('opacity', '1')
+    await page.mouse.move(box.x + rest.copyLeft + 14, box.y + box.height + 15)
+    await expect(control).toHaveCSS('opacity', '1')
+    expect(await measure()).toEqual(rest)
+    for (const mode of ['dark', 'light'] as const) {
+      await theme(page, mode)
+      await page.screenshot({ path: resolve(shots, `message-hover-1280-${mode}.png`) })
+    }
+    await theme(page, 'dark')
+    await page.mouse.move(40, 400)
+    await expect(control).toHaveCSS('opacity', '0')
+
+    // Keyboard: focus shows it with a visible ring, and a press copies the message.
+    await control.focus()
+    await expect(control).toHaveCSS('opacity', '1')
+    await expect(control).toHaveCSS('outline-style', 'solid')
+    expect(await measure()).toEqual(rest)
+    await page.keyboard.press('Enter')
+    await expect(control.locator('.thread-message__copy-label')).toHaveText('Copied')
+  } finally { await app.close() }
+})

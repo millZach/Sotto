@@ -348,6 +348,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
   readonly label: string; readonly busy: boolean; readonly disabled: boolean
+  /** The pane header's working copy beside it already says this same branch. */
   /** The label is a ref's own name, which a right-click copies. */
   readonly copyable: boolean
   readonly draftWorktree: boolean; readonly startFromOrigin: boolean

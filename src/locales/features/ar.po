@@ -284,6 +284,10 @@ msgstr ""
 msgid "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{count, plural, other {# choices}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr ""
@@ -474,6 +478,14 @@ msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "{left} seconds left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{length, plural, one {No prompts for # day} other {No prompts for # days}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{length, plural, one {No tokens for # day} other {No tokens for # days}}"
 msgstr ""
 
 #: src/renderer/src/features/dictate/journalFacts.ts
@@ -913,6 +925,10 @@ msgid "{title} may still be running."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{title} no longer waits on you"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "{title} no longer waits on you."
 msgstr ""
 
@@ -1076,6 +1092,14 @@ msgstr ""
 msgid "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts were in Sotto."
 msgstr ""
 
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "<0>Parakeet Ultra</0>, by Moondream. Setup suggests it."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "<0>Parakeet v3</0> or <1>v2</1>, by NVIDIA."
+msgstr ""
+
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "<0>Ready.</0> {size} on this computer."
 msgstr ""
@@ -1133,7 +1157,7 @@ msgid "A safe local field for testing your clipboard or shortcut."
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready."
+msgid "A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model."
 msgstr ""
 
 #: src/renderer/src/watcher/TeammateMessages.tsx
@@ -2662,6 +2686,10 @@ msgstr ""
 msgid "Each model's provider, and what Other holds"
 msgstr ""
 
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Each Parakeet model is downloaded once, about 670 MB, when you choose it. Settings shows whether the chosen one is ready."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each provider, {valuesWhen}"
 msgstr ""
@@ -3245,6 +3273,10 @@ msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "in your own words"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
@@ -4349,6 +4381,10 @@ msgstr ""
 msgid "No thread matches."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "No thread Watcher started is running"
+msgstr ""
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "No threads to show right now."
 msgstr ""
@@ -4640,6 +4676,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "On a Mac with Apple silicon, the <0>Core ML models</0> that FluidAudio keeps."
 msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
@@ -6777,6 +6817,10 @@ msgid "Stop all threads Watcher started"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all threads Watcher started. None is running."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop all, show its progress"
 msgstr ""
 
@@ -8395,6 +8439,10 @@ msgid "You and {name}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title} in your own words."
 msgstr ""
 
@@ -8465,6 +8513,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "You set this."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx

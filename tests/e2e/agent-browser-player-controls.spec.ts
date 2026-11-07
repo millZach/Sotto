@@ -47,7 +47,7 @@ test('the browser player moves and resizes with the pointer and the keyboard, wi
     const player = page.getByRole('complementary', { name: 'Browser for Workshop' })
     await expect(player).toBeVisible()
     // The arrival animation moves and scales the player; let it finish before reading positions from it.
-    await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
+    await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
     const bar = player.getByRole('group', { name: /Move the browser\. Drag, or use the arrow keys/ })
     const grip = player.getByRole('separator', { name: /Resize the browser\. Use the arrow keys/ })
 

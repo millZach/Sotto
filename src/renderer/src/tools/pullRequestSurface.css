@@ -1,52 +1,108 @@
-/* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines
-   each done or carrying the press that fixes it; one large Merge docked under them; the description and the linked
-   pull requests fold below. */
+/* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines,
+   what blocks the merge first and whole, what is done given way to one quiet row; one large Merge docked under them;
+   the description, every check, the changed files and the linked and the open pull requests fold below, in one box. */
 .pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
 .pr-surface :is(svg[data-state='open']) { color: var(--tt-success); }
 .pr-surface :is(svg[data-state='merged']) { color: var(--tt-activity); }
 .pr-surface :is(svg[data-state='closed'], svg[data-state='draft'], svg[data-state='none']) { color: var(--tt-text-muted); }
 
 .pr-surface__top { gap: 6px; }
+/* The line the window's own buttons share says which pull request and how it stands, in one line at every width; the
+   title it belongs to leads the body below. */
 .pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .pr-surface__lead > svg { flex: none; }
-.pr-surface__name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__name { min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .pr-surface__name:focus { outline: none; }
-.pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
-.pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
-.pr-surface__tag { flex: none; padding: 1px 8px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 18px; }
+.pr-surface__number { flex: none; color: var(--tt-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* Its state is a word beside its icon, as every status is (ADR-0110). */
+.pr-surface__tag { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* The title, whole, at the head of what the surface says about it: its lines balanced, as a heading's are. */
+.pr-surface__title { margin: 0 0 18px; color: var(--tt-text); font-size: var(--tt-type-heading); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; text-wrap: balance; }
+.pr-surface__title:focus { outline: none; }
+.pr-surface__title:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
 .tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: var(--tt-radius-sm); }
 
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
-.pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent;
+  /* It ends on a whole row. Where more is below, it stops drawing at the top of the row its foot would cut, and the card
+     under that row dissolves over the row's own top space, so the card reads as going on below and no row's words are
+     drawn in half; a docked Merge is a foot the same way (useWholeRowFoot measures both). At the end the foot holds only
+     the body's last space, so nothing stops early. A mask and not a painted band, so it shows the panel under it in
+     every theme, Glass's translucent one too. What the keyboard reaches scrolls in clear of the foot. */
+  --pr-dock-cut: 0px; --pr-dock-cut-end: 0px; --pr-dock-top: 0px; --pr-foot-cut: 100%; --pr-foot-cut-end: 100%;
+  mask-image: linear-gradient(to bottom, black var(--pr-dock-cut), transparent var(--pr-dock-cut-end), transparent var(--pr-dock-top), black var(--pr-dock-top),
+    black var(--pr-foot-cut), transparent var(--pr-foot-cut-end)); scroll-padding-bottom: 24px; }
 .pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 
 /* The checklist. */
 .pr-surface__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: var(--tt-type-lead); font-weight: 550; }
 .pr-surface__heading small { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 .pr-surface__heading small[data-tone='done'] { color: var(--tt-success); }
-.pr-surface__lines { margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); list-style: none; }
-.pr-surface__line { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
-.pr-surface__line:first-child { border-top: 0; }
-.pr-surface__line > svg { color: var(--tt-text-muted); }
-.pr-surface__line[data-tone='done'] > svg { color: var(--tt-success); }
+.pr-surface__lines { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+/* A line still open is whole and leads, on the one card they share (ADR-0110: filled, with no outline, its rows divided
+   by the card's inset), as the folds below are. */
+.pr-surface__line:not([data-tone='done']) { display: grid; flex: 0 0 100%; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; box-sizing: border-box; padding: 10px 12px; background: var(--tt-card); }
+.pr-surface__line:not([data-tone='done']) + .pr-surface__line:not([data-tone='done']) { border-top: 2px solid var(--tt-card-inset); }
+.pr-surface__line:not([data-tone='done']):first-child { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
+.pr-surface__line:not([data-tone='done']):is(:last-child, :has(+ [data-tone='done'])) { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
+.pr-surface__line:not([data-tone='done']):has(+ [data-tone='done']) { margin-bottom: 8px; }
+.pr-surface__line:not([data-tone='done']) > svg { color: var(--tt-text-muted); }
+/* A line that is done has done its job: a tick and its words, in a row that takes no more than it must. */
+.pr-surface__line[data-tone='done'] { display: inline-flex; align-items: center; gap: 6px; padding: 3px 16px 3px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.35; }
+.pr-surface__line[data-tone='done'] > svg { flex: none; color: var(--tt-success); }
 .pr-surface__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
 .pr-surface__line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
 .pr-surface__line-text { min-width: 0; }
 .pr-surface__line strong { display: block; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; overflow-wrap: anywhere; }
-.pr-surface__line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
 .pr-surface__why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; }
 .pr-surface__fix .tt-button { min-height: 28px; padding: 0 10px; font-size: var(--tt-type-small); }
 
-/* Merge stays in reach under the lines while the folds below scroll. */
-.pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
+/* Every check, in its fold. Each row is a press that opens it; words and times line up down the list. */
+.pr-surface__checks { justify-self: stretch; display: grid; gap: 4px; margin-right: -6px; }
+.pr-surface__check-list { margin: 0; padding: 0; list-style: none; }
+.pr-surface__check-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) minmax(8ch, auto) 9ch 13px; align-items: center; column-gap: 8px; width: 100%; min-height: 28px; padding: 4px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; }
+button.pr-surface__check-row:hover { background: var(--tt-hover); color: var(--tt-text); }
+button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
+.pr-surface__check-row > svg:first-child { color: var(--tt-text-muted); }
+.pr-surface__check-row > svg[data-status='success'] { color: var(--tt-success); }
+.pr-surface__check-row > svg:is([data-status='failure'], [data-status='cancelled']) { color: var(--tt-error-text); }
+.pr-surface__check-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
+.pr-surface__check:is([data-status='failure'], [data-status='cancelled'], [data-status='action-required']) .pr-surface__check-name { color: var(--tt-text); font-weight: 500; }
+.pr-surface__check-name { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
+.pr-surface__check-group { color: var(--tt-text-muted); font-weight: 400; }
+.pr-surface__check-why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; }
+.pr-surface__check-word { color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.pr-surface__check[data-status='failure'] .pr-surface__check-word, .pr-surface__check[data-status='cancelled'] .pr-surface__check-word { color: var(--tt-error-text); }
+.pr-surface__check-time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pr-surface__check-go { color: var(--tt-text-muted); }
+.pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
+.pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* Merge stays in reach under the lines while the folds below scroll, at the body's foot. A blocked Merge has nothing to reach, and would only cover the lines and presses that unblock it. */
+.pr-surface__dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
+.pr-surface__dock:has(.pr-surface__merge-go[data-blocked]) { position: static; }
+/* A pull request that has ended leads with that, and its checklist follows. */
+.pr-surface__title + .pr-surface__dock { padding-top: 0; }
+.pr-surface__lines + .pr-surface__folds { margin-top: 14px; }
 .pr-surface__merge { position: relative; display: flex; gap: 8px; }
 .pr-surface__merge .tt-button { min-height: 44px; font-size: var(--tt-type-reading); }
 .pr-surface__merge-go { flex: 1; min-width: 0; }
-.pr-surface__merge-go[aria-disabled='true'] { border-color: var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); cursor: not-allowed; filter: none; }
-.pr-surface__merge-go[aria-disabled='true']:hover { border-color: var(--tt-field-border); color: var(--tt-text-muted); filter: none; }
+/* Ready: the green the ticks above are drawn in, washed under the panel's own words rather than a solid plate, so it is
+   the one thing to press here without outshining the thread beside it. Its edge and mark carry it in every theme; by
+   day the wash is a clearer tint, so it reads as the press to make rather than a control at rest (tokens.css). */
+.pr-surface__merge .pr-surface__merge-go:not([data-blocked]) { border-color: var(--tt-success-edge); background: var(--tt-success-wash); color: var(--tt-text); font-weight: 600; }
+.pr-surface__merge .pr-surface__merge-go:not([data-blocked]) > svg { color: var(--tt-success); }
+.pr-surface__merge .pr-surface__merge-go:not([data-blocked]):hover:not(:disabled) { border-color: var(--tt-success); background: var(--tt-success-wash-hover); color: var(--tt-text); filter: none; }
+.pr-surface__merge .pr-surface__merge-go:not([data-blocked]):active:not(:disabled) { background: var(--tt-success-wash-press); filter: none; }
+/* A read in flight holds a ready Merge for a moment: it keeps its look, so a Refresh does not flash it blocked. */
+.pr-surface__merge-go[aria-disabled='true']:not([data-blocked]) { cursor: progress; opacity: .7; }
+/* Blocked: struck through with a hatch and no plate of its own, so it cannot be taken for a dim enabled button in any
+   theme. The words on it say so too, and the line under it says why. Pressing or hovering changes nothing. */
+.pr-surface__merge .pr-surface__merge-go[data-blocked], .pr-surface__merge .pr-surface__merge-go[data-blocked]:is(:hover, :active) { border: 1px dashed var(--tt-field-border); background: repeating-linear-gradient(135deg, var(--tt-hairline) 0 1px, transparent 1px 7px); color: var(--tt-text-2); cursor: not-allowed; filter: none; }
 .pr-surface__method { position: relative; flex: none; }
 .pr-surface__method-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; width: 270px; max-width: calc(100cqw - 32px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pr-surface__method-list[data-below] { top: calc(100% + 6px); bottom: auto; }
 .pr-surface__method-item { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); text-align: left; }
 .pr-surface__method-item:hover, .pr-surface__method-item:focus-visible { background: var(--tt-hover); outline: none; }
 .pr-surface__method-item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
@@ -55,7 +111,8 @@
 .pr-surface__hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 .pr-surface__textlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .pr-surface__textlink:disabled { color: var(--tt-text-muted); cursor: default; }
-.pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+/* What happened to it, or that the thread does not know it: a card, like the checklist and the folds. */
+.pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--tt-radius-md); background: var(--tt-card); }
 .pr-surface__finished > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__finished[data-state='merged'] > svg { color: var(--tt-activity); }
 .pr-surface__finished > div { flex: 1; min-width: 12ch; }
@@ -79,13 +136,114 @@
 .pr-surface__babysit[data-state='ended'] .pr-surface__babysit-text span { color: var(--tt-text-muted); }
 .pr-surface__finished + .pr-surface__babysit { margin: 12px 0 0; }
 
-/* The folds: Description, Linked pull requests. */
-.pr-surface__fold { border-top: 1px solid var(--tt-hairline); }
-.pr-surface__dock + .pr-surface__fold { margin-top: 6px; }
-.pr-surface__fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); font-weight: 500; text-align: left; }
+/* This pull request's own folds, together on one card (ADR-0110: filled, with no outline): the surface's account of it ends
+   where the card does, so a short pull request reads as finished rather than trailing off, and an open fold grows inside it. */
+/* Other pull requests, the thread's linked ones and the repository's open ones, lead away from this one, so they stand on
+   a card of their own under it (ADR-0110: a container is a card), their heads a step quieter than its own folds'. */
+.pr-surface__folds, .pr-surface__others { border-radius: var(--tt-radius-md); background: var(--tt-card); }
+.pr-surface__folds:empty, .pr-surface__others:empty { display: none; }
+.pr-surface__dock + .pr-surface__folds { margin-top: 6px; }
+/* Rows on a card are divided by the card's inset, and the last has none (ADR-0110). */
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
+/* A fold's head is one press, its preview and peek with it, so the whole of it lights under the pointer. */
+.pr-surface__fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; min-height: 40px; padding: 10px 12px; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
-.pr-surface__fold-body { display: grid; gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
-.pr-surface__description { color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pr-surface__fold-head:hover { background: var(--tt-hover); }
+.pr-surface__fold-head:active { background: var(--tt-hover-strong); }
+.pr-surface__fold-head:hover > svg { color: var(--tt-text); }
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold:first-child > .pr-surface__fold-head { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
+:is(.pr-surface__folds, .pr-surface__others) > .pr-surface__fold:last-child > .pr-surface__fold-head:last-child { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
+.pr-surface__folds + .pr-surface__others { margin-top: 14px; }
+.pr-surface__others .pr-surface__fold-head { min-height: 34px; padding-block: 7px; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 400; }
+.pr-surface__others .pr-surface__fold-head:is(:hover, [aria-expanded='true']) { color: var(--tt-text); }
+.pr-surface__others .pr-surface__fold-body { padding-top: 4px; }
+.pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 12px 14px 35px; }
+.pr-surface__fold-body[data-wide] { justify-items: stretch; padding-left: 12px; }
+.pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: 400; }
+/* What a closed Description holds: its first lines, under its name, in at most two lines. */
+.pr-surface__fold-preview { display: -webkit-box; flex: 1 0 100%; min-width: 0; padding-left: 23px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Where the panel has room, it is its whole first paragraph, in up to four. */
+.pr-surface__fold-preview[data-whole] { -webkit-line-clamp: 4; }
+/* Where the panel has room, a closed fold's head also shows the first few of what it holds: the checks that still stand,
+   the most changed files. Quieter than the list it opens to, and one press with the head, which opens that list. */
+.pr-surface__peek { display: grid; flex: 1 0 100%; gap: 3px; min-width: 0; margin-top: 6px; padding-left: 23px; font-size: var(--tt-type-small); font-weight: 400; line-height: 1.4; }
+.pr-surface__peek-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; color: var(--tt-text-2); }
+.pr-surface__peek[data-of='checks'] .pr-surface__peek-row { grid-template-columns: 13px minmax(0, 1fr) auto 7ch; column-gap: 8px; }
+.pr-surface__peek-row > svg { color: var(--tt-text-muted); }
+.pr-surface__peek-row > svg:is([data-status='failure'], [data-status='cancelled']) { color: var(--tt-error-text); }
+.pr-surface__peek-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
+/* The line that says how many more the fold holds than its peek shows: the quietest ink, so it reads as a note on the list. */
+.pr-surface__peek-row[data-more] { color: var(--tt-text-muted); }
+.pr-surface__peek-name { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
+.pr-surface__peek-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+.pr-surface__peek-folder[data-group] { margin-right: .3em; }
+.pr-surface__peek-name > bdi:last-child { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; }
+.pr-surface__peek-word { color: var(--tt-text-muted); white-space: nowrap; }
+.pr-surface__peek-row:is([data-status='failure'], [data-status='cancelled']) .pr-surface__peek-word { color: var(--tt-error-text); }
+.pr-surface__peek-time { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pr-surface__peek .pr-surface__counts { display: inline-grid; font-size: var(--tt-type-small); grid-template-columns: repeat(2, minmax(6ch, max-content)); text-align: right; }
+.pr-surface__checks-summary { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 10px; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.pr-surface__checks-summary [data-tone='failed'] { color: var(--tt-error-text); }
+.pr-surface__checks-summary [data-tone='waiting'] { color: var(--tt-warning-text); }
+.pr-surface__checks-summary [data-tone='settled'] { color: var(--tt-text-muted); }
+.pr-surface__fold-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pr-surface__fold-actions .tt-button { min-height: 30px; padding: 0 10px; font-size: var(--tt-type-small); }
+.pr-surface__from { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.pr-surface__description { justify-self: stretch; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; overflow-wrap: anywhere; }
+
+/* Lines added and removed: the success and error roles, in figures that line up. */
+.pr-surface__counts { flex: none; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-surface__counts [data-side='added'] { color: var(--tt-success); }
+.pr-surface__counts [data-side='removed'] { color: var(--tt-error-text); }
+
+/* The changed files, under their folders as the Changes tree has them: the folder heads its files, quiet, with what they
+   change between them, and each file is its name, read at the body's size, with its counts in two columns that line up
+   down the whole list, the folder's with them. */
+.pr-surface__files { display: grid; gap: 10px; justify-self: stretch; margin: 0 -6px 0 0; padding: 0; list-style: none; }
+.pr-surface__files ul { margin: 0; padding: 0; list-style: none; }
+.pr-surface__files-folder { display: flex; align-items: center; gap: 12px; min-height: 24px; padding: 0 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* A long folder gives way from its start, so the part nearest its files stays, as the Changes tree's does. */
+.pr-surface__files-folder > span:first-child { flex: 1; min-width: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__files-folder > .pr-surface__file-go { width: 13px; }
+.pr-surface__file { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 28px; padding: 3px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); text-align: left; }
+.pr-surface__file:hover { background: var(--tt-hover); }
+.pr-surface__file:active { background: var(--tt-hover-strong); }
+:is(.pr-surface__file, .pr-surface__files-folder) .pr-surface__counts { display: inline-grid; grid-template-columns: repeat(2, minmax(6ch, max-content)); font-size: var(--tt-type-small); text-align: right; }
+.pr-surface__counts[data-quiet] [data-side] { color: var(--tt-text-muted); }
+.pr-surface__file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Each opens on GitHub, as a check's row does, and says so with the same mark. */
+.pr-surface__file-go { flex: none; margin-left: -4px; color: var(--tt-text-muted); }
+.pr-surface__file:hover .pr-surface__file-go { color: var(--tt-text); }
+
+/* The repository's open pull requests: a search, then rows that say what, how it stands, who and how big. */
+.pr-surface__list-tools { display: flex; align-items: center; gap: 6px; }
+.pr-surface__search { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-code-bg); color: var(--tt-text-muted); }
+.pr-surface__search:focus-within { border-color: var(--tt-focus-ring); box-shadow: 0 0 0 1px var(--tt-focus-ring); }
+.pr-surface__search > svg { flex: none; }
+.pr-surface__search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
+.pr-surface__search input::placeholder { color: var(--tt-text-muted); opacity: 1; }
+.pr-surface__search input::-webkit-search-cancel-button { display: none; }
+.pr-surface__open-list { margin: 0; padding: 0; list-style: none; }
+.pr-surface__open-row { display: grid; grid-template-columns: 15px minmax(0, 1fr); grid-template-areas: 'icon title' '. meta'; column-gap: 8px; row-gap: 4px; align-items: start; width: 100%; padding: 9px 8px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
+.pr-surface__open-row:hover { background: var(--tt-hover); }
+.pr-surface__open-row:active { background: var(--tt-hover-strong); }
+/* The one shown above is a selected item, so it wears the selected card's fill (ADR-0110 decision 1). */
+.pr-surface__open-row[aria-current] { background: var(--tt-card-selected); }
+/* Every row here is open, so its mark only tells a draft by its shape; colour is left to how each one stands. */
+.pr-surface__open-row > svg[data-state] { grid-area: icon; margin-top: 2px; color: var(--tt-text-muted); }
+.pr-surface__open-title { grid-area: title; display: -webkit-box; overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-surface__open-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
+/* How it stands: its checks, then its review, each a mark and its words, kept together ahead of who, when and how big. */
+.pr-surface__open-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.pr-surface__open-who { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.pr-surface__open-fact { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); white-space: nowrap; }
+.pr-surface__open-fact > svg { flex: none; }
+.pr-surface__open-fact:is([data-checks='passed'], [data-review='approved']) > svg { color: var(--tt-success); }
+.pr-surface__open-fact:is([data-checks='failing'], [data-review='changes_requested']) { color: var(--tt-error-text); }
+.pr-surface__open-fact[data-checks='running'] { color: var(--tt-warning-text); }
+.pr-surface__open-fact:is([data-checks='none'], [data-review='draft']) { color: var(--tt-text-muted); }
+.pr-surface__list-failed { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--tt-error-text); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
+.pr-surface__finished[data-state='unlinked'] > svg { color: var(--tt-warning-text); }
 .pr-surface__links { justify-self: stretch; margin: 0; padding: 0; list-style: none; }
 .pr-surface__link { border-top: 1px solid var(--tt-hairline); }
 .pr-surface__link:first-child { border-top: 0; }
@@ -127,10 +285,25 @@
   .pr-surface__line { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
   .pr-surface__line > svg { margin-top: 1px; }
   .pr-surface__fix { grid-column: 2; justify-self: start; margin-top: 8px; }
+  /* A check's state goes under its name, so the name keeps the row's width. */
+  .pr-surface__check-row { grid-template-columns: 15px minmax(0, 1fr) auto 13px; grid-template-areas: 'icon name time go' '. word word .'; row-gap: 0; }
+  .pr-surface__check-row > svg:first-child { grid-area: icon; }
+  .pr-surface__check-name { grid-area: name; }
+  .pr-surface__check-word { grid-area: word; }
+  .pr-surface__check-time { grid-area: time; }
+  .pr-surface__check-go { grid-area: go; }
 }
+/* The narrowest panel, beside the thread in the smallest window: the same surface in a closer rhythm, so a ready pull
+   request's checklist, Merge and every fold's head fit in its height. */
 @container tools-body (max-width: 439px) {
-  .pr-surface__body { padding-inline: 12px; }
-  .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
+  .pr-surface__title { margin-bottom: 12px; }
+  .pr-surface__body { padding: 12px 12px 24px; }
+  .pr-surface__heading { margin-bottom: 8px; }
+  .pr-surface__dock { margin-inline: -12px; padding: 12px 12px 10px; }
+  .pr-surface__hint { margin-top: 6px; }
+  .pr-surface__fold-head { min-height: 36px; padding-block: 8px; }
+  .pr-surface__others .pr-surface__fold-head { min-height: 32px; padding-block: 6px; }
+  .pr-surface__folds + .pr-surface__others { margin-top: 10px; }
 }
 /* Open <title> after a checkout refused because another thread holds the folder (#1823): a word in the line, underlined as a link is. */
 .pull-request-dialog__open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: start; text-decoration: underline; text-underline-offset: 2px; white-space: normal; overflow-wrap: anywhere; }

@@ -63,6 +63,20 @@ describe('message copy control', () => {
     }
   })
 
+  it('heads only the first reply with the provider and time, and keeps the rest for assistive tech', () => {
+    const turns: AgentMessage[] = [
+      { id: 'u1', role: 'user', text: 'One?', createdAt: at },
+      { id: 'r1', role: 'assistant', text: 'First.', createdAt: at },
+      { id: 'u2', role: 'user', text: 'Two?', createdAt: at },
+      { id: 'r2', role: 'assistant', text: 'Second.', createdAt: at },
+    ]
+    render(<MessageList messages={turns} provider="Codex" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
+    const articles = [...document.querySelectorAll<HTMLElement>('.thread-message')]
+    expect(articles.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'yes', 'no'])
+    // The quiet reply still says who wrote it and when, in its header, ahead of its words.
+    expect(articles[3]!.querySelector('header')).toHaveTextContent(`Codex${clockLabel(Date.parse(at))}`)
+  })
+
   it('copies the source Markdown on press and confirms for a moment', async () => {
     vi.useFakeTimers()
     const writeText = stubClipboard()
@@ -153,11 +167,36 @@ describe('a pane holding the last turns of a long thread', () => {
   it('puts each turn’s work between its own message and its reply once the earlier messages are loaded', () => {
     render(<MessageList messages={history} provider="claude" running placement={placeActivities(history, history, activities)} context={live} />)
     const turns = screen.getAllByRole('region', { name: /Worked for/u })
-    turns.forEach((turn, index) => expect(turn).toHaveAccessibleName(['Worked for 3m 34s · 1 step', 'Worked for 29m 10s · 1 step'][index]))
+    turns.forEach((turn, index) => expect(turn).toHaveAccessibleName(['Worked for 3m 34s · 1 step · Ran 1 command', 'Worked for 29m 10s · 1 step · Ran 1 command'][index]))
     const transcript = document.body.textContent ?? ''
     const order = ['user u0', 'Worked for 3m 34s', 'assistant a0', 'user u1', 'Worked for 29m 10s', 'assistant a1', 'user u2', 'assistant a2']
     expect(order.map(text => transcript.indexOf(text))).toEqual([...order.map(text => transcript.indexOf(text))].sort((a, b) => a - b))
     expect(order.every(text => transcript.includes(text))).toBe(true)
+  })
+})
+
+describe('a quick turn’s Worked for line (quiet turns, ADR-0134)', () => {
+  const clock = (second: number): string => `2026-11-06T09:00:${String(second).padStart(2, '0')}.000Z`
+  const messages: AgentMessage[] = [
+    { id: 'u0', role: 'user', text: 'Which one was cut 3?', createdAt: clock(0) },
+    { id: 'a0', role: 'assistant', text: 'The request policy.', createdAt: clock(3) },
+    { id: 'u1', role: 'user', text: 'Run the tests.', createdAt: clock(10) },
+    { id: 'a1', role: 'assistant', text: 'They pass.', createdAt: clock(40) },
+  ]
+  const activities: AgentActivity[] = [
+    { id: 'turn-u0', turnId: 'u0', afterMessageId: 'u0', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', durationMs: 3_000 },
+    { id: 'r0', turnId: 'u0', afterMessageId: 'u0', sequence: 1, kind: 'tool', status: 'completed', title: 'Read' },
+    { id: 'turn-u1', turnId: 'u1', afterMessageId: 'u1', sequence: 2, kind: 'turn', status: 'completed', title: 'Turn', durationMs: 30_000 },
+    { id: 'c1', turnId: 'u1', afterMessageId: 'u1', sequence: 3, kind: 'command', status: 'completed', title: 'Bash', command: 'npm test' },
+  ]
+  const finished: ActivityContext = { liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }
+
+  it('marks a turn under fifteen seconds with one step as quiet, keeps its line a named button, and leaves a longer turn alone', () => {
+    render(<MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, activities)} context={finished} />)
+    const [quick, slow] = screen.getAllByRole('region', { name: /Worked for/u })
+    expect(quick).toHaveAttribute('data-quiet')
+    expect(slow).not.toHaveAttribute('data-quiet')
+    expect(screen.getByRole('button', { name: 'Worked for 3.0s · 1 step · Used Read' })).toBeInTheDocument()
   })
 })
 

@@ -69,7 +69,7 @@ The surface's layout is the owner's pick among three prototypes of #127's pull r
 - **How it merged.** GitHub records when a pull request merged, not how, so the merged block gives the time and not the method.
 - **Create PR** with no pull request is the Git action's own press (`git-action` with `create_pr`), enabled and explained by the same rules, and its progress shows in the pane's Git notice.
 
-Variant A's controls that C did not show are kept or dropped this way: Open on GitHub and Refresh stay beside the menu; Update with rebase, Convert to draft, Copy link, Link pull request, Unlink from thread and Close pull request are in the ··· menu; Merge now is dropped, since Merge waits for the checklist and Merge when ready covers the rest; the list of every check and the head and base line are dropped for the checklist's lines, with the full list on GitHub; the separate Linked pull requests view is now the fold, and unlinking any but the pull request shown is done by opening it first.
+Variant A's controls that C did not show are kept or dropped this way: Open on GitHub and Refresh stay beside the menu; Update with rebase, Convert to draft, Copy link, Link pull request, Unlink from thread and Close pull request are in the ··· menu; Merge now is dropped, since Merge waits for the checklist and Merge when ready covers the rest; the list of every check and the head and base line are dropped for the checklist's lines, with the full list on GitHub (Zach brought the list of every check back on November 4, 2026, as one more fold: see that amendment below); the separate Linked pull requests view is now the fold, and unlinking any but the pull request shown is done by opening it first.
 
 ## Amendment: review comments (#270)
 
@@ -201,3 +201,67 @@ A desktop from before this, on a host from after it, has its merges, closes and 
 ## Amendment: the quiet composer moves its branch controls (October 29, 2026)
 
 After trying Owl `.5`, Drake asked for no machine/workspace/branch line below the quiet pill. While `quiet-composer` is on, the existing workspace and branch controls live in the pane header beside the folder instead (ADR-0161). The full composer keeps its toolbar. This changes their placement, not Git behavior, permission, host choice or keyboard shortcuts.
+
+## Amendment, November 4, 2026: every check, one more fold below Merge
+
+Zach chose this. His pick of variant C on September 23 dropped the list of every check, with the full list on GitHub. On November 4 he tried both answers in the design pass's prototype `sotto-council/prototypes/pr-checks/index.html`, kept outside the repository, and picked B: the same surface with one more fold.
+
+**Checks** folds under the checklist and Merge, after the description, closed until pressed, as every fold is. It holds every check, each with its state in a word, how long it took and a press that opens it where GitHub says it lives. What failed or still runs comes first, and the checks that finished fold behind **Show 10 passed** while any of those stands. **Open all checks on GitHub** stands at its foot. A check GitHub gives no address for is a plain row, with nothing to press.
+
+The checklist and Merge do not change: **Checks passing** still names the first failing check and carries **Open check**, and the merge is decided by the same lines. The fold adds no read of GitHub, since the read the checklist comes from already holds these checks and their times. It costs a fifth row under Merge and one more piece of code to keep.
+
+## Amendment, November 4, 2026: the repository's open pull requests, straight to stable
+
+Zach chose this on November 4, 2026. The Pull request surface has a fifth fold, **Open pull requests**: a repository's open pull requests, the most recently updated first, with a search over what it read, each one's checks in a mark, its author, its age and its line counts. A press shows that pull request in the surface, and one the thread does not know has no Merge and offers **Link to this thread**. It came from the design pass of the same day and no decision recorded it, so this does. It amends this record because the surface and its remote list are here.
+
+1. **It goes straight to stable, with no Owl switch** (ADR-0072). It is not on `src/shared/owlFeatures.ts`, and a stable build shows it as Owl does.
+2. **It reads on a press.** The list is read through the host's `gh` when the fold opens and on its own Refresh, up to the fifty most recently updated, as one GraphQL query. Nothing polls it, and nothing of it is kept on a record. It contacts no new host: `gh` already reads this surface from GitHub, on the user's own sign-in.
+3. **`git-pull-request-list` is safe for a paired client because it only reads.** It is a host request, not a command, so it never joins the remote command list of decision 8. It takes one field, `threadId`, so a client names a thread it can already address, and the host works out the repository from that thread's folder; it cannot ask for any other repository. It changes nothing on GitHub or on the host, answers no permission and starts nothing, so it needs no policy record and no confirmation receipt. It does show a paired client more than `git-pull-request` does: the titles, authors, branches and counts of the repository's other open pull requests, which the host's `gh` sign-in can already read. A client does not ask a host that does not list the feature. Whatever a press does after the list, such as Link to this thread, goes through the commands and receipts it always did.
+
+**The phone's pick stands.** On October 21 Zach picked ADR-0102's sheet from the thread for the iPhone, over a GitHub tab listing every open pull request across threads and computers. That pick stands for the iPhone, which still has no list of them all. This list differs in three ways: it is on the desktop, inside the surface one press under Merge rather than a tab of its own; it holds one repository, not every thread and computer; and it reads only when the fold opens, so it spends GitHub's rate limit on a press rather than ahead of time, which was the reason ADR-0102 gave against its option B.
+
+## Amendment, November 4, 2026: the changed files, one more fold below Merge
+
+Zach has not been asked about this yet. It came from the design pass of the same day and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+**Changed files** folds below Merge, after **Checks**, closed until pressed. Its heading carries how many files and how many lines were added and removed. It lists the files the read already holds (ADR-0102's `files`) under their folders, as the November 5 note below has it: the files at the repository's top first, then the folder that changed most, each folder's files by name, the most changed first, with added and removed lines in two columns. A press on a row opens that file on GitHub. When GitHub lists fewer than the pull request changes, a line says how many of how many show. **Review in Changes** opens Changes on the branch against its base, and is offered only for the thread's own pull request. **Open files on GitHub** stands at its foot.
+
+The fold adds no read of GitHub and contacts no new host. The checklist and Merge do not change.
+
+## Note, November 4, 2026: the checklist, Merge and Changes as the design pass left them
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+- **A ready pull request's checklist is one row.** When nothing blocks the merge, the five lines are one quiet row of ticks and short words ("10 checks passed", "Approved by mira", "Up to date with main", "No conflicts", "Not a draft"), each with its fuller reason in its tooltip and for a screen reader. While something blocks, the open lines come first in one box, failed before to do, running, does not block and unknown, and the done lines fall to the quiet row under it.
+- **A blocked Merge says so.** It reads "Can't merge #1612 yet" with a no-entry mark, hatched with a dashed edge, still focusable and still doing nothing when pressed. The line under it says what has to happen, "You can merge once the failing checks pass and someone approves it.", where it said how many lines were left.
+- **The fold heads carry their state.** **Checks** says how many failed, are running and passed at the right of its head, and **Description** shows the description's first line, muted, until it opens. Both stay closed until pressed.
+- **Review in Changes stands above the file list** in **Changed files**, with **Open files on GitHub** still at its foot.
+- **Changes has one View menu.** Its layout, Wrap long lines, Hide whitespace changes, One file at a time and File tree are in a menu named View beside **Collapse all**, each ticked while it holds, where they were seven unnamed toggles.
+
+The lines above that say the checklist and Merge do not change are about what the Checks and Changed files folds cost, and they still hold for those folds. What changed in the checklist and Merge is this note's.
+
+## Amendment, November 5, 2026: each checklist line names how it stands
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/checklist-labels/`, kept outside the repository, and picked B.
+
+Each line of the merge checklist now names its state rather than its requirement: "2 checks failed", "1 check running", "Checks passed"; "Needs a review", "Changes requested", "No review required", "Review approved"; "Behind main", "Up to date with main"; "Conflicts with main", "No conflicts"; "Still a draft", "Ready for review". The checks line still names the first failing check in its reason and carries **Open check**, a cancelled check counts among the failed as the Checks fold counts it, and the draft line's press still says **Ready for review**. This replaces the November 4 amendment's line that **Checks passing** still names the first failing check; the rest of that amendment stands.
+
+## Note, November 5, 2026: the folds together, and the Description's first line
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+- **The pull request's own folds stand together** (`ee7252975`, `c69b379c3`). **Description**, **Checks** and **Changed files** stand together on one card, filled with no outline as ADR-0110 makes every container, where they were rows between hairlines with nothing under the last, so the surface's account of this pull request ends where the card does and an open fold grows inside it. **Linked pull requests** and **Open pull requests** lead to other pull requests, so they stand apart on a card of their own under it, filled the same way, their heads a step quieter than the first card's. All five keep their order and stay closed until pressed. A closed **Description** shows its first sentence under its name, in up to two lines, where the panel has no room for the previews of the amendment below.
+
+The checklist's lines, Merge's words and what each fold reads are as the amendments above say.
+
+## Amendment, November 5, 2026: the closed folds show what they hold where nothing would scroll
+
+Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/pr-previews/`, kept outside the repository, and picked B.
+
+Every fold still stays closed until pressed, as the November 4 amendments have it. Where the surface's body has room, a closed head shows the first of what it holds, most needed first (`8ae093197`): under **Checks** the checks that still stand, failed, waiting on an approval or running, up to three, each with its mark, name, state and time; under **Description** its whole first paragraph in up to four lines, in place of its first sentence; under **Changed files** the three most changed files with their lines, and eight once every other head's preview fits. Each count is tried before the frame is drawn and kept only if the body does not scroll, so a window of 820 by 560 shows none and a long blocked checklist shows fewer; while a fold is open the counts hold, so opening one never moves the heads above it. The previews are for the eye only and are hidden from assistive technology; each head's name is unchanged and is still what a press opens.
+
+## Note, November 5, 2026: the files under their folders
+
+Zach has not been asked about this yet. It came from the design pass of November 5, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+- **Changed files stands under its folders.** Opened, the fold groups the files by folder, as the file tree in **Changes** does: the files at the repository's top first, then the folder that changed most, each folder a quiet line with the lines its files add and remove between them, and its files under it by name alone, the most changed first, at the body's size, their counts in columns that line up with the folder's. The closed head's preview is still the most changed files across every folder, as the amendment above has it.

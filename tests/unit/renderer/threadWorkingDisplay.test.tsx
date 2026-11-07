@@ -34,6 +34,19 @@ function mount(state: AgentState) {
   return { transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 
+const word = (row: HTMLElement): Element => row.querySelector('.thread-activity-live__word')!
+
+/** A mounted thread whose activities change as a host's would, with the transcript's line kept mounted across them. */
+function mountLive(state: AgentState) {
+  const live = liveAgentState(state)
+  vi.mocked(useAgents).mockImplementation(live.useLive)
+  render(<ThreadsView now={NOW} />)
+  return {
+    result: screen.getByRole('log', { name: 'Thread transcript' }),
+    update: (activities: readonly AgentActivity[]): void => { act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === THREAD ? { ...item, activities: [...activities] } : item) } }) }) },
+  }
+}
+
 beforeEach(() => { sequence = 0; vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -86,14 +99,231 @@ describe('a turn that has reported nothing yet', () => {
     expect(steps).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('keeps its words once the provider reports a step, and folds the step under them', () => {
+  it('names the step the provider reports running in place of its words, and folds the step under the line', () => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [
       ...waiting(), activity({ id: 'test', command: 'npm test', status: 'running', startedAt: iso(-3_000) }),
     ] }))
     const liveRow = within(transcript).getByTestId('thread-activity-live')
-    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveTextContent('Combing the desert')
-    expect(liveRow).not.toHaveTextContent('npm test')
-    expect(within(liveRow).getByRole('button', { name: 'Working, 1 step so far' })).toHaveAttribute('aria-expanded', 'false')
+    expect(word(liveRow).textContent).toBe('Running ⁨npm test⁩')
+    const line = within(liveRow).getByRole('button', { name: 'Working, 1 step so far' })
+    expect(line).toHaveAttribute('aria-expanded', 'false')
+    expect(line).toHaveAccessibleDescription(/Running .*npm test/u)
+  })
+})
+
+describe('what the working line names', () => {
+  const waiting = (): AgentActivity[] => [lifecycle({ status: 'running', startedAt: iso(-12_000), timingSource: 'observed' })]
+  const said = (...steps: readonly AgentActivity[]): string | null => {
+    const { transcript } = mount(stateWith({ status: 'running', activities: [...waiting(), ...steps] }))
+    const text = word(within(transcript).getByTestId('thread-activity-live')).textContent
+    cleanup()
+    // The marks that keep a name in its own direction are not letters.
+    return (text ?? '').replace(/[\u2068\u2069]/gu, '')
+  }
+
+  it.each([
+    ['a command, without its shell', activity({ id: 's', status: 'running', command: `"C:\\Windows\\powershell.exe" -Command 'npm test'` }), 'Running npm test'],
+    ['Claude reading a file', activity({ id: 's', kind: 'tool', status: 'running', title: 'Read', text: JSON.stringify({ file_path: 'D:\\repo\\src\\threads.css' }) }), 'Reading threads.css'],
+    ['Muse reading a file', activity({ id: 's', kind: 'tool', status: 'running', title: 'read_file', text: JSON.stringify({ path: 'src/threads.css' }) }), 'Reading threads.css'],
+    ['Grok naming the file in its title', activity({ id: 's', kind: 'tool', status: 'running', title: 'Read src/threads.css' }), 'Reading threads.css'],
+    ['a file change', activity({ id: 's', kind: 'file-change', status: 'running', title: 'File changes', changes: [{ path: 'src/control.ts', kind: 'update' }] }), 'Editing control.ts'],
+    ['a change to several files', activity({ id: 's', kind: 'file-change', status: 'running', title: 'File changes', changes: [{ path: 'src/control.ts', kind: 'update' }, { path: 'src/a.ts', kind: 'update' }] }), 'Editing control.ts and 1 more'],
+    ['any other tool, as the provider named it', activity({ id: 's', kind: 'tool', status: 'running', title: 'Grep', text: JSON.stringify({ pattern: 'workingNow' }) }), 'Grep workingNow'],
+  ])('%s', (_, step, words) => { expect(said(step)).toBe(words) })
+
+  it.each([
+    ['reasoning, which it does not call Thinking', activity({ id: 's', kind: 'reasoning', status: 'running', title: 'Thinking' })],
+    ['a plan, whose record runs for the whole turn', activity({ id: 's', kind: 'plan', status: 'running', title: 'Plan', steps: [{ text: 'Write the tests', status: 'running' }, { text: 'Ship it', status: 'pending' }] })],
+    ['a gap between steps', activity({ id: 's', command: 'npm test', status: 'completed' })],
+  ])('leaves %s to the words', (_, step) => { expect(said(step)).toBe('Combing the desert') })
+
+  it('says a reply is being written, but not one from before the turn', () => {
+    const messages = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages
+    const reply = (createdAt: string) => ({ ...messages.at(-1)!, id: 'reply', role: 'assistant' as const, text: 'So far', createdAt })
+    const first = mount(stateWith({ status: 'running', messages: [...messages, reply(iso(0))], activities: waiting() }))
+    expect(word(within(first.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Writing a reply')
+    cleanup()
+    const before = mount(stateWith({ status: 'running', messages: [...messages, reply(iso(-3_600_000))], activities: waiting() }))
+    expect(word(within(before.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Combing the desert')
+  })
+
+  it('stands above a reply it writes after its steps, in the order the work happened, and below one it writes before them', () => {
+    const asked = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages[0]!
+    const reply = { ...asked, id: 'reply', role: 'assistant' as const, text: 'So far', createdAt: iso(0) }
+    const request = (kind: 'permission' | 'question') => ({ id: kind, kind, text: kind === 'permission' ? 'Run npm run bench?' : 'Which store?', options: [] })
+    const order = (activities: AgentActivity[], requests: ReturnType<typeof request>[] = []): 'line first' | 'reply first' => {
+      const { transcript } = mount(stateWith({ status: 'running', messages: [asked, reply], activities, requests }))
+      const line = within(transcript).getByTestId('thread-activity-live')
+      const written = within(transcript).getByText('So far').closest('.thread-message')!
+      const first = line.compareDocumentPosition(written) & Node.DOCUMENT_POSITION_FOLLOWING ? 'line first' : 'reply first'
+      cleanup()
+      return first
+    }
+    // Steps, then the reply: the line, with the turn's steps under it, stands where the Worked for line will.
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test' })])).toBe('line first')
+    // No steps: nothing will fold above the reply, so the line stays at the end.
+    expect(order(waiting())).toBe('reply first')
+    // A step after the reply: the reply is done and the work went on below it.
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test', status: 'running', afterMessageId: 'reply' })])).toBe('reply first')
+    // A permission request or a question after it: the reply no longer closes the turn, so it goes back above the line,
+    // which waits at the end with the request's card (Zach's pick B of reply-order, "as long as that reply closes out the last step").
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test' })], [request('permission')])).toBe('reply first')
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test' })], [request('question')])).toBe('reply first')
+  })
+
+  it('says what it waits for while a request waits on the user, not that a reply is being written', () => {
+    const messages = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages
+    const reply = { ...messages.at(-1)!, id: 'reply', role: 'assistant' as const, text: 'I will run the benchmark.', createdAt: iso(0) }
+    const request = (id: string, kind: 'permission' | 'question') => ({ id, kind, text: kind === 'permission' ? 'Run npm run bench?' : 'Which store?', options: [] })
+    const first = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: waiting(), requests: [request('p', 'permission')] }))
+    expect(word(within(first.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your permission')
+    cleanup()
+    // A permission outranks a question, as it does in the sidebar and the composer.
+    const both = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: [...waiting(), activity({ id: 's', status: 'running', command: 'npm run bench' })],
+      requests: [request('q', 'question'), request('p', 'permission')] }))
+    expect(word(within(both.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your permission')
+    cleanup()
+    const asked = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: waiting(), requests: [request('q', 'question')] }))
+    expect(word(within(asked.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your answer')
+  })
+
+  it('holds what it says so quick steps do not flicker, and comes back to the words only after a gap that lasts', () => {
+    vi.useFakeTimers({ now: NOW })
+    const step = (id: string, command: string, status: AgentActivity['status'] = 'running'): AgentActivity => activity({ id, command, status })
+    const state = stateWith({ status: 'running', activities: [...waiting(), step('a', 'one')] })
+    const { result, update } = mountLive(state)
+    const line = (): string => (word(within(result).getByTestId('thread-activity-live')).textContent ?? '').replace(/[\u2068\u2069]/gu, '')
+    expect(line()).toBe('Running one')
+    act(() => { vi.advanceTimersByTime(1_600) })
+    // A new step takes the line at once when the last has had its time.
+    update([...waiting(), step('a', 'one', 'completed'), step('b', 'two')])
+    expect(line()).toBe('Running two')
+    // Three more in quick succession: the line keeps the last it showed until its time is up, then shows the newest.
+    update([...waiting(), step('b', 'two', 'completed'), step('c', 'three')])
+    expect(line()).toBe('Running two')
+    update([...waiting(), step('c', 'three', 'completed'), step('d', 'four')])
+    expect(line()).toBe('Running two')
+    act(() => { vi.advanceTimersByTime(1_500) })
+    expect(line()).toBe('Running four')
+    // A short gap never shows, and the same step coming back changes nothing.
+    update([...waiting(), step('d', 'four', 'completed')])
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(line()).toBe('Running four')
+    update([...waiting(), step('d', 'four', 'completed'), step('e', 'five')])
+    expect(line()).toBe('Running four')
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(line()).toBe('Running five')
+    // A gap that lasts gives the line back to the words.
+    update([...waiting(), step('e', 'five', 'completed')])
+    act(() => { vi.advanceTimersByTime(1_500) })
+    expect(line()).not.toContain('Running')
+  })
+})
+
+describe('what the working line says the work is for', () => {
+  const waiting = (): AgentActivity[] => [lifecycle({ status: 'running', startedAt: iso(-12_000), timingSource: 'observed' })]
+  const unmarked = (text: string | null | undefined): string => (text ?? '').replace(/[⁨⁩]/gu, '')
+  const shown = (...steps: readonly AgentActivity[]) => {
+    const { transcript } = mount(stateWith({ status: 'running', activities: [...waiting(), ...steps] }))
+    const row = within(transcript).getByTestId('thread-activity-live')
+    const result = {
+      words: unmarked(word(row).textContent), detail: row.querySelector('.thread-activity-live__detail')!,
+      line: within(row).getByRole('button', { name: /^Working, / }),
+    }
+    return result
+  }
+  const described = (patch: Partial<AgentActivity> = {}): AgentActivity => activity({ id: 'cat', status: 'running', command: 'cat src/policy.ts',
+    text: JSON.stringify({ command: 'cat src/policy.ts', description: 'Read the request policy' }), ...patch })
+  const plan = (steps: NonNullable<AgentActivity['steps']>): AgentActivity => activity({ id: 'plan', kind: 'plan', status: 'running', title: 'Plan', steps })
+
+  it('leads with what Claude said a command is for, with the command beside it in the code face', () => {
+    const { words, detail, line } = shown(described())
+    expect(words).toBe('Read the request policy')
+    expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
+    expect(detail).toHaveAttribute('data-code')
+    expect(detail.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
+  })
+
+  it('keeps the plan in view above the line as its checklist, and leaves the plan’s item off the line', () => {
+    const { words, detail, line } = shown(plan([
+      { text: 'Read the code', status: 'completed' }, { text: 'Trace the request', status: 'running', active: 'Tracing the request' }, { text: 'Write it up', status: 'pending' },
+    ]), described())
+    // The line says what the running step is for, with its command beside it; the checklist says what the turn is on.
+    expect(words).toBe('Read the request policy')
+    expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
+    expect(detail).toHaveAttribute('data-code')
+    expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
+    const row = within(screen.getByRole('log', { name: 'Thread transcript' })).getByTestId('thread-activity-live')
+    const checklist = within(row).getByRole('list', { name: 'Plan, 1 of 3 done' })
+    expect(checklist).toHaveClass('thread-activity-live__plan')
+    // Above the line, outside the button, as written rather than in the words for running, with the opened plan's marks.
+    expect(checklist.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line).not.toContainElement(checklist)
+    expect([...checklist.querySelectorAll('li')].map(item => [item.dataset.status, item.textContent])).toEqual([
+      ['completed', 'Read the codeDone'], ['running', 'Trace the requestIn progress'], ['pending', 'Write it upTo do'],
+    ])
+    expect(checklist.querySelectorAll('.thread-activity__step-done')).toHaveLength(1)
+    expect(line).toHaveAttribute('aria-expanded', 'false')
+    cleanup()
+    // Codex's plan reads the same; an undescribed command names itself on the line.
+    const codex = shown(plan([{ text: 'Trace the request', status: 'running' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(codex.words).toBe('Running rg -n policy src')
+    expect(codex.detail.textContent).toBe('')
+    expect(within(screen.getByTestId('thread-activity-live')).getByRole('list', { name: 'Plan, 0 of 1 done' })).toBeVisible()
+  })
+
+  it('keeps the one line when no plan was sent, and shows the newest plan when the provider sent it again', () => {
+    shown(described())
+    expect(within(screen.getByTestId('thread-activity-live')).queryByRole('list')).toBeNull()
+    cleanup()
+    shown(plan([{ text: 'Old', status: 'running' }]), activity({ id: 'again', kind: 'plan', status: 'running', title: 'Plan', steps: [{ text: 'Old', status: 'completed' }, { text: 'New', status: 'running' }] }), described())
+    const lists = within(screen.getByTestId('thread-activity-live')).getAllByRole('list')
+    expect(lists).toHaveLength(1)
+    expect(lists[0]).toHaveAccessibleName('Plan, 1 of 2 done')
+  })
+
+  it('keeps the checklist above the line while the turn waits on the user', () => {
+    const request = { id: 'p', kind: 'permission' as const, text: 'Run npm run bench?', options: [] }
+    mount(stateWith({ status: 'running', requests: [request], activities: [...waiting(), plan([{ text: 'Bench it', status: 'running' }])] }))
+    const row = screen.getByTestId('thread-activity-live')
+    expect(word(row)).toHaveTextContent('Waiting for your permission')
+    expect(within(row).getByRole('list', { name: 'Plan, 0 of 1 done' })).toBeVisible()
+  })
+
+  it('takes a reasoning summary’s heading for the work it led to, and never for work after something finished', () => {
+    const summary = activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Inspecting the request policy**\n\nIt decides whether to ask.' })
+    const led = shown(summary, activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(led.words).toBe('Inspecting the request policy')
+    expect(unmarked(led.detail.textContent)).toBe('rg -n policy src')
+    cleanup()
+    const later = shown(summary, activity({ id: 'ls', command: 'ls' }), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(later.words).toBe('Running rg -n policy src')
+    expect(later.detail.textContent).toBe('')
+  })
+
+  it('says only the step when the provider said nothing of what it is for', () => {
+    const { words, detail } = shown(plan([{ text: 'Done already', status: 'completed' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
+    expect(words).toBe('Running rg -n policy src')
+    expect(detail.textContent).toBe('')
+  })
+
+  it('leaves the running step to its row while the steps are open, and names it again once they fold', () => {
+    try {
+      const { words, line } = shown(activity({ id: 'ls', command: 'ls' }), described())
+      expect(words).toBe('Read the request policy')
+      const row = within(screen.getByRole('log', { name: 'Thread transcript' })).getByTestId('thread-activity-live')
+      fireEvent.click(line)
+      // At once, since it answers the press: the turn's words on the line, the step on its own row under it.
+      expect(unmarked(word(row).textContent)).not.toMatch(/^$|request policy|cat /u)
+      expect(row.querySelector('.thread-activity-live__detail')!.textContent).toBe('')
+      expect(within(row).getAllByText('Read the request policy')).toHaveLength(1)
+      expect(within(row).getByRole('button', { name: /^Read the request policy, cat src\/policy\.ts/u })).toBeInTheDocument()
+      // Assistive tech still hears what runs on the line's own description.
+      expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
+      fireEvent.click(line)
+      expect(unmarked(word(row).textContent)).toBe('Read the request policy')
+    } finally { localStorage.clear() }
   })
 })
 
@@ -108,16 +338,16 @@ describe('what a finished turn changed', () => {
       activity({ id: 'test', command: 'npm test' }),
     ] }))
     // The count is readable without opening the turn's work.
-    const summary = within(transcript).getByRole('button', { name: 'Changed 2 files' })
-    expect(within(transcript).getByRole('button', { name: 'Worked for 30s · 3 steps' })).toHaveAttribute('aria-expanded', 'false')
+    const summary = within(transcript).getByRole('button', { name: 'Changed 2 files, 3 lines added, 2 lines removed' })
+    expect(within(transcript).getByRole('button', { name: 'Worked for 30s · 3 steps · Ran 1 command' })).toHaveAttribute('aria-expanded', 'false')
 
     fireEvent.click(summary)
     const files = within(transcript).getByRole('list', { name: 'Changed 2 files' })
     const items = [...files.querySelectorAll(':scope > li')]
     expect(items.map(item => item.querySelector('code')!.textContent)).toEqual(['src/voice.ts', 'src/new.ts'])
     // Every diff the turn reported for a file, not just the last one.
-    expect(items[0]!.textContent).toContain('-old')
-    expect(items[0]!.textContent).toContain('+third')
-    expect(items[1]!.textContent).toContain('+fresh')
+    expect(items[0]!.textContent).toContain('old')
+    expect(items[0]!.textContent).toContain('third')
+    expect(items[1]!.textContent).toContain('fresh')
   })
 })

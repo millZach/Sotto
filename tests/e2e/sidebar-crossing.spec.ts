@@ -108,6 +108,15 @@ async function checkCrossing(launched: LaunchedSotto, track: 'stable' | 'owl'): 
     await resizeContentWindow(launched, width, height, [800, 540])
     for (const saved of SAVED_WIDTHS) {
       await saveWidth(page, saved)
+      if (width < 1000) {
+        // Below a 1000 pixel window Threads stands as the rail and opens the sidebar over the thread (ADR-0110, November 5,
+        // 2026); Settings keeps its column at the width the sidebar would have, so the two frames differ there.
+        await onThreads(page)
+        await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
+        const settings = await onSettings(page)
+        expect(settings.column.width, `${track} ${width}x${height}, saved ${saved}`).toBe(shownWidth(saved, width))
+        continue
+      }
       const threads = await onThreads(page)
       const settings = await onSettings(page)
       const again = await onThreads(page)

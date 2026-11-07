@@ -1,5 +1,6 @@
 // Test-only build of the rich message components inside the real Threads layout classes.
 import { resolve } from 'node:path'
+import { lingui } from '@lingui/vite-plugin'
 import { defineConfig } from 'vite'
 
 const root = resolve(import.meta.dirname, '../../..')
@@ -30,6 +31,7 @@ export default defineConfig({
   base: './',
   logLevel: 'warn',
   esbuild: { jsx: 'automatic' },
-  plugins: [bundledDependencyInventory()],
+  // The components ask for their words as the renderer does: Lingui's macros and the `.po` catalogs compile at build time (ADR-0123).
+  plugins: [lingui({ macroTransform: true, failOnCompileError: true }), bundledDependencyInventory()],
   build: { outDir: resolve(root, 'test-results/rich-messages-fixture'), emptyOutDir: true, minify: false, modulePreload: false },
 })

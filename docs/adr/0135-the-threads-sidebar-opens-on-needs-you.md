@@ -10,6 +10,12 @@ Amended October 27, 2026: every question its provider lets the user decline now 
 
 Amended October 29, 2026: an entry no longer draws its ask or answers in place. It says only what its thread needs, and one press pops the thread's card open over the sidebar (below, "October 29, 2026 amendment: the entry says what it needs").
 
+Amended November 5, 2026, by Zach's pick of variant B: Needs you stays as it is, and a waiting thread's row in its folder drops the amber and reads **In Needs you** (below, "November 5, 2026 amendment: said once, in the card").
+
+Amended November 5, 2026, by Zach's pick of variant C of a second prototype: approvals and questions lead on one line each with **Answer** in view, and failed turns rest under them in muted ink (below, "November 5, 2026 amendment: what holds an agent leads").
+
+Amended November 5, 2026, by Zach's pick of variant C of a third prototype: a resting row in a folder takes one line, its name and a muted time, and working and waiting rows keep their two lines as this record has them (below, "November 5, 2026 amendment: resting rows step back").
+
 ## Context
 
 A collapsed project folder said "● 4". The 4 was the folder's thread total; how many of them needed the user, and for what, was a bare 6px dot, with the count only in its tooltip and screen-reader text (`Indicators` in `ThreadSidebar.tsx`). Sighted users were told less than screen-reader users. The dot also lumped three different waits together: a permission, which holds the agent still; a question; and a failed turn nobody had seen, which blocks nothing and can be dismissed. A second count competed with it: the Dismiss all line, which counts unseen failures alone (ADR-0092). To learn anything, the user expanded folders one by one.
@@ -47,7 +53,7 @@ What the mock-up could not show decided the rest. A request is answered in its t
 ## Consequences
 
 - The desktop gains a second place where a request can be answered. The store is what keeps that honest: one send, one hold, one draft per request, whichever surface the user pressed. Any future answer surface must go through it too.
-- A thread now appears twice — in the queue and in its folder — as it already does on the iPhone. Its folder row keeps every action it has today; the queue entry opens it (beside, with the same chord rows answer to) and answers or dismisses only what is set out above.
+- A thread now appears twice — in the queue and in its folder — as it already does on the iPhone, but its need is said once, in the queue (November 5, 2026 amendment). Its folder row keeps its place and every action it has today, rests its ring and reads **In Needs you**, and pointing at either one, or the keyboard's focus on it, lights the other. The queue entry opens it (beside, with the same chord rows answer to) and answers or dismisses only what is set out above.
 - Settled is quieter than it was, and less quiet than its name promises: a settled thread's permission now stands at the top of the sidebar, tagged. That is the iPhone's rule arriving on the desktop, and the alternative — an agent held still where nobody looks — is what the tag costs.
 - Waits understate after a host restart, and older hosts show none. Ordering inside a kind is therefore approximate across mixed hosts until hosts update; blocking still leads, which is the part that costs an agent its time.
 - The design captures change wherever the sidebar head shows with the feature on, and are regenerated on purpose. CONTEXT.md's **Needs you** stops being an iPhone-only entry, and the guide's sidebar words follow.
@@ -63,3 +69,59 @@ Zach's call, from a screenshot of an entry carrying a thirty-line command: the s
 - **The rail.** On Owl's rail (ADR-0146), while this feature is on, a waiting tile whose entry would pop a card pops the same card beside the rail, named as the entry's press is; every other tile opens its thread. The rail draws no text and no tray, so nothing else changes there.
 - **Focus.** When an entry answered in its card leaves, the focus goes on as when any entry leaves, because the card is drawn inside its entry. When a tile's card closes because its thread stopped waiting, a focus the card held goes back to the tile.
 
+## November 5, 2026 amendment: said once, in the card
+
+Zach chose this. Reviewers of the design pass read a waiting thread drawn twice, amber in the card and amber again in its folder, as repetition that made the sidebar busy. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/needs-you-twice/index.html`, kept outside the repository: A, both as they stood; B, the card as it is with the folder row pointing up to it; and C, the need said only in the folder, the card cut to its heading. He picked B. The prototype's stylesheets are Sotto's own at commit `f723761a3`.
+
+**What changed.** The card does not change. While it stands, the row in its folder of a thread standing in it:
+
+- keeps its place, its press, its menu and its actions;
+- rests its status ring, an outline in the muted ink, and drops the amber from its words;
+- reads **In Needs you** after a small arrow up, where it said what it needs. What it needs stays in the row's tooltip and in what a screen reader hears.
+
+Pointing at an entry lights its row, and pointing at the row lights its entry: the same quiet fill a row takes under the pointer, with a thin muted line down the entry's edge. The keyboard's focus on either does the same. A row in Settled whose thread stands in the card reads the same way. A row whose thread waits but is not in the card, such as a settled thread's failure, keeps its amber. The collapsed rail does not change. While the card is off, rows say what they need as before.
+
+**Why.** Amber says that something waits on the user, and it now says so once for each thread, where the card has the room to say what for.
+
+**What it costs.** The folder row no longer says what its thread waits for; the card does. A thread past the card's three still reads **In Needs you** while its entry is folded under **Show all**, so pointing at it lights nothing until the card is unfolded.
+
+## November 5, 2026 amendment: what holds an agent leads
+
+Zach chose this. Reviewers of the design pass found the card tall and loud: each entry took two lines, with its need words in amber and its press in view on every one. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/needs-you-quiet/index.html`, kept outside the repository, each on the real window with two threads waiting and with five: A, the card as it stood; B, one line a thread, amber on its ring only, its kind and wait in muted words that its presses replaced under the pointer or the keys; and C, approvals and questions leading on one line each with **Answer** in view, and failed turns resting under them in muted ink. He picked C. The prototype's stylesheets are Sotto's own at commit `fd7e62643`. The card he turned down earlier the same day, cut to a count and Next, was not offered again.
+
+**What changed.** While the card stands:
+
+- An approval or a question takes one line: its amber status ring, its title, its wait once it has waited a minute or more, and **Answer**, always in view. **Answer** pops the thread's card open as **Open to answer** did, and its name still says which: "Open to answer the approval in *title*", or "the question".
+- A failed turn blocks nothing, so it rests under them in muted ink, its ring an outline in that ink: "Turn failed in *title*". Its **Dismiss** and **Show why** show while the pointer is on its line or the keys are in it, and always on a screen whose pointer cannot hover.
+- Which wait a line is no longer stands in its words. The line's tooltip says it (**Needs your approval**, **Needs your answer**, **Needs attention**), and so does the title's spoken name: "Open *title*, needs your approval", "Open *title*, needs your answer", "Open *title*, its last turn failed". A delegated wait adds where it waits.
+- The heading says "longest wait 26 min" only while an approval or a question has waited a minute or more, and names the longest of them. "oldest just now" is gone, and a failure's wait is not said there. While two or more failures stand, **Dismiss N failed** takes the wait's place in the heading under the pointer or the keys; out of sight it keeps its Tab stop, so the keys reach it.
+- Three approvals and questions stand, then two failed turns, and the rest are counted in the foot: "+ 2 more: 1 approval, 1 failed", with **Show all** and Escape as before. The heading still counts everyone.
+
+The rest of this record holds: blocking first, then oldest; every thread one press away; its folder row reading **In Needs you**; the **Settled** tag; a delegated wait opening its thread; the popped card and its one store; no live region.
+
+**Why.** An agent held still costs the user time and a failed turn does not, and the card now says that by look as well as by order, in about one line a thread.
+
+**What it costs.** On screen an approval and a question look the same: only the tooltip and the spoken name tell them apart, as Zach saw in the prototype. A failed turn's presses are out of sight until the pointer or the keys reach it. With failures waiting the card stands at five lines, not three.
+
+## November 5, 2026 amendment: resting rows step back
+
+Zach chose this. Reviewers of the design pass found the folders' rows tall and alike: every row took two lines, so a long list of finished threads read as a column of Done words and provider marks, and what was moving or waiting stood out by its ring and weight alone. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/sidebar-rows/index.html`, kept outside the repository, on the real window at 1600 and 1280 wide: A, the rows as they stood, each two lines, its name over its provider's mark, its word (Working, Done, In Needs you) and its time; B, every row one line, its ring, its name and a muted time, with Done and Working gone from the screen, a provider mark only where a thread runs on another provider than most of its folder, and a waiting row's words in its time's place; and C, the resting rows stepping back. He picked C. The prototype's stylesheets are Sotto's own at commit `95baaa204`.
+
+**What changed.** A row whose thread is working or waiting keeps its two lines exactly as this record and its earlier amendments have them, In Needs you included. A **resting row**, a thread plainly Done or Settled with nothing more to say, takes one line:
+
+- its name in the body's weight and, at the line's end, its time in the muted ink, with no status ring, no provider mark and no word. The ring keeps its column, so every name down the list starts on one edge;
+- pointed at, or reached by the keys, its provider's mark stands where the ring would be, and its shortcuts take the time's place across the line;
+- its word stays in what a screen reader hears, at the head of the row's description, as on every row. Its name stays its title, as ADR-0164 has it.
+
+A row whose word is news is not resting and keeps its two lines: Just finished, Prototype ready, Babysitting, Monitoring and a restart's time. So does a Done row whose provider is out of reach (Done · Disconnected). The sticky folder head, the Needs you card and the collapsed rail do not change.
+
+Note, November 5, 2026: that sentence says what pick C left alone, not that the head is fixed. Later in the same design pass the edge under the sticky folder head changed (`e13af1f59`, then `348d19ea0`): rows pass under the solid head, which cuts them cleanly while the list moves, and where a row's height of empty sidebar stood there is no gap and no soft edge. When a scroll ends between rows, the list goes on to the next row's edge the way it was moving, so the row under the head's hairline rests whole and a scroll shorter than a row still moves the list. No pick of Zach's claims that change, and he has not been asked about it yet.
+
+**Decided in building, after the pick.** The prototype showed neither of these, so Zach did not pick them and has not been asked about them yet:
+
+- A Done row that Watcher watches, with its owl, or that sits on the Snoozed shelf, with the time it wakes, keeps its two lines. Its second line says something the user would otherwise lose from the screen, that Watcher is still on it or when it comes back, so it is not plainly resting.
+- In a sidebar wide enough to show it, a resting row's branch line goes with its word. The one line has no room for it, and a finished thread's branch is the least needed thing on its row; it shows again whenever the row takes two lines.
+
+**Why.** What is moving or waiting is what the list is read for, and it now stands out by shape as well as by ring and weight, while a finished thread takes about two-thirds of the height it did: 37 pixels a row in place of 54.
+
+**What it costs.** A resting row no longer says Done on screen, which ADR-0092 had it do (amended the same day), and its provider is out of sight until it is pointed at or reached by the keys. The list has two row heights.

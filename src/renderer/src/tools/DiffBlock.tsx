@@ -1,0 +1,356 @@
+import React, { Fragment, memo, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
+import type { I18n } from '@lingui/core'
+import { Check, Copy } from 'lucide-react'
+import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/codeHighlighter'
+import { useTransientFlag, writeClipboard } from '../agents/richActions'
+import { shownLineCount } from '../state/interfaceNumbers'
+import type { DiffLine } from './changesStore'
+import { decorateDiff, guessLanguage, hunkHeading, hunkSection, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, paintWithin, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint, type PaintedPart, type TextRange, type WordSegment } from './diffDrawing'
+import './changes.css'
+
+/** A diff in the transcript opens on this many lines; the rest is one press away, and is not read until then. */
+const OPENING_ROWS = 24
+
+/** A line both sides keep with nothing on it: between a document's paragraphs, a gap rather than a numbered row. */
+export const blankContext = (line: DiffLine): boolean => line.kind === 'context' && line.text.trim() === ''
+
+export const sign = (line: DiffLine | undefined): string => line?.kind === 'add' ? '+' : line?.kind === 'remove' ? '−' : ''
+
+/** What a screen reader hears before a changed line, which sighted readers get from its sign. */
+export const spoken = (line: DiffLine | undefined, words: I18n): ReactNode => line?.kind === 'add' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Added: ', comment: 'Read before an added line of a diff.' }))}</span>
+  : line?.kind === 'remove' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Removed: ', comment: 'Read before a removed line of a diff.' }))}</span> : null
+
+/**
+ * How far a line of code is indented, for the stylesheet to hang its wrapped remainder inside that indent, so a wrapped
+ * line reads as one line of its block and not as the next one. Nothing for a line that starts at the margin.
+ */
+export function hangingIndent(text: string): CSSProperties | undefined {
+  let columns = 0
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]
+    if (character === ' ') columns++
+    else if (character === '\t') columns += 4
+    else break
+  }
+  return columns === 0 ? undefined : { '--changes-indent': `${columns}ch` } as CSSProperties
+}
+
+/**
+ * How wide a diff's line numbers run: as many digits as its last number has, two at least, so a short file's lines
+ * start close to the edge and a long file's numbers still line up.
+ */
+export function numberWidth(lines: readonly DiffLine[]): CSSProperties {
+  let last = 0
+  for (const line of lines) last = Math.max(last, line.oldLine ?? 0, line.newLine ?? 0)
+  return { '--changes-digits': `${Math.max(2, String(last).length)}ch` } as CSSProperties
+}
+
+/** A run of code this short never breaks inside: a wrap goes at the space before it. A longer run can be wider than a wrapped line. */
+const KEPT_RUN = 16
+/** Where a browser would break inside a run of code a reader reads as one word, such as `'history-off'` or `a/b`. */
+const BREAKS_INSIDE = /[-/|}?!%](?=[\p{L}\p{N}_$])/u
+/** After these, a run too long to keep whole breaks where a reader expects: after a dot before a name, a comma, a slash or an opening bracket. */
+const BREAK_AFTER = /(?:[,;([{</]|\.(?=[\p{L}_$]))(?=\S)/gu
+
+interface BreakPlan { readonly kept: readonly TextRange[]; readonly after: readonly number[] }
+
+/**
+ * Where a wrapped line of code may break. A short run of letters and marks stays whole, so `'history-off'` never
+ * splits at its hyphen; a long one gets a chance after its dots, commas and brackets before the browser breaks it
+ * anywhere at all. Spaces stay the first place a line breaks. Nothing is added to the text. Null when the browser's
+ * own breaks already serve.
+ */
+export function codeBreaks(text: string): BreakPlan | null {
+  let kept: TextRange[] | null = null, after: number[] | null = null
+  for (const run of text.matchAll(/\S+/gu)) {
+    const word = run[0], start = run.index
+    if (word.length <= KEPT_RUN) {
+      if (BREAKS_INSIDE.test(word)) (kept ??= []).push({ start, end: start + word.length })
+      continue
+    }
+    for (const at of word.matchAll(BREAK_AFTER)) (after ??= []).push(start + at.index + at[0].length)
+  }
+  return kept || after ? { kept: kept ?? [], after: after ?? [] } : null
+}
+
+/** A stretch of a line of code that starts `from` characters into the line, with the plan's breaks drawn in. */
+function broken(text: string, from: number, plan: BreakPlan, key: number): ReactNode {
+  const to = from + text.length
+  const cuts = [
+    ...plan.kept.filter(range => range.end > from && range.start < to).map(range => ({ at: Math.max(range.start, from), end: Math.min(range.end, to) })),
+    ...plan.after.filter(point => point > from && point < to).map(point => ({ at: point, end: -1 })),
+  ].sort((a, b) => a.at - b.at)
+  if (cuts.length === 0) return text
+  const out: ReactNode[] = []
+  let at = from
+  for (const cut of cuts) {
+    if (cut.at < at) continue
+    if (cut.at > at) out.push(text.slice(at - from, cut.at - from))
+    if (cut.end < 0) { out.push(<wbr key={`${key}-${cut.at}`} />); at = cut.at }
+    else { out.push(<span key={`${key}-${cut.at}`} className="changes-kept">{text.slice(cut.at - from, cut.end - from)}</span>); at = cut.end }
+  }
+  if (at < to) out.push(text.slice(at - from))
+  return out
+}
+
+/** Each word in a span of its own, so the margin can mark every line a changed stretch reaches (changes.css). */
+function eachWord(text: string, key: number): ReactNode {
+  return text.split(/(\s+)/u).map((word, index) => word === '' || /^\s+$/u.test(word) ? word : <span key={`${key}-${index}`} className="changes-w">{word}</span>)
+}
+
+/**
+ * A line's words with their colours, and the words that changed marked as one phrase each. `code` lets a wrapped line
+ * break only where a reader expects (codeBreaks); `words` puts each word in a span of its own (eachWord).
+ */
+export function PaintedText({ text, paint, code = false, words: spanned = false }: { readonly text: string; readonly paint: LinePaint | undefined; readonly code?: boolean; readonly words?: boolean }): ReactNode {
+  if (!text) return ' '
+  const plan = code ? codeBreaks(text) : null
+  if (!paint?.tokens && !paint?.marks) return plan ? broken(text, 0, plan, 0) : spanned ? eachWord(text, 0) : text
+  const parts = paintedParts(text, paint)
+  const out: ReactNode[] = []
+  let offset = 0
+  const piece = (part: PaintedPart, index: number): ReactNode => {
+    const words = plan ? broken(part.text, offset, plan, index) : spanned ? eachWord(part.text, index) : part.text
+    offset += part.text.length
+    return part.className ? <span key={index} className={part.className}>{words}</span> : <Fragment key={index}>{words}</Fragment>
+  }
+  for (let index = 0; index < parts.length;) {
+    if (!parts[index]!.marked) {
+      out.push(piece(parts[index]!, index))
+      index++
+      continue
+    }
+    const first = index
+    const inside: ReactNode[] = []
+    for (; index < parts.length && parts[index]!.marked; index++) inside.push(piece(parts[index]!, index))
+    out.push(<mark key={first} className="changes-word">{inside}</mark>)
+  }
+  return out
+}
+
+/** The space at a stretch's edges apart from its words. A stretch that is only space keeps it inside, since that is what changed. */
+function edges(text: string): readonly [string, string, string] {
+  const start = text.length - text.trimStart().length, end = text.trimEnd().length
+  return end <= start ? ['', text, ''] : [text.slice(0, start), text.slice(start, end), text.slice(end)]
+}
+
+const REMOVED_LINE: DiffLine = { kind: 'remove', text: '', oldLine: null, newLine: null }
+const ADDED_LINE: DiffLine = { kind: 'add', text: '', oldLine: null, newLine: null }
+
+/**
+ * A prose line and what it became, read once (wordSegments): the words both keep, then at each change the words it
+ * took out, struck through, and the words it put in, underlined, each pair once and in its place. Every character of
+ * both lines is drawn, in order, and a screen reader hears which words went and which came. A reworked line
+ * (DiffDecoration.reworked) reads as two paragraphs instead (ReworkedText).
+ *
+ * `as` picks one side. `now` draws the line as it is now, the words that came underlined, and `earlier` as it was, the
+ * words that went struck through; a line rewritten whole (DiffDecoration.rewritten) has its word marks taken off by the
+ * stylesheet, which reads them from its row.
+ *
+ * Drawn as it is now or read once, every changed word is a span of its own, and so is an empty one where words went
+ * with nothing in their place, so the line's edge lights beside each line of the paragraph a change reaches.
+ */
+export function EditedText({ before, after, segments, paintBefore, paintAfter, as }: {
+  readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
+  readonly paintBefore: LinePaint | undefined; readonly paintAfter: LinePaint | undefined
+  readonly as?: 'now' | 'earlier' | undefined
+}): ReactNode {
+  const { i18n } = useLingui()
+  const marksMargin = as !== 'earlier'
+  const side = (line: string, range: TextRange, paint: LinePaint | undefined, removed: boolean, abut: boolean): ReactNode => {
+    if (range.end <= range.start) return null
+    const [lead, core, trail] = edges(line.slice(range.start, range.end))
+    const at = range.start + lead.length
+    const Tag = removed ? 'del' : 'ins'
+    return <>{lead}<Tag className="changes-word changes-word--edit" data-abut={abut || undefined}>
+      {spoken(removed ? REMOVED_LINE : ADDED_LINE, i18n)}<PaintedText text={core} paint={paintWithin(paint, { start: at, end: at + core.length })} words={marksMargin} />
+    </Tag>{trail}</>
+  }
+  return segments.map((segment, index) => {
+    if (segment.kind === 'kept') return <PaintedText key={index} text={after.slice(segment.after.start, segment.after.end)} paint={paintWithin(paintAfter, segment.after)} />
+    if (as === 'earlier') return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}</Fragment>
+    if (as === 'now') {
+      const gone = segment.after.end <= segment.after.start && segment.before.end > segment.before.start
+      return <Fragment key={index}>{gone ? <span className="changes-w" /> : side(after, segment.after, paintAfter, false, false)}</Fragment>
+    }
+    const went = before.slice(segment.before.start, segment.before.end), came = after.slice(segment.after.start, segment.after.end)
+    // Words that went and words that came, with no space of their own between them, are held a little apart.
+    const abut = went.trim() !== '' && came.trim() !== '' && !/\s$/u.test(went) && !/^\s/u.test(came)
+    return <Fragment key={index}>{side(before, segment.before, paintBefore, true, false)}{side(after, segment.after, paintAfter, false, abut)}</Fragment>
+  })
+}
+
+/**
+ * A reworked line as two paragraphs: the paragraph as it was, whole and a step quieter, the words that went struck
+ * through; under it the paragraph as it is now, whole, the words that came underlined. Each reads straight through,
+ * and nothing is shut away. A line rewritten whole has no words kept to read a change against, so the stylesheet
+ * takes the marks off both.
+ */
+export function ReworkedText({ before, after, segments, paintBefore, paintAfter }: {
+  readonly before: string; readonly after: string; readonly segments: readonly WordSegment[]
+  readonly paintBefore: LinePaint | undefined; readonly paintAfter: LinePaint | undefined
+}): ReactNode {
+  return <>
+    <span className="changes-reworked__was"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="earlier" /></span>
+    <span className="changes-reworked__now"><EditedText before={before} after={after} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} as="now" /></span>
+  </>
+}
+
+/**
+ * A hunk's head as a quiet divider. The line it starts on is the gutter's first number under it, so only a screen
+ * reader hears it here; what shows is the section around it when that names a place (hunkSection), on one line
+ * whatever its width. With no section the divider is a hairline and a gap.
+ */
+export function HunkHeading({ text, reading }: { readonly text: string; readonly reading: 'code' | 'document' }): ReactNode {
+  const { t } = useLingui()
+  const heading = hunkHeading(text)
+  if (!heading) return text
+  const line = heading.line
+  const section = hunkSection(heading, reading)
+  return <>
+    <span className="changes-hunk__line tt-visually-hidden">{t({ message: `Line ${line}`, comment: 'Where a part of a diff starts in the file; {line} is a line number.' })}</span>
+    {section ? <span className="changes-hunk__section">{heading.cut ? `${section}…` : section}</span> : null}
+  </>
+}
+
+/** Keeps the highlighter once loaded, and loads it when something asks. */
+export function useHighlighter(wanted: boolean): Highlighter | null {
+  const [highlighter, setHighlighter] = useState(highlighterNow)
+  useEffect(() => {
+    if (!wanted || highlighter !== null) return
+    let live = true
+    void loadHighlighter().then(loaded => { if (live) setHighlighter(loaded) }, () => undefined)
+    return () => { live = false }
+  }, [wanted, highlighter])
+  return highlighter
+}
+
+/** What a cut body says while the rest of it is on its host (ADR-0025): the line where the rest goes, and the bar's status. */
+export interface DiffBlockCut { readonly line: string; readonly status: ReactNode }
+
+/** The file a diff of one file names in its own header (`+++ b/docs/plan.md`, or `--- a/` for a file that went), if it names one. */
+export function namedPath(diff: string): string | null {
+  if ((diff.match(/^diff --git /gmu)?.length ?? 0) > 1) return null
+  return /^\+\+\+ b\/(.+)$/mu.exec(diff)?.[1] ?? /^--- a\/(.+)$/mu.exec(diff)?.[1] ?? null
+}
+
+/** The box's file, as a file's head in Changes names it: its folder quiet, then its name. The whole path is its tooltip. */
+function FileName({ path }: { readonly path: string }): ReactNode {
+  const cut = path.lastIndexOf('/')
+  const folder = cut < 0 ? '' : path.slice(0, cut + 1), base = path.slice(cut + 1)
+  // An isolate keeps the folder's slashes in place inside the right-to-left box that cuts it from its start.
+  return <span className="changes-block__name" title={path}>
+    {folder ? <span className="changes-file__folder"><bdi>{folder}</bdi></span> : null}<span className="changes-file__base">{base}</span>
+  </span>
+}
+
+/** The sign of a line read once with what it became: it lost words and gained some. */
+export const EDITED_SIGN = '±'
+
+/**
+ * How the box numbers its lines: `both` in two columns, where each line was and where it is now, as a pull request
+ * does, so a removed line keeps its number and neither column mixes the two counts; `one` in one column, for a file
+ * that only came or only went; `none` for a diff with no line numbers of its own.
+ */
+type Numbering = 'both' | 'one' | 'none'
+
+/** A line's numbers: where it was and where it is now in two columns, or its one number. */
+function Numbers({ numbering, was, now }: { readonly numbering: Numbering; readonly was: number | null; readonly now: number | null }): ReactNode {
+  if (numbering === 'none') return null
+  if (numbering === 'one') return <span className="changes-line__number" aria-hidden="true">{now ?? was ?? ''}</span>
+  return <><span className="changes-line__number changes-line__number--was" aria-hidden="true">{was ?? ''}</span><span className="changes-line__number" aria-hidden="true">{now ?? ''}</span></>
+}
+
+function Line({ line, decoration, numbering, code }: { readonly line: DiffLine; readonly decoration: DiffDecoration; readonly numbering: Numbering; readonly code: boolean }): ReactNode {
+  const { i18n } = useLingui()
+  const paint = decoration.paint.get(line)
+  return <div className="changes-line" data-kind={line.kind} data-paired={paint?.paired} data-blank={blankContext(line) || undefined} title={line.kind === 'hunk' ? line.text : undefined}>
+    <Numbers numbering={numbering} was={line.oldLine} now={line.newLine} />
+    <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
+    <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} reading={code ? 'code' : 'document'} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+  </div>
+}
+
+/** A document's line and what it became, as one line (EditedText), or a reworked one as two paragraphs (ReworkedText). */
+function EditedLine({ before, after, segments, decoration, numbering }: {
+  readonly before: DiffLine; readonly after: DiffLine; readonly segments: readonly WordSegment[]; readonly decoration: DiffDecoration; readonly numbering: Numbering
+}): ReactNode {
+  const paintBefore = decoration.paint.get(before), paintAfter = decoration.paint.get(after)
+  const reworked = decoration.reworked.has(before), rewritten = decoration.rewritten.has(before)
+  return <div className="changes-line" data-kind="edited" data-reworked={reworked || undefined} data-rewritten={rewritten || undefined}>
+    <Numbers numbering={numbering} was={before.oldLine} now={after.newLine} />
+    <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
+    <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}>
+      {reworked
+        ? <ReworkedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />
+        : <EditedText before={before.text} after={after.text} segments={segments} paintBefore={paintBefore} paintAfter={paintAfter} />}
+    </span>
+  </div>
+}
+
+/**
+ * A change as the transcript draws it, with the lines, marks and colours Changes draws: a document's words wrap and read
+ * as words, the words that changed stand out, and what stayed the same is quiet. Nothing scrolls sideways. `path` names
+ * the file when the caller knows it; without it the diff's own text says whether it is a document, and which language.
+ * Read only: comments on lines belong to Changes.
+ */
+export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly diff: string; readonly path?: string | undefined; readonly cut?: DiffBlockCut | undefined }): ReactNode {
+  const { t } = useLingui()
+  const [outcome, showOutcome] = useTransientFlag<'copied' | 'failed'>()
+  const [all, setAll] = useState(false)
+  const lines = useMemo(() => parseDiffText(diff), [diff])
+  // The part of a cut body is short already, and its line says the rest goes after it, so all of it shows.
+  const whole = all || cut !== undefined
+  const shown = useMemo(() => whole ? lines : lines.slice(0, OPENING_ROWS), [lines, whole])
+  const reading = useMemo(() => (path ? isDocumentPath(path) : looksLikeDocument(lines)) ? 'document' as const : 'code' as const, [lines, path])
+  const highlighter = useHighlighter(reading === 'code')
+  const language = useMemo(() => reading !== 'code' || !highlighter ? null : path ? languageOfPath(path, highlighter) : guessLanguage(lines, highlighter), [highlighter, lines, path, reading])
+  const decoration = useMemo(() => decorateDiff(shown, { reading, language, highlighter }), [highlighter, language, reading, shown])
+  // Each edited line of a document reads once with what it became; the rest are one line each.
+  const rows = useMemo(() => {
+    const order = reading === 'document' ? readingOrder(shown, decoration.pairs) : shown.map((_, index) => index)
+    const out: [number, number | undefined][] = []
+    for (let at = 0; at < order.length; at++) {
+      const index = order[at]!, partner = decoration.pairs.get(index)
+      if (partner !== undefined && order[at + 1] === partner && decoration.inline.has(shown[index]!)) { out.push([index, partner]); at++ }
+      else out.push([index, undefined])
+    }
+    return out
+  }, [decoration, reading, shown])
+  const { additions, deletions } = useMemo(() => {
+    let added = 0, removed = 0
+    for (const line of lines) { if (line.kind === 'add') added++; else if (line.kind === 'remove') removed++ }
+    return { additions: shownLineCount(added), deletions: shownLineCount(removed) }
+  }, [lines])
+  const side = wholeSide(lines)
+  const numbering: Numbering = !lines.some(line => line.oldLine !== null || line.newLine !== null) ? 'none' : side ? 'one' : 'both'
+  const digits = useMemo(() => numberWidth(lines), [lines])
+  const named = path ?? namedPath(diff)
+  const copied = outcome === 'copied'
+  const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
+  const copy = (): void => { if (!cut) void writeClipboard(diff).then(() => showOutcome('copied'), () => showOutcome('failed')) }
+  const shownCount = shown.length.toLocaleString(), lineCount = lines.length.toLocaleString()
+  return <div className="changes-block" role="group" aria-label={t({ message: 'Diff', comment: 'Names the box that shows one change to a file in the transcript.' })}>
+    <div className="changes-block__bar">
+      {named ? <FileName path={named} /> : null}
+      <span className="changes-counts">
+        <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
+        <span className="tt-visually-hidden">{t`${additions} added, ${deletions} removed`}</span>
+      </span>
+      <span className="changes-block__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
+      <button type="button" className="changes-block__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
+        aria-label={cut ? t`Copy diff, once the rest arrives` : t`Copy diff`} title={cut ? t`Copy works once the rest arrives` : t`Copy diff`} onClick={copy}>
+        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      </button>
+    </div>
+    <div className="changes-diff__rows" data-reading={reading} data-numbers={numbering === 'one' ? undefined : numbering} data-whole={side} style={numbering === 'none' ? undefined : digits}>
+      {rows.map(([index, partner]) => partner === undefined ? <Line key={index} line={shown[index]!} decoration={decoration} numbering={numbering} code={reading === 'code'} />
+        : <EditedLine key={index} before={shown[index]!} after={shown[partner]!} segments={decoration.inline.get(shown[index]!)!} decoration={decoration} numbering={numbering} />)}
+      {cut ? <div className="changes-block__cut activity-body__cut">{cut.line}</div> : null}
+    </div>
+    {shown.length < lines.length ? <div className="changes-diff__more"><span>{t`Showing ${shownCount} of ${lineCount} lines.`}</span>
+      <button type="button" className="files-link tt-focusable" onClick={() => setAll(true)}>{t`Show all`}</button></div> : null}
+  </div>
+})

@@ -82,6 +82,49 @@ describe('Usage page', () => {
     await user.click(measure(/^From cache /u))
     expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent("Input tokens weren't reported in this range, so the share from cache can't be worked out.")
   })
+  it('says once that a range has no tokens, on Tokens, last in the index, and leaves Where and From cache out until it has some', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, totals: activityRow(190, 10, 0, tokens()) }
+    const { user } = await open(dashboard(host))
+    // What has a figure leads; a measure with nothing to show follows as a line, in the same order for the arrow keys.
+    expect(within(measures()).getAllByRole('tab').map(tab => tab.querySelector('.usage-index__label')?.textContent)).toEqual(['Room left', 'Prompts', 'Most used model', 'Busiest hour', 'Tokens'])
+    expect(within(measures()).getAllByText('No tokens in this range')).toHaveLength(1)
+    measure(/^Busiest hour /u).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(measure(/^Tokens /u)).toHaveFocus()
+    const stage = screen.getByRole('tabpanel', { name: /Tokens/u })
+    expect(stage).toHaveTextContent('No tokens in this range.')
+    expect(within(stage).queryByRole('group', { name: /^Tokens per day/u })).toBeNull()
+  })
+  it('labels each busy day over its bar when only a few days have work', async () => {
+    const host = localHost()
+    await open(dashboard(host))
+    const chart = screen.getByRole('group', { name: /^Prompts per day/u })
+    expect([...chart.querySelectorAll('.usage-chart__label')].map(label => label.textContent).length).toBeGreaterThan(0)
+  })
+  it('says the figure of the day being read over its bar when more than a few days have work', async () => {
+    const host = localHost()
+    const days = ['2026-10-02', '2026-10-04', '2026-10-06', '2026-10-08', '2026-10-09', '2026-10-11', '2026-10-13']
+    host.activity = { ...host.activity!, daily: days.map((day, at) => ({ ...activityRow(5 + at, 0, 0, tokens(1_000_000, 10_000, 800_000, 10_000)), day })) }
+    const { user } = await open(dashboard(host))
+    const chart = screen.getByRole('group', { name: /^Prompts per day/u })
+    expect(chart.querySelectorAll('.usage-chart__label')).toHaveLength(0)
+    chart.focus()
+    await user.keyboard('{End}{ArrowLeft}')
+    expect([...chart.querySelectorAll('.usage-chart__column[data-on] .usage-chart__label')].map(label => label.textContent)).toEqual(['11'])
+    await user.keyboard('{Escape}')
+    expect(chart.querySelectorAll('.usage-chart__label')).toHaveLength(0)
+  })
+  it('draws a line of prompts per day in the index only when more than a few days have work', async () => {
+    await open()
+    expect(measure(/^Prompts /u).querySelector('.usage-spark')).toBeNull()
+    cleanup()
+    const host = localHost()
+    const days = ['2026-10-02', '2026-10-04', '2026-10-06', '2026-10-08', '2026-10-09', '2026-10-11', '2026-10-13']
+    host.activity = { ...host.activity!, daily: days.map((day, at) => ({ ...activityRow(5 + at, 0, 0, tokens(1_000_000, 10_000, 800_000, 10_000)), day })) }
+    await open(dashboard(host))
+    expect(measure(/^Prompts /u).querySelector('.usage-spark')).not.toBeNull()
+  })
   it('moves through the index with the arrow keys and opens each stage', async () => {
     const { user } = await open()
     measure(/^Prompts /u).focus()
@@ -110,6 +153,10 @@ describe('Usage page', () => {
     measure(/^Busiest hour /u).focus(); await user.keyboard('{Home}')
     expect(screen.getByRole('heading', { name: 'Room left' })).toBeVisible()
     expect(screen.getByText("Sotto can't read these limits yet")).toBeVisible()
+    // A subscription with no reading is a line under the rings, never an empty ring beside a full one.
+    expect(screen.getByText("Sotto can't read these limits yet").closest('.usage-unread')).not.toBeNull()
+    expect(document.querySelectorAll('.usage-ring-card').length).toBeGreaterThan(0)
+    for (const card of document.querySelectorAll('.usage-ring-card')) expect(card.querySelector('.usage-ring-card__fresh')).not.toBeNull()
   })
 
   it('splits the work by place: Sotto threads, their subagents, then each app outside Sotto', async () => {

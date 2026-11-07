@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests, pullRequestReadFailureOf } from '../../../src/main/agents/gitPullRequests'
 import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
-import { gitPullRequestDetailSchema, parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, gitPullRequestListResultSchema, parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
 import { initializeGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
 const URL_74 = 'https://github.com/sotto-fixture/owned/pull/74'
@@ -439,5 +439,41 @@ describe('Checkout pull request, Local', () => {
     const refused = scripted(() => new Error('error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt'))
     await expect(refused.service.checkoutLocal('C:/repo', URL_74)).rejects.toThrow('Could not check out the pull request. error: Your local changes to the following files would be overwritten by checkout: a.txt')
     await expect(refused.service.checkoutLocal('C:/repo', 'nope')).rejects.toThrow('Sotto checks out pull requests from GitHub only.')
+  })
+})
+
+describe('the open pull requests of a repository', () => {
+  const listAnswer = (change: Record<string, unknown> = {}) => JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4800, resetAt: '2099-01-01T00:00:00Z' }, viewer: { login: 'sotto-fixture' }, repository: { pullRequests: { totalCount: 73, nodes: [
+    { number: 74, title: 'Make the greeting friendlier', url: URL_74, isDraft: false, updatedAt: '2026-09-23T10:00:00Z', additions: 5, deletions: 1, changedFiles: 2, reviewDecision: 'APPROVED', headRefName: 'feat/greeting', author: { login: 'mira' }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] }, ...change },
+    { number: 75, title: 'A draft', url: 'https://github.com/sotto-fixture/owned/pull/75', isDraft: true, updatedAt: null, additions: null, deletions: null, changedFiles: null, reviewDecision: '', headRefName: null, author: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] } },
+    null,
+    { number: 76, title: 'Elsewhere', url: 'https://example.com/pull/76', headRefName: 'x' },
+  ] } } } })
+  it('reads them in one GraphQL query, the most recently updated first, in the list\'s own words', async () => {
+    const { calls, service } = scripted(() => listAnswer())
+    await expect(service.list('C:/app')).resolves.toEqual({ repository: 'sotto-fixture/owned', total: 73, pullRequests: [
+      { number: 74, title: 'Make the greeting friendlier', url: URL_74, draft: false, author: 'mira', headBranch: 'feat/greeting', updatedAt: '2026-09-23T10:00:00Z', additions: 5, deletions: 1, changedFiles: 2, checks: 'failing', reviewDecision: 'approved' },
+      { number: 75, title: 'A draft', url: 'https://github.com/sotto-fixture/owned/pull/75', draft: true, author: null, headBranch: '', updatedAt: null, additions: 0, deletions: 0, changedFiles: 0, checks: 'none', reviewDecision: null },
+    ] })
+    const asked = calls.filter(call => call[0] === 'api')
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.join(' ')).toMatch(/query PullRequestList[\s\S]*states: OPEN, first: 50, orderBy: \{ field: UPDATED_AT, direction: DESC \}/u)
+    expect(gitPullRequestListResultSchema.safeParse(await service.list('C:/app')).success).toBe(true)
+  })
+  it('answers null for a folder with no GitHub remote, without asking GitHub', async () => {
+    const calls: string[][] = []
+    const service = new GitPullRequests({ run: async (_cwd, command, args) => { calls.push([command, ...args]); if (command === 'git') return ''; throw new Error('gh was asked') } })
+    await expect(service.list('C:/app')).resolves.toBeNull()
+    expect(calls.filter(call => call[0] === 'gh' && call[1] === 'api' && call.join(' ').includes('PullRequestList'))).toEqual([])
+  })
+  it('refuses in plain words, saying why, when gh cannot read them', async () => {
+    const { service } = scripted(() => new Error('gh auth login'))
+    const refusal = await service.list('C:/app').catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(GitPullRequestRefusal)
+    expect((refusal as Error).message).toMatch(/^Could not read the open pull requests\./u)
+  })
+  it('reads the pull request\'s whole line counts and its author with its detail', async () => {
+    const { service } = scripted(() => answerJson({ pull: { additions: 2114, deletions: 2097, author: { login: 'zach' } } }))
+    await expect(service.view('C:/app', URL_74)).resolves.toMatchObject({ additions: 2114, deletions: 2097, author: 'zach' })
   })
 })

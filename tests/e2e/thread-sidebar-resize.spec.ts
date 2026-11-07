@@ -147,6 +147,32 @@ test('expanded and collapsed sidebars fit desktop sizes in both appearances and 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resize(launched, width, height)
+      if (width < 1000) {
+        // Below a 1000 pixel window the rail stands and Expand opens the sidebar over the thread (ADR-0110, November 5, 2026).
+        await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
+        await expect(separator(page)).toBeHidden()
+        for (const appearance of ['dark', 'light'] as const) {
+          await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+          await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+          await expectNoOverflow(page)
+          await expectCollapsedNavigation(page)
+          await page.screenshot({ path: join(evidence, `collapsed-${width}-${appearance}.png`), animations: 'disabled' })
+          const thread = (await page.locator('.thread-workspace').boundingBox())!
+          await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+          const over = page.getByRole('dialog', { name: 'Thread sidebar', exact: true })
+          await expect(over).toBeVisible()
+          expect(Math.round((await over.boundingBox())!.width)).toBe(280)
+          expect(await over.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
+          await expect(over.getByRole('link', { name: 'Settings', exact: true }).locator('svg.lucide-settings')).toBeVisible()
+          // The thread under it has not moved.
+          expect((await page.locator('.thread-workspace').boundingBox())!).toEqual(thread)
+          await page.screenshot({ path: join(evidence, `over-${width}-${appearance}.png`), animations: 'disabled' })
+          await page.keyboard.press('Escape')
+          await expect(over).toBeHidden()
+          await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeFocused()
+        }
+        continue
+      }
       if (width === 1600) {
         await separator(page).focus()
         await page.keyboard.press('End')

@@ -73,7 +73,7 @@ describe('Omarchy M3 and readability check', () => {
     }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
     // The pairs the window really paints, which every built-in half meets too (themeTokens.test.ts).
-    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks))
+    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks), theme.appearance)
     painted.set('--tt-success', omarchySuccessText(theme.colors, theme.appearance))
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
@@ -186,11 +186,21 @@ describe('Omarchy M3 and readability check', () => {
     // (October 31, 2026), when High Contrast began lifting that hint at half strength (November 1, 2026), and when Mark up
     // took its red and amber inks, `--tt-ink-red` and `--tt-ink-amber`, from the theme's error and warning colours at full
     // strength (November 1, 2026), and when that hint moved to the theme's Placeholder role (November 2, 2026); none of
-    // them changes a palette.
+    // them changes a palette, and when the desktop's Sotto halves got their softer room and reading inks and the transcript its
+    // muted tier (ADR-0024, November 4, 2026 amendment), which leaves the palettes as they were, and when secondary text and
+    // the sidebar's times lifted a quarter of the way to the text with the composer kept on its quiet tier (November 4,
+    // 2026), which derives tokens from the same roles, and when Sotto's dark room went soft warm ink with its sidebar and
+    // Tools below it, as Zach picked (ADR-0024, November 5, 2026 amendment), which sets the desktop's tokens and leaves the
+    // palettes as they were, and when the type scale's comments came to name what each step is used for now (November 5,
+    // 2026), which changes no value, and when a ready Merge's green wash, its edge and its hover and press moved into
+    // tokens, with a clearer tint by day (`--tt-success-wash`, November 5, 2026), derived from the status green, and when the
+    // caption step's comment came to name code in Changes (ADR-0169, November 5, 2026 amendment), which changes no value, and
+    // when a provider's mark drawn as a glyph took tokens of its own (`--tt-provider-codex-mark` and the rest, November 6,
+    // 2026), the badge colour by night and mixed halfway toward the text by day, which moves no palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('5e9f3ff5db22d0f2b160c7c7106b376e8c4621591368aaaa5ecba4a5f83d6f63')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('b0a371cefaa4ba6fccad0045db266bea6b376223dd46facf267e5d28885fbac3')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

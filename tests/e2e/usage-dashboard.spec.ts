@@ -93,7 +93,8 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     await daily.focus(); await daily.press('End')
     await expect(page.locator('.usage-when')).toContainText('so far · 1 prompt')
     await daily.press('Escape'); await expect(page.locator('.usage-when')).toContainText('Under 1 a day')
-    await expect(page.locator('.usage-split-block').filter({ hasText: 'Sent from' })).toContainText('Sotto1')
+    // One app sent every prompt, so it is named without a count that would repeat the total.
+    await expect(page.locator('.usage-split-block').filter({ hasText: 'Sent from' }).locator('.usage-split-only')).toHaveText('Sotto')
 
     await measures().getByRole('tab', { name: /^Tokens /u }).click()
     const fact = (label: string) => page.locator('.usage-tokens__legend div').filter({ has: page.getByText(label, { exact: true }) }).locator('dd')

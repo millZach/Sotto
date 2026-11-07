@@ -10,10 +10,10 @@ import { useWatchedThreadIds } from '../../../src/renderer/src/watcher/watcherRo
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /**
- * The collapsed rail (ADR-0146): with its Owl feature on, Watcher's tile under Expand, the threads Watcher watches
- * under it with the owl at each tile's corner, then the rest: in each part what waits on you first, edged in the
- * attention colour, then the moving threads, then the resting ones smaller and apart. A part of two or more tiles sits
- * in a tray, the trays taking the theme's group colours in turn. Off, the rail is today's.
+ * The collapsed rail (ADR-0146): with its Owl feature on, Watcher's tile under Expand, then a tray for each project's
+ * waiting and moving threads with the project's name at its head, what waits on you first and edged in the attention
+ * colour, and the resting threads' smaller tiles in one tray at the foot. Each tile is its provider's mark and its status
+ * ring, and a thread Watcher watches wears the owl at its corner (Zach's pick C, November 5, 2026). Off, the rail is today's.
  */
 vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>(), useWatchedThreadIds: vi.fn(() => new Set()) }))
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
@@ -58,58 +58,72 @@ describe('the collapsed rail (ADR-0146)', () => {
     expect(navigate).toHaveBeenCalledWith('watcher')
   })
 
-  it('puts what waits first, edged, then the moving threads, then the resting ones in a part of their own', () => {
+  it('puts each project\'s waiting and moving threads in a tray under its name, what waits first, and the resting ones at the foot', () => {
     owl(true)
-    const rail = mountCollapsed(threadsStateFixture())
+    const state = threadsStateFixture()
+    const rail = mountCollapsed(state)
     expect(rail.querySelector('.thread-nav__rail-rule, .thread-nav__rail-watched, .thread-nav__rail-watched-mark')).toBeNull()
     const waiting = [tile(rail, 'Visual gate flake'), tile(rail, 'Streaming WAV stall')]
     const queued = [...rail.querySelectorAll('.thread-nav__rail-thread[data-waiting]')].map(button => button.getAttribute('aria-label'))
-    expect(queued).toEqual(queueOrder(threadsStateFixture()))
+    expect(queued).toEqual(queueOrder(state))
     for (const button of waiting) {
       expect(button).toHaveAttribute('data-waiting')
       expect(button.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
     }
+    // Every project with a thread that waits or moves has its tray, named for the project, its name at the head.
+    const projects = [...rail.querySelectorAll<HTMLElement>('.thread-nav__rail-project')]
+    const title = (id: string | undefined): string => state.host.projects.find(project => project.id === id)!.title
+    const projectOf = (button: HTMLElement): string => title(state.host.threads.find(thread => thread.title === button.getAttribute('aria-label'))!.projectId)
+    expect(projects.length).toBeGreaterThan(1)
+    for (const tray of projects) {
+      expect(tray).toHaveAttribute('role', 'group')
+      expect(tray.querySelector('.thread-nav__rail-label')).toHaveTextContent(tray.getAttribute('aria-label')!)
+      for (const button of within(tray).getAllByRole('button')) expect(projectOf(button)).toBe(tray.getAttribute('aria-label'))
+    }
+    expect(new Set(projects.map(tray => tray.getAttribute('aria-label'))).size).toBe(projects.length)
+    // The trays take one theme role: no tray says a colour of its own.
+    for (const tray of projects) expect(tray).not.toHaveAttribute('data-hue')
+    // The project of the first waiting thread leads, and inside a tray what waits comes before what moves.
+    expect(projects[0]).toHaveAttribute('aria-label', projectOf(waiting[0]!))
+    for (const tray of projects) {
+      const kinds = within(tray).getAllByRole('button').map(button => button.hasAttribute('data-waiting'))
+      expect(kinds).toEqual([...kinds].sort((a, b) => Number(b) - Number(a)))
+    }
     const moving = tile(rail, 'Footer links')
     expect(moving).not.toHaveAttribute('data-resting')
     expect(moving).not.toHaveAttribute('data-waiting')
+    expect(moving.closest('.thread-nav__rail-project')).toHaveAttribute('aria-label', projectOf(moving))
+    // The resting ones share one tray at the foot, under every project's.
     const resting = [...rail.querySelectorAll<HTMLElement>('.thread-nav__rail-thread[data-resting]')]
     expect(resting.length).toBeGreaterThan(0)
-    for (const button of waiting) expect(follows(button, moving)).toBe(true)
-    const awake = moving.parentElement!, asleep = resting[0]!.parentElement!
-    expect(awake).not.toBe(asleep)
-    for (const part of [awake, asleep]) expect(part).toHaveClass('thread-nav__rail-group')
-    // Each part of two or more is a tray, the trays numbered in turn from the first.
-    const trays = [...rail.querySelectorAll<HTMLElement>('.thread-nav__rail-tray')]
-    expect(trays.map(tray => tray.dataset.hue)).toEqual(trays.map((_, index) => String(index + 1)))
-    expect(trays.includes(awake)).toBe(awake.childElementCount > 1)
-    expect(follows(awake, asleep)).toBe(true)
+    const asleep = rail.querySelector<HTMLElement>('.thread-nav__rail-resting')!
+    expect(asleep).toHaveClass('thread-nav__rail-tray')
+    for (const tray of projects) expect(follows(tray, asleep)).toBe(true)
     for (const button of resting) {
       expect(button.parentElement).toBe(asleep)
       expect(button.querySelector('.thread-nav__ring')).not.toHaveAttribute('data-state', 'working')
     }
+    // The tooltip names the title, the project and what it is doing.
+    expect(moving).toHaveAttribute('title', `Footer links · ${projectOf(moving)} · Working`)
   })
 
-  it('puts the threads Watcher watches under its tile in a tray, each with the owl, before the rest', () => {
+  it('marks each thread Watcher watches with the owl in its own project\'s tray', () => {
     owl(true)
     const state = threadsStateFixture()
     const id = (title: string): string => state.host.threads.find(thread => thread.title === title)!.id
     vi.mocked(useWatchedThreadIds).mockReturnValue(new Set([id('Footer links'), id('Visual gate flake')]))
     const rail = mountCollapsed(state)
-    const group = rail.querySelector<HTMLElement>('.thread-nav__rail-watched')!
-    expect(group).toHaveAccessibleName('Watched by Watcher')
-    expect(group).toHaveClass('thread-nav__rail-tray')
-    expect(group).toHaveAttribute('data-hue', '1')
-    expect(within(group).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Visual gate flake', 'Footer links'])
-    for (const button of within(group).getAllByRole('button')) {
+    expect(rail.querySelector('.thread-nav__rail-watched')).toBeNull()
+    for (const title of ['Visual gate flake', 'Footer links']) {
+      const button = tile(rail, title)
       expect(button.querySelector('.thread-nav__rail-watched-mark')).not.toBeNull()
       expect(button).toHaveAttribute('title', expect.stringMatching(/ · Watched by Watcher$/))
+      expect(button.closest('.thread-nav__rail-project')).not.toBeNull()
     }
     expect(tile(rail, 'Visual gate flake')).toHaveAttribute('data-waiting')
-    expect(tile(rail, 'Footer links')).not.toHaveAttribute('data-waiting')
     const unwatched = tile(rail, 'Streaming WAV stall')
-    expect(unwatched).toHaveAttribute('data-waiting')
     expect(unwatched.querySelector('.thread-nav__rail-watched-mark')).toBeNull()
-    expect(group.nextElementSibling).toBe(unwatched.parentElement)
+    expect(unwatched.closest('.thread-nav__rail-project')).toBe(tile(rail, 'Visual gate flake').closest('.thread-nav__rail-project'))
   })
 
   it('pops a waiting tile\'s card beside the rail, as the Needs you entry does, and opens the rest', () => {
@@ -182,5 +196,17 @@ describe('the collapsed rail (ADR-0146)', () => {
     act(() => footer.focus())
     act(() => { fireEvent.keyDown(footer, { key: 'ContextMenu' }) })
     expect(within(within(rail).getByRole('menu', { name: 'Actions for Footer links' })).getByRole('menuitem', { name: 'Open' })).toHaveAttribute('aria-keyshortcuts', 'Enter')
+  })
+
+  it('draws each tile as its provider\'s mark with its status ring, and no letters', () => {
+    owl(true)
+    const rail = mountCollapsed(threadsStateFixture())
+    for (const [title, provider] of [['Visual gate flake', 'claude'], ['Footer links', 'codex'], ['Weekly note', 'grok']] as const) {
+      const button = tile(rail, title)
+      expect(button).toHaveTextContent(/^$/)
+      expect(button.querySelector('.thread-nav__rail-provider')).toHaveAttribute('data-provider', provider)
+      expect(button.querySelector('.thread-nav__rail-provider svg')).not.toBeNull()
+      expect(button.querySelector('.thread-nav__ring')).not.toBeNull()
+    }
   })
 })
