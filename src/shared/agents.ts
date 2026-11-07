@@ -1010,7 +1010,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness', hermes: 'Hermes',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1745,7 +1745,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

@@ -4474,6 +4474,10 @@ msgstr "From the address, if left empty"
 msgid "Full access"
 msgstr "Full access"
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Full access on this Mac. Uses your own servers and the Refuseless Keychain item. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgstr "Full access on this Mac. Uses your own servers and the Refuseless Keychain item. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Getting earlier lines from {host}…"
 msgstr "Getting earlier lines from {host}…"

@@ -80,7 +80,7 @@ const STRONGEST: readonly WorkerRoleDefault[] = [
   { provider: 'muse', name: 'Muse Wonder Full', models: ['muse-wonder-full*'], effort: COUNCIL_SEAT_EFFORT },
 ]
 /** The order empty seats are filled in. Devin comes last: it cannot read the snapshot. */
-const SEAT_PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'opencode', 'cursor', 'deepseek', 'devin'])
+const SEAT_PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'devin'])
 
 /** A provider's ready models, its strongest first, then the one it recommends, then the rest as it lists them. */
 function strongestFirst(provider: ProviderId, models: readonly AgentModel[]): AgentModel[] {
