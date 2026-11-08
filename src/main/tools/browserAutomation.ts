@@ -1,5 +1,5 @@
 import { nativeImage, type NativeImage, type WebContents } from 'electron'
-import { PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from './pageAutomation'
+import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from './pageAutomation'
 
 export { BROWSER_COMMAND_DEADLINE_MS, cssIdentifier, type PointHandlers, type PointTarget, type PointedElement } from './pageAutomation'
 
@@ -53,13 +53,11 @@ export class BrowserAutomation extends PageAutomation {
     const snapshot = nativeImage.createFromDataURL(capturedImage)
     if (snapshot.isEmpty()) return null
     const size = snapshot.getSize()
-    let reduced = snapshot.resize({ width: Math.min(1280, size.width) })
-    let image = `data:image/jpeg;base64,${reduced.toJPEG(70).toString('base64')}`
-    if (image.length > 2_000_000) {
-      reduced = snapshot.resize({ width: Math.min(640, size.width) })
-      image = `data:image/jpeg;base64,${reduced.toJPEG(55).toString('base64')}`
+    for (const step of EVIDENCE_PICTURES) {
+      const image = `data:image/jpeg;base64,${snapshot.resize({ width: Math.min(step.width, size.width) }).toJPEG(step.quality).toString('base64')}`
+      if (image.length <= EVIDENCE_LIMIT) return { image, width: size.width, height: size.height }
     }
-    return image.length <= 2_000_000 ? { image, width: size.width, height: size.height } : null
+    return null
   }
   async thumbnail(capturedImage?: string): Promise<string | null> {
     const snapshot = capturedImage ? nativeImage.createFromDataURL(capturedImage) : this.image(await this.snapshot())

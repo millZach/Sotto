@@ -22,6 +22,12 @@ export type PageEventListener = (method: string, params: Record<string, unknown>
 export type PageEncoding = { readonly format: 'png'; readonly scale: 1 } | { readonly format: 'jpeg'; readonly quality: number; readonly scale: number }
 /** A picture Chromium returned, base64, at the size it was asked for. */
 export interface PageFrame { readonly data: string; readonly format: 'png' | 'jpeg'; readonly width: number; readonly height: number }
+/**
+ * The pictures a browser task keeps as evidence: a JPEG at most 1280 wide, or at most 640 if that one is over the
+ * limit. The desktop makes them from the capture; a host asks Chromium for them.
+ */
+export const EVIDENCE_PICTURES = [{ width: 1280, quality: 70 }, { width: 640, quality: 55 }] as const
+export const EVIDENCE_LIMIT = 2_000_000
 export interface PagePicture { readonly empty: boolean; readonly width: number; readonly height: number; readonly dataUrl: string }
 
 export type PageInput = Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' | 'tap' | 'swipe' | 'key' }>

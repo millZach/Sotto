@@ -23,6 +23,7 @@ const PAGES: Record<string, string> = {
     <a id="file" href="file:///etc/hostname" style="position:absolute;left:20px;top:220px">File</a>
     <div style="height:3000px"></div></body>`,
   '/b': '<!doctype html><title>Page B</title><p>B</p>',
+  '/frame': '<!doctype html><title>Framed</title><iframe id="inner" src="data:text/html,<p>inside</p>"></iframe>',
 }
 
 let server: Server, origin: string, profileRoot: string, browser: HostBrowser
@@ -116,6 +117,15 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     await page.automation.input({ type: 'scroll', x: 100, y: 100, deltaX: 0, deltaY: 400 }, () => undefined)
     await until(() => frames.length > before, 'a picture after scrolling')
     stop()
+    // Watching and stopping in a burst leaves no stream running, whatever order the changes finish in.
+    const late: HostPageFrame[] = []
+    const stops = [page.watch({ width: 400, height: 300 }, frame => late.push(frame)), page.watch({ width: 900, height: 700 }, frame => late.push(frame))]
+    for (const stopWatching of stops) stopWatching()
+    await new Promise(resolve => setTimeout(resolve, 500))
+    late.length = 0
+    await page.automation.input({ type: 'scroll', x: 100, y: 100, deltaX: 0, deltaY: -400 }, () => undefined)
+    await new Promise(resolve => setTimeout(resolve, 500))
+    expect(late).toEqual([])
     await page.close()
   })
 
@@ -133,6 +143,12 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     await new Promise(resolve => setTimeout(resolve, 300))
     expect((await browser.pages()).length).toBe(pages)
 
+    await page.navigate(`${origin}/frame`)
+    await loaded(page, '/frame')
+    const frames = async () => (await page.send('Page.getFrameTree') as { frameTree: { childFrames?: { frame: { url: string } }[] } }).frameTree.childFrames?.map(child => child.frame.url)
+    const deadline = Date.now() + 15_000
+    while (JSON.stringify(await frames()) !== JSON.stringify(['about:blank']) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+    expect(await frames()).toEqual(['about:blank'])
     await page.navigate('http://127.0.0.1:9/nothing-here')
     await until(() => page.state.status === 'unavailable', 'the failure')
     expect(page.state.error).toBe(PAGE_UNAVAILABLE)

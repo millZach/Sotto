@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { safeBrowserUrl } from '../../shared/browser'
-import { PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../main/tools/pageAutomation'
+import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../main/tools/pageAutomation'
 import { DevToolsPipe } from './devToolsPipe'
 import { findBrowser } from './findBrowser'
 
@@ -25,7 +25,8 @@ export const NEW_WINDOW_BLOCKED = 'A new-window request was blocked. Use a link 
 export const DOWNLOAD_BLOCKED = 'Downloads are blocked here. Open this page externally to download.'
 
 /** The permissions a page might ask for, all refused (ADR-0198, as the desktop's browser refuses them). */
-const REFUSED_PERMISSIONS = ['geolocation', 'notifications', 'camera', 'microphone', 'midi', 'clipboard-read', 'clipboard-write', 'background-sync', 'sensors', 'idle-detection', 'display-capture', 'local-fonts', 'storage-access', 'window-management']
+/** Every name the Permissions API knows; a name an older Chromium doesn't know is skipped. */
+const REFUSED_PERMISSIONS = ['accelerometer', 'ambient-light-sensor', 'background-fetch', 'background-sync', 'camera', 'captured-surface-control', 'clipboard-read', 'clipboard-write', 'display-capture', 'fullscreen', 'geolocation', 'gyroscope', 'idle-detection', 'keyboard-lock', 'local-fonts', 'magnetometer', 'microphone', 'midi', 'nfc', 'notifications', 'payment-handler', 'periodic-background-sync', 'persistent-storage', 'pointer-lock', 'protected-media-identifier', 'screen-wake-lock', 'speaker-selection', 'storage-access', 'system-wake-lock', 'top-level-storage-access', 'web-app-installation', 'window-management']
 /** Asks Chromium itself not to call home: no updates, sync, reports or field trials while a host drives it. */
 const QUIET_FLAGS = ['--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--disable-extensions', '--disable-domain-reliability', '--disable-breakpad', '--metrics-recording-only', '--no-pings', '--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication', '--password-store=basic', '--use-mock-keychain', '--mute-audio']
 /** The size a page starts at, as on the desktop, until a pane or the agent sets another. */
@@ -70,6 +71,8 @@ interface Running {
 
 export class HostBrowser {
   private running: Promise<Running> | null = null
+  /** The browser `running` resolves to, known from the moment it starts, so ending it never waits on its own start. */
+  private live: Running | null = null
   private disposed = false
   private readonly closeListeners = new Set<() => void>()
 
@@ -141,6 +144,7 @@ export class HostBrowser {
     }
     const pipe = new DevToolsPipe(child.stdio[3] as Writable, child.stdio[4] as Readable)
     const running: Running = { child, pipe, profile, contexts: new Map(), pages: new Map(), ending: null }
+    this.live = running
     child.once('error', () => pipe.close())
     child.once('exit', () => pipe.close())
     pipe.onClose(() => { void this.ended(running) })
@@ -214,7 +218,7 @@ export class HostBrowser {
     return running.ending
   }
   private async end(running: Running): Promise<void> {
-    if (this.running && await this.running.catch(() => null) === running) this.running = null
+    if (this.live === running) { this.live = null; this.running = null }
     const pages = [...running.pages.values()]
     running.pages.clear(); running.contexts.clear()
     for (const page of pages) page.gone()
@@ -244,7 +248,7 @@ export class HostBrowserMissing extends Error {
   constructor() { super(NO_HOST_BROWSER) }
 }
 
-type Watcher = { readonly size: { readonly width: number; readonly height: number }; readonly deliver: (frame: HostPageFrame) => void }
+type FrameSubscription = { readonly size: { readonly width: number; readonly height: number }; readonly deliver: (frame: HostPageFrame) => void }
 
 /**
  * One page in a host's browser, with its own DevTools session. Its automation is the desktop's (`PageAutomation`),
@@ -256,7 +260,7 @@ export class HostBrowserPage {
   private readonly changeListeners = new Set<(state: HostPageState) => void>()
   private readonly closeListeners = new Set<() => void>()
   private readonly sessionListeners = new Set<PageEventListener>()
-  private readonly watchers = new Set<Watcher>()
+  private readonly subscriptions = new Set<FrameSubscription>()
   private screencast: { width: number; height: number } | null = null
   private mainFrame: string | null = null
   private ended = false
@@ -265,6 +269,7 @@ export class HostBrowserPage {
   private refreshing = false
   private refreshAgain = false
   private lastFrameRefresh = 0
+  private streamChanges: Promise<void> = Promise.resolve()
   private readonly unsubscribe: () => void
 
   constructor(private readonly pipe: DevToolsPipe, readonly id: string, private readonly sessionId: string, readonly workspace: string, private readonly onGone: () => void) {
@@ -342,11 +347,11 @@ export class HostBrowserPage {
    * drawn at the largest size any of them asked for.
    */
   watch(size: { width: number; height: number }, deliver: (frame: HostPageFrame) => void): () => void {
-    const watcher: Watcher = { size: { width: Math.round(size.width), height: Math.round(size.height) }, deliver }
-    this.watchers.add(watcher)
+    const subscription: FrameSubscription = { size: { width: Math.round(size.width), height: Math.round(size.height) }, deliver }
+    this.subscriptions.add(subscription)
     void this.restream()
     return () => {
-      if (!this.watchers.delete(watcher)) return
+      if (!this.subscriptions.delete(subscription)) return
       void this.restream()
     }
   }
@@ -391,7 +396,7 @@ export class HostBrowserPage {
   gone(): void {
     if (this.ended) return
     this.ended = true
-    this.watchers.clear()
+    this.subscriptions.clear()
     this.unsubscribe()
     this.automation.dispose()
     this.onGone()
@@ -429,9 +434,17 @@ export class HostBrowserPage {
     await this.send('Page.navigateToHistoryEntry', { entryId: entry.id })
   }
 
-  private async restream(): Promise<void> {
+  /**
+   * Starts, resizes or stops the picture stream for whoever watches now. Changes run one after another, each reading
+   * the subscriptions when its turn comes, so a stream nobody watches any more is never started again.
+   */
+  private restream(): Promise<void> {
+    this.streamChanges = this.streamChanges.then(() => this.applyStream(), () => this.applyStream())
+    return this.streamChanges
+  }
+  private async applyStream(): Promise<void> {
     if (this.ended) return
-    const wanted = this.watchers.size ? { width: Math.max(...[...this.watchers].map(watcher => watcher.size.width)), height: Math.max(...[...this.watchers].map(watcher => watcher.size.height)) } : null
+    const wanted = this.subscriptions.size ? { width: Math.max(...[...this.subscriptions].map(subscription => subscription.size.width)), height: Math.max(...[...this.subscriptions].map(subscription => subscription.size.height)) } : null
     if (wanted?.width === this.screencast?.width && wanted?.height === this.screencast?.height) return
     const was = this.screencast
     this.screencast = wanted
@@ -445,7 +458,7 @@ export class HostBrowserPage {
       const metadata = params.metadata as { deviceWidth?: number; deviceHeight?: number } | undefined
       if (typeof params.data === 'string') {
         const frame: HostPageFrame = { data: params.data, width: Math.round(metadata?.deviceWidth ?? 0), height: Math.round(metadata?.deviceHeight ?? 0) }
-        for (const watcher of [...this.watchers]) watcher.deliver(frame)
+        for (const subscription of [...this.subscriptions]) subscription.deliver(frame)
         if (Date.now() - this.lastFrameRefresh >= 500) { this.lastFrameRefresh = Date.now(); this.refresh() }
       }
       if (typeof session === 'number') void this.send('Page.screencastFrameAck', { sessionId: session }).catch(() => undefined)
@@ -461,7 +474,8 @@ export class HostBrowserPage {
     }
     if (method === 'Page.frameNavigated') {
       const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined
-      if (!frame || frame.parentId) return
+      if (!frame) return
+      if (frame.parentId) { this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
       this.mainFrame = frame.id ?? this.mainFrame
       const url = safeBrowserUrl(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       if (url && url !== this.current.url) this.update({ url })
@@ -488,6 +502,15 @@ export class HostBrowserPage {
     if (method === 'Inspector.targetCrashed') this.issue(PAGE_STOPPED, true)
   }
 
+  /**
+   * A frame that reached a document other than http, https or a blank one goes blank, as the desktop's browser refuses
+   * it. DevTools' request interception never sees a `data:` document, so this is the barrier for one; it acts once the
+   * frame has arrived, where the desktop's acts before.
+   */
+  private blankUnsafeFrame(frameId: string | undefined, url: string): void {
+    if (!frameId || safeBrowserUrl(url) || url === 'about:blank' || url === 'about:srcdoc') return
+    void this.send('Page.navigate', { url: 'about:blank', frameId }).catch(() => undefined)
+  }
   private async history(): Promise<void> {
     const history = await this.send('Page.getNavigationHistory').catch(() => null) as { currentIndex: number; entries: { url?: string; title?: string }[] } | null
     if (!history || this.ended) return
@@ -519,14 +542,14 @@ export class HostPageAutomation extends PageAutomation {
   protected picture(frame: PageFrame): PagePicture {
     return { empty: frame.data.length === 0 || frame.width === 0 || frame.height === 0, width: frame.width, height: frame.height, dataUrl: `data:image/${frame.format};base64,${frame.data}` }
   }
-  /** A JPEG of the page at most 1280 wide, or 640 if that is over 2 MB, as the desktop keeps for a task's evidence. */
+  /** The evidence pictures the desktop keeps for a task (`EVIDENCE_PICTURES`), asked of Chromium. */
   async evidence(capture: { width: number; height: number }): Promise<{ image: string; width: number; height: number } | null> {
     if (this.host.closed || !capture.width) return null
-    for (const [width, quality] of [[1280, 70], [640, 55]] as const) {
-      const frame = await this.snapshot(undefined, { format: 'jpeg', quality, scale: Math.min(1, width / capture.width) }).catch(() => null)
+    for (const step of EVIDENCE_PICTURES) {
+      const frame = await this.snapshot(undefined, { format: 'jpeg', quality: step.quality, scale: Math.min(1, step.width / capture.width) }).catch(() => null)
       if (!frame) return null
       const image = `data:image/jpeg;base64,${frame.data}`
-      if (image.length <= 2_000_000) return { image, width: capture.width, height: capture.height }
+      if (image.length <= EVIDENCE_LIMIT) return { image, width: capture.width, height: capture.height }
     }
     return null
   }
