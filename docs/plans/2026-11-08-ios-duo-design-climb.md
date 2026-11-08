@@ -1,0 +1,35 @@
+# The Duo design climb
+
+Started November 8, 2026. Zach asked for the desktop's design climb (PR #2305) on the iPhone app, on the iPhone Duo's layout only: how the app looks and reads on the Duo, folded and unfolded, not the layout every other iPhone has. It follows the desktop climb's method.
+
+## What the Duo is here
+
+The iPhone Duo folds (ADR-0151). Folded, its cover screen is compact width, with the tabs, or an open thread's controls, in the strip down the right edge. Unfolded, the inner screen is regular width both ways: held sideways (951×669 points) the rail stands in the clock's strip with the thread sidebar beside the page; held upright the rail is a column down the right edge and the sidebar comes over the page. No other iPhone takes this layout, so every change here applies only on the Duo.
+
+## The method
+
+1. **Captures from the real app.** `apps/ios/Scripts/duo-captures.sh` runs `DuoCaptureTests` on the iPhone Duo simulator on the `xcode-27` runner, folded and unfolded sideways, and keeps a picture of each surface in dark and light and a short video of each movement. The simulator can't turn the unfolded Duo upright (`--ui-orientation` and `XCUIDevice` both leave it sideways), so the judges score folded and sideways from the real app; upright changes are checked in their prototypes and on Zach's Duo. A push to a `duo-captures/<name>` branch runs it (`.github/workflows/ios-duo-captures.yml`), so a round's captures never restart the pull request's CI. `duo-captures/climb-before` is `main` at `235dd51b4` with only the capture lane added: the before of every image.
+2. **Judges.** Each round, three fresh judges (GPT-6.1 Sol, Muse and Claude Opus 5.5, Zach's pick) score the Duo layout out of 10 against the comparison set, from that round's captures, with no tools beyond reading the files they are given and no memory of earlier rounds. The comparison set is T3 Code, Claude and ChatGPT with Codex from Zach's own screenshots on his Duo, folded, sideways and upright, with T3's App Store images for its thread and approval views (Zach's T3 was offline), and Cursor's for the folded set. Those screenshots stay out of the repository: they show his own thread titles and tailnet addresses. Their brief carries the decisions below as fixed. The climb ends when every judge scores Sotto 9.5 or higher.
+3. **Zach decides.** A judge's finding becomes a change only through Zach. For each surface the judges want changed, a prototype with variants A, B and C opens on the Duo from a tailnet link, and a question card asks which to build, with a recommendation. Only the pick is built. A finding that would reverse an ADR gets its own prototype and question first, and the ADR is amended only on his answer.
+4. **Batched rounds.** A capture run takes most of an hour, so each round builds every pick Zach has made, then captures once and judges once.
+5. **One pull request** carries the capture lane, every change, the verification note with a before and after image of each surface and a short before and after video of each change, and the ADR amendments. The last check is Zach's on a TestFlight build on his Duo.
+
+## Decisions the judges must keep
+
+These are Zach's (or Drake's, accepted) and stand unless Zach changes them. A judge may say one costs the score, but may not propose a change that undoes it without saying so plainly, so it can go to Zach as a question.
+
+- **Glow look (ADR-0051).** Sotto's own character: the theme's room, Figtree, dark by default, colour from the theme. Cards are flat, one fill a step off the room; a Needs you card glows, and the Threads tab's working and answered cards keep their glow. The reply box is Messages-shaped: a slim solid box with + as its own circle beside it, Send inside its end, Stop beside it while a turn runs, floating with the conversation running under it and no fade (October 31). The glow has a slider.
+- **The small reply box (ADR-0184).** In a thread with content and in Watcher, the box is one row until the user writes.
+- **The reply box's settings line (ADR-0166).** Model, effort, speed and permissions as chips on the box's second line.
+- **The Duo's layout (ADR-0151 and its amendments).** Threads unfolded is columns of cards, answered in place, when no thread is open; every other Threads page is the thread list. One page at a time; the sidebar is the thread list beside a page. Tabs are icons alone in one pill of 50-point tiles, low on the right where the thumb rests, with the sidebar's button and New thread at the top of the rail. A thread has no top bar and no big title on the Duo: its state, Agents, Watch and ••• stand in one pill on the rail, and its name, branch, changes and pull request are at the top of •••. Folded, Back stands where New thread does. Sideways, New thread moves into the sidebar's heading while a thread is open. A drag moves the sidebar. Edge to edge: the page's ground runs under the rail and the strip. Pages keep a 24-point margin unfolded; a thread and Watcher keep the 680-point reading width.
+- **Threads list rows (ADR-0151, October 30).** A Needs you row is a row like the others; nothing is answered on the list. Unfolding onto the list opens its top row.
+- **Movement (ADR-0151, October 31).** Pushes and pops are iOS's own; tab and sidebar changes fade; the fold reshapes on a spring; Reduce Motion fades.
+- **Watcher's room is its conversation (ADR-0152, ADR-0073).** No tabs or bar over it.
+- **The pull request sheet (ADR-0102)** and **Agents (ADR-0103)** as sheets from the thread; read only.
+- **Pictures as tiles (ADR-0170).** **Steps fold under the working words (ADR-0051 October amendments, ADR-0134).**
+- **Themes (ADR-0011, ADR-0024, ADR-0150).** Sotto's palettes in light and dark, and Glass in Owl.
+- **Privacy and permissions (AGENTS.md).** Nothing answers a request for the user; a request is answered on its sheet.
+
+## Rounds
+
+Each round's captures, scores and Zach's picks are added here as the climb goes.
