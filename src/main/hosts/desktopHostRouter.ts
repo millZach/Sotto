@@ -244,7 +244,8 @@ export class DesktopHostRouter {
           .map(thread => ({ ...thread, connected: connected && thread.connected }))
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
-        hostId: host.hostId, name: host.name, facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
+        hostId: host.hostId, name: host.name, ...host.clientId !== undefined ? { clientId: host.clientId } : {},
+        facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
         origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
         setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,

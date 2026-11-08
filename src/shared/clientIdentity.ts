@@ -212,12 +212,25 @@ const REMOTE_CALLER = /^relay:([^:]+):([\s\S]+)$/u
  * found under the thread that delegated to it, whichever machine each runs on (#1316 part 3).
  */
 export function delegatingKey(own: string, delegatedBy: string, across: DelegatingKeys): string {
-  if (parseHostEntityKey(delegatedBy)) return delegatedBy
+  // A key is made again exactly as it was written; a link that names no machine stays keyed under its own host.
+  const parent = delegatingThreadOfLink(own, delegatedBy, across)
+  return parent.hostId === undefined ? hostEntityKey(own, delegatedBy) : hostEntityKey(parent.hostId, parent.id)
+}
+
+/**
+ * The thread a `delegatedBy` link on `own` names, by its machine and that machine's ID for it, read as `delegatingKey`
+ * reads it: the same machine's thread, one another machine keys, or a desktop's own thread a relay caller names by its
+ * bare ID. That last is on `across.desktopHostId` only when its client is the client ID the host knows that desktop by;
+ * another desktop's thread names no machine here, so `hostId` is left out (#1217, Watcher naming the thread to direct).
+ */
+export function delegatingThreadOfLink(own: string, delegatedBy: string, across: DelegatingKeys): { readonly hostId?: string; readonly id: string } {
+  const keyed = parseHostEntityKey(delegatedBy)
+  if (keyed) return keyed
   const remote = REMOTE_CALLER.exec(delegatedBy)
-  if (!remote) return hostEntityKey(own, delegatedBy)
+  if (!remote) return { hostId: own, id: delegatedBy }
   const client = remote[1]!, caller = remote[2]!
-  if (parseHostEntityKey(caller)) return caller
-  return across.desktopHostId !== undefined && across.clientId !== undefined && client === across.clientId ? hostEntityKey(across.desktopHostId, caller) : hostEntityKey(own, delegatedBy)
+  return parseHostEntityKey(caller)
+    ?? (across.desktopHostId !== undefined && across.clientId !== undefined && client === across.clientId ? { hostId: across.desktopHostId, id: caller } : { id: caller })
 }
 
 /**
