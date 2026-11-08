@@ -288,6 +288,35 @@ export function mergeAgentActivities(previous: readonly AgentActivity[] = [], in
   return bounded(ordered ? records : records.sort((a, b) => a.sequence - b.sequence), previous, same)
 }
 
+/**
+ * `incoming` without the records a list that has cut its oldest records cut: those its provider lists in `list`, its whole
+ * list in its own order, before the first record `held` holds, unless one is known to have started after that record. A
+ * provider keeps its own newest `MAX_AGENT_ACTIVITIES`, and once its list and `held` differ by one record, as when a
+ * provider takes one back, they cut different old ones. Merged as new, each record `held` had cut took a sequence past
+ * the newest and pushed a newer one out, which the provider's next list brought back the same way, until old steps were
+ * numbered past new ones (#2330). A list has cut records when it is at the limit or its first record is marked cut,
+ * which a list a record was later taken out of still is.
+ *
+ * The provider's first record is nearly always `held`'s oldest, so the usual call reads a record or two of `held`.
+ */
+export function withoutCutActivities(held: readonly AgentActivity[] | undefined, list: readonly AgentActivity[] | undefined, incoming: readonly AgentActivity[]): readonly AgentActivity[] {
+  if (!held?.length || held.length < MAX_AGENT_ACTIVITIES && held[0]!.truncated !== true || !list?.length) return incoming
+  const first = list[0]!.id
+  if (held.some(record => record.id === first)) return incoming
+  const holding = new Set(held.map(record => record.id))
+  const oldest = list.find(record => holding.has(record.id))
+  if (!oldest) return incoming
+  const since = oldest.startedAt === undefined ? Number.NaN : Date.parse(oldest.startedAt)
+  const cut = new Set<string>()
+  for (const record of list) {
+    if (record === oldest) break
+    const started = record.startedAt === undefined ? Number.NaN : Date.parse(record.startedAt)
+    // A record that started after the oldest one held is new, listed first as a provider merging history under it may.
+    if (!(started > since)) cut.add(record.id)
+  }
+  return cut.size === 0 ? incoming : incoming.filter(record => !cut.has(record.id))
+}
+
 /** The merge for a list holding an id more than once: the last record with it, in the place of the first. */
 function mergeAll(previous: readonly AgentActivity[], incoming: readonly AgentActivity[], same: ((next: AgentActivity, old: AgentActivity) => boolean) | undefined): AgentActivity[] {
   const records = new Map(previous.map(record => [record.id, record]))

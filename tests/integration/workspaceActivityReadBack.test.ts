@@ -315,7 +315,7 @@ describe('a stored thread read back on the store worker', () => {
       const f = await stored(saved, () => true, { provider, onMain })
       f.host.observeThreads([DOCS])
       const reads = onMain ? undefined : holdReads(f.store)
-      provider.state.threads[0]!.activities = [record('r0', 0), ...saved.slice(0, -1)]
+      provider.state.threads[0]!.activities = [...saved.slice(1), record(`r${MAX_AGENT_ACTIVITIES + 1}`, MAX_AGENT_ACTIVITIES)]
       provider.emitActivity()
       await f.host.refreshThread(THREAD)
       if (reads) {
@@ -329,9 +329,8 @@ describe('a stored thread read back on the store worker', () => {
     }
     const onMain = await run(true), onWorker = await run(false)
     expect(onWorker).toEqual(onMain)
-    // The read merged again: the oldest record the publication's merge let go came back, as it did on main.
-    expect(onMain).toHaveLength(MAX_AGENT_ACTIVITIES)
-    expect(onMain.at(-1)).toEqual(['r1', MAX_AGENT_ACTIVITIES + 1])
+    // The publication's merge took the new record and let the oldest go, and the read merged the same list again to the same.
+    expect(onMain).toEqual([...saved.slice(1).map(item => [item.id, item.sequence]), [`r${MAX_AGENT_ACTIVITIES + 1}`, MAX_AGENT_ACTIVITIES]])
   })
 
   // The switch cuts the list short after its first piece; the read lost with the worker is finished on main from this run's

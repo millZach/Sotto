@@ -29,8 +29,8 @@ class ReadingProvider extends CertifyingProviderHost {
 const record = (index: number): AgentActivity => ({ id: `a${index}`, turnId: `t${index}`, sequence: index, kind: 'command', status: 'completed', title: `Command ${index}` })
 
 /**
- * The thread's records after it held a1..a2000, its provider published a0..a1999 (a list at the limit moving), and a
- * read then brought that same list back unchanged: the read reconciles every record it brings, as reads always did.
+ * The thread's records after it held a1..a2000, its provider published a2..a2001 (a list at the limit moving on), and
+ * a read then brought that same list back unchanged: the read reconciles every record it brings, as reads always did.
  */
 async function afterRead(copies: boolean): Promise<{ kept: readonly AgentActivity[]; before: readonly AgentActivity[] }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-read-activity-'))
@@ -45,9 +45,9 @@ async function afterRead(copies: boolean): Promise<{ kept: readonly AgentActivit
   provider.emit()
   const threadId = host.workspaceSnapshot().threads.find(item => item.title === native.title)!.id
   await expect.poll(() => host.workspaceSnapshot().threads.find(item => item.id === threadId)?.activities?.length).toBe(MAX_AGENT_ACTIVITIES)
-  native.activities = immutableActivities([record(0), ...native.activities.slice(0, -1)])
+  native.activities = immutableActivities([...native.activities.slice(1), record(MAX_AGENT_ACTIVITIES + 1)])
   provider.emit()
-  await expect.poll(() => host.workspaceSnapshot().threads.find(item => item.id === threadId)?.activities?.some(item => item.id === 'a0')).toBe(true)
+  await expect.poll(() => host.workspaceSnapshot().threads.find(item => item.id === threadId)?.activities?.some(item => item.id === `a${MAX_AGENT_ACTIVITIES + 1}`)).toBe(true)
   const heldBefore = (host as unknown as { state: { snapshot: AgentHostSnapshot } }).state.snapshot.threads.find(item => item.id === threadId)!.activities!
   await host.refreshThread(threadId)
   const now = (host as unknown as { state: { snapshot: AgentHostSnapshot } }).state.snapshot

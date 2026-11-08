@@ -72,7 +72,7 @@ import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitCh
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestPress, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { createdPullRequestUrls, endedTurn, OPENED_PULL_REQUESTS_MAX, openedDuringTurn, pullRequestUrlsIn } from './openedPullRequests'
-import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, withoutCutActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
@@ -4622,7 +4622,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       && old.historyEpoch === thread.historyEpoch && old.activities === previous.output
     if (reusable && previous.input === input) return previous.output
     const incoming = reusable ? input!.filter(record => previous.records.get(record.id) !== record) : input ?? []
-    const combined = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
+    const combined = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, withoutCutActivities(old?.activities, input, incoming))
     // A wordless Codex reasoning summary an earlier Sotto saved goes once the thread's activity is read again.
     const reconciled = combined.some(wordlessReasoningSummary) ? combined.filter(record => !wordlessReasoningSummary(record)) : combined
     // A read's whole reconciliation makes each record again, as does merging onto a list just read back from the store; one
