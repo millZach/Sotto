@@ -9,13 +9,14 @@ vi.mock('node:child_process', async importOriginal => {
   return { ...original, execFile: vi.fn(original.execFile) }
 })
 import { runWorktreeGitProcess } from '../../src/main/agents/threadWorktrees'
+import { stopsWhenTold } from '../fixtures/stopsWhenTold'
 
 const roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-git-timeout-')) throw new Error('Unsafe fixture cleanup')
-    await rm(root, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 describe('worktree Git process deadlines', () => {
@@ -32,12 +33,11 @@ describe('worktree Git process deadlines', () => {
   })
   it('stops a fake Git launcher and its writing grandchild before returning a timeout', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-git-timeout-')); roots.push(root)
-    const pidFile = join(root, 'writer.pid'), checkout = join(root, 'checkout')
-    const childPidFile = join(root, 'child.pid')
+    const pidFile = join(root, 'writer.pid'), checkout = join(root, 'checkout'), stop = join(root, 'stop')
     const writer = join(root, 'writer.cjs'), child = join(root, 'child.cjs'), launcher = join(root, 'git.cjs')
-    await writeFile(writer, `const fs = require('node:fs'); const folder = ${JSON.stringify(checkout)}; function write() { fs.mkdirSync(folder, {recursive:true}); fs.writeFileSync(folder + '/still-writing.txt', String(Date.now())); } write(); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(write, 10);`)
-    await writeFile(child, `require('node:fs').writeFileSync(${JSON.stringify(childPidFile)}, String(process.pid)); require('node:child_process').spawn(process.execPath, [${JSON.stringify(writer)}], {stdio:'ignore', detached:process.platform === 'win32'}); setInterval(() => {}, 1000);`)
-    await writeFile(launcher, `require('node:child_process').spawn(process.execPath, [${JSON.stringify(child)}], {stdio:'ignore', detached:process.platform === 'win32'}); setInterval(() => {}, 1000);`)
+    await writeFile(writer, `${stopsWhenTold(stop)} const fs = require('node:fs'); const folder = ${JSON.stringify(checkout)}; function write() { stopIfTold(); fs.mkdirSync(folder, {recursive:true}); fs.writeFileSync(folder + '/still-writing.txt', String(Date.now())); } write(); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(write, 10);`)
+    await writeFile(child, `${stopsWhenTold(stop)} require('node:child_process').spawn(process.execPath, [${JSON.stringify(writer)}], {stdio:'ignore', detached:process.platform === 'win32'});`)
+    await writeFile(launcher, `${stopsWhenTold(stop)} require('node:child_process').spawn(process.execPath, [${JSON.stringify(child)}], {stdio:'ignore', detached:process.platform === 'win32'});`)
     let deadline: (() => void) | undefined
     const realTimer = globalThis.setTimeout
     vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number, ...args: unknown[]) => {
@@ -58,14 +58,8 @@ describe('worktree Git process deadlines', () => {
       await rm(checkout, { recursive: true })
       await expect(readFile(join(checkout, 'still-writing.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
-      for (const cleanupPid of [pid, Number(await readFile(childPidFile, 'utf8').catch(() => '0'))]) {
-        if (!cleanupPid) continue
-        try {
-          process.kill(cleanupPid, 0)
-          if (process.platform === 'win32') await new Promise<void>(done => execFile('taskkill', ['/pid', String(cleanupPid), '/T', '/F'], { windowsHide: true }, () => done()))
-          else process.kill(cleanupPid, 'SIGKILL')
-        } catch { /* The regression already stopped it. */ }
-      }
+      // Whatever a regression left running ends itself; the PIDs may belong to other processes by now.
+      await writeFile(stop, '')
     }
   })
   describe("Windows taskkill process-tree termination", () => {

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { collectLaunchScript as collect, launchScriptChild, type LaunchScriptOutcome as Outcome } from '../fixtures/launchScriptRunner'
+import { stopFakeSshHosts } from '../fixtures/fakeSshHostCleanup'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,7 +15,7 @@ import { PairedClients } from '../../src/main/agents/pairing'
 const directories: string[] = [], children: ChildProcess[] = [], hosts: number[] = []
 afterEach(async () => {
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill()
-  for (const pid of hosts.splice(0)) { try { process.kill(pid, 'SIGTERM') } catch { /* already exited */ } }
+  await stopFakeSshHosts(hosts.splice(0), directories.map(directory => join(directory, 'data')))
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true })
 })
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
