@@ -8,6 +8,15 @@ Zach asked for local inference for anyone who runs a model: "use whatever model 
 
 ## Context
 
+Local Owl amendment, November 7, 2026: Drake's Hermes provider may also use
+`https://api.abliteration.ai/v1`, with the existing macOS Keychain item
+`abliteration` / `default`. Like its Refuseless route, Hermes reads the key
+through `key_cmd`; Sotto checks only whether the item exists. The route sends
+thread messages to Abliteration only when its model is selected. No key goes
+into the generated config or Sotto's records. This local-only addition does not
+change the shared server dialog or OpenCode's credential ownership. Image input
+stays off until verified through Hermes.
+
 People run models on their own machines with SGLang, vLLM, Ollama, LM Studio, llama.cpp and similar servers, nearly all of which answer the OpenAI API. Sotto drives native clients, and the one that can already run any OpenAI-compatible model is OpenCode 2 ([ADR-0087](0087-opencode-is-a-thread-provider.md)), whose live test already runs a thread against a local server declared in its config. What Sotto lacked was a way to declare one: OpenCode lists models only from its catalog, the sign-ins in Sotto's OpenCode folder and its config, and never asks a custom server what models it has.
 
 What the user calls a harness is, in Sotto's words, the **provider**. The server is a **model source**, as Anthropic or OpenRouter are under OpenCode.

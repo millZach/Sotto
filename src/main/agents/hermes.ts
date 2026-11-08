@@ -18,7 +18,7 @@ import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, HE
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
   findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
-import { HermesRuntime, hermesRefuselessAvailable, hermesServers } from './hermesRuntime'
+import { HermesRuntime, hermesAbliterationAvailable, hermesRefuselessAvailable, hermesServers } from './hermesRuntime'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { unreadableRequest } from './nativeRequests'
@@ -437,7 +437,8 @@ export class HermesAcpHost implements AgentHost {
       this.assertGeneration(generation)
       if (compareHermesVersions(version, HERMES_CLI_VERSION) !== 0) throw new ProviderUnavailable('too-old', `This local Owl requires Hermes ${HERMES_CLI_VERSION}, and this one is ${version}. Use the pinned install, then connect again. Your threads are kept.`, version, HERMES_CLI_VERSION)
       const refuseless = await hermesRefuselessAvailable()
-      this.servers = hermesServers(await this.options.servers?.() ?? [], refuseless)
+      const abliteration = await hermesAbliterationAvailable()
+      this.servers = hermesServers(await this.options.servers?.() ?? [], refuseless, abliteration)
       this.assertGeneration(generation)
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
@@ -488,7 +489,8 @@ export class HermesAcpHost implements AgentHost {
     const generation = this.generation
     void (async () => {
       const saved = await this.options.servers?.()
-      const servers = saved ? hermesServers(saved, this.servers.some(server => server.id === 'own-refuseless')) : undefined
+      const servers = saved ? hermesServers(saved, this.servers.some(server => server.id === 'own-refuseless'),
+        this.servers.some(server => server.id === 'own-abliteration')) : undefined
       if (!servers || generation !== this.generation) return
       this.servers = servers
       this.state.models = hermesCatalog(servers, this.harnessImages)

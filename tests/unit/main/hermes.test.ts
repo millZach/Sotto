@@ -13,7 +13,7 @@ const spark: OwnServer = { id: 'own-spark', name: 'Spark', address: 'http://spar
 
 describe('local Owl Hermes', () => {
   it('keeps credentials out of config, disables login adoption and titles, and pins Full access', () => {
-    const servers = hermesServers([spark, { ...spark, id: 'keyed', keyed: true }], true)
+    const servers = hermesServers([spark, { ...spark, id: 'keyed', keyed: true }], true, true)
     const config = JSON.parse(hermesConfig(servers, '/project'))
     expect(config.auth.adopt_external_logins).toBe(false)
     expect(config.approvals.mode).toBe('off')
@@ -26,10 +26,37 @@ describe('local Owl Hermes', () => {
     expect(config.custom_providers.map((p: { name: string }) => p.name)).toEqual(['own-spark', 'own-refuseless'])
     expect(config.custom_providers[1]).toMatchObject({ key_cmd: '/usr/bin/security find-generic-password -s refuseless -a default -w' })
     expect(config.custom_providers[1]).not.toHaveProperty('api_key')
+    expect(config.providers['own-abliteration']).toEqual({ base_url: 'https://api.abliteration.ai/v1', api_mode: 'chat_completions',
+      key_cmd: '/usr/bin/security find-generic-password -s abliteration -a default -w',
+      models: ['abliterated-model-large-v2', 'abliterated-model-large-flash', 'abliterated-model'] })
+    expect(config.providers['own-abliteration']).not.toHaveProperty('api_key')
     expect(hermesEnvironment('/sotto/hermes', {}, { HOME: '/home', OPENAI_API_KEY: 'secret', ANTHROPIC_API_KEY: 'secret' }))
       .toEqual({ HOME: '/home', HERMES_HOME: '/sotto/hermes' })
     expect(hermesProjectHome('/sotto/hermes', '/project')).toMatch(/^\/sotto\/hermes\/profiles\/project-/u)
     expect(hermesProjectHome('/sotto/hermes', '/project')).not.toBe(hermesProjectHome('/sotto/hermes', '/other'))
+  })
+
+  it('offers Abliteration only when available, keeping Refuseless unchanged and images off', () => {
+    const existing = hermesServers([spark], true)
+    const servers = hermesServers([spark], true, true)
+    expect(servers.slice(0, existing.length)).toEqual(existing)
+    expect(JSON.parse(hermesConfig(servers)).custom_providers).toEqual(JSON.parse(hermesConfig(existing)).custom_providers)
+    expect(JSON.parse(hermesConfig(existing))).not.toHaveProperty('providers')
+    expect(hermesServers([], false, false)).toEqual([])
+    expect(hermesServers([], false, true).map(server => server.id)).toEqual(['own-abliteration'])
+    expect(servers[2]?.models).toEqual([
+      { id: 'abliterated-model-large-v2', name: 'Abliterated Large V2', context: 1048576, thinking: false, images: false },
+      { id: 'abliterated-model-large-flash', name: 'Abliterated Large Flash', context: 1048576, thinking: true, images: false },
+      { id: 'abliterated-model', name: 'Abliterated Model', context: 262144, thinking: true, images: false },
+    ])
+    const catalog = hermesCatalog(servers, true).filter(model => model.source === 'Abliteration')
+    expect(catalog.map(model => model.id)).toEqual([
+      'own-abliteration/abliterated-model-large-v2', 'own-abliteration/abliterated-model-large-flash', 'own-abliteration/abliterated-model',
+    ])
+    for (const model of catalog) {
+      expect(model).not.toHaveProperty('supportsImages')
+      expect(hermesModelValue(model.id)).toBe(`custom:own-abliteration:${model.id.split('/')[1]}`)
+    }
   })
 
   it('maps server routes without offering unsupported reasoning or permission modes', () => {

@@ -15,9 +15,24 @@ export function hermesRefuselessAvailable(): Promise<boolean> {
   })
 }
 
-export function hermesServers(servers: readonly OwnServer[], refuseless: boolean): OwnServer[] {
+/** Check availability without reading the secret, as for Refuseless. */
+export function hermesAbliterationAvailable(): Promise<boolean> {
+  if (process.platform !== 'darwin') return Promise.resolve(false)
+  return new Promise(resolve => {
+    execFile('/usr/bin/security', ['find-generic-password', '-s', 'abliteration', '-a', 'default'],
+      { encoding: 'utf8', maxBuffer: 8192, timeout: 10_000 }, error => resolve(!error))
+  })
+}
+
+export function hermesServers(servers: readonly OwnServer[], refuseless: boolean, abliteration = false): OwnServer[] {
   return [...keylessServers(servers), ...(refuseless ? [{ id: 'own-refuseless', name: 'Refuseless', address: 'https://api.refuseless.com/v1', keyed: false,
-    models: [{ id: 'glm-5.3-flash-abliterated', name: 'GLM 5.3 Flash Abliterated', context: 131072, thinking: true, images: false }] }] : [])]
+    models: [{ id: 'glm-5.3-flash-abliterated', name: 'GLM 5.3 Flash Abliterated', context: 131072, thinking: true, images: false }] }] : []),
+  ...(abliteration ? [{ id: 'own-abliteration', name: 'Abliteration', address: 'https://api.abliteration.ai/v1', keyed: false,
+    models: [
+      { id: 'abliterated-model-large-v2', name: 'Abliterated Large V2', context: 1048576, thinking: false, images: false },
+      { id: 'abliterated-model-large-flash', name: 'Abliterated Large Flash', context: 1048576, thinking: true, images: false },
+      { id: 'abliterated-model', name: 'Abliterated Model', context: 262144, thinking: true, images: false },
+    ] }] : [])]
 }
 
 export function hermesProjectHome(root: string, projectPath: string): string {
@@ -27,6 +42,7 @@ export function hermesProjectHome(root: string, projectPath: string): string {
 /** JSON is YAML: no interpolation of model names, addresses, paths or secrets. */
 export function hermesConfig(servers: readonly OwnServer[], cwd?: string): string {
   const first = servers[0]
+  const abliteration = servers.find(server => server.id === 'own-abliteration')
   return JSON.stringify({
     _config_version: 52,
     auth: { adopt_external_logins: false }, approvals: { mode: 'off' },
@@ -37,7 +53,10 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string): strin
     memory: { memory_enabled: true, user_profile_enabled: true },
     ...(cwd ? { terminal: { cwd } } : {}),
     ...(first ? { model: { provider: `custom:${first.id}`, default: first.models[0]?.id, base_url: first.address, api_mode: 'chat_completions', context_length: first.models[0]?.context } } : {}),
-    custom_providers: servers.map(server => ({ name: server.id, base_url: server.address, api_mode: 'chat_completions',
+    // Hermes 0.23.0 preserves key_cmd only on the keyed providers map, not its legacy list.
+    ...(abliteration ? { providers: { [abliteration.id]: { base_url: abliteration.address, api_mode: 'chat_completions',
+      key_cmd: '/usr/bin/security find-generic-password -s abliteration -a default -w', models: abliteration.models.map(model => model.id) } } } : {}),
+    custom_providers: servers.filter(server => server.id !== 'own-abliteration').map(server => ({ name: server.id, base_url: server.address, api_mode: 'chat_completions',
       ...(server.id === 'own-refuseless' ? { key_cmd: '/usr/bin/security find-generic-password -s refuseless -a default -w' } : { api_key: '' }), models: server.models.map(model => model.id) })),
   }, null, 2) + '\n'
 }
