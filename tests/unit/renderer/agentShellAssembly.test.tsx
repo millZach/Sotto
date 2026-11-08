@@ -530,25 +530,34 @@ describe('shell updates while the main window is hidden', () => {
     expect(result.current.state?.notice).toBe('Replied')
   })
 
-  it('commits while hidden a state that brings or clears a request, and still holds one that only streams (#2156)', async () => {
+  it('commits while hidden a request that comes, changes or goes and a turn that ends, and still holds one that only streams (#2156)', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
-    const asking = { id: 'approve-printf', kind: 'permission' as const, text: "printf 'two' > probe.txt", options: [] }
+    const asking = { id: 'approve-printf', kind: 'permission' as const, text: "printf 'two' > probe.txt", options: [],
+      context: { command: "printf 'two' > probe.txt", summaryAsk: 'waiting' as const } }
     const working = { ...thread('first', []), status: 'running' as const }
-    const initial = fullState([working], 'first')
-    const wire = shellBridge(initial)
+    const wire = shellBridge(fullState([working], 'first'))
+    const publish = (first: AgentThread, notice = ''): void => act(() => wire.publish({ ...fullState([first], 'first'), notice }))
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
+    const shownThread = (): AgentThread | undefined => result.current.state?.host.threads[0]
     // The question or approval holds its agent until someone answers: it reaches the page, and whatever reads it, at once.
-    act(() => wire.publish(fullState([{ ...working, requests: [asking] }], 'first')))
-    expect(result.current.state?.host.threads[0]?.requests.map(request => request.id)).toEqual(['approve-printf'])
+    publish({ ...working, requests: [asking] })
+    expect(shownThread()?.requests.map(request => request.id)).toEqual(['approve-printf'])
+    // So does what arrives later under the same request, such as the command summary Sotto asked the provider for.
+    publish({ ...working, requests: [{ ...asking, context: { ...asking.context, summary: 'Writes a probe file.', summaryAsk: 'answered' } }] })
+    expect(shownThread()?.requests[0]?.context?.summary).toBe('Writes a probe file.')
+    // Work that changes no request and no turn still waits for the window to show (#993).
     const shown = result.current.state
-    // Work that changes no request still waits for the window to show (#993).
-    act(() => wire.publish({ ...fullState([{ ...working, requests: [asking] }], 'first'), notice: 'streamed' }))
+    publish({ ...working, requests: shownThread()!.requests }, 'streamed')
     expect(result.current.state).toBe(shown)
-    // An answered request leaves at once too.
-    act(() => wire.publish(fullState([{ ...working, requests: [] }], 'first')))
-    expect(result.current.state?.host.threads[0]?.requests).toEqual([])
-    expect(result.current.state?.notice).toBe('')
+    // An answered request leaves at once, and the turn that goes on after it is held until it ends, which shows at once.
+    publish({ ...working, requests: [] }, 'answered')
+    expect(shownThread()?.requests).toEqual([])
+    publish({ ...working, requests: [] }, 'replying')
+    expect(result.current.state?.notice).toBe('answered')
+    publish({ ...working, status: 'idle', lastTurn: { id: 'turn', status: 'completed' }, requests: [] }, 'finished')
+    expect(shownThread()?.status).toBe('idle')
+    expect(result.current.state?.notice).toBe('finished')
   })
 
   it('flushes a pending shell when hidden, holds what arrives while hidden, and resumes batching when shown', async () => {
