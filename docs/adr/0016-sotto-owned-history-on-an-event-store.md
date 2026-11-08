@@ -456,3 +456,20 @@ the client offers manual compaction is learnt then; until it is, the pane offers
 thread nobody had opened.
 
 Measured in `docs/perf/2026-11-01-claude-start-on-demand.md` and guarded by `tests/integration/claudeStartOnDemand.test.ts`.
+
+## Amendment: the workspace leaves out a record its own list has cut (November 8, 2026, #2330)
+
+A provider and the workspace each keep a thread's newest 2,000 records, and the workspace merges the provider's list onto
+its own. A record the workspace does not hold is new to it and takes a sequence past every record held. Once the two
+lists differ by one record, as when Claude takes back a thinking row it read as narration, which the workspace's merge
+keeps, the workspace cuts an old record the provider still lists first. The next merge took that record for new and
+numbered it past the newest, which cut a newer one the provider still held, and the next merge did the same with more,
+until a thread on forge held 1,119 steps from hours earlier numbered past its real newest. The cap then cuts the real
+newest steps first, and the iPhone opened that thread on one message (#2328).
+
+Once its list has cut records, the workspace now leaves out of a merge every record the provider lists before the first
+record it holds: those are older than every record it keeps, so it has already cut them. A list has cut records when it
+is at the limit or its first record is marked cut, as it stays when a record is later taken out of it. One the provider
+lists first that is known to have started after that held record is new, as when a provider merges history under a
+record it streamed, and merges as before. A list that has cut nothing merges as before. A thread whose order was
+scrambled before this keeps that order: this change repairs none.
