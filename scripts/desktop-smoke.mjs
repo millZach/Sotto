@@ -23,6 +23,17 @@ function run(args) {
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
-// DO NOT MERGE (#2051): the Diagnose pull request builds and runs only the projects directory click stress, five times over.
+// DO NOT MERGE (#2051): the second Diagnose run. The click did not hang in about 1,800 stress presses on Windows, so
+// this repeats CI's real journey batch, in its real order and one worker, four times over, each batch in a fresh
+// Playwright run, and carries on after a failed batch so every batch is tried.
 run([npm, 'run', 'build'])
-run([join(root, 'node_modules/@playwright/test/cli.js'), 'test', 'tests/e2e/settings-click-stress.spec.ts', '--workers=1', '--repeat-each=5'])
+const batch = ['tests/e2e/daily-workspace.spec.ts', 'tests/e2e/settings-index.spec.ts', 'tests/e2e/widget-dictation.spec.ts',
+  'tests/e2e/terminal-search-links-zoom.spec.ts', 'tests/e2e/host-client-updates.spec.ts', 'tests/e2e/update-all.spec.ts', 'tests/e2e/council-climb.spec.ts']
+let failed = 0
+for (let round = 1; round <= 4; round++) {
+  console.log(`#2051 batch ${round} of 4`)
+  const result = spawnSync(process.execPath, [join(root, 'node_modules/@playwright/test/cli.js'), 'test', ...batch, '--workers=1', `--output=test-results/round-${round}`],
+    { cwd: root, env, stdio: 'inherit', windowsHide: true })
+  if (result.status !== 0) { failed++; console.log(`#2051 batch ${round} failed`) }
+}
+if (failed) process.exit(1)
