@@ -61,5 +61,39 @@ printed or written by the check.
 - `npm exec -- vitest run tests/unit/main/hermes.test.ts`: all six tests passed.
 - No full suite, Playwright, e2e, design capture or app launch.
 
-The local build target is `0.1.43-owl.20261107.5`; installation waits for Drake's
-question-card choice.
+## Local Owl build
+
+Built `0.1.43-owl.20261107.5` at `release/mac-arm64/Sotto.app` from
+`229e938d6008b9bd9ab35fdee757c90797f51969`. This follows the `.4` build:
+asset verification, the Electron/Vite bundle, Core ML helper, key listener,
+build provenance, then electron-builder directory packaging for macOS arm64
+with `npmRebuild=true` and `extraMetadata.version=0.1.43-owl.20261107.5`.
+The source package version is unchanged. The fresh `npm ci --ignore-scripts`
+left node-pty's prebuilt spawn helper without execute permission; restoring
+that dependency file's permission let asset verification pass.
+
+The bundle's plist and packaged manifest both report `.5`. Its arm64 executable
+and deep, strict code-signature verification pass. Packaged provenance matches
+all 356 just-built artifacts and records build SHA-256
+`ab3fa281b86bf320525595d01335b43f063d7081e112ede8d24e20d1dbfa8097`.
+No app-launching package check was run.
+
+The final key scan covered 14,345 files (2,102,619,622 bytes), including the
+packaged app, generated configs, temporary Hermes homes, logs and the committed
+diff. It found zero matches; `.git` internals and `node_modules` were excluded.
+
+## Installation
+
+Drake selected **Install now** on the question card. Ran `sotto-install` with
+the completed bundle and `sleep 180` in one command. Sotto's restart interrupted
+the tool response; the resumed thread checked the result without reinstalling.
+
+`/Applications/Sotto.app` reports `0.1.43-owl.20261107.5`. The installer log records
+`2026-11-07 19:50:56 installed 0.1.43-owl.20261107.5 and relaunched`.
+The app process started at 19:50:41 and remained running after the installer's
+startup check. Its deep, strict signature check passes, and its packaged
+provenance matches the same source commit and all 356 local build artifacts.
+
+A post-install key scan also included the installed app, the installer's run
+folder and log, and Sotto's live Hermes home. It found zero matches across
+17,864 files (3,324,929,778 bytes), with the same exclusions as above.
