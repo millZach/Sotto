@@ -1,0 +1,121 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway (#212). A thread on forge viewed from the laptop, with Tools > Browser open. Nothing here opens a page. -->
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto's browser for a thread on forge</title>
+<style>
+@font-face{font-family:Figtree;src:url(figtree-latin.woff2) format('woff2');font-weight:300 900}
+:root[data-theme=dark]{--canvas:#0a0b0b;--chrome:#141616;--surface:#1a1c1c;--text:#f1f3f2;--text2:#c9cdcb;--muted:#9a9f9d;--line:#2a2e2d;--field:#3a3f3d;--accent:#7fd1b9;--on:#0a0b0b;--page:#f7f7f5;--pagetext:#1b1d1c;--warn:#e6b566}
+:root[data-theme=light]{--canvas:#fff;--chrome:#f4f5f4;--surface:#fff;--text:#141716;--text2:#3b403e;--muted:#5c6163;--line:#e2e4e3;--field:#c9cdcb;--accent:#0f6f58;--on:#fff;--page:#fff;--pagetext:#1b1d1c;--warn:#8a5a00}
+*{box-sizing:border-box}body{margin:0;background:var(--chrome);color:var(--text);font:15px/1.45 Figtree,system-ui,sans-serif}button{font:inherit;color:inherit}
+.page{max-width:1180px;margin:auto;padding:14px}h1{font-size:19px;font-weight:600;margin:0 0 4px}.lede{margin:0 0 12px;color:var(--text2);max-width:76ch}
+.group{margin:0 0 10px}.group>b{display:block;font-weight:600;font-size:13px;color:var(--muted);margin-bottom:5px}.row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{min-height:40px;padding:6px 12px;border:1px solid var(--field);border-radius:8px;background:transparent;color:var(--text2);cursor:pointer;text-align:left}.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on)}.chip[disabled]{opacity:.4;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.win{border:1px solid var(--line);border-radius:10px;background:var(--canvas);overflow:hidden;display:flex;height:560px}
+.thread{flex:1 1 40%;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.tools{flex:1 1 60%;min-width:0;display:flex;flex-direction:column;background:var(--canvas)}
+@media(max-width:760px){.win{flex-direction:column;height:auto}.thread{border-right:0;border-bottom:1px solid var(--line);height:220px;flex:none}.tools{height:440px;flex:none}}
+.head{display:flex;align-items:center;gap:8px;height:44px;flex:none;padding:0 10px 0 16px;border-bottom:1px solid var(--line)}.head h2{margin:0;font-size:15px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.crumb{color:var(--muted);font-size:13px;white-space:nowrap}
+.body{flex:1;min-height:0;padding:12px 16px;color:var(--muted);overflow:hidden;font-size:14px}.body b{display:block;color:var(--text2);font-weight:500;margin-bottom:6px}.fold{display:inline-block;margin-top:8px;padding:4px 10px;border:1px solid var(--line);border-radius:8px;color:var(--text2)}.fold.bad{color:var(--warn);border-color:var(--warn)}
+.compose{margin:0 12px 10px;padding:10px 12px;border:1px solid var(--field);border-radius:12px;color:var(--muted);flex:none}
+.trow{display:flex;align-items:center;gap:4px;height:40px;flex:none;padding:0 6px;border-bottom:1px solid var(--line);background:var(--chrome)}
+.act{display:grid;place-items:center;width:30px;height:30px;flex:none;padding:0;border:0;border-radius:7px;background:transparent;color:var(--text2);cursor:pointer}.act[aria-disabled=true]{opacity:.4;cursor:default}
+.addr{flex:1;min-width:0;height:28px;display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--field);border-radius:7px;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden}.addr i{font-style:normal;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.machine{display:inline-flex;align-items:center;gap:4px;padding:0 6px;color:var(--muted);font-size:12.5px;white-space:nowrap}
+.view{flex:1;min-height:0;position:relative;background:var(--page);color:var(--pagetext);overflow:hidden}
+.view[data-off=true]{filter:grayscale(1);opacity:.55}
+.site{padding:18px 22px}.site h3{margin:0 0 6px;font-size:18px}.site p{margin:0 0 12px;color:#555;font-size:14px}.site .f{width:220px;height:30px;border:1px solid #bbb;border-radius:6px;margin:0 0 8px;padding:4px 8px;font-size:13px;color:#333}.site .b{display:inline-block;padding:6px 14px;background:#2d6cdf;color:#fff;border-radius:6px;font-size:13px}.site .b.hit{outline:3px solid #f0a020;outline-offset:2px}
+.err{position:absolute;inset:0;display:grid;place-content:center;padding:20px;text-align:center;background:var(--page);color:#444;font-size:14px}.err b{display:block;font-size:16px;color:#222;margin-bottom:4px}
+.empty{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px;color:var(--text2);font-size:14px}.empty strong{color:var(--text);font-weight:600;font-size:15px;margin-bottom:4px}.empty code{font:13px ui-monospace,Menlo,Consolas,monospace;background:var(--line);padding:2px 6px;border-radius:5px}.empty .btn{align-self:flex-start;margin-top:12px;padding:6px 12px;border:1px solid var(--field);border-radius:8px;background:transparent;cursor:pointer}
+.strip{display:flex;align-items:center;gap:8px;flex:none;min-height:38px;padding:4px 10px;border-top:1px solid var(--line);background:var(--chrome);font-size:13.5px;color:var(--text2)}.strip .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}.strip .dot.w{background:var(--warn)}.strip span{flex:1;min-width:0}.strip button{padding:4px 10px;border:1px solid var(--field);border-radius:7px;background:transparent;cursor:pointer}
+.say{margin:10px 0 0;padding:10px 12px;background:var(--canvas);border:1px solid var(--line);border-radius:10px;color:var(--text2);font-size:14px}.say b{color:var(--text);font-weight:600}
+.cmp{margin:14px 0 0;border-collapse:collapse;width:100%;font-size:13.5px;color:var(--text2)}.cmp th,.cmp td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.cmp th{color:var(--text);font-weight:600;background:var(--canvas)}
+@media(max-width:560px){.cmp{font-size:12.5px}.crumb{display:none}}
+</style></head><body><div class="page" id="app"></div>
+<script>
+const I=(p,s=16)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`
+const ic={back:'<path d="m15 18-6-6 6-6"/>',fwd:'<path d="m9 18 6-6-6-6"/>',reload:'<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',point:'<path d="m4 4 7 16 2-7 7-2z"/>',shot:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',more:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',server:'<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>'}
+const s={route:'host',state:'working',look:'named',theme:'dark'};new URLSearchParams(location.search).forEach((v,k)=>{if(k in s)s[k]=v})
+const TAIL='forge.tail5728ca.ts.net'
+const states={
+ working:'Agent opens its dev server',
+ typing:'You click and type in the page',
+ drop:'The laptop sleeps or the connection drops',
+ back:'The connection comes back',
+ none:'forge has no Chrome or Chromium',
+ old:'forge’s Sotto is older',
+}
+function view(){
+ const r=s.route, st=s.state, host=r==='host'
+ const named=host&&s.look==='named'
+ let addr='localhost:5173', title='Sign in · Sotto web', site=true, err='', off=false, strip='', dot='', say='', fold='Browsing localhost:5173 · clicked in the page', foldBad=false, pane='page', hit=true
+ if(st==='working'){
+  strip='Agent is browsing · clicked in the page'; dot='a'
+  say=host?'<b>On forge.</b> The agent asked for <code>localhost:5173</code>, and that is forge’s own dev server, the one it just started. forge’s Sotto runs the page in forge’s Chromium and sends pictures of it to this pane as it changes. Nothing is installed on this computer, and nothing is kept on forge past what the pane shows.'
+   :'<b>On this computer.</b> The agent’s browser tool calls travel back to this computer, and the page opens in this computer’s Sotto browser, as for a thread here. <code>localhost:5173</code> would be the laptop, so the agent has to use forge’s tailnet address, and its dev server has to listen beyond localhost. The page shows that address.'
+  if(!host){addr=TAIL+':5173'}
+ }
+ if(st==='typing'){
+  hit=false
+  say=host?'<b>On forge.</b> Your clicks and keys are sent to forge and the next picture comes back, so typing lags by your tailnet’s round trip (tens of milliseconds at home, more on a phone’s network).'
+   :'<b>On this computer.</b> It is this computer’s own page, so typing is as quick as for a thread here.'
+  if(!host){addr=TAIL+':5173'}
+  fold='Browsed localhost:5173 · 4 steps'
+ }
+ if(st==='drop'){
+  off=host; if(!host){addr=TAIL+':5173'}
+  strip=host?'Reconnecting to forge. The page stays open there, and the agent keeps browsing.':'While this computer was away, the forge thread couldn’t use the browser.'; dot='w'
+  fold=host?'Browsing localhost:5173 · typed in the page':'Browsing stopped · the browser is on Zach’s laptop, which isn’t connected'; foldBad=!host
+  say=host?'<b>On forge.</b> The agent carries on while the laptop sleeps; the pane greys and shows the last picture until it’s back. A phone connected to forge has no Browser pane, but the agent doesn’t need one.'
+   :'<b>On this computer.</b> The agent’s next browser call fails while the laptop is away, and the thread says so in its one line. A phone doesn’t carry the browser. A forge thread can browse only while some desktop is connected to forge.'
+ }
+ if(st==='back'){
+  strip='Agent is browsing · typed in the page'; dot='a'; if(!host){addr=TAIL+':5173'}
+  fold=host?'Browsing localhost:5173 · 11 steps':'Browsing '+TAIL+':5173 · clicked in the page'
+  say=host?'<b>On forge.</b> The pane shows the page as it is now. Steps it took while you were away are in the thread.'
+   :'<b>On this computer.</b> The agent has to try again; its call that failed while you were away doesn’t come back on its own.'
+ }
+ if(st==='none'){
+  if(host){pane='none';strip='';fold='Browsing stopped · forge has no browser';foldBad=true
+   say='<b>On forge.</b> forge’s Sotto looks for Chrome, Chromium or Edge in the usual places. With none, the pane says so and the agent’s browser tools say the same thing. In this mock-up you install one yourself; Sotto downloading one would add a host it contacts, which is an ADR and a README change.'}
+  else{addr=TAIL+':5173';strip='Agent is browsing · clicked in the page';dot='a'
+   say='<b>Doesn’t happen on this computer.</b> The page uses this computer’s Sotto browser, so forge needs no browser of its own.'}
+ }
+ if(st==='old'){
+  if(host){pane='old';strip='';fold='';say='<b>On forge.</b> The forge thread gets no browser tools until its Sotto is updated, and the pane says how.'}
+  else{pane='old2';strip='';fold='';say='<b>On this computer.</b> forge’s Sotto has to know to send the browser calls here, so this needs an update on forge too.'}
+ }
+ const groups=[
+  ['Where the browser runs',[['host','On forge, in forge’s Chromium'],['desk','On this computer, in Sotto’s browser']],'route'],
+  ['What happens',Object.entries(states),'state'],
+  ['The pane’s row (on forge only)',[['named','A. Says “on forge”'],['plain','B. Looks as it does here']],'look'],
+  ['Theme',[['dark','Dark'],['light','Light']],'theme'],
+ ]
+ document.documentElement.dataset.theme=s.theme
+ const row=`<div class="trow"><button class="act" aria-label="Back">${I(ic.back)}</button><button class="act" aria-label="Forward" aria-disabled="true">${I(ic.fwd)}</button><button class="act" aria-label="Reload">${I(ic.reload)}</button>
+  <div class="addr">${addr} <i>${title}</i></div>${named?`<span class="machine" title="This page runs on forge">${I(ic.server,13)}on forge</span>`:''}
+  <button class="act" aria-label="Point at something">${I(ic.point)}</button><button class="act" aria-label="Screenshot to message">${I(ic.shot)}</button><button class="act" aria-label="More">${I(ic.more)}</button></div>`
+ let tools
+ if(pane==='none') tools=`<div class="trow"><div class="addr"><i>Enter an address</i></div></div><div class="empty"><strong>forge has no browser for this thread.</strong><p style="margin:0">Install Chromium or Google Chrome on forge, then press Check again. On forge’s Omarchy: <code>sudo pacman -S chromium</code></p><button class="btn">Check again</button></div>`
+ else if(pane==='old') tools=`<div class="empty"><strong>Browser is on the host machine.</strong>Update Sotto on forge in Settings &gt; Hosts &amp; phones to use it here.</div>`
+ else if(pane==='old2') tools=`<div class="empty"><strong>Browser is on the host machine.</strong>Update Sotto on forge in Settings &gt; Hosts &amp; phones so its threads can use this computer’s browser.</div>`
+ else tools=`${row}<div class="view" data-off="${off}"><div class="site"><h3>Sign in</h3><p>Sotto web, local build</p><div class="f">${st==='typing'||st==='back'||st==='drop'?'zach@example.com':'Email'}</div><br><div class="f">Password</div><br><span class="b ${hit&&(st==='working')?'hit':''}">Sign in</span></div></div>${strip?`<div class="strip" role="status"><i class="dot ${dot==='w'?'w':''}"></i><span>${strip}</span>${dot==='a'?'<button>Pause</button>':''}</div>`:''}`
+ document.getElementById('app').innerHTML=`<h1>Sotto’s browser for a thread on forge</h1>
+ <p class="lede">A forge thread seen from the laptop, with Tools &gt; Browser open beside it (#212). Press through what happens on each route. Nothing here opens a page.</p>
+ ${groups.map(([t,opts,key])=>`<div class="group"><b>${t}</b><div class="row">${opts.map(([v,l])=>`<button class="chip" data-k="${key}" data-v="${v}" aria-pressed="${s[key]===v}" ${key==='look'&&!host?'disabled':''}>${l}</button>`).join('')}</div></div>`).join('')}
+ <div class="win">
+  <div class="thread"><div class="head"><h2>Check the sign-in page</h2><span class="crumb">Sotto on forge</span></div>
+   <div class="body"><b>I started the dev server and I’m checking Sign in.</b>${fold?`<span class="fold ${foldBad?'bad':''}">${fold}</span>`:''}</div><div class="compose">Reply…</div></div>
+  <div class="tools">${tools}</div>
+ </div><p class="say">${say}</p>
+ <table class="cmp"><tr><th></th><th>On forge, in forge’s Chromium</th><th>On this computer, in Sotto’s browser</th></tr>
+ <tr><th>localhost</th><td>forge’s own; a dev server the agent starts just works</td><td>The laptop’s; the agent uses forge’s tailnet address and its server must listen beyond localhost</td></tr>
+ <tr><th>Laptop asleep</th><td>The agent keeps browsing</td><td>The agent can’t browse</td></tr>
+ <tr><th>Needs on forge</th><td>Chrome or Chromium installed; nothing native added to Sotto’s host archive (it drives the browser over Chrome’s own debugging connection)</td><td>Nothing</td></tr>
+ <tr><th>New protocol</th><td>Page pictures and your input over forge’s connection</td><td>Browser calls relayed to the desktop, like Tell Watcher and delegation</td></tr>
+ <tr><th>Typing in the page</th><td>Lags by the round trip</td><td>As here</td></tr>
+ <tr><th>Asking first</th><td colspan="2">Unchanged on both (ADR-0029): the thread uses the browser without asking unless you turn on Ask before this thread uses the browser</td></tr></table>`
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b||b.disabled)return;s[b.dataset.k]=b.dataset.v;view()})
+view()
+</script></body></html>
