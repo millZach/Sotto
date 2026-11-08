@@ -193,7 +193,7 @@ private struct AgentsSheet: View {
                             if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
                             switch row.kind {
                             case .thread:
-                                AgentsThreadRow(row: row) {
+                                AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
                                     if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
                                 }
                             case .agent:
@@ -290,6 +290,8 @@ private struct RowBody: View {
     let row: AgentsRow
     let tag: String
     let mark: AnyView
+    /// Whether Watcher watches the sheet's own thread, which reaches a thread below through the one that delegated it.
+    var sheetWatched = false
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         HStack(alignment: .top, spacing: Space.s3) {
@@ -313,7 +315,10 @@ private struct RowBody: View {
                     }
                 }
                 if let by = row.delegatedBy {
-                    Text("Delegated by \(by)").font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                    (row.watchedThrough(sheetWatched: sheetWatched)
+                        ? Text("Delegated by \(by) · Watched by Watcher through it", comment: "A delegated thread's line on the Agents sheet while Watcher watches the thread this sheet belongs to, which reaches it through the thread named; %@ is that thread's title.")
+                        : Text("Delegated by \(by)"))
+                        .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 if let preview = row.preview {
                     Text(preview).font(.sotto(.small)).foregroundStyle(Palette.ink.opacity(0.86)).lineLimit(2)
@@ -355,13 +360,14 @@ private struct RowBody: View {
 /// the thread, where the request is answered as any other.
 private struct AgentsThreadRow: View {
     let row: AgentsRow
+    let sheetWatched: Bool
     let open: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
                 HStack(alignment: .center, spacing: Space.s2) {
                     RowBody(row: row, tag: String(localized: "Thread", comment: "The tag on a row of the Agents sheet that is a delegated thread."), mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
-                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))))
+                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))), sheetWatched: sheetWatched)
                     Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
                         .accessibilityHidden(true)
                 }

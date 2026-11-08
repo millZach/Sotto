@@ -477,6 +477,17 @@ describe('watching a thread', () => {
       await waitFor(() => expect(by).toHaveTextContent('Delegated by Footer links·Watched by Watcher through it'))
       expect(within(by).getByRole('button', { name: 'Open Footer links, the thread that delegated to this one' })).toBeInTheDocument()
       cleanup()
+      // Two levels down, a thread Weekly note delegated is watched through it while Footer links, the top, is watched.
+      const below = delegated()
+      below.host.threads.find(item => item.id === 'notes-cleanup')!.delegatedBy = 'weekly-note'
+      below.activeThreadId = 'notes-cleanup'
+      mockApp('threads', true, true)
+      mockAgents(below)
+      render(<WatcherRoomProvider bridge={fakeBridge(roomState()).bridge}><ThreadsView now={NOW} /></WatcherRoomProvider>)
+      const grandchild = await screen.findByRole('region', { name: 'Notes cleanup' })
+      await waitFor(() => expect(grandchild.querySelector('.delegated-by')).toHaveTextContent('Delegated by Weekly note·Watched by Watcher through it'))
+      expect(within(grandchild).queryByRole('button', { name: 'Watch Notes cleanup' })).toBeNull()
+      cleanup()
       // Its row's menu, and its tile's on the rail, offer no Watch either: they share one offer.
       const child = delegated().host.threads.find(item => item.id === 'weekly-note')!
       const panes = { currentThreadId: null } as unknown as Parameters<typeof threadOffers>[1]

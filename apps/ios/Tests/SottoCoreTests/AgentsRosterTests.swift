@@ -79,6 +79,11 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(byID["thread:review"]?.meta(clock: { _ in "10:51" }), "Codex · Sotto · Laptop · Code review · GPT-6.1 Sol · 10:51")
         XCTAssertEqual(byID["thread:review"]?.spokenLabel, "review title, delegated thread on Codex, Needs your approval. Opens it to answer")
         XCTAssertEqual(byID["thread:check"]?.delegatedBy, "review title")
+        // Watcher watches the sheet's own thread and reaches the thread below through the one that delegated it (#1217);
+        // a row the sheet's own thread delegated has no such line.
+        XCTAssertEqual(byID["thread:check"]?.watchedThrough(sheetWatched: true), true)
+        XCTAssertEqual(byID["thread:check"]?.watchedThrough(sheetWatched: false), false)
+        XCTAssertEqual(byID["thread:review"]?.watchedThrough(sheetWatched: true), false)
         XCTAssertEqual(byID["thread:check"]?.status, "Stopped")
         XCTAssertEqual(byID["thread:quick"]?.status, "Working")
         XCTAssertEqual(byID["thread:docs"]?.status, "Just finished")

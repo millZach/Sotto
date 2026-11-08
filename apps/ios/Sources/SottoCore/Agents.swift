@@ -225,6 +225,10 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     /// are read again.
     public var detailsKey: String? = nil
 
+    /// Whether the row's "Delegated by" line adds that Watcher watches it through that thread (#1217, Zach's pick B). Only
+    /// a row below a thread the sheet's own thread delegated to has the line, and Watcher, which talks only to the thread
+    /// at the top, reaches it through them while it watches the sheet's own thread.
+    public func watchedThrough(sheetWatched: Bool) -> Bool { delegatedBy != nil && sheetWatched }
     /// Provider · project · computer · kind of work · model · start time, each only where it is known.
     public func meta(clock: (Date) -> String) -> String {
         (facts + (startedAt.map { [clock($0)] } ?? [])).joined(separator: " · ")
