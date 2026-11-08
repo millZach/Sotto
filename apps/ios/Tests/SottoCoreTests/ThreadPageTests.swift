@@ -80,6 +80,19 @@ final class ThreadPageTests: XCTestCase {
                        ["step-old", "step-hidden", "message-ask", "step-placed", "step-now", "message-reply"])
     }
 
+    func testAStepSitsUnderTheMessageItNamesWhateverItsSequence() throws {
+        // The step cap gave the first reply's steps sequences past the second reply's (#2328, #2330). Read by sequence alone they
+        // all sat after the last reply, leaving the first reply bare.
+        let messages = [try message("ask", "user", at: "00:00"), try message("first", "assistant", at: "01:00"),
+                        try message("second", "assistant", at: "03:00")]
+        let steps = [try step("late-a", 10, at: "01:10", after: "first"), try step("late-b", 11, at: "01:20", after: "first"),
+                     try step("now", 3, at: "03:10", after: "second"), try step("untimed", 4)]
+        XCTAssertEqual(order(messages, steps),
+                       ["message-ask", "message-first", "step-late-a", "step-late-b", "message-second", "step-now", "step-untimed"])
+        XCTAssertEqual(order(messages, steps, earlier: true),
+                       ["message-ask", "message-first", "step-late-a", "step-late-b", "message-second", "step-now", "step-untimed"])
+    }
+
     func testNoStepsAndNoMessages() throws {
         XCTAssertEqual(order([], []), [])
         XCTAssertEqual(order([try message("ask", "user")], []), ["message-ask"])
