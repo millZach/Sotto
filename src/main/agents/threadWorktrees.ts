@@ -461,6 +461,67 @@ function changedDuringWalk(): Error {
   return new Error('The files changed while Sotto was checking them. Nothing was removed. Choose Remove worktree again to review them.')
 }
 
+/** A FETCH_HEAD line for a commit fetched by its hash, `<commit>\t[not-for-merge]\t'<commit>' of <source>`. */
+const FETCHED_BY_HASH = /^([0-9a-f]{40}(?:[0-9a-f]{24})?)\t(?:not-for-merge)?\t'([0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?)' of (.*)$/u
+/** Past this many commits fetched by hash, FETCH_HEAD is left out, so the command that counts stays short and the count errs high. */
+const FETCHED_BY_HASH_MAX = 64
+
+/** A URL without its user and password, as Git's `transport_anonymize_url` writes it. */
+function anonymizedUrl(url: string): string {
+  const at = url.indexOf('@'), colon = url.indexOf(':'), slash = url.indexOf('/'), scheme = url.indexOf('://')
+  // A local path keeps its `@`: one with no colon, with a slash before its first colon, or with a drive letter.
+  if (at < 0 || colon < 0 || (slash >= 0 && slash < colon) || /^[A-Za-z]:/u.test(url)) return url
+  const rest = url.slice(at + 1)
+  // `user@host:path`, where the part after the `@` still has its colon.
+  if (scheme < 0) return rest.includes(':') ? rest : url
+  // `scheme://user@host/path`, and not an `@` in the path.
+  const path = url.indexOf('/', scheme + 3)
+  return !/^[A-Za-z0-9+.-]*$/u.test(url.slice(0, scheme)) || (path >= 0 && path < at) ? url : url.slice(0, scheme + 3) + rest
+}
+
+/**
+ * A remote's URL as Git writes it for the source of a fetch in FETCH_HEAD: without a user or password, without
+ * trailing slashes or a `.git` ending, and with a line break as `\n`. Any way this differs from Git's own only keeps
+ * a fetched commit counted.
+ */
+export function fetchHeadSource(url: string): string {
+  const anonymized = anonymizedUrl(url)
+  let end = anonymized.length
+  while (end > 0 && anonymized[end - 1] === '/') end--
+  // Git's test is on the index of the last character kept, so `a.git` keeps its ending.
+  if (end > 5 && anonymized.slice(end - 4, end) === '.git') end -= 4
+  return anonymized.slice(0, end).replaceAll('\n', '\\n')
+}
+
+/**
+ * How many commits a repository's refs and HEAD reach that no remote has, `run` being Git in that repository and
+ * `read` a file's text, empty when it cannot be read. A remote-tracking ref has a remote's commits, and so does
+ * FETCH_HEAD for a commit fetched by its hash from one of the repository's own remotes: `git submodule update`
+ * fetches a recorded commit no remote branch has that way, and leaves no remote-tracking ref for it (#687). A
+ * commit fetched from anywhere else, `.` included, as `git pull . <branch>` does, stays counted.
+ */
+async function unpublishedCommitCount(run: (args: string[]) => Promise<string>, read: (path: string) => Promise<string>): Promise<number> {
+  const count = async (published: readonly string[]) => Number((await run(['rev-list', '--count', ...published.length ? ['--ignore-missing'] : [], '--all', '--not', '--remotes', ...published])).trim())
+  const unpublished = await count([])
+  if (!unpublished) return 0
+  const lines = (await read((await run(['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim())).split('\n')
+  const fetched = lines.flatMap(line => {
+    const match = FETCHED_BY_HASH.exec(line)
+    return match && match[1] === match[2]!.toLowerCase() ? [{ commit: match[1]!, source: match[3]! }] : []
+  })
+  if (!fetched.length || fetched.length > FETCHED_BY_HASH_MAX) return unpublished
+  // `remote -v` gives each remote's fetch URL as Git fetches from it, with any `insteadOf` applied.
+  const remotes = new Set<string>()
+  for (const line of (await run(['remote', '-v'])).split(/\r?\n/u)) {
+    const url = /^[^\t]*\t(.*) \(fetch\)(?: \[[^\]]*\])?$/u.exec(line)?.[1]
+    const source = url === undefined ? undefined : fetchHeadSource(url)
+    // A remote at `.` is the repository itself, which has nothing a remote has.
+    if (source !== undefined && source !== '.') remotes.add(source)
+  }
+  const published = [...new Set(fetched.filter(({ source }) => remotes.has(source)).map(({ commit }) => commit))]
+  return published.length ? count(published) : unpublished
+}
+
 /**
  * A long walk (dependency folders included) otherwise awaits one fs promise after another with
  * nothing in between, and Electron's main thread also forwards keyboard input to the window: a walk
@@ -1132,6 +1193,8 @@ export class ThreadWorktrees {
       if (pathKey(await waited(realpath(cwd))) !== pathKey(join(canonicalRoot, relative(root, cwd)))) throw changedDuringWalk()
       return waited(this.git(cwd, args))
     }
+    /** A file's text, or nothing when it cannot be read: FETCH_HEAD is read only to lower a history count. */
+    const readText = (file: string): Promise<string> => waited(readFile(file, 'utf8')).catch(() => '')
     /** A folder's .git, and whether its HEAD and objects make it a candidate bare repository. */
     const repositoryMarkers = async (full: string, children: Listing) => {
       const marker = (name: string) => children.at === waits ? lstatInListing(full, children.entries, name, fresh) : present(join(full, name))
@@ -1177,7 +1240,7 @@ export class ThreadWorktrees {
             // A submodule's .git file points into metadata removed with the parent worktree.
             // Its history is at risk even when its checkout matches the parent's recorded commit.
             const kind = !submodule && gitMarker?.isFile() ? 'worktree' : 'repository'
-            const history = kind === 'repository' ? { unpushedCommitCount: Number((await git(full, ['rev-list', '--count', '--all', '--not', '--remotes'])).trim()) } : {}
+            const history = kind === 'repository' ? { unpushedCommitCount: await unpublishedCommitCount(args => git(full, args), readText) } : {}
             if (submodule) {
               const directory = gitMarker!.isFile() ? resolve(full, (await waited(readFile(join(full, '.git'), 'utf8'))).trim().replace(/^gitdir: /u, '')) : join(full, '.git')
               inspectedSubmoduleDirectories.add(pathKey(await waited(realpath(directory))))
@@ -1257,7 +1320,7 @@ export class ThreadWorktrees {
       if (entryKind(await present(join(directory, 'HEAD'))) === 'file') {
         const counted = inspectedSubmoduleDirectories.has(pathKey(await waited(realpath(directory))))
         // Recursive deinit keeps core.worktree pointing at a deleted checkout, so it is overridden.
-        const own = counted ? 0 : Number((await git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
+        const own = counted ? 0 : await unpublishedCommitCount(args => git(directory, ['--git-dir', directory, '--work-tree', directory, ...args]), readText)
         return own + await retainedHistory(join(directory, 'modules'))
       }
       // A module name with slashes is a folder of folders before its metadata.
@@ -1292,7 +1355,7 @@ export class ThreadWorktrees {
           if (!inspectedSubmoduleDirectories.has(pathKey(real))) {
             // Recursive deinit keeps core.worktree pointing at a deleted checkout. History reads
             // need no checkout, so override that path with the existing metadata directory.
-            const unpushedCommitCount = Number((await this.git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
+            const unpushedCommitCount = await unpublishedCommitCount(args => this.git(directory, ['--git-dir', directory, '--work-tree', directory, ...args]), readText)
             if (unpushedCommitCount) {
               // Read the checkout path from the parent's .gitmodules when it is still recorded;
               // orphaned or recursive metadata retains its own visible path.

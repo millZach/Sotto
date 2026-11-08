@@ -5,9 +5,11 @@ import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
+import { fetchHeadSource, runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 
 import { fixture, submoduleHistoryFixture } from '../fixtures/threadWorktreeFixture'
+
+const identity = ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid']
 
 describe("independent working-copy allocation", () => {
   it.each(['branch', 'tag', 'no-remote'] as const)('requires acknowledgement of clean submodule history outside HEAD (%s)', async reference => {
@@ -130,6 +132,66 @@ describe("independent working-copy allocation", () => {
     expect((await f.service.reclaim(a, { withUncommittedChanges: true, confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories })).reclaimedAt).toBeTruthy()
     await expect(lstat(moduleDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   }, 60_000)
+  /**
+   * A worktree whose submodule is checked out at a commit its origin keeps under a ref that is not a branch, as
+   * GitHub keeps a pull request's head. A clone does not fetch it, so `git submodule update` fetches it by its hash,
+   * which leaves it in FETCH_HEAD and on no remote-tracking ref (#687).
+   */
+  async function fetchedByHashFixture() {
+    const f = await fixture()
+    const origin = join(f.root, 'module-origin'); await mkdir(origin)
+    await writeFile(join(origin, 'module.txt'), 'published baseline')
+    await initializeGitRepository(origin, { files: {}, message: 'Module baseline', identity: { name: 'Fixture', email: 'fixture@example.invalid' } })
+    const tree = (await git(origin, ['rev-parse', 'HEAD^{tree}'])).trim()
+    const published = (await git(origin, [...identity, 'commit-tree', tree, '-p', 'HEAD', '-m', 'Published on no branch'])).trim()
+    await git(origin, ['update-ref', 'refs/pull/1/head', published])
+    await git(f.project, ['-c', 'protocol.file.allow=always', 'submodule', 'add', origin, 'module'])
+    await git(join(f.project, 'module'), ['-c', 'protocol.file.allow=always', 'fetch', 'origin', published])
+    await git(join(f.project, 'module'), ['checkout', '--detach', published])
+    await git(f.project, ['add', 'module'])
+    await git(f.project, [...identity, 'commit', '-m', 'Add module at a commit on no branch'])
+    const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await git(a.path!, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init'])
+    const module = join(a.path!, 'module')
+    expect((await git(module, ['rev-parse', 'HEAD'])).trim()).toBe(published)
+    // What the count read before: the commit on no remote-tracking ref.
+    expect(await git(module, ['rev-list', '--count', '--all', '--not', '--remotes'])).toBe('1\n')
+    expect(await readFile((await git(module, ['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim(), 'utf8')).toContain(`'${published}' of `)
+    return { ...f, a, origin, module, published }
+  }
+  it.each(['checked-out', 'deinitialized'] as const)('takes a submodule commit fetched by its hash from its remote as on that remote (%s)', async state => {
+    const f = await fetchedByHashFixture()
+    if (state === 'deinitialized') await git(f.a.path!, ['submodule', 'deinit', '--', 'module'])
+    const preview = await f.service.reclaimFacts(f.a)
+    expect(preview.repositories).toEqual([])
+    expect(preview.ignored).toEqual([])
+    expect((await f.service.reclaim(f.a, { automatic: true })).reclaimedAt).toBeTruthy()
+  }, 60_000)
+  it.each(['built on it', 'fetched from itself', 'fetched from a folder that is not its remote'] as const)('still counts a local commit beside one fetched by its hash (%s)', async source => {
+    const f = await fetchedByHashFixture()
+    let local: string
+    if (source === 'fetched from a folder that is not its remote') {
+      const elsewhere = join(f.root, 'elsewhere')
+      await git(f.root, ['-c', 'protocol.file.allow=always', 'clone', f.origin, elsewhere])
+      await git(elsewhere, ['-c', 'protocol.file.allow=always', 'fetch', 'origin', f.published])
+      local = (await git(elsewhere, [...identity, 'commit-tree', `${f.published}^{tree}`, '-p', f.published, '-m', 'Work kept in another folder'])).trim()
+      await git(elsewhere, ['update-ref', 'refs/heads/elsewhere', local])
+      await git(f.module, ['-c', 'protocol.file.allow=always', 'fetch', '--append', elsewhere, local])
+    } else {
+      local = (await git(f.module, [...identity, 'commit-tree', `${f.published}^{tree}`, '-p', f.published, '-m', 'Local module work'])).trim()
+      // `git pull . <branch>` writes the same kind of record, from the repository itself.
+      if (source === 'fetched from itself') await git(f.module, ['-c', 'protocol.file.allow=always', 'fetch', '--append', '.', local])
+    }
+    await git(f.module, ['checkout', '--detach', local])
+    const fetchHead = await readFile((await git(f.module, ['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim(), 'utf8')
+    expect(fetchHead).toContain(`'${f.published}' of `)
+    if (source !== 'built on it') expect(fetchHead).toContain(`'${local}' of `)
+    const preview = await f.service.reclaimFacts(f.a)
+    // The fetched commit is not counted; the local one on top of it is.
+    expect(preview.repositories).toEqual([{ path: 'module/', changeCount: 0, kind: 'repository', unpushedCommitCount: 1 }])
+    await expect(f.service.reclaim(f.a, { automatic: true })).rejects.toThrow('a rule leaves it alone')
+    expect(await git(f.module, ['cat-file', '-t', local])).toBe('commit\n')
+  }, 60_000)
   it.each(['clean', 'recursive', 'dirty-hidden'])('reclaims initialized submodules safely (%s)', async mode => {
     const recursive = mode === 'recursive'
     const f = await fixture()
@@ -160,4 +222,22 @@ describe("independent working-copy allocation", () => {
     expect((await f.service.reclaimFacts(a)).repositories).toEqual([])
     expect((await f.service.reclaim(a, { automatic: true })).reclaimedAt).toBeTruthy()
   }, 60_000)
+})
+
+// What Git 2.55 wrote in FETCH_HEAD for a fetch from each URL, checked with real fetches over a stand-in ssh
+// (November 7, 2026). The https forms follow the same rule as ssh's in Git's `transport_anonymize_url`.
+describe('a remote URL as FETCH_HEAD names it', () => {
+  it.each([
+    ['git@github.com:millZach/Sotto.git', 'github.com:millZach/Sotto'],
+    ['ssh://git@example.invalid/srv/module.git/', 'ssh://example.invalid/srv/module'],
+    ['ssh://user:secret@example.invalid/srv/module.git', 'ssh://example.invalid/srv/module'],
+    ['https://user:token@github.com/millZach/Sotto.git', 'https://github.com/millZach/Sotto'],
+    ['ssh://example.invalid/srv/a@b/module.git', 'ssh://example.invalid/srv/a@b/module'],
+    ['/srv/a@b/module.git/', '/srv/a@b/module'],
+    ['C:/Users/a@b/module.git', 'C:/Users/a@b/module'],
+    ['../origin/.git', '../origin/'],
+    ['a.git', 'a.git'],
+  ])('%s', (url, source) => {
+    expect(fetchHeadSource(url)).toBe(source)
+  })
 })

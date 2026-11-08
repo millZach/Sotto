@@ -2,6 +2,8 @@
 
 Accepted September 22, 2026.
 
+Amended November 7, 2026: a commit a nested repository or submodule fetched by its hash from one of its own remotes counts as on that remote, so a clean submodule `git submodule update` checked out that way needs no tick. See the correction at the end.
+
 Amended November 3, 2026: the cleanup rules, Clear now and Clear settled threads after also remove ignored build output that the repository marks with the `sotto-build-output` attribute or that its tool tags with a `CACHEDIR.TAG` (Drake chose both). See the correction at the end.
 
 Amended November 2, 2026: the cleanup rules, Clear now and Clear settled threads after also reclaim a clean worktree on a detached HEAD when a branch or remote branch has its commit, and the next send puts the folder back on that commit. See the correction at the end.
@@ -152,3 +154,9 @@ Drake chose the first two ways together, without waiting for Zach. A rule, Clear
 - **A folder its tool tags as a cache.** A folder holding a `CACHEDIR.TAG` file that begins with the standard's signature, `Signature: 8a477f597d28d172789f06886806bc55`, as SwiftPM's `.build/` and Cargo's `target/` do, counts in any repository, including one that marks nothing. A tag that is missing, is not a plain file, cannot be read or does not begin with those exact bytes counts for nothing.
 
 Any other ignored file still keeps the folder, as does a nested repository or worktree inside a marked folder. Both checks run again in the registry lane just before Git's lock is taken, so a folder that lost its mark or its tag before then stays. When Git cannot answer, the folder stays too. A committed `.gitattributes` is the repository's word rather than the user's: a cloned repository can let a rule delete what the user put in a folder it marks. Drake accepted that, since the rules are off until the user turns one on and a folder with uncommitted changes still stays. **Remove worktree**, the question Settle asks and **Delete thread…** are unchanged: they still list build output for the user to tick.
+
+## Correction, November 7, 2026: a submodule commit fetched by its hash (#687)
+
+The list counts a nested repository's or submodule's commits that no remote-tracking ref has. When a superproject records a submodule commit that no branch of the submodule's remote has, such as a pull request's head, a clone does not fetch it, so `git submodule update` fetches it by its hash. That fetch writes the commit to `FETCH_HEAD` and to no remote-tracking ref, so a clean submodule checked out that way was listed with one commit not on any remote, and removal asked for a tick it did not need. Nothing was lost; the question was wrong.
+
+A commit `FETCH_HEAD` records as fetched by its hash from one of the repository's own remotes now counts as on that remote, as a remote-tracking ref's commits do, and so does its history. The source Git writes there is compared with each remote's fetch URL in the same form, without a user or password and without a trailing `.git`. Checking the remote itself, with `git ls-remote` or a fetch, was the other way; it would add a network call, a wait and a possible sign-in to the removal question, so the question stays local. Nothing else is taken off the count: a commit fetched from the repository itself (`git pull . <branch>` writes the same kind of record) or from a folder or URL that is not one of its remotes still counts, and so does a commit made on top of a fetched one. `FETCH_HEAD` holds only the last fetch, so a later fetch in the submodule brings the row back until its branches have the commit. Like a remote-tracking ref, the record says the remote had the commit when it was fetched, not that it still does.
