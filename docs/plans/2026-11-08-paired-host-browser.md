@@ -10,7 +10,7 @@ Each part is its own pull request off `main`, "Part of #212", and the last close
 - The pane's row says "on forge" (A).
 - An Owl feature.
 - Asking first follows this computer's **Let agents use the browser without asking**; the host keeps the last value a desktop sent.
-- Only a desktop that may answer answers a waiting request. Any connected desktop can drive the page.
+- Only a desktop that may answer answers a waiting request. Any connected desktop can drive the page and press Share with agent.
 - The browser player floats a host's page too.
 - **Open in system browser** stays, with `localhost` swapped for the host's address.
 - Later, in their own pull requests: **Point at something** and **Screenshot to message** on a host's page, and the test iPhone on the host.
@@ -36,7 +36,7 @@ Each part is its own pull request off `main`, "Part of #212", and the last close
 **4. The protocol.** A `browser` host feature, offered to desktops only and only with the Owl answer on:
 - Requests: list pages, open, navigate, back, forward, reload, close, input, watch a page (with a size) and stop watching, share, answer, ask before this thread uses the browser, the setting.
 - Pushes: pages, tasks, pictures (only to a desktop watching that page, within the frame limit, dropped when behind).
-- Answers and **Share with agent** need `desktop && mayAnswer`.
+- Answers need `desktop && mayAnswer`; driving, sharing and the rest need a connected desktop.
 - The desktop client, router and preload bridge route a remote thread's browser channels to its host.
 - `tests/integration/socketHost.test.ts` covers a picture through the socket; `docs/host-protocol.md`.
 
