@@ -119,7 +119,7 @@ import UIKit
     /// A running thread: the sidebar beside it unfolded, its steps, its menu, and the thread with the sidebar hidden.
     func testThreadReading() {
         for light in [false, true] {
-            launch(["--ui-open-thread", "iphone"], light: light)
+            launch(["--ui-open-thread", "iphone", "--ui-can-stop"], light: light)
             _ = byID("thread-reply").waitForExistence(timeout: 20)
             sleep(2)
             shot("thread", light: light)
@@ -166,11 +166,16 @@ import UIKit
         _ = byID("thread-reply").waitForExistence(timeout: 20)
         sleep(4)
         shot("pictures")
+        // The fixture's pictures are on its later turns, not always its last screen.
+        scrollThread(up: true)
+        sleep(4)
+        shot("pictures-earlier")
     }
 
-    /// The reply box with the keyboard up.
+    /// The reply box with the keyboard up, on a thread whose computer changes its settings and takes a reply, so the box
+    /// shows its chips and a lit Send as a real thread's does. This fixture thread is short, so the page under it is too.
     func testReplyKeyboard() {
-        launch(["--ui-open-thread", "shortcuts", "--ui-can-stop"])
+        launch(["--ui-open-thread", "shortcuts", "--ui-thread-settings", "--ui-send-order", "message-first"])
         let reply = byID("thread-reply")
         _ = reply.waitForExistence(timeout: 20)
         shot("reply-at-rest")
@@ -248,7 +253,7 @@ import UIKit
             if tapIfThere(app.buttons["tab-computers"]) { shot("computers", light: light) }
             if tapIfThere(app.buttons["tab-settings"]) {
                 shot("settings", light: light)
-                if !light { scrollPage(by: -420); shot("settings-scrolled") }
+                if !light { scrollPage(by: -420); shot("settings-scrolled"); scrollPage(by: -420); shot("settings-further") }
             }
             if !light, tapIfThere(app.buttons["tab-threads"]), tapIfThere(app.buttons["new-thread"]) { shot("new-thread") }
             app.terminate()

@@ -27,7 +27,7 @@ def collect(posture: str) -> None:
         at = float(at)
         # The test holds still for five seconds after a mark. A frame is named for when its screenshot began, and one can
         # take a second or two, so keep one that began early enough to end before the page moves on.
-        near = [(abs(t - (at + 1.5)), f) for t, f in frames if at + 0.5 <= t <= at + 3.0]
+        near = [(abs(t - (at + 1.5)), f) for t, f in frames if at + 0.5 <= t <= at + 4.8]
         if not near:
             print(f'{name}: no frame')
             continue
