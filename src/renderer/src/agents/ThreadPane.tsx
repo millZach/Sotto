@@ -501,7 +501,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
-        {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
+        {thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* The Council, in this pane's drawer, for a thread on this computer (ADR-0177; Owl only). */}
         {terminal && !thread.remoteHost ? <PaneCouncilToggle threadId={thread.id} /> : null}
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}

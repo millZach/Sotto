@@ -419,6 +419,45 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(record).not.toContain(input.firstPrompt); expect(record).toContain('remoteOrigin')
 })
 
+it('talks only to parent threads on a paired host, and the host that owns them holds an older desktop to it too (#1217)', async () => {
+  const f = await master(), parent = await f.call('start_thread', f.start())
+  if (parent.status !== 'ok' || !('target' in parent)) throw new Error('start-refused')
+  // A thread the user made on the host, which the host then links to the parent as delegation does: only it holds the link for sure.
+  const child = { hostId: f.pairing.hostId, threadId: randomUUID() }
+  await f.socket.command({ type: 'create-thread', threadId: child.threadId, projectId: f.project.id, modelId: f.model.id, title: 'Synthetic delegated worker',
+    runtimeMode: 'approval-required', workingCopy: 'shared' })
+  const host = remote.host.service as unknown as { control: { dependencies: { host: { setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void> } } } }
+  await host.control.dependencies.host.setDelegatedBy(child.threadId, parent.target.threadId)
+  await expect.poll(() => f.router.watcherHosts().snapshot(f.pairing.hostId)?.threads.find(item => item.id === child.threadId)?.delegatedBy).toBe(parent.target.threadId)
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  const send = () => ({ requestId: f.requestId, retryKey: randomUUID(), target: child, text: 'Synthetic brief for the child', delivery: 'now' })
+  // This desktop reads the link in the host's threads and refuses before the wire, naming the thread to direct.
+  expect(await f.call('send_to_thread', send())).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD',
+    message: expect.stringContaining(`Direct that thread instead: “Synthetic remote worker”, threadId ${parent.target.threadId}, hostId ${f.pairing.hostId}.`) })
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: child })).toMatchObject({ code: 'RESERVED_THREAD' })
+  expect(await f.watcher.watchThread({ target: child })).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  expect(writes).not.toHaveBeenCalled()
+  // The roster marks it, from this computer's own read of the host's threads.
+  const roster = await f.call('list_threads', {})
+  if (roster.status !== 'ok') throw new Error('roster-refused')
+  expect(roster.rows.find(row => row.target.threadId === child.threadId)).toMatchObject({ delegatedBy: { hostId: f.pairing.hostId, threadId: parent.target.threadId, title: 'Synthetic remote worker' } })
+  expect(roster.rows.find(row => row.target.threadId === parent.target.threadId)).not.toHaveProperty('delegatedBy')
+  // An older desktop asks nothing of the link: the owning host refuses its send in the same words, before anything goes,
+  // and does not take its Watch.
+  vi.spyOn(f.watcher as unknown as { checkTargetNotDelegated(): void }, 'checkTargetNotDelegated').mockImplementation(() => undefined)
+  vi.spyOn(f.watcher as unknown as { checkNotDelegated(): void }, 'checkNotDelegated').mockImplementation(() => undefined)
+  expect(await f.call('send_to_thread', send())).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD', message: expect.stringContaining(parent.target.threadId) })
+  expect(writes).toHaveBeenCalledOnce()
+  // That send gave the thread the automatic watch an older build gives, which the host did not take either.
+  expect(f.watcher.state().standingWatches?.some(watch => watch.target.threadId === child.threadId)).toBe(true)
+  expect(await f.watcher.watchThread({ target: child })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  vi.restoreAllMocks()
+  // Back on this build, Watcher's next look lets that watch go quietly; the parent's stays.
+  ;(f.watcher as unknown as { publish(): void }).publish()
+  await expect.poll(() => f.watcher.state().standingWatches?.some(watch => watch.target.threadId === child.threadId), { timeout: 15_000 }).toBe(false)
+  expect(f.watcher.state().standingWatches?.some(watch => watch.target.threadId === parent.target.threadId)).toBe(true)
+})
+
 it('settles several idle threads on a paired host under one request while Watcher works (#1254)', async () => {
   const f = await master(), targets: { hostId: string, threadId: string }[] = []
   for (let index = 0; index < 3; index++) {

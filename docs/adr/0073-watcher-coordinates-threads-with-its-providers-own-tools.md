@@ -986,3 +986,15 @@ October 15's "Unknown is not zero" waits for the provider to say how unknown sub
 - **The refusal names what holds the thread.** `settle_thread`'s refusal names each counted background task and monitor by its label, as well as giving the counts.
 
 Not changed: Auto-settle merged threads and the worktree cleanup rules (ADR-0041) still read the roster as before.
+
+## November 7, 2026: Watcher talks only to parent threads (#1217)
+
+Zach's rule of October 20, 2026: Watcher talks only to parent threads, never to a thread another thread delegated to ([ADR-0081](0081-a-thread-may-delegate-work-to-threads-it-starts.md)). The thread that delegated briefs it, hears its result and decides what comes next; Watcher directs that thread. Zach settled the rest on November 7, 2026, picking variant B of the prototype kept as the tag `prototype/watch-delegated-1217` (`prototypes/watch-delegated-1217/index.html`): no Watch on a delegated thread anywhere, with its "Delegated by" line saying "Watched by Watcher through it" while its parent is watched; Watcher may still read it; a thread Watcher started that later delegates stays Watcher's; and a watch an older build holds on a delegated thread is let go quietly when Watcher starts.
+
+- **Refused before anything goes.** send_to_thread, stop_thread, settle_thread and unsettle_thread on a delegated thread are refused as `RESERVED_THREAD`, before the request, a hold on the thread, the user's agreement or GitHub is read. The refusal names the thread that delegated it by its thread ID, machine and title, and says that reading is still open and that nothing happened.
+- **Never watched.** Main's one watch setter refuses a delegated thread, whoever asks: the user's Watch from the room, a thread's page or the iPhone, and watch_thread. No send to one is admitted to give it an automatic watch, and recovery's upgrade of a request's participants into standing watches skips one. The October 28 look that ends a settled thread's watch also ends a delegated thread's, as Watcher's own unwatch_thread does, says nothing and records no Stop watching of the user's.
+- **Marked in the roster.** list_threads gives a delegated thread's row `delegatedBy`, the thread that delegated it, which the desktop adds from its own read of the owning snapshot. A paired host never sends it.
+- **The owning host enforces it.** A paired host refuses a desktop's send, stop or settle for its own delegated thread at admission, and leaves out of the watches a desktop synchronizes any on a delegated thread, letting go one installed there. No host feature changes.
+- **Reading is open.** read_thread and list_threads read a delegated thread as before. The user's own typing there is untouched: the rule binds Watcher alone.
+
+This amends the October 13 "Standing watching" section, which let the user watch any ordinary thread: a delegated thread is not one Watcher watches.

@@ -71,6 +71,7 @@ import { userWordsOf } from './continueThread'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
 import { WatcherHoldState } from './watcherHold'
+import { delegatedRefusalWords, delegatingThread, type DelegatedAction, type DelegatingThread } from './watcherDelegated'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
@@ -369,6 +370,8 @@ interface CallProgress {
   settleAgreed?: { readonly watcherThreadId: string; readonly target: WatcherThreadTarget }
 }
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
+/** The tools that would direct a thread, each refused for a delegated one (#1217): what its refusal says did not happen. */
+const DELEGATED_ACTIONS: Partial<Record<WatcherToolName, DelegatedAction>> = { send_to_thread: 'send', stop_thread: 'stop', settle_thread: 'settle' }
 const LATE: unique symbol = Symbol('late')
 /**
  * Whether a paired host's request failed by timing out (`HostRequestTimeoutError`) rather than by its connection closing.
@@ -1007,8 +1010,10 @@ export class WatcherService implements WatcherControlHooks {
     allowed()
     if (target.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher restores only this computer’s threads. Ask the user to restore it from Settled. Nothing was changed.')
     const thread = this.thread(target)
-    // A thread with a special job, or an archived one, is not Watcher's to restore, as it is not Watcher's to settle.
+    // A thread with a special job, or an archived one, is not Watcher's to restore, as it is not Watcher's to settle;
+    // nor is a delegated thread, which its parent settles and restores with it (#1217).
     this.protect(thread)
+    this.checkNotDelegated(thread, 'restore')
     if (isWorkspaceThreadSettled(thread, this.options.control.watcherSnapshot().projects.find(project => project.id === thread.projectId))) {
       if (!this.options.host.reopenThreadForWork) refuse('PROVIDER_UNAVAILABLE', 'Sotto cannot restore threads here. Nothing was changed.')
       // Asked again inside the workspace's lane, so a Stop or a takeover while the restore waited for it holds it back.
@@ -1087,7 +1092,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** A setting was saved: compaction looks now, against a Compact Watcher at that may now be below Watcher's conversation; the room shows the new point. */
   settingsChanged(): void { this.compactWhenDue(); this.publish() }
-  /** At most once a second while updates come and Watcher watches anything: a look that ends the watch on every settled thread. */
+  /**
+   * At most once a second while updates come and Watcher watches anything: a look that ends the watch on every settled
+   * thread, and on every delegated one (#1217).
+   */
   private lookForSettled(): void {
     if (this.closed || this.options.workerHost || this.settledTimer !== undefined || !this.view().watches?.length) return
     this.settledTimer = setTimeout(() => { this.settledTimer = undefined; void this.endSettledWatches() }, this.options.settledLookAfterMs ?? 1_000)
@@ -1097,16 +1105,20 @@ export class WatcherService implements WatcherControlHooks {
    * A settled thread is not watched (ADR-0073, October 28, 2026): whoever settled it, Watcher, the user or its project,
    * Watcher stops watching it, as its own unwatch_thread does, so no news of it follows. Only a settle
    * after the watch began ends it, so a thread the user watches while it is settled keeps its watch until it is
-   * restored and settled again. Restoring a thread does not watch it again.
+   * restored and settled again. Restoring a thread does not watch it again. A delegated thread's watch, which only an
+   * older build gave, ends the same way and says nothing (#1217).
    */
   private async endSettledWatches(): Promise<void> {
     if (this.endingSettled || this.closed) return
     this.endingSettled = true
     try {
-      const record = this.view()
+      const record = this.view(), delegated: WatcherStandingWatch[] = []
       const settled = (record.watches ?? []).filter(watch => {
         const thread = this.owningThread(watch.target.hostId, watch.target.threadId)
         if (!thread) return false
+        // A delegated thread is not watched (#1217): a watch an older build gave it is let go quietly, at Watcher's first
+        // look once it starts and its thread is listed, here or on a paired host, as Watcher's own unwatch_thread does.
+        if (thread.delegatedBy !== undefined) { delegated.push(watch); return false }
         const project = thread.workspaceSettledAt ? undefined : this.owningSnapshot(watch.target.hostId)?.projects.find(item => item.id === thread.projectId)
         const at = Date.parse(thread.workspaceSettledAt ?? project?.workspaceSettledAt ?? '')
         return at > Date.parse(watch.createdAt)
@@ -1117,6 +1129,7 @@ export class WatcherService implements WatcherControlHooks {
       const settling = settled.length ? new Set(record.operations.flatMap(operation => operation.action === 'settle'
         && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain') ? [key(operation.target)] : [])) : undefined
       for (const watch of settled) if (!this.closed && !settling?.has(key(watch.target))) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
+      for (const watch of delegated) if (!this.closed) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
     } finally { this.endingSettled = false }
   }
   private publish(observe = true): void {
@@ -1484,6 +1497,39 @@ export class WatcherService implements WatcherControlHooks {
   private protect(thread: AgentThread): void {
     if (this.protectedThread(thread)) refuse('RESERVED_THREAD', 'This thread has a special job and cannot be directed by Watcher.')
     if (isThreadClosed(thread)) refuse('TARGET_CHANGED', 'This thread is closed. Open another thread.')
+  }
+  /**
+   * The thread that delegated to this one, by its target and, where its machine lists it, its title (#1217). Undefined for
+   * a thread no other thread started. A desktop's own thread that asked a host for it names no machine, and is this
+   * computer's when this computer lists it.
+   */
+  private delegatingOf(thread: Pick<AgentThread, 'hostId' | 'delegatedBy'>): { readonly target: DelegatingThread; readonly title?: string } | undefined {
+    if (thread.delegatedBy === undefined) return undefined
+    let target = delegatingThread(thread.delegatedBy, thread.hostId ?? this.hostId())
+    if (target.hostId === undefined && this.localThread(target.threadId)) target = { hostId: this.hostId(), threadId: target.threadId }
+    const parent = target.hostId === undefined ? undefined : this.owningThread(target.hostId, target.threadId)
+    return { target, ...parent ? { title: parent.title } : {} }
+  }
+  /**
+   * Watcher talks only to parent threads (#1217): a thread another thread delegated to is refused, before anything is
+   * sent, with the thread to direct instead. A paired host asks it of its own threads too, since only it knows for sure.
+   */
+  private checkNotDelegated(thread: AgentThread, action: DelegatedAction): void {
+    const parent = this.delegatingOf(thread)
+    if (parent) refuse('RESERVED_THREAD', delegatedRefusalWords(parent.target, parent.title, action))
+  }
+  /**
+   * A send, stop or settle that names a delegated thread, refused first (#1217): before its request, a hold on the thread,
+   * the user's agreement or GitHub is read. A retry of an operation already recorded still answers with its receipt.
+   */
+  private checkTargetNotDelegated(name: WatcherToolName, input: unknown, imported?: WatcherOperation): void {
+    const action = DELEGATED_ACTIONS[name]
+    if (!action) return
+    const asked = input as { readonly target?: WatcherThreadTarget; readonly requestId?: string; readonly retryKey?: string }
+    const target = imported?.target ?? asked.target
+    if (!target || asked.requestId !== undefined && asked.retryKey !== undefined && this.recorded(this.view(), asked.requestId, asked.retryKey)) return
+    const named = this.owningThread(target.hostId, target.threadId)
+    if (named) this.checkNotDelegated(named, action)
   }
   private connected(thread: AgentThread): boolean {
     const snapshot = this.owningSnapshot(thread.hostId ?? this.hostId())
@@ -2805,7 +2851,8 @@ export class WatcherService implements WatcherControlHooks {
     const target = parsed.data.target
     if (by === 'watcher') this.checkHandedBack(this.view(), target)
     if (target.hostId !== this.hostId()) { this.requireRemote(target.hostId, true); if (!this.remote?.hosts().find(host => host.hostId === target.hostId)?.standingWatch) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before assigning a watch.') }
-    guard?.(); const thread = this.thread(target); this.protect(thread)
+    // No watch on a delegated thread, from any path (#1217): the thread that delegated it is the one to watch.
+    guard?.(); const thread = this.thread(target); this.protect(thread); this.checkNotDelegated(thread, 'watch')
     const previous = this.view().watches?.find(item => key(item.target) === key(target)), created = previous ? { ...previous } : this.newWatch(target, thread)
     const assignmentMaster = target.hostId !== this.hostId() ? this.view().current : null
     if (target.hostId !== this.hostId()) {
@@ -3120,7 +3167,8 @@ export class WatcherService implements WatcherControlHooks {
             && (participant.target.hostId === this.hostId() || this.remote?.hosts().find(host => host.hostId === participant.target.hostId)?.standingWatch)
             && !next.watches?.some(watch => key(watch.target) === key(participant.target))) {
             const thread = this.owningSnapshot(participant.target.hostId)?.threads.find(item => item.id === participant.target.threadId)
-            if (thread && isThreadClosed(thread)) continue
+            // A delegated thread is its parent's to see through, and is never watched (#1217).
+            if (thread && (isThreadClosed(thread) || thread.delegatedBy !== undefined)) continue
             const watch = this.newWatch(participant.target, thread)
             if (participant.lastUserMessageId !== undefined) watch.lastUserMessageId = participant.lastUserMessageId
             else if (!thread) watch.lastUserMessageId = null
@@ -4307,6 +4355,8 @@ export class WatcherService implements WatcherControlHooks {
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
     if (queued && operation.action === 'stop') return
     const thread = this.thread(operation.target); this.protect(thread)
+    // Asked again as it goes, so an operation an older build admitted for a delegated thread goes no further (#1217).
+    if (operation.action !== 'start') this.checkNotDelegated(thread, operation.action)
     if (!this.connected(thread)) refuse('HOST_DISCONNECTED', 'This thread is disconnected. Nothing was sent. Reconnect its provider.', true)
     if (operation.action === 'stop') this.checkStopTurn(thread, record, operation.requestId)
     if (operation.action === 'start' || operation.action === 'send') {
@@ -4439,6 +4489,8 @@ export class WatcherService implements WatcherControlHooks {
       const copy = name === 'start_thread' ? await this.startCopy(args) : undefined
       const parsed = watcherToolSchemas[name].input.safeParse(agreed ? agreed.call : copy ? copy.call : args)
       if (!parsed.success) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
+      // Watcher talks only to parent threads (#1217), whatever else this call would be refused for.
+      this.checkTargetNotDelegated(name, parsed.data)
       // The user's Settle it on Watcher's own card for this thread is their agreement, in Sotto's record of their press (#2228).
       const settleTarget = agreed ? (parsed.data as WatcherToolInput<'settle_thread'>).target : undefined
       const cardAgreed = settleTarget !== undefined && !this.settlesWithoutAsking() && this.questions.agreedSettle(threadId, settleTarget)
@@ -5825,6 +5877,9 @@ ${operation.draftId}`)
         || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)
         // A start from a moved branch is Work across machines' (#1033): a host with it off takes none, from any desktop.
         || (call.name === 'start_thread' && (call.input.fromMove !== undefined || call.input.fromOrigin !== undefined) && this.options.crossMachine !== true)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
+      // This host owns its threads' delegation links, so it refuses a desktop's send, stop or settle for a delegated thread
+      // as this computer's own tools do (#1217), before its watch or request is read: an older desktop does not ask.
+      this.checkTargetNotDelegated(call.name, call.input, operation)
       await this.transaction(async () => {
         guard()
         this.checkRemoteMaster(master, clientId)
@@ -5910,7 +5965,11 @@ ${operation.draftId}`)
       if (master.target.hostId === this.hostId() || watches.some(watch => watch.target.hostId !== this.hostId() || watch.remoteOrigin)) refuse('INVALID_INPUT', 'The watch assignment does not match its owning host.')
       const record = this.view()
       this.checkRemoteMaster(master, clientId)
-      for (const watch of watches) {
+      // This host owns its threads' delegation links, so it holds an older desktop to Watcher's rule too (#1217): a watch on
+      // a delegated thread is left out, whatever the desktop sends, and one an older build installed here is let go below.
+      // Left out before its fence is read, so a desktop that still sends it keeps its other watches.
+      const kept = watches.filter(watch => this.owningThread(watch.target.hostId, watch.target.threadId)?.delegatedBy === undefined)
+      for (const watch of kept) {
         if (record.watchFences?.some(fence => fence.id === watch.id)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Assign a new watch to continue.')
         this.protect(this.thread(watch.target))
         const previous = record.watches?.find(item => item.id === watch.id || key(item.target) === key(watch.target))
@@ -5926,8 +5985,8 @@ ${operation.draftId}`)
           ;(next.remoteMasters ??= []).push({ clientId, masterHostId: master.target.hostId, creationOperationId: master.creationOperationId, createdAt: master.createdAt })
         }
         for (const watch of next.watches ?? []) if (watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
-          && !watches.some(item => item.id === watch.id)) this.withdrawWatch(next, watch.target, operations)
-        for (const watch of watches) {
+          && !kept.some(item => item.id === watch.id)) this.withdrawWatch(next, watch.target, operations)
+        for (const watch of kept) {
           const previous = next.watches?.find(item => item.id === watch.id)
           const remoteOrigin = { clientId, masterHostId: master.target.hostId, masterCreationOperationId: master.creationOperationId, masterCreatedAt: master.createdAt }
           if (previous) { previous.remoteOrigin = remoteOrigin; continue }
@@ -6199,7 +6258,12 @@ ${operation.draftId}`)
     const watched = this.wakes.watchedKeys()
     const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
     const slim = watcherSlimRead(name, input, result, target => watched.has(key(target)), { turnFailed: target => thread(target)?.lastTurn?.status === 'failed',
-      endedBefore: target => this.endedRead.get(this.readSlot(target)) })
+      endedBefore: target => this.endedRead.get(this.readSlot(target)),
+      // Each row's thread by the hosts' own index, so marking a page reads no more than the page (#1217).
+      delegatedBy: target => {
+        const parent = this.delegatingOf(this.owningThread(target.hostId, target.threadId) ?? {})
+        return parent && { ...parent.target, ...parent.title !== undefined ? { title: parent.title } : {} }
+      } })
     // What this read gives as merged or closed, so the next leaves those out once this one is given (#1147). A refusal says nothing.
     if (name === 'read_thread' && typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'ok' && typeof slim === 'object' && slim !== null)
       this.endedPending.set(slim, watcherEndedPullRequests((result as { evidence: WatcherEvidence[] }).evidence))

@@ -123,6 +123,12 @@ const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watche
   state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional(), automationStopped: z.literal(true).optional() }).strict()
 const pr = z.object({ number: z.number().int().positive(), url: z.string().max(2_048), title: z.string().max(512),
   state: z.enum(['open', 'closed', 'merged']), draft: z.boolean() }).strict()
+/**
+ * The thread that delegated to a roster row's thread, which Watcher directs instead, since it never directs a delegated
+ * thread itself (#1217): its ID, its machine where its link names one, and its title where that machine lists it. The
+ * desktop's alone: a paired host never sends it.
+ */
+const delegatingRow = z.object({ hostId: z.uuid().optional(), threadId: id, title: z.string().max(WATCHER_TITLE_MAX).optional() }).strict()
 const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId,
   standingWatch: watcherStandingWatchSchema.omit({ remoteOrigin: true }).optional(),
   provider: providerIdSchema, modelId: entityId, reasoningEffort: z.string().max(64).optional(), status: z.enum(['idle', 'running', 'error']),
@@ -131,7 +137,7 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
   userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean(),
   // The desktop's alone (#1191): whether Watcher watches the thread, as a slim row says. A paired host never sends it.
-  watched: z.boolean().optional() }).strict()
+  watched: z.boolean().optional(), delegatedBy: delegatingRow.optional() }).strict()
 /**
  * A pull request as a slim read gives it (#1191): its number, or its address when that has none, and what it says now,
  * instead of every evidence fact. A fact GitHub has not been read for is left out rather than guessed, and approval,
@@ -150,7 +156,7 @@ const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().
   turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
   protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50),
   // Open pull requests only (#1147): how many of the thread's others are merged or closed, said only when there are any.
-  mergedPullRequests: counter.optional(), closedPullRequests: counter.optional() }).strict()
+  mergedPullRequests: counter.optional(), closedPullRequests: counter.optional(), delegatedBy: delegatingRow.optional() }).strict()
 /** How much list_threads and read_thread say of each thread's evidence (#1191). */
 export const watcherDetailSchema = z.enum(['slim', 'full'])
 const staleHost = z.object({ hostId: z.uuid(), observedAt: time.nullable() }).strict()

@@ -102,11 +102,13 @@ export function watcherEndedPullRequests(evidence: readonly WatcherEvidence[]): 
 
 type Rows = Extract<WatcherToolOutput<'list_threads'>, { status: 'ok' }>['rows']
 type FullRow = Extract<Rows[number], { evidence: unknown }>
+/** The thread that delegated to a row's thread, which Watcher directs instead (#1217). */
+export type WatcherDelegatingRow = NonNullable<FullRow['delegatedBy']>
 /**
  * A roster row as list_threads' slim detail gives it: who it is, where it stands, what it waits on, whether Watcher watches
  * it, and its open pull requests' summaries in place of every evidence fact.
  */
-export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false) {
+export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false, delegatedBy?: WatcherDelegatingRow) {
   const open = watcherOpenPullRequests(row.pullRequests, row.evidence).map(item => item.summary)
   const said = summariesByKey(row.evidence)
   // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
@@ -115,7 +117,8 @@ export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = fals
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
     ...latest?.automationStopped ? { automationStopped: true as const } : {},
-    ...row.protected ? { protected: true as const } : {}, pullRequests: open, ...endedCounts(row.pullRequests.map(pr => stateOf(pr, said))) }
+    ...row.protected ? { protected: true as const } : {}, pullRequests: open, ...endedCounts(row.pullRequests.map(pr => stateOf(pr, said))),
+    ...delegatedBy ? { delegatedBy } : {} }
 }
 
 const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unknown> =>
@@ -130,6 +133,11 @@ export interface WatcherSlimLookups {
   readonly turnFailed?: (target: WatcherThreadTarget) => boolean
   /** The pull requests the last read of the thread given to this Watcher conversation held merged or closed (#1147). */
   readonly endedBefore?: (target: WatcherThreadTarget) => ReadonlySet<string> | undefined
+  /**
+   * The thread that delegated to this one, from its own machine's link, which a row marks so Watcher directs that thread
+   * instead (#1217). A paired host's rows are marked here, from its threads as this computer holds them.
+   */
+  readonly delegatedBy?: (target: WatcherThreadTarget) => WatcherDelegatingRow | undefined
 }
 /**
  * What Watcher is given of a read's full result, from what its call asked (#1191). Refusals and other tools pass as they
@@ -137,14 +145,14 @@ export interface WatcherSlimLookups {
  */
 export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
   lookups: WatcherSlimLookups = {}): unknown {
-  const { turnFailed = () => false, endedBefore = () => undefined } = lookups
+  const { turnFailed = () => false, endedBefore = () => undefined, delegatedBy = () => undefined } = lookups
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
     // A paired host's page is filtered here, so its counts are counted again from what is left.
     const counts = asked.watchedOnly ? Object.fromEntries(Object.keys(result.counts as Record<string, number>).map(group => [group, rows.filter(row => row.group === group).length])) : result.counts
-    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => ({ ...row, watched: watched(row.target) }))
-      : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target))) }
+    return { ...result, counts, rows: asked.detail === 'full' ? rows.map(row => { const by = delegatedBy(row.target); return { ...row, watched: watched(row.target), ...by ? { delegatedBy: by } : {} } })
+      : rows.map(row => watcherSlimRow(row, watched(row.target), turnFailed(row.target), delegatedBy(row.target))) }
   }
   if (name === 'read_thread') {
     const asked = input as WatcherToolInput<'read_thread'>, evidence = result.evidence as WatcherEvidence[]

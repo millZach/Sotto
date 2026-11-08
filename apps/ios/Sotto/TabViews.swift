@@ -268,7 +268,7 @@ struct ThreadsView: View, Equatable {
                 let watched = model.watchedThreadIDs
                 let row = { (row: HostedThread) in
                     ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), watched: watched.contains(row.id), chosen: false,
-                                  canWatch: model.canChangeWatch(row.ref), shelf: model.shelfOffer(row), identifier: "thread-",
+                                  canWatch: model.offersWatch(row), shelf: model.shelfOffer(row), identifier: "thread-",
                                   open: { open(row.ref) },
                                   setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
                                   shelve: { action in Task { await model.shelve(row.ref, action) } })
@@ -928,9 +928,9 @@ private struct WorkingCard: View {
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
         Group {
-            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
+            if model.offersWatch(row) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    if model.canChangeWatch(row.ref) {
+                    if model.offersWatch(row) {
                         let watched = model.watchedByWatcher(row.ref)
                         Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
                             Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
@@ -1043,9 +1043,9 @@ private struct ThreadRow: View {
     var body: some View {
         let _ = BenchProbe.body("ThreadRow")
         Group {
-            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
+            if model.offersWatch(row) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    if model.canChangeWatch(row.ref) {
+                    if model.offersWatch(row) {
                         Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
                             Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
                         }

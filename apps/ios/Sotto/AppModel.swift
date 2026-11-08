@@ -698,6 +698,8 @@ extension AppModel {
         guard let host = watchHost(for: ref) else { return false }
         return online(host) && !watcherManaging.contains(Self.watchKey(ref))
     }
+    /// Whether a row offers Watch or Stop watching now: never a delegated thread's, whose parent is the one to watch (#1217).
+    func offersWatch(_ row: HostedThread) -> Bool { ThreadGroups.offersWatch(row.thread) && canChangeWatch(row.ref) }
     /// Whether a Watch or Stop watching press for this thread is on its way.
     func changingWatch(_ ref: ThreadRef) -> Bool { watcherManaging.contains(Self.watchKey(ref)) }
     /// What a watched thread's Watch adds to its hint, where the lit owl alone doesn't say it (ADR-0073, October 31
