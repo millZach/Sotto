@@ -52,7 +52,7 @@ struct ThreadView: View {
                 HStack(spacing: Space.s1) {
                     if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
-                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
+                    if model.watchHost(for: ref) != nil, thread.map(ThreadGroups.offersWatch) ?? true { WatchToggle(ref: ref, title: thread?.title) }
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
                 // Where the bar is short, iOS gives the group its smallest size, which squeezed Agents' and Watch's words
@@ -168,7 +168,7 @@ struct ThreadRailPill: View {
                 ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
                                 reachable: model.status(ref.hostID) != .unreachable, vertical: true)
                 if let agents = model.agentsCount(ref) { AgentsButton(count: agents, tile: true) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
-                if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title, tile: true) }
+                if model.watchHost(for: ref) != nil, thread.map(ThreadGroups.offersWatch) ?? true { WatchToggle(ref: ref, title: thread?.title, tile: true) }
             }
             // As the tabs' names do, they stay at this size; a tile has no room to grow. ••• is left out, since its icon
             // doesn't grow and the pull request's sheet it opens takes the user's own text size.

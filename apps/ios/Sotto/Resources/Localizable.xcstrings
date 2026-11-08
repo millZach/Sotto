@@ -45194,6 +45194,198 @@
         }
       }
     },
+    "Delegated by %@ · Watched by Watcher through it" : {
+      "comment" : "A delegated thread's line on the Agents sheet while Watcher watches the thread this sheet belongs to, which reaches it through the thread named; %@ is that thread's title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فوّضها %@ · يراقبها Watcher من خلاله"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ডেলিগেট করেছে · এর মাধ্যমে Watcher নজরে রাখছে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegováno: %@ · Sleduje Watcher jeho prostřednictvím"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegeret af %@ · Overvåges af Watcher gennem den"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegiert von %@ · Von Watcher darüber beobachtet"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ανατέθηκε από: %@ · Το παρακολουθεί ο Watcher μέσω αυτού"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegated by %@ · Watched by Watcher through it"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegado por %@ · Vigilado por Watcher a través de él"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegado por %@ · Vigilado por Watcher a través de él"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegado por %@ · Vigilado por Watcher a través de él"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegoija: %@ · Watcherin valvoma sen kautta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Délégué par %@ · Surveillé par Watcher par son intermédiaire"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ने सौंपा · इसके ज़रिए Watcher की निगरानी में"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegálta: %@ · A Watcher ezen keresztül figyeli"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegato da %@ · Monitorato da Watcher tramite esso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ から委任 · それを通じて Watcher が見守り中"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ने सोपवले · त्याच्या माध्यमातून Watcher चे लक्ष आहे"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegert av %@ · Overvåket av Watcher gjennom den"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gedelegeerd door %@ · Via die gevolgd door Watcher"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegowane przez %@ · Obserwowany przez Watchera za jego pośrednictwem"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegada por %@ · Vigiada pelo Watcher através dela"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegada por %@ · Vigiada pelo Watcher através dela"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegat de %@ · Urmărit de Watcher prin el"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegerad av %@ · Bevakas av Watcher genom den"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ஒப்படைத்தது · அதன் வழியாக Watcher கவனிக்கிறது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ అప్పగించింది · దాని ద్వారా Watcher గమనిస్తోంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devreden: %@ · Onun üzerinden Watcher tarafından izleniyor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Делеговано: %@ · Відстежує Watcher через нього"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ نے سونپا · اس کے ذریعے Watcher کی نگرانی میں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 委派 · 由 Watcher 通过它监看"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 委派 · 由 Watcher 透過它監看"
+          }
+        }
+      }
+    },
     "Delegated threads and agents, newest first" : {
       "extractionState" : "manual",
       "localizations" : {

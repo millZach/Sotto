@@ -128,7 +128,8 @@ export function openAtRequestLabel(title: string, kind: WaitKind): string {
  * One thread in the list: its ring, title and clock; its provider, Watcher's owl when it watches it, its project and
  * host, and where it stands; and, when it waits on the user, what it asks with Open to answer. A press on the row opens
  * the thread beside Watcher; with Shift, in the Threads room. The owl at its end watches it, or stops, and is the row's
- * last stop (Zach's pick on October 13, 2026, watch B).
+ * last stop (Zach's pick on October 13, 2026, watch B); a delegated thread has none, since its parent is the one to watch
+ * (#1217, Zach's pick B).
  */
 function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
   readonly entry: OverviewEntry; readonly watched: boolean; readonly current: boolean; readonly liveClock: boolean; readonly onOpen: OpenThread
@@ -164,7 +165,7 @@ function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
       <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} {...threadPress(onOpen, thread.id, true)}>
         {kind === 'failed' ? t({ message: 'Open', context: 'Open a thread' }) : t`Open to answer`}</button>
     </div> : null}
-    <WatchListToggle threadId={thread.id} title={thread.title} />
+    {thread.delegatedBy === undefined ? <WatchListToggle threadId={thread.id} title={thread.title} /> : null}
   </li>
 }
 

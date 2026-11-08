@@ -160,6 +160,10 @@ public enum ThreadGroups {
         }
         return tops
     }
+    /// Whether a thread offers Watch and Stop watching: not a delegated thread, which the thread that delegated it directs,
+    /// so that thread is the one to watch (ADR-0081, Zach's pick B of #1217 on November 7, 2026). Its computer refuses a
+    /// watch there too; this only keeps the control away, as the desktop does.
+    public static func offersWatch(_ thread: ThreadSummary) -> Bool { thread.delegatedBy == nil }
     /// A thread opened and never sent to, as the desktop's sidebar reads it (`isUnsentThread` in
     /// src/shared/threadActivity.ts): on its default title, at rest, asking nothing, not delegated, not settled, and with no
     /// messages. A computer that doesn't say how many messages it holds or where its title came from never makes one.

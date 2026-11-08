@@ -15,6 +15,7 @@ import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarF
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { codexModeLine, cursorModeLine } from '../../../src/renderer/src/agents/ThreadOptions'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
+import { threadOffers } from '../../../src/renderer/src/agents/threadMenu'
 import { WatcherRoomProvider, targetForThread, watchedTargets } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
@@ -96,10 +97,10 @@ function fakeBridge(initial: WatcherRoomState, legacy = false) {
     publish: (next: WatcherRoomState) => { state = next; for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true): void {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, delegation = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: { watcherEnabled, ...delegation ? { owlFeatures: { watcher: watcherEnabled, 'thread-delegation': true } } : {} }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
 }
 
@@ -111,8 +112,8 @@ function mockAgents(state: AgentState) {
   return command
 }
 
-function renderRoom(room: WatcherRoomState, options: { readonly state?: AgentState; readonly legacy?: boolean; readonly enabled?: boolean } = {}) {
-  mockApp('watcher', options.enabled ?? true)
+function renderRoom(room: WatcherRoomState, options: { readonly state?: AgentState; readonly legacy?: boolean; readonly enabled?: boolean; readonly delegation?: boolean } = {}) {
+  mockApp('watcher', options.enabled ?? true, options.delegation)
   mockAgents(options.state ?? stateWithWatcher())
   const { bridge, publish } = fakeBridge(room, options.legacy)
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
@@ -445,6 +446,63 @@ describe('watching a thread', () => {
     expect(screen.getByRole('dialog', { name: 'All threads' })).toBeInTheDocument()
     await waitFor(() => expect(within(weeklyRow).getByRole('button', { name: 'Watch Weekly note' })).toHaveAttribute('aria-pressed', 'true'))
     expect(within(list).getByText(/The owl watches a thread until you press it again/)).toBeInTheDocument()
+  })
+
+  it('offers no Watch on a delegated thread anywhere, and says on its Delegated by line when Watcher watches it through its parent (#1217)', async () => {
+    // Weekly note is a thread Footer links delegated to: Watcher talks only to Footer links, which directs it (pick B).
+    const delegated = () => {
+      const state = stateWithWatcher()
+      state.host.threads.find(item => item.id === 'weekly-note')!.delegatedBy = 'footer-links'
+      return state
+    }
+    vi.stubGlobal('sotto', { delegations: { read: vi.fn(async ({ threadId }: { threadId: string }) => ({ threadId, delegations: [], received: [] })),
+      brief: vi.fn(async () => null), onChanged: () => () => undefined } })
+    try {
+      const state = delegated()
+      state.activeThreadId = 'weekly-note'
+      mockApp('threads', true, true)
+      mockAgents(state)
+      const { bridge, publish } = fakeBridge(roomState({ watchedThreads: [], standingWatches: [] }))
+      render(<WatcherRoomProvider bridge={bridge}><ThreadsView now={NOW} /></WatcherRoomProvider>)
+      const pane = await screen.findByRole('region', { name: 'Weekly note' })
+      const by = await waitFor(() => { const element = pane.querySelector('.delegated-by'); expect(element).not.toBeNull(); return element as HTMLElement })
+      expect(by).toHaveTextContent('Delegated by Footer links')
+      expect(by).not.toHaveTextContent('Watched by Watcher through it')
+      // No Watch in its pane header, nor among the sidebar's rows; the thread that delegated keeps its own.
+      expect(within(pane).queryByRole('button', { name: 'Watch Weekly note' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Watch Weekly note' })).toBeNull()
+      expect(within(screen.getByRole('complementary', { name: 'Thread sidebar' })).getByRole('button', { name: 'Watch Footer links' })).toBeInTheDocument()
+      // Watching the thread that delegated, Watcher watches this one through it, and its line says so.
+      act(() => { publish(roomState()) })
+      await waitFor(() => expect(by).toHaveTextContent('Delegated by Footer links·Watched by Watcher through it'))
+      expect(within(by).getByRole('button', { name: 'Open Footer links, the thread that delegated to this one' })).toBeInTheDocument()
+      cleanup()
+      // Two levels down, a thread Weekly note delegated is watched through it while Footer links, the top, is watched.
+      const below = delegated()
+      below.host.threads.find(item => item.id === 'notes-cleanup')!.delegatedBy = 'weekly-note'
+      below.activeThreadId = 'notes-cleanup'
+      mockApp('threads', true, true)
+      mockAgents(below)
+      render(<WatcherRoomProvider bridge={fakeBridge(roomState()).bridge}><ThreadsView now={NOW} /></WatcherRoomProvider>)
+      const grandchild = await screen.findByRole('region', { name: 'Notes cleanup' })
+      await waitFor(() => expect(grandchild.querySelector('.delegated-by')).toHaveTextContent('Delegated by Weekly note·Watched by Watcher through it'))
+      expect(within(grandchild).queryByRole('button', { name: 'Watch Notes cleanup' })).toBeNull()
+      cleanup()
+      // Its row's menu, and its tile's on the rail, offer no Watch either: they share one offer.
+      const child = delegated().host.threads.find(item => item.id === 'weekly-note')!
+      const panes = { currentThreadId: null } as unknown as Parameters<typeof threadOffers>[1]
+      expect(threadOffers({ thread: child } as Parameters<typeof threadOffers>[0], panes).watch).toBe(false)
+      expect(threadOffers({ thread: { ...child, delegatedBy: undefined } } as Parameters<typeof threadOffers>[0], panes).watch).toBe(true)
+      // All threads has no owl at the end of its row.
+      const user = userEvent.setup()
+      renderRoom(roomState(), { state: delegated(), delegation: true })
+      await watcherPane()
+      await user.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
+      const list = screen.getByRole('dialog', { name: 'All threads' })
+      const weeklyRow = within(list).getByRole('button', { name: 'Open Weekly note beside Watcher' }).closest('li')!
+      expect(within(weeklyRow).queryByRole('button', { name: 'Watch Weekly note' })).toBeNull()
+      expect(within(list).getByRole('button', { name: 'Watch Footer links' })).toBeInTheDocument()
+    } finally { vi.unstubAllGlobals() }
   })
 
   it('offers no owl where the bridge cannot watch, and nothing of watching with the gate off', async () => {

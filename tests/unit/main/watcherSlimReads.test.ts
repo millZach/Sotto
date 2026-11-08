@@ -220,3 +220,16 @@ it('fits ten threads with three open and twenty-five merged pull requests each i
   expect(bytes(slim)).toBeLessThan(8 * 1_024)
   if (process.env.SOTTO_PERF_REPORT === '1') console.info(JSON.stringify({ full: bytes(full), slim: bytes(slim) }))
 })
+
+it('marks a delegated thread’s row with the thread that delegated it, slim or full, and only where it was delegated (#1217)', () => {
+  const page = roster(2, 1), parent = { hostId, threadId: 'thread-0', title: 'Synthetic thread 0' }
+  const delegatedBy = (at: { threadId: string }) => at.threadId === 'thread-1' ? parent : undefined
+  for (const detail of ['slim', 'full'] as const) {
+    const read = watcherToolSchemas.list_threads.output.parse(watcherSlimRead('list_threads', { detail }, page, () => false, { delegatedBy }))
+    if (read.status !== 'ok') throw new Error('roster-refused')
+    expect(read.rows[1]).toMatchObject({ delegatedBy: parent })
+    expect(read.rows[0]).not.toHaveProperty('delegatedBy')
+  }
+  // A paired host's rows carry no mark of their own: the desktop adds it from its own read of the host's threads.
+  expect(page.rows[1]).not.toHaveProperty('delegatedBy')
+})

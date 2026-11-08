@@ -34,7 +34,8 @@ export function threadOffers(row: ThreadRow, panes: PaneActions): ThreadOffers {
     // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
     beside: panes.currentThreadId !== null && panes.currentThreadId !== id,
     rename: !archived,
-    watch: row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history',
+    // Watcher talks only to parent threads (#1217, Zach's pick B): a delegated thread offers no Watch; its parent does.
+    watch: row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history' && row.thread.delegatedBy === undefined,
     shelfKeys: panes.currentThreadId === id,
     renameKey: panes.rowKeys?.rename ?? true,
   }

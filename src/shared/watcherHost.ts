@@ -59,9 +59,10 @@ export interface WatcherRemoteHosts {
    * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and
    * `origins` whether it lists `project-origins` (#1032), and `setUp` whether it lists `project-setup` (#1690).
    * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
-   * computer may answer on it, Ask for approval where it may not.
+   * computer may answer on it, Ask for approval where it may not. `clientId` is the client ID the host knows this computer
+   * by, which names this computer's threads in its delegation links (`relay:<client>:<caller>`, #1217).
    */
-  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; clientId?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

@@ -10266,6 +10266,10 @@ msgstr "Watch"
 msgid "Watched by Watcher"
 msgstr "Watched by Watcher"
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Watched by Watcher through it"
+msgstr "Watched by Watcher through it"
+
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "Watcher is watching it"
 msgstr "Watcher is watching it"

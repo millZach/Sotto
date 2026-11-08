@@ -1019,7 +1019,7 @@ it('builds a paired desktop\'s projection from the record without copying it, ag
   expect(await pushed({ requests: 1_600, operations: 1_500 })).toEqual({ reads: 0, copies: 0 })
 })
 
-it('syncs watches to the owning host, persists takeover there and refuses withdrawn or old-host identities', async () => {
+it('syncs watches to the owning host, persists takeover there, never reinstalls a withdrawn watch and refuses old-host identities', async () => {
   const master = await fixture(), worker = await fixture(true), target = await worker.create()
   const clientId = randomUUID()
   let standingWatch = true
@@ -1058,7 +1058,10 @@ it('syncs watches to the owning host, persists takeover there and refuses withdr
   expect(await master.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'ok' })
   await master.service.unwatchThread({ target })
   expect(worker.control.watcherRecord().watches).toEqual([])
-  expect(await worker.service.readRemote({ master: identity, standingWatches: [watch] }, clientId, () => undefined)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+  // A late read that still carries the withdrawn watch cannot bring it back. Its fence leaves it out quietly and refuses
+  // nothing else the read carries (#1217).
+  expect(await worker.service.readRemote({ master: identity, standingWatches: [watch] }, clientId, () => undefined)).toMatchObject({ standingWatches: [] })
+  expect(worker.control.watcherRecord().watches).toEqual([])
   standingWatch = false
   expect(await master.service.watchThread({ target })).toMatchObject({ code: 'HOST_FEATURE_UNAVAILABLE' })
   standingWatch = true

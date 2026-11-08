@@ -20,6 +20,7 @@ import { effortLabel } from './EffortPicker'
 import { speedName } from './ThreadOptions'
 import { RowMenu, type RowMenuPlace } from './RowMenu'
 import { CheckReplyLine, CheckTraysProvider, useCheckTrayOpen } from './CheckReply'
+import { useWatchedThreadIds } from '../watcher/watcherRoom'
 import './delegation.css'
 
 /** What an overseer chose in words: "GPT-6.1 Sol, High", and any speed the user's message asked for (ADR-0191). */
@@ -346,22 +347,31 @@ export function delegationsByTurn(views: readonly DelegationView[], messages: re
 /**
  * "Delegated by" the thread that delegated to this one, as a link back, with the outcome of its newest brief here
  * (#1029, design A). Nothing for a thread no other thread started, and nothing while the Owl list keeps delegation off.
+ * While Watcher watches that thread, or the one that delegated it, the line says Watcher watches this one through it: a
+ * delegated thread has no Watch of its own, since Watcher talks only to the top of a delegation (#1217, Zach's pick B on
+ * November 7, 2026).
  */
 export function DelegatedBy({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
   const { t } = useLingui()
   const enabled = useDelegationsEnabled()
   const newest = useNewestBrief(thread)
+  const watched = useWatchedThreadIds()
   const parentId = enabled ? thread.delegatedBy : undefined
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
   const parentTitle = parent?.title ?? ''
   const openLabel = t`Open ${parentTitle}, the thread that delegated to this one`
+  // Watcher watches the top of a delegation and reaches what is below through it: the thread that delegated this one, or,
+  // two levels down, the thread that delegated that one.
+  const top = parent?.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === parent.delegatedBy)
+  const watchedThrough = parent !== undefined && (watched.has(parent.id) || top !== undefined && watched.has(top.id))
   return <div className="delegated-by">
     <GitFork size={14} aria-hidden="true" />
     <span>{parent
       ? <Trans>Delegated by <button type="button" className="delegation-link tt-focusable" aria-label={openLabel} title={parentTitle}
         onClick={() => void command({ type: 'select-thread', threadId: parent.id })}>{parentTitle}</button></Trans>
       : <Trans>Delegated by <span className="delegated-by__gone">a thread that is no longer listed</span></Trans>}</span>
+    {watchedThrough ? <><span aria-hidden="true">·</span><span><Trans>Watched by Watcher through it</Trans></span></> : null}
     {newest ? <><span aria-hidden="true">·</span><Outcome view={newest} /></> : null}
   </div>
 }
