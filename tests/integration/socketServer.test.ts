@@ -488,7 +488,11 @@ it('spends the message budget before it checks a request against the protocol (#
   await closed
   // The hundred the budget allows are checked; the one past it closes the socket unchecked.
   expect(checked).toHaveBeenCalledTimes(100)
-  expect(peer.messages.filter(message => (message.error as { code?: string } | undefined)?.code === 'invalid_request')).toHaveLength(100)
+  // The close drops the connection with the rest of the burst still unread, so refusals still on their way can be lost
+  // with it (86 and 67 of 100 arrived on a loaded runner, run 42459563378). None may answer a request past the budget.
+  const refused = peer.messages.filter(message => (message.error as { code?: string } | undefined)?.code === 'invalid_request')
+  expect(refused.length).toBeLessThanOrEqual(100)
+  expect(refused.map(message => Number(String(message.id).replace('burst-', ''))).filter(index => !(index >= 0 && index < 100))).toEqual([])
 })
 
 it('counts a large request that names event pages against the message budget before checking it (#2273)', async () => {
