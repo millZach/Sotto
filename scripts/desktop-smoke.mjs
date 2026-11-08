@@ -23,7 +23,6 @@ function run(args) {
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
-run([npm, 'run', 'test:recovery'])
-run([join(root, 'node_modules/@playwright/test/cli.js'), 'test',
-  'tests/e2e/daily-workspace.spec.ts', 'tests/e2e/settings-index.spec.ts', 'tests/e2e/widget-dictation.spec.ts',
-  'tests/e2e/terminal-search-links-zoom.spec.ts', 'tests/e2e/host-client-updates.spec.ts', 'tests/e2e/update-all.spec.ts', 'tests/e2e/council-climb.spec.ts', '--workers=1'])
+// DO NOT MERGE (#2051): the Diagnose pull request builds and runs only the projects directory click stress, five times over.
+run([npm, 'run', 'build'])
+run([join(root, 'node_modules/@playwright/test/cli.js'), 'test', 'tests/e2e/settings-click-stress.spec.ts', '--workers=1', '--repeat-each=5'])
