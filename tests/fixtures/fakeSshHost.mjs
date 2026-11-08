@@ -1,6 +1,6 @@
 // Stands in for an installed host/index.js: it takes the data folder's lock, listens on loopback, writes
 // its listener descriptor (recording a launch script's or a boot unit's start the way the real host does) and answers the
-// administration flags the launch script uses.
+// administration flags the launch script uses. A test's cleanup stops it by asking it, by its instance, over that listener.
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import http from 'node:http'
@@ -55,7 +55,16 @@ async function main() {
   // Holding the lock before listening leaves a window in which a second launch finds the folder taken.
   await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_HOST_START_DELAY_MS ?? 0)))
   const port = Number(args[args.indexOf('--port') + 1])
-  const server = http.createServer((_request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ v: 1, status: 'ready', hostId, pid: process.pid, port: server.address().port, fixture, instance })) })
+  const server = http.createServer((request, response) => {
+    response.setHeader('content-type', 'application/json')
+    // A test's cleanup asks this start to stop itself, as SIGTERM would, rather than signal a PID that may name another
+    // process by then (#1002). Only a request naming this start's instance stops it.
+    if (request.method === 'POST' && request.url === `/stop?instance=${instance}`) {
+      void fs.rm(lockPath, { force: true }).finally(() => response.end(JSON.stringify({ v: 1, stopping: true, pid: process.pid, fixture, instance }), () => process.exit(0)))
+      return
+    }
+    response.end(JSON.stringify({ v: 1, status: 'ready', hostId, pid: process.pid, port: server.address().port, fixture, instance }))
+  })
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],

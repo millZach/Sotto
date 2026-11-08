@@ -41,21 +41,25 @@ async function leftBehind(data: string, pid: number, port: number): Promise<void
 }
 
 describe('stopping the fake SSH hosts a test saw start', () => {
-  it("signals a host still serving its folder, and never a process that was handed a stopped host's PID", async () => {
+  it("asks a host still serving its folder to stop itself, and signals no PID, not even one a stopped host had", async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-fake-host-cleanup-')); directories.push(root)
     const live = join(root, 'live'), closed = join(root, 'closed'), answered = join(root, 'answered')
     const host = await fakeHost(live)
     // Stands in for the Git in the other test worker that Windows gave the stopped hosts' PID to.
     const reused = started(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true }))
     await once(reused, 'spawn')
-    // One stopped host's port is closed now; another's has been taken by a host that answers as itself, not as it.
+    // One stopped host's port is closed now; another's has been taken by a host that is a different start.
     await leftBehind(closed, reused.pid!, await closedPort())
     await leftBehind(answered, reused.pid!, host.port)
     const kill = vi.spyOn(process, 'kill')
+    const seen = [host.child.pid!, reused.pid!]
+    await stopFakeSshHosts(seen, [answered, closed, join(root, 'never-started')])
+    // The live host was asked to stop as the stopped start, and is still answering as itself.
+    expect(await (await fetch(`http://127.0.0.1:${host.port}/health`)).json()).toMatchObject({ pid: host.child.pid })
     const exited = once(host.child, 'exit')
-    await stopFakeSshHosts([host.child.pid!, reused.pid!], [answered, closed, join(root, 'never-started'), live])
-    expect(kill.mock.calls).toEqual([[host.child.pid, 'SIGTERM']])
-    await exited
+    await stopFakeSshHosts(seen, [live])
+    expect(await exited).toEqual([0, null])
+    expect(kill).not.toHaveBeenCalled()
     expect(reused.exitCode).toBeNull()
   })
 })
