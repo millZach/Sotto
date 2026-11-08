@@ -255,8 +255,8 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-/** The footer stays inside the window, every composer stays above it or beside the collapsed rail,
-    and the window controls never cover a pane header's controls. */
+/** The footer stays inside the window, every composer stays above it, and the window controls never cover a pane
+    header's controls. */
 async function roomEdges(page: Page, width: number, height: number): Promise<void> {
   const way = await box(page.locator('.watcher-foot .thread-nav__foot'))
   expect(way.x + way.width, `the way off the page at ${width}x${height}`).toBeLessThanOrEqual(width)
@@ -265,11 +265,9 @@ async function roomEdges(page: Page, width: number, height: number): Promise<voi
     expect(overlaps(way, await box(pane)), `footer clear of a pane at ${width}x${height}`).toBe(false)
   }
   const controls = await box(page.locator('.threads-view__winctl'))
-  const collapsed = await page.locator('.watcher-room').getAttribute('data-sidebar-collapsed') !== null
   for (const composer of await page.locator('.thread-workspace__compose .thread-prompt').all()) {
     const card = await box(composer)
-    if (collapsed) expect(card.x, `a composer beside the rail at ${width}x${height}`).toBeGreaterThanOrEqual(way.x + way.width)
-    else expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(way.y)
+    expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(way.y)
   }
   for (const control of await page.locator('.thread-workspace__head :is(button, [role="meter"])').all()) {
     if (!await control.isVisible()) continue
@@ -884,46 +882,27 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('the collapsed footer keeps the Threads rail positions and can expand back to the room switch', async () => {
+  test('a collapsed Threads sidebar leaves Watcher its footer row and no rail', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async launched => {
       const { page } = launched
       await openThreads(page)
       await seedRoom(page, { current: true })
-      const footBoxes = () => page.locator('.thread-nav__foot :is([role="tab"], a, button)').evaluateAll(nodes => nodes.flatMap(node => {
-        const box = node.getBoundingClientRect()
-        return box.width && box.height ? [{ name: node.getAttribute('aria-label') ?? node.textContent, x: box.x, y: box.y, width: box.width, height: box.height }] : []
-      }))
-      for (const [width, height] of [[820, 560], [1280, 800], [1600, 1000]] as const) {
+      await resizeContentWindow(launched, 1600, 1000)
+      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      await page.keyboard.press('ControlOrMeta+2')
+      await expect(watcherPane(page)).toBeVisible()
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeContentWindow(launched, width, height)
-        // Under a 1000 pixel window the rail already stands (ADR-0110, November 5, 2026).
-        const narrow = width < 1000
-        if (!narrow) await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-        const threadsFoot = await footBoxes()
-        expect(threadsFoot.length).toBeGreaterThanOrEqual(3)
-        await page.keyboard.press('ControlOrMeta+2')
-        await expect(watcherPane(page)).toBeVisible()
-        // Watcher's room follows only the user's own Collapse, so in a narrow window its row stays at the bottom left
-        // while Threads stands as the rail.
-        if (narrow) {
-          await expect(page.locator('.watcher-foot .thread-nav__rail')).toHaveCount(0)
-          await expect(page.locator('.watcher-foot .thread-nav__foot')).toBeVisible()
-          await roomEdges(page, width, height)
-          await page.keyboard.press('ControlOrMeta+1')
-          continue
-        }
-        await expect(page.locator('.watcher-foot .thread-nav__rail')).toBeVisible()
-        expect(await footBoxes()).toEqual(threadsFoot)
+        // The room has no thread list, so a rail there would stand empty (Drake, November 8, 2026).
+        await expect(page.locator('.thread-nav__rail')).toHaveCount(0)
+        await expect(page.locator('.watcher-foot .thread-nav__foot')).toBeVisible()
         await roomEdges(page, width, height)
-        await allThreads(page).click()
-        await page.getByRole('button', { name: 'Open Footer links beside Watcher', exact: true }).click()
-        await expect(beside(page)).toBeVisible()
-        expect(await footBoxes()).toEqual(threadsFoot)
-        await roomEdges(page, width, height)
-        await page.locator('.watcher-foot').getByRole('button', { name: 'Expand sidebar', exact: true }).click()
-        await expect(switchTab(page, 'Watcher')).toBeVisible()
-        await expect(switchTab(page, 'Watcher')).toBeFocused()
-        await switchTab(page, 'Threads').click()
       }
+      await allThreads(page).click()
+      await page.getByRole('button', { name: 'Open Footer links beside Watcher', exact: true }).click()
+      await expect(beside(page)).toBeVisible()
+      await expect(page.locator('.thread-nav__rail')).toHaveCount(0)
+      await roomEdges(page, 820, 560)
     }))
   })
 
