@@ -25,8 +25,9 @@ public enum TimelineItem: Identifiable, Equatable, Sendable {
 }
 
 /// A thread's messages and the agent's steps as one conversation in time order (ADR-0051). Messages keep their own
-/// order, and so do steps, by sequence. A message is placed by `createdAt` and a step by `startedAt`; a step the host
-/// gave no time follows the step before it, and one that came before any timed step takes the time of the first.
+/// order. A step that names a message the page holds sits after it; otherwise a message is placed by `createdAt` and a
+/// step by `startedAt`, never above the step before it. Steps after one message keep their order by sequence. A step the
+/// host gave no time follows the step before it, and one that came before any timed step takes the time of the first.
 /// With no times to compare, steps sit after the last message from the user. Turn records are not steps.
 public enum ThreadTimeline {
     public static func items(messages: [Message], activities: [Activity], earlierAvailable: Bool = false,
@@ -77,10 +78,14 @@ public enum ThreadTimeline {
         let afterLastUser = messages.lastIndex(where: { $0.role == "user" }).map { $0 + 1 } ?? messages.count
         let byTime = firstMessageTime != nil
 
-        // A step's slot is how many messages come before it. Slots never go back, so steps keep their order.
+        // A step's slot is how many messages come before it. A step that names a message the page holds sits after
+        // it wherever its sequence puts it, as the desktop places it: a thread at the step cap can give old steps
+        // sequences past newer ones (#2330). A step placed by time never goes above the step before it, so those keep
+        // their order.
         var placed: [(step: Activity, slot: Int)] = []
-        var floor = 0
+        var previous = 0
         var cursor = 0
+        var outOfOrder = false
         for (index, step) in steps.enumerated() {
             var slot: Int
             if let after = step.afterMessageId, let position = positions[after] {
@@ -92,13 +97,19 @@ public enum ThreadTimeline {
                 // After every message written no later than the step started: a message and a step at the same
                 // moment read message first.
                 while cursor < messages.count && (messageTimes[cursor].map({ $0 <= time }) ?? true) { cursor += 1 }
-                slot = cursor
+                slot = max(cursor, previous)
             } else {
-                slot = afterLastUser
+                slot = max(afterLastUser, previous)
             }
-            slot = max(slot, floor)
-            floor = slot
+            if let last = placed.last, slot < last.slot { outOfOrder = true }
+            previous = slot
             placed.append((step: step, slot: slot))
+        }
+        // By slot, and by sequence within one. Steps that came in order are already.
+        if outOfOrder {
+            placed = placed.enumerated()
+                .sorted { a, b in a.element.slot != b.element.slot ? a.element.slot < b.element.slot : a.offset < b.offset }
+                .map { $0.element }
         }
 
         var entries: [TimelineEntry] = []
