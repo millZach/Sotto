@@ -1,0 +1,49 @@
+name: iPhone Duo captures
+
+# Pictures and short videos of every surface of the iPhone Duo's layout, folded and unfolded sideways, from the real app on the
+# iPhone Duo simulator (apps/ios/Scripts/duo-captures.sh). For design work on the Duo: run it on a commit before a change
+# and on the change, and compare. A push to a branch named duo-captures/<anything> runs it on that commit, without
+# starting a pull request's CI; once on main it also runs by hand from the Actions tab. It is not a gate and no check
+# waits for it.
+on:
+  push:
+    branches: ['duo-captures/**']
+  workflow_dispatch:
+    inputs:
+      postures:
+        description: 'Which postures, comma-separated: folded, sideways'
+        required: false
+        default: 'folded,sideways'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-duo-captures-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  captures:
+    name: iPhone Duo captures (macOS)
+    # The iPhone Duo simulator needs Xcode 27.1's iOS 27 runtime, which only this runner has (ADR-0151, amended).
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Record native toolchain
+        run: |
+          xcodebuild -version
+          command -v ffmpeg || echo "No ffmpeg on this runner: clips stay as marks beside the whole video"
+      - name: Capture the Duo folded and sideways
+        run: sh apps/ios/Scripts/duo-captures.sh "${{ inputs.postures || 'folded,sideways' }}"
+      - name: Keep the captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-duo-captures
+          path: apps/ios/.build-duo/out/
+          if-no-files-found: warn
+          retention-days: 30

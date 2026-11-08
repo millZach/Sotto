@@ -2149,7 +2149,7 @@ final class GlowWordsView: LoopingView {
         if window == nil {
             timer?.invalidate()
             timer = nil
-        } else if timer == nil {
+        } else if timer == nil, !DebugFlags.still {
             // The timer holds this view until it leaves the window, where it stops.
             let next = Timer(timeInterval: WorkingWords.seconds, target: self, selector: #selector(nextWord), userInfo: nil, repeats: true)
             next.tolerance = 0.2
