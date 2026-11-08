@@ -43,6 +43,14 @@ async function fixture() {
     state.userMessageIds = ['user-1']
     await service.afterTurn(state.threadId)
     const checkpoint = unwrap(await service.checkpoints(target)).checkpoints[0]!
+    // A Git read in either capture that fails lands the checkpoint unavailable with its reason, and every later revert
+    // is refused for that, not for what the test checks. Say the reason here, where it happened (#1002). A failed
+    // `rev-parse HEAD` reads as an empty HEAD, which the service reports as changed history, so both HEADs are named.
+    if (checkpoint.status !== 'ready') {
+      const record = (service as unknown as { records: Map<string, { before: { head: string }; after?: { head: string } }> }).records.get(checkpoint.id)
+      throw new Error(`The fixture's turn left its checkpoint ${checkpoint.status}, not ready: ${checkpoint.reason ?? 'no reason given'} `
+        + `HEAD before the turn: ${record?.before.head || '(none read)'}; after: ${record?.after?.head || '(none read)'}.`)
+    }
     return { ...target, checkpointId: checkpoint.id }
   }
   return { root, repo, state, second, dependencies, service, target, complete, rollback, refresh }
