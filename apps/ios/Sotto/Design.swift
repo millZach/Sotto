@@ -1809,8 +1809,10 @@ private struct ChoiceBody: View {
 /// A chip: a short choice in a capsule, glowing in the accent once chosen.
 struct ChipStyle: ButtonStyle {
     var selected = false
+    /// A narrower chip, so a row of them fits the Duo's cover screen.
+    var tight = false
     func makeBody(configuration: Configuration) -> some View {
-        ChipBody(label: configuration.label, pressed: configuration.isPressed, selected: selected)
+        ChipBody(label: configuration.label, pressed: configuration.isPressed, selected: selected, tight: tight)
     }
 }
 
@@ -1818,6 +1820,7 @@ private struct ChipBody: View {
     let label: ButtonStyleConfiguration.Label
     let pressed: Bool
     let selected: Bool
+    let tight: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
@@ -1825,7 +1828,7 @@ private struct ChipBody: View {
         label
             .font(.sotto(.small, .semibold))
             .lineLimit(2)
-            .padding(.horizontal, Space.s4)
+            .padding(.horizontal, tight ? Space.s3 : Space.s4)
             .padding(.vertical, Space.s2)
             .frame(minHeight: 44)
             .foregroundStyle(Palette.ink)
@@ -1844,24 +1847,29 @@ private struct ChipBody: View {
 
 /// The round glass button at the trailing edge of a page's heading, such as New thread.
 struct GlassCircleStyle: ButtonStyle {
+    /// On the iPhone Duo only New thread glows at rest; the other round buttons stand flat, so the strongest light on an
+    /// idle screen is what needs the user (Zach's pick C, November 8, 2026; ADR-0051, amended).
+    var flatOnDuo = false
     func makeBody(configuration: Configuration) -> some View {
-        GlassCircleBody(label: configuration.label, pressed: configuration.isPressed)
+        GlassCircleBody(label: configuration.label, pressed: configuration.isPressed, flatOnDuo: flatOnDuo)
     }
 }
 
 private struct GlassCircleBody: View {
     let label: ButtonStyleConfiguration.Label
     let pressed: Bool
+    let flatOnDuo: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         label
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(Palette.accentText)
             .frame(width: 44, height: 44)
             .modifier(CircleGround(ring: theme.color(.accent).opacity(0.28), tint: theme.color(.accent)))
-            .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6)
+            .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6, showing: !(flatOnDuo && duo != .none))
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)

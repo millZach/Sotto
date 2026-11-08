@@ -10,6 +10,7 @@ struct PullRequestSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     let ref: ThreadRef
     let url: String
     let number: Int
@@ -63,7 +64,7 @@ struct PullRequestSheet: View {
                 Button { openURL(page) } label: {
                     Image(systemName: "arrow.up.right.square").font(.system(size: 16, weight: .semibold))
                 }
-                .buttonStyle(GlassCircleStyle())
+                .buttonStyle(GlassCircleStyle(flatOnDuo: true))
                 .accessibilityLabel("Open #\(String(number)) on GitHub")
                 .accessibilityHint("Opens it in Safari.")
                 .accessibilityIdentifier("pull-request-github")
@@ -88,7 +89,7 @@ struct PullRequestSheet: View {
                             if each.flagged(detail) { Circle().fill(Palette.danger).frame(width: 7, height: 7).accessibilityHidden(true) }
                         }
                     }
-                    .buttonStyle(ChipStyle(selected: part == each))
+                    .buttonStyle(ChipStyle(selected: part == each, tight: isFolded))
                     .accessibilityLabel(each.flagged(detail) ? each.flaggedTitle : each.title)
                     .accessibilityHint("Goes to this part of the pull request.")
                     .accessibilityAddTraits(part == each ? .isSelected : [])
@@ -100,6 +101,9 @@ struct PullRequestSheet: View {
         }
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
     }
+
+    /// On the Duo's cover screen, where four jump chips of the usual width cut the last at the strip.
+    private var isFolded: Bool { if case .folded = duo { return true } else { return false } }
 
     private func jump(to target: PullRequestPart, proxy: ScrollViewProxy) {
         part = target
@@ -232,6 +236,7 @@ private struct PartTops: PreferenceKey {
 
 /// The pull request as one page: its header, where it stands, then each part.
 private struct PullRequestBody: View {
+    @Environment(\.duoLayout) private var duo
     static let space = "pull-request-sheet"
     let ref: ThreadRef
     let detail: PullRequestDetail
@@ -309,6 +314,8 @@ private struct PullRequestBody: View {
             .padding(.horizontal, Space.s1)
             content()
         }
+        // A jump to this part leaves its heading room under the chips' line, on the Duo.
+        .padding(.top, duo == .none ? 0 : Space.s3)
         .id(which)
         .background(alignment: .top) {
             GeometryReader { proxy in
@@ -656,15 +663,82 @@ private struct BabysitDock: View {
     let ref: ThreadRef
     let detail: PullRequestDetail
     @Binding var toast: String?
+    @Environment(\.duoLayout) private var duo
     @State private var pressing = false
     @State private var presses = 0
+    /// On the Duo, whether the one row shows what babysitting does.
+    @State private var explaining = false
 
     var body: some View {
         if model.offersBabysitting(ref.hostID) {
             let marks = model.babysitting(ref)
             let state = PullRequests.babysitState(babysitting: marks.current, ended: marks.ended, detail: detail,
                                                   agent: Words.provider(model.thread(ref)?.providerId))
-            card(state)
+            if duo == .none { card(state) } else { oneRow(state) }
+        }
+    }
+
+    /// On the Duo the dock is one row, with its explanation behind ⓘ: as a card it covered the sheet's reading area on the
+    /// cover screen (Zach's pick A, November 8, 2026).
+    @ViewBuilder private func oneRow(_ state: PullRequests.BabysitState) -> some View {
+        let waiting = pressing || model.babysitPress(ref) != nil
+        VStack(alignment: .leading, spacing: Space.s2) {
+            if explaining {
+                Text(explanation(state)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .accessibilityIdentifier("pull-request-babysit-words")
+            }
+            HStack(spacing: Space.s2) {
+                switch state {
+                case .babysitting(let title, _):
+                    Image(systemName: "alarm").iconFont(17, weight: .semibold).foregroundStyle(Palette.accentText).accessibilityHidden(true)
+                    Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
+                    Spacer(minLength: Space.s1)
+                    Button { press(false) } label: { waiting ? Text("Stopping…") : Text("Stop babysitting") }
+                        .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                        .disabled(waiting || !model.canChangeBabysitting(ref))
+                        .accessibilityLabel("Stop babysitting #\(String(detail.number))")
+                        .accessibilityIdentifier("stop-babysitting")
+                case .offered:
+                    Button { press(true) } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "alarm").accessibilityHidden(true)
+                            (waiting ? Text("Starting…", comment: "Babysitting a pull request is starting.") : Text("Babysit pull request"))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
+                    .disabled(waiting || !model.canChangeBabysitting(ref))
+                    .accessibilityLabel("Babysit pull request #\(String(detail.number))")
+                    .accessibilityIdentifier("babysit-pull-request")
+                case .finished(let title, _):
+                    Image(systemName: "alarm").iconFont(17, weight: .semibold).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                    Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
+                    Spacer(minLength: Space.s1)
+                }
+                Button { explaining.toggle() } label: {
+                    Image(systemName: "info.circle").iconFont(17, weight: .medium).foregroundStyle(Palette.muted)
+                        .frame(width: 44, height: 44)
+                        .background(Palette.fillSoft, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("What babysitting does")
+                .accessibilityAddTraits(explaining ? .isSelected : [])
+                .accessibilityIdentifier("pull-request-babysit-info")
+            }
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: presses)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pull-request-babysit")
+    }
+
+    private func explanation(_ state: PullRequests.BabysitState) -> String {
+        switch state {
+        case .babysitting(_, let words): return words
+        case .offered(let words): return words
+        case .finished(_, let words): return words
         }
     }
 

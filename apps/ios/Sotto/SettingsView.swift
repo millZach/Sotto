@@ -54,12 +54,10 @@ private struct AppearancePanel: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         let current = PhoneAppearance(rawValue: appearance) ?? .dark
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Appearance"), value: current == .system ? (scheme == .dark ? String(localized: "Following the iPhone: Dark") : String(localized: "Following the iPhone: Light")) : nil)
+        LookPanel(title: String(localized: "Appearance"), value: current == .system ? (scheme == .dark ? String(localized: "Following the iPhone: Dark") : String(localized: "Following the iPhone: Light")) : nil) {
             Segmented(name: String(localized: "Appearance"), choices: PhoneAppearance.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-\($0.rawValue)" }) { appearance = $0.rawValue }
         }
-        .lookRow()
     }
 }
 
@@ -172,8 +170,7 @@ private struct TextSizePanel: View {
     @AppStorage(PhonePreferenceKey.legacyLargerText) private var legacyLarger = false
     var body: some View {
         let current = PhoneTextSize.resolve(textSize, legacyLarger: legacyLarger)
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Text size"), value: current.title)
+        LookPanel(title: String(localized: "Text size"), value: current.title) {
             HStack(spacing: 0) {
                 ForEach(PhoneTextSize.allCases, id: \.rawValue) { size in
                     TextSizeStep(size: size, selected: size == current) { textSize = size.rawValue }
@@ -188,9 +185,9 @@ private struct TextSizePanel: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Text size")
+        } under: {
             TextSample()
         }
-        .lookRow()
     }
 }
 
@@ -232,14 +229,73 @@ private struct TextSizeStep: View {
 
 /// A request card's words at the chosen size, so the size can be judged before leaving Settings.
 private struct TextSample: View {
+    @Environment(\.duoLayout) private var duo
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let words = VStack(alignment: .leading, spacing: 2) {
+            // On the Duo it says what it is, since it reads like a request that strayed into Settings.
+            if duo != .none { Text("Sample", comment: "Labels the example words under Text size in Settings.").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted) }
             Text("Pick the drawer shortcut").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             Text("Asks: which shortcut should open the terminal drawer?").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if duo == .none { words } else {
+                words.padding(Space.s3).background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
         .accessibilityHidden(true)
+    }
+}
+
+/// One row of Look. Held sideways or upright on the Duo the label stands on the left with its control beside it, where
+/// phone-width controls stretched across the page (Zach's pick C, November 8, 2026); everywhere else the label stands over
+/// the control. At the accessibility text sizes the label stays over it, since the row has no room for both.
+private struct LookPanel<Control: View, Under: View>: View {
+    let title: String
+    let value: String?
+    let hint: String?
+    let control: Control
+    let under: Under
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    init(title: String, value: String?, hint: String? = nil, @ViewBuilder control: () -> Control, @ViewBuilder under: () -> Under) {
+        self.title = title
+        self.value = value
+        self.hint = hint
+        self.control = control()
+        self.under = under()
+    }
+    private var controlWidth: CGFloat? {
+        guard !typeSize.isAccessibilitySize else { return nil }
+        if duo.sideways { return 340 }
+        return duo == .upright ? 280 : nil
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            if let controlWidth {
+                HStack(spacing: Space.s5) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).accessibilityAddTraits(.isHeader)
+                        if let words = value ?? hint { Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    control.frame(width: controlWidth)
+                }
+            } else {
+                PanelHeader(title: title, value: value)
+                control
+                if let hint { PanelHint(text: hint) }
+            }
+            under
+        }
+        .lookRow()
+    }
+}
+
+extension LookPanel where Under == EmptyView {
+    init(title: String, value: String?, hint: String? = nil, @ViewBuilder control: () -> Control) {
+        self.init(title: title, value: value, hint: hint, control: control, under: { EmptyView() })
     }
 }
 
@@ -250,8 +306,7 @@ private struct GlowPanel: View {
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         let value = glow == 0 ? String(localized: "Off") : (Double(glow) / 100).formatted(.percent)
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value)
+        LookPanel(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value) {
             HStack(spacing: Space.s4) {
                 Light(tone: .accent, size: 10, breathing: true)
                     .frame(width: 24)
@@ -263,7 +318,6 @@ private struct GlowPanel: View {
             }
             .frame(minHeight: 44)
         }
-        .lookRow()
     }
 }
 
@@ -271,13 +325,10 @@ private struct DensityPanel: View {
     @AppStorage(PhonePreferenceKey.density) private var density = PhoneDensity.comfortable.rawValue
     var body: some View {
         let current = PhoneDensity(rawValue: density) ?? .comfortable
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Message density"), value: nil)
+        LookPanel(title: String(localized: "Message density"), value: nil, hint: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps.")) {
             Segmented(name: String(localized: "Message density"), choices: PhoneDensity.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
-            PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
         }
-        .lookRow()
     }
 }
 
@@ -286,14 +337,11 @@ private struct DuoTabsPanel: View {
     @AppStorage(PhonePreferenceKey.duoTabsSide) private var side = DuoTabsSide.right.rawValue
     var body: some View {
         let current = DuoTabsSide(rawValue: side) ?? .right
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil)
+        LookPanel(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil, hint: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen.")) {
             Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
                       choices: DuoTabsSide.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
-            PanelHint(text: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen."))
         }
-        .lookRow()
     }
 }
 

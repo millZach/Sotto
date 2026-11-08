@@ -8,19 +8,42 @@ struct ComputerRoute: Hashable { let hostID: String }
 /// cards scroll as one sheet, like Threads.
 struct ComputersView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         SheetPage(washHeight: 330) {
             PageHeading(String(localized: "Computers"), subtitle: String(localized: "Each computer runs Sotto and shares its threads with this iPhone.")) {
-                Button { model.startAdding() } label: { Image(systemName: "plus") }
-                    .buttonStyle(GlassCircleStyle())
-                    .disabled(!model.storageReady)
-                    .accessibilityLabel("Add computer")
+                // On the Duo, New thread's + stands on the rail beside this, so adding is the list's last row instead (Zach's
+                // pick C, November 8, 2026).
+                if duo == .none {
+                    Button { model.startAdding() } label: { Image(systemName: "plus") }
+                        .buttonStyle(GlassCircleStyle())
+                        .disabled(!model.storageReady)
+                        .accessibilityLabel("Add computer")
+                }
             }
             .padding(.top, Space.s1)
             if model.feedback != nil { FeedbackBanner().padding(.top, Space.s4) }
             VStack(spacing: Space.s3) {
                 ForEach(model.computers, id: \.hostID) { computer in
                     ComputerCard(hostID: computer.hostID, name: computer.name)
+                }
+                if duo != .none {
+                    let shape = RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    Button { model.startAdding() } label: {
+                        HStack(spacing: Space.s3) {
+                            Image(systemName: "plus").iconFont(16, weight: .semibold).accessibilityHidden(true)
+                            Text("Add a computer")
+                        }
+                        .font(.sotto(.body, .semibold))
+                        .foregroundStyle(Palette.accentText)
+                        .padding(.horizontal, Space.s4)
+                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        .overlay(shape.strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+                        .contentShape(shape)
+                    }
+                    .buttonStyle(PressStyle())
+                    .disabled(!model.storageReady)
+                    .accessibilityIdentifier("computers-add")
                 }
             }
             .padding(.top, Space.s6)

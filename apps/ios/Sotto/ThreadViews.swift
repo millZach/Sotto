@@ -149,7 +149,7 @@ struct RailBackButton: View {
     let back: () -> Void
     var body: some View {
         Button(action: back) { Image(systemName: "chevron.backward") }
-            .buttonStyle(GlassCircleStyle())
+            .buttonStyle(GlassCircleStyle(flatOnDuo: true))
             .accessibilityLabel(String(localized: "Back"))
             .accessibilityIdentifier("duo-rail-back")
     }
@@ -363,30 +363,35 @@ struct ThreadMenu: View {
     var onRail = false
     @State private var acted = 0
     @State private var showingPullRequest = false
+    @State private var showingCard = false
     var body: some View {
         let chips = GitChips(model.thread(ref)?.worktree)
-        Menu {
-            if onRail { railItems(chips) } else { actions }
-        } label: {
+        Group {
             if onRail {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
-                    .contentShape(Circle())
+                Button { showingCard = true } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressStyle())
+                .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
+                    railCard(chips).presentationCompactAdaptation(.popover)
+                }
             } else {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 32, height: 32)
-                    .background(Palette.fillSoft, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Menu { actions } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 32, height: 32)
+                        .background(Palette.fillSoft, in: Circle())
+                        .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
             }
         }
-        // Opened from the foot of the rail, iOS would turn the list over and put the name under the actions.
-        .menuOrder(onRail ? .fixed : .automatic)
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
@@ -419,47 +424,103 @@ struct ThreadMenu: View {
         }
     }
 
-    /// On the rail: the name, where it runs and its branch and changes head the menu as its section's heading, because iOS
-    /// dims a row that can't be pressed too far to read, and this is the only place they show. Under them the pull request,
-    /// where this computer offers its sheet (where it doesn't, it reads with the rest, as its chip does), and the actions.
-    @ViewBuilder private func railItems(_ chips: GitChips) -> some View {
+    /// On the rail: Sotto's own card, because iOS dims a menu's heading too far to read and this is the only place these
+    /// show (Zach's pick B, November 8, 2026). The name at full strength, each fact on its own line with its mark, the pull
+    /// request as a row where this computer offers its sheet (where it doesn't, it reads with the facts, as its chip does),
+    /// and the actions.
+    private func railCard(_ chips: GitChips) -> some View {
         let thread = model.thread(ref)
         let opens = model.offersPullRequestSheet(ref.hostID) && chips.pullRequestURL != nil
-        let name = thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet")
-        let about = facts(chips, thread: thread, pullRequestOpens: opens)
-        if !opens && !model.compactionOffered(ref) && model.shelfAction(ref) == nil {
-            // A heading needs rows under it, so with nothing to do the name and the facts are the row.
-            Button {} label: {
-                Text(name)
-                Text(verbatim: about)
-            }
-            .disabled(true)
-        } else {
-            Section {
-                if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
-                    let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
-                    Button { showingPullRequest = true } label: {
-                        Label(caption(pullRequest), systemImage: "arrow.triangle.pull")
-                        if let checks { Text(verbatim: checks) }
+        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
+        let card = VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(verbatim: thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, Space.s1)
+                    .accessibilityAddTraits(.isHeader)
+                fact("laptopcomputer") { Text(verbatim: place) }
+                if let branch = chips.branch { fact("arrow.triangle.branch") { Text(verbatim: branch) } }
+                if let changes = chips.changes {
+                    fact("plus.forwardslash.minus") {
+                        HStack(spacing: Space.s1) {
+                            Text(verbatim: "+\(changes.insertions)").foregroundStyle(Palette.accentText)
+                            Text(verbatim: "−\(changes.deletions)").foregroundStyle(Palette.dangerText)
+                        }
                     }
-                    .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
-                    .accessibilityIdentifier("thread-menu-pull-request")
                 }
-                actions
-            } header: {
-                Text(verbatim: name + "\n" + about)
+                if !opens, let pullRequest = chips.pullRequest { fact("arrow.triangle.pull") { Text(verbatim: caption(pullRequest)) } }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
+                let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                cardRow(caption(pullRequest), detail: checks, icon: "arrow.triangle.pull", chevron: true, identifier: "thread-menu-pull-request") {
+                    // The sheet can't rise while the card is still going.
+                    Task { try? await Task.sleep(nanoseconds: 350_000_000); showingPullRequest = true }
+                }
+                .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
+            }
+            if model.compactionOffered(ref) || model.shelfAction(ref) != nil { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            cardActions
+        }
+        .frame(width: 292, alignment: .leading)
+        // At the largest text sizes the card can outgrow the screen; then it scrolls.
+        return ViewThatFits(in: .vertical) { card; ScrollView { card } }
+    }
+
+    private func fact<Content: View>(_ icon: String, @ViewBuilder words: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+            Image(systemName: icon).iconFont(12, weight: .medium).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
+            words().font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The same actions as `actions`, as the card's rows.
+    @ViewBuilder private var cardActions: some View {
+        if model.compactionOffered(ref) {
+            let held = model.compactionHeld(ref)
+            cardRow(String(localized: "Compact context"), detail: held ?? String(localized: "Summarize earlier messages to free room"), enabled: held == nil) {
+                acted += 1
+                Task { await model.compact(ref) }
+            }
+        }
+        if let action = model.shelfAction(ref) {
+            let held = model.actionHeld(ref)
+            cardRow(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                    : String(localized: "Restore", comment: "Restore a settled thread to open work."),
+                    detail: held, identifier: action == .settle ? "thread-settle" : "thread-restore", enabled: held == nil) {
+                acted += 1
+                Task { await model.shelve(ref, action) }
             }
         }
     }
 
-    /// Where the thread runs on one line, then what the chips say on the next.
-    private func facts(_ chips: GitChips, thread: ThreadSummary?, pullRequestOpens: Bool) -> String {
-        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
-        var git: [String] = []
-        if let branch = chips.branch { git.append(branch) }
-        if let changes = chips.changes { git.append("+\(changes.insertions) −\(changes.deletions)") }
-        if !pullRequestOpens, let pullRequest = chips.pullRequest { git.append(caption(pullRequest)) }
-        return git.isEmpty ? place : place + "\n" + git.joined(separator: " · ")
+    private func cardRow(_ title: String, detail: String?, icon: String? = nil, chevron: Bool = false, identifier: String = "",
+                         enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button {
+            showingCard = false
+            action()
+        } label: {
+            HStack(spacing: Space.s3) {
+                if let icon { Image(systemName: icon).iconFont(14, weight: .medium).foregroundStyle(Palette.muted).accessibilityHidden(true) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: title).font(.sotto(.body)).foregroundStyle(enabled ? Palette.ink : Palette.muted)
+                    if let detail { Text(verbatim: detail).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true) }
+                }
+                Spacer(minLength: 0)
+                if chevron { Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!enabled)
+        .accessibilityIdentifier(identifier)
     }
 
     private func caption(_ pullRequest: GitChips.PullRequest) -> String {
@@ -2967,10 +3028,30 @@ extension View {
 
 private struct RequestSheetDetents: ViewModifier {
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// How tall the request says it needs to be, on the Duo.
+    @State private var fit: CGFloat?
+    @State private var chosen = PresentationDetent.medium
     func body(content: Content) -> some View {
-        let heights: Set<PresentationDetent> = typeSize.isAccessibilitySize ? [.large] : [.medium, .large]
-        return content.presentationDetents(heights).presentationDragIndicator(.visible)
+        let heights: Set<PresentationDetent>
+        if typeSize.isAccessibilitySize { heights = [.large] }
+        else if let fit { heights = [.height(fit), .large] }
+        else { heights = [.medium, .large] }
+        return content
+            .onPreferenceChange(RequestSheetFit.self) { height in
+                guard let height, height != fit else { return }
+                if chosen != .large { chosen = .height(height) }
+                fit = height
+            }
+            .presentationDetents(heights, selection: Binding(get: { typeSize.isAccessibilitySize ? .large : chosen }, set: { chosen = $0 }))
+            .presentationDragIndicator(.visible)
     }
+}
+
+/// How tall a request sheet's words, choices and buttons stand. On the Duo half the screen cut the third choice off with
+/// a band of nothing under the buttons, so the sheet opens exactly this tall (Zach's pick A, November 8, 2026).
+private struct RequestSheetFit: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = nextValue() ?? value }
 }
 
 /// The whole request: its context and every choice, on glass with a warm wash. Nothing is chosen for the user, and a
@@ -2985,8 +3066,12 @@ struct RequestSheet: View {
     /// its own store.
     @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dismiss) var dismiss
+    @Environment(\.duoLayout) private var duo
     let place: RequestPlace
     let request: AgentRequest
+    /// The height of what scrolls, and of what stands around it (the buttons and the safe area), for the Duo's fit.
+    @State private var wordsHeight: CGFloat = 0
+    @State private var aroundHeight: CGFloat = 0
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
@@ -3018,9 +3103,13 @@ struct RequestSheet: View {
             .padding(.top, Space.s5)
             .padding(.bottom, Space.s5)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
         }
         .scrollDismissesKeyboard(.interactively)
+        // The keyboard is in the safe area too, and writing an answer shouldn't make the sheet grow by it.
+        .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.top + $0.safeAreaInsets.bottom }) { if focus == nil { aroundHeight = $0 } }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .preference(key: RequestSheetFit.self, value: duo == .none || wordsHeight == 0 ? nil : wordsHeight + aroundHeight)
         .presentationBackground { SheetBackdrop(wash: true) }
         .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)

@@ -33,3 +33,22 @@ These are Zach's (or Drake's, accepted) and stand unless Zach changes them. A ju
 ## Rounds
 
 Each round's captures, scores and Zach's picks are added here as the climb goes.
+
+### Round 0 (November 8, 2026)
+
+Captures: `duo-captures/climb-before`. Scores: Claude Opus 5.5 7.5, GPT-6.1 Sol 8.0, GPT-6 Astra 8.0. No judge asked for a reversal. Muse Wonder Full was Zach's first pick for the third seat; a judge named in the Code review role came up on Sol, and Zach chose Astra instead.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/index.html`:
+
+| Surface | Pick |
+|---|---|
+| Question sheet | A, fits its choices |
+| Pull request sheet | A, one-row dock |
+| ••• menu | B, own card with ranked lines |
+| Sidebar rows | C, two-line names with the time below |
+| Settings | C, labels beside controls, and a labelled sample |
+| Computers | C, Add a computer as the list's last row |
+| Glow on controls | C, only New thread glows at rest |
+| Agents sheet | B, sections by state |
+
+Three findings were the capture, not the app: no Stop (the fixture had no stop capability), no chips and a grey Send (it had no settings or send capability), and a "blank" conversation above a sideways reply (the fixture thread is short; the picture shows it whole). Agents' third section is headed Finished rather than the prototype's Answered, and its rows keep their status words, because real rows also say Finished, Stopped and Just finished.

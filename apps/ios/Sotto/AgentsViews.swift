@@ -131,6 +131,7 @@ private struct AgentsPresenter: ViewModifier {
 private struct AgentsSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.duoLayout) private var duo
     let ref: ThreadRef
     let open: (ThreadRef) -> Void
     @State private var delegations: [DelegatedThreadRecord]?
@@ -162,13 +163,22 @@ private struct AgentsSheet: View {
                 if let title = source?.owner.title {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Spacer(minLength: Space.s2)
-                    Text(counts.detail).font(.sotto(.small, needs ? .semibold : .regular)).foregroundStyle(needs ? Palette.warningText : Palette.muted)
+                if duo == .none {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                        Spacer(minLength: Space.s2)
+                        Text(counts.detail).font(.sotto(.small, needs ? .semibold : .regular)).foregroundStyle(needs ? Palette.warningText : Palette.muted)
+                    }
+                    .padding(.top, Space.s2)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                        AgentsCountDetail(detail: counts.detail, needs: needs, working: rows.contains { $0.tone == .working } || (page?.summary.working ?? 0) > 0)
+                    }
+                    .padding(.top, Space.s2)
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(.top, Space.s2)
-                .accessibilityElement(children: .combine)
                 if problem {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Couldn’t read the agents on \(model.name(ref.hostID)). Nothing was changed. Try again.")
@@ -187,23 +197,26 @@ private struct AgentsSheet: View {
                         .font(.sotto(.body)).foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
                         .paragraphDirection()
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                            if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
-                            switch row.kind {
-                            case .thread:
-                                AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
-                                    if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
-                                }
-                            case .agent:
-                                AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)
+                } else if duo != .none {
+                    // On the Duo they stand under what they're doing, what needs the user first (Zach's pick B, November 8,
+                    // 2026). A section's heading says what its rows' status lines would; Finished and Failed rows keep
+                    // theirs, since the words differ row to row.
+                    ForEach(AgentsSection.sections(rows)) { section in
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            HStack(spacing: Space.s2) {
+                                Light(tone: section.tone.light, size: 7, breathing: section.tone == .working)
+                                Text(section.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).accessibilityAddTraits(.isHeader)
+                                Text("\(section.rows.count)").font(.sotto(.small)).monospacedDigit().foregroundStyle(Palette.muted)
                             }
+                            .padding(.horizontal, Space.s1)
+                            .accessibilityElement(children: .combine)
+                            agentRows(section.rows)
+                                .environment(\.agentsInSection, section.showsStatus)
                         }
                     }
-                    .sottoCard(.plain)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Delegated threads and agents, newest first")
+                } else {
+                    agentRows(rows)
+                        .accessibilityLabel("Delegated threads and agents, newest first")
                 }
             }
             .padding(.horizontal, Space.gutter)
@@ -219,6 +232,24 @@ private struct AgentsSheet: View {
         .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
+    }
+
+    private func agentRows(_ rows: [AgentsRow]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
+                switch row.kind {
+                case .thread:
+                    AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
+                        if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
+                    }
+                case .agent:
+                    AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)
+                }
+            }
+        }
+        .sottoCard(.plain)
+        .accessibilityElement(children: .contain)
     }
 
     /// The user's own refresh: the list, and every opened agent's task and result with it.
@@ -272,6 +303,57 @@ private extension AgentsRow.Tone {
     }
 }
 
+/// The rows that are doing one thing, on the Duo's Agents sheet.
+private struct AgentsSection: Identifiable {
+    let tone: AgentsRow.Tone
+    let title: String
+    let showsStatus: Bool
+    let rows: [AgentsRow]
+    var id: String { title }
+    static func sections(_ rows: [AgentsRow]) -> [AgentsSection] {
+        let all = [
+            AgentsSection(tone: .needs, title: String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), showsStatus: false,
+                          rows: rows.filter { $0.tone == .needs }),
+            AgentsSection(tone: .working, title: String(localized: "Working", comment: "A thread's state in its bar"), showsStatus: false,
+                          rows: rows.filter { $0.tone == .working }),
+            AgentsSection(tone: .failed, title: String(localized: "Failed"), showsStatus: true, rows: rows.filter { $0.tone == .failed }),
+            AgentsSection(tone: .done, title: String(localized: "Finished", comment: "The heading over delegated threads and agents that have stopped working."), showsStatus: true,
+                          rows: rows.filter { $0.tone == .done || $0.tone == .quiet }),
+        ]
+        return all.filter { !$0.rows.isEmpty }
+    }
+}
+
+private struct AgentsInSectionKey: EnvironmentKey { static let defaultValue: Bool? = nil }
+private extension EnvironmentValues {
+    /// Whether a row in a section says its status; nil for a row in the one list.
+    var agentsInSection: Bool? {
+        get { self[AgentsInSectionKey.self] }
+        set { self[AgentsInSectionKey.self] = newValue }
+    }
+}
+
+/// What needs the user in the warning colour and what works in the accent, on the Duo's Agents sheet.
+private struct AgentsCountDetail: View {
+    let detail: String
+    let needs: Bool
+    let working: Bool
+    var body: some View {
+        // `countLine` joins what needs the user and what works, in that order.
+        let parts = detail.components(separatedBy: " · ")
+        HStack(spacing: Space.s1) {
+            if needs, parts.count == 2 {
+                Text(verbatim: parts[0]).foregroundStyle(Palette.warningText)
+                Text(verbatim: "·").foregroundStyle(Palette.muted)
+                Text(verbatim: parts[1]).foregroundStyle(Palette.accentText)
+            } else {
+                Text(verbatim: detail).foregroundStyle(needs ? Palette.warningText : working ? Palette.accentText : Palette.muted)
+            }
+        }
+        .font(.sotto(.small, .semibold))
+    }
+}
+
 /// How long a row has worked, counting each second while it does.
 private struct RowElapsed: View {
     let elapsed: AgentsElapsed
@@ -293,6 +375,7 @@ private struct RowBody: View {
     /// Whether Watcher watches the sheet's own thread, which reaches a thread below through the one that delegated it.
     var sheetWatched = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.agentsInSection) private var inSection
     var body: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark
@@ -301,7 +384,17 @@ private struct RowBody: View {
                 .foregroundStyle(Palette.ink)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                if typeSize.isAccessibilitySize {
+                if inSection != nil {
+                    // In a section the name has the row's whole width, with the kind and the time under it.
+                    title.fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                        Text(tag).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        if case .unknown = row.elapsed {} else {
+                            Text(verbatim: "·").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                            RowElapsed(elapsed: row.elapsed).font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+                        }
+                    }
+                } else if typeSize.isAccessibilitySize {
                     // At the largest sizes the kind and the time go under the name, which beside them was cut to a few
                     // letters.
                     title.lineLimit(4)
@@ -326,7 +419,7 @@ private struct RowBody: View {
                 }
                 Text(row.meta(clock: { $0.formatted(date: .omitted, time: .shortened) }))
                     .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(2)
-                if let status = row.status {
+                if let status = row.status, inSection != false {
                     HStack(spacing: 6) {
                         Light(tone: row.tone.light, size: 7, breathing: row.tone == .working)
                         Text(status)
@@ -338,8 +431,8 @@ private struct RowBody: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // A row under another is set in, as Tools › Agents sets it.
-        .padding(.leading, CGFloat(min(row.level - 1, 3)) * 18)
+        // A row under another is set in, as Tools › Agents sets it. In a section it may stand apart from the row it's under.
+        .padding(.leading, inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18)
     }
     private var title: Text { Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
     private var kind: some View {
@@ -362,6 +455,7 @@ private struct AgentsThreadRow: View {
     let row: AgentsRow
     let sheetWatched: Bool
     let open: () -> Void
+    @Environment(\.agentsInSection) private var inSection
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
@@ -382,7 +476,7 @@ private struct AgentsThreadRow: View {
             if row.waitingFor != nil {
                 Button("Open to answer", action: open)
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                    .padding(.leading, Space.s4 + 28 + Space.s3 + CGFloat(min(row.level - 1, 3)) * 18)
+                    .padding(.leading, Space.s4 + 28 + Space.s3 + (inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18))
                     .padding(.bottom, Space.s3)
                     .accessibilityLabel("Open \(row.title) to answer its request")
                     .accessibilityIdentifier("agents-answer-\(row.id)")
@@ -399,6 +493,7 @@ private struct AgentsAgentRow: View {
     let row: AgentsRow
     /// The sheet's count of the user's refreshes: each one reads an opened agent again.
     let refreshes: Int
+    @Environment(\.agentsInSection) private var inSection
     @State private var open = false
     @State private var assignment: SubagentAssignment?
     @State private var failed = false
@@ -447,7 +542,7 @@ private struct AgentsAgentRow: View {
                 Text("Loading its result…").font(.sotto(.small)).foregroundStyle(Palette.muted).padding(.top, Space.s2)
             }
         }
-        .padding(.leading, Space.s4 + 28 + Space.s3 + CGFloat(min(row.level - 1, 3)) * 18)
+        .padding(.leading, Space.s4 + 28 + Space.s3 + (inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18))
         .padding(.trailing, Space.s4)
         .padding(.bottom, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)

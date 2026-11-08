@@ -339,7 +339,7 @@ struct MainTabs: View {
     private func sidebarButton(upright: Bool) -> some View {
         let showing = upright ? drawer : sidebarShown
         return Button { settleSidebar(!showing, upright: upright) } label: { Image(systemName: "sidebar.left") }
-            .buttonStyle(GlassCircleStyle())
+            .buttonStyle(GlassCircleStyle(flatOnDuo: true))
             .disabled(!sidebarAvailable)
             .accessibilityLabel(showing ? String(localized: "Hide the threads", comment: "Hides the list of threads beside the open thread on the iPhone Duo unfolded")
                                 : String(localized: "Show the threads", comment: "Shows the list of threads beside the open thread on the iPhone Duo unfolded"))
@@ -1026,19 +1026,29 @@ struct ThreadListRow: View, Equatable {
     private var button: some View {
         // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
-        let ago = wakeTime ?? Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+        // Beside a thread on the Duo, the name has the row's whole width and up to two lines, and the time ends the second
+        // line, where a column of times had cut nearly every name (Zach's pick C, November 8, 2026).
+        let side = identifier == "sidebar-thread-" && !large
+        let started = row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
+        let ago = wakeTime ?? (side ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: tone, breathing: kind == .working).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
-                        .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
-                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                        .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : side ? 2 : 1)
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                                  tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                        if side, let ago {
+                            Spacer(minLength: 0)
+                            Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).fixedSize()
+                        }
+                    }
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
                 Spacer(minLength: Space.s1)
-                if !large, let ago {
+                if !large, !side, let ago {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
                 }
             }
@@ -1263,6 +1273,20 @@ enum Words {
     static func date(_ iso: String?) -> Date? { iso.flatMap { stamp.date(from: $0) ?? plainStamp.date(from: $0) } }
     /// "4 min. ago", or nothing when the host did not say.
     static func ago(_ iso: String?) -> String? { date(iso).map { relative.localizedString(for: $0, relativeTo: Date()) } }
+    private static let shortAgo: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
+    /// How long ago in the fewest letters, such as 12m, for a row with little room; under a minute it is `ago`'s words.
+    static func agoShort(_ iso: String?) -> String? {
+        guard let when = date(iso) else { return nil }
+        let seconds = Date().timeIntervalSince(when)
+        guard seconds >= 60 else { return ago(iso) }
+        return shortAgo.string(from: seconds) ?? ago(iso)
+    }
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
