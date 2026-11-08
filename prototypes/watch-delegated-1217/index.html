@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: #1217 what Watch shows on a delegated thread. Three variants via ?variant=A|B|C. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype: Watch on a delegated thread (#1217)</title>
+<style>
+:root{--bg:#121315;--surface:#1a1b1e;--sunken:#16171a;--line:#2a2c30;--text:#e8e8ea;--text2:#b9bbc0;--muted:#8d9096;--teal:#4fb8a8;--hover:#232528}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 110px}
+h1{font-size:15px;color:var(--muted);font-weight:500;margin:0 0 4px}h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:26px 0 10px}
+.frame{max-width:980px;margin:0 auto}.cols{display:grid;grid-template-columns:260px 1fr;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.side{background:var(--sunken);border-right:1px solid var(--line);padding:10px 8px}.row{display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;border-radius:6px;color:var(--text2);font-size:14px}
+.row.child{padding-left:26px}.row.sel{background:var(--hover);color:var(--text)}.row .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.owl{width:16px;height:16px;display:inline-block;color:currentColor}.row .owl.on{color:var(--teal)}.row .owl.dim{opacity:.35}
+.pane{padding:0}.head{display:flex;align-items:center;gap:8px;height:46px;padding:0 12px;border-bottom:1px solid var(--line)}
+.head .title{flex:1;font-weight:600}.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 9px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text2);font:inherit;font-size:13px;white-space:nowrap}
+.btn.on{border-color:#4fb8a880;background:#4fb8a822;color:var(--text)}.btn.off{opacity:.45;cursor:not-allowed}
+.body{padding:14px 16px;color:var(--text2);font-size:14px}.dby{font-size:13px;color:var(--muted)}.dby a{color:var(--text2);text-decoration:underline;text-underline-offset:3px}
+.tip{margin-top:10px;font-size:13px;color:var(--text2);background:#24262a;border-radius:6px;padding:6px 9px;display:inline-block}.tip small{display:block;color:var(--muted);font-size:11px}
+.menu{margin-top:10px;display:inline-block;background:#202226;border:1px solid var(--line);border-radius:8px;padding:4px;font-size:13px;min-width:230px}
+.menu div{padding:5px 10px;border-radius:5px;color:var(--text2)}.menu .dis{color:var(--muted)}.menu small{display:block;color:var(--muted);font-size:11px}
+.bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:6px;background:#000c;border:1px solid var(--line);border-radius:999px;padding:6px;z-index:5}
+.bar a{white-space:nowrap;color:var(--text2);text-decoration:none;padding:6px 14px;border-radius:999px;font-size:14px}.bar a.on{background:var(--teal);color:#071512;font-weight:600}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0;max-width:760px}
+</style></head><body><div class="frame">
+<h1>Prototype for #1217, throwaway. Dark theme only. “Fix the login bug” delegated “Write the login tests”.</h1>
+<p class="hint" id="what"></p>
+<div id="states"></div>
+</div>
+<nav class="bar"><a href="?variant=A" id="vA">A · Greyed, says why</a><a href="?variant=B" id="vB">B · No Watch on it</a><a href="?variant=C" id="vC">C · Watches the parent</a></nav>
+<script>
+const p=new URLSearchParams(location.search).get('variant');const v=['A','B','C'].includes(p)?p:'A';document.getElementById('v'+v).classList.add('on')
+const owl=c=>`<svg class="owl ${c||''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="10" r="3"/><circle cx="16" cy="10" r="3"/><path d="M4 6l4 1M20 6l-4 1M6 15c2 4 10 4 12 0"/></svg>`
+const P='Fix the login bug',C='Write the login tests'
+const what={A:'Watch stays where it is on the delegated thread, greyed. Its tooltip and accessible name say why and where to go. The row menu shows Watch greyed with the same line. A press does nothing.',
+ B:'The delegated thread has no Watch anywhere (header, row owl, row menu, All threads, iPhone). Its “Delegated by” line says when Watcher watches it through the parent.',
+ C:'Watch on the delegated thread puts the thread that delegated it under Watcher\'s watch. It is pressed while the parent is watched, and its name says the parent.'}
+document.getElementById('what').textContent=what[v]
+function state(watched){
+ const rowOwl=v==='A'?owl('dim'):v==='B'?'':owl(watched?'on':'')
+ const side=`<div class="side"><div class="row">${owl(watched?'on':'')}<span class="t">${P}</span></div><div class="row child sel"><span class="t">${C}</span>${rowOwl}</div><div class="row"><span class="t">Release notes</span>${owl('')}</div></div>`
+ let btn='',tip='',menu='',dby=`<span class="dby">Delegated by <a>${P}</a></span>`
+ if(v==='A'){btn=`<span class="btn off" aria-disabled="true">${owl()}Watch</span>`;tip=`<div class="tip"><small>Its tooltip and accessible name</small>${watched?`Watcher watches “${P}”, the thread that delegated this one, and hears this one through it.`:`Watcher doesn't watch a delegated thread. Watch “${P}”, the thread that delegated it.`}</div>`
+  menu=`<div class="menu"><div>Open</div><div>Open beside</div><div>Rename</div><div class="dis">Watch<small>Watch “${P}” instead</small></div><div>Settle</div></div>`}
+ if(v==='B'){if(watched)dby=`<span class="dby">Delegated by <a>${P}</a> · Watched by Watcher through it</span>`
+  menu=`<div class="menu"><div>Open</div><div>Open beside</div><div>Rename</div><div>Settle</div></div>`}
+ if(v==='C'){btn=`<span class="btn ${watched?'on':''}">${owl()}${watched?`Watching “${P}”`:`Watch “${P}”`}</span>`;tip=`<div class="tip"><small>Its tooltip</small>${watched?`Stop watching “${P}”: Watcher lets it and the threads it delegated be`:`Watch “${P}”, the thread that delegated this one. Watcher directs it, and it directs this one.`}</div>`
+  menu=`<div class="menu"><div>Open</div><div>Open beside</div><div>Rename</div><div>${watched?'✓ ':''}Watch “${P}”</div><div>Settle</div></div>`}
+ return `<h2>${watched?'The parent is watched':'The parent is not watched'}</h2><div class="cols">${side}<div class="pane"><div class="head"><span class="title">${C}</span>${btn}</div><div class="body">${dby}<br>${tip}<br>${menu}</div></div></div>`}
+document.getElementById('states').innerHTML=state(false)+state(true)
+</script></body></html>
