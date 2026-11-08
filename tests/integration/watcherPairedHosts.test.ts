@@ -480,6 +480,35 @@ it('talks only to parent threads on a paired host, and the host that owns them h
   expect(marked.rows.find(row => row.target.threadId === theirs.threadId)?.delegatedBy).not.toHaveProperty('hostId')
 })
 
+it('lets go of a request’s participation on a paired host’s delegated thread once that host is attached after recovery (#1217)', async () => {
+  const f = await master(), parent = await f.call('start_thread', f.start())
+  if (parent.status !== 'ok' || !('target' in parent)) throw new Error('start-refused')
+  const child = { hostId: f.pairing.hostId, threadId: randomUUID() }
+  await f.socket.command({ type: 'create-thread', threadId: child.threadId, projectId: f.project.id, modelId: f.model.id, title: 'Synthetic delegated worker',
+    runtimeMode: 'approval-required', workingCopy: 'shared' })
+  const host = remote.host.service as unknown as { control: { dependencies: { host: { setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void> } } } }
+  await host.control.dependencies.host.setDelegatedBy(child.threadId, parent.target.threadId)
+  await expect.poll(() => f.router.watcherHosts().snapshot(f.pairing.hostId)?.threads.find(item => item.id === child.threadId)?.delegatedBy).toBe(parent.target.threadId)
+  // What an older build left: the thread taking part in the user's still active request, watched for it alone.
+  await f.control.updateWatcher(record => {
+    const request = record.requests.find(item => item.id === f.requestId)!
+    request.state = 'active'; request.closedAt = null
+    request.participants.push({ requestId: f.requestId, target: child, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0, lastUserMessageId: null })
+  })
+  const participation = () => f.control.watcherRecord().requests.find(item => item.id === f.requestId)!.participants.find(item => item.target.threadId === child.threadId)!
+  // Sotto starts again: Watcher recovers before its hosts are attached, so it cannot read that thread yet.
+  f.watcher.close()
+  const later = new WatcherService({ directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => false })
+  cleanups.push(async () => { later.close() })
+  await later.recover()
+  expect(participation()).not.toHaveProperty('automationStopped')
+  // Once the host is attached and its threads are listed, the participation goes quietly, and the thread is not watched.
+  later.useRemoteHosts(f.router.watcherHosts())
+  await expect.poll(() => participation().automationStopped, { timeout: 15_000 }).toBe(true)
+  expect(later.watches(child)).toBe(false)
+  expect(later.watches(parent.target)).toBe(true)
+})
+
 it('settles several idle threads on a paired host under one request while Watcher works (#1254)', async () => {
   const f = await master(), targets: { hostId: string, threadId: string }[] = []
   for (let index = 0; index < 3; index++) {

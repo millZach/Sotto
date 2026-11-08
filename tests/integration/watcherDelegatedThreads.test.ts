@@ -157,11 +157,12 @@ it('lets go, on the paired host that owns it, of a watch a desktop gave a delega
   const watch = (target: WatcherThreadTarget) => ({ id: randomUUID(), target, createdAt: at, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null, remoteOrigin })
   await f.control.updateWatcher(record => { record.watches = [watch(child), watch(parent)] })
   // This Sotto starts as the host those threads are on: with no desktop's read yet, it lets the delegated thread's watch
-  // go, fenced so a late read cannot give it back, and keeps the parent's.
+  // go and keeps the parent's. It sets no fence: the thread's link keeps the watch off, and once the link goes the thread
+  // can be watched again.
   await f.restart(60_000, true)
   const record = f.control.watcherRecord()
   expect(record.watches?.map(item => item.target.threadId)).toEqual([parent.threadId])
-  expect(record.watchFences?.some(fence => fence.target?.threadId === child.threadId && fence.remoteOrigin?.clientId === 'synthetic-desktop')).toBe(true)
+  expect(record.watchFences?.some(fence => fence.target?.threadId === child.threadId) ?? false).toBe(false)
 })
 
 it('answers a retry of an operation recorded before its thread was delegated with its receipt (#1217)', async () => {
@@ -184,4 +185,31 @@ it('answers a retry of an operation recorded before its thread was delegated wit
   expect(await f.call('send_to_thread', byRequest)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(await f.call('send_to_thread', byWatch)).toMatchObject({ status: 'ok', receipt: { operationId: standing.receipt.operationId } })
   expect(await f.call('send_to_thread', { ...byWatch, retryKey: randomUUID() })).toMatchObject({ code: 'RESERVED_THREAD' })
+})
+
+it('never lets a fenced watch hold up the rest of a desktop’s watches, and lets a thread whose link went be watched again (#1217)', async () => {
+  const f = await fixture(), { parent, child } = await f.family(), ordinary = await f.create('Synthetic ordinary worker'), stale = await f.create('Synthetic unwatched worker')
+  const at = new Date().toISOString()
+  const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-project', provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: at }
+  const remoteOrigin = { clientId: 'synthetic-desktop', masterHostId: master.target.hostId, masterCreationOperationId: master.creationOperationId, masterCreatedAt: master.createdAt }
+  const watch = (target: WatcherThreadTarget) => ({ id: randomUUID(), target, createdAt: at, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null })
+  // What a desktop gave this host before its thread was delegated, and one it stopped watching, whose fence stands.
+  const old = watch(child), unwatched = watch(stale)
+  await f.control.updateWatcher(record => {
+    record.watches = [{ ...old, remoteOrigin }]
+    record.watchFences = [{ id: unwatched.id, target: stale, remoteOrigin }]
+  })
+  // This Sotto starts as the host those threads are on, and lets the delegated thread's watch go.
+  await f.restart(60_000, true)
+  expect(f.control.watcherRecord().watches ?? []).toEqual([])
+  // The thread that delegated is deleted while the desktop is away, so the thread it delegated is an ordinary one again.
+  expect(await f.workspace.host.deleteThreads([parent.threadId], { automatic: false, hold: () => null })).toMatchObject({ deleted: [parent.threadId] })
+  await vi.waitFor(() => expect(f.control.watcherSnapshot().threads.find(item => item.id === child.threadId)?.delegatedBy).toBeUndefined())
+  // The desktop comes back with its old watch, the stale one and a new one: the old watch takes again, the new one is
+  // taken, and only the stale one is left out, quietly.
+  const fresh = watch(ordinary)
+  const read = await f.service.readRemote({ master, standingWatches: [old, unwatched, fresh] }, 'synthetic-desktop') as { status?: string; standingWatches?: { id: string }[] }
+  expect(read.status).not.toBe('refused')
+  expect(read.standingWatches?.map(item => item.id).sort()).toEqual([old.id, fresh.id].sort())
+  expect(f.control.watcherRecord().watches?.map(item => item.target.threadId).sort()).toEqual([child.threadId, ordinary.threadId].sort())
 })
