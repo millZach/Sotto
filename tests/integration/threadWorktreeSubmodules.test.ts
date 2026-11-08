@@ -1,9 +1,10 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { fetchHeadSource, runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 
@@ -159,15 +160,28 @@ describe("independent working-copy allocation", () => {
     expect(await readFile((await git(module, ['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim(), 'utf8')).toContain(`'${published}' of `)
     return { ...f, a, origin, module, published }
   }
-  it.each(['checked-out', 'deinitialized'] as const)('takes a submodule commit fetched by its hash from its remote as on that remote (%s)', async state => {
+  it.each(['checked-out', 'deinitialized'] as const)('still counts a submodule commit fetched by its hash, and says it may be on its remote (%s)', async state => {
     const f = await fetchedByHashFixture()
     if (state === 'deinitialized') await git(f.a.path!, ['submodule', 'deinit', '--', 'module'])
     const preview = await f.service.reclaimFacts(f.a)
-    expect(preview.repositories).toEqual([])
-    expect(preview.ignored).toEqual([])
-    expect((await f.service.reclaim(f.a, { automatic: true })).reclaimedAt).toBeTruthy()
+    expect(preview.repositories).toEqual([{ path: 'module/', changeCount: 0, kind: 'repository', unpushedCommitCount: 1, fetchedByHash: { remote: 'origin', commitCount: 1 } }])
+    await expect(f.service.reclaim(f.a, { automatic: true })).rejects.toThrow('a rule leaves it alone')
+    await expect(f.service.reclaim(f.a)).rejects.toThrow('Choose Remove worktree to review them')
+    if (state === 'checked-out') {
+      // A tick given to the note is refused once the note is gone: the row would now say "not on any remote".
+      const fetchHead = (await git(f.module, ['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim()
+      const recorded = await readFile(fetchHead, 'utf8')
+      await rm(fetchHead)
+      await expect(f.service.reclaim(f.a, { confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories })).rejects.toThrow('The nested work changed')
+      await writeFile(fetchHead, recorded)
+      expect((await f.service.reclaim(f.a, { confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: preview.repositories })).reclaimedAt).toBeTruthy()
+    } else {
+      // A client from before the note confirms the row without it, having read "1 commit not on any remote".
+      const unnoted = preview.repositories.map(row => ({ path: row.path, changeCount: row.changeCount, unpushedCommitCount: row.unpushedCommitCount, kind: row.kind }))
+      expect((await f.service.reclaim(f.a, { confirmedItems: preview.items, confirmedIgnored: preview.ignored, confirmedRepositories: unnoted })).reclaimedAt).toBeTruthy()
+    }
   }, 60_000)
-  it.each(['built on it', 'fetched from itself', 'fetched from a folder that is not its remote'] as const)('still counts a local commit beside one fetched by its hash (%s)', async source => {
+  it.each(['built on it', 'fetched from itself', 'fetched from a folder that is not its remote', 'fetched from a remote at its own path', 'fetched from a remote at its own Git directory'] as const)('notes only the commits fetched from another copy (%s)', async source => {
     const f = await fetchedByHashFixture()
     let local: string
     if (source === 'fetched from a folder that is not its remote') {
@@ -181,14 +195,20 @@ describe("independent working-copy allocation", () => {
       local = (await git(f.module, [...identity, 'commit-tree', `${f.published}^{tree}`, '-p', f.published, '-m', 'Local module work'])).trim()
       // `git pull . <branch>` writes the same kind of record, from the repository itself.
       if (source === 'fetched from itself') await git(f.module, ['-c', 'protocol.file.allow=always', 'fetch', '--append', '.', local])
+      if (source.startsWith('fetched from a remote at its own')) {
+        // A remote that is the submodule itself, by its path or a file URL: this fetch replaces the record from origin.
+        const gitDirectory = (await git(f.module, ['rev-parse', '--absolute-git-dir'])).trim()
+        await git(f.module, ['remote', 'add', 'self', source.endsWith('path') ? f.module : pathToFileURL(gitDirectory).href])
+        await git(f.module, ['-c', 'protocol.file.allow=always', 'fetch', 'self', f.published, local])
+      }
     }
     await git(f.module, ['checkout', '--detach', local])
     const fetchHead = await readFile((await git(f.module, ['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim(), 'utf8')
-    expect(fetchHead).toContain(`'${f.published}' of `)
     if (source !== 'built on it') expect(fetchHead).toContain(`'${local}' of `)
     const preview = await f.service.reclaimFacts(f.a)
-    // The fetched commit is not counted; the local one on top of it is.
-    expect(preview.repositories).toEqual([{ path: 'module/', changeCount: 0, kind: 'repository', unpushedCommitCount: 1 }])
+    // Both commits stay counted; only the one fetched from origin is noted.
+    expect(preview.repositories).toEqual([{ path: 'module/', changeCount: 0, kind: 'repository', unpushedCommitCount: 2,
+      ...source.startsWith('fetched from a remote at its own') ? {} : { fetchedByHash: { remote: 'origin', commitCount: 1 } } }])
     await expect(f.service.reclaim(f.a, { automatic: true })).rejects.toThrow('a rule leaves it alone')
     expect(await git(f.module, ['cat-file', '-t', local])).toBe('commit\n')
   }, 60_000)

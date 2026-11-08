@@ -5560,6 +5560,16 @@ msgstr ""
 msgid "Needs your approval"
 msgstr ""
 
+#. {remote} is the name of a Git remote, such as origin.
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
+msgid "Nested repository · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}} · {elsewhere, plural, one {{commitCount} commit not on any remote} other {{commitCount} commits not on any remote}} · {fetchedCount, plural, one {{fetchedCommitCount} commit on no remote branch. It was fetched from {remote}, so it may already be there.} other {{fetchedCommitCount} commits on no remote branch. They were fetched from {remote}, so they may already be there.}}"
+msgstr ""
+
+#. {remote} is the name of a Git remote, such as origin.
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
+msgid "Nested repository · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}} · {fetchedCount, plural, one {{fetchedCommitCount} commit on no remote branch. It was fetched from {remote}, so it may already be there.} other {{fetchedCommitCount} commits on no remote branch. They were fetched from {remote}, so they may already be there.}}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Nested repository · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}} · {unpushed, plural, one {{commitCount} commit not on any remote} other {{commitCount} commits not on any remote}}"
 msgstr ""

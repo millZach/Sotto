@@ -583,9 +583,15 @@ const agentThreadSummarySchema = z.object({
   runningTurnStartedAt: z.string().optional(),
 }).strict()
 export type AgentThreadSummary = z.infer<typeof agentThreadSummarySchema>
+/**
+ * Of a submodule row's commits not on any remote, the ones its FETCH_HEAD says were fetched by their hash from
+ * `remote`, so they may already be there (#687). They stay in `unpushedCommitCount` and still need the tick.
+ */
+const fetchedByHashSchema = z.object({ remote: z.string(), commitCount: z.number().int().positive() })
 export const worktreeReclaimPreviewSchema = z.object({
   path: z.string(), branch: z.string().optional(), dirty: z.boolean(), ignored: z.array(z.string()),
-  repositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) })),
+  repositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']),
+    fetchedByHash: fetchedByHashSchema.optional() })),
   items: z.array(z.object({ path: z.string(), bytes: z.number().nonnegative(), fileCount: z.number().int().nonnegative() })),
   untracked: z.array(z.string()),
   outsideLink: z.string().optional(),
@@ -1454,7 +1460,7 @@ const worktreeConfirmations = {
   confirmedIgnored: z.array(z.string()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
   confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
   confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(),
-    kind: z.enum(['worktree', 'repository']) }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
+    kind: z.enum(['worktree', 'repository']), fetchedByHash: fetchedByHashSchema.strict().optional() }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
