@@ -530,6 +530,27 @@ describe('shell updates while the main window is hidden', () => {
     expect(result.current.state?.notice).toBe('Replied')
   })
 
+  it('commits while hidden a state that brings or clears a request, and still holds one that only streams (#2156)', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const asking = { id: 'approve-printf', kind: 'permission' as const, text: "printf 'two' > probe.txt", options: [] }
+    const working = { ...thread('first', []), status: 'running' as const }
+    const initial = fullState([working], 'first')
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    // The question or approval holds its agent until someone answers: it reaches the page, and whatever reads it, at once.
+    act(() => wire.publish(fullState([{ ...working, requests: [asking] }], 'first')))
+    expect(result.current.state?.host.threads[0]?.requests.map(request => request.id)).toEqual(['approve-printf'])
+    const shown = result.current.state
+    // Work that changes no request still waits for the window to show (#993).
+    act(() => wire.publish({ ...fullState([{ ...working, requests: [asking] }], 'first'), notice: 'streamed' }))
+    expect(result.current.state).toBe(shown)
+    // An answered request leaves at once too.
+    act(() => wire.publish(fullState([{ ...working, requests: [] }], 'first')))
+    expect(result.current.state?.host.threads[0]?.requests).toEqual([])
+    expect(result.current.state?.notice).toBe('')
+  })
+
   it('flushes a pending shell when hidden, holds what arrives while hidden, and resumes batching when shown', async () => {
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
     vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)

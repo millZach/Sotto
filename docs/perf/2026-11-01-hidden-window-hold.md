@@ -40,7 +40,11 @@ What must not wait does not:
 - a state that adds or removes a thread commits. The browser tools watch each thread's tasks from the threads committed,
   so they are fed through a commit when the threads change, rather than outside React as #993 suggested;
 - a state that turns Keep local history on or off commits, so the cached shell, which holds excerpts of messages, is
-  cleared at once (ADR-0016).
+  cleared at once (ADR-0016);
+- a state in which a request comes or goes commits (added November 7, #2156). A question or an approval holds its agent
+  until someone answers, and the page is read by more than eyes: a computer-use agent reading a Codex thread on a Mac saw
+  the thread still working while main held its request, until a visit to Settings and back sent a command. A request
+  changes a few times a turn at most, so this costs a commit where a reply streams dozens.
 
 A shell waiting for its animation frame when the window hides is held, not left waiting for a frame that a hidden window
 does not draw. The browser itself, its tasks and its captures run in main and on the browser's own bridge, so ADR-0029's
@@ -72,8 +76,12 @@ occlusion detection is off (ADR-0020), which is #993's fourth item.
   - a window main calls hidden is held though its page reports it visible, and catches up when main says it shows;
   - a state that adds a thread, and a command's own reply, commit while hidden;
   - a shell pending its frame is let go of when the window hides, what arrives while hidden is held, and batching
-    resumes when shown.
+    resumes when shown;
+  - a state that brings or clears a request commits while hidden, and one that only streams is still held (#2156).
+- `tests/e2e/codex-request-open-thread.spec.ts`, run by hand after a build: a Codex question and two approvals raised in
+  the open thread show in the pane and the sidebar at once, and so does one raised while main says the window is hidden.
 
-Each of the second, third and fourth fails with its part of the change taken out.
+Each of the second, third and fourth fails with its part of the change taken out, and so do the request case and the
+hidden half of the end-to-end spec (#2156).
 
 Hidden captures for browser tasks and the test iPhone run in main and are not exercised here; nothing they read is held.
