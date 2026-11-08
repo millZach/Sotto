@@ -156,6 +156,18 @@ describe('Delete “title”?', () => {
       confirmedItems: [{ path: '.env', fileCount: 1 }, { path: 'scratch/', fileCount: 3 }], confirmedRepositories: [{ path: 'scratch/', changeCount: 2, kind: 'repository', unpushedCommitCount: 1 }] })
   })
 
+  it('says a submodule commit fetched from its remote may already be there, and sends that back with the tick', async () => {
+    const module = { path: 'module/', changeCount: 0, kind: 'repository' as const, unpushedCommitCount: 1, fetchedByHash: { remote: 'origin', commitCount: 1 } }
+    const live = mount([settled()], { preview: { kept: null, worktree: worktree({ ignored: ['module/'], items: [{ path: 'module/', bytes: 4096, fileCount: 3 }], repositories: [module] }) } })
+    openDelete()
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Nested repository · 0 uncommitted changes · 1 commit on no remote branch. It was fetched from origin, so it may already be there.')).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Delete this 1 ignored item with the folder/u }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(sent(live, 'delete-thread')).toHaveLength(1))
+    expect(sent(live, 'delete-thread')[0]).toMatchObject({ confirmedRepositories: [module] })
+  })
+
   it('shows a refusal in its own words and keeps the dialog open', async () => {
     mount([settled()], { deleteError: '“Move the cleanup rules” was not deleted: still working. Nothing was deleted.' })
     openDelete()

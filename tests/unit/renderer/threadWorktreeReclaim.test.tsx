@@ -64,6 +64,27 @@ describe('reclaiming a thread worktree', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(command).toHaveBeenCalledTimes(1)
   })
+  it.each([
+    [1, 1, 'Nested repository · 0 uncommitted changes · 1 commit on no remote branch. It was fetched from origin, so it may already be there.'],
+    [2, 2, 'Nested repository · 0 uncommitted changes · 2 commits on no remote branch. They were fetched from origin, so they may already be there.'],
+    [3, 1, 'Nested repository · 0 uncommitted changes · 2 commits not on any remote · 1 commit on no remote branch. It was fetched from origin, so it may already be there.'],
+  ] as const)('says a submodule commit fetched from its remote may already be there, and still asks (%s, %s fetched)', async (unpushed, fetched, row) => {
+    const result = ok()
+    const preview = result.worktreeReclaimPreview!
+    preview.repositories = [{ path: 'module/', changeCount: 0, kind: 'repository', unpushedCommitCount: unpushed, fetchedByHash: { remote: 'origin', commitCount: fetched } }]
+    preview.ignored = ['module/']
+    preview.items = [{ path: 'module/', bytes: 2048, fileCount: 4 }]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => result)
+    render(<ThreadWorkingCopy thread={thread} project={project} command={command} />)
+    fireEvent.click(screen.getByRole('button', { name: /Working copy:/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove worktree folder, keeping its branch' }))
+    expect(await screen.findByText(row)).toBeVisible()
+    const remove = screen.getByRole('button', { name: 'Remove with these files' })
+    expect(remove).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Delete this 1 ignored item with the folder, including the nested repository’s uncommitted work' }))
+    fireEvent.click(remove)
+    await waitFor(() => expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'reclaim-thread-worktree', confirmedRepositories: preview.repositories })))
+  })
   it.each(['pane', 'settle'])('shows the folder-change refusal inside the %s question', async surface => {
     const message = 'The folder changed. Nothing was removed. Choose Remove worktree again to see the new list.'
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async request => request.type === 'reclaim-thread-worktree' ? refused(message) : ok())

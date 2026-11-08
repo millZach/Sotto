@@ -69,7 +69,10 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     viewed: new Set<string>(), shell: null as AgentState | null, clock: 0, hits: 0, misses: 0,
     pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
-    /** The threads the last commit held, by ID in order, and whether a state arrived while hidden that is not committed yet. */
+    /**
+     * The threads the last commit held, in order, each with where its turn stands and the requests it shows (`threadsKey`), and
+     * whether a state arrived while hidden that is not committed yet.
+     */
     committedThreads: '', committedHistory: undefined as boolean | undefined, heldWhileHidden: false,
     /** Each state received, numbered in the order it arrived, the newest the draft store has been handed, and the newest drawn. */
     received: 0, draftsFed: 0, drawn: 0,
@@ -143,8 +146,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // directly, a command's own reply (urgent) commits, and so does a state that adds or removes a thread, since the
     // browser tools watch each thread's tasks from the threads committed (ADR-0029).
     // Keep local history going off commits too, so the cached shell's excerpts are cleared at once (ADR-0016).
+    // So does a state in which a thread's turn starts, waits or ends, or a request comes, changes or goes. The page is read by
+    // more than eyes: a computer-use agent reading it while the system called the window hidden saw a question or an
+    // approval, and the turn after the answer, only once a visit to another page sent a command (#2156).
     const received = ++detail.received
-    const threads = assembled.host.threads.map(thread => thread.id).join('\n')
+    const threads = threadsKey(assembled.host.threads)
     if (options.urgent !== true && next.stale !== true && windowHidden() && threads === detail.committedThreads
       && next.historyEnabled === detail.committedHistory) {
       detail.heldWhileHidden = true
@@ -443,6 +449,23 @@ interface AgentContextValue extends AgentConnection {
  * `startWindowVisibility` keeps), since a window started hidden or kept visible for a capture reports its page visible.
  */
 const windowHidden = (): boolean => document.hidden || document.documentElement.hasAttribute('data-window-hidden')
+
+/**
+ * `threads` in order, each with what its row and its pane say of its turn (running, compacting, waiting on work it started,
+ * how its last turn ended, a failure seen) and the requests it shows, in one string that a window holding broadcasts while
+ * hidden compares (#2156). A request is written out whole, since a card shows more than its ID and some of it arrives later,
+ * such as a command summary Sotto asked for. Requests are empty in nearly every thread, so this reads a few fields of each
+ * thread and nothing of its history.
+ */
+function threadsKey(threads: readonly AgentThread[]): string {
+  let key = ''
+  for (const thread of threads) {
+    key += `${thread.id}\u0000${thread.status}\u0000${thread.compaction?.status ?? ''}\u0000${thread.lastTurn?.status ?? ''}\u0000${thread.backgroundWork?.length ?? 0}\u0000${thread.failureSeen === true ? 1 : 0}`
+    if (thread.requests.length > 0) key += `\u0000${JSON.stringify(thread.requests)}`
+    key += '\n'
+  }
+  return key
+}
 
 const AgentContext = createContext<AgentContextValue | null>(null)
 

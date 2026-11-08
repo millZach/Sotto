@@ -220,10 +220,17 @@ export function WorktreeFilesToTick({ preview, tickable, acknowledged, onAcknowl
         : path.endsWith('/') ? plural(files, { one: `${kilobytes} KB, ${{ fileCount: shownCount(files) }} file, ignored`, other: `${kilobytes} KB, ${{ fileCount: shownCount(files) }} files, ignored` })
           : t`${kilobytes} KB, ignored`
       const changes = repository?.changeCount ?? 0, unpushed = repository?.unpushedCommitCount ?? 0
+      // Of a submodule's commits not on any remote, the ones fetched from a remote by their hash may already be there (#687).
+      const fetched = repository?.fetchedByHash, fetchedCount = Math.min(fetched?.commitCount ?? 0, unpushed), elsewhere = unpushed - fetchedCount
+      const remote = leftToRight(fetched?.remote ?? '')
       const note = !repository ? size
-        : repository.kind === 'repository'
-          ? t`Nested repository · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })} · ${plural(unpushed, { one: `${{ commitCount: shownCount(unpushed) }} commit not on any remote`, other: `${{ commitCount: shownCount(unpushed) }} commits not on any remote` })}`
-          : t`Nested worktree · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })}`
+        : repository.kind !== 'repository'
+          ? t`Nested worktree · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })}`
+          : !fetchedCount
+            ? t`Nested repository · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })} · ${plural(unpushed, { one: `${{ commitCount: shownCount(unpushed) }} commit not on any remote`, other: `${{ commitCount: shownCount(unpushed) }} commits not on any remote` })}`
+            : !elsewhere
+              ? t({ message: `Nested repository · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })} · ${plural(fetchedCount, { one: `${{ fetchedCommitCount: shownCount(fetchedCount) }} commit on no remote branch. It was fetched from ${ph({ remote })}, so it may already be there.`, other: `${{ fetchedCommitCount: shownCount(fetchedCount) }} commits on no remote branch. They were fetched from ${ph({ remote })}, so they may already be there.` })}`, comment: '{remote} is the name of a Git remote, such as origin.' })
+              : t({ message: `Nested repository · ${plural(changes, { one: `${{ changeCount: shownCount(changes) }} uncommitted change`, other: `${{ changeCount: shownCount(changes) }} uncommitted changes` })} · ${plural(elsewhere, { one: `${{ commitCount: shownCount(elsewhere) }} commit not on any remote`, other: `${{ commitCount: shownCount(elsewhere) }} commits not on any remote` })} · ${plural(fetchedCount, { one: `${{ fetchedCommitCount: shownCount(fetchedCount) }} commit on no remote branch. It was fetched from ${ph({ remote })}, so it may already be there.`, other: `${{ fetchedCommitCount: shownCount(fetchedCount) }} commits on no remote branch. They were fetched from ${ph({ remote })}, so they may already be there.` })}`, comment: '{remote} is the name of a Git remote, such as origin.' })
       return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{note}</span></li>
     })}</ul>
     {tickable ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => onAcknowledge(event.target.checked)} />{acknowledgement}</label> : null}

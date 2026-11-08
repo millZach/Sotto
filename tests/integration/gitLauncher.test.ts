@@ -5,7 +5,6 @@
  * callers over the worker, real Git included: the status reader's `runGitStatusCommand` and the worktree's
  * `runWorktreeGitProcess` keep their folders, environments, deadlines, output caps, process-tree stops and errors.
  */
-import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,6 +16,7 @@ import { runWorktreeGitProcess } from '../../src/main/agents/threadWorktrees'
 import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
 import { ownedGitRepository } from '../fixtures/gitRepository'
 import { mainThreadLaunches, resetMainThreadLaunches } from '../fixtures/mainThreadLaunches'
+import { stopsWhenTold } from '../fixtures/stopsWhenTold'
 
 vi.mock('node:child_process', async importOriginal => (await import('../fixtures/mainThreadLaunches')).timingLaunches(await importOriginal()))
 
@@ -313,9 +313,9 @@ describe('Git through the worker', () => {
   })
 
   it('stops a timed-out Git and the process it started before answering', async () => {
-    const root = await folder(), pidFile = join(root, 'child.pid'), child = join(root, 'child.cjs'), launcherScript = join(root, 'git.cjs')
-    await writeFile(child, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`)
-    await writeFile(launcherScript, `require('node:child_process').spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore', detached: process.platform === 'win32' }); setInterval(() => {}, 1000)`)
+    const root = await folder(), pidFile = join(root, 'child.pid'), child = join(root, 'child.cjs'), launcherScript = join(root, 'git.cjs'), stop = join(root, 'stop')
+    await writeFile(child, `${stopsWhenTold(stop)} require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))`)
+    await writeFile(launcherScript, `${stopsWhenTold(stop)} require('node:child_process').spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore', detached: process.platform === 'win32' })`)
     const outcome = runWorktreeGitProcess(root, ['status'], { executable: process.execPath, prefix: [launcherScript], timeout: 1_500 }).catch(error => error as Error)
     let pid = 0
     try {
@@ -324,11 +324,8 @@ describe('Git through the worker', () => {
       expect(await outcome).toMatchObject({ timedOut: true, message: 'Git took too long.' })
       expect(() => process.kill(pid, 0)).toThrow()
     } finally {
-      if (pid) try {
-        process.kill(pid, 0)
-        if (process.platform === 'win32') await new Promise<void>(done => spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }).on('close', () => done()))
-        else process.kill(pid, 'SIGKILL')
-      } catch { /* Already gone. */ }
+      // Whatever a regression left running ends itself; the PID may belong to another process by now.
+      await writeFile(stop, '')
     }
   })
 })
