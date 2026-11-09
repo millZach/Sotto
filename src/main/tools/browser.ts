@@ -1,20 +1,19 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
-import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
+import { browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserViewportSchema, browserCaptureSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserAutomation, type PointTarget } from './browserAutomation'
-import { BrowserGrants, grantCovers } from './browserGrants'
-import { ToolOperations, fail, parse, workspace } from './common'
-import { ThreadFilePages } from './threadFilePages'
+import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskWords } from './browserTasks'
+import { fail, parse } from './common'
+import type { ThreadFilePages } from './threadFilePages'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
-/** `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user shares it again. */
 /**
- * `point`: the user turned on Point at something for this page (ADR-0154), one session per turn on. It is `live`
+ * `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user
+ * shares it again. `point`: the user turned on Point at something for this page (ADR-0154), one session per turn on. It is `live`
  * once Chromium's inspect overlay is on, which waits until the pane shows the page, and it lasts through a pick until
  * the picture is sent to the window, so hiding the page or a navigation meanwhile ends the pick with it.
  */
@@ -24,16 +23,15 @@ type PointEnd = Extract<BrowserPointState, { state: 'ended' }>['reason']
 /** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
 type MountSlot = 'pane' | 'phone'
 const slotOf = (record: PageRecord): MountSlot => record.page.device ? 'phone' : 'pane'
-/** The actions that reach one element, so the element is recorded when asked and must still be there when run. */
-type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>
-const targeted = (action: BrowserAction): action is TargetedAction => action.type === 'click' || action.type === 'type' || action.type === 'tap' || action.type === 'key'
-/**
- * How far a swipe must travel. Shorter, Chromium reads it as a tap and clicks what it started on, and a swipe asks
- * nothing, so a short one would be a tap the browser grant never covered.
- */
-const SWIPE_MINIMUM = 24
 /** The phone's page never shows a desktop scrollbar; an iPhone draws none. */
 const PHONE_CSS = 'html { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; }'
+const browserWords = (): BrowserTaskWords => ({
+  openFirst: t`Answer the request to open this page first.`,
+  finished: t`This browser task has finished.`,
+  changedOrExpired: t`This browser request changed or expired. Ask the agent to try again.`,
+  grantNeedsAllow: t`Only an allowed action can be granted for the whole thread. Answer this one once.`,
+  stillRunning: t`A browser action is still running.`,
+})
 export interface BrowserDependencies {
   files: FilesService
   /** That the user or a thread opened a page or a test iPhone (ADR-0179). */
@@ -51,28 +49,21 @@ export interface BrowserDependencies {
 }
 
 /** Untrusted browsing is wholly separate from the application renderer and its session. */
-export class BrowserService extends ToolOperations {
-  private readonly pages = new Map<string, PageRecord>()
+export class BrowserService extends BrowserTasks<PageRecord> {
   private readonly sessions = new Map<string, Session>()
   private readonly namespace = randomUUID()
-  private readonly taskRecords = new Map<string, BrowserTask>()
-  private readonly pending = new Map<string, { generation: number; url: string; initial: boolean; target?: string }>()
-  private readonly executing = new Set<string>()
-  private readonly taskListeners = new Set<() => void>()
   private readonly captureLeases = new Map<PageRecord, CaptureLease>()
-  /** Per-thread browser grants: on by default, until the user stops one or turns the setting off (ADR-0029). */
-  private readonly grants = new BrowserGrants(() => this.dependencies.byDefault())
-  /** Threads Tools has listed, so a change of the setting reaches a thread with no page yet. */
-  private readonly listed = new Set<string>()
   private readonly mounted = new Map<MountSlot, { record: PageRecord; window: BrowserWindow; cleanup(): void }>()
   private readonly mountVersion: Record<MountSlot, number> = { pane: 0, phone: 0 }
   private readonly desiredPageId: Record<MountSlot, string | null> = { pane: null, phone: null }
   /** Point sessions, and the newest point request per page, so an Off that overtakes an On wins. */
   private pointSessions = 0
   private readonly pointRequests = new Map<string, number>()
-  private readonly filePages: ThreadFilePages
-  constructor(private readonly dependencies: BrowserDependencies) { super(); this.filePages = dependencies.filePages ?? new ThreadFilePages({ live: threadId => dependencies.files.hasThread(threadId) }) }
-  private publish(record: PageRecord): BrowserPage {
+  constructor(private readonly dependencies: BrowserDependencies) {
+    super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
+      ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
+  }
+  protected publish(record: PageRecord): BrowserPage {
     if (!record.view.webContents.isDestroyed()) {
       const contents = record.view.webContents
       const url = safeBrowserUrl(contents.getURL())
@@ -118,75 +109,7 @@ export class BrowserService extends ToolOperations {
     this.sessions.set(key, isolated)
     return isolated
   }
-  /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
-  private async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
-    try { return await workspace(this.dependencies.files, threadId, expected) }
-    catch (error) {
-      if ((error as { code?: string }).code === 'thread-unavailable') this.forgetThread(threadId)
-      throw error
-    }
-  }
-  private grantView(threadId: string): { grantedAt: number; source: 'settings' | 'user' } | null {
-    const grant = this.grants.active(threadId)
-    return grant ? { grantedAt: grant.grantedAt, source: grant.source } : null
-  }
-  private forgetThread(threadId: string): void {
-    const had = this.grants.active(threadId) !== null
-    this.grants.forget(threadId); this.listed.delete(threadId); this.filePages.forget(threadId)
-    if (had && !this.disposed) this.dependencies.emit({ type: 'browser-grant', threadId, grant: null })
-  }
-  list(payload: unknown) { return this.run(async () => {
-    const request = parse(toolListRequestSchema, payload)
-    const owner = await this.owner(request.threadId, request.workspaceId)
-    this.listed.add(owner.threadId)
-    return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => ({ ...record.page })), grant: this.grantView(owner.threadId) }
-  }) }
-  /** The user's Stop: the thread asks again, whichever its grant's source. Always allowed, even for a thread that has gone. */
-  stopGrant(payload: unknown) { return this.run(async () => {
-    const request = parse(toolTargetSchema, payload)
-    if (this.grants.stop(request.threadId) && !this.disposed) this.dependencies.emit({ type: 'browser-grant', threadId: request.threadId, grant: null })
-  }) }
-  /** The setting changed; every thread this service still holds pages or tasks for learns its grant again. */
-  settingChanged(): void {
-    if (this.disposed) return
-    const threads = new Set([...this.pages.values()].map(record => record.page.workspace.threadId))
-    for (const task of this.taskRecords.values()) threads.add(task.threadId)
-    for (const threadId of [...this.grants.threads(), ...this.listed]) threads.add(threadId)
-    for (const threadId of threads) {
-      const grant = this.grantView(threadId)
-      this.dependencies.emit({ type: 'browser-grant', threadId, grant })
-      // Turning the setting on shares the thread's pages and answers what was already waiting, as "Allow this thread to use the browser" does.
-      if (grant) { this.shareThreadPages(threadId); void this.performWaitingActions(threadId).catch(() => undefined) }
-    }
-  }
-  /**
-   * While its thread has a browser grant, a page is shared with that thread the moment it opens, whoever opened it,
-   * unless the user made it private (ADR-0029, October 5 amendment). Returns whether this made the page shared.
-   */
-  private shareByGrant(record: PageRecord): boolean {
-    if (record.initial || record.madePrivate || record.page.sharedOrigin || !this.grants.active(record.page.workspace.threadId)) return false
-    const url = safeBrowserUrl(record.page.url)
-    if (!url) return false
-    record.page.sharedOrigin = new URL(url).origin
-    record.automation.observe()
-    return true
-  }
-  /** A grant was given: the thread's pages the user has not made private are shared now, not only the next ones. */
-  private shareThreadPages(threadId: string): void {
-    for (const record of this.pages.values()) if (record.page.workspace.threadId === threadId && this.shareByGrant(record)) this.publish(record)
-  }
-  /**
-   * The page is moving to `url`. While its thread has a browser grant, a shared page stays shared as it goes to
-   * another site, a server's redirect included. Without one, sharing ends at the origin it was given for.
-   */
-  private followSharing(record: PageRecord, url: string): void {
-    const origin = new URL(url).origin
-    if (!record.page.sharedOrigin || record.page.sharedOrigin === origin) return
-    if (this.grants.active(record.page.workspace.threadId)) record.page.sharedOrigin = origin
-    else this.revoke(record)
-  }
-  create(payload: unknown) { return this.run(async () => this.createPage(parse(browserCreateSchema, payload))) }
-  private async createPage(request: ReturnType<typeof browserCreateSchema.parse>, initial = false): Promise<BrowserPage> {
+  protected async createPage(request: BrowserCreateRequest, initial = false): Promise<BrowserPage> {
     const owner = await this.owner(request.threadId, request.workspaceId)
     if (this.disposed) return fail('unavailable', 'Browser is shutting down.')
     if (this.pages.size >= 32) return fail('busy', 'Close a browser page before opening another (32 maximum).')
@@ -242,17 +165,7 @@ export class BrowserService extends ToolOperations {
       this.issue(record, t`A new-window request was blocked. Use a link destination action or open this page externally.`)
       return { action: 'deny' }
     })
-    /** The main frame is moving to `url`: what waited on the old page lapses, and its sharing follows or ends. */
-    const moving = (url: string, mainFrame: boolean): boolean => {
-      const safe = safeBrowserUrl(url)
-      if (!mainFrame || !safe) return false
-      this.endPoint(record, 'navigated')
-      this.invalidate(record)
-      record.generation++
-      this.followSharing(record, safe)
-      record.page.url = safe
-      return true
-    }
+    const moving = (url: string, mainFrame: boolean): boolean => mainFrame && this.moved(record, url)
     contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
       if (!moving(url, mainFrame)) return
       record.automation.clear()
@@ -289,49 +202,24 @@ export class BrowserService extends ToolOperations {
     else record.page.error = BROWSER_WAITING_TO_OPEN
     return this.publish(record)
   }
-  private load(record: PageRecord, url: string): void {
-    this.endPoint(record, 'navigated')
-    this.invalidate(record)
-    record.automation.clear()
-    this.followSharing(record, url)
-    record.page.url = url; record.page.status = 'loading'; record.page.error = null
-    const generation = ++record.generation
+  protected startLoading(record: PageRecord, url: string, generation: number): void {
     void record.view.webContents.loadURL(url).catch((error: unknown) => {
       if (record.generation === generation && (error as { code?: string }).code !== 'ERR_ABORTED') this.issue(record, t`This page is unavailable. Check the address or start its local server, then reload.`, true)
     })
   }
-  private async owned(request: ReturnType<typeof browserRequestSchema.parse>, validateDirectory = true): Promise<PageRecord> {
-    const record = this.pages.get(request.pageId)
-    if (!record || record.page.workspace.threadId !== request.threadId || record.page.workspace.workspaceId !== request.workspaceId) return fail('page-unavailable', 'This page belongs to another workspace or was closed.')
-    if (validateDirectory) await this.owner(request.threadId, request.workspaceId)
-    if (this.disposed || !this.pages.has(request.pageId) || record.view.webContents.isDestroyed()) return fail('page-unavailable', 'This browser page has closed.')
-    return record
+  protected isGone(record: PageRecord): boolean { return record.view.webContents.isDestroyed() }
+  protected loadedUrl(record: PageRecord): string { return record.view.webContents.getURL() }
+  protected step(record: PageRecord, direction: 'back' | 'forward'): void {
+    const history = record.view.webContents.navigationHistory
+    if (direction === 'back' && history.canGoBack()) history.goBack()
+    else if (direction === 'forward' && history.canGoForward()) history.goForward()
   }
+  protected pageLeft(record: PageRecord, reason: 'navigated' | 'hidden'): void { this.endPoint(record, reason) }
   /** The thread's test iPhone, if it has opened one; a thread has at most one. */
   private phoneOf(owner: FileWorkspace): PageRecord | undefined {
     return [...this.pages.values()].find(record => record.page.device === 'iphone' && record.page.workspace.threadId === owner.threadId && record.page.workspace.workspaceId === owner.workspaceId)
   }
   private isMounted(record: PageRecord): boolean { return this.mounted.get(slotOf(record))?.record === record }
-  navigate(payload: unknown) { return this.run(async () => {
-    const request = parse(browserNavigateSchema, payload)
-    const record = await this.owned(request)
-    record.initial = false
-    this.load(record, request.url)
-    // A page the user loads is the user's own now: under the grant it is shared like any other (ADR-0029).
-    this.shareByGrant(record)
-    return this.publish(record)
-  }) }
-  private history(payload: unknown, action: 'back' | 'forward' | 'reload') { return this.run(async () => {
-    const record = await this.owned(parse(browserRequestSchema, payload))
-    const history = record.view.webContents.navigationHistory
-    if (action === 'reload') { record.initial = false; this.load(record, record.page.url); this.shareByGrant(record) }
-    else if (action === 'back' && history.canGoBack()) history.goBack()
-    else if (action === 'forward' && history.canGoForward()) history.goForward()
-    return this.publish(record)
-  }) }
-  back(payload: unknown) { return this.history(payload, 'back') }
-  forward(payload: unknown) { return this.history(payload, 'forward') }
-  reload(payload: unknown) { return this.history(payload, 'reload') }
   openLink(payload: unknown) { return this.run(async () => {
     const request = parse(browserOpenLinkSchema, payload)
     const destination = request.destination ?? await this.dependencies.destination()
@@ -477,23 +365,14 @@ export class BrowserService extends ToolOperations {
       if (lease.temporary && !lease.window.isDestroyed()) lease.window.destroy()
     }
   }
-  close(payload: unknown) { return this.run(async () => {
-    const request = parse(browserRequestSchema, payload)
-    const record = await this.owned(request, false)
-    await this.destroy(record)
-    this.dependencies.emit({ type: 'closed', ...request })
-  }) }
-  private destroy(record: PageRecord): Promise<void> {
+  protected destroy(record: PageRecord): Promise<void> {
     const slot = slotOf(record)
     if (this.desiredPageId[slot] === record.page.id) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     if (this.isMounted(record)) this.removeMountedView(slot)
     // Closing says so with its own event; point mode simply goes with the page.
     record.point = null
     this.pointRequests.delete(record.page.id)
-    for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && ['working', 'paused'].includes(task.status)) {
-      task.status = 'failed'; task.summary = 'This browser page closed.'; task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
-    }
-    this.invalidate(record)
+    this.endTasks(record)
     record.automation.dispose()
     const lease = this.captureLeases.get(record)
     this.captureLeases.delete(record)
@@ -506,80 +385,6 @@ export class BrowserService extends ToolOperations {
       contents.close({ waitForBeforeUnload: false })
     })
   }
-  private publishTask(task: BrowserTask): BrowserTask {
-    task.updatedAt = Date.now()
-    const result = structuredClone(task)
-    if (!this.disposed) this.dependencies.emit({ type: 'task', task: result })
-    for (const listener of this.taskListeners) listener()
-    return result
-  }
-  private revoke(record: PageRecord): void {
-    record.page.sharedOrigin = null
-    this.invalidate(record)
-    this.endPoint(record, 'hidden')
-    record.automation.dispose()
-    for (const task of this.taskRecords.values()) if (task.pageId === record.page.id) {
-      task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
-    }
-  }
-  private invalidate(record: PageRecord): void {
-    for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && task.pendingAction) {
-      task.pendingAction = null; this.pending.delete(task.id)
-      task.output = 'The page changed. Request the action again.'
-      this.publishTask(task)
-    }
-  }
-  private task(request: ReturnType<typeof browserTaskRequestSchema.parse>): BrowserTask {
-    const task = this.taskRecords.get(request.taskId)
-    if (!task || task.threadId !== request.threadId || task.workspaceId !== request.workspaceId || task.pageId !== request.pageId) return fail('blocked', 'This browser task belongs to another thread or page.')
-    return task
-  }
-  private working(task: BrowserTask): void {
-    if (task.status !== 'working') fail('blocked', task.status === 'paused' ? 'Browser actions are paused. The user can resume them.' : 'This browser task has finished.')
-  }
-  private shared(record: PageRecord): void {
-    const actual = safeBrowserUrl(record.view.webContents.getURL())
-    if (!actual || !record.page.sharedOrigin || record.page.sharedOrigin !== new URL(record.page.url).origin || record.page.sharedOrigin !== new URL(actual).origin) fail('blocked', 'Ask the user to share this browser page before inspecting or interacting with it.')
-  }
-  private begin(record: PageRecord, description: string): BrowserTask {
-    if ([...this.taskRecords.values()].some(task => task.pageId === record.page.id && ['working', 'paused'].includes(task.status))) return fail('busy', 'Finish this page\'s current browser task first.')
-    if (this.taskRecords.size >= 64) {
-      const oldest = [...this.taskRecords.values()].find(task => ['completed', 'failed'].includes(task.status))
-      if (!oldest) return fail('busy', 'Finish a browser task before starting another.')
-      this.taskRecords.delete(oldest.id)
-    }
-    const task: BrowserTask = { id: randomUUID(), threadId: record.page.workspace.threadId, workspaceId: record.page.workspace.workspaceId, pageId: record.page.id, status: 'working', description, updatedAt: Date.now(), steps: [], thumbnail: null, summary: null, unchecked: [], pendingAction: null, output: null, evidence: [], device: record.page.device ?? null }
-    this.taskRecords.set(task.id, task)
-    return this.publishTask(task)
-  }
-  tasks(payload: unknown) { return this.run(async () => {
-    const request = parse(toolListRequestSchema, payload)
-    const owner = await this.owner(request.threadId, request.workspaceId)
-    const tasks = [...this.taskRecords.values()].filter(task => task.threadId === owner.threadId && task.workspaceId === owner.workspaceId)
-    for (const task of tasks) if (task.pendingAction && task.pendingAction.expiresAt < Date.now()) {
-      task.pendingAction = null; this.pending.delete(task.id); task.output = 'This browser action expired. Request it again.'; this.publishTask(task)
-    }
-    return structuredClone(tasks)
-  }) }
-  share(payload: unknown) { return this.run(async () => {
-    const request = parse(browserShareSchema, payload)
-    const record = await this.owned(request)
-    if (request.enabled && record.initial) return fail('blocked', t`Answer the request to open this page first.`)
-    record.page.sharedOrigin = request.enabled ? new URL(record.page.url).origin : null
-    record.madePrivate = !request.enabled
-    if (request.enabled) record.automation.observe()
-    if (!request.enabled) {
-      // Detaching from the page turns its overlay off with it.
-      this.endPoint(record, 'hidden')
-      record.automation.dispose()
-      for (const task of this.taskRecords.values()) if (task.pageId === record.page.id) {
-        if (task.status === 'working') task.status = 'paused'
-        task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
-      }
-      this.invalidate(record)
-    }
-    return this.publish(record)
-  }) }
   viewport(payload: unknown) { return this.run(async () => {
     const request = parse(browserViewportSchema, payload)
     const record = await this.owned(request)
@@ -710,28 +515,6 @@ export class BrowserService extends ToolOperations {
       this.emitPoint(record, { state: 'picked', capture: { ...full, captureId: record.selection.id, element: pointed.element }, box: pointed.box })
     } catch { if (record.point === point) this.endPoint(record, 'unavailable') }
   }
-  startTask(payload: unknown) { return this.run(async () => {
-    const request = parse(browserStartTaskSchema, payload)
-    const record = await this.owned(request)
-    this.shared(record)
-    return this.begin(record, request.description)
-  }) }
-  agentOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => this.open(await this.agentRequest(payload))) }
-  /**
-   * What an agent asked to open, as an address: a web address as it is, or an HTML file in the thread's folder at the
-   * loopback address Sotto serves it on (ADR-0085's October 27 amendment). Anything else is refused in words that say what
-   * happened and what to do, and opens nothing.
-   */
-  private async agentRequest(payload: unknown): Promise<ReturnType<typeof browserCreateSchema.parse> & { description: string }> {
-    const request = parse(browserAgentOpenSchema, payload)
-    const url = safeBrowserUrl(request.url)
-    if (url) return { ...request, url }
-    const owner = await this.owner(request.threadId, request.workspaceId)
-    const opening = await this.filePages.open(request.url, owner.threadId, owner.workingDirectory)
-    if (!opening) return fail('invalid-request', 'Sotto\'s browser opens an http or https address without a user name or password, or an HTML file in this thread\'s folder. Nothing was opened.')
-    if (!opening.ok) return fail('blocked', opening.message)
-    return { ...request, url: opening.url }
-  }
   /**
    * `iphone_open`: the agent opens a URL on the thread's test iPhone (ADR-0045). A thread has one phone, so a phone
    * it already has is replaced by the new one, which asks or is granted exactly as a new page is; one with a task
@@ -749,169 +532,6 @@ export class BrowserService extends ToolOperations {
     }
     return this.open({ ...request, device: 'iphone' })
   }) }
-  private async open(request: ReturnType<typeof browserCreateSchema.parse> & { description: string }): Promise<BrowserAgentResult> {
-    const page = await this.createPage(request, true)
-    const record = this.pages.get(page.id)!
-    const created = this.begin(record, request.description)
-    const task = this.taskRecords.get(created.id)!
-    return this.requestAction(record, task, { type: 'navigate', url: request.url })
-  }
-  private async requestAction(record: PageRecord, task: BrowserTask, action: BrowserAction): Promise<BrowserAgentResult> {
-    if (task.pendingAction) return fail('busy', 'A browser action is waiting for the user. Read the task before requesting another action.')
-    const generation = record.generation
-    const target = targeted(action) ? await record.automation.target(action) : undefined
-    this.working(task)
-    if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
-    if (!record.initial) this.shared(record)
-    // A browser grant answers navigate, click and type exactly as the user's own one-time answer would (ADR-0029).
-    if (grantCovers(action.type) && this.grants.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, target, true)
-    const where = record.page.device ? `on the test iPhone at ${record.page.url}` : `on ${record.page.url}`
-    const description = action.type === 'navigate' ? `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}`
-      : action.type === 'click' ? `Click at ${action.x}, ${action.y} ${where}` : action.type === 'tap' ? `Tap at ${action.x}, ${action.y} ${where}`
-        : action.type === 'type' ? `Type ${JSON.stringify(action.text)} into the focused field ${where}` : action.type === 'key' ? `Press ${action.key} ${where}` : action.type
-    task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000 }
-    this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}) })
-    return { task: this.publishTask(task), approvalRequired: true }
-  }
-  action(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => {
-    const request = parse(browserAgentActionSchema, payload)
-    const record = await this.owned(request)
-    const task = this.task(request)
-    this.working(task)
-    if (request.action.type !== 'navigate' || !record.initial) this.shared(record)
-    if (request.action.type === 'viewport' && record.page.device) return fail('blocked', 'The test iPhone keeps its own size.')
-    if (request.action.type === 'swipe' && Math.hypot(request.action.toX - request.action.x, request.action.toY - request.action.y) < SWIPE_MINIMUM) return fail('blocked', `A swipe must move at least ${SWIPE_MINIMUM} pixels. Use tap to tap.`)
-    if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
-    if (grantCovers(request.action.type)) return this.requestAction(record, task, request.action)
-    if (task.pendingAction) return fail('busy', 'Answer the pending browser action first.')
-    return this.perform(record, task, request.action)
-  }) }
-  controlTask(payload: unknown) { return this.run(async () => {
-    const request = parse(browserControlTaskSchema, payload)
-    await this.owned(request)
-    const task = this.task(request)
-    if (!['working', 'paused'].includes(task.status)) return fail('blocked', t`This browser task has finished.`)
-    task.status = request.control === 'pause' ? 'paused' : 'working'
-    if (request.control === 'pause') { task.pendingAction = null; this.pending.delete(task.id) }
-    return this.publishTask(task)
-  }) }
-  answerAction(payload: unknown) { return this.run(async () => {
-    const request = parse(browserAnswerActionSchema, payload)
-    const record = await this.owned(request)
-    const task = this.task(request), pending = task.pendingAction, scope = this.pending.get(task.id)
-    this.working(task)
-    if (!pending || pending.id !== request.actionId || !scope || pending.expiresAt < Date.now() || scope.generation !== record.generation || scope.url !== record.page.url) return fail('blocked', t`This browser request changed or expired. Ask the agent to try again.`)
-    if (request.forThread && !request.allow) return fail('blocked', t`Only an allowed action can be granted for the whole thread. Answer this one once.`)
-    if (this.executing.has(record.page.id)) return fail('busy', t`A browser action is still running.`)
-    task.pendingAction = null; this.pending.delete(task.id)
-    if (!request.allow) { task.output = 'The user declined this action.'; return this.publishTask(task) }
-    const threadId = record.page.workspace.threadId
-    if (request.forThread) {
-      this.grants.grant(threadId)
-      this.dependencies.emit({ type: 'browser-grant', threadId, grant: this.grantView(threadId) })
-      this.shareThreadPages(threadId)
-    }
-    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target)).task }
-    finally { if (request.forThread) await this.performWaitingActions(threadId) }
-  }) }
-  /**
-   * The grant answers the thread's navigate, click and type requests that were already waiting when it was given,
-   * not only later ones: they asked before the grant existed, and leaving them to wait out their expiry would
-   * contradict it. Each still has to match the page it asked about; one that no longer does keeps asking, as it
-   * would have.
-   */
-  private async performWaitingActions(threadId: string): Promise<void> {
-    for (const task of [...this.taskRecords.values()]) {
-      const pending = task.pendingAction, scope = this.pending.get(task.id), record = this.pages.get(task.pageId)
-      if (task.threadId !== threadId || task.status !== 'working' || !pending || !grantCovers(pending.action.type) || !scope || !record || pending.expiresAt < Date.now()
-        || scope.generation !== record.generation || scope.url !== record.page.url || this.executing.has(record.page.id) || !this.grants.active(threadId)) continue
-      task.pendingAction = null; this.pending.delete(task.id)
-      // One action failing is that task's own failed step; it does not undo the answer the user just gave.
-      await this.perform(record, task, pending.action, scope.initial, scope.target, true).catch(() => undefined)
-    }
-  }
-  private async perform(record: PageRecord, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string, granted = false): Promise<BrowserAgentResult> {
-    if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
-    this.executing.add(record.page.id)
-    const generation = record.generation
-    const observedUrl = action.type === 'navigate' ? action.url : record.page.url
-    const guard = (checkGeneration = true): void => {
-      this.working(task)
-      if (checkGeneration && record.generation !== generation) fail('blocked', 'The page changed. Inspect it before trying again.')
-      if (record.view.webContents.isDestroyed() || !this.pages.has(record.page.id)) fail('page-unavailable', 'This page closed.')
-      if (!initial) this.shared(record)
-    }
-    try {
-      guard()
-      if (targeted(action) && (!approvedTarget || await record.automation.target(action) !== approvedTarget)) fail('blocked', 'The target changed. Inspect the page and request the action again.')
-      guard()
-      let output = '', image: string | undefined
-      if (action.type === 'navigate') {
-        record.initial = false
-        // An agent's new page is shared by its Open and share answer, or by the browser grant that stands for it.
-        if (initial) record.page.sharedOrigin = new URL(action.url).origin
-        this.load(record, action.url)
-        if (record.page.sharedOrigin) record.automation.observe()
-        output = 'Navigation started. Inspect the page after it finishes loading.'
-      } else if (action.type === 'inspect') output = await record.automation.inspect()
-      else if (action.type === 'screenshot') { const capture = await record.automation.capture(record.page.url); image = capture.image; output = JSON.stringify({ url: capture.url, width: capture.width, height: capture.height }) }
-      else {
-        await record.automation.input(action, guard)
-        if (action.type === 'viewport') { record.page.viewport = { width: action.width, height: action.height }; this.publish(record) }
-        output = `${action.type} completed.`
-      }
-      if (action.type !== 'navigate') guard(action.type === 'inspect' || action.type === 'screenshot')
-      if (action.type === 'screenshot') {
-        const evidence = record.automation.evidence(image!)
-        guard()
-        if (evidence) task.evidence = [...(task.evidence ?? []), { id: randomUUID(), at: Date.now(), url: record.page.url, viewport: record.page.viewport ?? null, ...evidence }].slice(-3)
-      }
-      // Revocation during an asynchronous capture must not release page evidence.
-      if (action.type !== 'navigate') guard(action.type === 'inspect' || action.type === 'screenshot')
-      const thumbnail = action.type === 'navigate' ? null : await record.automation.thumbnail(image).catch(() => null)
-      if (action.type !== 'navigate') guard(action.type === 'inspect' || action.type === 'screenshot')
-      if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
-      task.output = output
-      const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? `Entered text in the focused field.${grantNote}` : action.type === 'key' ? `Pressed ${action.key}.${grantNote}` : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output}${grantNote}` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
-      task.steps = task.steps.slice(-40)
-      return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
-    } catch (error) {
-      task.output = 'The browser action did not finish. Inspect the page before trying again.'
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: observedUrl, viewport: record.page.viewport ?? null })
-      task.steps = task.steps.slice(-40); this.publishTask(task)
-      throw error
-    } finally { this.executing.delete(record.page.id); for (const listener of this.taskListeners) listener() }
-  }
-  waitForAction(taskId: string, actionId: string): Promise<BrowserTask | null> {
-    return new Promise(resolve => {
-      const check = (): void => {
-        if (this.disposed) { this.taskListeners.delete(check); clearTimeout(timer); resolve(null); return }
-        const task = this.taskRecords.get(taskId)
-        if (!this.disposed && task?.pendingAction?.id === actionId && task.pendingAction.expiresAt > Date.now()) return
-        const expired = task?.pendingAction?.id === actionId
-        if (expired) { task.pendingAction = null; this.pending.delete(taskId); task.output = 'This browser request expired. Ask the user before requesting it again.' }
-        if (task && this.executing.has(task.pageId)) return
-        this.taskListeners.delete(check)
-        if (timer) clearTimeout(timer)
-        if (expired && task) this.publishTask(task)
-        resolve(task ? structuredClone(task) : null)
-      }
-      this.taskListeners.add(check)
-      const timer = setTimeout(check, Math.max(0, (this.taskRecords.get(taskId)?.pendingAction?.expiresAt ?? Date.now()) - Date.now()) + 1)
-      check()
-    })
-  }
-  finishTask(payload: unknown) { return this.run(async () => {
-    const request = parse(browserFinishTaskSchema, payload)
-    await this.owned(request)
-    const task = this.task(request)
-    this.working(task)
-    if (this.executing.has(task.pageId) || task.pendingAction) return fail('busy', 'Finish the pending browser action first.')
-    task.status = request.status; task.summary = request.summary; task.unchecked = request.unchecked
-    task.pendingAction = null; this.pending.delete(task.id)
-    return this.publishTask(task)
-  }) }
   dispose(): void {
     this.disposed = true
     this.detach()
@@ -921,10 +541,6 @@ export class BrowserService extends ToolOperations {
       void isolated.closeAllConnections().catch(() => undefined)
     }
     this.sessions.clear()
-    this.taskRecords.clear(); this.pending.clear()
-    this.grants.clear()
-    this.filePages.dispose()
-    for (const listener of this.taskListeners) listener()
-    this.taskListeners.clear()
+    this.disposeTasks()
   }
 }
