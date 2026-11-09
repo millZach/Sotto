@@ -8,6 +8,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { coordinatorSetupThreads } from '../../../src/main/hosts/hostSetupThreads'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 it('offers only tool-capable models for host setup and refuses a stale Muse selection before dispatch', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-muse-tools-'))
@@ -32,7 +33,7 @@ it('admits Muse threads to visuals and babysitting in Owl, but offers no side-dr
   const inner = new FakeProviderHost()
   inner.state.threads[0]!.providerId = 'muse'
   inner.state.threads[1]!.providerId = 'codex'
-  const workspace = new WorkspaceHost(inner, root, () => true, undefined, true, true)
+  const workspace = new WorkspaceHost(inner, root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) })
   try {
     await workspace.initialize(); await workspace.connect()
     expect(workspace.admitsVisuals('session-workshop')).toBe(true)
@@ -52,7 +53,7 @@ it('admits no visuals or babysitting for a Muse thread whose client withheld Sot
   const inner = new FakeProviderHost()
   inner.state.threads[0]!.providerId = 'muse'
   inner.state.threads[0]!.sottoToolsWithheld = true
-  const workspace = new WorkspaceHost(inner, root, () => true, undefined, true, true)
+  const workspace = new WorkspaceHost(inner, root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) })
   try {
     await workspace.initialize(); await workspace.connect()
     expect(workspace.admitsVisuals('session-workshop')).toBe(false)

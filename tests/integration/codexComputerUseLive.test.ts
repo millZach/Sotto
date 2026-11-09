@@ -19,7 +19,7 @@ vi.mock('../../src/main/agents/subscriptionCodex', async original => {
     ? Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|NODE_OPTIONS/i.test(key)))
     : actual.nativeEnvironment() }
 })
-const { CodexAppServerHost } = await import('../../src/main/agents/codex')
+const { CodexAppServerHost } = await import('../../src/main/agents/providers/codex/codex')
 
 async function removeProbe(root: string): Promise<void> {
   if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-codex-cu-')) throw new Error('Unexpected Computer Use test folder')

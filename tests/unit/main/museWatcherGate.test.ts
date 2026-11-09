@@ -11,6 +11,7 @@ import type { HostRequest } from '../../../src/shared/hostProtocol'
 import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../../src/shared/watcherHost'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
 import { centerHostId, centerTime, watcherRecordFixture, watcherToolFixtures } from '../../fixtures/watcher'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 const cleanup: (() => void | Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -66,7 +67,7 @@ function fixture(boundary: 'router' | 'socket', museEnabled = false, mixed = tru
         cachedWatcherProjection: () => projection,
         watcherRead: async value => { calls.push(value); return response(value.call) },
         watcherControl: async (value, _client, dispatchGuard) => { void _client; guard = dispatchGuard; calls.push(value); return response(value.call) } } }
-    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, museEnabled })
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: museEnabled }) })
     router.add(connection); cleanup.push(() => router.dispose())
     const remote = router.watcherHosts()
     return { state, calls, wireFrames, client: undefined, projection, setResponse, snapshot: () => remote.snapshot(centerHostId), cachedProjection: () => remote.projection!(centerHostId, master),
@@ -75,7 +76,7 @@ function fixture(boundary: 'router' | 'socket', museEnabled = false, mixed = tru
       publish: () => shellListener?.(state), dispatchGuard: () => guard!() }
   }
   const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'synthetic', expectedHostId: centerHostId,
-    watcherEnabled: true, museEnabled, catchUpEvents: false })
+    watcherEnabled: true, heldProviders: heldProvidersOf({ muse: museEnabled }), catchUpEvents: false })
   const internal = client as unknown as { receive(text: string): void; publish(value: typeof state): void }
   Object.assign(client, { features: ['watcher-reads', 'watcher-control'], cachedWatcher: projection,
     frames: { close: () => undefined, send: (frame: HostRequest) => {
@@ -289,7 +290,7 @@ it('hides held Muse updates on every clientHosts entry and sends a named ordinar
   }
   const localCommand = vi.fn(async (_input: AgentCommand) => { void _input; return local })
   const remoteCommand = vi.fn(async (_input: AgentCommand) => { void _input; return remote })
-  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, museEnabled: false })
+  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: false }) })
   cleanup.push(() => router.dispose())
   router.add({ hostId: localId, kind: 'local', name: 'This computer', detail: () => null, preview: () => null,
     service: { shell: () => local, subscribe: () => () => undefined, command: localCommand } })

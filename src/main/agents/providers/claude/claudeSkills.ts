@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
+import type { AgentSkillCatalog, AgentSkillReference } from '../../../../shared/agentSkills'
 import { ClaudeProtocol } from './claudeProtocol'
 import { claudeDenial } from './claudeRequests'
 

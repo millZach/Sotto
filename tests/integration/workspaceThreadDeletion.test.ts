@@ -34,7 +34,7 @@ async function fixture() {
   const forgotten: string[] = []
   ;(adapter as FakeProviderHost & { forgetThread(id: string): Promise<void> }).forgetThread = async id => { forgotten.push(id) }
   const open = async () => {
-    const host = new WorkspaceHost(adapter, root, () => true)
+    const host = new WorkspaceHost(adapter, root, { historyEnabled: () => true })
     cleanup.push(async () => { await host.close().catch(() => undefined) })
     await host.initialize(); await host.connect()
     return host

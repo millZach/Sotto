@@ -7,6 +7,7 @@ import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 const MODES = [
   { id: 'ask', name: 'Ask', description: 'Asks first.', asks: 'Before each edit.', allows: 'nothing' as const },
@@ -38,7 +39,7 @@ async function fixture(enabled: boolean, directory?: string) {
     await rm(root, { recursive: true, force: true })
   })
   const adapter = new FakeProviderHost(state(root))
-  const host = new WorkspaceHost(adapter, root, () => true, undefined, false, false, enabled)
+  const host = new WorkspaceHost(adapter, root, { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: enabled })
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   return { root, adapter, host }

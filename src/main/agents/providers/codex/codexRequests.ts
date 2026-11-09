@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
-import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, skipSentenceFits } from './nativeRequests'
-import { browserRequestText, TOOLS_STILL_DECIDES } from './browserRequests'
-import { changeFilesAction, modelSummary, readableFields } from './requestInput'
-import { BROWSER_MCP_SERVER } from './browserAgentServer'
+import type { AgentRequest, AgentQuestionAnswers } from '../../../../shared/agents'
+import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, skipSentenceFits } from '../../nativeRequests'
+import { browserRequestText, TOOLS_STILL_DECIDES } from '../../browserRequests'
+import { changeFilesAction, modelSummary, readableFields } from '../../requestInput'
+import { BROWSER_MCP_SERVER } from '../../browserAgentServer'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
 const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), isSecret: z.boolean().optional(), options: z.array(option).nullish() })

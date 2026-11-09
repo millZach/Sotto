@@ -151,7 +151,7 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
       muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)),
       deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   await mkdir(join(root, 'workspace'), { recursive: true })
-  const workspace = new WorkspaceHost(native, join(root, 'workspace'), () => true, 600_000, true)
+  const workspace = new WorkspaceHost(native, join(root, 'workspace'), { historyEnabled: () => true, worktreeRefreshDelayMs: 600_000, watcherEnabled: true })
   workspace.enableDelegation()
   // Both coordinators tell the one workspace which threads they look at, and the last to tell it would decide which threads
   // hold their messages for both. It is made to hold every thread's but those the test lets go of (`unloaded`), so what one
@@ -201,7 +201,7 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
   for (const side of sides) {
     const { control, timers } = side
     vi.spyOn(control, 'deliverWakeUp').mockImplementation(async (threadId, news) => { side.delivered.push({ threadId, news }) })
-    control.mutateWatcher(record => {
+    control.watcherRecords.mutate(record => {
       record.current = { target: { hostId, threadId: sotto('w') }, projectId: control.watcherSnapshot().threads.find(item => item.id === sotto('w'))!.projectId,
         provider: 'claude', creationOperationId: uuid(1), createdAt: AT }
     })
@@ -271,7 +271,7 @@ function differences({ sides: [changed, whole] }: Stack): string[] {
     return { records: inside.records, paused: inside.paused, untold: [...inside.untold].map(([key, item]) => [key, item.ids, item.attempts]).sort(), lastWorking: inside.lastWorking }
   }
   const aspects: [string, unknown, unknown][] = [
-    ['Watcher\'s record', changed.control.watcherRecordView(), whole.control.watcherRecordView()],
+    ['Watcher\'s record', changed.control.watcherRecords.view(), whole.control.watcherRecords.view()],
     ['Watcher\'s room', room(changed), room(whole)],
     ['the state behind Watcher\'s wake-ups', wakeState(changed.watcher), wakeState(whole.watcher)],
     ['each thread\'s newest user message as Watcher noted it', heads(changed), heads(whole)],
@@ -312,7 +312,7 @@ async function agree(made: Stack, step: string, supply = true): Promise<void> {
 async function settled(made: Stack, supply = true): Promise<void> {
   const look = () => made.sides.map(side => {
     const wakes = side.watcher.wakes as unknown as { observedEdges?: { record: unknown; threads: string } }
-    return [side.control.watcherSnapshot(), side.control.watcherRecordView(), wakes.observedEdges?.record, wakes.observedEdges?.threads, side.delivered.length]
+    return [side.control.watcherSnapshot(), side.control.watcherRecords.view(), wakes.observedEdges?.record, wakes.observedEdges?.threads, side.delivered.length]
   }).flat()
   let last: unknown[] = [], waiting = 'what each side holds was still moving'
   for (let round = 0; round < 100; round++) {
@@ -325,7 +325,7 @@ async function settled(made: Stack, supply = true): Promise<void> {
     if (text(made.sides[0].control.watcherSnapshot()) !== text(made.sides[1].control.watcherSnapshot())) { waiting = 'the two coordinators held different host snapshots'; continue }
     // A record change is read by the wake-up pass the coordinator's next publish runs. A side whose record changed with no
     // publish to follow is given the call that publish would make, at the same time on the clock.
-    const behind = made.sides.filter(side => (side.watcher.wakes as unknown as { observedEdges?: { record: unknown } }).observedEdges?.record !== side.control.watcherRecordView())
+    const behind = made.sides.filter(side => (side.watcher.wakes as unknown as { observedEdges?: { record: unknown } }).observedEdges?.record !== side.control.watcherRecords.view())
     if (!behind.length) return
     waiting = `the ${behind.map(side => side.name).join(' and ')} side's wake-up pass had not read Watcher's record`
     if (!supply) continue
@@ -352,7 +352,7 @@ function passTime(made: Stack, ms: number): void {
  * side's observe pass read the old record and no later publication brought it another.
  */
 async function onBoth(made: Stack, change: (record: WatcherRecord) => void): Promise<void> {
-  await Promise.all(made.sides.map(side => side.control.updateWatcher(change)))
+  await Promise.all(made.sides.map(side => side.control.watcherRecords.update(change)))
 }
 
 /** The seeded run: every operation family once in a fixed order, then a seeded mix of them. */
@@ -373,18 +373,18 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
     return id
   }
   const watcherTarget = { hostId, threadId: sotto('w') }
-  const activeRequests = () => changed.control.watcherRecordView().requests.filter(request => request.state === 'active' && !request.standingWatchId)
+  const activeRequests = () => changed.control.watcherRecords.view().requests.filter(request => request.state === 'active' && !request.standingWatchId)
   const pick = <T>(list: readonly T[]): T => list[next(list.length)]!
   // A delegated thread under s1, delegated by s1, which Watcher watches.
   await workspace.setDelegatedBy(sotto(sessions.at(-1)!), sotto('s1'))
   const watchS1 = { id: uuid(ids++), target: target('s1'), createdAt: AT, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null }
   await onBoth(made, record => { (record.watches ??= []).push(structuredClone(watchS1)) })
   await same('a thread delegated from s1, which Watcher watches')
-  const watched = () => (changed.control.watcherRecordView().watches ?? []).flatMap(item => sessions.filter(session => sotto(session) === item.target.threadId))
+  const watched = () => (changed.control.watcherRecords.view().watches ?? []).flatMap(item => sessions.filter(session => sotto(session) === item.target.threadId))
   const families: Record<string, (session: string) => Promise<void>> = {
     // Standing watches, as Watch makes one and Stop watching takes it away.
     'watch': async session => {
-      if (changed.control.watcherRecordView().watches?.some(item => item.target.threadId === sotto(session))) return
+      if (changed.control.watcherRecords.view().watches?.some(item => item.target.threadId === sotto(session))) return
       const head = at(session).messages.findLast(item => item.role === 'user')?.id ?? null
       const watch = { id: uuid(ids++), target: target(session), createdAt: new Date().toISOString(), generation: 0, pausedByUserMessageId: null, lastUserMessageId: head }
       await onBoth(made, record => { (record.watches ??= []).push(structuredClone(watch)) })
@@ -451,7 +451,7 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
     // work: Watcher lets the hold go though nothing in the thread moved, only its record (ADR-0073).
     'held-watch': async session => {
       const into = watched().length ? pick(watched()) : session
-      const watch = changed.control.watcherRecordView().watches?.find(item => item.target.threadId === sotto(into))
+      const watch = changed.control.watcherRecords.view().watches?.find(item => item.target.threadId === sotto(into))
       const request = activeRequests()[0]
       if (!watch || !request) return
       const messageId = `brief-${ids++}`
@@ -501,7 +501,7 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
     // A change to Watcher's record whose pass comes only through the real path: the provider's next publication, taken in
     // by each coordinator and handed to its Watcher, with no call supplied by the test.
     'record-then-publication': async () => {
-      const watch = changed.control.watcherRecordView().watches?.[0]
+      const watch = changed.control.watcherRecords.view().watches?.[0]
       if (!watch) return
       await onBoth(made, record => { const held = record.watches!.find(item => item.id === watch.id); if (held) held.lastUserMessageId = null })
       const before = made.supplied.count

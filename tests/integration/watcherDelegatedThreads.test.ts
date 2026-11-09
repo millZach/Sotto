@@ -59,7 +59,7 @@ async function fixture(settleWithoutAsking = false) {
     return service.state().requests.at(-1)!.id
   }
   const sends = () => workspace.adapters.codex.commands.filter(command => ['send', 'steer', 'interrupt'].includes(command.type) && 'threadId' in command && command.threadId !== undefined).length
-  const watching = (threadId: string) => (control.watcherRecord().watches ?? []).some(watch => watch.target.threadId === threadId)
+  const watching = (threadId: string) => (control.watcherRecords.copy().watches ?? []).some(watch => watch.target.threadId === threadId)
   return { workspace, project, model, call, emit, create, family, request, sends, watching, watcherId,
     get control() { return control }, get service() { return service },
     /**
@@ -75,7 +75,7 @@ async function fixture(settleWithoutAsking = false) {
 
 it('refuses to send to, stop, settle or restore a delegated thread before anything goes, naming the thread that delegated it', async () => {
   const f = await fixture(), { parent, child } = await f.family(), requestId = await f.request()
-  const before = f.sends(), operations = f.control.watcherRecord().operations.length
+  const before = f.sends(), operations = f.control.watcherRecords.copy().operations.length
   const words = (nothing: string) => ({ status: 'refused', code: 'RESERVED_THREAD',
     message: `This thread is another thread’s delegated worker, and only the thread that delegated it directs it. Direct that thread instead: “Synthetic parent”, threadId ${parent.threadId}, hostId ${parent.hostId}. You can still read this one. ${nothing}` })
   for (const delivery of ['now', 'queue', 'steer'] as const) {
@@ -92,7 +92,7 @@ it('refuses to send to, stop, settle or restore a delegated thread before anythi
     expect(await f.call(name, { requestId: randomUUID(), retryKey: randomUUID(), target: child, ...name === 'send_to_thread' ? { text: 'Synthetic brief', delivery: 'now' } : {} })).toMatchObject(words(nothing))
   }
   expect(f.sends()).toBe(before)
-  expect(f.control.watcherRecord().operations).toHaveLength(operations)
+  expect(f.control.watcherRecords.copy().operations).toHaveLength(operations)
   // Reading changes nothing in the thread, so Watcher may still read it to report on it.
   expect(await f.call('read_thread', { target: child })).toMatchObject({ status: 'ok', target: child })
   // The thread that delegated stays Watcher's to direct.
@@ -130,7 +130,7 @@ it('lets go quietly of a watch an older build gave a delegated thread, and takes
   const head = lastUserMessageIdOf(known) ?? known.summary?.lastUser?.id ?? null
   // What an older build left: a standing watch on one delegated thread, and the other taking part in the user's request,
   // which recovery once turned into a watch of its own.
-  await f.control.updateWatcher(record => {
+  await f.control.watcherRecords.update(record => {
     (record.watches ??= []).push({ id: randomUUID(), target: child, createdAt: at, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null })
     const request = record.requests.find(item => item.id === requestId)!
     request.state = 'active'; request.closedAt = null
@@ -140,7 +140,7 @@ it('lets go quietly of a watch an older build gave a delegated thread, and takes
   expect(f.watching(other.threadId)).toBe(false)
   expect(f.watching(child.threadId)).toBe(true)
   // Nor is it watched for the request alone: its participation stopped as Watcher recovered, as a withdrawn watch's does.
-  expect(f.control.watcherRecord().requests.find(item => item.id === requestId)!.participants.find(item => item.target.threadId === other.threadId))
+  expect(f.control.watcherRecords.copy().requests.find(item => item.id === requestId)!.participants.find(item => item.target.threadId === other.threadId))
     .toMatchObject({ state: 'participating', automationStopped: true })
   expect(f.service.watches(other)).toBe(false)
   expect(f.service.state().watchedThreads.find(row => row.target.threadId === other.threadId)?.watched).not.toBe(true)
@@ -149,7 +149,7 @@ it('lets go quietly of a watch an older build gave a delegated thread, and takes
   await f.restart(0)
   await f.emit()
   await vi.waitFor(() => expect(f.watching(child.threadId)).toBe(false))
-  expect(f.control.watcherRecord().userUnwatches ?? []).toEqual([])
+  expect(f.control.watcherRecords.copy().userUnwatches ?? []).toEqual([])
   expect((f.service.state().news ?? []).some(event => event.target.threadId === child.threadId)).toBe(false)
 })
 
@@ -157,12 +157,12 @@ it('lets go, on the paired host that owns it, of a watch a desktop gave a delega
   const f = await fixture(), { parent, child } = await f.family(), at = new Date().toISOString()
   const remoteOrigin = { clientId: 'synthetic-desktop', masterHostId: randomUUID(), masterCreationOperationId: randomUUID(), masterCreatedAt: at }
   const watch = (target: WatcherThreadTarget) => ({ id: randomUUID(), target, createdAt: at, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null, remoteOrigin })
-  await f.control.updateWatcher(record => { record.watches = [watch(child), watch(parent)] })
+  await f.control.watcherRecords.update(record => { record.watches = [watch(child), watch(parent)] })
   // This Sotto starts as the host those threads are on: with no desktop's read yet, it lets the delegated thread's watch
   // go and keeps the parent's. It sets no fence: the thread's link keeps the watch off, and once the link goes the thread
   // can be watched again.
   await f.restart(60_000, true)
-  const record = f.control.watcherRecord()
+  const record = f.control.watcherRecords.copy()
   expect(record.watches?.map(item => item.target.threadId)).toEqual([parent.threadId])
   expect(record.watchFences?.some(fence => fence.target?.threadId === child.threadId) ?? false).toBe(false)
 })
@@ -197,13 +197,13 @@ it('never lets a fenced watch hold up the rest of a desktop’s watches, and let
   const watch = (target: WatcherThreadTarget) => ({ id: randomUUID(), target, createdAt: at, generation: 0, pausedByUserMessageId: null, lastUserMessageId: null })
   // What a desktop gave this host before its thread was delegated, and one it stopped watching, whose fence stands.
   const old = watch(child), unwatched = watch(stale)
-  await f.control.updateWatcher(record => {
+  await f.control.watcherRecords.update(record => {
     record.watches = [{ ...old, remoteOrigin }]
     record.watchFences = [{ id: unwatched.id, target: stale, remoteOrigin }]
   })
   // This Sotto starts as the host those threads are on, and lets the delegated thread's watch go.
   await f.restart(60_000, true)
-  expect(f.control.watcherRecord().watches ?? []).toEqual([])
+  expect(f.control.watcherRecords.copy().watches ?? []).toEqual([])
   // The thread that delegated is deleted while the desktop is away, so the thread it delegated is an ordinary one again.
   expect(await f.workspace.host.deleteThreads([parent.threadId], { automatic: false, hold: () => null })).toMatchObject({ deleted: [parent.threadId] })
   await vi.waitFor(() => expect(f.control.watcherSnapshot().threads.find(item => item.id === child.threadId)?.delegatedBy).toBeUndefined())
@@ -213,5 +213,5 @@ it('never lets a fenced watch hold up the rest of a desktop’s watches, and let
   const read = await f.service.readRemote({ master, standingWatches: [old, unwatched, fresh] }, 'synthetic-desktop') as { status?: string; standingWatches?: { id: string }[] }
   expect(read.status).not.toBe('refused')
   expect(read.standingWatches?.map(item => item.id).sort()).toEqual([old.id, fresh.id].sort())
-  expect(f.control.watcherRecord().watches?.map(item => item.target.threadId).sort()).toEqual([child.threadId, ordinary.threadId].sort())
+  expect(f.control.watcherRecords.copy().watches?.map(item => item.target.threadId).sort()).toEqual([child.threadId, ordinary.threadId].sort())
 })

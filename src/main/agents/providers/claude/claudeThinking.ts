@@ -1,5 +1,5 @@
-import { MAX_ACTIVITY_TEXT, THINKING_TITLE, thinkingText, type AgentActivity } from '../../shared/agentActivity'
-import { thinkingSettledAs } from './thinkingActivity'
+import { MAX_ACTIVITY_TEXT, THINKING_TITLE, thinkingText, type AgentActivity } from '../../../../shared/agentActivity'
+import { thinkingSettledAs } from '../../thinkingActivity'
 
 export const CLAUDE_THINKING_ID_PREFIX = 'claude-thinking-'
 /** A thinking block is known by its reply and its place in it, which the stream and the transcript both name. */

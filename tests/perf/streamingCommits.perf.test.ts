@@ -23,6 +23,7 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const WINDOWS = 100
 const ROUNDS = 3
@@ -86,7 +87,7 @@ async function measure(threads: number): Promise<Record<string, number>> {
     threads: ids.map((id): AgentThread => ({ id, projectId: 'project', title: id, modelId: 'fake:model', status: 'running', messages: [], requests: [] })),
   }
   const adapter = new StreamingAdapter(state)
-  const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, false, true)
+  const workspace = new WorkspaceHost(adapter, root, { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: true })
   await workspace.initialize()
   await workspace.connect()
   // The coordinator's subscription is what makes a publish apply events and read windows back.

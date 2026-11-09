@@ -16,7 +16,7 @@ import { usableModels, usableVariant } from './usableModels'
 import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
-import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
+import { pullRequestReadFailureOf } from '../main/agents/git/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
@@ -348,6 +348,14 @@ export async function startSocketServer(options: SocketServerOptions) {
   const sottoVersion = options.sottoVersion ?? packageVersion
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
+  // Listener capabilities are fixed at startup; per-client grants are checked below and again at dispatch.
+  const desktopListener = options.admin !== false || options.tailnet !== undefined
+  const desktopRecords = options.watcherDesktops !== undefined && desktopListener
+  const watcherReads = service.supportsWatcherReads === true && options.watcherDesktops !== undefined
+  const watcherChecks = service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined
+  const threadMoves = options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined
+  const delegation = service.supportsHostDelegation === true && desktopRecords
+  const usageReads = service.supportsUsage === true && service.usageRead !== undefined
   const features = HOST_FEATURES.filter(feature => (feature !== 'thread-snooze' || service.supportsThreadSnooze === true)
     && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
@@ -357,23 +365,23 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     // Files for Watcher ride on its photos, where the host keeps files at all (ADR-0131, October 28 amendment).
     && (feature !== 'watcher-phone-files' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined && service.supportsFileStaging === true)
-    && (feature !== 'every-agent-picture' || service.supportsEveryAgentPicture === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'every-agent-picture' || service.supportsEveryAgentPicture === true && service.desktopDefaults !== undefined && desktopRecords)
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-reads' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-outcomes' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-work-settled' || watcherReads)
+    && (feature !== 'watcher-outcomes' || watcherReads)
     // A new Watcher takes over the requests an older one of the same desktop made here (#1735).
-    && (feature !== 'watcher-new-owner' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-muse' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-cursor' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-new-owner' || watcherReads)
+    && (feature !== 'watcher-muse' || watcherReads)
+    && (feature !== 'watcher-cursor' || watcherReads)
     // A host keeps its own check queue (#1312) only where its Owl answer turns on Work across machines.
-    && (feature !== 'watcher-check-queue' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-check-queue' || watcherChecks)
     // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.
-    && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-check-stop' || watcherChecks)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
     && (feature !== 'product-events' || options.onProductEventAnswer !== undefined)
@@ -383,35 +391,35 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Offered with client updates: the coordinator's check keeps what an update already run said (ADR-0077).
     && (feature !== 'client-update-outcomes' || options.clientUpdates === true)
     && (feature !== 'client-update-not-listed' || options.clientUpdates === true)
-    && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
+    && (feature !== 'usage-dashboard' || (usageReads && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
-    && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
-    && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
+    && (feature !== 'usage-history' || (usageReads))
+    && (feature !== 'usage-muse-opencode' || (usageReads))
     && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // A confirmation receipt is bound to the pull request as the host read it for the client, so only a host that reads them gives one (#1691).
     && (feature !== 'pull-request-confirmation' || service.gitPullRequest !== undefined)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
-    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
-    && (feature !== 'worker-swarms' || service.supportsWorkerSwarms === true && service.supportsHostFacts === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && desktopListener)
+    && (feature !== 'worker-swarms' || service.supportsWorkerSwarms === true && service.supportsHostFacts === true && desktopRecords)
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
-    && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && desktopListener)
     // Setting up a copy for a worker placed here (#1690) is offered exactly where project origins are.
-    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && desktopListener)
     // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
     // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
-    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && desktopRecords)
     // A host that keeps a check queue sends it to a recorded desktop's window (#1312), only where its Owl answer turns on
     // Work across machines; the desktop's own phone listener never lists it.
-    && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
-    && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
-    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && desktopListener)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
@@ -427,22 +435,22 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Moves (#1178) on the same terms as branch moves, whose incoming ref each one starts from.
-    && (feature !== 'thread-move' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    && (feature !== 'thread-move' || threadMoves)
     // Calling a move off (#1178 part 4, Keep it here) on the same terms as thread-move.
-    && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    && (feature !== 'thread-move-keep' || threadMoves)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-tell' && feature !== 'watcher-ready' || options.tellWatcher !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
-    && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && delegation)
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
-    && (feature !== 'delegation-remote' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-remote' || options.delegationRemote !== undefined && delegation)
     // Starts from a delegating thread's branch, and checks, either way between machines (#1316 part 2), with remote delegation.
-    && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && delegation)
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-file-links' || service.supportsThreadFileLinks === true && service.threadFileLink !== undefined)
-    && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'thread-delete' || service.supportsThreadDelete === true && desktopListener)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
     // A sent file's bytes for the iPhone's Quick Look go with file staging (ADR-0131, October 25 amendment).

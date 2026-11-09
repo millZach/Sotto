@@ -17,7 +17,7 @@
  * still reads every held record once, by design, since it keeps no state between calls. The budgets only tighten.
  */
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../src/main/agents/claudeActivity'
+import { ClaudeActivity } from '../../src/main/agents/providers/claude/claudeActivity'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../src/shared/agentActivity'
 
 const timestamp = '2026-09-20T12:00:00.000Z'

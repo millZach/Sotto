@@ -8,14 +8,14 @@ import { NativeUsage, tokenCount } from '../../../src/main/agents/nativeUsage'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { usageTokenObservationSchema } from '../../../src/shared/usageDashboard'
-import { CodexAppServerHost } from '../../../src/main/agents/codex'
-import { ClaudeStreamJsonHost } from '../../../src/main/agents/claude'
+import { CodexAppServerHost } from '../../../src/main/agents/providers/codex/codex'
+import { ClaudeStreamJsonHost } from '../../../src/main/agents/providers/claude/claude'
 import { GrokAcpHost } from '../../../src/main/agents/grok'
 import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
-import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import type { ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
 
 const roots: string[] = []
 const drains: Array<() => Promise<void>> = []

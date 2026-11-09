@@ -12,7 +12,7 @@ const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 async function fixture(limitStops: boolean) {
   const f = await codexFixture(undefined, false, 2000, limitStops ? { limitStops: true } : {})
-  const workspace = new WorkspaceHost(f.host, f.root, () => true)
+  const workspace = new WorkspaceHost(f.host, f.root, { historyEnabled: () => true })
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await f.cleanup() })
   await workspace.connect()
   await workspace.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Fixture', path: f.root })

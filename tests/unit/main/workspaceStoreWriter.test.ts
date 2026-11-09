@@ -9,6 +9,7 @@ import { eventsOfWrite, writeThreads } from '../../../src/main/agents/threadStor
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { DeferredStoreWriter } from '../../fixtures/deferredStoreWriter'
 import { added, aliased, answer, appended, cleanUp, cleanup, DOCS, EventProvider, fixture, message, isSettled, pumped, record, releaseUntilPosted, replaced, reset, runEquivalence, settle, shown, storedMessages, visual, WORKSHOP } from '../../fixtures/storeWriterEquivalence'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 // The seam every thread-store write goes through (#1457, step 1 of docs/plans/store-worker.md). These tests run the
 // workspace over a writer that holds each confirmation until the test releases it, the way the store worker does.
@@ -529,7 +530,13 @@ describe('order, failure and durability through the seam', () => {
     cleanup.push(async () => { await rm(directory, { recursive: true, force: true }) })
     const adapter = new EventProvider()
     let writer: DeferredStoreWriter | undefined
-    const host = new WorkspaceHost(adapter, directory, () => history, undefined, false, false, true, store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer })
+    const host = new WorkspaceHost(adapter, directory, {
+      historyEnabled: () => history,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: true,
+      storeWriter: store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer },
+    })
     cleanup.push(async () => { host.disconnect(); writer!.holding = false; writer!.release(); await host.close().catch(() => undefined) })
     await host.initialize(); await host.connect(); host.observeThreads([WORKSHOP])
     writer!.holding = true

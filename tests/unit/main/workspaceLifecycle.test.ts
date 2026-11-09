@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { deferred } from '../../fixtures/deferred'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 const cleanup: Array<() => Promise<void>> = []
 const gates = [
@@ -24,7 +25,7 @@ afterEach(async () => {
 async function fixture({ watcherEnabled, museEnabled }: typeof gates[number]) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-workspace-lifecycle-'))
   const adapter = new FakeProviderHost()
-  const host = new WorkspaceHost(adapter, root, () => true, undefined, watcherEnabled, museEnabled)
+  const host = new WorkspaceHost(adapter, root, { historyEnabled: () => true, watcherEnabled, heldProviders: heldProvidersOf({ muse: museEnabled }) })
   cleanup.push(async () => {
     host.dispose()
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-workspace-lifecycle-')) throw new Error('Unexpected test directory')

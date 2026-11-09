@@ -1,6 +1,6 @@
 import { isAbsolute, normalize } from 'node:path'
 import { z } from 'zod'
-import { agentSkillSchema, agentSkillReferencesSchema, hasSkillInvocation, type AgentSkillCatalog, type AgentSkillReference } from '../../shared/agentSkills'
+import { agentSkillSchema, agentSkillReferencesSchema, hasSkillInvocation, type AgentSkillCatalog, type AgentSkillReference } from '../../../../shared/agentSkills'
 
 // Codex 0.154.0 SkillsListResponse: native ordering and duplicate names belong to
 // Codex. Do not recreate discovery/precedence by scanning files or sorting scopes.

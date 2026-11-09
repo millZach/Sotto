@@ -84,7 +84,7 @@ async function stack(sessions: readonly string[] = ['s1', 's2', 's3'], workspace
     const directory = join(root, `workspace-${index}`)
     await mkdir(directory, { recursive: true })
     // No worktree re-read lands mid-test: when one does is each workspace's own timing, which two workspaces need not share.
-    const host = new WorkspaceHost(native, directory, () => true, 600_000)
+    const host = new WorkspaceHost(native, directory, { historyEnabled: () => true, worktreeRefreshDelayMs: 600_000 })
     cleanup.push(async () => { host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() })
     await host.initialize()
     hosts.push(host)

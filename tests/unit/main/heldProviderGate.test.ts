@@ -88,11 +88,11 @@ describe('the held-provider table', () => {
     expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'deepseek', 'grok']), entries)).toBe(false)
     expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek'])
   })
-  it('reads an older Muse answer as the held set, and the held set wins', () => {
-    // The older answer is Muse's alone, so OpenCode, which it says nothing about, stays held: the gate fails closed.
+  it('holds every table provider by default and honors an explicit held set, including an empty one', () => {
     expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek'])
-    expect([...heldProvidersOption({ museEnabled: true })]).toEqual(['opencode', 'cursor', 'deepseek'])
-    expect([...heldProvidersOption({ museEnabled: true, heldProviders: HELD })]).toEqual(['muse', 'grok'])
+    expect([...heldProvidersOption({ heldProviders: heldProvidersOf({ muse: true }) })]).toEqual(['opencode', 'cursor', 'deepseek'])
+    expect(heldProvidersOption({ heldProviders: HELD })).toBe(HELD)
+    expect([...heldProvidersOption({ heldProviders: new Set() })]).toEqual([])
   })
   it("keeps Muse's refusal word for word and builds another's from its label", () => {
     expect(heldProviderRefusal('muse')).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
@@ -333,7 +333,7 @@ describe.each(providers)('every boundary holds %s', provider => {
     const root = await directory(), scopedModel = publicProviderEntityId(provider, 'model', 'scoped-model')
     const owlSnapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), ...hostState(provider).host,
       capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true } }
-    const owl = new WorkspaceHost(new FakeProviderHost(owlSnapshot), root, () => true, undefined, true, new Set())
+    const owl = new WorkspaceHost(new FakeProviderHost(owlSnapshot), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: new Set() })
     await owl.initialize(); await owl.connect()
     const first = await agentControlFixture({ directory: root, host: owl, credentialOptions: { mode: 'unavailable' }, control: { watcherEnabled: true, heldProviders: new Set() } })
     await first.control.start(); await first.dispose(); await first.control.closed(); await owl.close()
@@ -342,7 +342,7 @@ describe.each(providers)('every boundary holds %s', provider => {
       newThreadModelId: scopedModel, newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'approval-required' }
     await writeFile(file, JSON.stringify(saved))
 
-    const stable = new WorkspaceHost(new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true }), root, () => true, undefined, true, HELD)
+    const stable = new WorkspaceHost(new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true }), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: HELD })
     cleanup.push(() => stable.close()); await stable.initialize()
     const held = await agentControlFixture({ directory: root, host: stable, credentialOptions: { mode: 'unavailable' }, control: { watcherEnabled: true, heldProviders: HELD } })
     await held.control.start()
@@ -358,7 +358,7 @@ describe.each(providers)('every boundary holds %s', provider => {
     if (provider === 'muse') { expect(parked.dormantMuseConfiguration).toEqual(choices); expect(parked.dormantProviderConfigurations).toBeUndefined() }
     else { expect(parked.dormantProviderConfigurations).toEqual({ [provider]: choices }); expect(parked.dormantMuseConfiguration).toBeUndefined() }
 
-    const back = new WorkspaceHost(new FakeProviderHost(), root, () => true, undefined, true, new Set())
+    const back = new WorkspaceHost(new FakeProviderHost(), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: new Set() })
     cleanup.push(() => back.close()); await back.initialize()
     const reopened = await agentControlFixture({ directory: root, host: back, credentialOptions: { mode: 'unavailable' }, control: { watcherEnabled: true, heldProviders: new Set() } })
     cleanup.push(reopened.dispose); await reopened.control.start()
@@ -447,12 +447,12 @@ describe('parking and restoring held providers', () => {
       { ...host.threads[1]!, id: 'muse-worker', providerId: 'muse', modelId: 'model', title: 'Muse' }]
     const owlSnapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), ...host,
       capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true } }
-    const owl = new WorkspaceHost(new FakeProviderHost(owlSnapshot), root, () => true, undefined, true, new Set())
+    const owl = new WorkspaceHost(new FakeProviderHost(owlSnapshot), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: new Set() })
     await owl.initialize(); await owl.connect()
     const first = await agentControlFixture({ directory: root, host: owl, ...options(new Set()) })
     await first.control.start(); await first.dispose(); await first.control.closed(); await owl.close()
 
-    const stable = new WorkspaceHost(new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true }), root, () => true, undefined, true, HELD)
+    const stable = new WorkspaceHost(new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true }), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: HELD })
     cleanup.push(() => stable.close()); await stable.initialize()
     const held = await agentControlFixture({ directory: root, host: stable, ...options(HELD) })
     cleanup.push(held.dispose); await held.control.start()

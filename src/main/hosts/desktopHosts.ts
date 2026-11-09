@@ -265,8 +265,8 @@ export class DesktopHosts {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
     /** That the user began adding a host (ADR-0179). */
     featureUsed?: (feature: 'add-host') => void;
-    /** `museEnabled` is Muse's answer alone, from before the held set; `heldProviders` wins, and neither holds every one. */
-    watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    /** The providers held to Owl on this run; absent holds every one. */
+    watcherEnabled?: boolean; heldProviders?: HeldProviders; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
     crossMachineEnabled?: boolean;
     /** Sotto's browser for a host's own threads (ADR-0198): its socket accepts `browser` only where this is on. */

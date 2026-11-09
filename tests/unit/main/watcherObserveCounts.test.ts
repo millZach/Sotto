@@ -49,7 +49,7 @@ async function pairedWatcher(size: number) {
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, streamingPublishCost: true })
   cleanups.push(async () => { router.dispose() })
   router.add({ hostId, name: 'Paired', kind: 'remote', service, detail: () => null, preview: () => ({ ok: false }) as never })
-  await f.control.updateWatcher(record => {
+  await f.control.watcherRecords.update(record => {
     record.current = { target: { hostId: local, threadId: 'master' }, projectId: 'project', provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
     record.requests.push({ id: requestId, watcher: record.current.target, rootUserMessageId: 'prompt', state: 'active', createdAt: at, closedAt: null,
       participants: ids.map(threadId => ({ target: { hostId, threadId }, requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, promptCount: 1 })) })
@@ -62,8 +62,8 @@ async function pairedWatcher(size: number) {
   const remote = router.watcherHosts(), listHosts = remote.hosts.bind(remote)
   remote.hosts = () => { if (counted()) tally.hostLists++; return listHosts() }
   watcher.useRemoteHosts(remote)
-  const readRecord = f.control.watcherRecord.bind(f.control)
-  f.control.watcherRecord = () => { if (counted()) tally.records++; return readRecord() }
+  const readRecord = f.control.watcherRecords.copy.bind(f.control.watcherRecords)
+  f.control.watcherRecords.copy = () => { if (counted()) tally.records++; return readRecord() }
   watcher.wakes.start()
   // These count reads per pass, so every update runs its pass at once, as one does after WATCHER_OBSERVE_MS.
   Object.defineProperty(watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })

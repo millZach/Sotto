@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { open, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { CodexSessionLogWatcher } from '../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher } from '../../src/main/agents/providers/codex/codexSessionLog'
 import { codexFixture } from '../fixtures/codexFixture'
 
 // Every connect read every saved thread's rollout from its first byte, and every tick read every rollout again (#992).

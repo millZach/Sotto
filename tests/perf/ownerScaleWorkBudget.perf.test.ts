@@ -166,10 +166,10 @@ vi.mock('../../src/shared/agents', async importOriginal => {
 // on each run. Git is asked about each project folder; none is a repository, and this stand-in says so at once, as Git
 // would, instead of a child process that exits whenever the machine lets it. A retry's or a recovery's wait runs on the
 // test's clock.
-vi.mock('../../src/main/agents/gitLauncher', async importOriginal => {
-  const original = await importOriginal<typeof import('../../src/main/agents/gitLauncher')>()
+vi.mock('../../src/main/agents/git/gitLauncher', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/main/agents/git/gitLauncher')>()
   const { EventEmitter } = await import('node:events')
-  const launchProcess = (): import('../../src/main/agents/gitLauncher').LaunchedProcess => {
+  const launchProcess = (): import('../../src/main/agents/git/gitLauncher').LaunchedProcess => {
     const output = () => Object.assign(new EventEmitter(), { setEncoding() { return this }, destroy: () => undefined })
     const child = Object.assign(new EventEmitter(), { pid: undefined as number | undefined, stdout: output(), stderr: output(), kill: () => true })
     queueMicrotask(() => {
@@ -262,7 +262,7 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
     // A creation read while the workspace takes in an update; a save serializing every creation is not one.
     creationRead: () => { if (counter.accepting) bump('creationReads') } }))
   counter.wholeThreads = Math.min(pipeline.counts.threads, pipeline.counts.remoteThreads)
-  counter.record = () => pipeline.control.watcherRecordView()
+  counter.record = () => pipeline.control.watcherRecords.view()
   // Watcher's wake-up pass runs at most every 250 ms while threads stream. Here it runs on every update, as it does when
   // an update moves something it reacts to, so the counts are the most an update can do.
   if (pipeline.watcher) {
@@ -273,7 +273,7 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
     const wakes = pipeline.watcher.wakes as unknown as { options?: { progress?: (target: WatcherThreadTarget, key: string) => string | undefined } }
     const progress = wakes.options?.progress
     if (!wakes.options || typeof progress !== 'function') throw new Error('Watcher\'s wake-up pass no longer asks options.progress for each thread it works through; count the threads it works through another way.')
-    const watched = (target: WatcherThreadTarget): boolean => pipeline.control.watcherRecordView().watches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
+    const watched = (target: WatcherThreadTarget): boolean => pipeline.control.watcherRecords.view().watches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
     wakes.options.progress = (target, key) => { if (counter.measuring && !watched(target)) bump('unwatchedThreadPasses'); return progress(target, key) }
   }
   try {

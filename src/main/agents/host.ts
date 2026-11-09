@@ -283,7 +283,7 @@ export interface ActivitySubscriptionOptions {
  * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
-export interface AgentHost {
+export interface ProviderHost {
   /** Owl-only numeric observations. Adapters own native IDs; wrappers translate to Sotto IDs. */
   subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
@@ -300,16 +300,10 @@ export interface AgentHost {
    * every usage record and pass the rest through. Resumes from the sink's cursors; stops when `signal` aborts.
    */
   scanUsageHistory?(sink: UsageHistorySink, signal: AbortSignal): Promise<void>
-  /**
-   * Owl-only: Sotto's own stored user messages created before `before`, by identity and instant alone, with whether
-   * each was a wake-up. Answers false when the store could not be read yet. Never reads message text.
-   */
-  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean | Promise<boolean>
   /** Private main capability; never a serialized AgentCommand field. */
   executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
-  useWatcherTools?(tools: WatcherProfileTools): void
   /**
    * Capture the owned runtime before main checks identity. A refusal cannot close its replacement. `history` is true for an
    * earlier Watcher conversation's refusal, which stops the runtime but is not the provider's error.
@@ -336,17 +330,6 @@ export interface AgentHost {
    * a refusal in plain words when the provider cannot; uncertain when it may have made a copy it did not confirm.
    */
   forkThread?(request: ThreadForkRequest): Promise<AgentHostResult>
-  /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
-  continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
-  /** Fork a thread at one of its replies (#1028, E5b). The workspace makes the thread; refusals make nothing. */
-  forkAtReply?(request: ReplyFork): Promise<AgentHostResult>
-  /**
-   * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
-   * record. Undefined once it has gone, or when Sotto no longer holds what it carries.
-   */
-  startHandover?(threadId: string): { readonly text: string; readonly counts: HandoverCounts } | undefined
-  /** The first message went with the handover (`sent`), did not go after all (`null`), or goes without it (`'drop'`). */
-  markStartHandover?(threadId: string, sent: StartHandoverSent | null | 'drop'): Promise<void>
   /** Scope is constructed only by WorkspaceHost for an unstarted local thread. */
   listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean
@@ -357,15 +340,6 @@ export interface AgentHost {
    * of reading the whole history again. Messages the caller does not hand back are read afresh.
    */
   restoreThreadHistory?(threads: readonly RestoredThreadHistory[]): Promise<void>
-  /** Local organization/history; available without a provider connection. */
-  workspaceSnapshot?(): AgentHostSnapshot
-  /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
-  watcherThreadIds?(): readonly string[]
-  /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
-  dormantThreadIds?(): readonly string[]
-  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
-  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
-  setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: MergedSettleExpectation, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /**
    * A cleared thread is gone from the adapter (ADR-0140): its process, if it has one, is stopped, its alias record and
    * every per-thread record the adapter keeps for it are removed and saved, and its next snapshots leave it out. Wrappers
@@ -373,22 +347,6 @@ export interface AgentHost {
    * Resolves once the removal is on disk; a thread the adapter does not hold resolves at once.
    */
   forgetThread?(threadId: string): Promise<void>
-  /** Why deleting this thread is held back by the workspace, and its own worktree's facts (ADR-0140). WorkspaceHost's. */
-  previewThreadDeletion?(threadId: string, automatic?: boolean): Promise<{ kept: ThreadClearKeptReason | null; worktree: WorktreeReclaimPreview | null }>
-  /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0140). WorkspaceHost's. */
-  deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
-    readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
-  /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
-  reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
-  /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
-   * `user` and outranks everything later. The provider is not told. */
-  renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
-  setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
-  /**
-   * One thread's whole history from Sotto's own store, for the few things that need more than the window
-   * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
-   */
-  threadMessages?(threadId: string): readonly AgentMessage[]
   /**
    * One side call to the thread's own client, account and model, in the thread's working folder: the
    * instruction and material go in and the written text comes back (ADR-0026). It never resumes or writes
@@ -403,65 +361,6 @@ export interface AgentHost {
    * send, or Watcher's first message. Run on the model chosen, at its least effort, in the folder given or the home folder.
    */
   writeShortTextOn?(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
-  /**
-   * Record that a request was answered and which client answered it. Absent on hosts that keep no
-   * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
-   */
-  recordAnswer?(threadId: string, event: AnswerGivenEvent): void
-  /**
-   * Widen one thread's loaded message window by another twenty turns and publish (issue #119), or, with `throughMessageId`,
-   * far enough back to hold that message, for the message scrubber's press on a prompt above the window (ADR-0109).
-   */
-  loadEarlierMessages?(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot>
-  /**
-   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
-   * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
-   */
-  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null>
-  /**
-   * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
-   * turn above the window waits there with its messages. A view for the thread detail alone; the records
-   * themselves stay whole everywhere else. Absent on hosts that keep no window, which give every record.
-   */
-  paneActivities?(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[]
-  workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
-  configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
-  /** `background` is a read the window made on its own, which asks GitHub only as the timer would (#820). */
-  updateThreadWorktree?(threadId: string, retry: boolean, options?: { readonly background?: boolean }): Promise<AgentHostSnapshot>
-  restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
-  /** Remove the thread's own worktree folder and keep its branch (ADR-0041). */
-  previewThreadWorktreeReclaim?(threadId: string): Promise<WorktreeReclaimPreview>
-  reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean; confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] }): Promise<AgentHostSnapshot>
-  threadWorkingDirectory?(threadId: string): Promise<string>
-  /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
-  runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
-  pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
-  /**
-   * Bring changes to the branch of the thread this one began from (#1030); the outcome or question goes on its record. With
-   * `away`, a child's branch from another machine is already here, and `threadId` is the thread its commits go to.
-   */
-  bringChangesBack?(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away?: BringBackAway | undefined }): Promise<AgentHostSnapshot>
-  /** The branches the thread's folder offers, for the picker (ADR-0027). */
-  listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
-  /** The changed files of the thread's folder with their line counts, for the commit dialog (ADR-0027). */
-  listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
-  switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
-  initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
-  publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
-  /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
-  readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
-  /** The open pull requests of the thread's repository through `gh`, read on a press. */
-  listThreadRepositoryPullRequests?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
-  /**
-   * A press on the Pull request surface; answers with what happened, in T3's words. `matchHeadCommit` is the head a paired
-   * client's confirmation receipt was given on, which a merge or an auto-merge holds GitHub to (#1691).
-   */
-  runPullRequestAction?(command: GitPullRequestPress & { readonly threadId: string }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
-  linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>
-  unlinkThreadPullRequest?(threadId: string, url: string): Promise<AgentHostSnapshot>
-  /** T3's Checkout pull request, Local or Worktree. */
-  checkoutThreadPullRequest?(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
-  privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>
   snapshot(provider?: ProviderId): Promise<AgentHostSnapshot>
@@ -540,4 +439,109 @@ export interface AgentHost {
   threadInstructionsChanged?(threadId: string, provider?: ProviderId): Promise<void>
   /** Main-only: release a read-only Climb judge before removing its owned evidence copy. */
   closeCouncilJudge?(threadId: string): Promise<void>
+}
+
+/** Workspace operations sit above provider transports and use Sotto thread identities. */
+export interface AgentHost extends ProviderHost {
+  /**
+   * Owl-only: Sotto's own stored user messages created before `before`, by identity and instant alone, with whether
+   * each was a wake-up. Answers false when the store could not be read yet. Never reads message text.
+   */
+  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean | Promise<boolean>
+  useWatcherTools?(tools: WatcherProfileTools): void
+  /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
+  continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
+  /** Fork a thread at one of its replies (#1028, E5b). The workspace makes the thread; refusals make nothing. */
+  forkAtReply?(request: ReplyFork): Promise<AgentHostResult>
+  /**
+   * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
+   * record. Undefined once it has gone, or when Sotto no longer holds what it carries.
+   */
+  startHandover?(threadId: string): { readonly text: string; readonly counts: HandoverCounts } | undefined
+  /** The first message went with the handover (`sent`), did not go after all (`null`), or goes without it (`'drop'`). */
+  markStartHandover?(threadId: string, sent: StartHandoverSent | null | 'drop'): Promise<void>
+  /** Local organization/history; available without a provider connection. */
+  workspaceSnapshot?(): AgentHostSnapshot
+  /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
+  watcherThreadIds?(): readonly string[]
+  /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
+  dormantThreadIds?(): readonly string[]
+  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
+  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
+  setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: MergedSettleExpectation, watcherGuard?: () => void): Promise<AgentHostSnapshot>
+  /** Why deleting this thread is held back by the workspace, and its own worktree's facts (ADR-0140). WorkspaceHost's. */
+  previewThreadDeletion?(threadId: string, automatic?: boolean): Promise<{ kept: ThreadClearKeptReason | null; worktree: WorktreeReclaimPreview | null }>
+  /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0140). WorkspaceHost's. */
+  deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
+    readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
+  /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
+  reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
+  /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
+   * `user` and outranks everything later. The provider is not told. */
+  renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
+  setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
+  /**
+   * One thread's whole history from Sotto's own store, for the few things that need more than the window
+   * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
+   */
+  threadMessages?(threadId: string): readonly AgentMessage[]
+  /**
+   * Record that a request was answered and which client answered it. Absent on hosts that keep no
+   * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
+   */
+  recordAnswer?(threadId: string, event: AnswerGivenEvent): void
+  /**
+   * Widen one thread's loaded message window by another twenty turns and publish (issue #119), or, with `throughMessageId`,
+   * far enough back to hold that message, for the message scrubber's press on a prompt above the window (ADR-0109).
+   */
+  loadEarlierMessages?(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null>
+  /**
+   * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
+   * turn above the window waits there with its messages. A view for the thread detail alone; the records
+   * themselves stay whole everywhere else. Absent on hosts that keep no window, which give every record.
+   */
+  paneActivities?(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[]
+  workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
+  configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
+  /** `background` is a read the window made on its own, which asks GitHub only as the timer would (#820). */
+  updateThreadWorktree?(threadId: string, retry: boolean, options?: { readonly background?: boolean }): Promise<AgentHostSnapshot>
+  restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
+  /** Remove the thread's own worktree folder and keep its branch (ADR-0041). */
+  previewThreadWorktreeReclaim?(threadId: string): Promise<WorktreeReclaimPreview>
+  reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean; confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] }): Promise<AgentHostSnapshot>
+  threadWorkingDirectory?(threadId: string): Promise<string>
+  /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
+  runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
+  pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
+  /**
+   * Bring changes to the branch of the thread this one began from (#1030); the outcome or question goes on its record. With
+   * `away`, a child's branch from another machine is already here, and `threadId` is the thread its commits go to.
+   */
+  bringChangesBack?(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away?: BringBackAway | undefined }): Promise<AgentHostSnapshot>
+  /** The branches the thread's folder offers, for the picker (ADR-0027). */
+  listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  /** The changed files of the thread's folder with their line counts, for the commit dialog (ADR-0027). */
+  listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
+  switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
+  initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
+  publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
+  /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
+  readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of the thread's repository through `gh`, read on a press. */
+  listThreadRepositoryPullRequests?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
+  /**
+   * A press on the Pull request surface; answers with what happened, in T3's words. `matchHeadCommit` is the head a paired
+   * client's confirmation receipt was given on, which a merge or an auto-merge holds GitHub to (#1691).
+   */
+  runPullRequestAction?(command: GitPullRequestPress & { readonly threadId: string }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
+  linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>
+  unlinkThreadPullRequest?(threadId: string, url: string): Promise<AgentHostSnapshot>
+  /** T3's Checkout pull request, Local or Worktree. */
+  checkoutThreadPullRequest?(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
+  privacyChanged?(): Promise<void>
 }

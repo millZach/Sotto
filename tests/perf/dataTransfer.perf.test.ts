@@ -33,6 +33,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { WatcherRecords } from '../../src/main/agents/watcherRecords'
 import { AgentControl } from '../../src/main/agents/control'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentState } from '../../src/shared/agents'
@@ -123,7 +124,7 @@ const COUNTED: [object, string, string, ((result: unknown, args: unknown[]) => n
   // Main receiving a piece of a list the store worker read back, and owning its records.
   [StoreWorker.prototype, 'readAnswered', 'storeWorker.readAnswered', (_, args) => (args[0] as { activities?: unknown[] }).activities?.length ?? 0],
   [AgentControl.prototype, 'persist', 'control.persist'],
-  [AgentControl.prototype, 'mutateWatcher', 'control.mutateWatcher'],
+  [WatcherRecords.prototype, 'mutate', 'watcherRecords.mutate'],
 ]
 const nativeMethods = new Map<string, (...args: unknown[]) => unknown>()
 function count(name: string, ms: number, size: number): void {

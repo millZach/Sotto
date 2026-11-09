@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
+import type { GlassWindowBridge } from '../../../shared/glassWindow'
 import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
 import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
@@ -86,19 +87,40 @@ export function glassThemeOffered(target: GlassTarget = currentWindow()): boolea
  * What the window has asked main for, and what main has said. The room shows the desktop only once main says the
  * material is drawn; until then, and whenever Glass stops, the page is opaque, so the window never flashes black.
  */
-const glassWindowSync: { confirmed: boolean; requested: boolean | null } = (() => {
-  const bridge = currentWindow()?.sotto?.glassWindow
-  return { confirmed: bridge?.seeThrough === true, requested: bridge === undefined ? null : bridge.seeThrough }
-})()
+const glassWindowSync: { confirmed: boolean; requested: boolean | null } = { confirmed: false, requested: null }
+let appearanceLifetime: {
+  readonly root: HTMLElement
+  readonly target: GlassTarget
+  readonly bridge: GlassWindowBridge | undefined
+  readonly stop: () => void
+} | null = null
 
-// When the system takes the material away (Windows' Transparency effects turned off) or gives it back, main says so,
-// and the room follows: its own backdrop first, the desktop again only once the material is back (ADR-0150).
-currentWindow()?.sotto?.glassWindow?.onChanged(seeThrough => {
-  glassWindowSync.confirmed = seeThrough && glassWindowSync.requested === true
-  const root = typeof document === 'undefined' ? null : document.documentElement
-  if (root?.dataset.glass === undefined) return
-  root.dataset.glass = glassWindowSync.confirmed && glassWantsSeeThrough(currentWindow()) ? 'see-through' : 'in-app'
-})
+/** Start before the first paint in main and popup; repeated starts share one subscription and cleanup. */
+export function startAppearance(root: HTMLElement = document.documentElement, target: GlassTarget = currentWindow()): () => void {
+  const bridge = target?.sotto?.glassWindow
+  if (appearanceLifetime !== null && appearanceLifetime.root === root && appearanceLifetime.target === target && appearanceLifetime.bridge === bridge) return appearanceLifetime.stop
+  appearanceLifetime?.stop()
+  glassWindowSync.confirmed = bridge?.seeThrough === true
+  glassWindowSync.requested = bridge === undefined ? null : bridge.seeThrough
+  let active = true
+  // Follow main when the system takes its material away or gives it back (ADR-0150).
+  const unsubscribe = bridge?.onChanged(seeThrough => {
+    if (!active) return
+    glassWindowSync.confirmed = seeThrough && glassWindowSync.requested === true
+    if (root.dataset.glass === undefined) return
+    root.dataset.glass = glassWindowSync.confirmed && glassWantsSeeThrough(target) ? 'see-through' : 'in-app'
+  })
+  const stop = (): void => {
+    if (!active) return
+    active = false
+    unsubscribe?.()
+    appearanceLifetime = null
+    glassWindowSync.confirmed = false
+    glassWindowSync.requested = null
+  }
+  appearanceLifetime = { root, target, bridge, stop }
+  return stop
+}
 
 function systemReducesTransparency(target: GlassTarget): boolean {
   return target !== undefined && typeof target.matchMedia === 'function' && target.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches
@@ -117,13 +139,14 @@ function requestSeeThrough(on: boolean, root: HTMLElement, target: GlassTarget):
   if (!on) glassWindowSync.confirmed = false
   if (glassWindowSync.requested === on) return
   glassWindowSync.requested = on
+  const lifetime = appearanceLifetime
   void bridge.setSeeThrough(on).then(result => {
-    if (glassWindowSync.requested !== on) return
+    if (appearanceLifetime !== lifetime || glassWindowSync.requested !== on) return
     glassWindowSync.confirmed = on && result
     // The backdrop gives way to the desktop only now that the material is under it.
     if (glassWindowSync.confirmed && root.dataset.glass === 'in-app' && glassWantsSeeThrough(target)) root.dataset.glass = 'see-through'
   }, () => {
-    if (glassWindowSync.requested !== on) return
+    if (appearanceLifetime !== lifetime || glassWindowSync.requested !== on) return
     glassWindowSync.requested = null
     glassWindowSync.confirmed = false
   })

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import type { AgentActivity, ObservedAgent } from '../../../src/shared/agentActivity'
@@ -18,7 +18,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-subagents-workspace-'))
   const native = new FakeProviderHost()
   let history = true
-  const host = new WorkspaceHost(native, directory, () => history)
+  const host = new WorkspaceHost(native, directory, { historyEnabled: () => history })
   await host.initialize(); await host.connect()
   cleanups.push(async () => { host.dispose(); await rm(directory, { recursive: true, force: true }) })
   const thread = native.state.threads[0]!

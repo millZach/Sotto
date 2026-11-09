@@ -39,14 +39,14 @@ describe('Files preload contract', () => {
     expect(await bridge.previewLink!(link)).toEqual({ ok: true, value: { name: 'a.md', size: 1, text: 'a' } })
     expect(ipc.invoke).toHaveBeenLastCalledWith(FILES_PREVIEW_LINK, link)
   })
-  it('does not dispatch invalid paths, root overrides or tokenless stale selections', () => {
+  it('rejects invalid paths, root overrides or tokenless stale selections without dispatch', async () => {
     const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').files!
-    expect(() => bridge.list({ threadId: 'thread', path: '', root: 'C:/' } as FileListRequest)).toThrow()
-    expect(() => bridge.list({ threadId: 'thread', path: 'subdir' })).toThrow()
+    await expect(bridge.list({ threadId: 'thread', path: '', root: 'C:/' } as FileListRequest)).rejects.toThrow()
+    await expect(bridge.list({ threadId: 'thread', path: 'subdir' })).rejects.toThrow()
     for (const method of ['preview', 'copyPath', 'reveal'] as const) {
-      expect(() => bridge[method]!({ threadId: 'thread', path: 'file' } as FileRequest)).toThrow()
-      expect(() => bridge[method]!({ ...request, path: '../secret' })).toThrow()
+      await expect(bridge[method]!({ threadId: 'thread', path: 'file' } as FileRequest)).rejects.toThrow()
+      await expect(bridge[method]!({ ...request, path: '../secret' })).rejects.toThrow()
     }
     expect(ipc.invoke).not.toHaveBeenCalled()
   })

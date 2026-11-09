@@ -16,6 +16,7 @@ import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../.
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { testCredentials } from '../fixtures/testCredentials'
 import { PERF_BENCH, median, round } from '../fixtures/perfBench'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 /** Native-shaped event and certified activity publisher; no user profile or live provider is used. */
 class StreamingAdapter extends FakeProviderHost {
@@ -40,7 +41,7 @@ async function measure(threads: number, enabled: boolean) {
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true },
     projects: [{ id: 'project', title: 'Synthetic', path: root }], models: [{ id: 'fake:model', name: 'Synthetic', provider: 'Fake', ready: true }],
     threads: ids.map((id): AgentThread => ({ id, projectId: 'project', title: 'Synthetic', modelId: 'fake:model', status: 'running', messages: [], requests: [] })) })
-  const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, true)
+  const workspace = new WorkspaceHost(adapter, root, { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: true }) })
   await workspace.initialize()
   const control = new AgentControl({ directory: root, host: workspace, credentials: await testCredentials(root, { mode: 'unavailable' }), reasoner: {}, streamingPublishCost: enabled })
   const statePublisher = coalesceAgentStatePublishes(() => undefined)

@@ -29,12 +29,9 @@ export function releasesHeldProvider(held: HeldProviders, entries: readonly Held
   return entries.some(entry => !held.has(entry.provider))
 }
 
-/**
- * Options built before the held set existed name Muse's answer alone; `heldProviders` wins when both are given, and
- * neither holds every table provider.
- */
-export function heldProvidersOption(options: { readonly heldProviders?: HeldProviders; readonly museEnabled?: boolean }): HeldProviders {
-  return options.heldProviders ?? heldProvidersOf({ muse: options.museEnabled === true })
+/** The explicit held set wins, including an empty set; absent holds every table provider. */
+export function heldProvidersOption(options: { readonly heldProviders?: HeldProviders }): HeldProviders {
+  return options.heldProviders ?? heldProvidersOf({})
 }
 
 /** The provider a refusal names when a dormant thread's own provider is no longer known. */

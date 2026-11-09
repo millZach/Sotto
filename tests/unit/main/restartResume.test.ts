@@ -16,6 +16,7 @@ import { RESUME_NOTE, RESUMES_IN_A_ROW_MAX, isResumeNoteText, type RestartNews }
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 /**
  * Resuming threads after a restart (ADR-0076): what a connected provider reports running is recorded as it starts and
@@ -459,7 +460,7 @@ describe('a gated provider keeps its restart records', () => {
     host.state.models[0]!.providerId = 'muse'; host.state.models[0]!.provider = 'Muse'
     host.state.projects[0]!.path = parked.root
     const credentials = await testCredentials(parked.root, { mode: 'unavailable' })
-    const control = createAgentControl({ directory: parked.root, host, credentials, reasoner: e2eAgentReasoner, museEnabled: true }); controls.push(control)
+    const control = createAgentControl({ directory: parked.root, host, credentials, reasoner: e2eAgentReasoner, heldProviders: heldProvidersOf({ muse: true }) }); controls.push(control)
     const resume = new RestartResume({ directory: parked.root, control, enabled: () => true, tool: () => false,
       preservesDormantThread: () => false }); resumes.push(resume)
     control.useRestartResume({ due: () => true, sending: id => resume.noteSending(id), unsent: id => resume.noteUnsent(id) })

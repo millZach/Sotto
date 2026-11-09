@@ -19,7 +19,7 @@ async function opened(turns: AgentMessage[]) {
     await rm(directory, { recursive: true, force: true })
   })
   const adapter = new FakeProviderHost()
-  const host = new WorkspaceHost(adapter, directory, () => true)
+  const host = new WorkspaceHost(adapter, directory, { historyEnabled: () => true })
   cleanup.push(async () => { host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() })
   await host.initialize()
   await host.connect()

@@ -1,6 +1,6 @@
-import type { AgentRuntimeMode } from '../../shared/agents'
-import { RUNTIME_MODE_WORDS } from '../../shared/workerRoles'
-import { stoppedWork } from './stoppedWork'
+import type { AgentRuntimeMode } from '../../../../shared/agents'
+import { RUNTIME_MODE_WORDS } from '../../../../shared/workerRoles'
+import { stoppedWork } from '../../stoppedWork'
 
 /** Claude Code's `--permission-mode` for each of Sotto's modes. Aliases without a stored mode run approval-required. */
 export const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' } as const satisfies Record<AgentRuntimeMode, string>

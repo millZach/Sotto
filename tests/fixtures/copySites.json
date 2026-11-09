@@ -8,7 +8,7 @@
     "copyUnshared(": 1,
     "copyOver(": 1
   },
-  "src/main/agents/claude.ts": {
+  "src/main/agents/providers/claude/claude.ts": {
     "structuredClone(": 3,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
@@ -16,15 +16,14 @@
   "src/main/agents/cloneHostSnapshot.ts": {
     "cloneHostSnapshot(": 1
   },
-  "src/main/agents/codex.ts": {
+  "src/main/agents/providers/codex/codex.ts": {
     "structuredClone(": 3,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 21,
-    "watcherRecord()": 2,
-    "clonePlainData(": 2
+    "clonePlainData(": 1
   },
   "src/main/agents/cursor.ts": {
     "cloneHostSnapshot(": 1,
@@ -108,7 +107,11 @@
   "src/main/agents/watcher.ts": {
     "structuredClone(": 1,
     "shell()": 1,
-    "watcherRecord()": 1
+    "WatcherRecords.copy()": 1
+  },
+  "src/main/agents/watcherRecords.ts": {
+    "WatcherRecords.copy()": 1,
+    "clonePlainData(": 1
   },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,

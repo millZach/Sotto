@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isOwnHead, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isOwnHead, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/git/github'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 
 describe('the GitHub repository a remote names', () => {
   it('reads HTTPS, scp-like and ssh URLs on GitHub hosts, and nothing else', () => {

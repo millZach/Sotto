@@ -12,9 +12,9 @@
 import { describe, expect, it } from 'vitest'
 import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } from '../../src/main/agents/babysitting'
 import type { BabysitNews, BabysitRecord } from '../../src/main/agents/babysitNews'
-import { GitHubRateLimit } from '../../src/main/agents/github'
-import { DETAIL_QUERY, readDetail } from '../../src/main/agents/githubBabysitReads'
-import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { GitHubRateLimit } from '../../src/main/agents/git/github'
+import { DETAIL_QUERY, readDetail } from '../../src/main/agents/git/githubBabysitReads'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { pullRequestAddress, pullRequestKey } from '../../src/shared/gitPullRequests'
 
 const LIVE = process.env.SOTTO_GITHUB_LIVE === '1'

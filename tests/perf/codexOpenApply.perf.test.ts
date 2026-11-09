@@ -24,8 +24,8 @@
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/codexOpenApply.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { CodexActivityProjection } from '../../src/main/agents/codexActivity'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
+import { CodexActivityProjection } from '../../src/main/agents/providers/codex/codexActivity'
 import { opened, seededCodexThread } from '../fixtures/codexSeededThread'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 

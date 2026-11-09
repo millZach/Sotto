@@ -42,7 +42,7 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
 }
 /**
  * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
- * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
+ * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/providers/codex/codex.ts`:
  * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks unless the user's
  * own Codex rules allow it (#2185); Allow edits is
  * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and

@@ -117,6 +117,15 @@ msgstr ""
 msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 msgstr ""
 
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr ""
@@ -262,6 +271,55 @@ msgstr ""
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr ""
 
+#. {installed} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed, and that is what is published."
+msgstr ""
+
+#. {installed} and {published} are version numbers.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed; {published} is published."
+msgstr ""
+
+#. {installed} and {published} are version numbers; {command} is a terminal command.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with {command}."
+msgstr ""
+
+#. {installed} and {published} are version numbers.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with the installer you used."
+msgstr ""
+
+#. {installed} and {published} are version numbers.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed; {published} is published. Your threads keep working while it installs."
+msgstr ""
+
+#. {installed} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. Devin updates with the Devin app."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. mise does not list {to} yet, so Sotto could not install it. Try again later."
+msgstr ""
+
+#. {installed} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. Sotto could not read the published version. Check again to try."
+msgstr ""
+
+#. {installed} is a version number; {error} is the reason the update gave.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. The last update did not finish: {error}"
+msgstr ""
+
+#. {installed} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. The last update did not finish."
+msgstr ""
+
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "{kept} still works."
 msgstr ""
@@ -272,6 +330,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{label} details"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
@@ -288,6 +350,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "{label} saturation and brightness"
+msgstr ""
+
+#. {line} is a sentence about the installed client; {verified} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{line} It is newer than the {verified} Sotto has checked."
 msgstr ""
 
 #. Names of coding agent clients: {list} is all but the last, separated by commas, as in "Codex, Claude Code and Grok Build".
@@ -336,6 +403,11 @@ msgstr ""
 #. A model and its reasoning effort, as a list of defaults shows them
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{modelName}, {level}"
+msgstr ""
+
+#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{name} (Claude Code’s choice)"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -571,6 +643,16 @@ msgstr ""
 #. {provider} is a provider, such as Claude Code. Heads its older models in a model list.
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "{provider} · Legacy"
+msgstr ""
+
+#. {provider} is a provider's name; {chosen} and {fit} are permission modes.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
+msgstr ""
+
+#. {provider} is a provider's name.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "{provider} uses its own permission profiles; a new thread starts on its first."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -975,6 +1057,10 @@ msgstr ""
 msgid "After {name} restarts, its host starts again only when this computer connects over SSH."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history."
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "After an update, macOS may need you to turn Sotto off and on again in that list."
 msgstr ""
@@ -1194,6 +1280,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Asking GitHub..."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -1432,9 +1522,11 @@ msgid "Check {hostName} for {name} again"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Check again"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Check for client updates"
 msgstr ""
@@ -1448,7 +1540,7 @@ msgstr ""
 msgid "Check now"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Check that Sotto can hear you. Access is asked for only while the test runs."
 msgstr ""
 
@@ -1489,11 +1581,28 @@ msgstr ""
 msgid "Checking the host installation…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Checking the published version…"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Checking…"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
@@ -1544,6 +1653,10 @@ msgstr ""
 msgid "Choose from your devices"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Choose model. {modelName} oversees new threads"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Choose the light theme and the dark theme on their own."
 msgstr ""
@@ -1566,6 +1679,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose what {roleName} workers may do without asking. Now {permissionName}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Choose what new threads start with in Settings > Threads."
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: AI cleanup of dictated text. Other messages name it as "Settings > Cleanup".
@@ -1652,6 +1769,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Click effect on."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Client update checks are off, so Sotto does not know what is published."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -1800,6 +1921,7 @@ msgstr ""
 msgid "Commit, use folder"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Compact idle threads"
 msgstr ""
@@ -1815,7 +1937,23 @@ msgstr ""
 
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Connect"
+msgstr ""
+
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Connect {computerName} to change its projects directory."
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Connect {label}"
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Connect {label} to load its models."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -1828,6 +1966,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect it to use it on {host}."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Connect this provider to read its installed version."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
@@ -1849,9 +1991,11 @@ msgstr ""
 #. A provider on a host, or a host: connected and ready.
 #. A provider on a host, or a host: connected and ready.
 #. A provider on a host: connected and ready.
+#. A provider's status.
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Connected"
 msgstr ""
 
@@ -1870,6 +2014,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Connecting…"
 msgstr ""
@@ -1913,6 +2058,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1933,6 +2079,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy"
 msgstr ""
 
@@ -1948,6 +2095,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Copy command"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Copy Muse login command"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -1973,6 +2124,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Copy the command to run on {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Could not check for client updates. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -2001,6 +2156,15 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Could not sign in"
+msgstr ""
+
+#. {providerName} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Could not update {providerName}. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Could not update this provider. Try again."
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".
@@ -2055,6 +2219,14 @@ msgstr "Creatura salvata."
 msgid "Creature shown."
 msgstr "Creatura mostrata."
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Cursor’s install guide could not be opened. Try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Custom instructions"
@@ -2086,6 +2258,10 @@ msgstr ""
 msgid "dash"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+msgstr ""
+
 #. A worker role is on its default model
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Default"
@@ -2106,6 +2282,11 @@ msgstr ""
 msgid "Default merge method"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Default permissions for new threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Default projects directory"
 msgstr ""
@@ -2209,8 +2390,19 @@ msgstr ""
 msgid "Diff layout"
 msgstr ""
 
+#. A provider's status: switched off.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Disabled"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Disconnect"
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Disconnect {label}"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -2218,6 +2410,7 @@ msgid "Disconnect {name} on {hostName}"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Disconnecting…"
 msgstr ""
 
@@ -2351,6 +2544,11 @@ msgstr ""
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Effort color saved."
 msgstr "Colore dello sforzo salvato."
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Enable {label}"
+msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Enter <0>{machine}</0>."
@@ -2911,6 +3109,18 @@ msgstr ""
 msgid "Install {extensionName}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Install Devin CLI and run devin auth login before connecting."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Installation steps"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Installed client"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Installed on {host}."
 msgstr ""
@@ -3200,7 +3410,7 @@ msgstr ""
 msgid "Links and Sotto’s browser"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Listening. Say something."
 msgstr ""
 
@@ -3208,8 +3418,16 @@ msgstr ""
 msgid "load unknown"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Loading providers…"
+msgstr ""
+
 #: src/renderer/src/features/settings/LocalAppsSettings.tsx
 msgid "Local app access could not be read. Reopen Settings and try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Local connection"
 msgstr ""
 
 #. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
@@ -3281,21 +3499,22 @@ msgstr ""
 msgid "Message surface"
 msgstr ""
 
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Microphone"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Microphone {number}"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Microphone level"
 msgstr ""
 
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Microphone test"
 msgstr ""
 
@@ -3357,6 +3576,14 @@ msgstr ""
 msgid "Model"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Model, reasoning effort and permissions."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Models"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Monthly cap"
@@ -3408,6 +3635,26 @@ msgstr ""
 msgid "Moved"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Muse is still running with its sandbox off. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Muse is still running with its sandbox on. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Muse login command copied."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Muse's shell commands and file tools run inside its sandbox on this computer."
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Muted text"
@@ -3427,7 +3674,9 @@ msgstr ""
 msgid "Native iOS builds on a run.cloud simulator"
 msgstr ""
 
+#. A provider's status.
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Needs attention"
 msgstr ""
 
@@ -3453,12 +3702,25 @@ msgstr ""
 msgid "New thread shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "New threads"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "New threads in this project work in"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "New threads start with"
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "New threads start with these on every connected computer. Change them for one thread in its composer."
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "New threads start with these. Change them for one thread in its composer."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3536,16 +3798,20 @@ msgstr ""
 msgid "No matches."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "No microphone is set up. Run this test to set one up."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "No microphone was found."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No model"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "No models were returned. Refresh this provider to check again."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -3626,8 +3892,10 @@ msgstr ""
 msgid "Not checked yet."
 msgstr ""
 
+#. A provider's status.
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
@@ -3675,6 +3943,7 @@ msgid "Not set up"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not signed in"
 msgstr ""
 
@@ -3809,6 +4078,10 @@ msgstr ""
 msgid "On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back."
 msgstr ""
@@ -3841,6 +4114,11 @@ msgstr ""
 msgid "One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum."
 msgstr ""
 
+#. {provider} is a provider's name.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 msgstr ""
@@ -3864,6 +4142,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Open beside shortcut"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Open Muse installation guide"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Open OpenCode installation guide"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -3943,6 +4229,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Open Watcher’s room."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -4222,6 +4512,10 @@ msgstr ""
 msgid "Port <0>(optional)</0>"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Preparing agent configuration…"
+msgstr ""
+
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Preparing the panel…"
 msgstr ""
@@ -4266,7 +4560,7 @@ msgstr ""
 msgid "Preview"
 msgstr "Anteprima"
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Previous microphone (unavailable)"
 msgstr ""
 
@@ -4315,8 +4609,17 @@ msgstr ""
 msgid "Project folder"
 msgstr ""
 
+#. A Settings card about where new projects go.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Projects"
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Provider default"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".
@@ -4419,6 +4722,14 @@ msgstr ""
 msgid "Recent sessions"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Reconnect"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Reconnect Muse to apply the shell sandbox setting"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Reconnecting…"
 msgstr ""
@@ -4435,6 +4746,15 @@ msgstr ""
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Reduced motion"
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Refresh {label}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Refreshing…"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4569,6 +4889,22 @@ msgstr ""
 msgid "Replies in threads"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread."
+msgstr ""
+
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Reports no limits, so it would be chosen blind"
 msgstr ""
@@ -4701,6 +5037,15 @@ msgstr ""
 msgid "Resume threads after a restart"
 msgstr ""
 
+#. {label} is a provider's name; the button connects it again.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Retry {label}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Retry connection"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"
 msgstr ""
@@ -4713,6 +5058,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Run the local host"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Run these commands in a terminal on this computer, then check again."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -4942,6 +5291,7 @@ msgstr ""
 msgid "Setup stopped."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Shell sandbox"
 msgstr ""
@@ -5116,6 +5466,10 @@ msgstr ""
 msgid "Sign in to Tailscale in your browser. Sotto lists your devices once you have."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sign-in steps"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Signed in"
 msgstr ""
@@ -5129,6 +5483,7 @@ msgid "Signed in. This computer is <0>{machine}</0> on your tailnet."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Signing in…"
 msgstr ""
 
@@ -5241,7 +5596,7 @@ msgstr ""
 msgid "Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Sotto did not hear anything. Check that the microphone is not muted."
 msgstr ""
 
@@ -5265,11 +5620,15 @@ msgstr ""
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto has not read this client's version yet. Check again to read it."
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Sotto has not tested it yet."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Sotto heard you. The microphone is closed."
 msgstr ""
 
@@ -5329,6 +5688,14 @@ msgstr ""
 msgid "Sotto removes <0>sotto-host.service</0> and its script from {name}. The host running there is not the unit’s, so it keeps running as it is. After {name} restarts, its host starts again only when this computer connects over SSH."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Sotto runs Tailscale Serve on {name}, port 8443, or 10000 when another app uses 8443, so Sotto on your iPhone can reach {name}’s threads over your tailnet. Only phones you pair can connect. Phones reach {name} while its host runs. Turning this off removes the setting and disconnects them."
 msgstr ""
@@ -5351,6 +5718,15 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
+msgstr ""
+
+#. {requiredVersion} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto works with OpenCode {requiredVersion} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 msgstr ""
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
@@ -5585,6 +5961,10 @@ msgstr ""
 msgid "Starting the thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Starting the update…"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "Starting…"
@@ -5649,7 +6029,7 @@ msgstr ""
 msgid "Stop starting at boot…"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Stop test"
 msgstr ""
 
@@ -5858,11 +6238,11 @@ msgstr ""
 msgid "Terminal search & text size"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Test again"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Test microphone"
 msgstr ""
 
@@ -5933,7 +6313,7 @@ msgstr ""
 msgid "The approval page could not open. Nothing was changed. Try again."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "The chosen microphone is not connected. Plug it in or choose another."
 msgstr ""
 
@@ -5959,6 +6339,10 @@ msgstr ""
 msgid "The command could not be copied. Select it and copy it yourself."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The command could not be copied. Select muse login and copy it yourself."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "The composer’s own key. Shift+Enter adds a line."
 msgstr ""
@@ -5973,6 +6357,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "The download dropped partway. {installed} is still installed."
+msgstr ""
+
+#. Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -6071,12 +6460,21 @@ msgstr ""
 msgid "The local host setting could not be saved. Nothing was changed. Try again."
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "The microphone test could not start."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The model that turns your speech into text. Choosing one switches dictation to it."
+msgstr ""
+
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The models {clientName} offers you now."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The Muse guide could not be opened. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -6089,6 +6487,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "The one on {host} is too old."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The OpenCode guide could not be opened. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
@@ -6125,6 +6527,7 @@ msgstr ""
 
 #. Stands in for a version number, as in "Updating to {to}…"
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "the published version"
 msgstr ""
 
@@ -6162,6 +6565,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The setup of {name} stopped."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The shell sandbox setting was not saved, so Muse keeps the one it had. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
@@ -6252,12 +6659,27 @@ msgstr ""
 msgid "The thread's own model writes a new pull request's title and body from the branch's commits and diff."
 msgstr ""
 
+#. Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "The update finished, but {name} on {host} still reports {installed}. Nothing was lost, and your threads kept working."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "The update ran, but {host} still starts {installed}."
+msgstr ""
+
+#. {installed} is a version number; {command} is a terminal command.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The update ran, but this client still reports {installed}. Try again, or run {command} yourself to see what it says."
+msgstr ""
+
+#. {installed} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The update ran, but this client still reports {installed}. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
@@ -6339,6 +6761,10 @@ msgstr ""
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This machine is no longer saved, so new workers start on this computer. Choose another."
 msgstr ""
@@ -6347,6 +6773,8 @@ msgstr ""
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged."
 msgstr ""
 
+#. Stands for a provider whose name is not known, at the start of a sentence.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "This provider"
 msgstr ""
@@ -6395,6 +6823,7 @@ msgstr ""
 msgid "Those themes could not be saved."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Thread providers"
 msgstr ""
@@ -6426,6 +6855,22 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Threads with a turn running on each machine, unless you set its own number below."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Cursor"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with DeepSeek Harness"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Muse"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with OpenCode"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -6525,6 +6970,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Try again"
 msgstr ""
 
@@ -6534,6 +6980,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Try updating {name} on {host} again"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Try updating Muse again"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -6588,6 +7038,8 @@ msgid "Typing speed saved."
 msgstr ""
 
 #. A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.
+#. A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Ultracode effort"
 msgstr ""
@@ -6627,9 +7079,11 @@ msgstr ""
 msgid "Up to"
 msgstr ""
 
+#. A button that installs the published version of a provider's client.
 #. A button that updates one agent client on a host.
 #. Updates an installed theme extension
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Update"
 msgstr ""
@@ -6640,6 +7094,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Update {extensionName}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Update {label} to {version}"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -6672,6 +7130,18 @@ msgstr ""
 msgid "Update existing"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Update Muse"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Update Muse with the installer or package manager you used. Then check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Update OpenCode 2 with the installer or package manager you used. Then check again."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Update status is unavailable."
 msgstr ""
@@ -6688,6 +7158,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Update theme"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Update to {version}"
 msgstr ""
 
 #. Where one client update stands: finished.
@@ -6721,6 +7195,10 @@ msgstr ""
 msgid "Updating {extensionName}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Updating {label} to {version}"
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Updating {name}"
 msgstr ""
@@ -6733,6 +7211,11 @@ msgstr ""
 msgid "Updating {name}…"
 msgstr ""
 
+#. {published} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Updating to {published}…"
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Updating to {to} · step {step} of {steps}…"
 msgstr ""
@@ -6741,6 +7224,11 @@ msgstr ""
 msgid "Updating to {to}…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Updating to the published version…"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Updating…"
 msgstr ""
@@ -6859,6 +7347,19 @@ msgstr ""
 msgid "Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup."
 msgstr ""
 
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Uses your {clientName} sign-in on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting."
+msgstr ""
+
 #. How many workers a request usually starts in a role
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Usual"
@@ -6897,7 +7398,7 @@ msgstr ""
 msgid "Waiting for {name}’s threads"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Waiting for microphone permission..."
 msgstr ""
 
@@ -6938,12 +7439,25 @@ msgstr ""
 msgid "Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Waiting to update"
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Waiting to update {names}."
 msgstr ""
 
+#. {published} is a version number.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Waiting to update to {published}. Your threads keep working."
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Waiting to update to {to}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Waiting to update to the published version. Your threads keep working."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -7129,6 +7643,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When your computer starts"
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Where a new project goes. Each computer has its own folder."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The Git launcher (`src/main/agents/gitLauncher.ts`) over real child processes, launched in this thread and on the
+ * The Git launcher (`src/main/agents/git/gitLauncher.ts`) over real child processes, launched in this thread and on the
  * built worker: both report a process the same way, and a launch on the worker makes none on this thread. Then the two
  * callers over the worker, real Git included: the status reader's `runGitStatusCommand` and the worktree's
  * `runWorktreeGitProcess` keep their folders, environments, deadlines, output caps, process-tree stops and errors.
@@ -10,8 +10,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { GitLauncher, useGitLauncher, type LaunchedProcess } from '../../src/main/agents/gitLauncher'
-import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn } from '../../src/main/agents/gitStatus'
+import { GitLauncher, useGitLauncher, type LaunchedProcess } from '../../src/main/agents/git/gitLauncher'
+import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn } from '../../src/main/agents/git/gitStatus'
 import { runWorktreeGitProcess } from '../../src/main/agents/threadWorktrees'
 import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
 import { ownedGitRepository } from '../fixtures/gitRepository'

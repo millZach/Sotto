@@ -5,7 +5,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WatcherHostControl, WatcherHostRead } from '../../shared/watcherHost'
 import { immutableModels, isImmutableModels } from './activitySnapshots'
-import type { AgentHost, AgentHostResult } from './host'
+import type { ProviderHost, AgentHostResult } from './host'
 
 /**
  * One gate for every provider held to Owl (ADR-0072, ADR-0079). Each question takes the run's held set, read once at
@@ -210,7 +210,7 @@ export function heldWatcherRefusal(provider: HeldProviderNames): WatcherRefusal 
  * adapter's saved records stay on disk untouched for a return to Owl. The provider keeps its place in the switch so a
  * thread bound to it is refused in its own name rather than taken for another provider's.
  */
-export class HeldProviderHost implements AgentHost {
+export class HeldProviderHost implements ProviderHost {
   private readonly snapshotValue: AgentHostSnapshot
   constructor(private readonly provider: ProviderId) {
     this.snapshotValue = { ...structuredClone(EMPTY_AGENT_HOST), name: PROVIDER_LABELS[provider] }

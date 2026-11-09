@@ -17,6 +17,7 @@ import { HostConnectionError, SocketHostService } from '../../../src/main/agents
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, SCREENSHOT_WRONG_TYPE, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
@@ -885,7 +886,7 @@ describe('a host restarting for an update (ADR-0040)', () => {
     expect(remote.command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-client-updates' }), expect.anything())
   })
   it('sends Settings > Providers’ presses to this computer while another host is selected, answering with their own outcome', async () => {
-    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const router = new DesktopHostRouter(emptyDesktopState, { heldProviders: heldProvidersOf({ muse: true }) }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     local.state.configuration = { ...local.state.configuration, enabledProviders: ['codex', 'muse'], checkClientUpdates: false }
     remote.state.error = 'Codex did not confirm the connection.'
     router.add(local.connection); router.add(remote.connection)
@@ -908,7 +909,7 @@ describe('a host restarting for an update (ADR-0040)', () => {
       .toBe('Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.')
   })
   it('names a remote host where its provider errors say “this machine”, and leaves this computer’s as they are', () => {
-    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const router = new DesktopHostRouter(emptyDesktopState, { heldProviders: heldProvidersOf({ muse: true }) }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const said = 'Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.'
     const muse = { id: 'muse' as const, name: 'Muse', capabilities: local.state.host.capabilities, connection: 'error' as const, problem: 'signed-out' as const, version: '1.4.8', error: said }
     local.state.host.providers = [muse]; remote.state.host.providers = [muse]

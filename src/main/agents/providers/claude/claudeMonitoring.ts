@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BACKGROUND_WORK_LABELS, MAX_AGENT_MONITORS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork, type AgentMonitoringTask,
-  type BackgroundWorkType } from '../../shared/agentMonitoring'
+  type BackgroundWorkType } from '../../../../shared/agentMonitoring'
 import { object, type ClaudeFrame } from './claudeProtocol'
 
 const monitorTypes = new Set(['monitor', 'monitor_mcp'])

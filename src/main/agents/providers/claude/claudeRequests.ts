@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
-import { permissionValue, QUESTION_SKIPPED, questionValues } from './nativeRequests'
+import type { AgentRequest, AgentQuestionAnswers } from '../../../../shared/agents'
+import { permissionValue, QUESTION_SKIPPED, questionValues } from '../../nativeRequests'
 import { object, type ClaudeFrame } from './claudeProtocol'
-import { browserRequestText } from './browserRequests'
-import { readableFields, toolInputCard } from './requestInput'
+import { browserRequestText } from '../../browserRequests'
+import { readableFields, toolInputCard } from '../../requestInput'
 
 const questionSchema = z.object({ question: z.string().min(1), header: z.string().optional(), multiSelect: z.boolean().optional(),
   options: z.array(z.object({ label: z.string(), description: z.string().optional() })).optional() })

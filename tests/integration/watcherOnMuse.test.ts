@@ -14,6 +14,7 @@ import { heldOperation } from '../fixtures/deferred'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { museFixture } from '../fixtures/museFixture'
 import { testCredentials } from '../fixtures/testCredentials'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -35,7 +36,7 @@ async function fixture(script?: Record<string, unknown>, options: { disableSandb
   cleanups.push(worker.cleanup)
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
   const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
-  const runtime = await createAgentRuntime({ directory, credentials, watcherEnabled: true, museEnabled: true, settings: () => settings,
+  const runtime = await createAgentRuntime({ directory, credentials, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }), settings: () => settings,
     writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
     providers: { muse: muse.adapter, codex: worker.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
   cleanups.push(runtime.close)

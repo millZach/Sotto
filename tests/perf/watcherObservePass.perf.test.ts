@@ -158,7 +158,7 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
       await f.control.start()
       const at = '2026-10-15T00:00:00.000Z', requestId = randomUUID()
       const digest = (n: number) => n.toString(16).padStart(64, '0')
-      await f.control.updateWatcher(record => {
+      await f.control.watcherRecords.update(record => {
         record.current = { target: { hostId: f.control.hostId()!, threadId: 'generated-master' },
           projectId: 'generated-project', provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
         record.requests.push({ id: requestId, watcher: record.current.target, rootUserMessageId: 'generated-prompt',

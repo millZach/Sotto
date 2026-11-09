@@ -14,6 +14,7 @@ import { createAgentRuntime } from '../../src/main/agents/runtime'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { testCredentials } from '../fixtures/testCredentials'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 describe('requires SOTTO_MUSE_LIVE=1', () => {
   it.skipIf(process.env.SOTTO_MUSE_LIVE !== '1' || !!process.env.CI)('Watcher on the installed Muse lists threads through its own tools, admitted by Sotto, in one turn', async () => {
@@ -28,7 +29,7 @@ describe('requires SOTTO_MUSE_LIVE=1', () => {
     const adapter = new MuseMspHost(directory)
     const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
     const settings = { ...DEFAULT_SETTINGS, historyEnabled: false, threadTitles: false, agentVisuals: false, babysitPullRequests: false }
-    const runtime = await createAgentRuntime({ directory, credentials, watcherEnabled: true, museEnabled: true, settings: () => settings,
+    const runtime = await createAgentRuntime({ directory, credentials, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }), settings: () => settings,
       writingSettings: async () => settings, historyEnabled: () => false, openExternal: async () => undefined, reasoner: {},
       providers: { muse: adapter, codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
     // The person running the check answers nothing through Sotto here: an answer would be the harness's, not theirs.

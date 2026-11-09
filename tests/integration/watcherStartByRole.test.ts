@@ -172,7 +172,7 @@ it('returns the original receipt for a retry after the role\'s setting changed, 
   expect(f.workers()).toHaveLength(1)
   expect(f.sends()).toBe(1)
   // The saved operation keeps today's shape: its digest is of the concrete start, with no role in it.
-  const saved = f.control.watcherRecord().operations.find(item => item.id === first.receipt.operationId)!
+  const saved = f.control.watcherRecords.copy().operations.find(item => item.id === first.receipt.operationId)!
   expect(JSON.stringify(saved)).not.toContain('building')
 })
 

@@ -18,7 +18,7 @@ describe('interactive visual preload contract (ADR-0060)', () => {
     ipc.invoke.mockResolvedValue({ ok: true, url: 'sotto-visual://page/abc' })
     expect(await bridge.open({ threadId: 'thread', visualId: 'v1', theme })).toEqual({ ok: true, url: 'sotto-visual://page/abc' })
     expect(ipc.invoke).toHaveBeenCalledWith(VISUAL_PAGE_OPEN, { threadId: 'thread', visualId: 'v1', theme })
-    expect(() => bridge.open({ threadId: 'thread', visualId: 'v1', theme, source: '<h1>Hi</h1>' } as VisualPageRequest)).toThrow()
+    await expect(bridge.open({ threadId: 'thread', visualId: 'v1', theme, source: '<h1>Hi</h1>' } as VisualPageRequest)).rejects.toThrow()
     ipc.invoke.mockResolvedValue({ ok: true, url: 'https://example.com/' })
     await expect(bridge.open({ threadId: 'thread', visualId: 'v1', theme })).rejects.toThrow()
   })

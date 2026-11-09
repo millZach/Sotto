@@ -1232,9 +1232,14 @@ export interface AgentThreadsBroadcast {
 export type KeptPart = Exclude<keyof AgentState, 'host'>
 /** A part of the shell's host a broadcast may keep: any field but its threads. */
 export type KeptHostPart = Exclude<keyof AgentHostSnapshot, 'threads'>
-export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
+type CompleteHostBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
   models: AgentModelCatalogBroadcast
   clientHosts?: AgentClientHostBroadcast[]
+  threads: AgentThreadsBroadcast
+}
+/** A broadcast after retained parts are restored, before catalogs and thread records are reassembled. */
+export type CompleteAgentStateBroadcast = Omit<AgentState, 'host'> & { host: CompleteHostBroadcast }
+export type AgentHostSnapshotBroadcast = Partial<Omit<CompleteHostBroadcast, 'threads'>> & {
   threads: AgentThreadsBroadcast
   /** The host's parts this broadcast left out, as the broadcast its threads are measured from had them (`kept`). */
   kept?: KeptHostPart[]
@@ -1245,7 +1250,7 @@ export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'cli
  * because they hold what the broadcast its threads are measured from held (ADR-0028, October 30 kept parts): they are
  * absent here, and the page puts them back before anything reads the state.
  */
-export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
+export type AgentStateBroadcast = Partial<Omit<AgentState, 'host'>> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
 
 const PRIMARY_CATALOG_KEY = '__primary__'
 

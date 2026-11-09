@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { UsageQuotaRead } from '../../shared/usageDashboard'
-import { withCliPath } from './cliLookup'
-import { launchInteractiveProcess, type InteractiveProcess } from './gitLauncher'
-import { dropExpiredQuotaWindows, mergeClaudeQuota, parseClaudeQuota, parseClaudeUsage, unavailableProviderQuota } from './providerQuota'
-import { claudeEnvironment } from './subscriptionClaude'
+import type { UsageQuotaRead } from '../../../../shared/usageDashboard'
+import { withCliPath } from '../../cliLookup'
+import { launchInteractiveProcess, type InteractiveProcess } from '../../git/gitLauncher'
+import { dropExpiredQuotaWindows, mergeClaudeQuota, parseClaudeQuota, parseClaudeUsage, unavailableProviderQuota } from '../../providerQuota'
+import { claudeEnvironment } from '../../subscriptionClaude'
 
 /**
  * Claude limits read on demand through Claude Code's own `get_usage` control request (stream-json). No prompt is

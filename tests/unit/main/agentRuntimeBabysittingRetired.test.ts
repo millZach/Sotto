@@ -13,7 +13,7 @@ import { WatcherService } from '../../../src/main/agents/watcher'
 import { WatchedPullRequestReader } from '../../../src/main/agents/watchedPullRequests'
 import type { PullRequestObservation } from '../../../src/main/agents/watcherEvidence'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
 import { testCredentials } from '../../fixtures/testCredentials'
 

@@ -36,7 +36,7 @@ export class RetainedDraftStore {
   private readonly held: HeldProviders
   /** A saved record names a held provider, matched in the file's text before it is parsed. */
   private readonly heldProviderWords: RegExp | undefined
-  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
+  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; heldProviders?: HeldProviders; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
     this.held = heldProvidersOption(options)
     this.heldProviderWords = this.held.size ? new RegExp(`"providerId"\\s*:\\s*"(?:${[...this.held].join('|')})"`, 'u') : undefined
     if (options.directory) this.disk = new AtomicJsonStore(join(options.directory, 'remote-drafts.json'), retainedDraftsSchema.parse, () => [], undefined, undefined, options.onRecovery)

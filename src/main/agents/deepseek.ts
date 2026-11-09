@@ -19,7 +19,7 @@ import { deepseekAnswer, deepseekDecline, deepseekPending, type DeepSeekPending,
 import { compareDeepSeekVersions, deepseekEnvironment, DeepSeekRejected, DeepSeekRpc, DeepSeekUncertain, DEEPSEEK_ACP_VERSION, DEEPSEEK_CLI_VERSION,
   findDeepSeekExecutable, readDeepSeekVersion, type DeepSeekFrame } from './deepseekRpc'
 import { deepseekPatch, deepseekRouteKeys } from '../ownModelServers/deepseekPatch'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -182,7 +182,7 @@ export interface DeepSeekAcpOptions {
   captureMedia?: MediaCapture
 }
 
-export class DeepSeekAcpHost implements AgentHost {
+export class DeepSeekAcpHost implements ProviderHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}

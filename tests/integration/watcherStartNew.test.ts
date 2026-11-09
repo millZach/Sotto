@@ -125,7 +125,7 @@ describe('New Watcher', () => {
     expect(f.revoke).not.toHaveBeenCalled()
 
     const fresh = await fixture()
-    await fresh.control.updateWatcher(record => { record.current = null })
+    await fresh.control.watcherRecords.update(record => { record.current = null })
     expect(await fresh.service.startNew()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   })
 
@@ -160,7 +160,7 @@ describe('New Watcher', () => {
     expect(handover.text).toContain('The threads you watch and what each waits on:')
     // When the worker's turn ends, the send goes once, from the new Watcher, under the receipt it was queued with.
     await f.finish(started.target.threadId)
-    await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === queued.receipt.operationId)!.deliveryState).toBe('accepted'))
+    await vi.waitFor(() => expect(f.control.watcherRecords.copy().operations.find(item => item.id === queued.receipt.operationId)!.deliveryState).toBe('accepted'))
     expect(f.native(started.target.threadId).messages.filter(message => message.role === 'user' && message.text.includes('Add the release notes too.'))).toHaveLength(1)
     // The new Watcher acts under the request the last one worked on, which is its own now.
     const inherited = f.service.state().requests.find(item => item.watcher.threadId === f.first.threadId && item.state === 'active')
@@ -253,12 +253,12 @@ describe('New Watcher', () => {
     native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Release from main?', options: [] }]
     await f.refresh()
     // The first try stops the turn, which closes the card, then fails before the new Watcher is saved.
-    const update = f.control.updateWatcher.bind(f.control)
-    const failing = vi.spyOn(f.control, 'updateWatcher').mockImplementationOnce(async () => { throw new Error('synthetic-write-failure') })
+    const update = f.control.watcherRecords.update.bind(f.control.watcherRecords)
+    const failing = vi.spyOn(f.control.watcherRecords, 'update').mockImplementationOnce(async () => { throw new Error('synthetic-write-failure') })
     expect(await f.service.startNew()).toMatchObject({ status: 'refused' })
     failing.mockImplementation(update)
     native.requests = []; native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'interrupted' }; await f.refresh()
-    expect(f.control.watcherRecord().creation).toBeNull()
+    expect(f.control.watcherRecords.copy().creation).toBeNull()
     // The second try finds no card, and still hands the first one's question over.
     expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
     expect(f.service.state().carried).toMatchObject({ questionClosed: true })
@@ -314,10 +314,10 @@ describe('New Watcher', () => {
     })
     // While the sweep moves it to the second Watcher, a third becomes current.
     const third = { hostId: second.hostId, threadId: randomUUID() }
-    const move = f.control.moveWatcherQueue.bind(f.control), view = f.control.watcherRecordView.bind(f.control)
+    const move = f.control.moveWatcherQueue.bind(f.control), view = f.control.watcherRecords.view.bind(f.control.watcherRecords)
     let retired = false
     vi.spyOn(f.control, 'moveWatcherQueue').mockImplementation(async (from, to) => { const moved = await move(from, to); retired = true; return moved })
-    vi.spyOn(f.control, 'watcherRecordView').mockImplementation(() => {
+    vi.spyOn(f.control.watcherRecords, 'view').mockImplementation(() => {
       const record = view()
       return retired && record.current ? { ...record, current: { ...record.current, target: third } } : record
     })
@@ -341,7 +341,7 @@ describe('New Watcher', () => {
     notReady.mockRestore()
     // The saved choice says one mode and the thread reports another: nothing is started on either.
     f.native(f.first.threadId).runtimeMode = 'approval-required'; await f.refresh()
-    await f.control.updateWatcher(record => { record.lastRuntimeMode = 'auto-accept-edits' })
+    await f.control.watcherRecords.update(record => { record.lastRuntimeMode = 'auto-accept-edits' })
     expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'PERMISSION_NOT_COMPARABLE' })
     expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null })
     expect(f.creates()).toBe(creates)
@@ -358,10 +358,10 @@ describe('New Watcher', () => {
     })
     expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
     expect(f.service.state().handover).toBeNull()
-    expect(f.control.watcherRecord().creation).not.toBeNull()
+    expect(f.control.watcherRecords.copy().creation).not.toBeNull()
     expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
     spy.mockRestore()
-    expect(f.control.watcherRecord().creation).toBeNull()
+    expect(f.control.watcherRecords.copy().creation).toBeNull()
     expect(f.service.state().handover).toMatchObject({ source: f.first, provider: 'codex', counts: { carried: 2 } })
   })
 
@@ -475,7 +475,7 @@ describe('New Watcher', () => {
     })
     expect(await f.service.startNew()).toMatchObject({ status: 'refused' })
     // Open with the choice the creation was saved with finishes it, as it finishes a provider change.
-    const pending = f.control.watcherRecord().creation!
+    const pending = f.control.watcherRecords.copy().creation!
     const reopened = await f.service.open({ provider: 'codex', modelId: pending.modelId!, ...(pending.reasoningEffort ? { reasoningEffort: pending.reasoningEffort } : {}) })
     expect(reopened, JSON.stringify(reopened)).toMatchObject({ status: 'ok' })
     spy.mockRestore()

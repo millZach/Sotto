@@ -1,9 +1,9 @@
-import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } from './threadMedia'
+import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } from '../../threadMedia'
 import { createHash } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../shared/agentActivity'
-import type { AgentThread } from '../../shared/agents'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../../../shared/agentActivity'
+import type { AgentThread } from '../../../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
 // Display fields selected from installed codex-cli 0.154.0's generated schema; `subAgentActivity` from 0.162.1's.

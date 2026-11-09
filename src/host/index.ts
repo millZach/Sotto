@@ -159,17 +159,18 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const hostId = await loadHostIdentity(directory)
   // Product events (ADR-0179): a host holds them in memory until a connected desktop says the switch is on, and makes no ID before that.
   const productEvents = createProductEvents({ released: typeof __SOTTO_RELEASED_HOST__ !== 'undefined' && __SOTTO_RELEASED_HOST__, dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
-  productEvents.record('app.started', { pairedHosts: 0 })
-  await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
-  await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
-  await removeRetiredVoiceCache(directory)
-  const startup = await settings.get()
-  const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
-  // Sotto's browser for this host's own threads, in this machine's own Chromium (ADR-0198), on the host's Owl answers for
-  // it and for the browser pane it builds on. The runtime makes it before any thread starts. The last Let agents use the
-  // browser without asking a desktop sent is kept in this host's settings file, so a restart with no desktop holds it.
+  let memory: ReturnType<typeof openRuntimeMemory>
   let browser: HostBrowserTools | undefined
+  let delegationRelay: HostDelegationRelay | undefined
+  let startedRuntime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined
   try {
+    productEvents.record('app.started', { pairedHosts: 0 })
+    await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
+    await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
+    await removeRetiredVoiceCache(directory)
+    const startup = await settings.get()
+    memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
+    // The browser is made before any thread starts, and shares this startup cleanup boundary.
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
@@ -189,7 +190,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
     // The start goes through the desktop connected last that is still paired here with an answers grant (Zach, October 27, 2026).
     const desktopCounts = (clientId: string): boolean => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false)
-    const delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { counts: desktopCounts, ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
+    delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { counts: desktopCounts, ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
     await delegationRelay?.load()
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same Owl answer. Its callers are
     // read before the threads start, so news of what they made can find them.
@@ -202,7 +203,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // With Work across machines off it still keeps them, reading that record without stepping any move.
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
-    const runtime = await createAgentRuntime({
+    const runtime = startedRuntime = await createAgentRuntime({
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
@@ -354,7 +355,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
         tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
-    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()]); await runtime.close(); throw error }
+    } catch (error) {
+      await Promise.allSettled([
+        async () => signIns.close(), async () => phones?.close(), async () => listener?.close(),
+        ...threadTools.map(tools => async () => tools.close()),
+      ].map(stop => stop()))
+      throw error
+    }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -363,6 +370,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       close: (): Promise<void> => {
         closing ??= (async () => {
           productEvents.stop()
+          delegationRelay?.close()
           signIns.close()
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
           // The descriptor is no longer written from here on, so the one removed below stays removed.
@@ -384,7 +392,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return closing
       },
     }
-  } catch (error) { await browser?.close().catch(() => undefined); memory?.close(); throw error }
+  } catch (error) {
+    await Promise.allSettled([
+      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => startedRuntime?.close(),
+    ].map(stop => stop()))
+    try { memory?.close() } catch { /* Keep the startup failure. */ }
+    throw error
+  }
 }
 
 export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessEnv = process.env): HeadlessHostOptions {

@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { describe, expect, it } from 'vitest'
-import { runtimePolicy } from '../../src/main/agents/codex'
+import { runtimePolicy } from '../../src/main/agents/providers/codex/codex'
 import { findExecutable, nativeEnvironment } from '../../src/main/agents/subscriptionCodex'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 

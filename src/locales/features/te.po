@@ -6192,7 +6192,6 @@ msgid "Sotto could not connect it."
 msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx
-#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Sotto could not do that. Nothing changed. Try again."
 msgstr ""
 
@@ -6206,6 +6205,10 @@ msgstr ""
 
 #: src/renderer/src/App.tsx
 msgid "Sotto could not finish starting"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sotto could not finish that change. It may have partly taken effect. Check Teams before trying again."
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -6963,6 +6966,10 @@ msgstr ""
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Teams"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Teams has unsaved changes. They are active here, but may be lost when Sotto closes."
 msgstr ""
 
 #: src/renderer/src/features/performance/PerformanceSettings.tsx

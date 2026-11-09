@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { GitHubRateLimit, GitHubRateLimited, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
-import { PullRequestHeads } from '../../../src/main/agents/githubPullRequestHeads'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { GitHubRateLimit, GitHubRateLimited, type GitHubRateLimitEvent } from '../../../src/main/agents/git/github'
+import { PullRequestHeads } from '../../../src/main/agents/git/githubPullRequestHeads'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 import { deferred } from '../../fixtures/deferred'
 
 const repository = { host: 'github.com', owner: 'sotto-fixture', name: 'owned' }
