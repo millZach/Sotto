@@ -6,7 +6,7 @@ import { COUNCIL_PANELISTS_MAX, COUNCIL_PANELISTS_MIN, COUNCIL_SEAT_EFFORT, coun
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
 import { ModelPicker } from '../../agents/ModelPicker'
-import { effortChoices } from '../../agents/ThreadOptions'
+import { effortChoices } from '../../agents/permissionPresentation'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import './council.css'
 

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentConnection } from '../agents/AgentContext'
-import { sendThreadRevision } from '../agents/ThreadComposer'
+import { sendThreadRevision } from '../agents/threadSubmission'
 import { describeThreads } from '../agents/threadFacts'
 
 /**
