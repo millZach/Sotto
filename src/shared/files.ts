@@ -43,8 +43,13 @@ export type FileLink = z.infer<typeof fileLinkSchema>
  */
 export const fileLinkPreviewSchema = z.object({ name: z.string().max(4096), size: z.number().int().nonnegative().max(FILES_MAX_TEXT_BYTES), text: z.string().max(FILES_MAX_TEXT_BYTES) }).strict()
 export type FileLinkPreview = z.infer<typeof fileLinkPreviewSchema>
-/** A path as a link wrote it, without a trailing location such as `:12`, `#L12` or `#page=2`. */
-export const withoutLinkLocation = (path: string): string => path.replace(/(?:#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?|#page=\d+|:\d+(?:[:-]\d+)?)$/u, '')
+/**
+ * A path as a link wrote it, without a trailing location: a line such as `:12` or `#L12`, a page such as `#page=2`, or a
+ * heading such as `#reading-a-failure`. A fragment holding a folder separator is part of a name, as in `C#/notes.md`.
+ */
+export const withoutLinkLocation = (path: string): string => path.replace(/(?:#[^#/\\]*|:\d+(?:[:-]\d+)?)$/u, '')
+/** A Windows path with the drive first: a `file:` URL's path and Codex's links write `/D:/Projects/notes.md`. */
+export const withDriveFirst = (path: string): string => /^\/[a-z]:[\\/]/iu.test(path) ? path.slice(1) : path
 const MARKDOWN_ENDING = /\.(?:md|markdown|mdown)$/iu
 /** Whether a real file's name ends as Markdown's do. */
 export const isMarkdownFileName = (name: string): boolean => MARKDOWN_ENDING.test(name)
