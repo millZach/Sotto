@@ -40,6 +40,7 @@ import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
+import { hostBrowserTools } from './browser/hostBrowserTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
@@ -236,8 +237,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     })
     // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
     // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
-    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
-    // stays the desktop's.
+    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change.
     const agentHost = runtime.agentHost
     // Watcher runs on a desktop, so a thread here reaches it over that desktop's connection (ADR-0073, November 2, 2026).
     const tellWatcherRelay = watcherEnabled && runtime.watcher ? new HostTellWatcherRelay() : undefined
@@ -249,6 +249,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         (threadId, ready) => tellWatcherRelay.tell({ threadId, ready }))] : []),
     ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
+    // Sotto's browser for this host's own threads, in this machine's own Chromium (ADR-0198), on the host's Owl answers for
+    // it and for the browser pane it builds on. The last Let agents use the browser without asking a desktop sent is kept in
+    // this host's settings file, so a restart with no desktop connected holds it.
+    const browser = owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? hostBrowserTools({
+      resolveBinding: threadId => runtime.agentControl.filesBinding(threadId), withoutAsking: startup.browserWithoutAsking,
+      saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) },
+    }) : undefined
+    if (browser) agentHost.useBrowserTools(browser.tools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
@@ -346,7 +354,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
         tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
-    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled(threadTools.map(tools => tools.close())); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()]); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -364,7 +372,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           threadMoves?.close()
           try { await listener?.close() } finally {
             // No thread's tool call is taken once the host is closing; a call already running ends with its service.
-            await Promise.allSettled(threadTools.map(tools => tools.close()))
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
