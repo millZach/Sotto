@@ -66,7 +66,8 @@ public extension Wire {
     /// The phone reads snapshots, not event history. Match the desktop's v1 snapshot-only hello.
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs (#701).
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
-    /// and `provider-cursor` the same for Cursor (ADR-0128). `changed-thread-records` asks for shell pushes that carry
+    /// `provider-cursor` the same for Cursor (ADR-0128), and `provider-deepseek` for DeepSeek Harness, which a computer sends
+    /// only to a phone that names it (ADR-0138, November 8 amendment). `changed-thread-records` asks for shell pushes that carry
     /// only the thread records that changed since the last one (ADR-0028's October 30 amendment), which the connection
     /// puts back into the whole list (`ThreadRecordsCache`). `reply-thread-records` has a hello or a shell read name the
     /// revision of the records it lists whole, which the connection then holds, so the push after it carries only what
@@ -79,7 +80,7 @@ public extension Wire {
     /// (ADR-0028's November 2 amendment). `step-window` has each thread's detail start at the message before its newest
     /// 200 steps, where a thread of a few long turns once sent every step it held (ADR-0194).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
-        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"),
+        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("provider-deepseek"), .string("changed-thread-records"),
                     .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records"),
                     .string(StepWindow.feature)])]
 

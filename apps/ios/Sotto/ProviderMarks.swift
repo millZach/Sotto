@@ -20,7 +20,7 @@ struct ProviderLogo: View {
     /// The logo's name in the asset catalog, for each provider that has one.
     static func asset(_ providerID: String?) -> String? {
         ["codex": "ProviderCodex", "claude": "ProviderClaude", "grok": "ProviderGrok", "devin": "ProviderDevin", "muse": "ProviderMuse", "opencode": "ProviderOpenCode",
-         "cursor": "ProviderCursor"][providerID ?? ""]
+         "cursor": "ProviderCursor", "deepseek": "ProviderDeepSeek"][providerID ?? ""]
     }
 }
 

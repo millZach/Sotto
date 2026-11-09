@@ -124,7 +124,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
-  // Its Owl answers, and every provider hosts do not take yet (none since #1107 added OpenCode to HOST_PROVIDERS).
+  // Its Owl answers, and every provider hosts do not take yet: DeepSeek Harness, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   // Restarting its own threads a usage limit stopped (ADR-0144), on the host's own Owl answer.

@@ -98,11 +98,12 @@ public struct ThreadWatch: Sendable {
     }
 }
 
-/// An agent's name as Sotto shows it, from its provider ID.
+/// An agent's name as Sotto shows it, from its provider ID. DeepSeek Harness reads "DeepSeek" here, Zach's pick B from
+/// `docs/prototypes/iphone-deepseek-harness-names-prototype.html` (ADR-0138, November 8 amendment).
 public enum AgentNames {
     public static func name(_ providerID: String?) -> String {
         ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin", "muse": "Muse", "opencode": "OpenCode",
-         "cursor": "Cursor"][providerID ?? ""]
+         "cursor": "Cursor", "deepseek": "DeepSeek"][providerID ?? ""]
             ?? String(localized: "The agent", bundle: .module, comment: "Stands in for an agent's name when Sotto doesn't know its provider")
     }
 }
