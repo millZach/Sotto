@@ -28,6 +28,7 @@ export interface PageFrame { readonly data: string; readonly format: 'png' | 'jp
  */
 export const EVIDENCE_PICTURES = [{ width: 1280, quality: 70 }, { width: 640, quality: 55 }] as const
 export const EVIDENCE_LIMIT = 2_000_000
+export interface PageEvidence { readonly image: string; readonly width: number; readonly height: number }
 export interface PagePicture { readonly empty: boolean; readonly width: number; readonly height: number; readonly dataUrl: string }
 
 export type PageInput = Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' | 'tap' | 'swipe' | 'key' }>
@@ -319,6 +320,10 @@ export abstract class PageAutomation {
   }
   /** A picture as the caller keeps it: whether it holds anything, its size, and its data URL. */
   protected abstract picture(frame: PageFrame): PagePicture
+  /** The smaller pictures a task keeps of an agent's screenshot (`EVIDENCE_PICTURES`), or null when none fits. */
+  abstract evidence(capture: BrowserCapture): PageEvidence | null | Promise<PageEvidence | null>
+  /** A small JPEG of the page for its task, from `image` when the caller has one. */
+  abstract thumbnail(image?: string): Promise<string | null>
   async elementAt(point: { x: number; y: number }): Promise<{ element: NonNullable<BrowserCapture['element']>; bounds: BrowserBounds } | null> {
     await this.ready()
     const expression = `(() => { const el = document.elementFromPoint(${point.x}, ${point.y}); if (!el) return null; const r=el.getBoundingClientRect(); return { element: { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '', name: (el.getAttribute('aria-label') || el.getAttribute('alt') || '').slice(0,500), text: (el.innerText || '').slice(0,1000), selector: el.id ? '#' + CSS.escape(el.id) : el.tagName.toLowerCase() }, bounds: { x:r.x, y:r.y, width:r.width, height:r.height } }; })()`

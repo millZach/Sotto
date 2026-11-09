@@ -47,7 +47,7 @@ import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
-import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
+import { claudeErrorReplyText, claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
 import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, firstUnread, type OriginBucket } from './claudeSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
@@ -482,8 +482,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly configurationLaunches = new Set<string>()
   /** The error each thread's failed turn put on the provider, so that thread's next finished turn can take it down again. */
   private readonly turnFailures = new Map<string, string>()
-  /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
-  private readonly assistantErrors = new Map<string, string>()
+  /**
+   * The classification on a turn's last assistant message, when Claude Code gave one for a failed API call, with that
+   * reply's text, read only to tell the reason and when a usage limit resets (`claudeTurnFailure.ts`) and never shown.
+   */
+  private readonly assistantErrors = new Map<string, { readonly kind: string; readonly text?: string }>()
   private readonly logOrigins = new Map<string, Set<string>>()
   /** Each thread's origins by the digest of the text Sotto delivered with notes, keyed by the origin list it indexes. */
   private readonly deliveredIndex = new WeakMap<Alias['origins'], OriginIndex>()
@@ -2006,7 +2009,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (typeof frame.uuid === 'string' && frame.uuid) { thread.lastTurn = { id: frame.uuid, status: 'running' }; this.selfTurns.set(id, frame.uuid) }
     }
     if (frame.type === 'assistant') {
-      if (typeof frame.error === 'string' && !frame.parent_tool_use_id) this.assistantErrors.set(id, frame.error)
+      if (typeof frame.error === 'string' && !frame.parent_tool_use_id) {
+        const said = claudeErrorReplyText(frame)
+        this.assistantErrors.set(id, { kind: frame.error, ...said === undefined ? {} : { text: said } })
+      }
       this.message(id, frame, false)
     }
     if (frame.type === 'stream_event') {
@@ -2046,8 +2052,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const answersCompaction = origin !== undefined && alias.compactInputIds?.at(-1) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
-      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
-      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, this.assistantErrors.get(id)) : undefined
+      const assistantError = this.assistantErrors.get(id)
+      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, assistantError?.kind, assistantError?.text) : null
+      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, assistantError?.kind, undefined, assistantError?.text) : undefined
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined

@@ -52,6 +52,30 @@ describe('a Markdown file a message links to', () => {
     expect(revealed).not.toHaveBeenCalled()
   })
 
+  it('reads every form agents write: spaces, dot folders, a heading or line after it, and a folder outside the thread\'s', async () => {
+    const project = join(other, 'Seduce Jensen')
+    await mkdir(join(project, '.zstack'), { recursive: true }); await writeFile(join(project, 'AGENTS.md'), '# Agents'); await writeFile(join(project, '.zstack', 'rounds.md'), '# Rounds')
+    await mkdir(join(root, '.agents', 'adr'), { recursive: true }); await writeFile(join(root, '.agents', 'adr', '0002.md'), '# ADR')
+    await mkdir(join(root, 'docs')); await writeFile(join(root, 'docs', 'ci.md'), '# CI')
+    expect(value(await read(join(project, 'AGENTS.md'))).text).toBe('# Agents')
+    expect(value(await read(`${join(project, '.zstack', 'rounds.md')}:14`))).toMatchObject({ name: 'rounds.md', text: '# Rounds' })
+    expect(value(await read('./.agents/adr/0002.md')).text).toBe('# ADR')
+    expect(value(await read('docs/ci.md#reading-a-failure'))).toMatchObject({ name: 'ci.md', text: '# CI' })
+    expect(value(await read('docs/ci.md#L3')).text).toBe('# CI')
+  })
+
+  // Codex on Windows writes </D:/Seduce Jensen/AGENTS.md>; a file URL's path reads the same way.
+  it.runIf(process.platform === 'win32')('reads a Windows path written with a slash before the drive, or with backslashes and a dot folder', async () => {
+    const project = join(other, 'Seduce Jensen')
+    await mkdir(join(project, '.zstack'), { recursive: true }); await writeFile(join(project, '.zstack', 'rounds.md'), '# Rounds')
+    const full = join(project, '.zstack', 'rounds.md')
+    const slashed = `/${full.replace(/\\/gu, '/')}`
+    expect(value(await read(slashed))).toMatchObject({ name: 'rounds.md', text: '# Rounds' })
+    expect(value(await read(`${slashed}:12`)).text).toBe('# Rounds')
+    expect(value(await read(full)).text).toBe('# Rounds')
+    expect(value(await service.revealLink({ threadId: 'thread', path: slashed }))).toEqual({})
+  })
+
   it('reads an absolute path outside the folder, and holds a relative one inside it', async () => {
     await writeFile(join(other, 'outside.md'), '# Outside')
     expect(value(await read(join(other, 'outside.md'))).text).toBe('# Outside')

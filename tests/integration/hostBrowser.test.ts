@@ -11,6 +11,9 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { HostBrowser, HostBrowserMissing, NEW_WINDOW_BLOCKED, NO_HOST_BROWSER, PAGE_BLOCKED, PAGE_UNAVAILABLE, type HostBrowserPage, type HostPageFrame } from '../../src/host/browser/hostBrowser'
+import { HostBrowserService } from '../../src/host/browser/hostBrowserService'
+import { createHostBrowserAgentServer } from '../../src/main/tools/browserAgentTools'
+import type { BrowserToolResult } from '../../src/main/agents/browserAgentServer'
 
 const enabled = process.env.SOTTO_REAL_BROWSER === '1'
 if (!enabled && process.env.SOTTO_REAL_BROWSER_REQUIRED === '1') throw new Error('The real-browser journey would be skipped: set SOTTO_REAL_BROWSER=1.')
@@ -153,6 +156,37 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     await until(() => page.state.status === 'unavailable', 'the failure')
     expect(page.state.error).toBe(PAGE_UNAVAILABLE)
     await page.close()
+  })
+
+  it('lets a host thread\'s agent open, inspect and screenshot a page through its browser tools', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-host-browser-tools-'))
+    const workspace = { threadId: 'thread-1', projectId: 'project', workingDirectory: root, workspaceId: 'a'.repeat(64) }
+    const service = new HostBrowserService({ browser: new HostBrowser({ profileRoot: root }), emit: () => undefined, withoutAsking: true, saveWithoutAsking: async () => undefined,
+      files: { resolveWorkspace: async () => ({ ok: true as const, value: workspace }), hasThread: () => true } })
+    const tools = createHostBrowserAgentServer(service)
+    const body = (result: BrowserToolResult) => JSON.parse((result.content[0] as { text: string }).text) as { task: { id: string; pageId: string; status: string }; output?: string; approvalRequired?: boolean }
+    try {
+      const opened = body(await tools.call('thread-1', 'browser_open', { url: `${origin}/a`, description: 'Check page A' }))
+      expect(opened.approvalRequired).toBe(false)
+      const target = { pageId: opened.task.pageId, taskId: opened.task.id }
+      const deadline = Date.now() + 15_000
+      while (Date.now() < deadline) {
+        const listing = await service.list({ threadId: 'thread-1' })
+        if (listing.ok && listing.value.pages[0]?.status === 'ready' && listing.value.pages[0].title === 'Page A') break
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      const inspected = body(await tools.call('thread-1', 'browser_action', { ...target, action: { type: 'inspect' } }))
+      expect(inspected.output).toContain('Sign in')
+      const shot = await tools.call('thread-1', 'browser_action', { ...target, action: { type: 'screenshot' } })
+      expect(shot.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' })
+      const finished = body(await tools.call('thread-1', 'browser_finish', { ...target, status: 'completed', summary: 'Page A shows Sign in.', unchecked: [] }))
+      expect(finished.task.status).toBe('completed')
+    } finally {
+      await tools.close()
+      await service.shutDown()
+      expect(await readdir(root)).toEqual([])
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps each workspace apart, and deletes its profile when it closes', async () => {

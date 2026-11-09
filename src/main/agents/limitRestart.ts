@@ -36,6 +36,11 @@ const recordSchema = z.object({
   sent: z.literal(true).optional(),
   /** A watched thread whose last turn stopped with work left, restarted at once rather than at a reset (#2234). */
   cause: z.literal('work-left').optional(),
+  /**
+   * The thread's last turn when it was recorded: the turn the limit stopped, or the turn a thread working in the background
+   * rested on. A later turn is someone's send, even one first read after Sotto starts again. Absent from older records.
+   */
+  turnId: z.string().min(1).max(512).optional(),
 }).strict()
 const fileSchema = z.object({ version: z.literal(1), threads: z.array(recordSchema).max(RECORDS_MAX) }).strict()
 type LimitRecord = z.infer<typeof recordSchema>
@@ -242,16 +247,38 @@ export class LimitRestart {
     if (turn?.status === 'failed' && turn.limitStop && thread.providerId && before !== undefined && before !== key) {
       return this.stopped(thread, { provider: thread.providerId, ...(turn.limitStop.resetsAt ? { resetsAt: turn.limitStop.resetsAt } : {}) })
     }
+    // A turn of a provider finished after its limit stopped threads it gave no reset for: the limit has reset, so they
+    // wait for the user's next message with nothing saying Sotto can't restart them (November 9, 2026).
+    const finished = turn?.status === 'completed' && !isThreadTurnRunning(thread) && before !== undefined && before !== key
+    const unsaid = finished && thread.providerId ? this.dropUnsaid(thread.providerId, thread.id) : false
     const record = this.records.get(thread.id)
-    if (!record || this.delivering.has(thread.id)) return false
+    if (!record || this.delivering.has(thread.id)) return unsaid
+    // Before its restart, a turn other than the one recorded is someone's send, even one first read after a start. A thread
+    // read with no turn at all, as Claude Code's are before their history loads, says nothing either way.
+    if (!record.sent && turn !== undefined && (record.turnId !== undefined ? turn.id !== record.turnId
+      // A record from an older build names no turn: one with no reset, first read with a turn that is not a limit's stop, is
+      // the card that outlived its reason, so it goes too (November 9, 2026).
+      : record.at === undefined && !before && !(turn.status === 'failed' && turn.limitStop))) { this.drop(thread.id); return true }
     // A turn of the thread's own finished: it carried on, and its restarts in a row start again from none.
-    if (turn?.status === 'completed' && !isThreadTurnRunning(thread) && before !== undefined && before !== key) { this.drop(thread.id); return true }
+    if (finished) { this.drop(thread.id); return true }
     // Before its restart, a turn running is someone else's: the user, Watcher or the provider carried it on.
     if (!record.sent && isThreadTurnRunning(thread)) { this.drop(thread.id); return true }
     // Before its restart, any other turn since the stop was someone's send, even one first seen already ended: the
     // thread is theirs now. A limit stop of that turn was recorded above, in this record's place.
     if (!record.sent && turn !== undefined && before !== undefined && before !== key) { this.drop(thread.id); return true }
-    return false
+    return unsaid
+  }
+
+  /** Drops every thread of a provider waiting on a limit that gave no reset, but one; true when any went. */
+  private dropUnsaid(provider: string, except: string): boolean {
+    let dropped = false
+    // Deleting the entry being visited leaves a Map's iteration on course, so nothing is copied.
+    for (const record of this.records.values()) {
+      if (record.provider !== provider || record.threadId === except || record.at !== undefined || record.sent || record.cause !== undefined) continue
+      if (this.dormant(record.threadId) || this.delivering.has(record.threadId)) continue
+      this.drop(record.threadId); dropped = true
+    }
+    return dropped
   }
 
   /** A turn that stopped at its provider's usage limit; true when the record changed. */
@@ -268,12 +295,12 @@ export class LimitRestart {
     // The first stop of a provider's limit: its threads still working in the background were stopped by it too.
     const first = ![...this.records.values()].some(record => record.provider === report.provider && !record.sent && record.cause === undefined)
     this.drop(thread.id)
-    this.set({ threadId: thread.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts })
+    this.set({ threadId: thread.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts, ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {} })
     if (first) {
       for (const other of this.options.control.host().threads) {
         if (other.id === thread.id || other.providerId !== report.provider || this.records.has(other.id) || this.dormant(other.id)) continue
         if (other.kind === 'watcher-history' || !(other.backgroundWork?.length) || isThreadTurnRunning(other) || isThreadClosed(other)) continue
-        this.set({ threadId: other.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts: 0 })
+        this.set({ threadId: other.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts: 0, ...other.lastTurn ? { turnId: other.lastTurn.id } : {} })
       }
     }
     return true

@@ -249,6 +249,10 @@ msgid "{count, plural, one {Dismiss Needs attention on {threads} thread} other {
 msgstr "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
 
 #: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Dismiss the note about {name}’s {threads} thread} other {Dismiss the note about {name}’s {threads} threads}}"
+msgstr "{count, plural, one {Dismiss the note about {name}’s {threads} thread} other {Dismiss the note about {name}’s {threads} threads}}"
+
+#: src/renderer/src/agents/restartWords.ts
 msgid "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
 msgstr "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
 
@@ -3860,6 +3864,7 @@ msgstr "Disconnecting…"
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/RestartStopped.tsx
 #: src/renderer/src/agents/SettleToast.tsx
 #: src/renderer/src/agents/SidebarFrame.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -8099,6 +8104,10 @@ msgstr "Sotto could not confirm the folder was saved. Check the folder shown in 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the new order. Check the queue before changing it again."
 msgstr "Sotto could not confirm the new order. Check the queue before changing it again."
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Sotto could not confirm the note was dismissed. Press Dismiss again."
+msgstr "Sotto could not confirm the note was dismissed. Press Dismiss again."
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the queue resumed."

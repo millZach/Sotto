@@ -54,7 +54,7 @@ test('a link in a paired host\'s thread opens that host\'s file in Tools > Files
       await writeFile(join(outside, 'key.txt'), 'secret')
       try {
         const thought: AgentActivity = { id: 'remote-thought', turnId: 'turn', sequence: 0, kind: 'reasoning', status: 'completed', title: 'Thinking',
-          text: `Wrote [the plan](docs/plan.md), kept a note at [kept](<${join(outside, 'kept.md').replaceAll('\\', '/')}>) and [a text file](<${join(outside, 'key.txt').replaceAll('\\', '/')}>). The old one was \`docs/gone.md\`.` }
+          text: `Wrote [the plan](docs/plan.md) ([its heading](docs/plan.md#the-plan)), kept a note at [kept](<${join(outside, 'kept.md').replaceAll('\\', '/')}>) and [a text file](<${join(outside, 'key.txt').replaceAll('\\', '/')}>). The old one was \`docs/gone.md\`.` }
         native.event({ type: 'ready', threadId: 'workshop', text: 'Done.', status: 'idle', activities: [thought] })
 
         launched = await launchSotto('success', profile)
@@ -91,6 +91,11 @@ test('a link in a paired host\'s thread opens that host\'s file in Tools > Files
         await expect(preview).toHaveCount(0)
         await expect(link).toBeFocused()
         await expect(page.getByRole('tree', { name: /Files in/u })).toBeVisible()
+
+        // A heading after the path is read from the host too, as a line is.
+        await log.getByRole('link', { name: 'Open docs/plan.md#the-plan in the side panel' }).click()
+        await expect(page.getByRole('region', { name: 'Preview of plan.md' }).getByRole('heading', { name: 'The plan' })).toBeVisible()
+        await page.getByRole('button', { name: 'Close preview' }).click()
 
         // A full path may name a Markdown file anywhere on the thread's machine.
         await log.getByRole('link', { name: /Open .*kept\.md in the side panel/u }).click()
@@ -193,6 +198,47 @@ for (const appearance of ['dark', 'light'] as const) {
     }
   })
 }
+
+// Every form agents were seen writing (November 9, 2026), on a folder with a space and a dot folder like Zach's D:\Seduce Jensen.
+test('a link opens its file however the agent wrote the path', async () => {
+  test.setTimeout(120_000)
+  const folder = await mkdtemp(join(tmpdir(), 'sotto-e2e-link-forms-'))
+  const project = join(folder, 'Seduce Jensen')
+  await mkdir(join(project, '.zstack'), { recursive: true })
+  await writeFile(join(project, 'AGENTS.md'), '# Project instructions\n')
+  await writeFile(join(project, '.zstack', 'rounds.md'), '# Run checklist\n\n## Round one\n')
+  const forward = project.replaceAll('\\', '/')
+  const windows = process.platform === 'win32'
+  const forms: (readonly [label: string, destination: string, name: string, heading: string])[] = [
+    ['brackets and a line', `<${forward}/.zstack/rounds.md:3>`, 'rounds.md', 'Run checklist'],
+    ['spaces without brackets', `${forward}/AGENTS.md`, 'AGENTS.md', 'Project instructions'],
+    ['a heading after it', `<${forward}/.zstack/rounds.md#round-one>`, 'rounds.md', 'Run checklist'],
+    ['an encoded space', `${forward.replaceAll(' ', '%20')}/.zstack/rounds.md`, 'rounds.md', 'Run checklist'],
+    ...windows ? [
+      ['a slash before the drive', `</${forward}/AGENTS.md>`, 'AGENTS.md', 'Project instructions'],
+      ['backslashes through a dot folder', `${project}\\.zstack\\rounds.md`, 'rounds.md', 'Run checklist'],
+    ] as const : [],
+  ]
+  try {
+    await onReleaseTrack('owl', () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'phase3-workspace', agents: 'design-threads', motion: 'reduced' }, async launched => {
+      const { page } = launched
+      await seedWatcherRoom(page, { watched: ['footer-links', 'visual-gate'], idPrefix: 'forms' })
+      await linkInWatcher(page, forms.map(([label, destination]) => `- [${label}](${destination})`).join('\n'))
+      await resizeContentWindow(launched, 1280, 800)
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+      for (const [label, , name, heading] of forms) {
+        await page.getByRole('link', { name: /in the side panel$/u }).filter({ hasText: label }).click()
+        const preview = page.getByRole('region', { name: `Preview of ${name}` })
+        await expect(preview.getByRole('heading', { name: heading })).toBeVisible()
+        if (label === 'brackets and a line') await page.screenshot({ path: join(evidence, 'watcher-link-forms-1280.png'), animations: 'disabled' })
+        await page.keyboard.press('Escape')
+        await expect(preview).toHaveCount(0)
+      }
+    }))
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
 
 test('on stable main refuses to read a linked Markdown file', async () => {
   test.setTimeout(90_000)
