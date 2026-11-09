@@ -138,11 +138,6 @@ msgstr "{0} says this passage misstates it: “{1}”"
 msgid "{0} there"
 msgstr "{0} there"
 
-#. placeholder {0}: words.stage(row.stage)
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "{0}, asked again"
-msgstr "{0}, asked again"
-
 #. placeholder {0}: other.name
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "{0}, shared from another tailnet"
@@ -655,8 +650,8 @@ msgid "{name} runs an older Sotto host that does not report its load. Watcher tr
 msgstr "{name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 
 #: src/renderer/src/features/council/CouncilSeats.tsx
-msgid "{Name} runs on {provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked."
-msgstr "{Name} runs on {provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked."
+msgid "{Name} runs in the cloud, so its claims about the code will be unchecked."
+msgstr "{Name} runs in the cloud, so its claims about the code will be unchecked."
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{name} runs Sotto host {to}."
@@ -783,10 +778,6 @@ msgstr "{name}'s Watcher asked what you are working on."
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{named} window"
 msgstr "{named} window"
-
-#: src/renderer/src/features/council/CouncilSeats.tsx
-msgid "{names} hold the same model. A second copy adds less than a different model."
-msgstr "{names} hold the same model. A second copy adds less than a different model."
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "{oldCount, plural, one {{oldNames} counts only its Sotto threads until its host update.} other {{oldNames} count only their Sotto threads until their hosts update.}}"
@@ -1009,11 +1000,9 @@ msgstr "{who}, {model}, {now}. Open its thread"
 msgid "{who}, {when}"
 msgstr "{who}, {when}"
 
-#. placeholder {0}: window.toLocaleString(i18n.locale)
-#. placeholder {1}: tokens.toLocaleString(i18n.locale)
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "{who}’s model, {model}, holds about {0} tokens, and the conversation is about {1}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread."
-msgstr "{who}’s model, {model}, holds about {0} tokens, and the conversation is about {1}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread."
+msgid "{who}’s model, {model}, holds less than this conversation and may lose its start."
+msgstr "{who}’s model, {model}, holds less than this conversation and may lose its start."
 
 #. A computer's, in "Still reading {scanningList} history"
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -1212,30 +1201,6 @@ msgstr "About <0>{average}</0> a day"
 msgid "About <0>{perPrompt}</0> tokens per prompt"
 msgstr "About <0>{perPrompt}</0> tokens per prompt"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About evidence"
-msgstr "About evidence"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About judges"
-msgstr "About judges"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About kept evidence"
-msgstr "About kept evidence"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About stop rules"
-msgstr "About stop rules"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About targets"
-msgstr "About targets"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "About the goal"
-msgstr "About the goal"
-
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "About these numbers"
 msgstr "About these numbers"
@@ -1373,6 +1338,10 @@ msgstr "Allowed: {action}"
 msgid "Already on this computer:"
 msgstr "Already on this computer:"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Also answer again as"
+msgstr "Also answer again as"
+
 #. Heading over the threads working on a machine besides its checks.
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Also working"
@@ -1405,8 +1374,20 @@ msgid "Answer"
 msgstr "Answer"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Answer again as"
+msgstr "Answer again as"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Answer again with outside research"
+msgstr "Answer again with outside research"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Answer again with these criteria"
 msgstr "Answer again with these criteria"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Answer again without outside research"
+msgstr "Answer again without outside research"
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Answer it here instead; the handover carries it."
@@ -1415,10 +1396,6 @@ msgstr "Answer it here instead; the handover carries it."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Answer to objections"
 msgstr "Answer to objections"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Answer without outside research"
-msgstr "Answer without outside research"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Answer your threads from your iPhone"
@@ -1433,6 +1410,7 @@ msgstr "answering permissions from a paired client"
 msgid "answering the fairness check"
 msgstr "answering the fairness check"
 
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Answers"
 msgstr "Answers"
@@ -1493,6 +1471,11 @@ msgstr "Ask a follow-up"
 msgid "Ask chair for proposal"
 msgstr "Ask chair for proposal"
 
+#. placeholder {0}: thread.title
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Ask from another thread. Now {0}"
+msgstr "Ask from another thread. Now {0}"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
 msgstr "Ask the Council"
@@ -1513,15 +1496,21 @@ msgstr "Ask Watcher instead"
 msgid "Ask Watcher…"
 msgstr "Ask Watcher…"
 
+#: src/renderer/src/features/council/ClimbGrid.tsx
+#: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/features/council/SeatGrid.tsx
+msgid "Asked again"
+msgstr "Asked again"
+
 #. Under a Council an agent started at the user's request, when the user's words are not kept.
 #: src/renderer/src/features/council/AskedByLine.tsx
-msgid "Asked by {provider} in this thread, at your request."
-msgstr "Asked by {provider} in this thread, at your request."
+msgid "Asked by {provider}"
+msgstr "Asked by {provider}"
 
 #. Under a Council an agent started at the user's request; the provider's name, then the user's own message quoted.
 #: src/renderer/src/features/council/AskedByLine.tsx
-msgid "Asked by {provider} in this thread, because you said “{words}”"
-msgstr "Asked by {provider} in this thread, because you said “{words}”"
+msgid "Asked by {provider}: “{words}”"
+msgstr "Asked by {provider}: “{words}”"
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Asking {machine}"
@@ -1548,8 +1537,8 @@ msgid "Asks you first"
 msgstr "Asks you first"
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "assumed by the chair"
-msgstr "assumed by the chair"
+msgid "assumed"
+msgstr "assumed"
 
 #. Before a token figure some records left out
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -1628,13 +1617,9 @@ msgstr "Back to Teams"
 msgid "Bars"
 msgstr "Bars"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Baseline"
 msgstr "Baseline"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Before round 0"
-msgstr "Before round 0"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Better scores"
@@ -1652,7 +1637,7 @@ msgstr "both of you"
 msgid "Branch sent"
 msgstr "Branch sent"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Builder"
 msgstr "Builder"
 
@@ -1746,7 +1731,7 @@ msgstr "Cancel update, and leave {target} on {from}"
 msgid "Cancelled."
 msgstr "Cancelled."
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Candidate"
 msgstr "Candidate"
 
@@ -1760,8 +1745,9 @@ msgstr "Carried {carried}."
 
 #. The Council's chair, as a seat's label
 #. The Council's chair, on its plate in the chamber
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/CouncilChamber.tsx
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
@@ -1771,8 +1757,6 @@ msgstr "Chair"
 msgid "Chair’s proposal"
 msgstr "Chair’s proposal"
 
-#. Opens the list of threads a Council question can come from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr "Change"
@@ -1798,16 +1782,17 @@ msgid "Change where new workers start"
 msgstr "Change where new workers start"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/features/council/SeatGrid.tsx
+msgid "Changed its answer"
+msgstr "Changed its answer"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Changed their answers: {changed}."
 msgstr "Changed their answers: {changed}."
 
 #: src/renderer/src/App.tsx
 msgid "Changes save as you make them."
 msgstr "Changes save as you make them."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Changing the kind, the research or the criteria asks every panelist to answer again."
-msgstr "Changing the kind, the research or the criteria asks every panelist to answer again."
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "ChatGPT through Codex"
@@ -1922,10 +1907,6 @@ msgstr "Chinese"
 msgid "Choose a folder"
 msgstr "Choose a folder"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Choose a model"
-msgstr "Choose a model"
-
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a project folder"
 msgstr "Choose a project folder"
@@ -2034,10 +2015,6 @@ msgstr "Clear usage…"
 msgid "Climb"
 msgstr "Climb"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged."
-msgstr "Climb works on any kind of work. Design is one preset. The chair proposes a rubric; you approve it before the baseline is judged."
-
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -2131,11 +2108,7 @@ msgstr "Compacting."
 msgid "Compare with fixed evidence"
 msgstr "Compare with fixed evidence"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Completed"
-msgstr "Completed"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Completed / planned"
 msgstr "Completed / planned"
 
@@ -2394,10 +2367,7 @@ msgstr "CPU"
 msgid "Criteria, one to five, one on each line"
 msgstr "Criteria, one to five, one on each line"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Criterion"
-msgstr "Criterion"
-
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check"
 msgstr "Crux check"
@@ -2411,10 +2381,6 @@ msgstr "Crux check, a lookup: {0}"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check: {0}"
 msgstr "Crux check: {0}"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Custom"
-msgstr "Custom"
 
 #. Colour scheme
 #: src/renderer/src/features/onboarding/LookStep.tsx
@@ -2444,7 +2410,6 @@ msgstr "Decisions it noted"
 #. The cleanup model or mode Sotto chooses itself
 #. The cleanup model or mode Sotto chooses itself
 #: src/renderer/src/components/CleanupModelFields.tsx
-#: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Default"
 msgstr "Default"
 
@@ -2497,10 +2462,6 @@ msgstr "deleting or making irreversible changes"
 #: src/renderer/src/features/memory/questions.ts
 msgid "Deleting or making irreversible changes"
 msgstr "Deleting or making irreversible changes"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Design"
-msgstr "Design"
 
 #: src/renderer/src/watcher/WatcherHoldBand.tsx
 msgid "Details"
@@ -2597,8 +2558,9 @@ msgid "done"
 msgstr "done"
 
 #. An Omarchy setup piece that is set up
-#. Closes the list of threads a Council question can come from
+#: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/features/council/SeatGrid.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
@@ -2722,10 +2684,6 @@ msgstr "Edits files and runs any command without asking, anywhere on this comput
 msgid "Edits files without asking. Asks before a command that changes something."
 msgstr "Edits files without asking. Asks before a command that changes something."
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Effort"
-msgstr "Effort"
-
 #. First-run setup: the group of steps about other computers and the iPhone
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Elsewhere"
@@ -2738,10 +2696,6 @@ msgstr "English"
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Enter your OpenRouter API key first."
 msgstr "Enter your OpenRouter API key first."
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
-msgstr "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "Every product event"
@@ -2772,10 +2726,6 @@ msgstr "Exclude paths or globs"
 msgid "Exclusions and limits"
 msgstr "Exclusions and limits"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Exhibit"
-msgstr "Exhibit"
-
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Expired"
 msgstr "Expired"
@@ -2800,6 +2750,7 @@ msgstr "failed"
 msgid "Failed"
 msgstr "Failed"
 
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Fairness check"
 msgstr "Fairness check"
@@ -2901,15 +2852,15 @@ msgstr "Follow Windows or minimize non-essential motion."
 msgid "Follow-up {0}"
 msgstr "Follow-up {0}"
 
-#. placeholder {0}: round.question ?? ''
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Follow-up: {0}"
-msgstr "Follow-up: {0}"
+msgid "Follow-up: {question}"
+msgstr "Follow-up: {question}"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Framed as {kinds}."
 msgstr "Framed as {kinds}."
 
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Framing"
 msgstr "Framing"
@@ -2934,16 +2885,9 @@ msgstr "freezes over 100 ms"
 msgid "French"
 msgstr "French"
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr "From"
-
-#. placeholder {0}: council.origin.title
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "From {0}"
-msgstr "From {0}"
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "From <0>{fromTitle}</0> on {provider}. Context, not a new request."
@@ -2957,14 +2901,6 @@ msgstr "From cache"
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "From the last Watcher, on {provider}. Context, not a new request."
 msgstr "From the last Watcher, on {provider}. Context, not a new request."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "from the question"
-msgstr "from the question"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Frozen copies go only to the selected judges. Git is optional. Links, caches, environment files and private keys are excluded by default. Over a limit, nothing is partially captured."
-msgstr "Frozen copies go only to the selected judges. Git is optional. Links, caches, environment files and private keys are excluded by default. Over a limit, nothing is partially captured."
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Frozen evidence and Climb results are kept on this computer while local history is on. Judge copies are temporary."
@@ -3041,10 +2977,6 @@ msgstr "Go to Watcher’s question in this conversation: {asked}"
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Goal"
 msgstr "Goal"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Goal preset"
-msgstr "Goal preset"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Got a code from your teammate?"
@@ -3279,7 +3211,7 @@ msgstr "In Watcher’s room, pick its model and what it may do without asking in
 msgid "in your own words"
 msgstr "in your own words"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Incumbent"
 msgstr "Incumbent"
 
@@ -3469,23 +3401,26 @@ msgstr "Its question to you was closed."
 msgid "Its reason:"
 msgstr "Its reason:"
 
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Its snapshot of {branch} has been removed."
-msgstr "Its snapshot of {branch} has been removed."
-
 #: src/renderer/src/languages.ts
 msgid "Japanese"
 msgstr "Japanese"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Judge"
-msgstr "Judge"
-
-#. placeholder {0}: (turn.seat ?? 0) + 1
 #. placeholder {0}: index + 1
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "Judge {0}"
 msgstr "Judge {0}"
+
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "Judge 1"
+msgstr "Judge 1"
+
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "Judge 2"
+msgstr "Judge 2"
+
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "Judge 3"
+msgstr "Judge 3"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Judging"
@@ -3540,10 +3475,6 @@ msgstr "Kept here"
 msgid "Kept on {from}"
 msgstr "Kept on {from}"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Kept rounds"
-msgstr "Kept rounds"
-
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Key saved"
 msgstr "Key saved"
@@ -3557,7 +3488,6 @@ msgid "Keyboard"
 msgstr "Keyboard"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
-#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -4140,6 +4070,8 @@ msgid "Needs attention"
 msgstr "Needs attention"
 
 #. A group of threads in Watcher’s room: they wait on the user
+#: src/renderer/src/features/council/ClimbGrid.tsx
+#: src/renderer/src/features/council/SeatGrid.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Needs you"
@@ -4281,12 +4213,8 @@ msgid "No other threads yet. Threads you or Watcher start show here."
 msgstr "No other threads yet. Threads you or Watcher start show here."
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "No outside research: the panelists work from the snapshot and the conversation."
-msgstr "No outside research: the panelists work from the snapshot and the conversation."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "No outside research: the panelists work from the thread's folder and the conversation."
-msgstr "No outside research: the panelists work from the thread's folder and the conversation."
+msgid "No outside research."
+msgstr "No outside research."
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
@@ -4324,9 +4252,11 @@ msgstr "No reading from {from}"
 msgid "No reading yet. Muse reports its limits after a Muse turn runs on {host}."
 msgstr "No reading yet. Muse reports its limits after a Muse turn runs on {host}."
 
+#: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "no result"
-msgstr "no result"
+#: src/renderer/src/features/council/SeatGrid.tsx
+msgid "No result"
+msgstr "No result"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "No saved policies. Existing permission checks still apply."
@@ -4432,6 +4362,10 @@ msgstr "None"
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "None ready yet. Threads need at least one; Settings › Providers has them later too."
 msgstr "None ready yet. Threads need at least one; Settings › Providers has them later too."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Not a Git repository, so Sotto can’t check cited lines."
+msgstr "Not a Git repository, so Sotto can’t check cited lines."
 
 #: src/renderer/src/features/starting/StartingScreen.tsx
 msgid "not answering"
@@ -4905,6 +4839,14 @@ msgstr "Output"
 msgid "Output is unavailable."
 msgstr "Output is unavailable."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Outside research: {reason}"
+msgstr "Outside research: {reason}"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Outside research."
+msgstr "Outside research."
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Outside Sotto"
@@ -5271,7 +5213,7 @@ msgstr "Question from Watcher"
 msgid "Question in a thread it delegated to"
 msgstr "Question in a thread it delegated to"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Queued"
 msgstr "Queued"
 
@@ -5329,6 +5271,10 @@ msgstr "Read {minutes} min ago"
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Read {name} limits again"
 msgstr "Read {name} limits again"
+
+#: src/renderer/src/features/council/SeatGrid.tsx
+msgid "Read {stage} from {seat}, {model}, {state}"
+msgstr "Read {stage} from {seat}, {model}, {state}"
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Read again"
@@ -5532,7 +5478,7 @@ msgstr "Records from before the clear never come back. New work counts afterward
 msgid "Recovered transcript"
 msgstr "Recovered transcript"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Reference"
 msgstr "Reference"
 
@@ -5617,14 +5563,6 @@ msgstr "reporting the crux check"
 msgctxt "kind of work"
 msgid "Research"
 msgstr "Research"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Research outside the snapshot"
-msgstr "Research outside the snapshot"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Research outside the thread's folder"
-msgstr "Research outside the thread's folder"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
@@ -5712,6 +5650,10 @@ msgstr "Review"
 msgid "Review current replacement"
 msgstr "Review current replacement"
 
+#: src/renderer/src/features/council/CouncilGrid.tsx
+msgid "Reviews"
+msgstr "Reviews"
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Revoked"
 msgstr "Revoked"
@@ -5728,16 +5670,16 @@ msgstr "Room left"
 msgid "Room left on each subscription"
 msgstr "Room left on each subscription"
 
+#: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Round"
 msgstr "Round"
 
-#. placeholder {0}: item.index
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Round {0}"
-msgstr "Round {0}"
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "Round {id}"
+msgstr "Round {id}"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Round 0 · Baseline"
 msgstr "Round 0 · Baseline"
 
@@ -5821,10 +5763,6 @@ msgstr "Say what to start or check."
 msgid "Scope"
 msgstr "Scope"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Score"
-msgstr "Score"
-
 #: src/renderer/src/watcher/WatcherQuestions.tsx
 msgid "Scroll up to Watcher’s question"
 msgstr "Scroll up to Watcher’s question"
@@ -5842,10 +5780,6 @@ msgstr "Search models or paste @preset/…"
 msgid "Search transcripts"
 msgstr "Search transcripts"
 
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Second kind"
-msgstr "Second kind"
-
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "See every event"
 msgstr "See every event"
@@ -5861,6 +5795,10 @@ msgstr "Selected paths (one per line; blank selects the folder)"
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Selected text"
 msgstr "Selected text"
+
+#: src/renderer/src/features/council/SeatGrid.tsx
+msgid "Selected turn"
+msgstr "Selected turn"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
@@ -5882,7 +5820,7 @@ msgstr "Send to {title}"
 msgid "Send your teammate the link. They open it and accept."
 msgstr "Send your teammate the link. They open it and accept."
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Sending"
 msgstr "Sending"
 
@@ -5912,10 +5850,6 @@ msgstr "Sent to"
 msgid "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
 msgstr "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
 
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "set by you"
-msgstr "set by you"
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort}"
 msgstr "Set up {firstShort}"
@@ -5923,10 +5857,6 @@ msgstr "Set up {firstShort}"
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort} and {secondShort}"
 msgstr "Set up {firstShort} and {secondShort}"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Set up a Climb"
-msgstr "Set up a Climb"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up all three"
@@ -5995,13 +5925,9 @@ msgstr "Settled on {0}, and its worktree is kept there."
 msgid "Settling"
 msgstr "Settling"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Setup"
 msgstr "Setup"
-
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Setup chair"
-msgstr "Setup chair"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Setup could not be saved. Your choices are intact; please try again."
@@ -6578,8 +6504,8 @@ msgid "Source"
 msgstr "Source"
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Sources, which reviewers open since Sotto checks only a link’s shape:"
-msgstr "Sources, which reviewers open since Sotto checks only a link’s shape:"
+msgid "Sources:"
+msgstr "Sources:"
 
 #: src/renderer/src/languages.ts
 msgid "Spanish"
@@ -6628,6 +6554,10 @@ msgstr "Stacked by model: {names}."
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Stacked by provider: {names}."
 msgstr "Stacked by provider: {names}."
+
+#: src/renderer/src/features/council/CouncilGrid.tsx
+msgid "Stage"
+msgstr "Stage"
 
 #. First-run setup: the group of steps that begins it
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -6712,18 +6642,6 @@ msgstr "Starting Watcher…"
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Starting…"
 msgstr "Starting…"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, in {parts} parts before the question. A stage waits up to {minutes} minutes for a thread."
-msgstr "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, in {parts} parts before the question. A stage waits up to {minutes} minutes for a thread."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, with the question. A stage waits up to {minutes} minutes for a thread."
-msgstr "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, with the question. A stage waits up to {minutes} minutes for a thread."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Starts {threadCount} threads. A stage waits up to {minutes} minutes for a thread."
-msgstr "Starts {threadCount} threads. A stage waits up to {minutes} minutes for a thread."
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "Starts a thread in the selected project. Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings."
@@ -6928,10 +6846,6 @@ msgstr "Stopping"
 msgid "Stopping…"
 msgstr "Stopping…"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap."
-msgstr "Stops when all targets pass, after two completed attempts without meaningful improvement, or when you press Stop. Each slider controls its own cap."
-
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Streak"
 msgstr "Streak"
@@ -7030,7 +6944,7 @@ msgstr "talking"
 msgid "Target"
 msgstr "Target"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Target met"
 msgstr "Target met"
 
@@ -7125,17 +7039,17 @@ msgstr "The chair’s framing could not be read, so the panel answers the questi
 msgid "The Climb could not continue."
 msgstr "The Climb could not continue."
 
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "The Climb needs you."
+msgstr "The Climb needs you."
+
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "The Climb's reply was lost. Read its status before trying again."
 msgstr "The Climb's reply was lost. Read its status before trying again."
 
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The conversation is too long for one prompt, so each thread reads all of it in {parts} parts first."
-msgstr "The conversation is too long for one prompt, so each thread reads all of it in {parts} parts first."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The Council had two panelists, so nothing is counted."
-msgstr "The Council had two panelists, so nothing is counted."
+#: src/renderer/src/features/council/CouncilGrid.tsx
+msgid "The Council needs you."
+msgstr "The Council needs you."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The Council went on without {leftOut}."
@@ -7254,22 +7168,6 @@ msgstr "The owl in the bar"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "The owl watches a thread until you press it again."
 msgstr "The owl watches a thread until you press it again."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The panelists research outside the snapshot with their own tools: {reason}"
-msgstr "The panelists research outside the snapshot with their own tools: {reason}"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The panelists research outside the snapshot with their own tools."
-msgstr "The panelists research outside the snapshot with their own tools."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The panelists research outside the thread's folder with their own tools: {reason}"
-msgstr "The panelists research outside the thread's folder with their own tools: {reason}"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "The panelists research outside the thread's folder with their own tools."
-msgstr "The panelists research outside the thread's folder with their own tools."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "The projects you left out are not here, as they are not on {name}'s desks."
@@ -7503,10 +7401,6 @@ msgstr "Threads that need you"
 msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
 msgstr "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
-msgstr "Three fresh, independent judges read each round, followed by a fresh chair. Targets, origin context and past scores stay out of judging prompts. Claude and Codex can sit together on Mac and Linux; Windows currently supports Claude. Sotto verifies each judge’s isolated, read-only startup; an unsupported client cannot judge."
-
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Through"
 msgstr "Through"
@@ -7736,9 +7630,13 @@ msgstr "Turned off"
 msgid "Turning speech into text."
 msgstr "Turning speech into text."
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
-msgid "Turns"
-msgstr "Turns"
+#: src/renderer/src/features/council/ClimbGrid.tsx
+msgid "Turns by round and seat"
+msgstr "Turns by round and seat"
+
+#: src/renderer/src/features/council/CouncilGrid.tsx
+msgid "Turns by stage and seat"
+msgstr "Turns by stage and seat"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Two desks with {name}"
@@ -7763,7 +7661,7 @@ msgstr "Uncached input"
 msgid "unchecked"
 msgstr "unchecked"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Unconfirmed"
 msgstr "Unconfirmed"
 
@@ -7795,7 +7693,7 @@ msgstr "unknown"
 msgid "Unknown"
 msgstr "Unknown"
 
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 msgid "Unmeasurable"
 msgstr "Unmeasurable"
 
@@ -7971,6 +7869,10 @@ msgstr "Use not reported"
 msgid "Use not reported · resets {resets}"
 msgstr "Use not reported · resets {resets}"
 
+#: src/renderer/src/features/council/ClimbPanel.tsx
+msgid "Use the Design goal"
+msgstr "Use the Design goal"
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Used only for AI cleanup and kept in your system’s credential store."
 msgstr "Used only for AI cleanup and kept in your system’s credential store."
@@ -7985,6 +7887,7 @@ msgstr "Valid until"
 
 #. The title on the chair's verdict scroll when its words are not kept
 #: src/renderer/src/features/council/CouncilChamber.tsx
+#: src/renderer/src/features/council/CouncilGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Verdict"
 msgstr "Verdict"
@@ -8363,30 +8266,15 @@ msgstr "Words, speed, streak and where your words went show here once you have d
 
 #. A group of threads in Watcher’s room, and a thread’s status
 #. A thread’s status
-#: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/features/council/SeatGrid.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Working"
 msgstr "Working"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in a snapshot of {branch} at {commit}, with its uncommitted changes and {untracked} untracked files."
-msgstr "Working in a snapshot of {branch} at {commit}, with its uncommitted changes and {untracked} untracked files."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in a snapshot of {branch} at {commit}, with its uncommitted changes."
-msgstr "Working in a snapshot of {branch} at {commit}, with its uncommitted changes."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in a snapshot of {branch} at {commit}."
-msgstr "Working in a snapshot of {branch} at {commit}."
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
-msgstr "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
@@ -8510,10 +8398,6 @@ msgstr "You sent <0>{sent}</0>, Watcher <1>{watcher}</1> and wake-ups <2>{wakeUp
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You set this policy"
 msgstr "You set this policy"
-
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "You set this."
-msgstr "You set this."
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You skipped {title}’s question"

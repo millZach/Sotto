@@ -85,4 +85,17 @@ describe('retired models', () => {
     expect(modelInForce(live, publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))).toBe(publicProviderEntityId('claude', 'model', 'fable'))
     expect(modelInForce(live, publicProviderEntityId('claude', 'model', 'claude-sonnet-4-5'))).toBe(publicProviderEntityId('claude', 'model', 'sonnet'))
   })
+  it('follows Claude Code 2.1.321 moving fable onto Fable 5.2: a thread on claude-fable-5-2 moves there, and Fable 5.1 stays as legacy', () => {
+    // Claude Code's part of the catalog on November 9, 2026, the day Fable 5.2 launched, after the update: `fable` now
+    // names Fable 5.2, and Fable 5.1 is listed under its own ID. Before it, 2.1.319 listed Fable 5.2 as claude-fable-5-2.
+    const after = markLegacyModels([
+      claude('default', 'Default (recommended)', { recommended: true }), claude('opus', 'Opus 5.5'), claude('fable', 'Fable 5.2'),
+      claude('claude-fable-5-1', 'Fable 5.1'), claude('sonnet', 'Sonnet 5.5'), claude('haiku', 'Haiku 5.5'), claude('claude-fable-5', 'Fable 5'),
+      claude('claude-fable-5-2', 'Fable 5.2', { ready: false }),
+    ])
+    expect(named(after.filter(model => model.ready && !model.legacy))).toEqual(['Default (recommended)', 'Opus 5.5', 'Fable 5.2', 'Sonnet 5.5', 'Haiku 5.5'])
+    expect(named(after.filter(model => model.ready && model.legacy))).toEqual(['Fable 5.1', 'Fable 5'])
+    expect(modelInForce(after, publicProviderEntityId('claude', 'model', 'claude-fable-5-2'))).toBe(publicProviderEntityId('claude', 'model', 'fable'))
+    expect(modelInForce(after, publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))).toBe(publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))
+  })
 })
