@@ -5,7 +5,7 @@ import { browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type Browser
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserAutomation, type PointTarget } from './browserAutomation'
-import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskWords } from './browserTasks'
+import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskWords, type TaskPage } from './browserTasks'
 import { fail, parse } from './common'
 import type { ThreadFilePages } from './threadFilePages'
 import { blockSpellcheckDictionaryDownloads } from '../security'
@@ -17,7 +17,7 @@ interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBound
  * once Chromium's inspect overlay is on, which waits until the pane shows the page, and it lasts through a pick until
  * the picture is sent to the window, so hiding the page or a navigation meanwhile ends the pick with it.
  */
-interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean; point: PointSession | null }
+interface PageRecord extends TaskPage { view: WebContentsView; readonly automation: BrowserAutomation; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; point: PointSession | null }
 interface PointSession { readonly session: number; readonly color: { r: number; g: number; b: number }; live: boolean; picking: boolean }
 type PointEnd = Extract<BrowserPointState, { state: 'ended' }>['reason']
 /** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
@@ -63,17 +63,13 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
       ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
   }
-  protected publish(record: PageRecord): BrowserPage {
-    if (!record.view.webContents.isDestroyed()) {
-      const contents = record.view.webContents
-      const url = safeBrowserUrl(contents.getURL())
-      if (url && record.page.status !== 'loading' && record.page.status !== 'unavailable') record.page.url = url
-      record.page.canGoBack = contents.navigationHistory.canGoBack()
-      record.page.canGoForward = contents.navigationHistory.canGoForward()
-    }
-    const page = { ...record.page }
-    if (!this.disposed && this.pages.has(record.page.id)) this.dependencies.emit({ type: 'page', page })
-    return page
+  protected readPage(record: PageRecord): void {
+    if (record.view.webContents.isDestroyed()) return
+    const contents = record.view.webContents
+    const url = safeBrowserUrl(contents.getURL())
+    if (url && record.page.status !== 'loading' && record.page.status !== 'unavailable') record.page.url = url
+    record.page.canGoBack = contents.navigationHistory.canGoBack()
+    record.page.canGoForward = contents.navigationHistory.canGoForward()
   }
   private issue(record: PageRecord, message: string, unavailable = false): void {
     if (!this.pages.has(record.page.id) || this.disposed) return

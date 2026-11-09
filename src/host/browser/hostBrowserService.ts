@@ -35,9 +35,10 @@ const NOT_STARTED = 'Sotto couldn\'t start the browser on the machine this threa
  * browser context. The grant lives in the host's memory and ends when the host's Sotto stops.
  */
 export class HostBrowserService extends BrowserTasks<HostPageRecord> {
-  private readonly setting: { withoutAsking: boolean }
+  /** `saved`: the value the settings file holds, so a save that failed is tried again by the next send of the same value. */
+  private readonly setting: { withoutAsking: boolean; saved: boolean }
   constructor(private readonly dependencies: HostBrowserServiceDependencies) {
-    const setting = { withoutAsking: dependencies.withoutAsking }
+    const setting = { withoutAsking: dependencies.withoutAsking, saved: dependencies.withoutAsking }
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => setting.withoutAsking, words: () => HOST_WORDS,
       ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
     this.setting = setting
@@ -50,10 +51,13 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
    * the desktop when the setting changes, and the host keeps the value for a restart with no desktop connected.
    */
   async setWithoutAsking(value: boolean): Promise<void> {
-    if (value === this.setting.withoutAsking) return
-    this.setting.withoutAsking = value
-    this.settingChanged()
+    if (value !== this.setting.withoutAsking) {
+      this.setting.withoutAsking = value
+      this.settingChanged()
+    }
+    if (value === this.setting.saved) return
     await this.dependencies.saveWithoutAsking(value)
+    this.setting.saved = value
   }
 
   protected async createPage(request: BrowserCreateRequest, initial = false): Promise<BrowserPage> {
@@ -115,11 +119,8 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
   }
   /** A host's page has no Point at something yet (ADR-0198, decision 7), so nothing outlives its document. */
   protected pageLeft(): void { /* Nothing kept per document. */ }
-  protected publish(record: HostPageRecord): BrowserPage {
+  protected readPage(record: HostPageRecord): void {
     if (!record.host.closed) { record.page.canGoBack = record.host.state.canGoBack; record.page.canGoForward = record.host.state.canGoForward }
-    const page = { ...record.page }
-    if (!this.disposed && this.pages.has(record.page.id)) this.dependencies.emit({ type: 'page', page })
-    return page
   }
 
   /** The host's Sotto is stopping: every page closes, every grant ends, and the browser's profile is deleted. */

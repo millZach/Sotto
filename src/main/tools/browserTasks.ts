@@ -8,9 +8,13 @@ import { ToolOperations, fail, parse, workspace } from './common'
 import type { PageAutomation } from './pageAutomation'
 import { ThreadFilePages } from './threadFilePages'
 
+/** The actions that reach one element, so the element is recorded when asked and must still be there when run. */
 type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>
-export const targeted = (action: BrowserAction): action is TargetedAction => action.type === 'click' || action.type === 'type' || action.type === 'tap' || action.type === 'key'
-/** The shortest a swipe may move, so a tap is asked for as a tap. */
+const targeted = (action: BrowserAction): action is TargetedAction => action.type === 'click' || action.type === 'type' || action.type === 'tap' || action.type === 'key'
+/**
+ * How far a swipe must travel. Shorter, Chromium reads it as a tap and clicks what it started on, and a swipe asks
+ * nothing, so a short one would be a tap the browser grant never covered.
+ */
 const SWIPE_MINIMUM = 24
 
 export type BrowserCreateRequest = ReturnType<typeof browserCreateSchema.parse>
@@ -79,12 +83,19 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   protected abstract isGone(record: R): boolean
   /** The address the page's document is at now, as its browser reports it. */
   protected abstract loadedUrl(record: R): string
-  /** Brings the page's record up to date with its browser and tells the window. */
-  protected abstract publish(record: R): BrowserPage
+  /** Brings the page's record up to date with what its browser knows now: where it is, and whether it can go back or forward. */
+  protected abstract readPage(record: R): void
   protected abstract step(record: R, direction: 'back' | 'forward'): void | Promise<void>
   /** The page navigated or stopped being shared: whatever the subclass keeps for the old page (Point at something) ends. */
   protected abstract pageLeft(record: R, reason: 'navigated' | 'hidden'): void
 
+  /** The page as it is now, told to the window while the page is still open. */
+  protected publish(record: R): BrowserPage {
+    this.readPage(record)
+    const page = { ...record.page }
+    if (!this.disposed && this.pages.has(record.page.id)) this.base.emit({ type: 'page', page })
+    return page
+  }
   /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
   protected async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
     try { return await workspace(this.base.files, threadId, expected) }
@@ -120,6 +131,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     for (const task of this.taskRecords.values()) threads.add(task.threadId)
     for (const threadId of [...this.grants.threads(), ...this.listed]) threads.add(threadId)
     for (const threadId of threads) {
+      // A thread Sotto no longer lists takes its grant with it, and nothing it left waiting runs (ADR-0029).
+      if (!this.base.files.hasThread(threadId)) { this.forgetThread(threadId); continue }
       const grant = this.grantView(threadId)
       this.base.emit({ type: 'browser-grant', threadId, grant })
       // Turning the setting on shares the thread's pages and answers what was already waiting, as "Allow this thread to use the browser" does.

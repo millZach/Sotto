@@ -8,7 +8,9 @@ import type { ToolsResult } from '../../../../src/shared/tools'
 
 const workspaceId = 'a'.repeat(64)
 const workspace = { threadId: 'thread-1', projectId: 'project', workingDirectory: '/work', workspaceId }
-const files = { resolveWorkspace: async (threadId: string) => threadId === workspace.threadId ? { ok: true as const, value: workspace } : { ok: false as const, error: { code: 'thread-unavailable' as const, message: 'gone' } }, hasThread: () => true }
+/** The threads the coordinator lists; a test takes one away to say it has gone. */
+const listed = new Set<string>()
+const files = { resolveWorkspace: async (threadId: string) => listed.has(threadId) ? { ok: true as const, value: workspace } : { ok: false as const, error: { code: 'thread-unavailable' as const, message: 'gone' } }, hasThread: (threadId: string) => listed.has(threadId) }
 
 /** A page in a host's browser as the service sees it: its state moves when it is told to go somewhere. */
 class FakePage {
@@ -45,6 +47,7 @@ function fakeBrowser(missing = false) {
 const services: HostBrowserService[] = []
 afterEach(async () => { for (const service of services.splice(0)) await service.shutDown(); vi.useRealTimers() })
 function setup(options: { withoutAsking?: boolean; missing?: boolean } = {}) {
+  listed.clear(); listed.add(workspace.threadId)
   const { browser, pages } = fakeBrowser(options.missing)
   const events: BrowserEvent[] = []
   const saved: boolean[] = []
@@ -106,6 +109,33 @@ describe('a host\'s browser service (ADR-0198)', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'browser-grant', threadId: workspace.threadId, grant: expect.objectContaining({ source: 'settings' }) }))
     await service.setWithoutAsking(true)
     expect(saved).toEqual([true])
+  })
+
+  it('tries a failed save of the setting again when a desktop sends the same value', async () => {
+    const { browser } = fakeBrowser()
+    const written: boolean[] = []
+    let failing = true
+    const service = new HostBrowserService({ browser, files, emit: () => undefined, withoutAsking: true,
+      saveWithoutAsking: async value => { if (failing) throw new Error('disk full'); written.push(value) } })
+    services.push(service)
+    await expect(service.setWithoutAsking(false)).rejects.toThrow('disk full')
+    expect(service.withoutAsking).toBe(false)
+    failing = false
+    await service.setWithoutAsking(false)
+    expect(written).toEqual([false])
+    await service.setWithoutAsking(false)
+    expect(written).toEqual([false])
+  })
+
+  it('runs nothing a thread that has gone left waiting when the setting turns on, and ends its grant', async () => {
+    const { service, pages, events } = setup({ withoutAsking: false })
+    value(await open(service))
+    listed.delete(workspace.threadId)
+    events.length = 0
+    await service.setWithoutAsking(true)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(pages[0]!.visits).toEqual([])
+    expect(events.filter(event => event.type === 'browser-grant')).toEqual([{ type: 'browser-grant', threadId: workspace.threadId, grant: null }])
   })
 
   it('follows the page to where it goes, and ends sharing at another site without a grant', async () => {

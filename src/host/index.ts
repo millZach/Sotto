@@ -40,7 +40,7 @@ import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
-import { hostBrowserTools } from './browser/hostBrowserTools'
+import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
@@ -165,6 +165,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
+  // Sotto's browser for this host's own threads, in this machine's own Chromium (ADR-0198), on the host's Owl answers for
+  // it and for the browser pane it builds on. The runtime makes it before any thread starts. The last Let agents use the
+  // browser without asking a desktop sent is kept in this host's settings file, so a restart with no desktop holds it.
+  let browser: HostBrowserTools | undefined
   try {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
@@ -199,6 +203,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
+      ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
+        saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
       observeActiveThread: false, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
@@ -249,14 +255,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         (threadId, ready) => tellWatcherRelay.tell({ threadId, ready }))] : []),
     ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
-    // Sotto's browser for this host's own threads, in this machine's own Chromium (ADR-0198), on the host's Owl answers for
-    // it and for the browser pane it builds on. The last Let agents use the browser without asking a desktop sent is kept in
-    // this host's settings file, so a restart with no desktop connected holds it.
-    const browser = owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? hostBrowserTools({
-      resolveBinding: threadId => runtime.agentControl.filesBinding(threadId), withoutAsking: startup.browserWithoutAsking,
-      saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) },
-    }) : undefined
-    if (browser) agentHost.useBrowserTools(browser.tools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
@@ -384,7 +382,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return closing
       },
     }
-  } catch (error) { memory?.close(); throw error }
+  } catch (error) { await browser?.close().catch(() => undefined); memory?.close(); throw error }
 }
 
 export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessEnv = process.env): HeadlessHostOptions {
