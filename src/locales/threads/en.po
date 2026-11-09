@@ -8005,6 +8005,7 @@ msgstr "Skipped."
 msgid "Snooze"
 msgstr "Snooze"
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Snooze {title}"
 msgstr "Snooze {title}"

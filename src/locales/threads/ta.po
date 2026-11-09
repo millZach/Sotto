@@ -8005,6 +8005,7 @@ msgstr ""
 msgid "Snooze"
 msgstr ""
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Snooze {title}"
 msgstr ""

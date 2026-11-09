@@ -40,7 +40,7 @@ import { useSettleGaps, type HeldGap } from './settleGap'
 import { SettleToast } from './SettleToast'
 import { useWordCut } from './wordCut'
 import './workingThreadsLine.css'
-import { snoozeThreads, SnoozeUntil, useSnoozeMenu, useThreadSnoozes, wakeWords } from './threadSnooze'
+import { snoozeThread, SnoozeUntil, useSnoozeMenu, useThreadSnoozes, wakeWords } from './threadSnooze'
 
 export { useAddProject } from './addProject'
 
@@ -212,14 +212,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   const wakes = snoozedUntil === undefined ? '' : wakeWords(snoozedUntil)
   const snooze = canSnooze ? (): void => setSnoozeMenu('beside') : undefined
-  const setSnooze = (until: number | null): void => {
-    if (row.thread.snoozedUntil === undefined) snoozeThreads([id], until)
-    else {
-      // A user's choice replaces any legacy entry still waiting to migrate.
-      snoozeThreads([id], null)
-      void command({ type: 'snooze-thread', threadId: id, until: until === null ? null : new Date(until).toISOString() })
-    }
-  }
+  const setSnooze = (until: number | null): void => snoozeThread(row.thread, until, command)
   const wake = canSnooze && snoozedUntil !== undefined ? (): void => setSnooze(null) : undefined
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
