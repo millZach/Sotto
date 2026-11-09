@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { BROWSER_WAITING_TO_OPEN, safeBrowserUrl, type BrowserPage } from '../../shared/browser'
 import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskDependencies, type BrowserTaskWords, type TaskPage } from '../../main/tools/browserTasks'
-import { fail } from '../../main/tools/common'
+import { fail, parse } from '../../main/tools/common'
+import { browserInputSchema, browserWatchSchema, type HostBrowserFrame } from '../../shared/hostBrowser'
 import { HostBrowserMissing, NO_HOST_BROWSER, type HostBrowser, type HostBrowserPage, type HostPageAutomation, type HostPageState } from './hostBrowser'
 
 /** `seen`: the page's state as last heard from the browser, so a change is told apart from what Sotto set itself. */
@@ -59,6 +60,23 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
     await this.dependencies.saveWithoutAsking(value)
     this.setting.saved = value
   }
+
+  /** The user's own click, key, typed text or scroll from a desktop's pane. It needs no grant: it is the user acting. */
+  input(payload: unknown) { return this.run(async () => {
+    const request = parse(browserInputSchema, payload)
+    const record = await this.owned(request)
+    await record.host.input(request.input)
+  }) }
+  /**
+   * Pictures of the page for a desktop's pane until the returned stop, newest first (ADR-0198, decision 5). The page lays
+   * out at the pane's size, as a page on this computer takes the size of the pane that shows it.
+   */
+  watch(payload: unknown, deliver: (frame: HostBrowserFrame) => void) { return this.run(async () => {
+    const request = parse(browserWatchSchema, payload)
+    const record = await this.owned(request)
+    await record.host.resize(request.size).catch(() => undefined)
+    return record.host.watch(request.size, frame => deliver({ pageId: record.page.id, ...frame }))
+  }) }
 
   protected async createPage(request: BrowserCreateRequest, initial = false): Promise<BrowserPage> {
     const owner = await this.owner(request.threadId, request.workspaceId)

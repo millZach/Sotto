@@ -3391,15 +3391,15 @@ export class AgentControl {
     this.answeredRequests = this.trimReceipts([...this.answeredRequests.filter(previous => JSON.stringify(previous) !== JSON.stringify(receipt)), receipt])
   }
   /** `draftKept` is whether what the user was doing survives a refusal as a saved draft: true for a send, false for a create. */
-  private canAct(threadId?: string, draftKept = true): void {
+  private assertCanAct(threadId?: string, draftKept = true): void {
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     // Nothing connected at all names the machine and the page that connects one (#459); one thread's provider
     // being down while others are connected is that thread's own refusal.
     if (!this.state.host.connected) throw new Error(noProviderRefusal(this.dependencies.runsAs === 'headless-host' ? 'host' : 'desktop', draftKept))
     if (threadId && !isThreadProviderConnected(this.state.host, this.thread(threadId))) throw new Error(`Reconnect this thread provider before sending.${draftKept ? ' Your draft is saved.' : ''}`)
   }
-  private canCreate(provider?: ProviderId): void {
-    this.canAct(undefined, false)
+  private assertCanCreate(provider?: ProviderId): void {
+    this.assertCanAct(undefined, false)
     if (this.outbox.some(item => (item.type === 'create-project' || item.type === 'create-thread') && (!provider || (item.provider ?? this.state.configuration.provider) === provider))) {
       throw new Error('An earlier creation has an unknown result. Reconnect and inspect the provider before creating anything else; select the existing project or thread if it appears.')
     }
@@ -4318,7 +4318,7 @@ export class AgentControl {
         const resumable = (): AgentThread => {
           const current = this.state.host.threads.find(t => t.id === thread.id)
           if (!current || isThreadClosed(current) || isWorkspaceThreadSettled(current, this.state.host.projects.find(p => p.id === current.projectId))) throw new Error('Restore this thread and project before resuming queued follow-ups.')
-          this.canAct(current.id)
+          this.assertCanAct(current.id)
           return current
         }
         let current = resumable()
@@ -4563,7 +4563,7 @@ export class AgentControl {
         if (turn) turn.receivedAt = performance.now()
         let failure: string | undefined
         try {
-          this.canAct(threadId)
+          this.assertCanAct(threadId)
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
           // A delegation's hidden news goes past what waits ahead of it, so it claims itself rather than the head.
           await this.followupStore.claim(first.id, 'send', isDelegationOnlyWakeUp(first) ? candidate => candidate.id !== first.id : held); claimed = true
@@ -4596,7 +4596,7 @@ export class AgentControl {
             const latest = this.thread(threadId)
             if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
-            this.canAct(threadId)
+            this.assertCanAct(threadId)
             validatePromptAttachments(this.state.host, latest.modelId, item.attachments, this.attachmentRules)
             // Asked again right before the provider hears it: a stop or the switch may have come while it was read.
             if (this.wakeUpOutdated(threadId, item)) throw new WakeUpNoLongerDue()
@@ -4707,7 +4707,7 @@ export class AgentControl {
   }
   private validateInterrupt(threadId: string): void {
     try {
-      this.canAct(undefined, false)
+      this.assertCanAct(undefined, false)
       const thread = this.thread(threadId)
       if (!capabilitiesForThread(this.state.host, thread).interrupt) throw new Error('This connection cannot stop agent work.')
       if (isThreadClosed(thread)) throw new Error('This thread is settled or archived. There is no open work to stop.')
@@ -4719,7 +4719,7 @@ export class AgentControl {
     if (queued.wakeUp) throw new Error('A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.')
     const validate = (): void => {
       this.watcherOrigins.get(command)?.guard()
-      this.canAct(command.threadId)
+      this.assertCanAct(command.threadId)
       const thread = this.thread(command.threadId)
       if (!capabilitiesForThread(this.state.host, thread).steer) throw new Error('This provider does not support native steering. Leave the message queued instead.')
       if (thread.status !== 'running') throw new Error('There is no running turn to steer. The message is still queued.')
@@ -4776,7 +4776,7 @@ export class AgentControl {
       return
     }
     const validate = (): void => {
-      this.canAct(command.threadId)
+      this.assertCanAct(command.threadId)
       const thread = this.thread(command.threadId)
       if (!capabilitiesForThread(this.state.host, thread).steer) throw new Error('This provider does not support native steering. Queue a follow-up instead.')
       if (thread.status !== 'running') throw new Error('There is no running turn to steer. Send or queue this prompt instead.')
@@ -5026,7 +5026,7 @@ export class AgentControl {
       }
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
       case 'recover-draft': {
-        this.canAct()
+        this.assertCanAct()
         if (!this.state.providerUpgrade || this.state.draftThreadId !== null || !this.hasDraft()) throw new Error('There is no unbound recovered draft to use.')
         const target = this.thread(command.threadId)
         if (target.archivedAt || target.requests.length) throw new Error('Choose an open thread without a pending question or permission before using the recovered draft.')
@@ -5041,7 +5041,7 @@ export class AgentControl {
       case 'steer': await this.steer(command, turn); return
       case 'create-project': {
         const provider = command.provider ?? this.state.configuration.provider
-        this.canCreate(provider)
+        this.assertCanCreate(provider)
         const targetProvider = this.state.host.providers?.find(status => status.id === provider)
         if (targetProvider && targetProvider.connection !== 'connected') throw new Error(`Connect ${PROVIDER_LABELS[provider]} before creating a project.`)
         if (!(targetProvider?.capabilities ?? this.state.host.capabilities).projects) throw new Error('This provider does not support creating projects.')
@@ -5136,7 +5136,7 @@ export class AgentControl {
       }
       case 'create-thread': {
         const model = resolveModel(this.state.host.models, command.modelId)
-        this.canCreate(model?.providerId)
+        this.assertCanCreate(model?.providerId)
         if (!this.state.host.capabilities.threads) throw new Error('This provider cannot create threads.')
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
@@ -5194,7 +5194,7 @@ export class AgentControl {
         const fork = command.type === 'fork-thread'
         const chosen = fork && !(source.providerId !== undefined && NATIVE_FORKS.has(source.providerId)) ? undefined : command.modelId
         const model = resolveModel(this.state.host.models, chosen ?? source.modelId)
-        this.canCreate(model?.providerId)
+        this.assertCanCreate(model?.providerId)
         if (!model?.ready || fork && model.providerId !== source.providerId) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.')
         if (this.state.host.threads.some(thread => thread.id === command.newThreadId)) throw new Error('This thread already exists. Select it instead of creating it again.')
         // The new thread starts on the new-thread defaults, as any new thread does, so it is never wider than the user chose.
@@ -5217,7 +5217,7 @@ export class AgentControl {
         return
       }
       case 'configure-thread': {
-        this.canAct(undefined, false)
+        this.assertCanAct(undefined, false)
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
           && command.fastMode === undefined && command.speed === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
@@ -5268,7 +5268,7 @@ export class AgentControl {
       }
       case 'compact-thread': {
         const validate = (): void => {
-          this.canAct(command.threadId, false)
+          this.assertCanAct(command.threadId, false)
           const thread = this.thread(command.threadId)
           if (!capabilitiesForThread(this.state.host, thread).compact || thread.manualCompactionSupported === false) throw new Error('Native manual compaction is unavailable for this thread.')
           if (isThreadClosed(thread) || thread.nativeSessionStarted === false || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its requests before compacting.')
@@ -5283,7 +5283,7 @@ export class AgentControl {
         return
       }
       case 'answer': {
-        this.canAct()
+        this.assertCanAct()
         this.guardClientGrant(client)
         const thread = this.thread(command.threadId)
         if (isThreadClosed(thread)) throw new Error('This thread is settled or archived. Reopen it before answering an old request.')
@@ -5597,7 +5597,7 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
-    this.canAct(undefined, draftKept)
+    this.assertCanAct(undefined, draftKept)
     // Refused here, before an outbox entry exists and long before the provider hears anything.
     if (command.type === 'answer') this.guardClientGrant(client)
     const threadId = 'threadId' in command ? command.threadId : undefined
@@ -5615,7 +5615,7 @@ export class AgentControl {
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
           ? requestDraftProvider(this.state.host, this.thread(command.threadId), this.state.configuration.provider) : this.thread(command.threadId).providerId
-    if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.canAct(threadId, draftKept)
+    if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.assertCanAct(threadId, draftKept)
     // A prompt or an answer admitted before its thread was fenced for a move goes no further once it is (#1178): refused
     // here, at dispatch, before any outbox entry exists, with its draft kept.
     if (threadId && draftKept) { const fence = this.moveFences.get(threadId); if (fence !== undefined) throw new Error(fence) }
@@ -5696,7 +5696,7 @@ export class AgentControl {
     let providerLatencyMs: number | undefined
     let previewAttachments: AgentAttachmentHandle[] = []
     try {
-      this.canAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
+      this.assertCanAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
       if (prompt?.attachments?.length) {
         // Checked again now the outbox entry owns the content: a sweep that runs from here on keeps it, and one
         // that ran while this waited behind a running lane is caught here rather than at the adapter.
@@ -5707,7 +5707,7 @@ export class AgentControl {
       if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
         const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
         await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerQuestions }, command.commandId, draftAnswers)
-        this.canAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
+        this.assertCanAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
       }
       if (prompt && isUsageProviderId(provider)) {
         // A send the guard already refuses writes nothing to Usage; the guard runs again just before the provider hears it.
@@ -5727,13 +5727,14 @@ export class AgentControl {
       const hostCommand = (command.type === 'answer' ? await this.answerWithImages(command) : prompt?.attachments?.length
         ? { ...command, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
       try {
-        this.canAct(undefined, draftKept)
+        this.assertCanAct(undefined, draftKept)
         if (stages && prompt && !stages.has('dispatched')) {
           stages.mark('dispatched')
           this.firstOutputs.watch(prompt.threadId, stages, this.state.host.threads.find(item => item.id === prompt.threadId))
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
+        if (command.type === 'answer') this.guardClientGrant(client)
         if (wakeUp) this.wakeUpsOffered.add(command.commandId)
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
@@ -5972,7 +5973,7 @@ export class AgentControl {
   /** Asked only of a settled thread, so a send to any other awaits nothing more than it did. */
   private async reopenForWork(threadId: string): Promise<void> {
     // Its own provider first: a send that thread's connection refuses restores nothing.
-    this.canAct(threadId)
+    this.assertCanAct(threadId)
     const host = this.dependencies.host
     if (!host.reopenThreadForWork) throw new Error('This thread is settled. Restore it before sending it a prompt.')
     this.acceptSnapshot(await host.reopenThreadForWork(threadId))
@@ -5988,7 +5989,7 @@ export class AgentControl {
     if (pendingId) {
       // A retry may discover that the earlier command already succeeded. It is
       // never a new dispatch and must not replace an edited or recovered draft.
-      this.canAct()
+      this.assertCanAct()
       this.observe(threadId)
       this.acceptSnapshot(await this.readThread(threadId))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
@@ -6010,7 +6011,7 @@ export class AgentControl {
       // Admission put the complete per-thread draft in place before this lane, and saved it then if the lane was busy;
       // otherwise the write that makes the outbox entry durable saves it.
     }
-    this.canAct()
+    this.assertCanAct()
     this.observe(threadId)
     const messageId = this.watcher.operations.find(item => item.draftId === draftId)?.messageId
       ?? (draftId ? this.delegationHooks?.messageIdFor(draftId) ?? this.councilHooks?.messageIdFor(draftId) : undefined) ?? randomUUID()
@@ -6019,7 +6020,7 @@ export class AgentControl {
     this.sendStages(turn)?.addRead(performance.now() - readStartedAt)
     this.acceptSnapshot(read)
     const validate = (): void => {
-      this.canAct()
+      this.assertCanAct()
       origin?.guard()
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
@@ -6053,7 +6054,7 @@ export class AgentControl {
       || this.state.deliveries?.some(item => item.threadId === draftThreadId && item.draftId === pickedDraftId && item.setAside))) throw new Error('This draft revision was set aside or replaced. Use a new draft revision to send a new message.')
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === draftThreadId && !holdsNothingBack(item) && (phoneOrigin || this.blocksExplicitPrompt(item, pickedDraftId)))?.id
     if (pendingId) {
-      this.canAct()
+      this.assertCanAct()
       this.observe(); this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
       this.say('Reconciled the earlier action. No new prompt was sent.')
@@ -6063,7 +6064,7 @@ export class AgentControl {
       turn.threadId = draftThreadId
       turn.projectId = this.state.host.threads.find(thread => thread.id === draftThreadId)?.projectId ?? null
     }
-    this.canAct()
+    this.assertCanAct()
     this.observe(...(draftThreadId ? [draftThreadId] : []))
     const messageId = randomUUID()
     const readStartedAt = performance.now()

@@ -1,6 +1,5 @@
 import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { useSyncExternalStore } from 'react'
-import { THREAD_PROMPT_ID } from './ThreadComposer'
 
 /** Narrower than this, a pane's header, transcript and composer stop being usable; the workspace shows one pane at a time instead. */
 export const MIN_PANE_WIDTH = 400
@@ -57,11 +56,6 @@ export type DividerTarget = { readonly axis: 'columns'; readonly row: number; re
 export const isSplit = (layout: SplitLayout): boolean => layout.panes.length >= 2
 const even = (count: number): number[] => Array.from({ length: count }, () => 1 / count)
 const sum = (values: readonly number[]): number => values.reduce((total, value) => total + value, 0)
-
-/** Each pane's composer needs its own element ID once two are on screen; the single view keeps the established one. */
-export function threadPromptId(threadId: string): string {
-  return `${THREAD_PROMPT_ID}-${threadId}`
-}
 
 /** How many panes each grid row holds: 1; 2; 2 over 1; 2 over 2; then ceil(√n) columns with a shorter last row. */
 export function gridShape(count: number): number[] {

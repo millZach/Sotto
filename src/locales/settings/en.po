@@ -2782,10 +2782,6 @@ msgstr "How Changes first opens. A choice made in Changes lasts until you change
 msgid "How fast you type, in words per minute ({slowest} to {fastest}). The Dictate room counts the time dictation saves you against it."
 msgstr "How fast you type, in words per minute ({slowest} to {fastest}). The Dictate room counts the time dictation saves you against it."
 
-#: src/renderer/src/features/settings/CouncilSettings.tsx
-msgid "How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own."
-msgstr "How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own."
-
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "How long Copied stays up, in milliseconds (500 to 5000)."
 msgstr "How long Copied stays up, in milliseconds (500 to 5000)."
@@ -5265,10 +5261,6 @@ msgstr "Sotto does not know how {name} was installed, so it will not replace it.
 msgid "Sotto does this"
 msgstr "Sotto does this"
 
-#: src/renderer/src/features/settings/CouncilSettings.tsx
-msgid "Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more. Each panelist’s effort is used for its answer, review and crux check, and the chair’s for its framing and verdict."
-msgstr "Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more. Each panelist’s effort is used for its answer, review and crux check, and the chair’s for its framing and verdict."
-
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr "Sotto hands the code to {name} on {hostName} and keeps nothing."
@@ -7168,10 +7160,6 @@ msgstr "While you dictate"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Whitespace formatting"
 msgstr "Whitespace formatting"
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Who sits on a Council, how its chamber is laid out, and how long a stage waits"
-msgstr "Who sits on a Council, how its chamber is laid out, and how long a stage waits"
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
