@@ -9,7 +9,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 it('lists a Claude model\'s levels without Ultracode and refuses a worker started on it', async () => {
   const f = await delegationFixture(cleanups)
-  // The fake Claude model reports Extra high, so Claude Code's catalog would offer Ultracode after Max.
+  // The fake Claude model reports XHigh, so Claude Code's catalog would offer Ultracode after Max.
   for (const model of f.workspace.adapters.claude.state.models) model.reasoningEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
   f.workspace.adapters.claude.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'claude' })

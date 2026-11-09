@@ -182,7 +182,7 @@ describe('speed in the quiet split chip', () => {
     expect(screen.queryByRole('button', { name: /^Thread speed/u })).toBeNull()
     expect(effort()).toHaveTextContent('High, Standard')
     fireEvent.click(effort())
-    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Low', 'Medium', 'High', 'Extra high', 'Max'])
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Low', 'Medium', 'High', 'XHigh', 'Max'])
     expect(screen.getByRole('option', { name: 'High' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('radio', { name: 'Fast' })).toHaveAttribute('title', '2x speed, increased usage.')
     fireEvent.click(screen.getByRole('radio', { name: 'Fast' }))

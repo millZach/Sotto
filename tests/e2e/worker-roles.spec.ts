@@ -126,16 +126,16 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
 
       // Each role on its default with Claude Code and Codex connected. Muse is not set up, so Code review is on its next.
       expect(await fields(page, 'Orchestrating')).toEqual(['Opus 5.5', 'High', 'Ask for approval'])
-      expect(await fields(page, 'Building')).toEqual(['Opus 5.5', 'Extra high', 'Allow edits'])
-      expect(await fields(page, 'UI')).toEqual(['Opus 5.5', 'Extra high', 'Allow edits'])
-      expect(await fields(page, 'Code review')).toEqual(['GPT-6.1 Sol', 'Extra high', 'Ask for approval'])
+      expect(await fields(page, 'Building')).toEqual(['Opus 5.5', 'XHigh', 'Allow edits'])
+      expect(await fields(page, 'UI')).toEqual(['Opus 5.5', 'XHigh', 'Allow edits'])
+      expect(await fields(page, 'Code review')).toEqual(['GPT-6.1 Sol', 'XHigh', 'Ask for approval'])
       expect(await fields(page, 'Research')).toEqual(['Haiku 5.5', 'Haiku 5.5 has none', 'Ask for approval'])
       expect(await fields(page, 'Computer use')).toEqual(['GPT-6 Astra', 'Medium', 'Full access'])
       const computer = card(page, 'Computer use').locator('.worker-role__note')
       await expect(computer).toHaveText([/^Workers never start wider than your new-thread default, so these start on “Ask for approval”\. Change it in Threads$/u,
         'On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.'])
       const review = card(page, 'Code review').locator('.worker-role__defaults li')
-      await expect(review.nth(0)).toContainText('Muse Wonder Full, Extra high')
+      await expect(review.nth(0)).toContainText('Muse Wonder Full, XHigh')
       await expect(review.nth(0)).toContainText('Not set up')
       await expect(review.nth(1)).toContainText('In use')
       await expect(card(page, 'Building').locator('.worker-role__tag')).toHaveText('Default')
@@ -173,7 +173,7 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       await page.keyboard.press('ArrowDown')
       await expect(dialog.getByRole('option', { name: 'Sonnet 5.5' })).toBeFocused()
       await page.keyboard.press('Enter')
-      await expect.poll(() => fields(page, 'Building')).toEqual(['Sonnet 5.5', 'Extra high', 'Allow edits'])
+      await expect.poll(() => fields(page, 'Building')).toEqual(['Sonnet 5.5', 'XHigh', 'Allow edits'])
       await expect(building.locator('.worker-role__tag')).toHaveText('Your choice')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).workerRoles.building?.modelId)).toBe('native:claude:model:sonnet')
       // The permission list opens on the row's mode, and Escape puts focus back on its chip.
@@ -191,7 +191,7 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       await page.evaluate(async () => { const result = await window.sotto!.agents!.command({ type: 'disconnect', provider: 'claude' }); if (result.error) throw new Error(result.error) })
       await expect(building.locator('.worker-role__tag')).toHaveText('Your choice, not available', { timeout: 30_000 })
       await expect(building.locator('.worker-role__note[data-kind="moved"]')).toHaveText('Your choice, Sonnet 5.5, stays. Claude Code is not connected, so until it is, workers start on GPT-6.1 Sol, the next default.')
-      expect(await fields(page, 'UI')).toEqual(['GPT-6.1 Sol', 'Extra high', 'Allow edits'])
+      expect(await fields(page, 'UI')).toEqual(['GPT-6.1 Sol', 'XHigh', 'Allow edits'])
       await expect(card(page, 'UI').locator('.worker-role__tag')).toHaveText('Next default')
       await expect(panel(page).locator('.worker-roles__summary')).toContainText('Claude Code is not connected, so')
       await panel(page).getByRole('heading', { name: 'Worker roles' }).scrollIntoViewIfNeeded()
@@ -210,15 +210,15 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       await expect(building.locator('.worker-role__tag')).toHaveText('Your choice', { timeout: 30_000 })
 
       // Reset puts the default back and says so, with Undo.
-      await building.getByRole('button', { name: 'Reset Building to its default, Opus 5.5 at Extra high with Allow edits' }).click()
-      await expect.poll(() => fields(page, 'Building')).toEqual(['Opus 5.5', 'Extra high', 'Allow edits'])
-      await expect(panel(page).locator('.worker-roles__said')).toContainText('Building is back on its default, Opus 5.5 at Extra high.')
+      await building.getByRole('button', { name: 'Reset Building to its default, Opus 5.5 at XHigh with Allow edits' }).click()
+      await expect.poll(() => fields(page, 'Building')).toEqual(['Opus 5.5', 'XHigh', 'Allow edits'])
+      await expect(panel(page).locator('.worker-roles__said')).toContainText('Building is back on its default, Opus 5.5 at XHigh.')
       await panel(page).locator('.worker-roles__said').getByRole('button', { name: 'Undo' }).click()
-      await expect.poll(() => fields(page, 'Building')).toEqual(['Sonnet 5.5', 'Extra high', 'Allow edits'])
+      await expect.poll(() => fields(page, 'Building')).toEqual(['Sonnet 5.5', 'XHigh', 'Allow edits'])
       await resetAll.click()
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).workerRoles)).toEqual({})
 
-      // One start by role: a delegation that names only its kind of work starts on Code review's GPT-6.1 Sol at Extra high,
+      // One start by role: a delegation that names only its kind of work starts on Code review's GPT-6.1 Sol at XHigh,
       // held to the delegating thread's Ask for approval, and its result says it came from the role.
       const started = await delegate(page, parentId, { work: 'code-review', title: 'Review the reconnect diff', brief: 'Review the diff on the reconnect fix.', wait_seconds: 0 })
       expect(started, JSON.stringify(started)).toMatchObject({ status: 'ok', role: { work: 'code-review', named: [] } })

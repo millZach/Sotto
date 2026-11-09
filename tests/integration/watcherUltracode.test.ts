@@ -15,7 +15,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 async function fixture() {
   const workspace = await workspaceFixture(undefined, { history: true })
   cleanups.push(workspace.remove)
-  // The fake Claude model reports Extra high, so Claude Code's catalog would offer Ultracode after Max.
+  // The fake Claude model reports XHigh, so Claude Code's catalog would offer Ultracode after Max.
   for (const model of workspace.adapters.claude.state.models) model.reasoningEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })

@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react'
+import { effortLabel } from './effortNames'
 import { Lock, Shield } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -61,14 +62,13 @@ export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string
 }
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
-const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
 
 /** The choices used when creating a thread, visible while its optional controls are collapsed. */
 export function threadOptionsSummary(model: AgentModel | undefined, effort: string | undefined, mode: AgentRuntimeMode | undefined, providerMode?: string): string {
   const reasoning = effort ?? model?.defaultReasoningEffort
   const own = model?.providerModes?.find(candidate => candidate.id === startingProviderMode(model, providerMode))
   const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : t`Provider default`
-  return [model?.name ?? t`Choose model`, reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
+  return [model?.name ?? t`Choose model`, reasoning ? effortLabel(reasoning) : null, permissions].filter(Boolean).join(' · ')
 }
 
 /**
@@ -88,8 +88,8 @@ export function WatcherPermission({ mode = 'approval-required' }: { readonly mod
 export function effortChoices(model: AgentModel | undefined, reasoning: string, { ultracode = false }: { readonly ultracode?: boolean } = {}): ChoiceOption[] {
   const efforts = (model?.reasoningEfforts ?? []).filter(effort => ultracode || effort !== ULTRACODE)
   if (efforts.length === 0) return []
-  const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : t`Provider default`, disabled: true }]
-  return [...lead, ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]
+  const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? effortLabel(reasoning) : t`Provider default`, disabled: true }]
+  return [...lead, ...efforts.map(effort => ({ id: effort, label: effortLabel(effort) }))]
 }
 
 /**

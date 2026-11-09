@@ -737,7 +737,7 @@ msgstr ""
 msgid "{museReviews, plural, one {Muse review} other {# Muse reviews}}"
 msgstr ""
 
-#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.
+#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as XHigh, marked as the one Claude Code picks on its own.
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "{name} (Claude Code’s choice)"
 msgstr ""
@@ -4194,11 +4194,6 @@ msgstr ""
 msgid "Expand sidebar"
 msgstr ""
 
-#. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
-msgid "Extra high"
-msgstr ""
-
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
@@ -4624,7 +4619,7 @@ msgid "Hide until this branch changes"
 msgstr ""
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "High"
 msgstr ""
 
@@ -5202,7 +5197,7 @@ msgid "looked at the screen"
 msgstr ""
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Low"
 msgstr ""
 
@@ -5267,12 +5262,12 @@ msgid "Mark-up tools"
 msgstr ""
 
 #. A reasoning effort level, the highest some models offer.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Max"
 msgstr ""
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Medium"
 msgstr ""
 
@@ -5302,7 +5297,7 @@ msgid "Messages you sent"
 msgstr ""
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Minimal"
 msgstr ""
 
@@ -5791,6 +5786,11 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "No working link. This question is about a prototype, and no page it names opens."
+msgstr ""
+
+#. A reasoning effort level: no reasoning before the answer.
+#: src/renderer/src/agents/effortNames.ts
+msgid "None"
 msgstr ""
 
 #: src/renderer/src/agents/SkillPicker.tsx
@@ -8846,9 +8846,9 @@ msgstr ""
 msgid "The draft is deleted and cannot be brought back."
 msgstr ""
 
-#. Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.
+#. Describes the Ultracode effort setting. Ultracode and XHigh are the names the effort control shows.
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
+msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is XHigh. A change takes effect on the thread’s next message."
 msgstr ""
 
 #. Linux: what shows a file in its folder. Read inside "Show in {manager}: {file}".
@@ -9703,7 +9703,7 @@ msgid "Ultra fast"
 msgstr ""
 
 #. The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Ultracode"
 msgstr ""
 
@@ -10532,6 +10532,11 @@ msgstr ""
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Wrote {subject}"
+msgstr ""
+
+#. A reasoning effort level, one step above High. XHigh is its name; keep it as it is.
+#: src/renderer/src/agents/effortNames.ts
+msgid "XHigh"
 msgstr ""
 
 #. Who sent a thread's last message.

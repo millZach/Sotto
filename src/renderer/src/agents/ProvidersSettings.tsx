@@ -355,7 +355,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'claude' && <div className="provider-client">
           <div>
             <h4 id={`${rowId}-ultracode`}><Trans comment="A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.">Ultracode effort</Trans></h4>
-            <p id={`${rowId}-ultracode-line`} className="tt-paragraph"><Trans comment="Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.">The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message.</Trans></p>
+            <p id={`${rowId}-ultracode-line`} className="tt-paragraph"><Trans comment="Describes the Ultracode effort setting. Ultracode and XHigh are the names the effort control shows.">The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is XHigh. A change takes effect on the thread’s next message.</Trans></p>
           </div>
           <div className="provider-client__actions">
             <select className="tt-select tt-focusable provider-client__select" data-setting="ultracode-effort" aria-labelledby={`${rowId}-ultracode`} aria-describedby={`${rowId}-ultracode-line`}
@@ -363,7 +363,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
               {ULTRACODE_EFFORTS.map(level => {
                 const name = effortLabel(level)
                 return <option key={level} value={level}>{level === DEFAULT_ULTRACODE_EFFORT
-                  ? t({ message: `${name} (Claude Code’s choice)`, comment: 'An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.' })
+                  ? t({ message: `${name} (Claude Code’s choice)`, comment: 'An option in the Ultracode effort setting. {name} is a reasoning effort level, such as XHigh, marked as the one Claude Code picks on its own.' })
                   : name}</option>
               })}
             </select>

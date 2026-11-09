@@ -338,7 +338,7 @@ describe('a provider’s models, in provider settings', () => {
     expect(field).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByRole('dialog', { name: 'Codex models' })
     expect(within(list).getByText('GPT-6.1-Sol')).toBeVisible()
-    expect(within(list).getByText('low · high')).toBeVisible()
+    expect(within(list).getByText('Low · High')).toBeVisible()
     expect(within(list).getByText('GPT-6-Codex-Mini')).toBeVisible()
     // A model the provider lists but cannot run is left out, not labelled.
     expect(within(list).queryByText('GPT-5-Retired')).toBeNull()

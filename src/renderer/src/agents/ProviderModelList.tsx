@@ -1,4 +1,5 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
+import { effortLabel } from './effortNames'
 import { ChevronDown, Search, X } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -47,7 +48,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
   const count = countModels(models.length)
   const close = (): void => setOpen(false)
   const row = (model: AgentModel): ReactNode => <li key={model.id} tabIndex={-1}>
-    <span><b>{model.name}</b>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span>
+    <span><b>{model.name}</b>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.map(effortLabel).join(' · ')}</small> : null}</span>
     {model.id === agentEntryId ? <span className="provider-model-list__tag">{t`Agent setting`}</span> : null}
   </li>
   return <div className="provider-model-list">

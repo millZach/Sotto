@@ -111,7 +111,7 @@ const WONDER = muse('Muse Wonder', ['muse-wonder', 'muse-wonder-1*'])
 /**
  * The roles, each with its defaults in order (decided October 14, 2026, from the prototype at
  * `prototype/watcher-worker-roles`). With Claude Code, Codex, Muse and Grok Build connected: Orchestrating on Opus,
- * Building and UI on Opus at Extra high, Code review on Muse Wonder Full at Extra high, Research on Haiku, Computer use on
+ * Building and UI on Opus at XHigh, Code review on Muse Wonder Full at XHigh, Research on Haiku, Computer use on
  * GPT-6 Astra with Full access, which the new-thread default still caps. With one provider, its own models.
  */
 export const WORKER_ROLES: readonly WorkerRole[] = [

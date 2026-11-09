@@ -172,7 +172,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       try { message = JSON.parse(line) } catch { continue }
       const parsed = INITIALIZED.safeParse(message)
       if (!parsed.success || parsed.data.response.request_id !== requestId) continue
-      // Ultracode follows Max on every model that offers Extra high, the models Claude Code runs it on (ADR-0148).
+      // Ultracode follows Max on every model that offers XHigh, the models Claude Code runs it on (ADR-0148).
       return parsed.data.response.response.models.map(model => ({
         id: model.value, name: versionedName(model),
         reasoningEfforts: model.supportsEffort === false ? [] : withUltracode(orderReasoningEfforts(model.supportedEffortLevels ?? [])),

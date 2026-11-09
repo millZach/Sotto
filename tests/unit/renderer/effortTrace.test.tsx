@@ -23,7 +23,7 @@ const traceMark = (value: string, options: ReturnType<typeof levels>): string | 
   const { container } = render(<EffortPicker value={value} options={options} disabled={false} onChange={() => {}} />)
   return container.querySelector('.effort-picker-anchor')!.getAttribute('data-effort-trace')
 }
-/** The harness's state with Claude's model offering Ultracode past Max, as the catalog reports a model with Extra high. */
+/** The harness's state with Claude's model offering Ultracode past Max, as the catalog reports a model with XHigh. */
 function claudeState(reasoningEffort: string): AgentState {
   const state = fixture({ reasoningEffort })
   state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])
