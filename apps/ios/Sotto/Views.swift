@@ -949,7 +949,8 @@ struct ThreadListRow: View, Equatable {
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
         lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
-            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
+            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier
+            && lhs.words(duo: false) == rhs.words(duo: false) && lhs.words(duo: true) == rhs.words(duo: true) && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
@@ -963,9 +964,15 @@ struct ThreadListRow: View, Equatable {
         case .recent(let unread): return unread ? .accent : row.failed ? .danger : .off
         }
     }
+    @Environment(\.duoLayout) private var duo
+    /// What the row says under its title.
+    private var line: String { words(duo: duo != .none) }
     /// What the row says under its title: the request it waits on, where a working thread lives, or for a recent one
-    /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it.
-    private var line: String {
+    /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it. On the Duo the
+    /// provider's mark stands for its name, so the line keeps room for the project and computer, and a waiting thread
+    /// says Question or Permission under Needs you (Zach's pick B, November 9, 2026). VoiceOver still says it all.
+    func words(duo: Bool) -> String {
+        let place = duo ? Words.placeWithoutProvider(row) : Words.place(row)
         switch kind {
         case .needs:
             if let asking {
@@ -973,13 +980,17 @@ struct ThreadListRow: View, Equatable {
                 return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
                               comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
             }
+            if duo {
+                let short = state == .needsAnswer ? String(localized: "Permission") : String(localized: "Question")
+                return "\(short) · \(row.computer)"
+            }
             return "\(state.words) · \(row.computer)"
-        case .working, .snoozed: return Words.place(row)
+        case .working, .snoozed: return place
         case .recent(let unread):
             if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
             if !row.reachable { return "\(row.status.words) · \(row.computer)" }
             if row.failed { return "\(state.words) · \(row.computer)" }
-            return Words.place(row)
+            return place
         }
     }
     /// The row as VoiceOver reads it: its title, then its state where that matters, then where it runs.
@@ -987,7 +998,7 @@ struct ThreadListRow: View, Equatable {
         let place = Words.place(row)
         let spoken: String
         switch kind {
-        case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in line } ?? place)"
+        case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in words(duo: false) } ?? place)"
         case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
         case .snoozed: spoken = "\(row.thread.title), \(wakeTime ?? ""), \(place)"
         case .recent(let unread):
@@ -1033,7 +1044,9 @@ struct ThreadListRow: View, Equatable {
         let ago = wakeTime ?? (side ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
-                Light(tone: tone, breathing: kind == .working).padding(.top, 6)
+                // On the Duo a thread that just finished carries a check in its light, so it can't pass for one at
+                // work (Zach's pick A, November 9, 2026).
+                Light(tone: tone, breathing: kind == .working, finished: unread && duo != .none).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
                         .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : side ? 2 : 1)
@@ -1290,6 +1303,10 @@ enum Words {
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
+    }
+    /// Where a thread lives for a line that already shows its provider's mark: the project, then the computer.
+    static func placeWithoutProvider(_ row: HostedThread) -> String {
+        [row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
     }
     static func duration(_ ms: Double?) -> String? {
         guard let ms, ms >= 1000 else { return nil }

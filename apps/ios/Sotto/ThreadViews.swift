@@ -1694,11 +1694,71 @@ private struct MarkdownListView: View {
     }
 }
 
-/// Code on the code surface, its language above it and Copy beside that; long lines scroll sideways.
+/// Code that wraps at the block's edge, on the Duo in every posture (Zach, November 9, 2026, the Duo design climb's round
+/// 2): each line that runs past the edge goes on under a ↪, so a wrapped line can't pass for two, and Copy still copies
+/// the code as written. The font is monospaced, so a column is one measured character wide and the breaks are worked out
+/// here, at a space where one falls in the last half of the line.
+private struct WrappedCode: View {
+    let code: String
+    @State private var width: CGFloat = 0
+    @State private var advance: CGFloat = 0
+    @Environment(\.sottoTheme) private var theme
+    struct Line: Hashable { let text: String; let continued: Bool }
+    var body: some View {
+        let columns = advance > 0 && width > 0 ? max(12, Int((width / advance).rounded(.down))) : Int.max
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(Self.lines(code, columns: columns).enumerated()), id: \.offset) { _, line in
+                Group {
+                    if line.continued {
+                        Text(verbatim: "↪ ").foregroundStyle(theme.color(.muted)) + Text(verbatim: line.text)
+                    } else {
+                        Text(verbatim: line.text.isEmpty ? " " : line.text)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(.footnote, design: .monospaced))
+        .foregroundStyle(Palette.codeInk)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+        .background(alignment: .topLeading) {
+            Text(verbatim: "MMMMMMMMMM").font(.system(.footnote, design: .monospaced)).fixedSize().hidden()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width / 10 }) { advance = $0 }
+        }
+        .textSelection(.enabled)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: code))
+    }
+    /// The code's lines cut to `columns`, a continuation two columns shorter for its ↪.
+    static func lines(_ code: String, columns: Int) -> [Line] {
+        var out: [Line] = []
+        for raw in code.replacingOccurrences(of: "\t", with: "    ").components(separatedBy: "\n") {
+            var rest = Substring(raw)
+            var continued = false
+            repeat {
+                let room = continued ? columns - 2 : columns
+                if rest.count <= room { out.append(Line(text: String(rest), continued: continued)); break }
+                var cut = rest.index(rest.startIndex, offsetBy: room)
+                if let space = rest[..<cut].lastIndex(of: " "), rest.distance(from: rest.startIndex, to: space) >= room / 2 {
+                    cut = rest.index(after: space)
+                }
+                out.append(Line(text: String(rest[..<cut]), continued: continued))
+                rest = rest[cut...]
+                continued = true
+            } while !rest.isEmpty
+        }
+        return out
+    }
+}
+
+/// Code on the code surface, its language above it and Copy beside that; long lines scroll sideways. On the Duo they wrap
+/// in every posture instead, each break marked ↪ (`WrappedCode`).
 private struct CodeBlockView: View {
     let language: String?
     let code: String
     @State private var copied = false
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
@@ -1719,14 +1779,18 @@ private struct CodeBlockView: View {
             .padding(.leading, Space.s3)
             .padding(.trailing, Space.s1)
             Rectangle().fill(Palette.hairline).frame(height: 1)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(Palette.codeInk)
-                    .lineSpacing(3)
-                    .fixedSize()
-                    .padding(Space.s3)
-                    .textSelection(.enabled)
+            if duo != .none {
+                WrappedCode(code: code).padding(Space.s3)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(code)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(Palette.codeInk)
+                        .lineSpacing(3)
+                        .fixedSize()
+                        .padding(Space.s3)
+                        .textSelection(.enabled)
+                }
             }
         }
         .background(Palette.code, in: shape)
@@ -2293,28 +2357,60 @@ private struct StepLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
     @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let _ = BenchProbe.body("StepLine")
+        Group {
+            if duo == .none {
+                line(whole: false)
+            } else {
+                // On the Duo a command that doesn't fit beside its step goes whole on a line under it, rather than cut in
+                // the middle (Zach, November 9, 2026, the Duo design climb's round 2).
+                ViewThatFits(in: .horizontal) {
+                    line(whole: true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 7) {
+                            mark.frame(width: markRoom, height: markRoom)
+                            verb
+                            Spacer(minLength: Space.s2)
+                            meta
+                        }
+                        .frame(minHeight: 26)
+                        if let subject {
+                            subjectText(subject).fixedSize(horizontal: false, vertical: true).padding(.leading, markRoom + 7)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("step-\(record.id)")
+    }
+
+    /// The step on one line; `whole` keeps the command whole, so it fits or doesn't, where elsewhere it is cut.
+    private func line(whole: Bool) -> some View {
         HStack(spacing: 7) {
             mark.frame(width: markRoom, height: markRoom)
-            Text(verbatim: record.title)
-                .font(.sotto(.caption, .semibold))
-                .foregroundStyle(verbStyle)
-                .lineLimit(1)
-                .layoutPriority(1)
+            verb
             if let subject {
-                Text(subject)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if whole { subjectText(subject).fixedSize() } else { subjectText(subject).lineLimit(1).truncationMode(.middle) }
             }
             Spacer(minLength: Space.s2)
             meta
         }
         .frame(minHeight: 26)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("step-\(record.id)")
+    }
+    private var verb: some View {
+        Text(verbatim: record.title)
+            .font(.sotto(.caption, .semibold))
+            .foregroundStyle(verbStyle)
+            .lineLimit(1)
+            .layoutPriority(1)
+    }
+    private func subjectText(_ subject: String) -> some View {
+        Text(subject)
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(Palette.muted)
     }
 
     private var running: Bool { record.status == "running" }
@@ -3647,7 +3743,8 @@ struct RequestSheet: View {
             .padding(.top, Space.s3)
             .padding(.bottom, Space.s2)
             .background { SheetBackdrop(wash: false) }
-            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            // The line runs under the folded Duo's strip too, to the sheet's edge, rather than stopping where the strip starts.
+            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
         }
     }
 }

@@ -186,7 +186,7 @@ struct NewThreadSheet: View {
         .disabled(!canCreate)
         .accessibilityIdentifier("open-new-thread")
         .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
     }
 
     // MARK: Step 1: a computer
@@ -655,7 +655,7 @@ private struct FooterHint: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .paragraphDirection()
             .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
     }
 }
 
@@ -721,7 +721,7 @@ private struct ComputerFolderPicker: View {
                 .disabled(loading || problem != nil || listing?.path == nil || !model.online(hostID))
                 .accessibilityIdentifier("use-project-folder")
                 .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-                .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
         }
     }
 

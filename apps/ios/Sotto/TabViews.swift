@@ -103,17 +103,28 @@ struct ThreadsView: View, Equatable {
         let _ = BenchPage.drawn(held: held != nil)
         SheetPage(warm: unsearched.requestCount > 0) {
             VStack(alignment: .leading, spacing: 0) {
-                heading
+                // The unfolded Duo's columns put the heading, the computer menu and search on one row, so the cards start
+                // higher (Zach's pick B, November 9, 2026).
+                if inColumns {
+                    PageHeading(String(localized: "Threads")) {
+                        ComputerMenu()
+                        searchPill.frame(maxWidth: 420)
+                    }
+                    .padding(.top, Space.s3)
+                } else {
+                    heading
+                }
                 // The computer menu shares the search row, and the sections count their own threads (#1849). At the
                 // accessibility text sizes the row can't hold both, so search goes under the menu.
-                if typeSize.isAccessibilitySize {
+                if inColumns {
+                    EmptyView()
+                } else if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: Space.s3) { ComputerMenu(); searchPill }
                         .padding(.top, Space.s3)
                 } else {
                     HStack(spacing: Space.s3) {
                         ComputerMenu()
-                        searchPill.frame(maxWidth: inColumns ? 420 : nil)
-                        if inColumns { Spacer(minLength: Space.s2) }
+                        searchPill
                     }
                     .padding(.top, Space.s3)
                 }
@@ -243,7 +254,7 @@ struct ThreadsView: View, Equatable {
         // Every computer that can't be reached shares one note (#1849).
         let unreachable = model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }
         if query.isEmpty && !unreachable.isEmpty {
-            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting })
+            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting }, oneLine: inColumns)
         }
     }
 
@@ -527,6 +538,8 @@ struct ThreadsView: View, Equatable {
 private struct ConnectionNote: View {
     let computers: [ComputerThreads]
     let trying: Bool
+    /// Over the unfolded Duo's columns the note is one line, its two sentences side by side.
+    var oneLine = false
     /// Their names, joined as the language joins a list: "Studio Mac and Desktop".
     private var names: String { ListFormatter.localizedString(byJoining: computers.map(\.name)) }
     @EnvironmentObject var model: AppModel
@@ -537,18 +550,24 @@ private struct ConnectionNote: View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         HStack(spacing: Space.s3) {
             Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                (trying ? Text("Checking \(names)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(names).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
-                    .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    // Several names hold one line, cut at its end; VoiceOver reads them all.
-                    .lineLimit(computers.count > 1 ? 1 : nil)
-                if !trying {
-                    (computers.count == 1 ? Text("Showing its last shared threads.") : Text("Showing their last shared threads."))
-                        .font(.sotto(.small)).foregroundStyle(Palette.muted)
-                        .paragraphDirection()
+            if oneLine {
+                (headline.font(.sotto(.small, .semibold)).foregroundStyle(theme.color(.ink))
+                    + (trying ? Text(verbatim: "") : Text(verbatim: " ") + showing.font(.sotto(.small)).foregroundStyle(theme.color(.muted))))
+                    .lineLimit(1)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    headline
+                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                        // Several names hold one line, cut at its end; VoiceOver reads them all.
+                        .lineLimit(computers.count > 1 ? 1 : nil)
+                    if !trying {
+                        showing
+                            .font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            .paragraphDirection()
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
             // Each computer is tried on its own, so a slow one holds up none of the others.
             Button { retries += 1; for computer in computers where computer.status != .connecting { Task { await model.connect(computer.hostID) } } } label: {
@@ -564,14 +583,20 @@ private struct ConnectionNote: View {
             .accessibilityLabel(trying ? String(localized: "Trying to reach \(names)", comment: "%@ is the computer's name.")
                                 : String(localized: "Try reaching \(names) again", comment: "%@ is the computer's name."))
         }
-        .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
+        .padding(.vertical, oneLine ? Space.s1 : Space.s3).padding(.leading, Space.s4).padding(.trailing, oneLine ? Space.s1 : Space.s3)
         .background {
             LinearGradient(colors: [trying ? theme.color(.surface) : theme.tinted(.surface, with: .danger, 0.09), theme.color(.surface)],
                            startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
         }
         .clipShape(shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
-        .padding(.top, Space.s4)
+        .padding(.top, oneLine ? Space.s3 : Space.s4)
+    }
+    private var headline: Text {
+        trying ? Text("Checking \(names)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(names).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name"))
+    }
+    private var showing: Text {
+        computers.count == 1 ? Text("Showing its last shared threads.") : Text("Showing their last shared threads.")
     }
 }
 
@@ -783,7 +808,7 @@ private struct RequestCard: View {
         if !request.supported {
             reviewOnly(String(localized: "Answer this one in the thread."))
         } else if !model.mayAnswer(asking.ref.hostID) {
-            reviewOnly(String(localized: "This iPhone can’t answer on \(row.computer) yet.", comment: "%@ is the computer's name."))
+            reviewOnly(String(localized: "Answer it on \(row.computer).", comment: "On a question card when this iPhone can't answer on the thread's computer. %@ is the computer's name."))
         } else if isPermission {
             permissionActions(enabled: ready)
         } else if let options = request.oneTapOptions {
@@ -793,16 +818,18 @@ private struct RequestCard: View {
         }
     }
 
+    /// A note on its own line, then the way into the thread on a row of its own, where the two side by side had wrapped
+    /// into a corner of the column (Zach's pick B, November 9, 2026).
     private func reviewOnly(_ note: String?) -> some View {
-        HStack(spacing: Space.s3) {
+        VStack(alignment: .leading, spacing: Space.s1) {
             if let note {
                 Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                     .paragraphDirection()
             }
-            Spacer(minLength: 0)
             NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(reviewWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
@@ -965,9 +992,11 @@ private struct WorkingCard: View {
                     .padding(.top, Space.s2)
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
                     .padding(.top, Space.s1)
-                Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Space.s3)
+                if let liveLine {
+                    Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Space.s3)
+                }
             }
             .padding(Space.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -993,16 +1022,16 @@ private struct WorkingCard: View {
             : label
     }
     /// The step running now when this iPhone holds the thread's detail; otherwise what the state says. The list
-    /// a computer shares carries no steps.
-    private var liveLine: String {
+    /// a computer shares carries no steps. Nothing when all it could say is that the agent works on its computer, which
+    /// the state and the place above already say (Zach's pick B, November 9, 2026).
+    private var liveLine: String? {
         if let detail = model.detail(for: row.ref), let step = detail.activities?.last(where: { $0.status == "running" }) {
             return [step.title, step.subject].compactMap { $0 }.joined(separator: " ")
         }
         if state == .compacting { return String(localized: "Making room in the thread’s context.") }
         if state == .waiting { return String(localized: "A background command is still running.") }
         if row.thread.status != "running", !(row.thread.backgroundWork ?? []).isEmpty { return String(localized: "Background agents are still working.") }
-        let provider = Words.provider(row.thread.providerId)
-        return String(localized: "\(provider) is working on \(row.computer).", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
+        return nil
     }
 }
 
@@ -1063,7 +1092,9 @@ private struct ThreadRow: View {
     @ViewBuilder private var link: some View {
         NavigationLink(value: ThreadRoute(ref: row.ref)) {
             HStack(alignment: .top, spacing: Space.s3) {
-                Light(tone: unread ? .accent : failed ? .danger : .off).padding(.top, 6)
+                // These rows stand only in the unfolded Duo's columns, where a thread that just finished carries a check in
+                // its light (Zach's pick A, November 9, 2026).
+                Light(tone: unread ? .accent : failed ? .danger : .off, finished: unread).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)

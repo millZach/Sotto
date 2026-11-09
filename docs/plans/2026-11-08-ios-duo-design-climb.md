@@ -52,3 +52,19 @@ Zach's picks, from `docs/prototypes/ios-duo-climb/index.html`:
 | Agents sheet | B, sections by state |
 
 Three findings were the capture, not the app: no Stop (the fixture had no stop capability), no chips and a grey Send (it had no settings or send capability), and a "blank" conversation above a sideways reply (the fixture thread is short; the picture shows it whole). Agents' third section is headed Finished rather than the prototype's Answered, and its rows keep their status words, because real rows also say Finished, Stopped and Just finished.
+
+### Round 1 (November 9, 2026)
+
+Captures: `duo-captures/round-1` (run 42541871862, after a first run showed the ••• card off-screen and the question sheet too tall). Scores: GPT-6.1 Sol 8.5, GPT-6 Astra 8.5, Claude Opus 5.5 8.5. No judge asked for a reversal.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-2.html`:
+
+| Surface | Pick |
+|---|---|
+| Code | Wrap in every posture (his own words), with the open step's whole command under it |
+| Threads overview, unfolded | B, trimmed cards and a one-row top |
+| Rows' second line | B, the mark stands for the provider and a waiting row says Question or Permission |
+| Finished light | A, a check in the light |
+| Pull request sheet | C, a fade above the dock, a tighter top and one-line statuses |
+
+Three findings were the capture: Watcher showed no way to the waiting question because every capture emptied Watcher's waiting cards (`--ui-watcher-nothing-waits`, now left off Watcher's own pictures); the pull request and Agents pictures showed Queue for Stop because they launched without `--ui-can-stop`; and the amber stroke on Watcher's reply box is the top-effort trace (ADR-0019) held still mid-lap. The folded sheets' hairline over their buttons stopped at the strip; it now meets the sheet's edge. Held for a later round, each raised by one judge: the folded Agents sheet's summary, Computers sideways, the rail's state pill, the New thread sheet's corners and long folded table cards.

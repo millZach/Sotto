@@ -43,7 +43,9 @@ struct PullRequestSheet: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.bottom, Space.s2)
-            .dockFade { SheetBackdrop(wash: false) }
+            // On the Duo the words fade out over a longer reach above Babysit, where a short one left half a line cut
+            // off over the dock (Zach's pick C, November 9, 2026).
+            .dockFade(reach: duo == .none ? Space.s4 : Space.s8) { SheetBackdrop(wash: false) }
         }
         .foregroundStyle(Palette.ink)
         .presentationDetents([.large])
@@ -237,12 +239,15 @@ private struct PartTops: PreferenceKey {
 /// The pull request as one page: its header, where it stands, then each part.
 private struct PullRequestBody: View {
     @Environment(\.duoLayout) private var duo
+    @Environment(\.sottoTheme) private var theme
     static let space = "pull-request-sheet"
     let ref: ThreadRef
     let detail: PullRequestDetail
     @State private var showPassed = false
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s5) {
+        // On the Duo the top sits closer and each status is one line, so Summary starts where it can be read without
+        // scrolling (Zach's pick C, November 9, 2026).
+        VStack(alignment: .leading, spacing: duo == .none ? Space.s5 : Space.s3) {
             heading
             standing
             part(.summary, aside: nil) { summary }
@@ -254,7 +259,7 @@ private struct PullRequestBody: View {
     }
 
     private var heading: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: duo == .none ? Space.s2 : Space.s1 + 2) {
             HStack(spacing: Space.s2) {
                 StatePill(state: detail.shownState)
                 Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
@@ -288,14 +293,21 @@ private struct PullRequestBody: View {
                 if index > 0 { Hairline() }
                 HStack(alignment: .top, spacing: Space.s3) {
                     ToneMark(tone: line.tone, size: 18)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                        Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    if duo == .none {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                            Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        (Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(theme.color(.ink))
+                            + Text(verbatim: " · ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
+                            + Text(line.detail).font(.sotto(.small)).foregroundStyle(theme.color(.muted)))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                .padding(.horizontal, Space.s4).padding(.vertical, duo == .none ? Space.s3 : Space.s2)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("pull-request-standing-\(index)")
             }

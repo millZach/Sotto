@@ -31,8 +31,10 @@ import UIKit
     private var unfolded: Bool { posture != "folded" }
 
     private func launch(_ extra: [String], light: Bool = false) {
-        var arguments = ["--ui-fixture", "--reset-ui-preferences", "--ui-still", "--ui-watcher", "--ui-watcher-nothing-waits",
-                         "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + extra
+        // Watcher's own pictures keep the cards that wait on the user, as the app shows them; elsewhere none waits.
+        let waits = extra.contains("--ui-open-watcher") ? [] : ["--ui-watcher-nothing-waits"]
+        var arguments = ["--ui-fixture", "--reset-ui-preferences", "--ui-still", "--ui-watcher"] + waits
+            + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + extra
         if light { arguments += ["--ui-light"] }
         app.launchArguments = arguments
         app.launch()
@@ -201,7 +203,7 @@ import UIKit
 
     /// The pull request sheet from the ••• menu.
     func testPullRequest() {
-        launch(["--ui-pull-request", "--ui-open-thread", "iphone"])
+        launch(["--ui-pull-request", "--ui-open-thread", "iphone", "--ui-can-stop"])
         _ = byID("thread-reply").waitForExistence(timeout: 20)
         if tapIfThere(app.buttons["thread-actions"]) {
             shot("thread-menu-pull-request")
@@ -218,7 +220,7 @@ import UIKit
 
     /// Agents: the thread's delegated threads and agents.
     func testAgents() {
-        launch(["--ui-agents", "--ui-open-thread", "iphone"])
+        launch(["--ui-agents", "--ui-open-thread", "iphone", "--ui-can-stop"])
         _ = byID("thread-reply").waitForExistence(timeout: 20)
         dismissSheet()
         if tapIfThere(app.buttons["thread-agents"]) {

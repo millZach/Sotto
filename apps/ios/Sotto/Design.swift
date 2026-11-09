@@ -398,12 +398,15 @@ struct PhoneDisplayPreferences: ViewModifier {
 // MARK: - Lights
 
 /// A small status light with a soft halo. Accent for working or online, warning for needs you, danger for
-/// failed or unreachable, an empty ring for quiet. A breathing light slows to still under Reduce Motion.
+/// failed or unreachable, an empty ring for quiet. A breathing light slows to still under Reduce Motion. A finished light
+/// is a larger disc with a check in it, so a thread that just finished can't pass for one at work; it keeps the halo and
+/// still takes only the dot's room.
 struct Light: View {
     enum Tone { case accent, warning, danger, off }
     let tone: Tone
     var size: CGFloat = 8
     var breathing = false
+    var finished = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -411,6 +414,22 @@ struct Light: View {
         Group {
             if tone == .off {
                 Circle().strokeBorder(theme.color(.muted), lineWidth: 1.5)
+            } else if finished {
+                let disc = max(size * 1.75, 14)
+                ZStack {
+                    Circle().fill(color)
+                    Image(systemName: "checkmark").font(.system(size: disc * 0.55, weight: .heavy)).foregroundStyle(theme.color(.onAccent))
+                }
+                .frame(width: disc, height: disc)
+                .background {
+                    if glow.shows {
+                        let reach = Light.haloRadius(disc, glow)
+                        Circle()
+                            .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
+                                                 startRadius: disc * 0.3, endRadius: reach))
+                            .frame(width: reach * 2, height: reach * 2)
+                    }
+                }
             } else if moving {
                 // The same dot and halo drawn by Core Animation, which breathes it without the app's help.
                 BreathingLight(color: theme.rgb(role), glow: glow)
