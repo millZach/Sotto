@@ -21,7 +21,7 @@ Zach saw both in the prototype, with what `localhost`, a sleeping laptop, a miss
 
 ## Decision
 
-**1. The browser runs on the host.** The host's Sotto finds Chrome, Chromium or Edge where each installs itself on that system and runs it headless, with no window on the host's screen (Zach's pick). Sotto adds no npm dependency and nothing native to the host archive: it speaks the DevTools Protocol over `--remote-debugging-pipe`, through Node's own child process pipes, so the browser opens no port. Each workspace gets a profile of its own in a temporary folder that Sotto deletes when the browser closes, as this computer's browser keeps nothing between sessions. Page permission requests (camera, location, notifications) are refused, as on this computer.
+**1. The browser runs on the host.** The host's Sotto finds Chrome, Chromium or Edge where each installs itself on that system and runs it headless, with no window on the host's screen (Zach's pick). Sotto adds no npm dependency and nothing native to the host archive: it speaks the DevTools Protocol over `--remote-debugging-pipe`, through Node's own child process pipes, so the browser opens no port. Each workspace gets a browser context of its own, kept in memory, inside one temporary profile that Sotto deletes when the browser closes, as this computer's browser keeps nothing between sessions. Page permission requests (camera, location, notifications) are refused, as on this computer.
 
 `localhost` is the host's, so a dev server the agent starts there opens. The agent keeps browsing while no desktop is connected.
 
