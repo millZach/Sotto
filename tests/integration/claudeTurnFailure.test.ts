@@ -110,6 +110,8 @@ describe('the error a failed Claude turn leaves', () => {
     expect(claudeTurnFailure(frame, 'rate_limit', reply)).toBe(`${USAGE} Send again after it resets at 10am (America/Los_Angeles).`)
     // Only read for a usage limit: any other failure keeps its own sentence.
     expect(claudeLimitStop(frame, 'overloaded', now, reply)).toBeUndefined()
+    // A classification Sotto does not know leaves the reason to the reply's own words.
+    expect(claudeLimitStop(frame, 'unknown', now, reply)).toEqual({ resetsAt: '2026-11-09T18:00:00.000Z' })
   })
 
   it('puts the reset its error reply named on the failed turn, when the result names none', async () => {

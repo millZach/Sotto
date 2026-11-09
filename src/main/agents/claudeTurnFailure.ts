@@ -43,7 +43,7 @@ const TEXT: readonly (readonly [Reason, RegExp])[] = [
   ['busy', /overloaded|internal server error|server error|service unavailable|bad gateway|gateway timeout|temporarily unavailable/iu],
 ]
 
-function reasonOf(frame: ClaudeFrame, assistantError: string | undefined, text: string): Reason | undefined {
+function reasonOf(frame: ClaudeFrame, assistantError: string | undefined, text: string, errorReply?: string): Reason | undefined {
   if (frame.subtype === 'error_max_turns' || frame.terminal_reason === 'max_turns') return 'step-limit'
   if (frame.subtype === 'error_max_budget_usd' || frame.terminal_reason === 'budget_exhausted') return 'spending-limit'
   if (frame.terminal_reason === 'prompt_too_long') return 'too-long'
@@ -54,13 +54,13 @@ function reasonOf(frame: ClaudeFrame, assistantError: string | undefined, text: 
   if (status === 401 || status === 403) return 'sign-in'
   if (status === 404) return 'model'
   if (status !== undefined && status >= 500) return 'busy'
-  return TEXT.find(([, pattern]) => pattern.test(text))?.[0]
+  // The result's own words first, then the error reply Claude Code made of the stop, when the result says nothing known.
+  return TEXT.find(([, pattern]) => pattern.test(text))?.[0] ?? (errorReply === undefined ? undefined : TEXT.find(([, pattern]) => pattern.test(errorReply))?.[0])
 }
 
 /**
  * When Claude Code's text says a usage limit resets: "resets 3pm (America/Chicago)", "resets at 5:40pm", or, for a reset on
- * another day, "resets Nov 11, 5am (America/Los_Angeles)". The groups are the month and day when it names a day, the
- * hour, the minutes, a or p, and the zone.
+ * another day, "resets Nov 11, 5am (America/Los_Angeles)".
  */
 const SPOKEN_RESET = /\bresets?\s+(?:at\s+)?(?:([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s?([ap])m(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?/iu
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
@@ -71,20 +71,44 @@ function monthOf(name: string): number | undefined {
   return at < 0 ? undefined : at
 }
 
+/** A reset Claude Code spoke of, read whole: its wall time, its day when it named one, and its zone when it named one. */
+interface SpokenReset {
+  /** The time as Claude Code wrote it, such as "5am" or "5:40pm". */
+  readonly clock: string
+  readonly hour: number
+  readonly minute: number
+  /** The day as Claude Code wrote it, such as "Nov 11", with its month from 0. */
+  readonly day?: { readonly said: string; readonly month: number; readonly date: number }
+  readonly zone?: string
+}
+/** The reset Claude Code's text speaks of, or undefined when it names none, or a time, day or month that cannot be. */
+function spokenReset(text: string): SpokenReset | undefined {
+  const said = SPOKEN_RESET.exec(text)
+  if (!said) return undefined
+  const [, monthName, date, clock, minutes, meridiem, zone] = said
+  const twelve = Number(clock), minute = minutes === undefined ? 0 : Number(minutes)
+  if (twelve < 1 || twelve > 12 || minute > 59) return undefined
+  const hour = twelve % 12 + (meridiem!.toLowerCase() === 'p' ? 12 : 0)
+  const written = `${clock}${minutes === undefined ? '' : `:${minutes}`}${meridiem!.toLowerCase()}m`
+  if (monthName === undefined) return { clock: written, hour, minute, ...zone ? { zone } : {} }
+  const month = monthOf(monthName), day = Number(date)
+  if (month === undefined || day < 1 || day > 31) return undefined
+  return { clock: written, hour, minute, day: { said: `${monthName} ${date}`, month, date: day }, ...zone ? { zone } : {} }
+}
+
 /** When a usage limit resets, if Claude Code's text says: a local time, or the epoch seconds it has appended after a `|`. */
 function resetTime(text: string): string | undefined {
   const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
   if (epoch) return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(Number(epoch) * 1000))
-  const said = SPOKEN_RESET.exec(text)
-  if (!said || said[1] !== undefined && monthOf(said[1]) === undefined) return undefined
-  const clock = `${said[3]}${said[4] === undefined ? '' : `:${said[4]}`}${said[5]!.toLowerCase()}m`
+  const reset = spokenReset(text)
   // As the sentence goes on after "resets at": "5am on Nov 11 (America/Los_Angeles)".
-  return [clock, said[1] === undefined ? undefined : `on ${said[1]} ${said[2]}`, said[6] ? `(${said[6]})` : undefined].filter(Boolean).join(' ')
+  return reset && [reset.clock, reset.day ? `on ${reset.day.said}` : undefined, reset.zone ? `(${reset.zone})` : undefined].filter(Boolean).join(' ')
 }
 
 /**
  * The text of an assistant message that stands for a failed API call, such as "You’ve hit your weekly limit · resets Nov 11,
- * 5am (America/Los_Angeles)": only read for when a limit resets, never shown from here.
+ * 5am (America/Los_Angeles)": only read to tell the reason when nothing else does and when a limit resets, never shown
+ * from here.
  */
 export function claudeErrorReplyText(frame: ClaudeFrame): string | undefined {
   const message = frame.message
@@ -110,7 +134,7 @@ export function claudeTurnAborted(frame: ClaudeFrame): boolean {
 export function claudeTurnFailure(frame: ClaudeFrame, assistantError?: string, errorReply?: string): string | null {
   if (claudeTurnAborted(frame)) return null
   const text = errorText(frame)
-  const reason = reasonOf(frame, assistantError, text)
+  const reason = reasonOf(frame, assistantError, text, errorReply)
   if (reason === undefined) return CLAUDE_TURN_FAILED
   if (reason !== 'usage-limit') return SENTENCES.get(reason)!
   return claudeUsageLimitSentence(resetTime(text) ?? (errorReply === undefined ? undefined : resetTime(errorReply)))
@@ -154,22 +178,17 @@ function zonedInstant(year: number, month: number, day: number, hour: number, mi
 function resetInstant(text: string, now: number): string | undefined {
   const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
   if (epoch) return new Date(Number(epoch) * 1000).toISOString()
-  const said = SPOKEN_RESET.exec(text)
-  if (!said) return undefined
-  const clock = Number(said[3]), minute = said[4] === undefined ? 0 : Number(said[4])
-  if (clock < 1 || clock > 12 || minute > 59) return undefined
-  const hour = clock % 12 + (said[5]!.toLowerCase() === 'p' ? 12 : 0)
-  if (said[1] === undefined) {
-    const at = nextWallTime(hour, minute, said[6], now)
+  const reset = spokenReset(text)
+  if (!reset) return undefined
+  if (!reset.day) {
+    const at = nextWallTime(reset.hour, reset.minute, reset.zone, now)
     return at === undefined ? undefined : new Date(at).toISOString()
   }
-  const month = monthOf(said[1]), day = Number(said[2])
-  if (month === undefined || day < 1 || day > 31) return undefined
   let year: number
-  try { year = new Date(now + zoneOffsetMs(said[6], now)).getUTCFullYear() } catch { return undefined }
+  try { year = new Date(now + zoneOffsetMs(reset.zone, now)).getUTCFullYear() } catch { return undefined }
   // A day already well past this year is next year's, as "Jan 2" said on December 30 is.
   for (const candidate of [year, year + 1]) {
-    const at = zonedInstant(candidate, month, day, hour, minute, said[6])
+    const at = zonedInstant(candidate, reset.day.month, reset.day.date, reset.hour, reset.minute, reset.zone)
     if (at === undefined) return undefined
     if (at > now - 24 * 60 * 60_000) return new Date(at).toISOString()
   }
@@ -189,7 +208,7 @@ function errorText(frame: ClaudeFrame): string {
 export function claudeLimitStop(frame: ClaudeFrame, assistantError?: string, now: number = Date.now(), errorReply?: string): TurnLimitStop | undefined {
   if (claudeTurnAborted(frame)) return undefined
   const text = errorText(frame)
-  if (reasonOf(frame, assistantError, text) !== 'usage-limit') return undefined
+  if (reasonOf(frame, assistantError, text, errorReply) !== 'usage-limit') return undefined
   const resetsAt = resetInstant(text, now) ?? (errorReply === undefined ? undefined : resetInstant(errorReply, now))
   return resetsAt ? { resetsAt } : {}
 }

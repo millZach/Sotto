@@ -233,6 +233,29 @@ describe('restarting threads a usage limit stopped', () => {
     expect(still.restart.scheduled('workshop')).toBeDefined()
   })
 
+  it('keeps a saved restart for a thread first read with no turn, as Claude Code’s are before their history loads', async () => {
+    const at = new Date(START + 30 * 60_000).toISOString(), stoppedAt = new Date(START - 60_000).toISOString()
+    const saved = { version: 1, threads: [{ threadId: 'workshop', provider: 'claude', stoppedAt, at, restarts: 0, turnId: 'workshop-1' }] }
+    const f = await fixture({ saved, threads: [thread('workshop', { status: 'idle', lastTurn: undefined })] })
+    expect(f.restart.scheduled('workshop')?.at).toBeDefined()
+    expect(f.live()).toHaveLength(1)
+    // Its history loads on the stopped turn: still scheduled.
+    f.update('workshop', limitStop('workshop', at))
+    expect(f.restart.scheduled('workshop')?.at).toBeDefined()
+  })
+
+  it('drops a no-reset card an older build saved once its thread is first read on a turn that is not a limit’s stop', async () => {
+    const stoppedAt = new Date(START - 60_000).toISOString(), at = new Date(START + 30 * 60_000).toISOString()
+    const saved = { version: 1, threads: [{ threadId: 'card', provider: 'claude', stoppedAt, restarts: 0 }, { threadId: 'stopped', provider: 'claude', stoppedAt, restarts: 0 },
+      { threadId: 'timed', provider: 'claude', stoppedAt, at, restarts: 0 }, { threadId: 'loading', provider: 'claude', stoppedAt, restarts: 0 }] }
+    const f = await fixture({ saved, threads: [thread('card', { status: 'idle', lastTurn: { id: 'card-2', status: 'completed' } }), thread('stopped', limitStop('stopped')),
+      thread('timed', { status: 'idle', lastTurn: { id: 'timed-2', status: 'completed' } }), thread('loading', { status: 'idle', lastTurn: undefined })] })
+    expect(['card', 'stopped', 'timed', 'loading'].map(id => f.restart.scheduled(id) !== undefined)).toEqual([false, true, true, true])
+    // Once its history loads, the one read with no turn is judged the same way.
+    f.update('loading', { lastTurn: { id: 'loading-2', status: 'completed' } })
+    expect(f.restart.scheduled('loading')).toBeUndefined()
+  })
+
   it('drops the restarts a provider named no reset for once a turn of that provider finishes, and leaves timed ones and other providers', async () => {
     const reset = new Date(START + 60 * 60_000).toISOString()
     const f = await fixture({ threads: [thread('a'), thread('b'), thread('timed'), thread('devin', { providerId: 'devin' }), thread('worker')] })

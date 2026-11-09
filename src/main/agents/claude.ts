@@ -482,10 +482,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly configurationLaunches = new Set<string>()
   /** The error each thread's failed turn put on the provider, so that thread's next finished turn can take it down again. */
   private readonly turnFailures = new Map<string, string>()
-  /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
-  private readonly assistantErrors = new Map<string, string>()
-  /** The text of the turn's last error reply, read only for when a usage limit resets (`claudeTurnFailure.ts`). */
-  private readonly assistantErrorTexts = new Map<string, string>()
+  /**
+   * The classification on a turn's last assistant message, when Claude Code gave one for a failed API call, with that
+   * reply's text, read only to tell the reason and when a usage limit resets (`claudeTurnFailure.ts`) and never shown.
+   */
+  private readonly assistantErrors = new Map<string, { readonly kind: string; readonly text?: string }>()
   private readonly logOrigins = new Map<string, Set<string>>()
   /** Each thread's origins by the digest of the text Sotto delivered with notes, keyed by the origin list it indexes. */
   private readonly deliveredIndex = new WeakMap<Alias['origins'], OriginIndex>()
@@ -686,7 +687,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await this.usage.load()
     const [account, executable, aliases, projects] = await Promise.all([this.client.status(), this.client.findExecutable(), this.readAliases(), this.projectStore.read()])
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.assistantErrorTexts.clear(); this.state.models = markLegacyModels(account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
+    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.state.models = markLegacyModels(account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
       ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) })))
     delete this.state.problem; delete this.state.account
     if (!account.ready || !executable) {
@@ -2009,9 +2010,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (frame.type === 'assistant') {
       if (typeof frame.error === 'string' && !frame.parent_tool_use_id) {
-        this.assistantErrors.set(id, frame.error)
         const said = claudeErrorReplyText(frame)
-        if (said === undefined) this.assistantErrorTexts.delete(id); else this.assistantErrorTexts.set(id, said)
+        this.assistantErrors.set(id, { kind: frame.error, ...said === undefined ? {} : { text: said } })
       }
       this.message(id, frame, false)
     }
@@ -2052,9 +2052,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const answersCompaction = origin !== undefined && alias.compactInputIds?.at(-1) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
-      const errorReply = this.assistantErrorTexts.get(id)
-      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id), errorReply) : null
-      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, this.assistantErrors.get(id), undefined, errorReply) : undefined
+      const assistantError = this.assistantErrors.get(id)
+      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, assistantError?.kind, assistantError?.text) : null
+      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, assistantError?.kind, undefined, assistantError?.text) : undefined
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
@@ -2067,7 +2067,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // turn has not begun, so it has no record to settle here.
         if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)
       }
-      this.assistantErrors.delete(id); this.assistantErrorTexts.delete(id)
+      this.assistantErrors.delete(id)
       // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
       // and so does a steer the turn ended before reading or was cut for.
       const steers = [...this.steers.values()].filter(steer => steer.threadId === id)
@@ -2554,7 +2554,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.nativeTakeovers.delete(id); this.completedOrigins.delete(id); this.assistantBlocks.delete(id)
     this.configuring.delete(id); this.configurationGuards.delete(id); this.configurationLaunches.delete(id)
     this.dispatching.delete(id); this.outdated.delete(id); this.savedCursors.delete(id)
-    this.turnFailures.delete(id); this.assistantErrors.delete(id); this.assistantErrorTexts.delete(id); this.usageGroups.delete(id)
+    this.turnFailures.delete(id); this.assistantErrors.delete(id); this.usageGroups.delete(id)
     this.restoredHistory.delete(id)
     this.messageLog.forget(id)
     this.threads.delete(id)

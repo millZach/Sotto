@@ -253,8 +253,12 @@ export class LimitRestart {
     const unsaid = finished && thread.providerId ? this.dropUnsaid(thread.providerId, thread.id) : false
     const record = this.records.get(thread.id)
     if (!record || this.delivering.has(thread.id)) return unsaid
-    // Before its restart, a turn other than the one recorded is someone's send, even one first read after a start.
-    if (!record.sent && record.turnId !== undefined && turn?.id !== record.turnId) { this.drop(thread.id); return true }
+    // Before its restart, a turn other than the one recorded is someone's send, even one first read after a start. A thread
+    // read with no turn at all, as Claude Code's are before their history loads, says nothing either way.
+    if (!record.sent && turn !== undefined && (record.turnId !== undefined ? turn.id !== record.turnId
+      // A record from an older build names no turn: one with no reset, first read with a turn that is not a limit's stop, is
+      // the card that outlived its reason, so it goes too (November 9, 2026).
+      : record.at === undefined && !before && !(turn.status === 'failed' && turn.limitStop))) { this.drop(thread.id); return true }
     // A turn of the thread's own finished: it carried on, and its restarts in a row start again from none.
     if (finished) { this.drop(thread.id); return true }
     // Before its restart, a turn running is someone else's: the user, Watcher or the provider carried it on.
