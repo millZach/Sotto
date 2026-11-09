@@ -39,7 +39,7 @@ struct WatcherView: View {
             .onDisappear { model.watcherOnScreen = false }
             // Another computer's Watcher opens on its own conversation, with nothing of this one's open over it.
             .onChange(of: hostID) { _, _ in stopPreview = nil; reviewing = nil }
-            .sheet(item: $reviewing) { card in
+            .duoSheet(item: $reviewing, wash: true) { card in
                 RequestSheet(place: card.place, request: card.request).requestSheetDetents()
             }
             // Stop Watcher’s threads asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26
@@ -810,6 +810,7 @@ private struct WatcherConversationPane: View {
     @ViewBuilder private func cards(_ page: WatcherPage) -> some View {
         let workers = page.needsYou.filter { !page.isOwn($0) }
         let own = page.needsYou.filter { page.isOwn($0) }
+        let named = namedJustAbove(page, workers.first)
         ForEach(workers, id: \.key) { card in
             waiting(card.key) {
                 VStack(alignment: .leading, spacing: Space.s2) {
@@ -825,13 +826,23 @@ private struct WatcherConversationPane: View {
                         }
                         .accessibilityElement(children: .combine)
                     }
-                    WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
+                    WatcherRequestCard(hostID: hostID, card: card, own: false, review: review, startsAtQuestion: card.key == named)
                 }
             }
         }
         ForEach(own, id: \.key) { card in
             waiting(card.key) { WatcherRequestCard(hostID: hostID, card: card, own: true, review: review) }
         }
+    }
+    /// The worker's card whose thread Watcher's words just above it name, so the card need not name it again: on the Duo,
+    /// a question card straight after Watcher's last message, with nothing set aside or being sent between (Zach's pick A,
+    /// November 9, 2026, round 4).
+    private func namedJustAbove(_ page: WatcherPage, _ first: WatcherPage.RequestCard?) -> String? {
+        guard duo != .none, let first, first.request.kind != "permission", model.watcherSending[hostID] == nil,
+              (model.watcherSetAside[hostID] ?? []).isEmpty,
+              let last = page.conversation.messages.last, last.role != "user",
+              !first.title.isEmpty, last.text.localizedCaseInsensitiveContains(first.title) else { return nil }
+        return first.key
     }
     /// Whether this iPhone can answer a worker's card where it is now.
     private func answerableHere(_ card: WatcherPage.RequestCard) -> Bool {
@@ -1224,6 +1235,9 @@ private struct WatcherRequestCard: View {
     let card: WatcherPage.RequestCard
     let own: Bool
     let review: (ReviewedCard) -> Void
+    /// Watcher's words just above name the thread, so the card starts at the question, with the thread's marks beside
+    /// its tag; VoiceOver still reads the thread's name and where it runs.
+    var startsAtQuestion = false
     @Environment(\.duoLayout) private var duo
     @State private var picked: String?
     @State private var answered = 0
@@ -1283,9 +1297,15 @@ private struct WatcherRequestCard: View {
             HStack(spacing: Space.s2) {
                 Light(tone: .warning)
                 Text(tag).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.warningText)
+                if startsAtQuestion {
+                    Text(verbatim: "·").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    ProviderMarks(providerID: card.provider, watched: model.watchedByWatcher(card.target.ref))
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted)
+                }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 18)
+            if !startsAtQuestion {
             Group {
                 if own {
                     HStack(spacing: Space.s2) {
@@ -1301,10 +1321,11 @@ private struct WatcherRequestCard: View {
             .padding(.top, Space.s2)
             PlaceLine(providerID: card.provider, watched: !own && model.watchedByWatcher(card.target.ref), text: whereItRuns)
                 .padding(.top, Space.s1)
+            }
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .paragraphDirection()
-                .padding(.top, Space.s3)
+                .padding(.top, startsAtQuestion ? Space.s2 : Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
                     .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
@@ -1327,6 +1348,7 @@ private struct WatcherRequestCard: View {
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .modifier(SpokenWhenTrimmed(trimmed: startsAtQuestion, words: "\(tag), \(card.title), \(whereItRuns), \(ask)"))
         .accessibilityIdentifier(own ? "watcher-own-card" : "watcher-card-\(card.target.threadId)")
     }
 
@@ -2022,5 +2044,14 @@ struct WatchToast: View {
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85), value: model.watchNotice)
+    }
+}
+
+/// A card that shows less than it says: VoiceOver reads the whole of it, its thread's name and where it runs included.
+private struct SpokenWhenTrimmed: ViewModifier {
+    let trimmed: Bool
+    let words: String
+    @ViewBuilder func body(content: Content) -> some View {
+        if trimmed { content.accessibilityLabel(Text(verbatim: words)) } else { content }
     }
 }

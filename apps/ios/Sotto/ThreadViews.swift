@@ -87,7 +87,7 @@ struct ThreadView: View {
             Task { if model.selected == ref { await model.select(nil) } }
         }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
-        .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
+        .duoSheet(item: $open, wash: true, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
             RequestSheet(ref: ref, request: request).requestSheetDetents().overThread()
         }
         .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
@@ -254,8 +254,13 @@ struct ThreadStatePill: View {
                     // One word stays on one line, shrinking rather than breaking, in every language.
                     Text(railWord).lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
                     // The rail shows how long it has been at it folded too, as it does unfolded (Zach's pick A,
-                    // November 9, 2026).
-                    if reachable, state.workInProgress, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
+                    // November 9, 2026), in minutes, "12m", where "12m 14s" filled the tile to its edges (Zach's pick B,
+                    // round 4). VoiceOver reads the state alone, as before.
+                    if reachable, state.workInProgress, let since {
+                        TimelineView(.periodic(from: Date(), by: 15)) { context in
+                            Text(Words.runShort(context.date.timeIntervalSince(since))).lineLimit(1).minimumScaleFactor(0.6)
+                        }
+                    }
                 }
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                 .foregroundStyle(foreground)
@@ -415,7 +420,12 @@ struct ThreadMenu: View {
                 .buttonStyle(PressStyle())
                 .onGeometryChange(for: Bool.self, of: { $0.frame(in: .global).midX < 240 }) { railOnLeft = $0 }
                 .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: railOnLeft ? .leading : .trailing) {
+                    // A solid card a step off the sheets, like Sotto's cards, where iOS's glass showed a moving light that
+                    // read as a smudge, and the thread's reply box steps away while it is open, as it does beside a sheet
+                    // (Zach's pick A, November 9, 2026, round 4).
                     railCard(chips).presentationCompactAdaptation(.popover)
+                        .presentationBackground(Palette.raised)
+                        .overThread()
                 }
             } else {
                 Menu { actions } label: {
@@ -433,7 +443,7 @@ struct ThreadMenu: View {
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
-        .sheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest) {
             if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
                 PullRequestSheet(ref: ref, url: url, number: number).overThread()
             }
@@ -478,7 +488,7 @@ struct ThreadMenu: View {
                     .padding(.bottom, Space.s1)
                     .accessibilityAddTraits(.isHeader)
                 fact("laptopcomputer") { Text(verbatim: place) }
-                if let branch = chips.branch { fact("arrow.triangle.branch") { Text(verbatim: branch) } }
+                if let branch = chips.branch { fact("arrow.triangle.branch") { Text(verbatim: Self.breaksAtSlashes(branch)) } }
                 if let changes = chips.changes {
                     fact("plus.forwardslash.minus") {
                         HStack(spacing: Space.s1) {
@@ -506,6 +516,13 @@ struct ThreadMenu: View {
         .frame(width: 292, alignment: .leading)
         // At the largest text sizes the card can outgrow the screen; then it scrolls.
         return ViewThatFits(in: .vertical) { card; ScrollView { card } }
+    }
+
+    /// A branch's name for a line that wraps: it may break after a slash, never after a hyphen, so
+    /// "feat/frosted-window-and-pane-terminal" no longer reads as a hyphenated word cut in two. A zero-width space after
+    /// each slash offers the break, and a word joiner after each hyphen holds it (Zach's pick A, round 4).
+    static func breaksAtSlashes(_ branch: String) -> String {
+        branch.replacingOccurrences(of: "/", with: "/\u{200B}").replacingOccurrences(of: "-", with: "-\u{2060}")
     }
 
     private func fact<Content: View>(_ icon: String, @ViewBuilder words: () -> Content) -> some View {
@@ -934,7 +951,7 @@ private struct Conversation: View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
-                        opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
+                        opensFiles: model.opensSentFiles(ref.hostID), providerID: model.thread(ref)?.providerId) { viewing = $0 }.equatable()
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
@@ -1141,7 +1158,7 @@ private struct ThreadHero: View, Equatable {
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(edgeReader(\.minY, topMoved))
-        .sheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest) {
             if let pullRequest, let number = chips.pullRequest?.number {
                 PullRequestSheet(ref: ref, url: pullRequest.url, number: number).overThread()
             }
@@ -1368,11 +1385,15 @@ private struct MessageView: View, Equatable {
     let ref: ThreadRef
     /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
     let opensFiles: Bool
+    /// The provider's ID, for its mark beside its name on the Duo.
+    var providerID: String? = nil
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
+    @Environment(\.duoLayout) private var duo
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
+            && a.providerID == b.providerID
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")
@@ -1415,12 +1436,20 @@ private struct MessageView: View, Equatable {
         VStack(alignment: .leading, spacing: Space.s2) {
             if showsWho {
                 HStack(spacing: Space.s2) {
-                    Text(String(provider.prefix(1)))
-                        .font(.figtree(10, .caption2, .bold))
-                        .foregroundStyle(Palette.accentText)
-                        .frame(width: 18, height: 18)
-                        .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .accessibilityHidden(true)
+                    // On the Duo the provider's own mark stands beside its name, as on the rows, cards and Agents, where
+                    // a lettered tile read like a placeholder (Zach's pick, November 9, 2026, round 4).
+                    if duo != .none, ProviderLogo.asset(providerID) != nil {
+                        ProviderLogo(providerID: providerID)
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Text(String(provider.prefix(1)))
+                            .font(.figtree(10, .caption2, .bold))
+                            .foregroundStyle(Palette.accentText)
+                            .frame(width: 18, height: 18)
+                            .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .accessibilityHidden(true)
+                    }
                     Text(provider).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
             }
@@ -3189,7 +3218,7 @@ private struct RequestSheetDetents: ViewModifier {
 
 /// How tall a request sheet's words, choices and buttons stand. On the Duo half the screen cut the third choice off with
 /// a band of nothing under the buttons, so the sheet opens exactly this tall (Zach's pick A, November 8, 2026).
-private struct RequestSheetFit: PreferenceKey {
+struct RequestSheetFit: PreferenceKey {
     static let defaultValue: CGFloat? = nil
     static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = nextValue() ?? value }
 }
@@ -3205,10 +3234,13 @@ struct RequestSheet: View {
     /// Watched so a card in Watcher's page that is answered or changes elsewhere shows here: Watcher's page publishes on
     /// its own store.
     @EnvironmentObject var watcherStore: WatcherStore
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
     @Environment(\.duoLayout) private var duo
     let place: RequestPlace
     let request: AgentRequest
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     /// The height of what scrolls and of the buttons under it, for the Duo's fit.
     @State private var wordsHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
@@ -3228,6 +3260,10 @@ struct RequestSheet: View {
     private var computer: String { model.name(place.hostID) }
     /// The request as the computer holds it now; nil once it is answered or replaced.
     private var current: AgentRequest? { model.waitingRequest(request.id, at: place) }
+    /// Folded, how wide the strip under the clock is. Only the heading keeps clear of it; the choices and the buttons run
+    /// to the sheet's own margin below the clock, where the strip was 95 points of nothing (Zach's pick A, November 9,
+    /// 2026, round 4).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
 
     var body: some View {
         ScrollView {
@@ -3246,8 +3282,10 @@ struct RequestSheet: View {
             .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
         }
         .scrollDismissesKeyboard(.interactively)
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) { footer }.onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { footerHeight = $0 }
+                .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         }
         // iOS adds the bottom safe area to a height detent itself, so it isn't counted here.
         .preference(key: RequestSheetFit.self, value: duo == .none || wordsHeight == 0 ? nil : wordsHeight + footerHeight)
@@ -3285,6 +3323,7 @@ struct RequestSheet: View {
                     .accessibilityIdentifier("request-headline")
             }
         }
+        .padding(.trailing, foldedStrip)
         .accessibilityElement(children: .contain)
         if !permission, count > 0, let explanation = RequestText.explanation(current) {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)

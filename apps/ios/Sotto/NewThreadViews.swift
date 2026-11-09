@@ -6,7 +6,10 @@ import SottoCore
 /// whole box opens its choices.
 struct NewThreadSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     let opened: (ThreadRef) -> Void

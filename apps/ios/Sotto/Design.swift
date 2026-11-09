@@ -1348,6 +1348,8 @@ private struct GlowLayer: View {
     let period: Double?
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         Group {
             if !glow.shows {
@@ -1368,8 +1370,11 @@ private struct GlowLayer: View {
     }
     private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
     /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
-    private var blur: CGFloat { CGFloat(glow.radius(18)) }
-    private var drop: CGFloat { CGFloat(glow.radius(10)) }
+    private var blur: CGFloat { CGFloat(glow.radius(18)) * reach }
+    private var drop: CGFloat { CGFloat(glow.radius(10)) * reach }
+    /// On the Duo in light, a glow reaches a third as far at the same strength, a tighter ring that no longer washes
+    /// across the gutters onto the next card; dark keeps the full reach (Zach's pick B, November 9, 2026, round 4).
+    private var reach: CGFloat { duo != .none && scheme == .light ? 1.0 / 3 : 1 }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
@@ -1743,6 +1748,13 @@ private struct PillBody: View {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
+    /// On the Duo in light, a primary button that can't be pressed yet, such as Send answer before a choice, is the soft
+    /// grey of Not now with muted words: pale teal behind a white label at 42% could hardly be read (Zach's pick,
+    /// November 9, 2026, round 4).
+    private var greyedPrimary: Bool { kind == .primary && !enabled && duo != .none && scheme == .light }
+    private var drawn: PillKind { greyedPrimary ? .soft : kind }
     var body: some View {
         label
             .font(.sotto(compact ? .small : .body, .semibold))
@@ -1750,17 +1762,17 @@ private struct PillBody: View {
             .padding(.horizontal, compact ? Space.s3 : Space.s4)
             .padding(.vertical, Space.s2)
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
-            .foregroundStyle(foreground)
-            .modifier(PillGround(fill: fill, glass: kind == .soft))
+            .foregroundStyle(greyedPrimary ? Palette.muted : foreground)
+            .modifier(PillGround(fill: fill, glass: drawn == .soft))
             .glow(Capsule(), color: theme.color(.accent), alpha: 0.4, radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
-            .opacity(enabled ? 1 : 0.42)
+            .opacity(enabled || greyedPrimary ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
             .opacity(pressed && reduceMotion ? 0.7 : 1)
             .animation(.easeOut(duration: 0.16), value: pressed)
     }
     private var foreground: ThemeRole {
-        switch kind {
+        switch drawn {
         case .primary: return Palette.onAccent
         case .soft: return Palette.ink
         case .ghost: return Palette.accentText
@@ -1768,7 +1780,7 @@ private struct PillBody: View {
         }
     }
     private var fill: ThemeRole {
-        switch kind {
+        switch drawn {
         case .primary: return Palette.accent
         case .soft: return Palette.fillSoft
         case .ghost: return ThemeRole.clear

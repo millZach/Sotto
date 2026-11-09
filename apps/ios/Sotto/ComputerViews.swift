@@ -95,7 +95,8 @@ private struct ComputerCard: View {
                     .accessibilityHint("Opens this computer’s details")
             }
             .buttonStyle(PressStyle())
-            if status == .unreachable {
+            // Half the page wide, Try again ends the state line instead (below), so the two cards match.
+            if status == .unreachable, !stateUnderName {
                 HStack(spacing: Space.s3) {
                     Button { retries += 1; Task { await model.connect(hostID) } } label: {
                         Label("Try again", systemImage: "arrow.clockwise")
@@ -109,7 +110,27 @@ private struct ComputerCard: View {
             }
         }
         .padding(Space.s4)
+        // The link can't hold a button, so Try again stands over the place kept for it on the state line.
+        .overlayPreferenceValue(TryAgainSpot.self) { spot in
+            GeometryReader { proxy in
+                if let spot, stateUnderName, status == .unreachable {
+                    let rect = proxy[spot]
+                    Button { retries += 1; Task { await model.connect(hostID) } } label: {
+                        tryAgainWords.frame(width: rect.width, height: max(rect.height, 44)).contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
+                    .accessibilityLabel("Try reaching \(name) again")
+                    .position(x: rect.midX, y: rect.midY)
+                }
+            }
+        }
         .sottoCard()
+    }
+
+    /// Try again as the state line's last words, in the accent.
+    private var tryAgainWords: some View {
+        Text("Try again").font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText).lineLimit(1).fixedSize()
     }
 
     /// The name with one line under it, and the computer's state at the trailing edge. At the largest text sizes the
@@ -122,7 +143,15 @@ private struct ComputerCard: View {
                     HStack(spacing: Space.s2) {
                         state
                         Text(verbatim: "·").font(.sotto(.small)).foregroundStyle(Palette.muted).accessibilityHidden(true)
-                        detail
+                        // Unreachable, the line ends with Try again where the counts were, so this card is as tall as
+                        // the one beside it; the counts were the last it shared and come back once it connects (Zach's
+                        // pick A, November 9, 2026, round 4).
+                        if status == .unreachable {
+                            tryAgainWords.hidden().accessibilityHidden(true)
+                                .anchorPreference(key: TryAgainSpot.self, value: .bounds) { $0 }
+                        } else {
+                            detail
+                        }
                     }
                 }
                 Spacer(minLength: Space.s2)
@@ -319,3 +348,8 @@ private struct ClientIDRow: View {
     }
 }
 
+/// Where Try again stands on a half-width computer card's state line.
+private struct TryAgainSpot: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}

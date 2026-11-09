@@ -150,7 +150,7 @@ struct ThreadsView: View, Equatable {
         .onChange(of: model.pending) { _, _ in
             for id in Array(sent.keys) { resolve(id) }
         }
-        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+        .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
@@ -638,12 +638,27 @@ private struct ComputerMenu: View {
     }
 }
 
+/// How long ago, or how long a turn has run, in the fewest letters ("2m", "12m"), on the Duo's overview cards. One short
+/// form on every card, with no "ago" and no ticking seconds; seconds tick only on the open thread's rail (Zach's pick B,
+/// November 9, 2026, round 4). It refreshes every half minute.
+private struct ShortAge: View {
+    let iso: String?
+    var body: some View {
+        TimelineView(.periodic(from: Date(), by: 30)) { _ in
+            if let ago = Words.agoShort(iso) {
+                Text(ago).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted).lineLimit(1).fixedSize()
+            }
+        }
+    }
+}
+
 // MARK: - Needs you
 
 /// A question or permission waiting on the user, warm with its glow. One-tap answers are made here: a chip
 /// and Send answer, or Deny and Allow once. Anything more opens the thread, where the full sheet waits.
 private struct RequestCard: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.duoLayout) private var duo
     let row: HostedThread
     /// The thread that asks and takes the answer: the row's own, or the delegated thread the row stands for (ADR-0081).
     /// Opening the card opens the row's thread; reviewing the request opens the thread that asks.
@@ -741,7 +756,9 @@ private struct RequestCard: View {
                 Text(tag).font(.sotto(.caption, .semibold))
                     .foregroundStyle(phase == .answered ? Palette.accentText : Palette.warningText)
                 Spacer(minLength: Space.s2)
-                if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
+                if duo != .none {
+                    ShortAge(iso: row.thread.summary?.lastMessageAt)
+                } else if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
             }
@@ -750,7 +767,7 @@ private struct RequestCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
             PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
-                      text: place)
+                      text: duo != .none && !delegated ? Words.placeWithoutProvider(row) : place)
                 .padding(.top, Space.s1)
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -978,6 +995,7 @@ private struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
     /// Watched for the step the open thread is running, which the thread's history carries.
     @EnvironmentObject var detailStore: DetailStore
+    @Environment(\.duoLayout) private var duo
     let row: HostedThread
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
@@ -1007,7 +1025,9 @@ private struct WorkingCard: View {
                     Light(tone: .accent, breathing: true)
                     Text(state.words).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
                     Spacer(minLength: Space.s2)
-                    if let since = Words.date(row.thread.summary?.runningTurnStartedAt) {
+                    if duo != .none {
+                        ShortAge(iso: row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+                    } else if let since = Words.date(row.thread.summary?.runningTurnStartedAt) {
                         ElapsedText(since: since).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted)
                     } else if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
                         Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
@@ -1017,7 +1037,8 @@ private struct WorkingCard: View {
                 Text(verbatim: row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Space.s2)
-                PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
+                PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
+                          text: duo != .none ? Words.placeWithoutProvider(row) : place)
                     .padding(.top, Space.s1)
                 if let liveLine {
                     Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
@@ -1148,7 +1169,8 @@ private struct ThreadRow: View {
     /// What the row says under its title: just finished, can't be reached, failed, or where it lives.
     private var line: String {
         if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
-        if !row.reachable { return "\(row.status.words) · \(row.computer)" }
+        // "Can't reach it · Studio Mac" was cut in the column; this says the same in one phrase (Zach's pick B, round 4).
+        if !row.reachable { return String(localized: "Can’t reach \(row.computer)") }
         if failed { return "\(state.words) · \(row.computer)" }
         // The provider's mark stands for its name, as in the thread rows (Zach's pick B, November 9, 2026).
         return Words.placeWithoutProvider(row)

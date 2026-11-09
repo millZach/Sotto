@@ -715,10 +715,12 @@ private struct Segmented<Value: Hashable>: View {
     @Namespace private var knob
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         HStack(spacing: 0) {
             ForEach(choices, id: \.self) { choice in
-                SegmentButton(title: title(choice), chosen: choice == selection, knob: knob, raised: scheme == .dark) {
+                SegmentButton(title: title(choice), chosen: choice == selection, knob: knob, raised: scheme == .dark,
+                              lifted: scheme == .dark && duo != .none) {
                     withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86)) { pick(choice) }
                 }
                 .accessibilityIdentifier(identifier(choice))
@@ -736,6 +738,9 @@ private struct SegmentButton: View {
     let chosen: Bool
     let knob: Namespace.ID
     let raised: Bool
+    /// On the Duo in dark the chosen segment stands a step lighter than its track, as it does in light, where the
+    /// overlay fill sat darker than the track and looked pressed in (Zach's pick, November 9, 2026, round 4).
+    var lifted = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -745,9 +750,14 @@ private struct SegmentButton: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background {
                     if chosen {
-                        Capsule().fill(raised ? Palette.overlay : Palette.surface)
-                            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                            .matchedGeometryEffect(id: "knob", in: knob)
+                        if lifted {
+                            Capsule().fill(Palette.fillSoft).overlay(Capsule().fill(Palette.ink.opacity(0.12)))
+                                .matchedGeometryEffect(id: "knob", in: knob)
+                        } else {
+                            Capsule().fill(raised ? Palette.overlay : Palette.surface)
+                                .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                                .matchedGeometryEffect(id: "knob", in: knob)
+                        }
                     }
                 }
                 .contentShape(Capsule())

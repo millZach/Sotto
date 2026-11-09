@@ -38,9 +38,11 @@ struct AgentsButton: View {
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button(action: action) {
             if tile {
+                // The badge counts only the delegated threads that wait on the user, in amber, so amber still means
+                // Needs you; the sheet counts the rest (Zach's pick B, November 9, 2026, round 4).
                 AgentMark(size: 24, relativeTo: .footnote)
                     .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
-                    .overlay(alignment: .topTrailing) { DuoRailBadge(count: count.total, warning: needs) }
+                    .overlay(alignment: .topTrailing) { if needs { DuoRailBadge(count: count.needs, warning: true) } }
                     .foregroundStyle(Palette.muted)
                     .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                     .contentShape(Circle())
@@ -100,7 +102,7 @@ private struct AgentsPresenter: ViewModifier {
     @State private var reopen = false
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $open, onDismiss: {
+            .duoSheet(isPresented: $open, onDismiss: {
                 guard let next = pending else { closed(); return }
                 pending = nil
                 reopen = true
@@ -131,7 +133,10 @@ private struct AgentsPresenter: ViewModifier {
 /// agents again every few seconds, since nothing tells the phone of an agent's new update until its counts change.
 private struct AgentsSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.duoLayout) private var duo
     let ref: ThreadRef
     let open: (ThreadRef) -> Void
@@ -349,11 +354,15 @@ private struct RowBody: View {
     let mark: AnyView
     /// Whether Watcher watches the sheet's own thread, which reaches a thread below through the one that delegated it.
     var sheetWatched = false
+    /// Room kept at the end of the name's line in the Duo's sections, for Open to answer standing there.
+    var nameRoom: CGFloat = 0
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.agentsInSection) private var inSection
     var body: some View {
-        if inSection != nil, !typeSize.isAccessibilitySize { sectioned } else { listed }
+        if RowBody.sectioned(inSection, typeSize) { sectioned } else { listed }
     }
+    /// Whether a row takes the Duo's sectioned layout: in a section, below the accessibility text sizes.
+    static func sectioned(_ inSection: Bool?, _ typeSize: DynamicTypeSize) -> Bool { inSection != nil && !typeSize.isAccessibilitySize }
     /// In the Duo's sections the mark sits beside the name, so the words below take the row's whole width; the kind, the
     /// time and the clock share a line, and where it runs is one line cut at its end (Zach's pick B, November 9, 2026).
     private var sectioned: some View {
@@ -366,6 +375,7 @@ private struct RowBody: View {
                     .accessibilityHidden(true)
                 title.fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.trailing, nameRoom)
             HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
                 Text(tag)
                 if case .unknown = row.elapsed {} else {
@@ -385,7 +395,7 @@ private struct RowBody: View {
                     .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
             }
             if let preview = row.preview {
-                Text(preview).font(.sotto(.small)).foregroundStyle(Palette.ink.opacity(0.86)).lineLimit(2)
+                Text(preview).font(.sotto(.small)).foregroundStyle(Palette.ink.opacity(0.86)).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !row.facts.isEmpty {
@@ -394,7 +404,10 @@ private struct RowBody: View {
             }
             if let status = row.status, inSection != false {
                 HStack(spacing: 6) {
-                    Light(tone: row.tone.light, size: 7, breathing: row.tone == .working)
+                    // A finished task carries the finished check, where a hollow ring read as still waiting (Zach's
+                    // pick B, November 9, 2026, round 4).
+                    if row.tone == .done { Light(tone: .accent, size: 7, finished: true) }
+                    else { Light(tone: row.tone.light, size: 7, breathing: row.tone == .working) }
                     Text(status)
                 }
                 .font(.sotto(.small, row.tone == .done || row.tone == .quiet ? .regular : .semibold))
@@ -484,14 +497,23 @@ private struct AgentsThreadRow: View {
     let sheetWatched: Bool
     let open: () -> Void
     @Environment(\.agentsInSection) private var inSection
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// How wide Open to answer stands at the end of the name's line, so the name keeps clear of it.
+    @State private var answerWidth: CGFloat = 0
+    /// In the Duo's sections Open to answer ends the name's line in the chevron's place, so the brief gets the room
+    /// below (Zach's pick B, November 9, 2026, round 4).
+    private var answerBesideName: Bool { row.waitingFor != nil && RowBody.sectioned(inSection, typeSize) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
                 HStack(alignment: .center, spacing: Space.s2) {
                     RowBody(row: row, tag: String(localized: "Thread", comment: "The tag on a row of the Agents sheet that is a delegated thread."), mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
-                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))), sheetWatched: sheetWatched)
-                    Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
-                        .accessibilityHidden(true)
+                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))), sheetWatched: sheetWatched,
+                            nameRoom: answerBesideName ? answerWidth + Space.s2 : 0)
+                    if !answerBesideName {
+                        Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .padding(.horizontal, Space.s4)
                 .padding(.vertical, Space.s3)
@@ -501,15 +523,26 @@ private struct AgentsThreadRow: View {
             .buttonStyle(PressStyle())
             .accessibilityLabel(row.spokenLabel)
             .accessibilityIdentifier("agents-row-\(row.id)")
-            if row.waitingFor != nil {
-                Button("Open to answer", action: open)
-                    .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .overlay(alignment: .topTrailing) {
+                if answerBesideName {
+                    answer
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { answerWidth = $0 }
+                        .padding(.top, Space.s3 - 6)
+                        .padding(.trailing, Space.s3)
+                }
+            }
+            if row.waitingFor != nil, !answerBesideName {
+                answer
                     .padding(.leading, Space.s4 + 28 + Space.s3 + (inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18))
                     .padding(.bottom, Space.s3)
-                    .accessibilityLabel("Open \(row.title) to answer its request")
-                    .accessibilityIdentifier("agents-answer-\(row.id)")
             }
         }
+    }
+    private var answer: some View {
+        Button("Open to answer", action: open)
+            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .accessibilityLabel("Open \(row.title) to answer its request")
+            .accessibilityIdentifier("agents-answer-\(row.id)")
     }
 }
 

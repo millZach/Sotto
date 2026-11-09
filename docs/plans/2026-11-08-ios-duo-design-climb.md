@@ -89,3 +89,26 @@ Zach's picks, from `docs/prototypes/ios-duo-climb/round-3.html`:
 | A waiting permission's row | Permission, as built |
 
 Fixed without a pick, as part of the code pick: a long path broke inside a name, so a break now goes after a space or a slash first. Held, each raised by one judge: text under the reply box with the keyboard up (Fable), faint choice circles in dark (Astra), the amber glow in light (Opus), the Agents badge counting every agent in amber (Opus).
+
+### Round 3 (November 9, 2026)
+
+Captures: `duo-captures/round-3` (run 42692585379). Scores: GPT-6.1 Sol 8.5, Claude Opus 5.5 8.5, Claude Fable 5.2 8.5. No judge asked for a reversal.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-4.html`:
+
+| Surface | Pick |
+|---|---|
+| Below the reply box | As it is: the conversation keeps running on below the box |
+| Overview cards | B, the mark stands for the provider and one short time, seconds only on the thread's rail |
+| The glow in light | B, a third of the reach at the same strength |
+| Agents sheet | B, Open to answer by the name, three lines of brief, the finished check, a badge of what needs you |
+| State on the rail | B, minutes only |
+| Sheets sideways | A, over the page from the sidebar's edge to the rail, as Sotto's own sheet (asked again once iOS's sheet proved unable to move) |
+| Folded sheet's right side | A, wide below the clock |
+| The ••• card | A, a solid card, the reply box away, a branch broken after its slash |
+| Computers, sideways | A, Try again on the state line; the counts come back once it connects (asked again: the prototype said they moved to the computer's page, which shows none) |
+| Watcher's question card | A, starts at the question when Watcher's words name the thread |
+| Settle in ••• | Keep "Settle", the glossary's word everywhere |
+| Small fixes | All four: the provider's mark on a turn, grey Send in light, the sidebar's fade, the lighter chosen segment |
+
+Held, raised by one judge: Settings' density (Sol).

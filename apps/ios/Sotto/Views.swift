@@ -121,6 +121,9 @@ struct MainTabs: View {
     @State private var sidebarElse = false
     /// New thread, opened from the Duo's rail.
     @State private var creating = false
+    /// Where the Duo held sideways draws its own sheets, over the page (`DuoSheetLayer`). Held, not watched: only the
+    /// layer redraws when a sheet comes or goes.
+    @State private var sheetHost = DuoSheetHost()
     /// The Duo was last folded, on the Threads list, so unfolding it opens the list's top row (`openTopRow`).
     @State private var foldedOnList = false
     /// How much of the page shows: below one while a change that isn't a push or a pop fades it (`crossfade`, `fadeIn`).
@@ -209,6 +212,7 @@ struct MainTabs: View {
                     SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable()
                 }
             }
+            .anchorPreference(key: DuoPageFrame.self, value: .bounds) { $0 }
             if case .column(leading: false, width: let strip) = place {
                 // Upright it starts just under the status bar; sideways, in a column of its own, a step down from the top.
                 rail(shown, top: upright ? Space.s3 : Space.s4, duo: duo).frame(width: strip)
@@ -242,7 +246,13 @@ struct MainTabs: View {
         .overlay(alignment: .leading) {
             if case .strip(trailing: false, width: let strip) = place { rail(shown, top: duo.clockClearance, duo: duo).frame(width: strip).offset(x: -strip) }
         }
-        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+        // Held sideways, a sheet stands over the page from the sidebar's edge to the rail (Zach's pick A, round 4).
+        .overlayPreferenceValue(DuoPageFrame.self) { anchor in
+            if duo.sideways, let anchor {
+                GeometryReader { proxy in DuoSheetLayer(host: sheetHost, page: proxy[anchor]) }
+            }
+        }
+        .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in
                 model.newThreadOpened(ref)
                 tab = .threads
@@ -287,6 +297,7 @@ struct MainTabs: View {
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
+        .environment(\.duoSheetHost, duo.sideways ? sheetHost : nil)
     }
     /// The sidebar has a page to stand beside: every page but the Threads list, which is the same list.
     private var sidebarAvailable: Bool { !(tab == .threads && threadPath.isEmpty) }
@@ -781,11 +792,20 @@ struct ThreadSidebar: View, Equatable {
             .padding(.horizontal, Space.s2)
             .padding(.bottom, Space.s6)
         }
+        // The list fades out over its last 40 points, so a row the screen's foot cuts reads as more below rather than as
+        // sliced (Zach's pick, November 9, 2026, round 4). The ground behind it doesn't fade.
+        .mask {
+            VStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 40)
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
+        }
         .frame(width: width)
         .background(Palette.surface.opacity(0.7))
         .overlay(alignment: .trailing) { Rectangle().fill(Palette.hairline).frame(width: 1) }
         .accessibilityIdentifier("duo-sidebar-list")
-        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+        .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
     }
@@ -1300,6 +1320,11 @@ enum Words {
         guard seconds >= 60 else { return ago(iso) }
         return shortAgo.string(from: seconds) ?? ago(iso)
     }
+    /// How long something has run in the fewest letters, minutes and up ("12m", "1h"), and seconds under a minute.
+    static func runShort(_ seconds: TimeInterval) -> String {
+        guard seconds >= 60 else { return Elapsed.words(seconds) }
+        return shortAgo.string(from: seconds) ?? Elapsed.words(seconds)
+    }
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
@@ -1392,5 +1417,196 @@ struct ComputerBanner: View {
         } else {
             FeedbackBanner()
         }
+    }
+}
+
+// MARK: - The Duo's own sheet, held sideways
+
+/// Closes the sheet a view stands in when Sotto draws that sheet itself (`duoSheet`); nil inside iOS's own sheets.
+private struct SheetCloseKey: EnvironmentKey { static let defaultValue: (() -> Void)? = nil }
+/// Where Sotto draws its own sheet on the Duo held sideways; nil anywhere else.
+private struct DuoSheetHostKey: EnvironmentKey { static let defaultValue: DuoSheetHost? = nil }
+extension EnvironmentValues {
+    var sheetClose: (() -> Void)? {
+        get { self[SheetCloseKey.self] }
+        set { self[SheetCloseKey.self] = newValue }
+    }
+    var duoSheetHost: DuoSheetHost? {
+        get { self[DuoSheetHostKey.self] }
+        set { self[DuoSheetHostKey.self] = newValue }
+    }
+}
+
+/// The sheet Sotto draws over the page on the Duo held sideways, and what closes it. iOS centres its own sheet in the
+/// window, where it cut the sidebar's names mid-word, so here the sheet stands over the page alone, from the sidebar's
+/// edge to the rail, and the sidebar stays whole beside it (Zach's pick A, November 9, 2026, round 4).
+@MainActor final class DuoSheetHost: ObservableObject {
+    struct Shown {
+        let id: UUID
+        /// The question sheet's warm wash at its top.
+        let wash: Bool
+        let content: AnyView
+        let close: () -> Void
+    }
+    @Published private(set) var shown: Shown?
+    func show(_ sheet: Shown) { shown = sheet }
+    func gone(_ id: UUID) { if shown?.id == id { shown = nil } }
+}
+
+extension View {
+    /// A sheet that is iOS's own everywhere but the Duo held sideways, where Sotto draws it over the page (`DuoSheetHost`).
+    /// A view inside it closes it with `dismiss`, which its sheets route through `sheetClose`.
+    func duoSheet<Sheet: View>(isPresented: Binding<Bool>, wash: Bool = false, onDismiss: (() -> Void)? = nil,
+                               @ViewBuilder content: @escaping () -> Sheet) -> some View {
+        modifier(DuoSheetPresenter(isPresented: isPresented, wash: wash, onDismiss: onDismiss, sheet: content))
+    }
+    func duoSheet<Item: Identifiable, Sheet: View>(item: Binding<Item?>, wash: Bool = false, onDismiss: (() -> Void)? = nil,
+                                                   @ViewBuilder content: @escaping (Item) -> Sheet) -> some View {
+        modifier(DuoItemSheetPresenter(item: item, wash: wash, onDismiss: onDismiss, sheet: content))
+    }
+}
+
+private struct DuoSheetPresenter<Sheet: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let wash: Bool
+    let onDismiss: (() -> Void)?
+    let sheet: () -> Sheet
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.duoSheetHost) private var host
+    /// The sheet this presenter has up in the host, if any.
+    @State private var showing: UUID?
+    @ViewBuilder func body(content: Content) -> some View {
+        if duo.sideways, let host {
+            content
+                .onChange(of: isPresented, initial: true) { _, shown in
+                    if shown, showing == nil {
+                        let id = UUID()
+                        showing = id
+                        let binding = $isPresented
+                        host.show(.init(id: id, wash: wash, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
+                    } else if !shown, let id = showing {
+                        showing = nil
+                        host.gone(id)
+                        onDismiss?()
+                    }
+                }
+                // Folding the Duo, or leaving the page, closes the sheet as iOS closes one whose page goes.
+                .onDisappear {
+                    guard let id = showing else { return }
+                    showing = nil
+                    host.gone(id)
+                    isPresented = false
+                    onDismiss?()
+                }
+        } else {
+            content.sheet(isPresented: $isPresented, onDismiss: onDismiss, content: sheet)
+        }
+    }
+}
+
+private struct DuoItemSheetPresenter<Item: Identifiable, Sheet: View>: ViewModifier {
+    @Binding var item: Item?
+    let wash: Bool
+    let onDismiss: (() -> Void)?
+    let sheet: (Item) -> Sheet
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.duoSheetHost) private var host
+    @State private var showing: UUID?
+    @ViewBuilder func body(content: Content) -> some View {
+        if duo.sideways, let host {
+            content
+                .onChange(of: item?.id, initial: true) { _, _ in
+                    if let id = showing {
+                        showing = nil
+                        host.gone(id)
+                        if item == nil { onDismiss?() }
+                    }
+                    if let item {
+                        let id = UUID()
+                        showing = id
+                        let binding = $item
+                        host.show(.init(id: id, wash: wash, content: AnyView(sheet(item)), close: { binding.wrappedValue = nil }))
+                    }
+                }
+                .onDisappear {
+                    guard let id = showing else { return }
+                    showing = nil
+                    host.gone(id)
+                    item = nil
+                    onDismiss?()
+                }
+        } else {
+            content.sheet(item: $item, onDismiss: onDismiss, content: sheet)
+        }
+    }
+}
+
+/// Where the page stands beside the sidebar and the rail, for the Duo's own sheet.
+struct DuoPageFrame: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
+/// The Duo's own sheet over the page: a scrim over the whole screen, and the sheet inside the page's frame with a margin,
+/// as tall as a question asks to be or the page's full height. A drag down on its grabber or a tap on the scrim closes
+/// it, and VoiceOver treats it as a dialog that its escape gesture closes.
+struct DuoSheetLayer: View {
+    @ObservedObject var host: DuoSheetHost
+    let page: CGRect
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How tall a question sheet asks to be (`RequestSheetFit`); nil for a sheet that takes the page's height.
+    @State private var fit: CGFloat?
+    @State private var drag: CGFloat = 0
+    private let grabber: CGFloat = 16
+    var body: some View {
+        ZStack {
+            if let shown = host.shown {
+                Rectangle().fill(Color.black.opacity(0.36)).ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { shown.close() }
+                    .accessibilityHidden(true)
+                    .transition(.opacity)
+                GeometryReader { proxy in
+                    let bottom = min(page.maxY, proxy.size.height) - Space.s2
+                    let top = page.minY + Space.s2
+                    let room = max(bottom - top, 160)
+                    let height = fit.map { min($0 + grabber, room) } ?? room
+                    sheet(shown)
+                        .frame(width: max(page.width - Space.s2 * 2, 0), height: height)
+                        .position(x: page.midX, y: bottom - height / 2 + max(drag, 0))
+                }
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .id(shown.id)
+            }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.9), value: host.shown?.id)
+        .onChange(of: host.shown?.id) { _, _ in fit = nil; drag = 0 }
+    }
+    private func sheet(_ shown: DuoSheetHost.Shown) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+        return VStack(spacing: 0) {
+            Capsule().fill(Palette.muted.opacity(0.5)).frame(width: 36, height: 5)
+                .frame(maxWidth: .infinity, minHeight: grabber)
+                .contentShape(Rectangle())
+                .gesture(DragGesture()
+                    .onChanged { drag = $0.translation.height }
+                    .onEnded { value in
+                        if value.translation.height > 90 || value.predictedEndTranslation.height > 260 { shown.close() }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
+                    })
+                .accessibilityHidden(true)
+            shown.content
+                .environment(\.sheetClose, shown.close)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .onPreferenceChange(RequestSheetFit.self) { fit = $0 }
+        .background { SheetBackdrop(wash: shown.wash) }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.28), radius: 24, y: 8)
+        .environment(\.sottoOnSheet, true)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { shown.close() }
     }
 }

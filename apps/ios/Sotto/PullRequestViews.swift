@@ -7,7 +7,10 @@ import SottoCore
 /// thread's computer when the sheet opens and when it is pulled to refresh. Read only, but for babysitting.
 struct PullRequestSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
