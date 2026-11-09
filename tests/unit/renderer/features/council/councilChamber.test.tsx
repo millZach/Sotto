@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
@@ -119,6 +119,67 @@ describe('the Council tab’s reads', () => {
   })
 })
 
+describe('the quiet Council record', () => {
+  it('keeps full model names and opens the selected grid cell’s thread', async () => {
+    withLayout()
+    const { command } = provide()
+    const record = councilFixture({ rows: [row('A', 'answer', 'working'), row('B', 'answer', 'done', { summary: 'Keep the export format.' })] })
+    record.seats = record.seats.map((seat, index) => ({ ...seat, modelName: index === 0 ? 'GLM 5.3 Refuseless' : 'DeepSeek V4.1 Flash 1017 Abliterated' }))
+    render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    await screen.findByRole('heading', { name: 'Move history into node:sqlite now?' })
+    const grid = screen.getByRole('table')
+    expect(within(grid).getByRole('button', { name: /from A, GLM 5.3 Refuseless/ })).toBeInTheDocument()
+    await userEvent.click(within(grid).getByRole('button', { name: /from B, DeepSeek V4.1 Flash 1017 Abliterated/ }))
+    const reader = screen.getByRole('region', { name: 'Selected turn' })
+    expect(reader).toHaveTextContent('DeepSeek V4.1 Flash 1017 Abliterated')
+    expect(reader).toHaveTextContent('Keep the export format.')
+    await userEvent.click(within(reader).getByRole('button', { name: 'Open thread' }))
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-b' })
+  })
+
+  it('tabs through the composer in reading order and keeps an Ask error beneath it', async () => {
+    withLayout()
+    provide([{ id: 'thread-a', title: 'Thread A' }, { id: 'thread-b', title: 'Thread B' }], [{ id: 'claude:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }])
+    const error = 'The Council could not start.'
+    const { container } = render(<CouncilView thread="thread-a" bridge={{ read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(async () => ({ ok: false as const, message: error })), onChanged: () => () => undefined }} />)
+    const question = await screen.findByRole('textbox', { name: 'Question' })
+    await userEvent.type(question, 'Which store?')
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Ask from another thread. Now Thread A' })).toHaveFocus()
+    await userEvent.tab()
+    const ask = screen.getByRole('button', { name: 'Ask the Council' })
+    expect(ask).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByText(error)).toBeInTheDocument()
+    expect(container.querySelector('.council-composer')).not.toContainElement(screen.getByText(error))
+  })
+
+  it.each([
+    { status: 'working', layout: 'long-table', verdict: false, showSeats: false },
+    { status: 'waiting', layout: 'long-table', verdict: false, showSeats: false },
+    { status: 'done', layout: 'long-table', verdict: true, showSeats: true },
+    { status: 'done', layout: 'half-circle', verdict: true, showSeats: false },
+    { status: 'stopped', layout: 'long-table', verdict: false, showSeats: true },
+    { status: 'settled', layout: 'long-table', verdict: false, showSeats: true },
+  ] as const)('keeps seat names only when plates are absent: $status, $layout', async ({ status, layout, verdict, showSeats }) => {
+    withLayout()
+    provide()
+    vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, councilLayout: layout } } as unknown as AppContextValue)
+    const record = councilFixture({
+      stage: status === 'done' ? 'done' : 'framing', rows: [row('chair', 'framing', 'working')],
+      ...(verdict ? { verdict: { text: 'Keep the files.', counts: { answered: 3, rankings: [], findings: [], supports: [], favourites: [], changed: [], partial: false }, objections: [], fairnessDone: true } } : {}),
+    }, { status })
+    const { container } = render(<CouncilView bridge={{ read: async () => [record], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    await screen.findByRole('heading', { name: 'Move history into node:sqlite now?' })
+    expect(container.querySelector('.council-entry__seats') !== null).toBe(showSeats)
+    expect(container.querySelector('.council-entry__head')).not.toHaveTextContent('From ')
+    expect(container.querySelector('.council-entry__head')).not.toHaveTextContent(/Working|Waiting on you|Done/u)
+    expect(container).not.toHaveTextContent('Working in a snapshot')
+    expect(screen.getByRole('textbox', { name: 'Question' })).not.toHaveAttribute('placeholder')
+    expect(screen.getByRole('textbox', { name: 'Question' })).not.toHaveAttribute('aria-describedby')
+  })
+})
+
 describe('the Council belongs to its origin thread', () => {
   const models: AgentState['host']['models'] = [{ id: 'claude:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }]
   it.each(['working', 'waiting', 'done', 'stopped', 'settled'] as const)('keeps another thread’s %s Council out of the list and chamber, including after an update', async status => {
@@ -148,7 +209,11 @@ describe('the Council belongs to its origin thread', () => {
     const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
     await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'A’s unsent question')
     await userEvent.click(screen.getByRole('radio', { name: '5' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    const origin = screen.getByRole('button', { name: 'Ask from another thread. Now Thread A' })
+    await userEvent.click(origin)
+    await userEvent.keyboard('{Escape}')
+    expect(origin).toHaveFocus()
+    await userEvent.click(origin)
     await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
     const saved = heldCouncilForm('thread-a')
     rerender(<CouncilView thread="thread-b" bridge={bridge} />)
@@ -190,28 +255,28 @@ describe('the Council belongs to its origin thread', () => {
     const own: ClimbRecord = { ...other, id: '11111111-1111-4111-8111-111111111111', originThread: 'thread-a', originTitle: 'Thread A', phase: 'stopped', reason: 'A’s saved Climb', turns: [] }
     const bridge: CouncilBridge = { read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: () => () => undefined, climb: vi.fn(async () => ({ ok: true, climbs: [other, own] })) }
     const { rerender } = render(<CouncilView thread="thread-a" bridge={bridge} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Climb' }))
     expect(await screen.findByText('A’s saved Climb')).toBeInTheDocument()
     await userEvent.type(screen.getByRole('textbox', { name: 'Goal' }), 'A’s unsent goal')
-    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Ask from another thread\. Now /u }))
     await userEvent.click(screen.getByRole('button', { name: 'Thread B' }))
     expect(screen.queryByText('B’s Climb is running')).toBeNull()
     expect(screen.getByRole('textbox', { name: 'Goal' })).toHaveValue('A’s unsent goal')
     expect(command).not.toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['b-setup'] })
     rerender(<CouncilView thread="thread-b" bridge={bridge} />)
     expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('')
-    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Climb' }))
     expect(await screen.findByText('B’s Climb is running')).toBeInTheDocument()
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['b-setup'] }))
     expect(screen.queryByRole('textbox', { name: 'Goal' })).toBeNull()
     expect(screen.queryByText('A’s saved Climb')).toBeNull()
     rerender(<CouncilView thread="thread-a" bridge={bridge} />)
-    expect(screen.getByRole('button', { name: 'Climb' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('radio', { name: 'Climb' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('textbox', { name: 'Goal' })).toHaveValue('A’s unsent goal')
     expect(document.querySelector('.council-origin__title')).toHaveTextContent('Thread B')
     expect(screen.queryByText('B’s Climb is running')).toBeNull()
     rerender(<CouncilView bridge={bridge} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Climb' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Climb' }))
     expect(await screen.findByText('B’s Climb is running')).toBeInTheDocument()
     expect(screen.getByText('A’s saved Climb')).toBeInTheDocument()
   })

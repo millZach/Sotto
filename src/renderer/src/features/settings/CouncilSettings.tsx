@@ -28,8 +28,7 @@ export function CouncilSettings({ settings, onUpdateSettings }: {
     { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
   ]
   return <>
-    <SettingsGroup title={t`Panel`} icon={Users} rows={false} setting="council-panel"
-      note={t`Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more. Each panelist’s effort is used for its answer, review and crux check, and the chair’s for its framing and verdict.`}>
+    <SettingsGroup title={t`Panel`} icon={Users} rows={false} setting="council-panel">
       {agents?.state ? <CouncilSeats catalog={newThreadDefaultsCatalog(agents.state)} panel={{ panelists: settings.councilPanelists, chair: settings.councilChair }}
         onChange={panel => void onUpdateSettings({ councilPanelists: [...panel.panelists], councilChair: panel.chair })} />
         : <p className="council-seats__note tt-paragraph">{t`Preparing the panel…`}</p>}
@@ -61,7 +60,6 @@ function DeadlineField({ value, onSave }: { readonly value: number; readonly onS
   }
   const min = COUNCIL_STAGE_DEADLINE.min, max = COUNCIL_STAGE_DEADLINE.max
   return <Field label={t`Minutes`} setting="council-deadline"
-    description={t`How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own.`}
     {...error ? { error: t`Enter a whole number of minutes from ${min} to ${max}. Nothing was changed.` } : {}}>
     <input className="tt-input" inputMode="numeric" value={draft} autoComplete="off"
       onChange={event => { setDraft(event.currentTarget.value); setError(false) }} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') commit() }} />
