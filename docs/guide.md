@@ -1230,7 +1230,7 @@ A minute after the reset, Sotto sends each thread this note, shown in the thread
 
 Watcher goes first when its own provider stopped it. When Watcher is on, it then hears which threads Sotto restarted. A thread you sent to in the meantime, one that is working again, settled or archived is left alone; one whose provider is not connected waits until it is. Earlier Watcher conversations are read-only history and stay off the restart list when Watcher moves on. Your own message is never sent again, and the note answers no question or permission. A thread that stops at the limit again is scheduled again, up to three times in a row before a turn of its own finishes.
 
-If a provider gives no reset time, Sotto doesn't restart its threads on its own; the band says so, and you send again once the limit resets. That includes Devin, OpenCode, DeepSeek Harness and Cursor, and some Claude Code credit limits. A spending limit you set never resets on its own, so it schedules nothing.
+If a provider gives no reset time, Sotto doesn't restart its threads on its own; the band says so, and you send again once the limit resets. That includes Devin, OpenCode, DeepSeek Harness and Cursor, and some Claude Code credit limits. The band goes when you send to its threads again, when a turn of the same provider finishes in any thread, since its limit has then reset, or when you press **Dismiss**; the threads then wait for your next message. A spending limit you set never resets on its own, so it schedules nothing.
 
 ### Watched threads with work left
 
