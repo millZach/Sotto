@@ -169,15 +169,21 @@ public enum ThreadSettings {
     }
 }
 
-/// Effort levels in words, as the desktop says them (`EffortPicker.tsx`).
+/// Effort levels in words, as the desktop says them (`effortNames.ts`, #227).
 public enum EffortWords {
+    /// A level found by its spelling-free key, as the desktop's `effortKey` does, so `x-high` and `Extra_High` read as `xhigh`.
+    static func key(_ id: String) -> String {
+        let key = id.lowercased().filter { $0 != "-" && $0 != "_" && $0 != " " }
+        return key == "extrahigh" ? "xhigh" : key
+    }
     public static func name(_ id: String) -> String {
-        switch id {
+        switch key(id) {
         case "minimal": return String(localized: "Minimal", bundle: .module, comment: "A reasoning effort level.")
         case "low": return String(localized: "Low", bundle: .module, comment: "A reasoning effort level.")
         case "medium": return String(localized: "Medium", bundle: .module, comment: "A reasoning effort level.")
         case "high": return String(localized: "High", bundle: .module, comment: "A reasoning effort level.")
-        case "xhigh": return String(localized: "Extra high", bundle: .module, comment: "A reasoning effort level.")
+        // Its name, as Zach picked it for every surface (#227), kept as it is in every language.
+        case "xhigh": return "XHigh"
         case "max": return String(localized: "Max", bundle: .module, comment: "A reasoning effort level, the highest some models offer.")
         // Claude Code's own name, kept as it is (ADR-0148).
         case "ultracode": return "Ultracode"
@@ -200,7 +206,7 @@ public enum EffortWords {
         case "low": return String(localized: "Fast. For small, clear tasks.", bundle: .module, comment: "What the Low effort level does.")
         case "medium": return String(localized: "The usual balance of speed and care.", bundle: .module, comment: "What the Medium effort level does.")
         case "high": return String(localized: "Takes longer and catches more.", bundle: .module, comment: "What the High effort level does.")
-        case "xhigh": return String(localized: "Much longer. For stubborn problems.", bundle: .module, comment: "What the Extra high effort level does.")
+        case "xhigh": return String(localized: "Much longer. For stubborn problems.", bundle: .module, comment: "What the XHigh effort level does.")
         case "max": return String(localized: "Near the model’s limit. Slow and costly.", bundle: .module, comment: "What the Max effort level does.")
         default: return index == 0 ? String(localized: "Fast. For small, clear tasks.", bundle: .module, comment: "What the Low effort level does.")
             : String(localized: "More time for difficult problems.", bundle: .module, comment: "What an effort level Sotto has no line for does.")
