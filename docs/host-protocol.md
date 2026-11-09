@@ -537,9 +537,9 @@ The request `browser` carries `request: { method, payload }`, and answers with a
 - `input` `{ threadId, workspaceId, pageId, input }`: the user's click, key, typed text or scroll in a pane, where `input` is `{ type: "mouse", action, x, y, button, clickCount, modifiers }`, `{ type: "wheel", x, y, deltaX, deltaY, modifiers }`, `{ type: "key", action, key, code, keyCode, text?, modifiers }` or `{ type: "text", text }`. It is the user acting, so it needs no browser grant.
 - `watch` `{ threadId, workspaceId, pageId, size: { width, height } }`: the page lays out at the pane's size and the host pushes `browser-frame` pictures of it to this desktop until `unwatch` or the socket closes. A second `watch` of the same page replaces the first.
 - `unwatch` `{ threadId, workspaceId, pageId }`.
-- `setting` `{ withoutAsking }`: this computer's **Let agents use the browser without asking**, which a desktop sends on connecting and whenever it changes. The host keeps the last value it was sent in its own settings file.
+- `setting` `{ withoutAsking }`: this computer's **Let agents use the browser without asking**, which a desktop sends on connecting and whenever it changes. The host keeps the last value it took in its own settings file.
 
-`answerAction` is refused `forbidden` unless the desktop is one the launch script recorded and its `remote-answer` policy lets it answer, as for `host-update`. Every other method needs only a desktop that accepted `browser`. A desktop that did not accept it is refused `invalid_request`, and a request naming a thread that desktop is not sent is refused `forbidden`.
+`answerAction` and `setting` are refused `forbidden` unless the desktop is one the launch script recorded and its `remote-answer` policy lets it answer, as for `host-update`: turning asking off stands in for answers (Zach, November 9, 2026). A desktop that may not answer still sends its setting, and takes the refusal quietly. Every other method needs only a desktop that accepted `browser`. A desktop that did not accept it is refused `invalid_request`, and a request naming a thread that desktop is not sent is refused `forbidden`.
 
 Pictures are never written to disk or logged on either side. The desktop's window receives them on its own channel, `sotto:browser:frame`, apart from the browser's other events.
 

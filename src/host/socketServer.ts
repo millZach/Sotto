@@ -1124,6 +1124,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         watches.get(request.payload.pageId)?.(); watches.delete(request.payload.pageId)
         return { ok: true, value: undefined }
       case 'setting':
+        // Turning asking off stands in for the user's answers, so only a desktop that may answer changes it (Zach, November 9).
+        if (!mayAnswerBrowser(peer)) throw new Refusal('forbidden')
         try { await browser.setWithoutAsking(request.payload.withoutAsking) }
         catch { return { ok: false, error: { code: 'unavailable', message: 'The host could not keep this setting. It holds it until the host restarts. Try again.' } } }
         return { ok: true, value: undefined }

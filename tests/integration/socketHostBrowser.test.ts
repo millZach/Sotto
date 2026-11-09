@@ -133,14 +133,23 @@ describe('a paired host\'s browser over the socket (ADR-0198)', () => {
     } finally { await client.close(); await close() }
   })
 
-  it('keeps the setting a desktop sends', async () => {
-    const { desktop, service, saved, close } = await hostWithBrowser()
+  it('keeps the setting a desktop that may answer sends, and takes none from one that may not', async () => {
+    const allowed = await hostWithBrowser({ answers: true })
     try {
-      await desktop.call('hello', { op: 'hello', accepts: ['browser'] })
-      expect(result(await desktop.call('setting', { op: 'browser', request: { method: 'setting', payload: { withoutAsking: true } } })).ok).toBe(true)
-      expect(service.withoutAsking).toBe(true)
-      expect(saved).toEqual([true])
-    } finally { await close() }
+      await allowed.desktop.call('hello', { op: 'hello', accepts: ['browser'] })
+      expect(result(await allowed.desktop.call('setting', { op: 'browser', request: { method: 'setting', payload: { withoutAsking: true } } })).ok).toBe(true)
+      expect(allowed.service.withoutAsking).toBe(true)
+      expect(allowed.saved).toEqual([true])
+    } finally { await allowed.close() }
+    const quiet = await hostWithBrowser({ answers: false })
+    try {
+      await quiet.desktop.call('hello', { op: 'hello', accepts: ['browser'] })
+      const refused = await quiet.desktop.call('setting', { op: 'browser', request: { method: 'setting', payload: { withoutAsking: true } } }) as { ok: boolean; error: { code: string } }
+      expect(refused.ok).toBe(false)
+      expect(refused.error.code).toBe('forbidden')
+      expect(quiet.service.withoutAsking).toBe(false)
+      expect(quiet.saved).toEqual([])
+    } finally { await quiet.close() }
   })
 
   it('takes no browser request from a desktop that did not accept it, and is not listed by a host without the browser', async () => {

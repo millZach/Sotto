@@ -1430,10 +1430,14 @@ export class DesktopHostRouter {
     catch (error) { return refusal(error instanceof HostConnectionError ? error.message : hostBrowserRefusal.failed(connection.name)) }
     return mapHostReferences(answer, value => hostEntityKey(connection.hostId, value))
   }
-  /** Tells one host this computer's **Let agents use the browser without asking**; a host without the browser is told nothing. */
+  /**
+   * Tells one host this computer's **Let agents use the browser without asking**; a host without the browser is told nothing.
+   * A host takes it only from a desktop that may answer there, so its refusal of one that may not is not a failure.
+   */
   async tellBrowserSetting(connection: DesktopHostConnection, withoutAsking: boolean): Promise<void> {
     if (connection.kind !== 'remote' || !connection.browser || connection.available?.() === false) return
-    await connection.browser({ method: 'setting', payload: { withoutAsking } })
+    try { await connection.browser({ method: 'setting', payload: { withoutAsking } }) }
+    catch (error) { if (!(error instanceof HostConnectionError && error.code === 'forbidden')) throw error }
   }
   /** Hears every connected host's browser pages, tasks and grants change, by this window's keys. Returns the way to stop. */
   subscribeBrowser(listener: (change: BrowserEvent) => void): () => void {
