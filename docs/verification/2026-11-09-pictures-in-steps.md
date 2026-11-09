@@ -22,10 +22,10 @@ Captures in `artifacts/inline-media/`:
 
 ## What was proved by tests, not seen
 
-- **The strip.** `stepPictures.test.tsx`: the newest three and the count, read at tile size by handle; shown and generated steps left out; the viewer stepping through the pictures of the work around the line; the count opening the first it stands for; a video's mark playing a tile under the line and taking it away; nothing while hidden, with `inline-media` off, or outside a thread.
+- **The strip.** `stepPictures.test.tsx`: the newest three and the count, read at tile size by handle; shown and generated steps left out; the viewer stepping through the pictures of the work around the line; the count opening the first it stands for; a turn's written files, which arrive newest first, showing their newest; videos holding the line before pictures, and a count that stands for videos alone playing the next; a video's mark playing at once in a tile under the line, once, and a second press or Escape taking it away with the focus back on the mark; nothing while hidden, with `inline-media` off, or outside a thread.
 - **Tiles.** `threadMediaTiles.test.tsx`: a tool's pictures and a turn's written files make no tile; shown and generated ones keep every tile behaviour.
 - **Catalogs.** `threadMediaTilesCatalog.test.tsx`: tiles and a step's pictures are named from the compiled catalogs with no warning.
-- **iPhone.** `StepPicturesTests.swift` in SottoCore holds which pictures sit in a step and which stand as tiles, and the newest three with the count. `check-strings.mjs` passes with the three new strings in every language.
+- **iPhone.** `StepPicturesTests.swift` in SottoCore holds which pictures sit in a step and which stand as tiles, the newest three with the count, written files turned round, and videos before pictures. `check-strings.mjs` passes with the three new strings in every language.
 
 ## Not checked
 

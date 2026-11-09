@@ -919,6 +919,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
       <Icon className="thread-browser__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
       {going ? <i className="thread-browser__dot" data-connected={connected || undefined} aria-hidden="true" /> : null}
       <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
+      {open ? null : <StepPicturesSlot count={Math.min(pictures.count, MOST_STEP_PICTURES)} more={pictures.count > MOST_STEP_PICTURES} />}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
     {pictures.strip}{pictures.player}

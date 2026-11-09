@@ -2710,6 +2710,18 @@ msgstr "Close pane"
 msgid "Close the reply"
 msgstr "Close the reply"
 
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Close video"
+msgstr "Close video"
+
+#. {0} of {1} videos an agent's steps wrote; {2} names the step. A press takes the video under the line away.
+#. placeholder {0}: videos.indexOf(shown) + 1
+#. placeholder {1}: videos.length
+#. placeholder {2}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Close video {0} of {1}, from {2}"
+msgstr "Close video {0} of {1}, from {2}"
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Close without adding a model source"
 msgstr "Close without adding a model source"
@@ -6667,11 +6679,16 @@ msgstr "Plans the work and runs it as a team of agents. Uses many more tokens."
 msgid "Play GIF {number}"
 msgstr "Play GIF {number}"
 
+#. The count before a step's newest pictures when it stands for videos alone; a press plays the first of them under the line.
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play the next video"
+msgstr "Play the next video"
+
 #: src/renderer/src/agents/StepPictures.tsx
 msgid "Play video"
 msgstr "Play video"
 
-#. {0} of {1} videos an agent's steps wrote; {2} names the step. Pressed again, the video under the line goes.
+#. {0} of {1} videos an agent's steps wrote; {2} names the step. A press plays it in a tile under the line.
 #. placeholder {0}: videos.indexOf(shown) + 1
 #. placeholder {1}: videos.length
 #. placeholder {2}: stepTitle(t, shown.record)

@@ -389,6 +389,11 @@
 }
 .thread-activity__row > .step-pictures { position: absolute; position-anchor: --step-pictures; top: anchor(center); left: anchor(left); translate: 0 -50%; }
 .thread-browser__steps > li > .step-pictures { margin-left: auto; }
+/* A folded browser line keeps room for its run's strip the way a row does, wherever the line stands. */
+.thread-browser { position: relative; anchor-scope: --step-pictures; }
+.thread-browser > .step-pictures { position: absolute; position-anchor: --step-pictures; top: anchor(center); left: anchor(left); translate: 0 -50%; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .step-pictures__slot { margin-left: auto; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .step-pictures__slot + .thread-activity__chevron { margin-left: 0; }
 .step-pictures__player { margin: 4px 0 8px 30px; }
 .thread-work > .step-pictures { margin: 0 0 8px; }
 .thread-activity > .step-pictures { margin-left: 4px; }

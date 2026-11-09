@@ -9,6 +9,8 @@ public enum StepPictures {
     public static let most = 3
     /// The ID every step an agent showed pictures in through `sotto_media` starts with, as the desktop's `SHOWN_STEP_PREFIX`.
     public static let shownStepPrefix = "sotto-shown-"
+    /// The ID of the step that holds a turn's written files, as the desktop's `WRITTEN_STEP_PREFIX`.
+    public static let writtenStepPrefix = "sotto-written-"
 
     /// One picture or video in a step, with the step it belongs to.
     public struct Item: Identifiable, Equatable, Sendable {
@@ -22,9 +24,14 @@ public enum StepPictures {
         step.id.hasPrefix(shownStepPrefix) || step.generates == "image"
     }
 
-    /// The pictures and videos of these steps that sit in their lines, in the order the steps came.
+    /// The pictures and videos of these steps that sit in their lines, oldest first: in the order the steps came, and within
+    /// a step in the order it made them. A turn's written files arrive newest first, so they are turned round.
     public static func inSteps(_ steps: [Activity]) -> [Item] {
-        steps.flatMap { step in standInThread(step) ? [] : (step.media ?? []).map { Item(step: step, media: $0) } }
+        steps.flatMap { step -> [Item] in
+            guard !standInThread(step) else { return [] }
+            let media = step.id.hasPrefix(writtenStepPrefix) ? Array((step.media ?? []).reversed()) : (step.media ?? [])
+            return media.map { Item(step: step, media: $0) }
+        }
     }
 
     /// The steps whose pictures stand in the thread as tiles, and the steps still making an image.
@@ -32,9 +39,13 @@ public enum StepPictures {
         steps.filter(standInThread)
     }
 
-    /// What a line shows of its pictures: the newest `most`, oldest first, and how many earlier ones its count stands for.
-    public static func newest(_ items: [Item]) -> (shown: [Item], more: Int) {
-        let shown = Array(items.suffix(most))
-        return (shown, items.count - shown.count)
+    /// What a line shows of its pictures, in order, and what its count stands for. The newest `most` show, but a video comes
+    /// before a picture: the viewer reaches every picture of the line from any of them, and a video only from its own mark.
+    public static func line(_ items: [Item]) -> (shown: [Item], hidden: [Item]) {
+        guard items.count > most else { return (items, []) }
+        var kept = Set<String>()
+        for item in items.reversed() where item.media.kind == "video" && kept.count < most { kept.insert(item.id) }
+        for item in items.reversed() where kept.count < most { kept.insert(item.id) }
+        return (items.filter { kept.contains($0.id) }, items.filter { !kept.contains($0.id) })
     }
 }

@@ -485,10 +485,12 @@ struct AgentPictures: View {
     let open: (OpenPhotos) -> Void
     private var tiled: [Activity] { StepPictures.inThread(steps) }
     private var items: [OpenPhotos.Item] {
-        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
-            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step),
-                            callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
-        } }
+        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { AgentPictures.viewed(ref: ref, step: step, picture: $0, by: by) } }
+    }
+    /// One of a step's pictures as the viewer shows it: read by its handle, named by its step, with its callouts and size.
+    static func viewed(ref: ThreadRef, step: Activity, picture: Activity.Media, by: String?) -> OpenPhotos.Item {
+        OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: title(of: step),
+                        callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
     }
     /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
     private var gifs: Set<String> {
@@ -548,28 +550,35 @@ struct StepPictureStrip: View {
     @Binding var playing: String?
     let open: (OpenPhotos) -> Void
     var body: some View {
-        let line = StepPictures.newest(items)
+        let line = StepPictures.line(items)
+        // The count opens the first picture it stands for, or plays its first video when it stands for videos alone.
+        let first = line.hidden.first { $0.media.kind == "image" } ?? line.hidden.first
+        let opensPicture = first?.media.kind == "image"
         HStack(spacing: 4) {
-            if line.more > 0 {
-                Button { show(items.prefix(line.more).first { $0.media.kind == "image" } ?? items.first { $0.media.kind == "image" }) } label: {
-                    Text(verbatim: "+\(line.more)").font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+            if let first {
+                Button { if opensPicture { show(first) } else { play(first) } } label: {
+                    Text(verbatim: "+" + line.hidden.count.formatted()).font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
                         .padding(.horizontal, 5).frame(minWidth: 26, minHeight: 23)
                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Palette.hairline, lineWidth: 1))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("Open all pictures", comment: "The count before a step's newest pictures, which opens the viewer at the first of the rest."))
+                .accessibilityLabel(opensPicture
+                    ? Text("Open all pictures", comment: "The count before a step's newest pictures, which opens the viewer at the first of the rest.")
+                    : Text("Play the next video", comment: "The count before a step's newest pictures when it stands for videos alone; a tap plays the first under the line."))
             }
             ForEach(line.shown) { item in
                 if item.media.kind == "video" {
-                    Button { playing = playing == item.id ? nil : item.id } label: {
+                    Button { play(item) } label: {
                         Image(systemName: "film").iconFont(11, weight: .semibold, relativeTo: .footnote).foregroundStyle(playing == item.id ? Palette.ink : Palette.muted)
                             .frame(width: 34, height: 23).background(Palette.raised, in: RoundedRectangle(cornerRadius: 5))
                             .overlay(RoundedRectangle(cornerRadius: 5).stroke(playing == item.id ? Palette.accent : Palette.hairline, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Play video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video it wrote; %@ names the step. It plays under the line."))
+                    .accessibilityLabel(playing == item.id
+                        ? Text("Close video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video playing under it; %@ names the step. A tap takes the video away.")
+                        : Text("Play video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video it wrote; %@ names the step. It plays under the line."))
                     .accessibilityAddTraits(playing == item.id ? .isSelected : [])
                 } else {
                     Button { show(item) } label: { StepPictureThumb(key: key(item)) }
@@ -583,16 +592,15 @@ struct StepPictureStrip: View {
     private func key(_ item: StepPictures.Item) -> PhotoPreviews.Key {
         PhotoPreviews.Key(ref: ref, messageID: item.step.id, attachmentID: item.media.id, activityID: item.step.id)
     }
+    /// Plays a video under the line, or takes it away when it is the one playing.
+    private func play(_ item: StepPictures.Item) { playing = playing == item.id ? nil : item.id }
     /// Opens the viewer at `item`, among the run's pictures, or the line's own when the run does not hold it.
     private func show(_ item: StepPictures.Item?) {
         guard let item else { return }
         let around = StepPictures.inSteps(run)
         let pictures = (around.contains { $0.id == item.id } ? around : items).filter { $0.media.kind == "image" }
         guard let index = pictures.firstIndex(where: { $0.id == item.id }) else { return }
-        let viewed = pictures.map { picture in
-            OpenPhotos.Item(key: key(picture), name: AgentPictures.title(of: picture.step), callouts: picture.media.callouts ?? [],
-                            size: picture.media.width.flatMap { width in picture.media.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
-        }
+        let viewed = pictures.map { AgentPictures.viewed(ref: ref, step: $0.step, picture: $0.media, by: by) }
         open(OpenPhotos(ref: ref, id: "step-pictures-" + (run.first?.id ?? item.step.id), items: viewed, index: index))
     }
 }
@@ -605,7 +613,9 @@ struct StepPictureVideo: View {
     var body: some View {
         let videos = items.filter { $0.media.kind == "video" }
         if let playing, let index = videos.firstIndex(where: { $0.id == playing }) {
-            AgentVideoTile(ref: ref, step: videos[index].step, video: videos[index].media, number: index + 1, count: videos.count)
+            // A tap on its mark was the ask, so it plays at once; another video's tile starts afresh.
+            AgentVideoTile(ref: ref, step: videos[index].step, video: videos[index].media, number: index + 1, count: videos.count, playsAtOnce: true)
+                .id(playing)
                 .frame(maxWidth: 260)
                 .padding(.vertical, Space.s1)
         }
@@ -765,6 +775,8 @@ struct AgentVideoTile: View {
     let video: Activity.Media
     let number: Int
     let count: Int
+    /// Opened by a tap on its mark in a step's line, it fetches and plays when it first shows.
+    var playsAtOnce = false
     @State private var player: AVPlayer?
     @State private var progress: Double?
     @State private var problem: Problem?
@@ -791,7 +803,7 @@ struct AgentVideoTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .onAppear { shown = true }
+            .onAppear { shown = true; if playsAtOnce, player == nil, progress == nil, problem == nil { start() } }
             // Scrolled away, it pauses at once; its fetch, if any, stops asking for parts.
             .onDisappear { shown = false; player?.pause() }
     }

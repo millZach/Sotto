@@ -95,14 +95,25 @@ function MediaTile({ shown, index, count, onOpen }: {
  * only enough to show its first frame; further away it lets go of it. It never plays until it is pressed, and it pauses
  * the moment it leaves the screen.
  */
-export function VideoTile({ shown, number, count }: { readonly shown: Shown; readonly number: number; readonly count: number }): ReactNode {
+export function VideoTile({ shown, number, count, playsAtOnce = false }: {
+  readonly shown: Shown; readonly number: number; readonly count: number
+  /** Opened by a press on its mark in a step's line, it plays as soon as it has loaded, once: that press was the ask. */
+  readonly playsAtOnce?: boolean
+}): ReactNode {
   const { t } = useLingui()
   const frame = useRef<HTMLDivElement>(null)
   const player = useRef<HTMLVideoElement>(null)
   const [near, setNear] = useState(false)
   const [started, setStarted] = useState(false)
   const [failed, setFailed] = useState(false)
+  const asked = useRef(playsAtOnce)
   useEffect(() => frame.current ? watchNear(frame.current, setNear) : undefined, [])
+  useEffect(() => {
+    const video = player.current
+    if (!near || !asked.current || !video) return
+    asked.current = false
+    void video.play().then(() => video.focus(), () => setFailed(true))
+  }, [near])
   useEffect(() => frame.current ? watchOnScreen(frame.current, shown => { if (!shown) player.current?.pause() }) : undefined, [])
   // Let go of, it starts over from its first frame when it comes near again.
   useEffect(() => { if (!near) setStarted(false) }, [near])

@@ -34,12 +34,14 @@ class NearObserver {
 describe('an agent\'s pictures in its steps (ADR-0170, pictures in steps)', () => {
   const real = globalThis.IntersectionObserver
   const threadMedia = vi.fn(async (request: { size: string }) => ({ dataUrl: request.size === 'tile' ? TILE : WHOLE }))
+  const play = vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve() })
   beforeAll(() => {
     globalThis.IntersectionObserver = NearObserver as unknown as typeof IntersectionObserver
     ;(window as unknown as { sotto: unknown }).sotto = { agents: { threadMedia } }
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(play)
   })
-  afterEach(() => { cleanup(); owl.on = true; threadMedia.mockClear() })
+  afterEach(() => { cleanup(); owl.on = true; threadMedia.mockClear(); play.mockClear() })
   afterAll(() => { globalThis.IntersectionObserver = real; delete (window as unknown as { sotto?: unknown }).sotto; vi.restoreAllMocks() })
 
   it('shows the newest three of a line\'s pictures, small, with a count for the rest, each read at tile size by its handle', async () => {
@@ -78,17 +80,43 @@ describe('an agent\'s pictures in its steps (ADR-0170, pictures in steps)', () =
     expect(screen.getByRole('dialog').textContent).toContain('Picture 1')
   })
 
-  it('plays a video in a tile under the line when its mark is pressed, and takes it away when pressed again', async () => {
-    const video = { id: 'm0', digest: 'a'.repeat(64), kind: 'video' as const, mimeType: 'video/webm' as const, sizeBytes: 14_200_000, name: 'signup.webm', source: 'file' as const }
-    inThread(<Line records={[{ ...step('sotto-written-1', 0), kind: 'file-change', media: [video] }]} />)
+  const video = (index: number) => ({ id: `v${index}`, digest: 'a'.repeat(64), kind: 'video' as const, mimeType: 'video/webm' as const, sizeBytes: 14_200_000, name: `signup-${index}.webm`, source: 'file' as const })
+
+  it('plays a video under the line when its mark is pressed, and puts it away on a second press or Escape', async () => {
+    inThread(<Line records={[{ ...step('sotto-written-1', 0), kind: 'file-change', media: [video(0)] }]} />)
     const mark = screen.getByRole('button', { name: 'Play video 1 of 1, from Pictures and videos it wrote' })
     expect(document.querySelector('video')).toBeNull()
     await userEvent.click(mark)
     expect(mark.getAttribute('aria-pressed')).toBe('true')
-    expect(document.querySelector('video')?.getAttribute('src')).toBe('sotto-media://video/thread/sotto-written-1/m0')
+    expect(mark.getAttribute('aria-label')).toBe('Close video 1 of 1, from Pictures and videos it wrote')
+    expect(document.querySelector('video')?.getAttribute('src')).toBe('sotto-media://video/thread/sotto-written-1/v0')
+    // The press was the ask, so it plays at once, and only once.
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
     await userEvent.click(mark)
     expect(document.querySelector('video')).toBeNull()
+    await userEvent.click(mark)
+    await waitFor(() => expect(document.querySelector('video')).not.toBeNull())
+    await userEvent.keyboard('{Escape}')
+    expect(document.querySelector('video')).toBeNull()
+    expect(document.activeElement).toBe(mark)
     expect(threadMedia).not.toHaveBeenCalled()
+  })
+
+  it('shows a turn\'s newest written files, which arrive newest first, and keeps its videos on the line', async () => {
+    // The host lists what a turn wrote newest first: m0 is the newest.
+    inThread(<Line records={[{ ...step('sotto-written-1', 5), kind: 'file-change' }]} />)
+    expect(screen.getAllByRole('button', { name: /^Open picture/ }).map(button => button.dataset.mediaId)).toEqual(['m2', 'm1', 'm0'])
+    cleanup()
+    // Four videos and two pictures: the videos hold the line, since the viewer reaches the pictures from the count.
+    inThread(<Line records={[{ ...step('mixed', 2), media: [picture(0), video(1), video(2), picture(3), video(4), video(5)] }]} />)
+    expect(screen.getAllByRole('button', { name: /^Play video/ })).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: 'Open all 6 pictures' }))
+    await waitFor(() => expect(threadMedia).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'mixed', mediaId: 'm0', size: 'full' }))
+    cleanup()
+    // A count that stands for a video alone plays it.
+    inThread(<Line records={[{ ...step('a', 0), media: [video(0), video(1), video(2), video(3)] }]} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Play the next video' }))
+    expect(document.querySelector('video')?.getAttribute('src')).toBe('sotto-media://video/thread/a/v0')
   })
 
   it('hides its strip while the line does not show it, and draws nothing with the Owl feature off or outside a thread', async () => {

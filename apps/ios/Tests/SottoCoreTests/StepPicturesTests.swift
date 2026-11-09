@@ -22,11 +22,30 @@ final class StepPicturesTests: XCTestCase {
 
     func testALineShowsTheNewestThreeAndCountsTheRest() throws {
         let items = StepPictures.inSteps([try step("a", pictures: 3), try step("b", pictures: 2)])
-        let line = StepPictures.newest(items)
+        let line = StepPictures.line(items)
         XCTAssertEqual(line.shown.map(\.id), ["a/m2", "b/m0", "b/m1"])
-        XCTAssertEqual(line.more, 2)
-        let few = StepPictures.newest(Array(items.prefix(2)))
+        XCTAssertEqual(line.hidden.map(\.id), ["a/m0", "a/m1"])
+        let few = StepPictures.line(Array(items.prefix(2)))
         XCTAssertEqual(few.shown.count, 2)
-        XCTAssertEqual(few.more, 0)
+        XCTAssertTrue(few.hidden.isEmpty)
+    }
+
+    func testATurnsWrittenFilesAreTurnedRoundSoTheNewestShow() throws {
+        // The computer lists what a turn wrote newest first: m0 is the newest.
+        let written = try step("sotto-written-1", pictures: 5)
+        XCTAssertEqual(StepPictures.line(StepPictures.inSteps([written])).shown.map(\.media.id), ["m2", "m1", "m0"])
+    }
+
+    func testVideosHoldTheLineBeforePictures() throws {
+        let digest = String(repeating: "b", count: 64)
+        let kinds = ["image", "video", "video", "image", "video", "video"]
+        let media = kinds.enumerated().map { index, kind in
+            #"{"id":"m\#(index)","digest":"\#(digest)","kind":"\#(kind)","mimeType":"\#(kind == "video" ? "video/webm" : "image/png")","sizeBytes":40,"name":"f\#(index)","source":"file"}"#
+        }
+        let json = #"{"id":"mixed","sequence":1,"kind":"tool","status":"completed","title":"Step","media":[\#(media.joined(separator: ","))]}"#
+        let mixed = try JSONDecoder().decode(Activity.self, from: Data(json.utf8))
+        let line = StepPictures.line(StepPictures.inSteps([mixed]))
+        XCTAssertEqual(line.shown.map(\.media.id), ["m2", "m4", "m5"])
+        XCTAssertEqual(line.hidden.map(\.media.id), ["m0", "m1", "m3"])
     }
 }
