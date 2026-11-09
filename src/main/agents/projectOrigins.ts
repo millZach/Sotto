@@ -1,7 +1,7 @@
 import type { AgentProject } from '../../shared/agents'
 import { PROJECT_ORIGINS_MAX, type ProjectOrigins } from '../../shared/workerMachine'
-import { parseGitHubRemote, type GitHubRepository } from './github'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { parseGitHubRemote, type GitHubRepository } from './git/github'
+import { runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 
 /** How many folders are asked at once: one `git config` read each, a few milliseconds apiece. */
 const READS_AT_ONCE = 8

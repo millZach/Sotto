@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 
-import type { ClaudeAdapterEvent } from '../../src/main/agents/claude'
+import type { ClaudeAdapterEvent } from '../../src/main/agents/providers/claude/claude'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 

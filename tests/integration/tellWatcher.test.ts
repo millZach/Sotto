@@ -120,7 +120,7 @@ it('watches nothing it starts or sends to, and later sends only to the thread it
   const requestId = f.requestIn(f.notes(id).find(note => note.includes('"Start one."'))!)!
   const started = await call('start_thread', startInput(requestId))
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  expect((f.control.watcherRecord().watches ?? []).some(watch => watch.target.threadId === started.target.threadId)).toBe(false)
+  expect((f.control.watcherRecords.copy().watches ?? []).some(watch => watch.target.threadId === started.target.threadId)).toBe(false)
   // In its turn it may send to a thread it did not start, and that earns it nothing later.
   await f.endTurn(worker, 'Synthetic reply to the user')
   expect(await call('send_to_thread', { requestId, retryKey: randomUUID(), target: { hostId, threadId: worker }, text: 'Synthetic send', delivery: 'now' })).toMatchObject({ status: 'ok' })
@@ -138,7 +138,7 @@ it('closes a request nothing was done under once its turn ends', async () => {
   await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('tell_watcher'))).toBe(true), { timeout: 15_000 })
   const requestId = f.requestIn(f.notes(id).find(item => item.includes('tell_watcher'))!)!
   await f.endTurn(id, 'Synthetic Watcher reply to the thread')
-  await vi.waitFor(() => expect(f.control.watcherRecord().requests.find(request => request.id === requestId)?.state).toBe('closed'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(f.control.watcherRecords.copy().requests.find(request => request.id === requestId)?.state).toBe('closed'), { timeout: 15_000 })
 })
 
 it('opens nothing when only the worker names Watcher', async () => {
@@ -237,10 +237,10 @@ it('keeps a message news had not yet carried across a restart', async () => {
   await f.restart()
   await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('"Saved before the batch."'))).toBe(true), { timeout: 15_000 })
   const requestId = f.requestIn(f.notes(id).find(note => note.includes('"Saved before the batch."'))!)!
-  expect(f.control.watcherRecord().requests.find(request => request.id === requestId)?.state).toBe('active')
+  expect(f.control.watcherRecords.copy().requests.find(request => request.id === requestId)?.state).toBe('active')
   // Told once, and forgotten: another restart sends nothing more.
   await f.endTurn(id, 'Synthetic Watcher reply')
-  await vi.waitFor(() => expect(f.control.watcherRecord().requests.find(request => request.id === requestId)?.state).toBe('closed'), { timeout: 15_000 })
+  await vi.waitFor(() => expect(f.control.watcherRecords.copy().requests.find(request => request.id === requestId)?.state).toBe('closed'), { timeout: 15_000 })
   const told = f.notes(id).length
   await f.restart()
   await new Promise(resolve => setTimeout(resolve, 2_500))
@@ -257,7 +257,7 @@ it('keeps a message still queued across a restart, and its request with it', asy
   await f.endTurn(id, 'Synthetic Watcher reply')
   await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('"Queued while Watcher works."'))).toBe(true), { timeout: 15_000 })
   const requestId = f.requestIn(f.notes(id).find(note => note.includes('"Queued while Watcher works."'))!)!
-  expect(f.control.watcherRecord().requests.find(request => request.id === requestId)?.state).toBe('active')
+  expect(f.control.watcherRecords.copy().requests.find(request => request.id === requestId)?.state).toBe('active')
 })
 
 // #2229: a worker's READY TO MERGE is a fact Sotto carries, so it reaches Watcher even when a turn's news leaves its reply out.

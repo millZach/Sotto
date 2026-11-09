@@ -3,17 +3,19 @@
  * The desktop relay inside delegation (#1316): the desktop admits a thread on another machine as one of its own callers,
  * under its own ceiling and levels, and a host's thread starts elsewhere through the relay or is refused by name.
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DelegationService, type DelegationControlHooks, type DelegationCoordinator, type DelegationServiceOptions, type RelayedCaller } from '../../../src/main/agents/delegation'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { RelayUnanswered } from '../../../src/main/agents/delegationRelayHost'
 import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../../src/shared/agents'
 import { relayAwayWords } from '../../../src/shared/delegationRelay'
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-relay-admission-')) throw new Error('Unexpected test directory')
     await rm(root, { recursive: true, force: true })
@@ -45,6 +47,12 @@ async function service(options: Partial<DelegationServiceOptions>, configured: '
 }
 const start = { work: 'code-review', brief: 'Review it.', provider: 'codex', model: 'model', permission: 'full-access', wait_seconds: 0 }
 
+it('rejects an unreadable delegation record before admitting commands', async () => {
+  const failure = new Error('delegations could not be read')
+  vi.spyOn(AtomicJsonStore.prototype, 'read').mockRejectedValueOnce(failure)
+  await expect(service({})).rejects.toBe(failure)
+})
+
 describe('a relayed caller on the desktop', () => {
   const key = `host:${HOST}:parent-there`
   const caller = (levels: number, runtimeMode: RelayedCaller['runtimeMode'] = 'full-access'): RelayedCaller => ({ id: key, projectId: 'project', runtimeMode, levels, rootUserMessageId: 'root-there' })
@@ -60,6 +68,15 @@ describe('a relayed caller on the desktop', () => {
     expect(f.commands.filter(command => command.type === 'create-thread')).toHaveLength(1)
     const narrower = await service({ relayedCallers: { caller: id => id === key ? caller(0, 'full-access') : undefined, tell: async () => undefined } }, 'auto-accept-edits')
     expect(await narrower.delegation.delegate(key, { ...start, permission: 'auto' })).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
+  })
+
+  it('keeps a relayed caller root and head without manufacturing local thread fields', async () => {
+    const remote = { ...caller(0), callerMessageId: 'head-there' }
+    const f = await service({ relayedCallers: { caller: id => id === key ? remote : undefined, tell: async () => undefined } })
+    expect(await f.delegation.delegate(key, start)).toMatchObject({ status: 'ok' })
+    const saved = JSON.parse(await readFile(join(roots.at(-1)!, 'delegations.json'), 'utf8'))
+    expect(saved.delegations[0]).toMatchObject({ delegatingThreadId: key, rootUserMessageId: 'root-there', callerMessageId: 'head-there' })
+    f.delegation.close()
   })
 
   it('counts the levels above it on its own machine', async () => {

@@ -8,7 +8,7 @@ import type { CursorSignInBridge, CursorSignInView } from '../../../src/shared/c
 import type { HostSignInRequest, ProviderSignInView } from '../../../src/shared/hostProviders'
 import { cursorPending } from '../../../src/main/agents/cursorRequests'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
+import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
 import { ModelPicker } from '../../../src/renderer/src/agents/ModelPicker'
 import { modeChoices } from '../../../src/renderer/src/agents/permissionPresentation'
 import { AgentRequestCard } from '../../../src/renderer/src/agents/requests/AgentRequestCard'
@@ -201,7 +201,7 @@ describe('Cursor’s provider row', () => {
   })
 
   it('draws its badge from a colour of its own, defined in both modes', () => {
-    const providers = readFileSync('src/renderer/src/agents/providers.css', 'utf8')
+    const providers = readFileSync('src/renderer/src/features/settings/providers.css', 'utf8')
     expect(providers).toMatch(/\.provider-badge\[data-provider='cursor'\] \{ --provider-badge: var\(--tt-provider-cursor-badge\); \}/u)
     const tokens = readFileSync('src/renderer/src/styles/tokens.css', 'utf8')
     expect(tokens.match(/--tt-provider-cursor-badge: #[\da-f]{6};/gu)).toHaveLength(2)

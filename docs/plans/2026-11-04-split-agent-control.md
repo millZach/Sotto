@@ -35,6 +35,8 @@ PR 5 was "Thread detail, ~255 lines" until November 5. Reading it closely showed
 
 The file should be about 5,850 lines, which alone does not fix it. Check whether moved modules stayed small, whether agents and tests found them easier to work in, and how many conflicts the moves caused.
 
+November 9: Zach reopened the deferred code-health concerns, including Watcher ownership and followup lifecycle. The [followup plan](2026-11-09-deferred-code-health.md#adr-0190-checkpoint) records the design comparison and resumes those bounded changes before PRs 6 and 7 are complete. Combined saved-file assembly and broadcast remain in Control. Watcher records move into one owner; the send lifecycle stays in Control. The remaining exclusions below still apply.
+
 Out of this plan until then:
 
 - **Watcher's section, about 480 lines.** 45% of this block changed in the last 7 days, so moving it now would conflict constantly. It waits for a quieter stretch.

@@ -22,6 +22,7 @@ import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../.
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const THREADS = 250
 const MODELS = 874
@@ -53,7 +54,7 @@ describe.skipIf(!PERF_BENCH)('the 250 ms workspace flush over a large catalog (t
       })),
     }
     const adapter = new FakeProviderHost(state)
-    const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, false, true)
+    const workspace = new WorkspaceHost(adapter, root, { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: true })
     await workspace.initialize()
     await workspace.connect()
     await workspace.flush()

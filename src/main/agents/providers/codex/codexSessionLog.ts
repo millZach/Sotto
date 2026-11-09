@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { open, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../shared/agents'
+import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../../../shared/agents'
 import { CodexRolloutIdentities, rolloutIdentitiesStateSchema, type RolloutIdentity } from './codexMessageIdentity'
-import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { isAttachedFilesNote, stripAttachedFilesNote } from '../../attachedFiles'
+import { AtomicJsonStore } from '../../../storage/atomicJsonStore'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 type TextContent = { type: string; text?: string | undefined }[]

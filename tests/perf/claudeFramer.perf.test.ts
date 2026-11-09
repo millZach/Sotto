@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { ClaudeProtocol, type ClaudeFrame } from '../../src/main/agents/claudeProtocol'
+import { ClaudeProtocol, type ClaudeFrame } from '../../src/main/agents/providers/claude/claudeProtocol'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))

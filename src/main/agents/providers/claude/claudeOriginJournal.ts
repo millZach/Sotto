@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { hasErrorCode } from '../storage/atomicJsonStore'
-import { retryWindowsFileOperation } from '../storage/windowsFileRetry'
+import { hasErrorCode } from '../../../storage/atomicJsonStore'
+import { retryWindowsFileOperation } from '../../../storage/windowsFileRetry'
 
 /**
  * One origin as the journal holds it: the Sotto thread it belongs to, the record itself, and the journal generation

@@ -56,7 +56,7 @@ async function pairedWatcher(watcherScale: number) {
   record.watches = [{ id: randomUUID(), target: watched, createdAt: request.createdAt, generation: 0 }]
   record.operations.push({ ...structuredClone(record.operations.at(-1)!), id: randomUUID(), requestId: request.id, retryKey: randomUUID(), action: 'stop', target: watched,
     receiptId: 'stop-receipt', cardId: 'stop-card' })
-  await f.control.updateWatcher(next => Object.assign(next, structuredClone(record)))
+  await f.control.watcherRecords.update(next => Object.assign(next, structuredClone(record)))
   const snapshot: AgentHostSnapshot = { ...localSnapshot, hostId, connected: true,
     threads: [{ ...native, id: 'worker', hostId, status: 'running' }, ...targets.map(target => ({ ...native, id: target.threadId, hostId, status: 'idle' as const }))] }
   let projection: WatcherHostProjection | undefined
@@ -65,13 +65,13 @@ async function pairedWatcher(watcherScale: number) {
     projection: () => projection, control: vi.fn(), subscribe: () => () => undefined }
   // A pushed projection is reconciled from the router's copy of it, not read again.
   const reconcile = () => (watcher as unknown as { reconcileRemote(hostId?: string, force?: boolean): Promise<void> }).reconcileRemote(hostId, false)
-  const held = () => { const now = f.control.watcherRecord(); projection = { hostId, master: now.current!, revision: randomUUID(), observedAt: new Date().toISOString(), requests: now.requests, operations: now.operations, evidence: [] } }
+  const held = () => { const now = f.control.watcherRecords.copy(); projection = { hostId, master: now.current!, revision: randomUUID(), observedAt: new Date().toISOString(), requests: now.requests, operations: now.operations, evidence: [] } }
   held()
   watcher.useRemoteHosts(remote)
   // Whatever the first passes settle, the projection then says what the record holds.
   await reconcile(); held(); await reconcile(); held()
-  const fenced = f.control.watcherRecordView().requests.some(item => item.standingWatchId === record.watches![0]!.id && item.participants.some(participant => participant.automationStopped))
-  return { control: f.control, reconcile, recordBytes: JSON.stringify(f.control.watcherRecordView()).length, fenced }
+  const fenced = f.control.watcherRecords.view().requests.some(item => item.standingWatchId === record.watches![0]!.id && item.participants.some(participant => participant.automationStopped))
+  return { control: f.control, reconcile, recordBytes: JSON.stringify(f.control.watcherRecords.view()).length, fenced }
 }
 
 /**
@@ -79,10 +79,10 @@ async function pairedWatcher(watcherScale: number) {
  * and the longest one serialization, and changes handed to `updateWatcher`, each of which copies the record.
  */
 async function measure(paired: Awaited<ReturnType<typeof pairedWatcher>>, passes: number) {
-  const native = globalThis.structuredClone, stringify = JSON.stringify.bind(JSON), before = paired.control.watcherRecordView()
+  const native = globalThis.structuredClone, stringify = JSON.stringify.bind(JSON), before = paired.control.watcherRecords.view()
   let copies = 0, characters = 0, largest = 0, largestStart = ''
   globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => {
-    if (value === paired.control.watcherRecordView()) copies++
+    if (value === paired.control.watcherRecords.view()) copies++
     return native(value, options)
   }) as typeof structuredClone
   const serialized = vi.spyOn(JSON, 'stringify').mockImplementation(((...parameters: Parameters<typeof JSON.stringify>) => {
@@ -90,13 +90,13 @@ async function measure(paired: Awaited<ReturnType<typeof pairedWatcher>>, passes
     if ((text?.length ?? 0) > largest) { largest = text!.length; largestStart = text!.slice(0, 160) }
     return text
   }) as typeof JSON.stringify)
-  const updates = vi.spyOn(paired.control, 'updateWatcher'), times: number[] = []
+  const updates = vi.spyOn(paired.control.watcherRecords, 'update'), times: number[] = []
   let handed: number
   try {
     for (let pass = 0; pass < passes; pass++) { const start = performance.now(); await paired.reconcile(); times.push(performance.now() - start) }
     handed = updates.mock.calls.length
   } finally { globalThis.structuredClone = native; serialized.mockRestore(); updates.mockRestore() }
-  expect(paired.control.watcherRecordView()).toBe(before)
+  expect(paired.control.watcherRecords.view()).toBe(before)
   return { copies: copies / passes, characters: characters / passes, largest, largestStart, updates: handed / passes, times }
 }
 

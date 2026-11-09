@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { answerRequest, pendingRequest } from '../../../src/main/agents/codexRequests'
+import { answerRequest, pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 
 function form(properties: Record<string, unknown>, required: string[] = [], mode = 'form') {
   return pendingRequest('form-request', 'mcpServer/elicitation/request', {

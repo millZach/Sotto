@@ -4,12 +4,13 @@ import { appendFile, mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
+import { ClaudeSessionLog } from '../../src/main/agents/providers/claude/claudeSessionLog'
 import type { AgentThread } from '../../src/shared/agents'
 import { claudeFixture, savedClaudeThreads } from '../fixtures/claudeFixture'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 // A thread's Claude transcript used to be read from its first byte on every connect. Each authored entry
 // also published a whole snapshot of its own, so a long transcript cost thousands of snapshot clones and
@@ -84,7 +85,7 @@ describe('Claude transcript catch-up', () => {
     const sottoId = randomUUID()
     registry.reserve(sottoId, 'claude', id, f.projectId)
     await registry.flush()
-    const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, registry), join(f.root, 'workspace'), () => true, undefined, false, false, true)
+    const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, registry), join(f.root, 'workspace'), { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: true })
     await workspace.connect()
     try {
       const failing = vi.spyOn(ThreadStore.prototype, 'appendBatches')

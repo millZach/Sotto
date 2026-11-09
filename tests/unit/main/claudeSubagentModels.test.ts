@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ClaudeSubagentModels, MAX_SUBAGENT_TRANSCRIPTS, type ClaudeModelTarget } from '../../../src/main/agents/claudeSubagentModels'
+import { ClaudeSubagentModels, MAX_SUBAGENT_TRANSCRIPTS, type ClaudeModelTarget } from '../../../src/main/agents/providers/claude/claudeSubagentModels'
 
 const roots: string[] = []
 afterEach(async () => {

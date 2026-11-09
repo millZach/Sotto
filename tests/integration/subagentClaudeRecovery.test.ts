@@ -9,7 +9,7 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 it.each([{ evicted: false, privacy: false }, { evicted: true, privacy: false }, { evicted: true, privacy: true }])('finishes and reuses a Claude subagent after restart with eviction=$evicted privacy=$privacy', async ({ evicted, privacy }) => {
   let historyEnabled = true
   let fixture = await claudeFixture(undefined, 15_000)
-  let workspace = new WorkspaceHost(fixture.host, fixture.root, () => historyEnabled)
+  let workspace = new WorkspaceHost(fixture.host, fixture.root, { historyEnabled: () => historyEnabled })
   const root = fixture.root
   try {
     await workspace.connect()
@@ -60,7 +60,7 @@ it.each([{ evicted: false, privacy: false }, { evicted: true, privacy: false }, 
     expect((await readFile(path)).byteLength).toBe(cursor.offset)
 
     fixture = await claudeFixture(root, 15_000)
-    workspace = new WorkspaceHost(fixture.host, root, () => historyEnabled)
+    workspace = new WorkspaceHost(fixture.host, root, { historyEnabled: () => historyEnabled })
     await workspace.connect()
     await fixture.adapter.refreshThread('thread')
     const restored = (await workspace.subagentPage({ threadId: 'thread' })).rows

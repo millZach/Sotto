@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { CodexSessionLogWatcher } from '../../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher } from '../../../src/main/agents/providers/codex/codexSessionLog'
 import { rolloutLine } from '../../fixtures/codexFixture'
 
 // The point of this test is a rollout larger than one read chunk, so it writes and then parses two

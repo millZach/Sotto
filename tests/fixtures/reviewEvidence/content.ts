@@ -78,8 +78,8 @@ export class AgentControl {
 
 const WC = `   7160 src/main/agents/control.ts
    3412 src/main/agents/workspace.ts
-   2871 src/main/agents/codex.ts
-   2694 src/main/agents/claude.ts
+   2871 src/main/agents/providers/codex/codex.ts
+   2694 src/main/agents/providers/claude/claude.ts
    1980 src/main/ipc/registerIpc.ts
   18117 total`
 
@@ -364,8 +364,8 @@ export const STREAM_SHOWN = { first: '', second: 'is the only place t', third: '
 
 const streamBase = (): Turn => new Turn('stream-1', 'stream-u1', 'running', undefined, 4)
   .reasoning('stream-r1', '**Following one request end to end**\n\nThe adapter is where a request starts, so I am reading that first, then the snapshot handler that sees it arrive.')
-  .command('stream-c1', 'rg -n "kind: \'permission\'" src/main/agents/claude.ts', "1204:        kind: 'permission', text, options: [],", 60).described('Find where Claude permission requests are built')
-  .command('stream-c2', 'sed -n 1190,1240p src/main/agents/claude.ts', "      const request: AgentRequest = {\n        id: requestId,\n        kind: 'permission', text, options: [],\n…", 45).described('Read the permission request builder')
+  .command('stream-c1', 'rg -n "kind: \'permission\'" src/main/agents/providers/claude/claude.ts', "1204:        kind: 'permission', text, options: [],", 60).described('Find where Claude permission requests are built')
+  .command('stream-c2', 'sed -n 1190,1240p src/main/agents/providers/claude/claude.ts', "      const request: AgentRequest = {\n        id: requestId,\n        kind: 'permission', text, options: [],\n…", 45).described('Read the permission request builder')
 
 /**
  * Claude's todo list for the trace, as its TodoWrite sends it once the first files are read: the items as written, the one

@@ -60,7 +60,7 @@ async function root(): Promise<string> {
 }
 
 async function opened(directory: string, adapter = new EventProviderHost(), history: () => boolean = () => true) {
-  const host = new WorkspaceHost(adapter, directory, history)
+  const host = new WorkspaceHost(adapter, directory, { historyEnabled: history })
   let closed = false
   const close = async (): Promise<void> => { if (closed) return; closed = true; host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() }
   cleanup.push(close)

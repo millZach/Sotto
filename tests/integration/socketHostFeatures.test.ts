@@ -11,7 +11,7 @@ import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type Agent
 import { HOST_FEATURES, hostVersionMismatch, type HostFeature, type HostOperation } from '../../src/shared/hostProtocol'
 import { owlFeaturesForTrack, type OwlFeatureId } from '../../src/shared/owlFeatures'
 import { getReleaseTrack } from '../../src/shared/releaseTrack'
-import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
+import { GitPullRequestRefusal } from '../../src/main/agents/git/gitPullRequests'
 import { HostFactsSource, hostMachineReport, type MachineWork } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'

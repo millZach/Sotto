@@ -16,7 +16,7 @@ describe('subagent preload contract', () => {
     ipc.invoke.mockResolvedValue(page)
     expect(await bridge.page({ threadId: 'thread' })).toEqual(page)
     expect(ipc.invoke).toHaveBeenCalledWith(SUBAGENTS_PAGE, { threadId: 'thread' })
-    expect(() => bridge.page({ threadId: 'thread', limit: 5000 } as SubagentPageRequest)).toThrow()
+    await expect(bridge.page({ threadId: 'thread', limit: 5000 } as SubagentPageRequest)).rejects.toThrow()
     const listener = vi.fn(), unsubscribe = bridge.onChanged(listener)
     expect(ipc.on).toHaveBeenCalledWith(SUBAGENTS_CHANGED, expect.any(Function))
     const receive = ipc.on.mock.calls.find(call => call[0] === SUBAGENTS_CHANGED)![1] as (event: unknown, payload: unknown) => void

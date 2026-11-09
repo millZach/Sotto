@@ -22,6 +22,7 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../../src/main/e2e/agentEf
 import { CouncilService } from '../../../../src/main/council/councilService'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import { testCredentials } from '../../../fixtures/testCredentials'
+import { heldProvidersOf } from '../../../../src/shared/heldProviders'
 
 const cleanup: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -308,7 +309,14 @@ it('keeps owned judge creation and sending outside Git, checkpoints and side wri
   provider.state.threads = []
   provider.state.projects[0]!.path = directory
   provider.state.models[0]!.providerId = 'claude'
-  const host = new WorkspaceHost(provider, directory, () => true, undefined, true, false, false, undefined, null, true)
+  const host = new WorkspaceHost(provider, directory, {
+    historyEnabled: () => true,
+    watcherEnabled: true,
+    heldProviders: heldProvidersOf({ muse: false }),
+    streamingPublishCostEnabled: false,
+    storeWorker: null,
+    councilEnabled: true,
+  })
   cleanup.push(() => host.close())
   await host.connect()
   const store = new CouncilEvidenceStore(directory, randomUUID(), false), id = randomUUID()

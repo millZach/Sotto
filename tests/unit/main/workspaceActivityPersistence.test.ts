@@ -28,7 +28,7 @@ async function fixture(history: () => boolean = () => true, legacy = false) {
     host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose(); closed.add(host)
   }
   const open = async () => {
-    const host = new WorkspaceHost(provider, directory, history)
+    const host = new WorkspaceHost(provider, directory, { historyEnabled: history })
     cleanup.push(() => close(host))
     await host.initialize()
     // A window shows every saved thread, so what each one restored is in hand: a thread none shows keeps its records in

@@ -4,9 +4,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 import { deferred } from '../../fixtures/deferred'
-import { GitHubHosts } from '../../../src/main/agents/github'
+import { GitHubHosts } from '../../../src/main/agents/git/github'
 
 const repositories: Awaited<ReturnType<Awaited<ReturnType<typeof gitRepositorySeed>>['copy']>>[] = []
 let seed: Awaited<ReturnType<typeof gitRepositorySeed>>

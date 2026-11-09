@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CodexSessionLogWatcher, promptDigest, type RolloutPosition, type RolloutPositions } from '../../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher, promptDigest, type RolloutPosition, type RolloutPositions } from '../../../src/main/agents/providers/codex/codexSessionLog'
 import { browserFeedbackNote, carriesAttachedFiles } from '../../../src/main/agents/attachedFiles'
 import { rolloutLine } from '../../fixtures/codexFixture'
 import type { AgentMessage } from '../../../src/shared/agents'

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, rmdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
-import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import type { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 import { recoverWatcherLiveCodex } from '../fixtures/watcherLiveRecovery'
 
 const prefix = 'sotto-watcher-recovery-'

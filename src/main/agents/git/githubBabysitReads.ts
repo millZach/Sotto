@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { RATE_LIMIT_SELECTION, rateLimitSchema } from './github'
 import { checkOf, checksRefused } from './gitPullRequests'
-import type { GitPullRequestCheck } from '../../shared/gitPullRequests'
-import type { PullRequestObservation } from './watcherEvidence'
-import { pullRequestKey } from '../../shared/gitPullRequests'
-import { summarizePullRequestChecks } from './pullRequestCheckState'
-import { BUG_BOT_REVIEWS_SELECTION, bugBotReviewsSchema, readBugBotReview } from './bugBotReview'
-import type { WatcherBugBotReview } from '../../shared/watcher'
+import type { GitPullRequestCheck } from '../../../shared/gitPullRequests'
+import type { PullRequestObservation } from '../watcherEvidence'
+import { pullRequestKey } from '../../../shared/gitPullRequests'
+import { summarizePullRequestChecks } from '../pullRequestCheckState'
+import { BUG_BOT_REVIEWS_SELECTION, bugBotReviewsSchema, readBugBotReview } from '../bugBotReview'
+import type { WatcherBugBotReview } from '../../../shared/watcher'
 
 /** Publish facts from an existing read. Neither comments nor check names/output cross this boundary. */
 const passedOnlyWhole = (summary: ReturnType<typeof summarizePullRequestChecks>, whole: boolean) => summary === 'passed' && !whole ? 'pending' : summary

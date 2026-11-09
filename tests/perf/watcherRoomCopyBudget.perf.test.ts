@@ -102,7 +102,7 @@ it('hands every reader the room from the record\'s own records, which none of th
   const publish = () => (f.watcher as unknown as { publish(observe?: boolean): void }).publish(false)
   try {
     // A request a phone started: the record keeps which phone it was, and no reader is handed it.
-    f.control.mutateWatcher(next => { next.requests[0]!.phoneOrigin = { kind: 'phone', hostId: centerHostId, clientId: randomUUID() } })
+    f.control.watcherRecords.mutate(next => { next.requests[0]!.phoneOrigin = { kind: 'phone', hostId: centerHostId, clientId: randomUUID() } })
     const record = f.state(), expected = roomRecords(record)
     expect(record.requests[0]!.phoneOrigin).toBeDefined()
     const phoneBefore = phone.state(true, true, true)
@@ -146,7 +146,7 @@ it('hands every reader the room from the record\'s own records, which none of th
 
     // A change to the record after a reader kept a room replaces the record, so the kept rooms read as they did.
     const kept = structuredClone({ room, captured: sent.captured, legacy: sent.legacy }), rootAfter = randomUUID()
-    f.control.mutateWatcher(next => {
+    f.control.watcherRecords.mutate(next => {
       next.requests[1]!.rootUserMessageId = rootAfter
       next.history = []
       if (next.current) next.current.target.threadId = randomUUID()

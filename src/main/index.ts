@@ -56,6 +56,7 @@ import { HostUpdates } from './hosts/hostUpdate'
 import { routerBusyThreads } from './hosts/busyHost'
 import { HostBootChanges } from './hosts/hostBootStart'
 import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
+import type { DesktopLocalRuntime } from './hosts/localRuntime'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
 import { PhoneAccess, type PhoneAccessEvent } from './phones/phoneAccess'
@@ -333,11 +334,11 @@ import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
 import { githubBaseBranchChecks, githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
-import type { GitHubRateLimitEvent } from './agents/github'
+import type { GitHubRateLimitEvent } from './agents/git/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
-import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
-import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
+import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/providers/claude/claude'
+import { CodexAppServerHost, type CodexAdapterEvent } from './agents/providers/codex/codex'
 import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
@@ -1100,7 +1101,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) }, hostname: () => osHostname(), log: logOperational,
     ...e2eConfiguration ? { fetch: e2eTeamFetch(userDataPath) } : {},
   }) : undefined
-  const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
+  const localRuntime: DesktopLocalRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
     directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
@@ -2178,7 +2179,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     open: threadId => {
       void windows.showMain()
         .then(() => {
-          const watcher = localRuntime.watcher ? agentControl.watcherRecordView().current : null
+          const watcher = localRuntime.watcher ? agentControl.watcherRecords.view().current : null
           return openNotificationThread(hostRouter, threadId, watcher ? hostEntityKey(watcher.target.hostId, watcher.target.threadId) : undefined)
         })
         .then(opening => { windows.sendToMain(NOTIFICATION_OPENED, opening) })

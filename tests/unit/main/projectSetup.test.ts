@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { runGitStatusCommand } from '../../../src/main/agents/gitStatus'
+import { runGitStatusCommand } from '../../../src/main/agents/git/gitStatus'
 import { ProjectCopies, type ProjectSetupOptions } from '../../../src/main/agents/projectSetup'
 import { projectSetupRequestSchema } from '../../../src/shared/workerMachine'
 

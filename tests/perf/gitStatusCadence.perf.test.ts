@@ -10,7 +10,7 @@
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/gitStatusCadence.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { afterAll, describe, it, vi } from 'vitest'
-import { GitStatusReader } from '../../src/main/agents/gitStatus'
+import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
 import { ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import { gitSpawns } from '../fixtures/gitSpawnCounter'

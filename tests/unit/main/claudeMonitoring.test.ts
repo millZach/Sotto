@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeMonitoring } from '../../../src/main/agents/claudeMonitoring'
+import { ClaudeMonitoring } from '../../../src/main/agents/providers/claude/claudeMonitoring'
 import { agentMonitoringSchema, MAX_AGENT_MONITORS } from '../../../src/shared/agentMonitoring'
-import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import type { ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
 
 const start = (patch: ClaudeFrame = {}): ClaudeFrame => ({ type: 'system', subtype: 'task_started', task_id: 'native-private-id', task_type: 'monitor', description: 'Watch the build', ...patch })
 const update = (patch: ClaudeFrame): ClaudeFrame => ({ type: 'system', subtype: 'task_updated', task_id: 'native-private-id', patch })

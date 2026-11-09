@@ -8,8 +8,8 @@ import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
 import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
-import { launchProcess, runToExit } from './gitLauncher'
-import { QUIET_GIT_ENV } from './gitStatus'
+import { launchProcess, runToExit } from './git/gitLauncher'
+import { QUIET_GIT_ENV } from './git/gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
 /** A move's incoming ref (ADR-0082 decision 2), `refs/sotto/incoming/<move>/<branch>`, with the moved branch's name. */

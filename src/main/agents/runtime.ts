@@ -15,8 +15,8 @@ import { nextPromptOpeningWriter, nextPromptWriter } from '../llm/nextPrompt'
 import { NextPrompts } from './nextPrompts'
 import { nextPromptProject } from './nextPromptProject'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
-import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
-import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
+import { CodexAppServerHost, type CodexAdapterEvent } from './providers/codex/codex'
+import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './providers/claude/claude'
 import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
@@ -59,13 +59,13 @@ import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { desktopWindowClient, LocalHostService } from './hostService'
 import { threadToolReads } from './threadToolReads'
-import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
-import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
-import { GitActions } from './gitActions'
+import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './git/gitStatus'
+import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './git/github'
+import { GitActions } from './git/gitActions'
 import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
 import { wakeUpPartDue, type BabysitNews } from './babysitNews'
 import { WatchedPullRequestReader, type WatchedPullRequestEvent } from './watchedPullRequests'
-import { GitPullRequests } from './gitPullRequests'
+import { GitPullRequests } from './git/gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
@@ -73,7 +73,7 @@ import type { BaseBranchChecks } from './watcherComputedState'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import { LimitRestart } from './limitRestart'
-import type { AgentHost } from './host'
+import type { ProviderHost } from './host'
 import { UsageService } from './usageService'
 import type { ProductEventRecorder } from '../productEvents/threadEvents'
 import { mayGrantLocally } from './authority'
@@ -94,7 +94,7 @@ import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
-type NativeHost = AgentHost & { closed?: () => Promise<void> }
+type NativeHost = ProviderHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
   directory: string
@@ -111,8 +111,6 @@ export interface AgentRuntimeOptions {
   threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
-  /** Muse's answer alone, from before the held set; `heldProviders` wins. */
-  museEnabled?: boolean
   /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
   usageEnabled?: boolean
   /** Where this process's product events go (ADR-0179). Absent in tests and tools that send none. */
@@ -241,7 +239,7 @@ export interface AgentRuntimeOptions {
    */
   keepsWorktree?: (threadId: string) => boolean
   /** Desktop design fixtures replace the whole provider boundary. */
-  host?: AgentHost
+  host?: ProviderHost
   /** Native process overrides keep tests on the production coordinator path. */
   providers?: Partial<Record<ProviderId, NativeHost>>
   reasoner?: ControlDependencies['reasoner']
@@ -354,7 +352,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false, undefined, undefined, options.councilEnabled ?? false)
+  }), directory, { historyEnabled: options.historyEnabled, watcherEnabled: options.watcherEnabled ?? false,
+    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false })
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -478,7 +477,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const hostDelegation = options.runsAs === 'headless-host' && options.crossMachineEnabled === true ? options.hostDelegation : undefined
   // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
   const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
-  if (desktopDefaults) await desktopDefaults.load()
   // What a desktop said of **Show every picture and video an agent makes**: it reaches this host's captures as a setting, grants nothing.
   if (desktopDefaults && hostDelegation) {
     const eligible = hostDelegation.capacityEligible ?? hostDelegation.counts
@@ -559,14 +557,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A branch landed on a host for a start an exact read proves never made is let go of there (#1316 part 2).
       delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId),
         ...branchMoves ? { letGo: async landed => { const here = agentControl.hostId(); if (here) await branchMoves.forget({ ...landed, here }) } } : {} })
-      await delegationRemote.load()
       const remoteStarts = delegationRemote
       placingWatcher.useDelegationStarts(hostId => remoteStarts.pendingStarts(hostId))
       delegationRelay = new DesktopDelegationRelay(directory, { placement: placingWatcher, localHostId: () => agentControl.hostId(), elsewhere: true })
-      await delegationRelay.load()
     }
     const relaying = delegationRelay, remote = delegationRemote
-    if (options.dynamicThreadsEnabled === true) { dynamicRecord = new DynamicRecord(directory, () => threadTokensOf(agentControl.watcherSnapshot().threads)); await dynamicRecord.load() }
+    if (options.dynamicThreadsEnabled === true) { dynamicRecord = new DynamicRecord(directory, () => threadTokensOf(agentControl.watcherSnapshot().threads)) }
     const record = dynamicRecord
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
       ...options.dynamicThreadsEnabled === true ? { dynamicThreads: () => options.settings().dynamicThreads, providerLimits: async (provider: ProviderId) => agentHost.readProviderQuota?.(provider, true, true), ...record ? { record } : {} } : {},
@@ -647,11 +643,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
       news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {},
       ...movesHere ? { here: { supportsThreadMove: true, supportsThreadMoveKeep: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
-  await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.
-  const heldMoves = !threadMoves && options.runsAs !== 'headless-host' ? await holdUnfinishedMoves(directory, agentControl) : undefined
-  const moveKeeps = threadMoves ?? heldMoves
+  let heldMoves: Awaited<ReturnType<typeof holdUnfinishedMoves>> | undefined
   // A deleted thread keeps no worktree, so its move lets go of it (ADR-0140 decision 4).
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
@@ -674,7 +668,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...watcher ? { watched: (threadId: string) => { const hostId = agentControl.hostId(); return Boolean(hostId && watcher.watches({ hostId, threadId })) } } : {},
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
-    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : options.keepsWorktree ? { keeps: options.keepsWorktree } : {},
+    ...threadMoves || options.runsAs !== 'headless-host' ? { keeps: (threadId: string) => (threadMoves ?? heldMoves)?.keepsWorktree(threadId) ?? true } : options.keepsWorktree ? { keeps: options.keepsWorktree } : {},
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
@@ -740,7 +734,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Restarting threads a usage limit stopped (ADR-0144): given before start, so the first snapshot is read for stops and a
   // restart note restored from the queue is asked about. Watcher's own thread goes first, and Watcher hears of the others.
   const watcherThreadHere = (): string | undefined => {
-    const target = agentControl.watcherRecordView().current?.target
+    const target = agentControl.watcherRecords.view().current?.target
     return target && target.hostId === agentControl.hostId() ? target.threadId : undefined
   }
   const limitRestart = restartStopped ? new LimitRestart({ directory,
@@ -839,31 +833,46 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // desktop ends it again whenever the switch is saved off.
   const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
   try {
+    // Read every startup record inside the cleanup boundary, before a provider can start.
+    await desktopDefaults?.load()
+    await delegationRemote?.load()
+    await delegationRelay?.load()
+    await dynamicRecord?.load()
+    await threadMoves?.load()
+    if (!threadMoves && options.runsAs !== 'headless-host') heldMoves = await holdUnfinishedMoves(directory, agentControl)
     if (restartResume) await agentHost.initialize()
     await restartResume?.start()
     await limitRestart?.start()
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
     // With the coordinator's own record read, a fence it kept for a move the move's record shows over is lifted (#1178).
+    const moveKeeps = threadMoves ?? heldMoves
     moveKeeps?.settleFences()
+    await watcher?.recover()
+    await delegation?.recover()
   } catch (error) {
-    await restartResume?.freeze()
-    await limitRestart?.close()
-    idleCompaction.stop()
-    watcher?.close()
-    delegation?.close()
-    continuation?.close()
-    const closingWatcherTools = watcherTools?.close()
-    void babysitter?.close()
-    void watchedPullRequests?.close()
-    void mainCheckout?.close()
-    agentControl.dispose()
-    await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
-    agentHost.dispose()
-    usage?.close()
+    // One failed closer must neither skip the other resources nor replace the startup error.
+    await Promise.allSettled([
+      async () => { admissionOff?.(); workerAdmission?.close() },
+      async () => stopWatcher(),
+      async () => restartResume?.freeze(),
+      async () => limitRestart?.close(),
+      async () => projectCopies?.close(),
+      async () => worktreeCleanup.close(),
+      async () => mainCheckout?.close(),
+      async () => babysitter?.close(),
+      async () => watchedPullRequests?.close(),
+      async () => toolReads.dispose(),
+      async () => agentControl.dispose(),
+      async () => reasoner.close?.(),
+      async () => shortTextWriter.close(),
+      ...Object.values(providers).map(provider => async () => provider.closed?.()),
+      async () => closingWatcherTools,
+      async () => delegation?.drained(),
+      async () => watcher?.drained(),
+    ].map(stop => stop()))
+    await Promise.allSettled([async () => agentHost.dispose(), async () => usage?.close()].map(stop => stop()))
     throw error
   }
-  if (watcher) await watcher.recover()
-  if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).

@@ -26,6 +26,11 @@ export function hostClientBridge<T extends object>(bridge: T): T {
   // A remote host's thread has no cloud iPhone here (ADR-0047): wrapped, so a host-scoped thread ID reaching this local
   // bridge is refused.
   const domains = new Set(['agents', 'terminal', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory', 'visuals'])
+  // These members return their unsubscribe immediately. Every other call in these domains returns a Promise.
+  const subscriptions = new Set([
+    'agents.onState', 'agents.onThreadDetail', 'terminal.onEvent', 'browser.onEvent', 'browser.onFrame',
+    'cloudIphone.onEvent', 'gitChanges.onChanged', 'subagents.onChanged', 'requestDrafts.onChanged', 'memory.onChanged',
+  ])
   // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
   // October 5 amendment): these calls keep another host's key. Every other call naming another host is refused here.
   // A link's Markdown file is read the same way, and main itself says a link's file cannot be shown in a folder here (ADR-0120).
@@ -44,7 +49,7 @@ export function hostClientBridge<T extends object>(bridge: T): T {
   const wrap = (object: object, domain?: string): object => Object.freeze(Object.fromEntries(Object.entries(object).map(([name, member]) => {
     if (!domain) return [name, domains.has(name) && member && typeof member === 'object' ? wrap(member as object, name) : member]
     if (typeof member !== 'function') return [name, member]
-    return [name, (...args: unknown[]): unknown => {
+    const call = (...args: unknown[]): unknown => {
       const outgoing = args.map(arg => {
         if (typeof arg === 'function') return (value: unknown) => (arg as (value: unknown) => void)(routed && domain === 'agents' && name !== 'onState' ? value : receive(value))
         if (routed && domain === 'agents') return arg
@@ -54,7 +59,8 @@ export function hostClientBridge<T extends object>(bridge: T): T {
       })
       const result: unknown = Reflect.apply(member, object, outgoing)
       return result instanceof Promise ? result.then(value => routed && domain === 'agents' && name !== 'get' && name !== 'command' ? value : receive(value)) : result
-    }]
+    }
+    return [name, subscriptions.has(`${domain}.${name}`) ? call : async (...args: unknown[]) => call(...args)]
   })))
   return Object.freeze(wrap(bridge)) as T
 }

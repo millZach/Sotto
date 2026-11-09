@@ -15,7 +15,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 async function fixture() {
   const f = await codexFixture()
   let history = true
-  const workspace = new WorkspaceHost(f.host, f.root, () => history)
+  const workspace = new WorkspaceHost(f.host, f.root, { historyEnabled: () => history })
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await f.cleanup() })
   await workspace.connect()
   await workspace.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Fixture', path: f.root })
@@ -138,7 +138,7 @@ describe('Codex activity through native transport and workspace persistence', ()
     await notify('item/completed', { item: { ...activityItems.commandDone, id: 'new-command', aggregatedOutput: 'Fresh retained output' } }, true)
     await workspace.privacyChanged()
     expect(savedActivities(f.root).some(record => record.output === 'Fresh retained output')).toBe(true)
-    const restored = new WorkspaceHost(new FakeProviderHost(), f.root, () => false)
+    const restored = new WorkspaceHost(new FakeProviderHost(), f.root, { historyEnabled: () => false })
     await restored.initialize()
     expect(restored.workspaceSnapshot().threads[0]).not.toHaveProperty('activities')
     expect(await readFile(join(f.root, 'workspace.json'), 'utf8')).not.toContain('npm test')

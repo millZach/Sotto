@@ -5,7 +5,7 @@ import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
 import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
 import { mainThreadLaunches, resetMainThreadLaunches } from '../fixtures/mainThreadLaunches'
-import { useGitLauncher } from '../../src/main/agents/gitLauncher'
+import { useGitLauncher } from '../../src/main/agents/git/gitLauncher'
 import type { GrokAcpOptions } from '../../src/main/agents/grok'
 
 vi.mock('node:child_process', async importOriginal => (await import('../fixtures/mainThreadLaunches')).timingLaunches(await importOriginal()))

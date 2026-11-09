@@ -1,7 +1,7 @@
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { NEXT_PROMPT_PROJECT_LIMITS, NEXT_PROMPT_WATCHER_THREADS, type NextPromptProject, type NextPromptWatcherFacts } from '../llm/nextPrompt'
-import type { RunGitCommand } from './gitStatus'
+import type { RunGitCommand } from './git/gitStatus'
 
 /** A read that takes longer is left out rather than holding the suggestion. */
 const GIT_TIMEOUT_MS = 5_000

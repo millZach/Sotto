@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
 
 import { codexFixture, nativeRequestId, rolloutLine } from '../fixtures/codexFixture'
-import type { CodexProcess } from '../../src/main/agents/codexProcess'
+import type { CodexProcess } from '../../src/main/agents/providers/codex/codexProcess'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { promptImageOf } from '../fixtures/stagedImages'
 

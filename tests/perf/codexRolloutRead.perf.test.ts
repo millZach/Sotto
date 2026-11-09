@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mayBeRead } from '../../src/main/agents/codexSessionLog'
+import { mayBeRead } from '../../src/main/agents/providers/codex/codexSessionLog'
 import { sourceAt } from '../fixtures/baselineSource'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 

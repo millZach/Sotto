@@ -1,4 +1,4 @@
-import type { RunGitCommand } from '../../src/main/agents/gitStatus'
+import type { RunGitCommand } from '../../src/main/agents/git/gitStatus'
 
 /**
  * A scripted GitHub for babysitting (ADR-0061): pull requests as plain records a test changes between passes, and a

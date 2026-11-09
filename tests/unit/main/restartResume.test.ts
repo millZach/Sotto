@@ -16,6 +16,7 @@ import { RESUME_NOTE, RESUMES_IN_A_ROW_MAX, isResumeNoteText, type RestartNews }
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 /**
  * Resuming threads after a restart (ADR-0076): what a connected provider reports running is recorded as it starts and
@@ -263,6 +264,7 @@ describe('a thread whose history is read only after Sotto restarts', () => {
     const f = await fixture({ host })
     await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [] })
     await expect.poll(() => host.reads).toBeGreaterThan(0)
+    await f.control.followupsSettled()
     await expect.poll(() => f.control.get().followups?.[0]?.status).not.toBe('sending')
     expect(sends(f.host)).toEqual([])
     expect(f.control.get().followups).toEqual([expect.objectContaining({ text: 'Then add the tests.' })])
@@ -459,7 +461,7 @@ describe('a gated provider keeps its restart records', () => {
     host.state.models[0]!.providerId = 'muse'; host.state.models[0]!.provider = 'Muse'
     host.state.projects[0]!.path = parked.root
     const credentials = await testCredentials(parked.root, { mode: 'unavailable' })
-    const control = createAgentControl({ directory: parked.root, host, credentials, reasoner: e2eAgentReasoner, museEnabled: true }); controls.push(control)
+    const control = createAgentControl({ directory: parked.root, host, credentials, reasoner: e2eAgentReasoner, heldProviders: heldProvidersOf({ muse: true }) }); controls.push(control)
     const resume = new RestartResume({ directory: parked.root, control, enabled: () => true, tool: () => false,
       preservesDormantThread: () => false }); resumes.push(resume)
     control.useRestartResume({ due: () => true, sending: id => resume.noteSending(id), unsent: id => resume.noteUnsent(id) })

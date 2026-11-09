@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 
 // No turn is sent: native thread creation and settings changes alone cost no model tokens.
 describe("requires SOTTO_CODEX_SETTINGS_LIVE=1", () => {

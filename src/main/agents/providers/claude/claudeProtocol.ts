@@ -1,9 +1,9 @@
-import { stderrRateExceeded } from './stderrRate'
+import { stderrRateExceeded } from '../../stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
-import { withCliPath } from './cliLookup'
-import { runToExit, stopProcessTree } from './gitLauncher'
+import { AGENT_MAX_ATTACHMENT_BYTES } from '../../../../shared/agents'
+import { withCliPath } from '../../cliLookup'
+import { runToExit, stopProcessTree } from '../../git/gitLauncher'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}

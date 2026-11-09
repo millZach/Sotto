@@ -28,6 +28,7 @@ import { cursorModeArguments } from '../../src/main/agents/cursorModels'
 import { cursorFixture } from '../fixtures/fakeCursorFixture'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -606,7 +607,7 @@ for (const provider of ['codex', 'grok', 'muse'] as const) it(`${provider} keeps
   const f = await factories[provider](); cleanups.push(f.cleanup)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider, enabledProviders: () => [provider],
     threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), hermes: new FakeProviderHost(), [provider]: f.host } })
-  const workspace = new WorkspaceHost(native, f.root, () => true, undefined, true, true)
+  const workspace = new WorkspaceHost(native, f.root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) })
   cleanups.push(() => workspace.close())
   await workspace.initialize()
   await workspace.connect()

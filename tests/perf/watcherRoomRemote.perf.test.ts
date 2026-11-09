@@ -61,7 +61,7 @@ describe.skipIf(!PERF_BENCH)('Watcher room reads from a real socket cache (#991)
       cleanups.push(() => f.dispose())
       await f.control.start()
       const at = '2026-10-14T00:00:00.000Z', requestId = randomUUID()
-      await f.control.updateWatcher(record => {
+      await f.control.watcherRecords.update(record => {
         record.current = { target: { hostId: f.control.hostId()!, threadId: 'generated-master' },
           projectId: 'generated-project', provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
         record.requests.push({ id: requestId, watcher: record.current.target, rootUserMessageId: 'generated-prompt',
@@ -86,7 +86,7 @@ describe.skipIf(!PERF_BENCH)('Watcher room reads from a real socket cache (#991)
         return Reflect.apply(nativeClone, globalThis, [value, options]) as Value
       }
       for (const targets of [1, 3, 6]) {
-        await f.control.updateWatcher(record => {
+        await f.control.watcherRecords.update(record => {
           record.requests[0]!.participants = ids.slice(0, targets).map(threadId => ({ target: { hostId: paired.hostId, threadId },
             requestId, startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 }))
         })

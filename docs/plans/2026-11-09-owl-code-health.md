@@ -45,7 +45,7 @@ A fresh blind review reassessed the eighteen affected dimensions and produced a 
 
 The subsequent mechanical rescan reported strict 88.6. It retained subjective assessments and marked affected dimensions stale; this is not a new blind assessment of the completed fixes. Reopened heuristic findings and the wider mechanical backlog remain visible rather than being counted as completed work.
 
-After the fresh review, twenty-five recorded findings remain deferred. Three older findings overlap their replacements, leaving twenty-two distinct concerns in sixteen groups. All twenty-two followup steps remain unfinished; these are not fixes or permanent dismissals:
+At the end of the first batch, twenty-five recorded findings remained deferred. Three older findings overlap their replacements, leaving twenty-two distinct concerns in sixteen groups. The user subsequently reopened twenty-one concerns in [the deferred-work plan](2026-11-09-deferred-code-health.md); SQLite rollback handling remains deferred by the user's explicit choice. The table records why these concerns were separated from that first batch:
 
 | Followup | Why it needs a separate change |
 | --- | --- |
@@ -57,7 +57,7 @@ After the fresh review, twenty-five recorded findings remain deferred. Three old
 | Socket feature predicates | Preserve the Owl, host, admin and default-inclusion capability matrix. |
 | Appearance initialization | Verify both main and popup bootstrap and teardown. |
 | Durable Teams and delegation failures | Define truthful partial-success behavior and fail-closed startup cleanup. |
-| SQLite rollback errors | Requires the user's scope decision for an uncommon double-failure case. |
+| SQLite rollback errors | The user chose to leave this uncommon double-failure case deferred. |
 | Preload promise refusals | Separate asynchronous calls from synchronous subscription setup. |
 | Send outcomes and followup lifecycle | Settle absent-receipt semantics before sharing lifecycle code. |
 | Integration completion signals | Replace the Watcher and product-event fixtures' sleeps with observable completion; run in GitHub. |

@@ -45,7 +45,7 @@ async function fixture() {
         claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), hermes: new FakeProviderHost() },
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
-    const host = new WorkspaceHost(native, directory, () => historyEnabled)
+    const host = new WorkspaceHost(native, directory, { historyEnabled: () => historyEnabled })
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: {},
     })
@@ -113,7 +113,7 @@ describe('workspace persistence, delivery and settlement', () => {
     await writeFile(join(f.directory, `workspace.json.tmp-123-${randomUUID()}`), marker)
     await writeFile(join(f.directory, `workspace.json.corrupt-123-${randomUUID()}`), marker)
     await writeFile(join(f.directory, 'workspace.json.tmp-user-note'), 'Preserve unrelated files')
-    const recovered = new WorkspaceHost(new FakeProviderHost(), f.directory, () => false)
+    const recovered = new WorkspaceHost(new FakeProviderHost(), f.directory, { historyEnabled: () => false })
     await recovered.initialize()
     recovered.dispose()
     const names = (await readdir(f.directory)).filter(name => name.startsWith('workspace.json'))

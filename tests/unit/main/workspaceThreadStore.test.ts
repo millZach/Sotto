@@ -31,7 +31,7 @@ async function root(): Promise<string> {
 }
 
 async function opened(directory: string, adapter: FakeProviderHost, history: () => boolean = () => true) {
-  const host = new WorkspaceHost(adapter, directory, history)
+  const host = new WorkspaceHost(adapter, directory, { historyEnabled: history })
   cleanup.push(async () => { host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() })
   await host.initialize()
   return host

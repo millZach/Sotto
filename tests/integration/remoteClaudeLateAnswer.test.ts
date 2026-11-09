@@ -14,7 +14,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { requestDraftQuestions } from '../../src/shared/requestDrafts'
-import type { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
+import type { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
 
 it.each([true, false])('recovers a late Claude stdin completion %s after native cancellation and a cached negative receipt', async accepted => {
   const native = await claudeFixture()

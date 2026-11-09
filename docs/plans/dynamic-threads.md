@@ -71,7 +71,7 @@ Tests: `tests/integration/settingsHistoryIpc.test.ts` catches a missing allow-li
 ## Part 3: The overseer's instructions and the mark
 
 - `src/shared/workerRoles.ts` or a new `src/shared/dynamicThreads.ts`: one function that writes the standing instructions. No edits, a piece per worker, name the model with `why`, prefer room, one writer at a time in a shared checkout.
-- `src/main/agents/claude.ts` (`subagentRoles`, `--append-system-prompt`) and `src/main/agents/codex.ts` (`launchRoles`, `developerInstructions`): on a Dynamic thread, send these in place of the role table and leave out the role agents.
+- `src/main/agents/providers/claude/claude.ts` (`subagentRoles`, `--append-system-prompt`) and `src/main/agents/providers/codex/codex.ts` (`launchRoles`, `developerInstructions`): on a Dynamic thread, send these in place of the role table and leave out the role agents.
 - A thread set before its first message starts on these instructions. One that changes later owes an **overseer note**, which the workspace puts on its next send, through the channel Watcher's request note uses (`claude.ts`'s prompt hook, `codex.ts`'s `additionalContext`). A change at rest also lets go of the idle process, so the next one starts without role agents, or with them.
 - `src/main/agents/watcherOwnChanges.ts` and `src/renderer/src/watcher/WatcherOwnChange.tsx`: let the mark serve an overseer too. It names the model, and the thread's transcript draws it when `speaker` is not Watcher.
 

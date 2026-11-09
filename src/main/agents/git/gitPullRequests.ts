@@ -3,7 +3,7 @@ import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
   GIT_PULL_REQUEST_FILES_MAX, GIT_PULL_REQUEST_LIST_MAX, gitCommitIdSchema,
   type GitPullRequestAction, type GitPullRequestList, type GitPullRequestListItem, type GitPullRequestCheck, type GitPullRequestPress, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
-} from '../../shared/gitPullRequests'
+} from '../../../shared/gitPullRequests'
 import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
 

@@ -1,10 +1,10 @@
 import { BABYSITTING_PER_THREAD_MAX, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
-import type { GitHubRateLimit, GitHubRateLimitReading } from './github'
+import type { GitHubRateLimit, GitHubRateLimitReading } from './git/github'
 import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, REMARK_WORDS_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, readRemarkWords, remarkWordsQuery, pullRequestObservation,
-  type BabysitRemark, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+  type BabysitRemark, type DetailAnswer, type PullRequestFingerprint } from './git/githubBabysitReads'
 import type { PullRequestObservation } from './watcherEvidence'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 import { FAILED_READ_LIMIT, couldNotRunNotice, findNews, printable, publishedBabysitting, stillCurrent, toldAtStart,
   type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold, type BabysitUnreadable } from './babysitNews'
 import { PULL_REQUEST_HOST, PULL_REQUEST_PASS_MS, REFUSED_CHECKS_BEFORE_BACK_OFF, REMARKS_REREAD_MS, askPullRequests, checksAfter, checksDue, isFailedRead, openPullRequestObservation,

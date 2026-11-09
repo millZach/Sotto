@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { toldAtStart } from '../../src/main/agents/babysitNews'
-import { GitHubRateLimited } from '../../src/main/agents/github'
+import { GitHubRateLimited } from '../../src/main/agents/git/github'
 import type { AgentThread } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -51,7 +51,7 @@ async function fixture(on = true, babysittingRetired = false, pullRequestState?:
   }
   const thread = (threadId: string) => f.control.watcherSnapshot().threads.find(item => item.id === threadId)!
   const settled = (threadId: string) => Boolean(thread(threadId).workspaceSettledAt)
-  const watching = (threadId: string) => (f.control.watcherRecord().watches ?? []).some(watch => watch.target.threadId === threadId)
+  const watching = (threadId: string) => (f.control.watcherRecords.copy().watches ?? []).some(watch => watch.target.threadId === threadId)
   /** Watcher is told the thread's news in a turn of its own: that turn starts, and then ends. */
   const watcherHears = async () => {
     await vi.waitFor(() => expect(native(watcherId).status).toBe('running'), { timeout: 15_000 })
@@ -110,7 +110,7 @@ it('refuses a settle the user has not agreed to while the setting is off, and ta
   expect(await f.settle(requestId, target, { userAgreed: true })).toMatchObject({ status: 'ok' })
   expect(f.settled(target.threadId)).toBe(true)
   // The agreement is this computer's alone: the operation it recorded is the call without it.
-  const operation = f.control.watcherRecord().operations.findLast(item => item.action === 'settle')!
+  const operation = f.control.watcherRecords.copy().operations.findLast(item => item.action === 'settle')!
   expect(JSON.stringify(operation)).not.toContain('userAgreed')
 })
 
@@ -299,7 +299,7 @@ it('stops watching a thread the user settles, and restoring it does not watch it
   expect((await f.control.commandShell({ type: 'settle-thread', threadId: target.threadId })).error).toBeNull()
   await vi.waitFor(() => expect(f.watching(target.threadId)).toBe(false), { timeout: 15_000 })
   // Not the user's Stop watching: Watcher may watch it again when the user asks, without the user handing it back.
-  expect(f.control.watcherRecord().userUnwatches ?? []).toEqual([])
+  expect(f.control.watcherRecords.copy().userUnwatches ?? []).toEqual([])
   expect((await f.control.commandShell({ type: 'restore-thread', threadId: target.threadId })).error).toBeNull()
   await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.watching(target.threadId)).toBe(false)

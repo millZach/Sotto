@@ -123,7 +123,7 @@ describe('real Watcher user message display', () => {
     // A message an earlier build sent with the footer, and proved: the projection is its exact original boundary.
     const nativeUser = f.native().messages.find(message => message.id === request.rootUserMessageId)!, wire = original + legacyFooter(request.id, f.target.hostId)
     nativeUser.text = wire
-    await f.control.updateWatcher(record => { record.requests.find(item => item.id === request.id)!.displayPrompt = watcherDisplayPrompt(original, wire) })
+    await f.control.watcherRecords.update(record => { record.requests.find(item => item.id === request.id)!.displayPrompt = watcherDisplayPrompt(original, wire) })
     await f.refresh()
     f.native().messages.push({ id: 'streaming-reply', role: 'assistant', text: 'Hello', createdAt: new Date().toISOString() })
     await f.refresh(); updates.length = 0
@@ -192,7 +192,7 @@ describe('real Watcher user message display', () => {
     expect(verifications()).toBe(beforeReopen + 1)
     expect(detailText()).toBe(original)
     expect(verifications()).toBe(beforeReopen + 1)
-    expect(f.control.watcherRecord().requests.find(item => item.id === request.id)!.displayPrompt).toEqual(request.displayPrompt)
+    expect(f.control.watcherRecords.copy().requests.find(item => item.id === request.id)!.displayPrompt).toEqual(request.displayPrompt)
     expect(f.native().messages.find(message => message.id === request.rootUserMessageId)!.text).toBe(wire)
     await f.workspace.host.flush()
     const db = new DatabaseSync(join(f.root, 'threads.sqlite'), { readOnly: true })
@@ -213,7 +213,7 @@ describe('real Watcher user message display', () => {
     const restored = f.create(), service = f.make(restored)
     await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
     await restored.commandShell({ type: 'observe-threads', threadIds: [f.target.threadId] })
-    expect(restored.watcherRecord().requests.find(item => item.id === request.id)!.displayPrompt).toEqual(request.displayPrompt)
+    expect(restored.watcherRecords.copy().requests.find(item => item.id === request.id)!.displayPrompt).toEqual(request.displayPrompt)
     expect(restored.threadDetail(f.target.threadId)!.messages.find(message => message.id === request.rootUserMessageId)?.text).toBe(original)
     // A message saved before display proofs, with the footer main appended for its own request, shows as typed too
     // (Zach, October 14, 2026: the footer is omitted everywhere user-facing).
@@ -221,7 +221,7 @@ describe('real Watcher user message display', () => {
     const nativeOf = (provider: 'codex' | 'claude', threadId: string) => f.workspace.adapters[provider].state.threads.find(thread => thread.id === f.workspace.registry.byThread(threadId)!.sessionId)!
     const refresh = async (provider: 'codex' | 'claude') => { f.workspace.adapters[provider].emit(); await restored.commandShell({ type: 'refresh', provider }) }
     nativeOf('codex', f.target.threadId).messages.find(message => message.id === request.rootUserMessageId)!.text = original + legacyFooter(request.id, restored.hostId()!)
-    await restored.updateWatcher(record => { delete record.requests.find(item => item.id === request.id)!.displayPrompt })
+    await restored.watcherRecords.update(record => { delete record.requests.find(item => item.id === request.id)!.displayPrompt })
     await refresh('codex')
     expect(restored.threadDetail(f.target.threadId)!.messages.find(message => message.id === request.rootUserMessageId)?.text).toBe(original)
     // On the current conversation, a proof that no longer matches is never second-guessed; without one, the footer comes off.
@@ -232,12 +232,12 @@ describe('real Watcher user message display', () => {
     const currentRequest = service.state().requests.at(-1)!
     const footed = currentText + legacyFooter(currentRequest.id, restored.hostId()!)
     nativeOf('claude', current).messages.find(message => message.id === currentRequest.rootUserMessageId)!.text = footed
-    await restored.updateWatcher(record => { record.requests.find(item => item.id === currentRequest.id)!.displayPrompt!.wireDigest = '0'.repeat(64) })
+    await restored.watcherRecords.update(record => { record.requests.find(item => item.id === currentRequest.id)!.displayPrompt!.wireDigest = '0'.repeat(64) })
     await refresh('claude')
     const phone = new WatcherPhoneService(restored, service)
     expect(restored.threadDetail(current)!.messages.find(message => message.id === currentRequest.rootUserMessageId)!.text).toBe(footed)
     expect(phone.state(false).conversation.messages.find(message => message.id === currentRequest.rootUserMessageId)?.text).toBe(footed)
-    await restored.updateWatcher(record => { delete record.requests.find(item => item.id === currentRequest.id)!.displayPrompt })
+    await restored.watcherRecords.update(record => { delete record.requests.find(item => item.id === currentRequest.id)!.displayPrompt })
     await refresh('claude')
     expect(restored.threadDetail(current)!.messages.find(message => message.id === currentRequest.rootUserMessageId)!.text).toBe(currentText)
     expect(phone.state(false).conversation.messages.find(message => message.id === currentRequest.rootUserMessageId)?.text).toBe(currentText)

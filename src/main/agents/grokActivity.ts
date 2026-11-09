@@ -1,5 +1,5 @@
 import { MAX_ACTIVITY_TEXT, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
-import { object } from './claudeProtocol'
+import { object } from './providers/claude/claudeProtocol'
 import { acpToolMedia, rawOutputText, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, settledThinking, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 

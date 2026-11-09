@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { agentThreadSchema, type AgentThread } from '../../../src/shared/agents'
 import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, mergeAgentActivities } from '../../../src/shared/agentActivity'

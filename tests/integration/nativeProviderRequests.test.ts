@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
-import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
+import type { CodexProcess, RpcFrame } from '../../src/main/agents/providers/codex/codexProcess'
 import type { GrokRpc } from '../../src/main/agents/grokRpc'
 import type { AdapterFixture } from '../fixtures/adapterFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'

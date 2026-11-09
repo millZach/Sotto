@@ -3,8 +3,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
-import { CodexProcess } from '../../src/main/agents/codexProcess'
+import { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
+import { CodexProcess } from '../../src/main/agents/providers/codex/codexProcess'
 import { GrokSubscriptionClient } from '../../src/main/agents/subscriptionGrok'
 
 vi.mock('node:child_process', async importOriginal => {
