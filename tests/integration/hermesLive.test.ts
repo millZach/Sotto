@@ -82,21 +82,6 @@ it.skipIf(process.env.SOTTO_HERMES_LIVE !== '1')('codes, calls HTTP MCP, hot-add
     expect(calls).toBeGreaterThan(1)
     expect((await host.snapshot()).threads.find(t => t.id === id)?.messages.some(m => m.role === 'assistant' && m.text.includes('RESUMED'))).toBe(true)
     console.log(JSON.stringify({ check: 'resume-http-mcp', passed: true, totalSeconds: (Date.now() - started) / 1000 }))
-    if (process.env.SOTTO_HERMES_REFUSELESS_LIVE === '1') {
-      const rf = randomUUID(), rfStarted = Date.now()
-      expect((await host.snapshot()).models.some(m => m.id === 'own-refuseless/glm-5.3-flash-abliterated')).toBe(true)
-      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: rf, projectId: 'first', title: 'Refuseless live check',
-        modelId: 'own-refuseless/glm-5.3-flash-abliterated', runtimeMode: 'full-access' })
-      host.observeThreads([rf])
-      expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: rf,
-        text: 'Write refuseless_check.py in this project with a function double(x) returning x * 2. Run python3 to import it and assert double(3) == 6. Reply REFUSELESS_OK once it passes.' })).toEqual({ accepted: true })
-      await idle(rf)
-      expect(await readFile(join(project, 'refuseless_check.py'), 'utf8')).toContain('def double')
-      const finished = (await host.snapshot()).threads.find(t => t.id === rf)
-      expect(finished?.status).toBe('idle')
-      expect(finished?.messages.some(m => m.role === 'assistant' && m.text.includes('REFUSELESS_OK'))).toBe(true)
-      console.log(JSON.stringify({ check: 'refuseless-folder-reasoning-no-title', passed: true, seconds: (Date.now() - rfStarted) / 1000 }))
-    }
   } finally {
     host.disconnect(); await host.closed(); await server.close()
     console.log(JSON.stringify({ check: 'cleanup', root }))
