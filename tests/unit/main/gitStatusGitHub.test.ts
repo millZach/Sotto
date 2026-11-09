@@ -33,7 +33,7 @@ function headsAnswer(args: readonly string[], pulls: readonly Pull[], extra: Rec
   return JSON.stringify({ data: { ...extra, repository } })
 }
 
-function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) => GhAnswer, options: { gatherMs?: number; signedIn?: readonly string[]; aliases?: Readonly<Record<string, string>> } = {}) {
+function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) => GhAnswer, options: { gatherMs?: number; signedIn?: readonly string[]; aliases?: Readonly<Record<string, string>>; beforeGit?: (args: readonly string[]) => void } = {}) {
   let now = 1_000_000
   const calls: string[][] = []
   /** `gh auth status`, which asks GitHub nothing about pull requests, kept apart from the questions that do. */
@@ -48,6 +48,7 @@ function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) 
       return answer
     }
     git.push([cwd, ...args])
+    options.beforeGit?.(args)
     const folder = folders[cwd]
     if (!folder) throw new Error('fatal: not a git repository')
     const upstream = folder.upstream === undefined ? `origin/${folder.branch}` : folder.upstream
@@ -85,6 +86,31 @@ const worktrees = (count: number, common = 'C:/fixture/owned/.git'): Record<stri
   Object.fromEntries(Array.from({ length: count }, (_, index) => [`C:/fixture/worktrees/thread-${index + 1}`, { common, branch: `feature/thread-${index + 1}` }]))
 
 describe('one question per repository', () => {
+  it.each(['ETIMEDOUT', 'ABORT_ERR'])('keeps the last answer and backs off when remote discovery fails with %s', async code => {
+    const folder = 'C:/fixture/worktrees/thread-1'
+    let failure: Error | undefined
+    let number = 1
+    const f = harness(worktrees(1), args => headsAnswer(args, [{ head: 'feature/thread-1', number }]), {
+      beforeGit: args => { if (args[0] === 'config' && failure) throw failure },
+    })
+    const discoveries = () => f.git.filter(call => call[1] === 'config').length
+    expect((await f.round(folder, true)).pullRequest?.number).toBe(1)
+    failure = Object.assign(new Error('remote discovery failed'), { code })
+    number = 2
+    f.reader.invalidate()
+    expect((await f.round(folder, true)).pullRequest?.number).toBe(1)
+    expect(discoveries()).toBe(2)
+    expect((await f.round(folder, true)).pullRequest?.number).toBe(1)
+    expect(discoveries()).toBe(2)
+    f.advance(20_001)
+    expect((await f.round(folder, true)).pullRequest?.number).toBe(1)
+    expect(discoveries()).toBe(3)
+    failure = undefined
+    f.advance(40_001)
+    expect((await f.round(folder, true)).pullRequest?.number).toBe(2)
+    expect(discoveries()).toBe(4)
+    expect(f.graphql()).toBe(2)
+  })
   it('asks about ten branches of one repository in one gh api graphql call, each head a variable', async () => {
     const folders = worktrees(10)
     const pulls = Object.values(folders).map((folder, index) => ({ head: folder.branch, number: 100 + index }))

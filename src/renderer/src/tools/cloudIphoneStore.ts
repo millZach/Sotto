@@ -87,7 +87,9 @@ export class CloudIphoneStore {
   /** Checks the key with run.cloud and saves it only if accepted; an empty value removes the saved key. */
   async setKey(bridge: CloudIphoneBridgeLike, value: string): Promise<{ saved: boolean; problem: string | null }> {
     if (!bridge) return { saved: false, problem: t`Cloud iPhone is not available in this window.` }
-    const result = await bridge.setKey({ value })
+    let result: Awaited<ReturnType<CloudIphoneBridge['setKey']>>
+    try { result = await bridge.setKey({ value }) }
+    catch { return { saved: false, problem: t`Cloud iPhone is not available in this window.` } }
     if (!result.ok) return { saved: false, problem: result.error.message }
     void this.loadStatus(bridge)
     return result.value
@@ -96,7 +98,9 @@ export class CloudIphoneStore {
   /** The user's Start cloud iPhone or Deny on the thread's request card. */
   async answer(bridge: CloudIphoneBridgeLike, session: CloudSession, allow: boolean): Promise<string | null> {
     if (!bridge) return t`Cloud iPhone is not available in this window.`
-    const result = await bridge.answer({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id, allow })
+    let result: Awaited<ReturnType<CloudIphoneBridge['answer']>>
+    try { result = await bridge.answer({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id, allow }) }
+    catch { return t`Cloud iPhone is not available in this window.` }
     if (!result.ok) return result.error.message
     this.receive({ type: 'session', session: result.value })
     return null
@@ -105,7 +109,9 @@ export class CloudIphoneStore {
   /** The user's End session. */
   async end(bridge: CloudIphoneBridgeLike, session: CloudSession): Promise<string | null> {
     if (!bridge) return t`Cloud iPhone is not available in this window.`
-    const result = await bridge.end({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id })
+    let result: Awaited<ReturnType<CloudIphoneBridge['end']>>
+    try { result = await bridge.end({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id }) }
+    catch { return t`Cloud iPhone is not available in this window.` }
     if (!result.ok) return result.error.message
     this.receive({ type: 'session', session: result.value })
     return null

@@ -145,7 +145,10 @@ export interface GitHubRemote { readonly repository: GitHubRepository | null; re
 export async function readGitHubRemotes(run: RunGitCommand, cwd: string, hosts: GitHubHosts): Promise<Map<string, GitHubRemote>> {
   const remotes = new Map<string, { url: string | null; ghResolved: string | null }>()
   // Git answers 1 when no key matches, which is a repository with no remotes.
-  const listing = await run(cwd, 'git', ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']).catch(() => '')
+  const listing = await run(cwd, 'git', ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']).catch((error: unknown) => {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1) return ''
+    throw error
+  })
   for (const line of listing.split('\n')) {
     const match = /^remote\.(.+)\.(url|gh-resolved) (.*)$/u.exec(line.trim())
     if (!match) continue

@@ -68,4 +68,48 @@ describe('the DevTools pipe (ADR-0198)', () => {
     await new Promise(resolve => setImmediate(resolve))
     expect(garbled.pipe.closed).toBe(true)
   })
+
+  it.each([null, [], false, 17, 'message'].map(value => ({ value })))('closes on a non-object envelope: $value', async ({ value }) => {
+    const { pipe, answer } = connect()
+    const waiting = expect(pipe.send('Page.reload')).rejects.toThrow('The browser has closed.')
+    answer(value)
+    await waiting
+    expect(pipe.closed).toBe(true)
+  })
+
+  it('closes on a non-object error envelope', async () => {
+    const { pipe, answer } = connect()
+    const waiting = expect(pipe.send('Page.reload')).rejects.toThrow('The browser has closed.')
+    answer({ id: 1, error: 'refused' })
+    await waiting
+    expect(pipe.closed).toBe(true)
+  })
+
+  it.each([false, true])('enforces the size limit on a complete frame, split=%s', async split => {
+    const { pipe, fromBrowser } = connect()
+    const waiting = expect(pipe.send('Page.reload')).rejects.toThrow('The browser has closed.')
+    // The JSON remains valid with trailing spaces, so decoding cannot hide a missed byte limit.
+    const message = Buffer.alloc(DEVTOOLS_MESSAGE_LIMIT + 2, ' ')
+    message.write('{"id":1,"result":{}}')
+    message[message.length - 1] = 0
+    if (split) {
+      fromBrowser.write(message.subarray(0, DEVTOOLS_MESSAGE_LIMIT - 1))
+      expect(pipe.closed).toBe(false)
+      fromBrowser.write(message.subarray(DEVTOOLS_MESSAGE_LIMIT - 1))
+    } else fromBrowser.write(message)
+    await waiting
+    expect(pipe.closed).toBe(true)
+  })
+
+  it('accepts a complete frame exactly at the byte limit', async () => {
+    const { pipe, fromBrowser } = connect()
+    const waiting = pipe.send('Page.reload')
+    const message = Buffer.alloc(DEVTOOLS_MESSAGE_LIMIT + 1, ' ')
+    message.write('{"id":1,"result":{"accepted":true}}')
+    message[message.length - 1] = 0
+    fromBrowser.write(message)
+    await expect(waiting).resolves.toEqual({ accepted: true })
+    expect(pipe.closed).toBe(false)
+    pipe.close()
+  })
 })

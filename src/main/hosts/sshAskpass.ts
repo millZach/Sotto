@@ -185,8 +185,10 @@ export class AskpassBroker {
       if (at === -1) return
       clearTimeout(timer)
       socket.removeListener('data', onData)
-      let request: { token?: unknown; prompt?: unknown; hint?: unknown }
-      try { request = JSON.parse(input.slice(0, at)) as typeof request } catch { socket.destroy(); return }
+      let decoded: unknown
+      try { decoded = JSON.parse(input.slice(0, at)) } catch { socket.destroy(); return }
+      if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) { socket.destroy(); return }
+      const request = decoded as Record<string, unknown>
       const caller = typeof request.token === 'string' ? this.caller(request.token) : undefined
       if (!caller || typeof request.prompt !== 'string') { socket.destroy(); return }
       // ssh kills its helper when it stops waiting (a notice ended, or ssh gave up), so a helper that goes

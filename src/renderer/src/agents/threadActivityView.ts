@@ -183,8 +183,8 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  const newest = newestTurn(messages, sorted, anchors, named, places)
-  return { after, unshown, before, leading, trailing, ...newest.ended ? { newestTurnEnded: true as const } : {}, ...newest.cutShort ? { newestTurnCutShort: true as const } : {} }
+  const newestStatus = newestTurnStatus(messages, sorted, anchors, named, places)
+  return { after, unshown, before, leading, trailing, ...newestStatus.ended ? { newestTurnEnded: true as const } : {}, ...newestStatus.cutShort ? { newestTurnCutShort: true as const } : {} }
 }
 
 /**
@@ -196,7 +196,7 @@ export function placeActivities(
  * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
  * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
  */
-function newestTurn(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+function newestTurnStatus(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
   named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): { readonly ended: boolean; readonly cutShort: boolean } {
   const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
   const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
