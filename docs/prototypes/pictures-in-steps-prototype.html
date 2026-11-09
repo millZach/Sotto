@@ -1,0 +1,435 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Zach, November 9, 2026: an agent's pictures should sit inside the steps that made them, small, instead of taking the
+  thread over as 208x140 tiles (ADR-0170). A press on one opens the viewer and Mark up as today. A picture the agent shows
+  on purpose through show_in_thread stays large in the thread.
+
+  The question: how does a step carry its pictures?
+    ?variant=A   A · Strip at the row's end, and on the closed Worked for line
+    ?variant=B   B · A filmstrip under the step's words; the closed line says how many in words
+    ?variant=C   C · The newest picture stands as the step's mark; the closed line adds nothing
+  The top bar switches the view (desktop or iPhone), the theme, steps open or closed, how many thumbnails a row shows,
+  and whether a generated image stays a tile or goes in its row. Left and right arrow keys switch the variant.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · Sotto pictures in steps</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.2 0.006 70);
+  --tt-sidebar: oklch(0.175 0.006 70);
+  --tt-surface-elevated: oklch(0.245 0.007 70);
+  --tt-surface-sunken: oklch(0.16 0.006 70);
+  --tt-bubble: oklch(0.27 0.008 70);
+  --tt-text: oklch(0.95 0.006 80);
+  --tt-text-2: oklch(0.84 0.008 80);
+  --tt-text-muted: oklch(0.7 0.01 80);
+  --tt-hairline: oklch(0.32 0.008 70);
+  --tt-accent: oklch(0.76 0.12 75);
+  --tt-on-accent: oklch(0.2 0.03 75);
+  --tt-activity: oklch(0.78 0.12 75);
+  --tt-hover: oklch(1 0 0 / 6%);
+  --tt-scrim: rgb(0 0 0 / 82%);
+  --tt-font: Figtree, ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.975 0.004 85);
+  --tt-sidebar: oklch(0.95 0.006 85);
+  --tt-surface-elevated: oklch(0.99 0.003 85);
+  --tt-surface-sunken: oklch(0.94 0.006 85);
+  --tt-bubble: oklch(0.935 0.007 85);
+  --tt-text: oklch(0.23 0.014 75);
+  --tt-text-2: oklch(0.33 0.014 75);
+  --tt-text-muted: oklch(0.47 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-accent: oklch(0.52 0.12 70);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-activity: oklch(0.5 0.12 70);
+  --tt-hover: oklch(0 0 0 / 5%);
+  --tt-scrim: rgb(20 22 26 / 76%);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #121316; color: var(--tt-text); font: 15px/1.5 var(--tt-font); overflow: hidden; }
+:root[data-theme='light'] body { background: #c9ccd2; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+/* ---------- prototype chrome (not part of the design) ---------- */
+.pnav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 10px; background: #f3f0e8; color: #111; font: 600 12px/1 system-ui, sans-serif; box-shadow: 0 2px 10px rgb(0 0 0 / 30%); }
+.pnav .grp { display: inline-flex; align-items: center; gap: 3px; }
+.pnav .grp > span { margin-right: 3px; color: #555; }
+.pnav button { border: 1px solid #c8c3b6; background: #fff; color: #111; border-radius: 999px; padding: 6px 9px; cursor: pointer; font: inherit; }
+.pnav button[aria-pressed='true'] { background: #111; color: #fff; border-color: #111; }
+.pbar { position: fixed; z-index: 100; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #fff; color: #111; border-radius: 999px; box-shadow: 0 6px 24px rgb(0 0 0 / 45%); font: 700 13px/1.2 system-ui, sans-serif; max-width: calc(100vw - 16px); }
+.pbar button { flex: none; border: 0; width: 34px; height: 34px; border-radius: 50%; background: #111; color: #fff; cursor: pointer; font-size: 16px; }
+.pbar span { text-align: center; }
+.hud { position: fixed; z-index: 100; right: 10px; bottom: 64px; width: 260px; padding: 10px 12px; background: #fffbe8; color: #222; border-radius: 10px; font: 12px/1.45 system-ui, sans-serif; box-shadow: 0 6px 20px rgb(0 0 0 / 35%); }
+.hud b { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8a6d00; margin-bottom: 4px; }
+.hud .x { position: absolute; top: 4px; right: 6px; border: 0; background: none; cursor: pointer; font-size: 14px; color: #777; }
+.hud.min { width: auto; padding: 6px 10px; } .hud.min .rows { display: none; }
+@media (max-width: 700px) { .pbar { font-size: 11.5px; gap: 6px; } .pbar button { width: 30px; height: 30px; } .pnav { font-size: 11px; gap: 5px 8px; } .pnav button { padding: 5px 7px; } }
+#stage { position: absolute; left: 0; right: 0; bottom: 0; overflow: auto; display: flex; justify-content: center; }
+.scaler { transform-origin: top left; flex: none; }
+
+/* ---------- desktop window ---------- */
+.win { width: 1280px; height: 800px; background: var(--tt-canvas); display: grid; grid-template-columns: 248px 1fr; grid-template-rows: 38px 1fr; overflow: hidden; border-radius: 10px; box-shadow: 0 20px 60px rgb(0 0 0 / 50%); }
+.strip { grid-column: 1 / -1; border-bottom: 1px solid var(--tt-hairline); display: flex; align-items: center; padding: 0 16px; gap: 14px; color: var(--tt-text-muted); font-size: 13px; }
+.strip b { color: var(--tt-text); font-weight: 600; }
+.side { background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); padding: 14px 10px; font-size: 13px; color: var(--tt-text-muted); }
+.side .h { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; margin: 6px 8px 8px; }
+.side .t { padding: 7px 8px; border-radius: 8px; display: flex; gap: 8px; align-items: center; }
+.side .t.on { background: var(--tt-hover); color: var(--tt-text); }
+.side .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--tt-text-muted); }
+.side .t.on .dot { border-color: var(--tt-activity); background: var(--tt-activity); }
+.pane { display: flex; flex-direction: column; min-height: 0; }
+.pane-head { height: 44px; flex: none; display: flex; align-items: center; padding: 0 24px; font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--tt-hairline); }
+.scroll { flex: 1; overflow: auto; padding: 22px 24px 120px; }
+.col { max-width: 720px; margin: 0 auto; }
+.composer { margin: 0 24px 18px; align-self: center; width: calc(100% - 48px); max-width: 720px; border: 1px solid var(--tt-hairline); border-radius: 22px; padding: 12px 18px; color: var(--tt-text-muted); font-size: 14px; background: var(--tt-surface-elevated); }
+
+/* ---------- iPhone ---------- */
+.phone { width: 390px; height: 844px; border-radius: 48px; background: #000; padding: 12px; box-shadow: 0 20px 60px rgb(0 0 0 / 50%); }
+.phone-in { width: 100%; height: 100%; border-radius: 38px; overflow: hidden; background: var(--tt-canvas); display: flex; flex-direction: column; }
+.phone-top { height: 92px; flex: none; display: flex; align-items: flex-end; padding: 0 18px 10px; font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--tt-hairline); }
+.phone .scroll { padding: 16px 14px 60px; font-size: 15px; }
+.phone .composer { margin: 0 12px 26px; width: auto; }
+
+/* ---------- transcript ---------- */
+.msg { margin: 0 0 18px; }
+.msg header { display: flex; gap: 8px; font-size: 13px; color: var(--tt-text-muted); margin-bottom: 4px; }
+.msg header b { color: var(--tt-text-2); font-weight: 600; }
+.msg.user { background: var(--tt-bubble); border-radius: 16px; padding: 10px 14px; margin-left: auto; width: fit-content; max-width: 80%; }
+.msg p { margin: 0; }
+.work { margin: 0 0 12px; }
+.work-line { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-left: -6px; padding: 0 8px 0 6px; border-radius: 8px; color: var(--tt-text-muted); font-size: 14px; cursor: pointer; border: 0; background: none; text-align: left; max-width: 100%; }
+.work-line:hover { background: var(--tt-hover); }
+.work-line .words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; width: 14px; height: 14px; transition: transform .15s; }
+.work[data-open] .work-line .chev { transform: rotate(90deg); }
+.rows { list-style: none; margin: 2px 0 0; padding: 0; display: none; }
+.work[data-open] .rows { display: block; }
+.row { position: relative; }
+.row-btn { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 3px 6px; border: 0; border-radius: 7px; background: none; text-align: left; color: var(--tt-text-2); font-size: 14px; line-height: 1.4; }
+.row-btn:hover { background: var(--tt-hover); }
+.row .ico { width: 15px; height: 15px; color: var(--tt-text-muted); }
+.row .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .lead { color: var(--tt-text-muted); }
+.row .mono { font-family: var(--tt-mono); font-size: 12.5px; }
+.row .meta { color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row[data-now] .ico { color: var(--tt-activity); }
+.row[data-now] .lbl { color: var(--tt-text); font-weight: 500; }
+.pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); margin-right: 5px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+:root[data-motion='reduced'] .pulse { animation: none; }
+.reply p { margin: 0 0 10px; }
+
+/* Thumbnails: shared bits. A thumb is its own button inside the row, so a press opens the viewer and not the row. */
+.thumbs { display: inline-flex; align-items: center; gap: 4px; }
+.thumb { flex: none; padding: 0; border: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); border-radius: 5px; overflow: hidden; cursor: zoom-in; position: relative; }
+.thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb:hover { border-color: var(--tt-text-muted); }
+.thumb .play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; background: rgb(0 0 0 / 30%); font-size: 11px; }
+.more { flex: none; border: 1px solid var(--tt-hairline); background: none; border-radius: 5px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; padding: 0 6px; cursor: pointer; }
+.more:hover { color: var(--tt-text-2); background: var(--tt-hover); }
+
+/* A: strip at the row's end */
+[data-variant='A'] .row .thumbs .thumb { width: 34px; height: 24px; }
+[data-variant='A'] .row .thumbs .more { height: 24px; }
+[data-variant='A'] .work-line .thumbs { margin-left: 4px; }
+[data-variant='A'] .work-line .thumb { width: 30px; height: 21px; }
+[data-variant='A'] .work-line .more { height: 21px; }
+
+/* B: filmstrip under the step's words */
+[data-variant='B'] .film { display: flex; gap: 6px; padding: 0 6px 6px 30px; }
+[data-variant='B'] .film .thumb { width: 72px; height: 48px; border-radius: 6px; }
+[data-variant='B'] .film .more { height: 48px; padding: 0 10px; border-radius: 6px; }
+.phone [data-variant='B'] .film .thumb, .phone[data-variant='B'] .film .thumb { width: 60px; height: 40px; }
+.phone[data-variant='B'] .film .more { height: 40px; }
+
+/* C: the newest picture is the step's mark */
+[data-variant='C'] .row-btn { grid-template-columns: 40px minmax(0, 1fr) auto auto; }
+[data-variant='C'] .mark { width: 40px; height: 28px; position: relative; padding: 0; border: 0; background: none; cursor: zoom-in; }
+[data-variant='C'] .mark .card { position: absolute; inset: 0; border: 1px solid var(--tt-hairline); border-radius: 5px; overflow: hidden; background: var(--tt-surface-sunken); }
+[data-variant='C'] .mark .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+[data-variant='C'] .mark .card.back { transform: translate(3px, -3px); opacity: .6; }
+[data-variant='C'] .mark .n { position: absolute; right: -4px; bottom: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); font-size: 10.5px; line-height: 14px; text-align: center; color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+
+/* Large tile: what show_in_thread (and, by the toggle, a generated image) keeps */
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.tile { width: 208px; margin: 0; }
+.tile button { display: block; width: 208px; height: 140px; padding: 0; border: 1px solid var(--tt-hairline); border-radius: 10px; overflow: hidden; background: var(--tt-surface-sunken); cursor: zoom-in; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile figcaption { font-size: 12.5px; color: var(--tt-text-muted); margin-top: 4px; display: flex; gap: 8px; }
+.tile figcaption b { color: var(--tt-text-2); font-weight: 500; }
+.tiles-title { font-size: 13px; color: var(--tt-text-muted); margin: 0 0 4px; }
+.phone .tile, .phone .tile button { width: 168px; } .phone .tile button { height: 113px; }
+
+/* Video opened in its row (B and A and C alike) */
+.row-video { margin: 4px 0 8px 30px; width: 260px; height: 150px; border-radius: 10px; border: 1px solid var(--tt-hairline); background: #000 center/cover; display: grid; place-items: center; color: #fff; }
+
+/* ---------- viewer (as today) ---------- */
+.viewer { position: fixed; inset: 0; z-index: 90; background: var(--tt-scrim); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 70px 16px 80px; }
+.viewer[data-open] { display: flex; }
+.viewer img { max-width: min(1000px, 100%); max-height: calc(100% - 60px); border-radius: 8px; box-shadow: 0 10px 40px rgb(0 0 0 / 60%); }
+.viewer .bar { display: flex; gap: 8px; align-items: center; color: #eee; font-size: 13px; flex-wrap: wrap; justify-content: center; }
+.viewer .bar button { border: 1px solid rgb(255 255 255 / 25%); background: rgb(255 255 255 / 10%); color: #fff; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.viewer .note { color: #bbb; font-size: 12px; }
+</style>
+</head>
+<body>
+<nav class="pnav" aria-label="Prototype controls">
+  <div class="grp"><span>View</span><button data-k="view" data-v="desktop">Desktop</button><button data-k="view" data-v="iphone">iPhone</button></div>
+  <div class="grp"><span>Theme</span><button data-k="theme" data-v="dark">Dark</button><button data-k="theme" data-v="light">Light</button></div>
+  <div class="grp"><span>Steps</span><button data-k="steps" data-v="open">Open</button><button data-k="steps" data-v="closed">Closed</button></div>
+  <div class="grp"><span>Thumbnails</span><button data-k="n" data-v="2">2</button><button data-k="n" data-v="3">3</button><button data-k="n" data-v="4">4</button><button data-k="n" data-v="fit">As fit</button></div>
+  <div class="grp"><span>Generated image</span><button data-k="gen" data-v="tile">Tile</button><button data-k="gen" data-v="row">In its row</button></div>
+</nav>
+<div id="stage"><div class="scaler" id="scaler"></div></div>
+<div class="viewer" id="viewer" role="dialog" aria-label="Picture viewer">
+  <img id="vimg" alt="">
+  <div class="bar"><button id="vprev">←</button><span id="vname"></span><button id="vnext">→</button><button id="vmark">Mark up</button><button id="vclose">Close</button></div>
+  <div class="note">The viewer and Mark up stay exactly as they are today; this page only mocks the press that opens them.</div>
+</div>
+<div class="pbar"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+
+<script>
+const VARIANTS = {
+  A: 'A · Strip at the row’s end, and on the closed line',
+  B: 'B · Filmstrip under the step; closed line in words',
+  C: 'C · Newest picture as the step’s mark; closed line plain',
+}
+const params = new URLSearchParams(location.search)
+const small = matchMedia('(max-width: 700px)').matches
+const state = {
+  variant: VARIANTS[params.get('variant')] ? params.get('variant') : 'A',
+  view: params.get('view') || (small ? 'iphone' : 'desktop'),
+  theme: params.get('theme') || 'dark',
+  steps: params.get('steps') || 'open',
+  n: params.get('n') || '3',
+  gen: params.get('gen') || 'tile',
+}
+
+// ---------- fake pictures, drawn here so the page needs nothing else ----------
+const pics = {}
+function draw(key, hue, kind, label) {
+  const c = document.createElement('canvas'); c.width = 640; c.height = 420
+  const g = c.getContext('2d')
+  g.fillStyle = `hsl(${hue} 18% 96%)`; g.fillRect(0, 0, 640, 420)
+  g.fillStyle = `hsl(${hue} 30% 22%)`; g.fillRect(0, 0, 640, 44)
+  g.fillStyle = `hsl(${hue} 60% 55%)`; g.fillRect(18, 14, 90, 16)
+  if (kind === 'page') {
+    g.fillStyle = '#d9dce2'; for (let i = 0; i < 4; i++) g.fillRect(24, 70 + i * 34, 360, 18)
+    g.fillStyle = `hsl(${hue} 55% 50%)`; g.fillRect(420, 70, 190, 150)
+    g.fillStyle = `hsl(${hue} 65% 45%)`; g.fillRect(24, 330, 180, 44)
+  } else if (kind === 'narrow') {
+    g.fillStyle = '#e6e8ec'; g.fillRect(200, 44, 240, 376)
+    g.fillStyle = '#c9ccd3'; for (let i = 0; i < 6; i++) g.fillRect(214, 64 + i * 30, 212, 14)
+    g.fillStyle = `hsl(${hue} 65% 48%)`; g.fillRect(214, 300, 212, 40)
+    g.fillStyle = 'hsl(5 80% 55%)'; g.fillRect(420, 290, 40, 60)
+  } else if (kind === 'frame') {
+    g.fillStyle = '#d9dce2'; g.fillRect(24, 70, 592, 300)
+    g.fillStyle = `hsl(${hue} 55% 52%)`; g.fillRect(24 + label * 30, 70, 220, 300)
+  } else if (kind === 'art') {
+    const gr = g.createLinearGradient(0, 0, 640, 420); gr.addColorStop(0, `hsl(${hue} 60% 30%)`); gr.addColorStop(1, `hsl(${hue + 60} 60% 60%)`)
+    g.fillStyle = gr; g.fillRect(0, 0, 640, 420)
+    g.fillStyle = 'rgb(255 255 255 / 80%)'; g.beginPath(); g.arc(320, 200, 90, 0, Math.PI * 2); g.fill()
+  }
+  if (typeof label === 'string') { g.fillStyle = `hsl(${hue} 30% 22%)`; g.font = '600 22px system-ui'; g.fillText(label, 24, 404) }
+  pics[key] = c.toDataURL('image/png')
+}
+draw('home', 210, 'page', 'localhost:5173')
+for (let i = 0; i < 5; i++) draw('cap' + i, 200 + i * 12, 'page', `Step ${i + 1} of the page script`)
+for (let i = 0; i < 3; i++) draw('nar' + i, 160 + i * 10, 'narrow', `820 wide, try ${i + 1}`)
+for (let i = 0; i < 14; i++) draw('f' + i, 30 + i * 4, 'frame', i)
+draw('gen', 280, 'art', '')
+draw('w1', 120, 'page', 'checkout-after.png'); draw('w2', 125, 'narrow', 'checkout-820.png')
+
+// ---------- the thread ----------
+const P = list => list.map(k => ({ key: k }))
+const turns = [
+  { user: 'The checkout page breaks at the 820 minimum. Fix it and check it in the browser.',
+    line: 'Worked for 4m 12s · 8 steps · Ran 2 commands, used the browser',
+    steps: [
+      { ico: 'file', lead: 'Read', subj: 'src/checkout/Checkout.tsx', meta: '' },
+      { ico: 'globe', lead: 'Opened', subj: 'localhost:5173 in the browser', meta: '2s', pics: P(['home']) },
+      { ico: 'globe', lead: '', subj: 'Ran page script, waited, captured page', extra: '5 steps', meta: '18s', pics: P(['cap0', 'cap1', 'cap2', 'cap3', 'cap4']) },
+      { ico: 'edit', lead: 'Edited', subj: 'src/checkout/checkout.css', meta: '+14 −6' },
+      { ico: 'globe', lead: '', subj: 'Resized to 820 wide and captured page', extra: '3 steps', meta: '9s', pics: P(['nar0', 'nar1', 'nar2']) },
+      { ico: 'term', lead: '', subj: 'Run the checkout tests', meta: '41s' },
+      { ico: 'film', lead: '', subj: 'Pictures and videos it wrote', meta: '', pics: [{ key: 'w1' }, { key: 'w2' }, { key: 'w1', video: true }] },
+    ],
+    reply: ['The summary column now wraps under the cart below 900 pixels, and the pay button stays in view at 820. The checkout tests pass.'] },
+  { user: 'Show me the 820 one.',
+    line: 'Worked for 6s · 1 step',
+    steps: [{ ico: 'img', lead: '', subj: 'Showed: Checkout at 820 pixels', meta: '', shown: true }],
+    tiles: { title: 'Checkout at 820 pixels', list: ['nar2'] },
+    reply: ['Here it is at 820 wide, after the fix.'] },
+  { user: 'Make a header image for the receipt email.',
+    line: 'Worked for 38s · 1 step · Made an image',
+    steps: [{ ico: 'img', lead: 'Made', subj: 'an image: a soft gradient with a round seal', meta: '31s', gen: true, pics: P(['gen']) }],
+    reply: ['Here is a header image for the receipt email.'] },
+  { user: 'Now check the drawer animation frame by frame.', running: true,
+    line: 'Capturing frames of the drawer · 2m 41s',
+    steps: [
+      { ico: 'globe', lead: 'Opened', subj: 'the cart drawer', meta: '1s' },
+      { ico: 'img', lead: 'Reading', subj: 't_28.90.png', extra: '', meta: '', now: true, pics: P(Array.from({ length: 14 }, (_, i) => 'f' + i)) },
+    ] },
+]
+
+// ---------- drawing ----------
+const ICONS = {
+  file: '<path d="M4 2h6l3 3v9H4z" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  globe: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12" fill="none" stroke="currentColor" stroke-width="1.2"/>',
+  edit: '<path d="M3 13l1-3 7-7 2 2-7 7z" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  term: '<path d="M3 4l4 4-4 4M8 12h5" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  img: '<rect x="2" y="3" width="12" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="7" r="1.3" fill="currentColor"/><path d="M3 12l4-3 3 2 3-2" fill="none" stroke="currentColor" stroke-width="1.2"/>',
+  film: '<rect x="2" y="3" width="12" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M7 6l3 2-3 2z" fill="currentColor"/>',
+}
+const svg = name => `<svg class="ico" viewBox="0 0 16 16" aria-hidden="true">${ICONS[name]}</svg>`
+const chev = '<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+let viewerList = [], viewerAt = 0
+const allPics = []
+function picId(turn, step, i) { return `${turn}/${step}/${i}` }
+
+function howMany(total, room) {
+  if (state.n === 'fit') return Math.min(total, room)
+  const n = Number(state.n)
+  return total > n ? n : total
+}
+function thumbButtons(list, tIndex, sIndex, cap, cls = '') {
+  const shown = howMany(list.length, cap)
+  const rest = list.length - shown
+  // Newest last in the step, so the strip shows the newest ones and "+N" stands for the earlier ones.
+  const start = list.length - shown
+  let html = rest > 0 ? `<button type="button" class="more" data-open="${picId(tIndex, sIndex, 0)}" aria-label="Open all ${list.length} pictures">+${rest}</button>` : ''
+  for (let i = start; i < list.length; i++) {
+    const p = list[i]
+    html += `<button type="button" class="thumb ${cls}" data-open="${picId(tIndex, sIndex, i)}" aria-label="Open picture ${i + 1} of ${list.length}">` +
+      `<img src="${pics[p.key]}" alt="">${p.video ? '<span class="play">▶</span>' : ''}</button>`
+  }
+  return html
+}
+
+function stepRow(step, t, s, phone) {
+  const lbl = `<span class="lbl">${step.lead ? `<span class="lead">${esc(step.lead)} </span>` : ''}<span class="${step.subj.includes('/') || step.subj.includes('.png') ? 'mono' : ''}">${esc(step.subj)}</span>${step.extra ? `<span class="lead"> · ${esc(step.extra)}</span>` : ''}</span>`
+  const meta = `<span class="meta">${step.now ? '<span class="pulse"></span>30m 36s' : esc(step.meta || '')}</span>`
+  const inRow = step.pics && !(step.gen && state.gen === 'tile')
+  const list = inRow ? step.pics : []
+  const v = state.variant
+  let icon = svg(step.ico), strip = '', film = ''
+  if (v === 'A') strip = `<span class="thumbs">${list.length ? thumbButtons(list, t, s, phone ? 3 : 6) : ''}</span>`
+  if (list.length && v === 'B') film = `<div class="film">${thumbButtons(list, t, s, phone ? 4 : 7)}</div>`
+  if (list.length && v === 'C') {
+    const last = list[list.length - 1]
+    icon = `<button type="button" class="mark" data-open="${picId(t, s, list.length - 1)}" aria-label="Open ${list.length} picture${list.length > 1 ? 's' : ''}">` +
+      (list.length > 1 ? `<span class="card back"><img src="${pics[list[list.length - 2].key]}" alt=""></span>` : '') +
+      `<span class="card"><img src="${pics[last.key]}" alt=""></span>${list.length > 1 ? `<span class="n">${list.length}</span>` : ''}</button>`
+  }
+  const video = list.some(p => p.video) && openVideos.has(`${t}/${s}`) ? `<div class="row-video" style="background-image:url(${pics.w1})">▶ playing in its row</div>` : ''
+  return `<li class="row" ${step.now ? 'data-now' : ''}><div class="row-btn">${icon}${lbl}${strip}${meta}</div>${film}${video}</li>`
+}
+const openVideos = new Set()
+
+function turnHtml(turn, t, phone) {
+  let html = `<div class="msg user"><p>${esc(turn.user)}</p></div>`
+  const open = state.steps === 'open' || turn.running
+  const rowPics = turn.steps.flatMap((step, s) => (step.pics && !(step.gen && state.gen === 'tile') ? step.pics.map((p, i) => ({ ...p, id: picId(t, s, i) })) : []))
+  let lineExtra = ''
+  if (!open && rowPics.length) {
+    if (state.variant === 'A') {
+      const shown = howMany(rowPics.length, phone ? 3 : 5), rest = rowPics.length - shown
+      lineExtra = `<span class="thumbs">${rest > 0 ? `<span class="more">+${rest}</span>` : ''}${rowPics.slice(-shown).map(p => `<span class="thumb"><img src="${pics[p.key]}" alt=""></span>`).join('')}</span>`
+    } else if (state.variant === 'B') lineExtra = `<span class="words"> · ${rowPics.length} picture${rowPics.length > 1 ? 's' : ''}</span>`
+  }
+  html += `<section class="work" ${open ? 'data-open' : ''}><button type="button" class="work-line" data-turn="${t}">${chev}<span class="words">${turn.running ? '<span class="pulse"></span>' : ''}${esc(turn.line)}</span>${lineExtra}</button>` +
+    `<ul class="rows">${turn.steps.map((step, s) => stepRow(step, t, s, phone)).join('')}</ul></section>`
+  const genTile = turn.steps.find(step => step.gen) && state.gen === 'tile'
+  if (turn.tiles || genTile) {
+    const list = turn.tiles ? turn.tiles.list : ['gen']
+    html += `${turn.tiles ? `<p class="tiles-title">${esc(turn.tiles.title)}</p>` : ''}<div class="tiles">${list.map((k, i) => `<figure class="tile"><button type="button" data-open="tile/${t}/${i}" aria-label="Open picture ${i + 1}"><img src="${pics[k]}" alt=""></button><figcaption><b>Picture ${i + 1}</b><span>PNG · ${k === 'gen' ? '1024×672' : '820×1180'}</span></figcaption></figure>`).join('')}</div>`
+  }
+  if (turn.reply) html += `<div class="msg reply"><header><b>Claude Code</b><span>9:${41 + t}</span></header>${turn.reply.map(p => `<p>${esc(p)}</p>`).join('')}</div>`
+  return html
+}
+
+function render() {
+  const root = document.documentElement
+  root.dataset.theme = state.theme
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) root.dataset.motion = 'reduced'
+  const phone = state.view === 'iphone'
+  const body = turns.map((turn, t) => turnHtml(turn, t, phone)).join('')
+  const scaler = document.getElementById('scaler')
+  scaler.innerHTML = phone
+    ? `<div class="phone" data-variant="${state.variant}"><div class="phone-in"><div class="phone-top">Checkout at 820</div><div class="scroll"><div class="col" data-variant="${state.variant}">${body}</div></div><div class="composer">Reply…</div></div></div>`
+    : `<div class="win" data-variant="${state.variant}"><div class="strip"><b>Sotto</b><span>Threads</span><span>Watcher</span></div>` +
+      `<aside class="side"><div class="h">Sotto</div><div class="t on"><span class="dot"></span>Checkout at 820</div><div class="t"><span class="dot"></span>Receipt email copy</div><div class="t"><span class="dot"></span>Tray icon on Linux</div></aside>` +
+      `<main class="pane"><div class="pane-head">Checkout at 820</div><div class="scroll"><div class="col" data-variant="${state.variant}">${body}</div></div><div class="composer">Reply to Claude Code…</div></main></div>`
+  fit()
+  document.querySelectorAll('.pnav button').forEach(b => b.setAttribute('aria-pressed', String(state[b.dataset.k] === b.dataset.v)))
+  document.getElementById('vlabel').textContent = VARIANTS[state.variant]
+  const q = new URLSearchParams(state); history.replaceState(null, '', '?' + q)
+}
+function fit() {
+  const stage = document.getElementById('stage'), scaler = document.getElementById('scaler')
+  const top = document.querySelector('.pnav').offsetHeight; stage.style.top = top + 'px'
+  const el = scaler.firstElementChild
+  const w = el.offsetWidth, h = el.offsetHeight
+  const sw = stage.clientWidth - 16, sh = stage.clientHeight - 70
+  const scale = Math.min(1, sw / w, state.view === 'iphone' && !small ? sh / h : 1)
+  scaler.style.transform = `scale(${scale})`; scaler.style.width = w * scale + 'px'; scaler.style.height = h * scale + 'px'
+  scaler.style.margin = '8px 0 70px'
+}
+
+// ---------- events ----------
+document.querySelector('.pnav').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; state[b.dataset.k] = b.dataset.v; render() })
+const order = Object.keys(VARIANTS)
+const step = d => { state.variant = order[(order.indexOf(state.variant) + d + order.length) % order.length]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+addEventListener('keydown', e => {
+  const viewer = document.getElementById('viewer')
+  if (viewer.dataset.open !== undefined) {
+    if (e.key === 'Escape') closeViewer()
+    if (e.key === 'ArrowRight') showAt(viewerAt + 1)
+    if (e.key === 'ArrowLeft') showAt(viewerAt - 1)
+    return
+  }
+  if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1)
+})
+addEventListener('resize', fit)
+document.getElementById('scaler').addEventListener('click', e => {
+  const open = e.target.closest('[data-open]')
+  if (open) {
+    const id = open.dataset.open
+    if (id.startsWith('tile/')) { const [, t, i] = id.split('/'); const list = turns[t].tiles ? turns[t].tiles.list : ['gen']; openViewer(list.map(k => pics[k]), Number(i)); return }
+    const [t, s, i] = id.split('/').map(Number)
+    const list = turns[t].steps[s].pics
+    if (list[i].video) { const k = `${t}/${s}`; openVideos.has(k) ? openVideos.delete(k) : openVideos.add(k); render(); return }
+    openViewer(list.filter(p => !p.video).map(p => pics[p.key]), Math.min(i, list.filter(p => !p.video).length - 1))
+    return
+  }
+  const line = e.target.closest('.work-line')
+  if (line) { state.steps = state.steps === 'open' ? 'closed' : 'open'; render() }
+})
+function openViewer(list, at) { viewerList = list; document.getElementById('viewer').dataset.open = ''; showAt(at) }
+function showAt(at) { viewerAt = (at + viewerList.length) % viewerList.length; document.getElementById('vimg').src = viewerList[viewerAt]; document.getElementById('vname').textContent = `Picture ${viewerAt + 1} of ${viewerList.length}` }
+function closeViewer() { delete document.getElementById('viewer').dataset.open }
+document.getElementById('vclose').onclick = closeViewer
+document.getElementById('vprev').onclick = () => showAt(viewerAt - 1)
+document.getElementById('vnext').onclick = () => showAt(viewerAt + 1)
+document.getElementById('vmark').onclick = () => alert('Mark up opens here, unchanged from today.')
+document.getElementById('viewer').addEventListener('click', e => { if (e.target.id === 'viewer') closeViewer() })
+render()
+</script>
+</body>
+</html>
