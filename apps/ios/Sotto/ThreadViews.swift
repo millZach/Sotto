@@ -364,6 +364,8 @@ struct ThreadMenu: View {
     @State private var acted = 0
     @State private var showingPullRequest = false
     @State private var showingCard = false
+    /// Whether the rail stands on the left, as Settings can put it sideways, so the card opens toward the page.
+    @State private var railOnLeft = false
     var body: some View {
         let chips = GitChips(model.thread(ref)?.worktree)
         Group {
@@ -376,7 +378,8 @@ struct ThreadMenu: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(PressStyle())
-                .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
+                .onGeometryChange(for: Bool.self, of: { $0.frame(in: .global).midX < 240 }) { railOnLeft = $0 }
+                .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: railOnLeft ? .leading : .trailing) {
                     railCard(chips).presentationCompactAdaptation(.popover)
                 }
             } else {
@@ -3069,9 +3072,9 @@ struct RequestSheet: View {
     @Environment(\.duoLayout) private var duo
     let place: RequestPlace
     let request: AgentRequest
-    /// The height of what scrolls, and of what stands around it (the buttons and the safe area), for the Duo's fit.
+    /// The height of what scrolls and of the buttons under it, for the Duo's fit.
     @State private var wordsHeight: CGFloat = 0
-    @State private var aroundHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
@@ -3106,10 +3109,11 @@ struct RequestSheet: View {
             .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
         }
         .scrollDismissesKeyboard(.interactively)
-        // The keyboard is in the safe area too, and writing an answer shouldn't make the sheet grow by it.
-        .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.top + $0.safeAreaInsets.bottom }) { if focus == nil { aroundHeight = $0 } }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        .preference(key: RequestSheetFit.self, value: duo == .none || wordsHeight == 0 ? nil : wordsHeight + aroundHeight)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) { footer }.onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { footerHeight = $0 }
+        }
+        // iOS adds the bottom safe area to a height detent itself, so it isn't counted here.
+        .preference(key: RequestSheetFit.self, value: duo == .none || wordsHeight == 0 ? nil : wordsHeight + footerHeight)
         .presentationBackground { SheetBackdrop(wash: true) }
         .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)

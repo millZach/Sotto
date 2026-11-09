@@ -729,6 +729,8 @@ private struct BabysitDock: View {
                 .accessibilityIdentifier("pull-request-babysit-info")
             }
         }
+        // With the dock's own margin, this lines up with the sheet's words.
+        .padding(.horizontal, Space.s2)
         .sensoryFeedback(.impact(weight: .medium), trigger: presses)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pull-request-babysit")
