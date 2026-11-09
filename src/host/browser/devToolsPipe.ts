@@ -80,6 +80,7 @@ export class DevToolsPipe {
     if (this.ended) return
     let start = 0
     for (let end = chunk.indexOf(0, start); end !== -1; end = chunk.indexOf(0, start)) {
+      if (this.buffered + end - start > DEVTOOLS_MESSAGE_LIMIT) { this.close(); return }
       this.chunks.push(chunk.subarray(start, end))
       const message = Buffer.concat(this.chunks)
       this.chunks = []; this.buffered = 0
@@ -95,13 +96,17 @@ export class DevToolsPipe {
   }
 
   private dispatch(raw: Buffer): void {
-    let message: { id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown }; sessionId?: unknown }
-    try { message = JSON.parse(raw.toString('utf8')) as typeof message } catch { this.close(); return }
+    let decoded: unknown
+    try { decoded = JSON.parse(raw.toString('utf8')) } catch { this.close(); return }
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) { this.close(); return }
+    const message = decoded as Record<string, unknown>
+    if (message.error !== undefined && (!message.error || typeof message.error !== 'object' || Array.isArray(message.error))) { this.close(); return }
+    const error = message.error as Record<string, unknown> | undefined
     if (typeof message.id === 'number') {
       const pending = this.pending.get(message.id)
       if (!pending) return
       this.pending.delete(message.id)
-      if (message.error) pending.reject(new DevToolsError(pending.method, typeof message.error.code === 'number' ? message.error.code : undefined, typeof message.error.message === 'string' ? message.error.message : 'The browser refused the command.'))
+      if (error) pending.reject(new DevToolsError(pending.method, typeof error.code === 'number' ? error.code : undefined, typeof error.message === 'string' ? error.message : 'The browser refused the command.'))
       else pending.resolve(message.result ?? {})
       return
     }
