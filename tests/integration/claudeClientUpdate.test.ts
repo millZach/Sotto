@@ -128,6 +128,25 @@ it('starts a thread kept live again on the new client straight away, and leaves 
   expect(await launchedFrom(f, 'shown')).toEqual([process.execPath, next])
 })
 
+// Claude Code 2.1.321 moved `fable` from Fable 5.1 to Fable 5.2 and gave Fable 5.2 fast mode (November 9, 2026). An update
+// Sotto runs reads the new client's catalog, so no menu names the alias for the model it no longer runs.
+it('reads the new client\'s models, so an alias that moved to a newer model is named and offered as the new one', async () => {
+  const f = await claudeFixture(undefined, 15_000)
+  fixtures.push(f)
+  const fable = (value: string, displayName: string, fast = false) => ({ value, displayName, supportsEffort: true, supportedEffortLevels: ['low', 'high', 'xhigh', 'max'], ...fast ? { supportsFastMode: true } : {} })
+  await writeFile(join(f.root, 'version.txt'), '2.1.319')
+  await writeFile(join(f.root, 'models.json'), JSON.stringify([fable('fable', 'Fable 5.1'), fable('claude-fable-5-2', 'Fable 5.2')]))
+  await f.host.connect()
+  const offered = async () => (await f.host.snapshot()).models.map(model => [model.name, model.legacy === true, model.speeds?.map(speed => speed.id) ?? []])
+  expect(await offered()).toEqual([['Fable 5.1', true, []], ['Fable 5.2', false, []]])
+
+  await update(f)
+  await writeFile(join(f.root, 'models.json'), JSON.stringify([fable('fable', 'Fable 5.2', true), fable('claude-fable-5-1', 'Fable 5.1')]))
+  await f.adapter.clientUpdated()
+  expect(await offered()).toEqual([['Fable 5.2', false, ['fast']], ['Fable 5.1', true, []]])
+  expect((await f.host.snapshot()).version).toBe('2.1.2 (Claude Code)')
+})
+
 it('does nothing while Claude Code is not connected', async () => {
   const f = await claudeFixture(undefined, 15_000)
   fixtures.push(f)
