@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway (#227): one name per reasoning effort level, shown where each surface meets it. ?variant=a|b|c -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reasoning effort names (#227)</title>
+<style>
+  :root { --bg:#111214; --pane:#17181b; --row:#1f2125; --text:#e8e8ea; --muted:#9a9ca3; --line:#2a2c31; --accent:#7cc4b5; }
+  html[data-theme=light] { --bg:#f6f5f2; --pane:#ffffff; --row:#f1f0ec; --text:#1d1e21; --muted:#5f6168; --line:#dddbd5; --accent:#2f7f70; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, sans-serif; padding-bottom: 90px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 20px 16px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .muted { color: var(--muted); }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 16px; }
+  .surface { background:var(--pane); border:1px solid var(--line); border-radius:12px; padding: 12px 14px; }
+  .surface h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .card .level { display:flex; justify-content:space-between; padding: 6px 8px; border-radius: 8px; }
+  .card .level.on { background: var(--row); outline: 1px solid var(--accent); }
+  .card small { color: var(--muted); }
+  .slider { display:flex; gap: 4px; margin: 6px 0 10px; }
+  .slider i { flex:1; height: 6px; border-radius: 3px; background: var(--row); }
+  .slider i.on { background: var(--accent); }
+  .summary { background: var(--row); border-radius: 999px; padding: 6px 12px; display:inline-block; }
+  select { width: 100%; background: var(--row); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px; font: inherit; }
+  .list div { padding: 5px 8px; border-radius: 6px; }
+  .list div.on { background: var(--row); }
+  .model { display:flex; flex-direction:column; padding: 6px 0; border-top: 1px solid var(--line); }
+  .model:first-of-type { border-top: 0; }
+  .model small { color: var(--muted); }
+  .bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display:flex; gap:6px; background: var(--pane); border:1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.35); flex-wrap: wrap; justify-content: center; max-width: calc(100% - 20px); }
+  .bar button { border:0; background:transparent; color:var(--text); padding: 7px 11px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .bar button[aria-pressed=true] { background: var(--accent); color: var(--bg); }
+  .note { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 12px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>One name for each reasoning effort level</h1>
+  <p class="muted">Prototype for issue #227. Today Codex's and Grok's <code>xhigh</code> reads "Extra high" on the effort card, "Xhigh" in New thread and New terminal, and <code>xhigh</code> in Settings → Providers. Every surface below uses the same names; switch the naming at the bottom. Muse's <code>none</code> and <code>ultra</code> are shown too.</p>
+  <p class="note" id="explain"></p>
+  <div class="grid">
+    <section class="surface card"><h2>Effort card (the slider)</h2><div class="slider" id="slider"></div><div id="card"></div></section>
+    <section class="surface"><h2>New thread, before its options open</h2><span class="summary" id="summary"></span></section>
+    <section class="surface"><h2>New terminal: reasoning effort list</h2><div class="list" id="terminal"></div></section>
+    <section class="surface"><h2>Settings → Agents: coordinator's reasoning effort</h2><select id="coordinator"></select></section>
+    <section class="surface"><h2>Settings → Providers: models</h2><div id="providers"></div></section>
+  </div>
+</main>
+<div class="bar" role="toolbar" aria-label="Variants">
+  <button data-variant="a">A. Extra high</button><button data-variant="b">B. XHigh</button><button data-variant="c">C. Very high</button>
+  <button data-theme="dark">Dark</button><button data-theme="light">Light</button>
+</div>
+<script>
+const CODEX = ['minimal', 'low', 'medium', 'high', 'xhigh']
+const CLAUDE = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
+const MUSE = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+const BASE = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', max: 'Max', ultracode: 'Ultracode', ultra: 'Ultra' }
+const VARIANTS = {
+  a: { xhigh: 'Extra high', explain: 'A. "Extra high": the effort card\'s name today, spelled out in plain words like the rest.' },
+  b: { xhigh: 'XHigh', explain: 'B. "XHigh": closest to the providers\' own id, short enough for the narrowest lists.' },
+  c: { xhigh: 'Very high', explain: 'C. "Very high": plain words that read as one step above High, without "extra".' },
+}
+const LINES = { minimal: 'Fastest. For the smallest tasks.', low: 'Fast. For small, clear tasks.', medium: 'The usual balance of speed and care.', high: 'Takes longer and catches more.', xhigh: 'Much longer. For stubborn problems.' }
+let variant = new URLSearchParams(location.search).get('variant') || 'a'
+if (!VARIANTS[variant]) variant = 'a'
+const name = id => id === 'xhigh' ? VARIANTS[variant].xhigh : BASE[id] ?? id
+function render() {
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  document.querySelectorAll('[data-theme]').forEach(b => { if (b.tagName === 'BUTTON') b.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === b.dataset.theme)) })
+  document.getElementById('explain').textContent = VARIANTS[variant].explain
+  const on = CODEX.indexOf('xhigh')
+  document.getElementById('slider').innerHTML = CODEX.map((_, i) => `<i class="${i <= on ? 'on' : ''}"></i>`).join('')
+  document.getElementById('card').innerHTML = CODEX.map((id, i) => `<div class="level ${id === 'xhigh' ? 'on' : ''}"><span>${name(id)}</span><small>${i === CODEX.length - 1 ? 'Everything the model has. Slowest, costliest.' : LINES[id]}</small></div>`).join('')
+  document.getElementById('summary').textContent = `GPT-6 · ${name('xhigh')} · Ask for approval`
+  document.getElementById('terminal').innerHTML = ['Provider default', ...CLAUDE].map(id => `<div class="${id === 'xhigh' ? 'on' : ''}">${id === 'Provider default' ? id : name(id)}</div>`).join('')
+  document.getElementById('coordinator').innerHTML = CODEX.map(id => `<option ${id === 'xhigh' ? 'selected' : ''}>${name(id)}</option>`).join('')
+  document.getElementById('providers').innerHTML = [['GPT-6 (Codex)', CODEX], ['Claude Opus (Claude Code)', CLAUDE], ['Muse', MUSE]].map(([model, levels]) => `<div class="model"><b>${model}</b><small>${levels.map(name).join(' · ')}</small></div>`).join('')
+  history.replaceState(null, '', `?variant=${variant}`)
+}
+document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => { variant = b.dataset.variant; render() })
+document.querySelectorAll('button[data-theme]').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; render() })
+render()
+</script>
+</body>
+</html>
