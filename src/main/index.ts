@@ -9,6 +9,7 @@ import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { startShortcut } from '../shared/dictationShortcuts'
 import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
+import { addressFromHost } from '../shared/hostBrowser'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
@@ -1409,7 +1410,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders, crossMachineEnabled) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders, crossMachineEnabled, pairedHostBrowser) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
@@ -2516,7 +2517,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           list: request => hostRouter.gitChanges(request), review: request => hostRouter.gitReview(request),
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
-        ...pairedHostBrowser ? { hostedBrowser: { request: request => hostRouter.hostedBrowser(request) } } : {},
+        ...pairedHostBrowser ? { hostedBrowser: { request: request => hostRouter.hostedBrowser(request),
+          openExternally: async ({ url, threadId }) => {
+            const hostId = parseHostEntityKey(threadId)?.hostId
+            const address = hostId ? desktopHosts.browserAddress(hostId) : undefined
+            try { await shell.openExternal(address ? addressFromHost(url, address) : url) }
+            catch { return { ok: false as const, error: { code: 'unavailable' as const, message: t`The system browser didn't open. Nothing was changed. Try again.` } } }
+            return { ok: true as const, value: { destination: 'external' as const } }
+          } } } : {},
       }, () => windows.getTrustedRenderers())
       // A paired host's browser (ADR-0198): its pages, tasks and grants reach the window as this computer's do, and its
       // pictures on their own channel, never logged or kept.

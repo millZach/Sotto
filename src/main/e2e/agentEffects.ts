@@ -7,10 +7,14 @@ import { resolveModel } from '../../shared/modelCatalog'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadForkRequest } from '../agents/host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import type { AgentReasoner } from '../agents/reasoning'
+import type { BrowserAgentTools } from '../agents/browserAgentServer'
 import { withUltracode } from '../../shared/ultracode'
 
 /** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
 export class E2EAgentHost implements AgentHost {
+  /** Sotto's browser tools as the coordinator gave them, so a journey can make the agent's browser calls it would make. */
+  browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private readonly checkpointFixture: boolean
   private readonly climbFixture: boolean
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()

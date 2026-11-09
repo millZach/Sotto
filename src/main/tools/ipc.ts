@@ -3,7 +3,7 @@ import { msg, t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { namesHostThread } from '../../shared/clientIdentity'
 import { TERMINAL_CHANNEL } from '../../shared/terminal'
-import { BROWSER_CHANNEL } from '../../shared/browser'
+import { BROWSER_CHANNEL, browserOpenLinkSchema } from '../../shared/browser'
 import { hostBrowserRequestSchema, type HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import { GIT_CHANGES_CHANNEL, gitPathRequestSchema, gitReviewRequestSchema, type GitChangeListing, type GitPathRequest, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
 import type { FilePath } from '../../shared/files'
@@ -36,10 +36,12 @@ export interface HostedGitChanges {
  */
 export interface HostedBrowser {
   request(request: HostBrowserThreadRequest): Promise<ToolsResult<unknown>>
+  /** Open in system browser for a host's page: on this computer, at the host's address where the page names its own machine. */
+  openExternally(request: { url: string; threadId: string }): Promise<ToolsResult<{ destination: 'external' }>>
 }
 const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const
 /** The requests only a host's page takes: a page here is drawn by Electron, not from pictures. */
-const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch'] as const
+const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch', 'available'] as const
 /** What each request a host's page cannot take says instead. */
 const NOT_ON_HOST_PAGE: Partial<Record<typeof BROWSER_METHODS[number], MessageDescriptor>> = {
   mount: msg`This page is on the host machine, so it is drawn from its pictures. Nothing was changed.`,
@@ -94,7 +96,16 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
     if (!parsed.success || parsed.data.method === 'setting') return { ok: false, error: { code: 'invalid-request', message: INVALID_REQUEST } }
     return hosted.request(parsed.data)
   }
-  for (const method of BROWSER_METHODS) register(BROWSER_CHANNEL + method, payload => namesHostThread(payload) ? browserOnHost(method, payload) : services.browser[method](payload))
+  /** Open in system browser names the page's thread as its target; a host's page opens at the host's address (ADR-0198, decision 7). */
+  const openLink = (payload: unknown): unknown => {
+    const parsed = browserOpenLinkSchema.safeParse(payload)
+    if (services.hostedBrowser && parsed.success && parsed.data.destination === 'external' && parsed.data.target && namesHostThread(parsed.data.target)) {
+      return services.hostedBrowser.openExternally({ url: parsed.data.url, threadId: parsed.data.target.threadId })
+    }
+    return services.browser.openLink(payload)
+  }
+  for (const method of BROWSER_METHODS) register(BROWSER_CHANNEL + method, payload => method === 'openLink' ? openLink(payload)
+    : namesHostThread(payload) ? browserOnHost(method, payload) : services.browser[method](payload))
   for (const method of HOST_PAGE_METHODS) register(BROWSER_CHANNEL + method, payload => namesHostThread(payload) ? browserOnHost(method, payload)
     : { ok: false, error: { code: 'invalid-request', message: i18n._(NOT_A_HOST_PAGE) } })
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))

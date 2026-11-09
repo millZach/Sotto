@@ -14,6 +14,7 @@
 
 .browser-player__frame { position: relative; flex: 1; min-height: 48px; background: var(--tt-code-bg); }
 .browser-player__viewport { position: absolute; inset: 0; }
+.browser-player__frame > .host-page { position: absolute; inset: 0; }
 .browser-player__viewport[data-covered] { display: grid; place-items: center; padding: 10px; text-align: center; }
 .browser-player__frame-note { margin: auto; padding: 10px; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
 

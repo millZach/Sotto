@@ -18,7 +18,7 @@ describe('tools IPC and preload boundary', () => {
     const { url, webContents: sender } = main
     const { mainFrame } = sender
     const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(39)
+    expect(handlers.size).toBe(40)
     for (const [channel, handler] of handlers) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
@@ -33,7 +33,8 @@ describe('tools IPC and preload boundary', () => {
     const local = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, local]), ['dispose', vi.fn()]])
     const request = vi.fn().mockResolvedValue({ ok: true, value: undefined })
-    const services = { terminal: make([]), gitChanges: make([]), hostedBrowser: { request },
+    const openExternally = vi.fn().mockResolvedValue({ ok: true, value: { destination: 'external' } })
+    const services = { terminal: make([]), gitChanges: make([]), hostedBrowser: { request, openExternally },
       browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point']) } as never as Parameters<typeof registerToolsIpc>[1]
     const registry = ipcRegistry()
     const { url, webContents: sender } = registry.main
@@ -60,6 +61,12 @@ describe('tools IPC and preload boundary', () => {
     expect(local).not.toHaveBeenCalled()
     await call('navigate', { ...page, threadId: 'thread-here', url: 'http://127.0.0.1:5173/' })
     expect(local).toHaveBeenCalledOnce()
+    // Open in system browser for a host's page goes to main's swap for the host's address; a page here opens as it did.
+    expect((await call('openLink', { url: 'http://localhost:5173/', destination: 'external', target: { threadId, workspaceId: page.workspaceId } })).ok).toBe(true)
+    expect(openExternally).toHaveBeenCalledExactlyOnceWith({ url: 'http://localhost:5173/', threadId })
+    await call('openLink', { url: 'http://localhost:5173/', destination: 'external', target: { threadId: 'thread-here', workspaceId: page.workspaceId } })
+    expect(local).toHaveBeenCalledTimes(2)
+    expect(openExternally).toHaveBeenCalledOnce()
   })
   it('counts the terminal as used when a shell starts, and on no other call or refusal', async () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })

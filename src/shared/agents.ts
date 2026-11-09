@@ -1130,7 +1130,11 @@ export const agentStateSchema = z.object({
    */
   checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
-  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
+  /**
+   * `browser`: present while the host offers Sotto's browser for its own threads to this computer (ADR-0198), numbering
+   * the connection it came on, so a page watched over an earlier connection is watched again over this one.
+   */
+  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),

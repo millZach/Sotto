@@ -7,6 +7,7 @@ import type { ToolsError, ToolsResult } from '../../../shared/tools'
 import { pageLabel, type BrowserStore } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
+import { HostPageView, type ThreadHost } from './HostPageView'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 
 /** Why Tools > Browser could not list a thread's pages, in words. */
@@ -36,7 +37,7 @@ export function changePage(bridge: BrowserBridge, threadId: string, page: Browse
  * overlay: anything inside it never makes the page step aside. The quiet pane passes the viewport itself, so its
  * own More menu, which opens over the page, does (ADR-0154).
  */
-export function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally, children, cover, onShown }: {
+export function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally, children, cover, onShown, onHost }: {
   readonly page: BrowserPage; readonly threadId: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined
   readonly surface: React.RefObject<HTMLDivElement | null> | null; readonly refused: LaterWords | null; readonly onOpenExternally: () => void
   /** What sits at the page's foot, under the native view and never over it: the quiet pane's agent strip. */
@@ -45,12 +46,14 @@ export function PageViewport({ page, threadId, store, bridge, surface, refused, 
   readonly cover?: ReactNode
   /** Told whether the live page is showing, so what needs it on screen, such as Point at something, waits for it. */
   readonly onShown?: (shown: boolean) => void
+  /** The paired host the page runs on (ADR-0198): drawn from its pictures in the window, so nothing has to step aside for it. */
+  readonly onHost?: ThreadHost | undefined
 }): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(surface ?? host, host)
   // A cover stands in the page's place, so the native page, which would draw over it, steps aside.
-  const show = page.status !== 'unavailable' && covered === false && !cover
+  const show = !onHost && page.status !== 'unavailable' && covered === false && !cover
   const openInSystemBrowser = t`Open in system browser`
   const pageId = page.id
 
@@ -67,7 +70,8 @@ export function PageViewport({ page, threadId, store, bridge, surface, refused, 
         <button type="button" className="files-link tt-focusable" onClick={() => void store.history(bridge, threadId, pageId, 'reload')}>{t`Try again`}</button>
         <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
       </div>
-    </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
+    </div> : onHost ? <HostPageView page={page} threadId={threadId} bridge={bridge} shown={!cover} connected={onHost.connected} link={onHost.link} />
+    : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
       {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
         <strong>{t`This page could not be shown.`}</strong>{' '}
         <p className={typeof refused === 'string' ? undefined : 'tt-paragraph'}>{shownWords(refused)}</p>

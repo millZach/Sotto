@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolTargetSchema, toolsResultSchema } from '../shared/tools'
 import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalImageSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
-import { browserInputSchema, browserWatchSchema, hostBrowserFrameSchema } from '../shared/hostBrowser'
+import { browserInputSchema, browserWatchSchema, hostBrowserFrameSchema, hostBrowserResultSchemas } from '../shared/hostBrowser'
 import { BROWSER_CHANNEL, BROWSER_EVENT, BROWSER_FRAME_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, browserPointModeSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitPathRequestSchema, gitReviewRequestSchema, gitReviewSchema, gitWatchRequestSchema, gitListingSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
@@ -75,6 +75,7 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       watch: request => call(BROWSER_CHANNEL + 'watch', browserWatchSchema, voidResult, request),
       unwatch: request => call(BROWSER_CHANNEL + 'unwatch', browserRequestSchema, voidResult, request),
       onFrame: listener => subscribe(BROWSER_FRAME_EVENT, hostBrowserFrameSchema, listener),
+      available: request => call(BROWSER_CHANNEL + 'available', toolListRequestSchema, hostBrowserResultSchemas.available, request),
     }),
     gitChanges: Object.freeze<GitChangesBridge>({
       checkpoints: request => call(GIT_CHANGES_CHANNEL + 'checkpoints', toolListRequestSchema, checkpointListingResult, request),

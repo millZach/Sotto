@@ -25,7 +25,7 @@ declare global { var sottoRemoteHostE2E: RemoteHostE2E | undefined }
  * paired host's threads reach Watcher, and their delegations the window, here exactly as they would over SSH.
  */
 export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: RetainedDraftStore, watcherEnabled = false,
-  heldProviders?: HeldProviders, crossMachineEnabled = false): RemoteHostE2E {
+  heldProviders?: HeldProviders, crossMachineEnabled = false, pairedHostBrowser = false): RemoteHostE2E {
   const sockets = new Map<string, SocketHostService>()
   const connections = new Map<string, { up: boolean }>()
   const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completed: number; completedIdle: number }>()
@@ -36,7 +36,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
       if (sockets.has(input.hostId)) throw new Error('The remote host test is already connected.')
       // Whether the socket is up, as the real launcher tells the router (`available`), so a dropped host reads as away.
       const state = { up: false }
-      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, ...(heldProviders ? { heldProviders } : {}),
+      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser, ...(heldProviders ? { heldProviders } : {}),
         onConnectionChange: value => { state.up = value } })
       try {
         const hello = await socket.connect()
@@ -60,6 +60,9 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
           // A thread's Agents, read on the host as the real launcher's connection reads them.
           subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
           activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
+          // Sotto's browser for the host's own threads, as the real launcher's connection offers it (ADR-0198).
+          ...socket.supportsBrowser ? { browser: request => socket.browser(request), subscribeBrowser: listener => socket.subscribeBrowser(listener),
+            subscribeBrowserFrames: listener => socket.subscribeBrowserFrames(listener) } : {},
         })
         sockets.set(hello.hostId, socket)
         connections.set(hello.hostId, state)
