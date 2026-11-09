@@ -50,3 +50,11 @@
 .browser-pane__recent > svg { flex: none; color: var(--tt-text-muted); }
 .browser-pane__recent > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-pane__hint { max-width: 380px; margin: 0 auto; color: var(--tt-text-muted); font-size: var(--tt-type-body); text-align: center; }
+/* A paired host's page, drawn from its pictures (ADR-0198): the page lays out at this size, a picture is never enlarged, so a
+   click lands where it shows, and the last picture greys while the host is away. */
+.host-page__picture { position: absolute; inset: 0; overflow: hidden; outline-offset: -2px; cursor: default; touch-action: none; }
+.host-page__frame { display: block; width: 100%; height: 100%; object-fit: scale-down; object-position: top left; pointer-events: none; user-select: none; }
+.host-page[data-off] .host-page__frame { opacity: 0.5; filter: grayscale(1); }
+.host-page__problem { position: absolute; inset: 8px 8px auto; margin: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); }
+.browser-pane__strip[data-state='reconnecting'] .browser-pane__dot { background: var(--tt-warning); }
+.browser-pane__strip[data-state='reconnecting'] .browser-pane__strip-text { white-space: normal; }

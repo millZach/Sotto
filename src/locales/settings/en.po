@@ -2259,8 +2259,8 @@ msgid "dash"
 msgstr "dash"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
-msgstr "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+msgid "DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+msgstr "DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 
 #. A worker role is on its default model
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -2797,6 +2797,10 @@ msgstr "Foundation"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "From your SSH configuration"
 msgstr "From your SSH configuration"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Full access on this Mac. Uses your own model servers, keyed ones included. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgstr "Full access on this Mac. Uses your own model servers, keyed ones included. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5689,8 +5693,8 @@ msgid "Sotto removes <0>sotto-host.service</0> and its script from {name}. The h
 msgstr "Sotto removes <0>sotto-host.service</0> and its script from {name}. The host running there is not the unit’s, so it keeps running as it is. After {name} restarts, its host starts again only when this computer connects over SSH."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
-msgstr "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
+msgid "Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is."
+msgstr "Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
@@ -6862,8 +6866,8 @@ msgid "Threads with Cursor"
 msgstr "Threads with Cursor"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Threads with DeepSeek Harness"
-msgstr "Threads with DeepSeek Harness"
+msgid "Threads with DeepSeek"
+msgstr "Threads with DeepSeek"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Threads with Muse"

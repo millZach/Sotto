@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BROWSER_WAITING_TO_OPEN, safeBrowserUrl, type BrowserPage } from '../../shared/browser'
 import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskDependencies, type BrowserTaskWords, type TaskPage } from '../../main/tools/browserTasks'
 import { fail, parse } from '../../main/tools/common'
+import { toolListRequestSchema } from '../../shared/tools'
 import { browserInputSchema, browserWatchSchema, type HostBrowserFrame } from '../../shared/hostBrowser'
 import { HostBrowserMissing, NO_HOST_BROWSER, type HostBrowser, type HostBrowserPage, type HostPageAutomation, type HostPageState } from './hostBrowser'
 
@@ -61,6 +62,12 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
     this.setting.saved = value
   }
 
+  /** Whether this host has a browser for the thread's pages, without starting it (ADR-0198, decision 2). */
+  available(payload: unknown) { return this.run(async () => {
+    const request = parse(toolListRequestSchema, payload)
+    await this.owner(request.threadId, request.workspaceId)
+    return { available: await this.dependencies.browser.available() }
+  }) }
   /** The user's own click, key, typed text or scroll from a desktop's pane. It needs no grant: it is the user acting. */
   input(payload: unknown) { return this.run(async () => {
     const request = parse(browserInputSchema, payload)

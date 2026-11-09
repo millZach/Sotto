@@ -1168,6 +1168,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'controlTask': return browser.controlTask(request.payload)
       case 'stopGrant': return browser.stopGrant(request.payload)
       case 'input': return browser.input(request.payload)
+      case 'available': return browser.available(request.payload)
     }
   }
   const unsubscribeChecks = service.subscribeCheckQueue?.(() => {

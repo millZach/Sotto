@@ -13,6 +13,7 @@ export const HELD_PROVIDER_ENTRIES = [
   { provider: 'opencode', feature: 'opencode' },
   { provider: 'cursor', feature: 'cursor' },
   { provider: 'deepseek', feature: 'deepseek' },
+  { provider: 'hermes', feature: 'hermes' },
 ] as const satisfies readonly HeldProviderEntry[]
 
 /** The providers held on this run: a fact read once at start, like the Owl answers it comes from. */

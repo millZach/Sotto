@@ -3470,15 +3470,15 @@ msgid "cut at {kib} KiB"
 msgstr ""
 
 #: src/renderer/src/agents/permissionPresentation.tsx
-msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+msgid "DeepSeek denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
 msgstr ""
 
 #: src/renderer/src/agents/permissionPresentation.tsx
-msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+msgid "DeepSeek edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
 msgstr ""
 
 #: src/renderer/src/agents/permissionPresentation.tsx
-msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+msgid "DeepSeek runs commands and edits files without asking, in the project and outside it."
 msgstr ""
 
 #. A badge on a Git ref: the repository's default branch.

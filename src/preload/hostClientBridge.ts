@@ -23,8 +23,8 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     }
     return hostId === undefined ? value : mapHostReferences(value, id => parseHostEntityKey(id) ? id : hostEntityKey(hostId, id))
   }
-  // A remote host's thread has no cloud iPhone here (ADR-0047): wrapped like `browser`, so a host-scoped
-  // thread ID reaching this local bridge is refused the same way.
+  // A remote host's thread has no cloud iPhone here (ADR-0047): wrapped, so a host-scoped thread ID reaching this local
+  // bridge is refused.
   const domains = new Set(['agents', 'terminal', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory', 'visuals'])
   // These members return their unsubscribe immediately. Every other call in these domains returns a Promise.
   const subscriptions = new Set([
@@ -40,6 +40,10 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     visuals: new Set(['open']),
     // A thread on a paired host opens its terminal over SSH from this computer (ADR-0183): main knows the key names a host.
     terminal: new Set(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']),
+    // A thread on a paired host browses in that host's Chromium (ADR-0198): main sends its browser calls to that host, and
+    // refuses in words what a host's page does not take.
+    browser: new Set(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant',
+      'viewport', 'capture', 'point', 'input', 'watch', 'unwatch', 'available']),
   }
   const elsewhere = (id: string): boolean => { const key = parseHostEntityKey(id); return key !== null && key.hostId !== hostId }
   const wrap = (object: object, domain?: string): object => Object.freeze(Object.fromEntries(Object.entries(object).map(([name, member]) => {

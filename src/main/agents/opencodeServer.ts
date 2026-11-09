@@ -377,7 +377,7 @@ let endingWithSotto = false
  * running in their own process groups on macOS and Linux until the next connect's sweep. Only a signal sent now can end
  * them, and their records stay for that sweep to clear. Windows needs none: Node's job object ends them with Sotto.
  */
-function endWithSotto(child: ChildProcess, closed: Promise<void>): void {
+export function endWithSotto(child: ChildProcess, closed: Promise<void>): void {
   if (process.platform === 'win32' || child.pid === undefined) return
   if (!endingWithSotto) {
     endingWithSotto = true

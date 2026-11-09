@@ -81,16 +81,16 @@ function hostState(provider: Held): AgentState {
 describe('the held-provider table', () => {
   it('holds a provider until its Owl feature is on, and a missing answer holds it', () => {
     const entries: readonly HeldProviderEntry[] = [...HELD_PROVIDER_ENTRIES, { provider: 'grok', feature: 'usage' }]
-    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'grok'])
-    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'cursor', 'deepseek', 'grok'])
-    expect([...heldProvidersOf({ muse: true, opencode: true, cursor: true, deepseek: true, usage: true }, entries)]).toEqual([])
+    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'grok'])
+    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes', 'grok'])
+    expect([...heldProvidersOf({ muse: true, opencode: true, cursor: true, deepseek: true, hermes: true, usage: true }, entries)]).toEqual([])
     expect(releasesHeldProvider(new Set(['grok']), entries)).toBe(true)
-    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'deepseek', 'grok']), entries)).toBe(false)
-    expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek'])
+    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'grok']), entries)).toBe(false)
+    expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
   })
   it('holds every table provider by default and honors an explicit held set, including an empty one', () => {
-    expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek'])
-    expect([...heldProvidersOption({ heldProviders: heldProvidersOf({ muse: true }) })]).toEqual(['opencode', 'cursor', 'deepseek'])
+    expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
+    expect([...heldProvidersOption({ heldProviders: heldProvidersOf({ muse: true }) })]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes'])
     expect(heldProvidersOption({ heldProviders: HELD })).toBe(HELD)
     expect([...heldProvidersOption({ heldProviders: new Set() })]).toEqual([])
   })

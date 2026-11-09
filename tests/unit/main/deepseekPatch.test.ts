@@ -15,7 +15,7 @@ const SERVER: OwnServer = {
 const KEYED: OwnServer = { id: 'own-keyed1', name: 'Keyed box', address: 'http://keyed.example/v1', keyed: true,
   models: [{ id: 'm', name: 'M', context: 32768, thinking: false, images: false }] }
 
-describe('the DeepSeek Harness overlay (ADR-0138)', () => {
+describe('the DeepSeek overlay (ADR-0138)', () => {
   it('declares one route per keyless server, disables the cloud adapters, and holds no key', () => {
     const patch = deepseekPatch([SERVER, KEYED])!
     expect(patch).toContain('"own-abc123"')
@@ -70,11 +70,11 @@ describe('the DeepSeek Harness overlay (ADR-0138)', () => {
   })
 })
 
-describe('the DeepSeek Harness catalog and settings (ADR-0138)', () => {
+describe('the DeepSeek catalog and settings (ADR-0138)', () => {
   it('builds models from keyless servers only, grouped by server, with the three modes', () => {
     const catalog = deepseekCatalog([SERVER, KEYED])
     expect(catalog.map(model => model.id)).toEqual(['own-abc123/deepseek-v4-flash', 'own-abc123/qwen-plain'])
-    expect(catalog[0]).toMatchObject({ provider: 'DeepSeek Harness', source: 'Spark Cluster', ready: true,
+    expect(catalog[0]).toMatchObject({ provider: 'DeepSeek', source: 'Spark Cluster', ready: true,
       reasoningEfforts: ['off', 'low', 'high', 'max'], defaultReasoningEffort: 'high',
       runtimeModes: ['approval-required', 'auto-accept-edits', 'full-access'] })
     expect(catalog[1]!.reasoningEfforts).toBeUndefined()
@@ -99,7 +99,7 @@ describe('the DeepSeek Harness catalog and settings (ADR-0138)', () => {
   })
 })
 
-describe('DeepSeek Harness client versions', () => {
+describe('DeepSeek client versions', () => {
   it('orders release candidates before their release, and an unreadable version before every readable one', () => {
     expect(parseDeepSeekVersion('0.2.1-rc.2')).toBeDefined()
     expect(parseDeepSeekVersion('dsh 0.2.1')).toBeUndefined()

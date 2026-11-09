@@ -206,7 +206,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
           for (const [index, form] of forms.entries()) expect(form.upserted(sessionId, since[index]!)).toBe(true)
         }
         await step(() => send(), () => shown()?.status === 'running' && shown()!.messages.some(m => m.id === 'own-message'))
-        // A provider with no question route (DeepSeek Harness) shows its one kind of request, a permission, instead.
+        // A provider with no question route (DeepSeek) shows its one kind of request, a permission, instead.
         await step(() => skips.questions ? f.driver.raisePermission(sessionId, 'Run build?') : f.driver.raiseQuestion(sessionId, 'Which color?'), () => shown()?.requests.length === 1)
         const request = shown()!.requests[0]!
         await step(() => f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: skips.questions ? '' : 'Blue', ...(skips.questions ? { approved: false } : {}) }), () => shown()?.requests.length === 0)

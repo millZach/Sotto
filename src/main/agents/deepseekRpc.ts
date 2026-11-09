@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
- * DeepSeek Harness's floor: the oldest client Sotto connects (ADR-0042, ADR-0138). 0.2.1-rc.2 is the version whose
+ * DeepSeek's floor: the oldest client Sotto connects (ADR-0042, ADR-0138). 0.2.1-rc.2 is the version whose
  * ACP profile was checked live (docs/research/2026-10-24-deepseek-harness-acp-probe.md): `dsh --profile acp` with
  * `session/new`, `session/resume`, `session/close`, grouped model and `reasoning_effort` config options, sandbox
  * escalation through `session/request_permission` offering one-shot choices only, HTTP MCP mounts, committed
@@ -21,7 +21,7 @@ export class DeepSeekRefusal extends Error {}
 export class DeepSeekRejected extends Error {
   readonly code: number | undefined
   constructor(code?: number) {
-    super('DeepSeek Harness refused the operation. Review the thread before retrying.')
+    super('DeepSeek refused the operation. Review the thread before retrying.')
     this.code = Number.isSafeInteger(code) ? code : undefined
   }
 }
@@ -50,7 +50,7 @@ const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'com
 export type DeepSeekSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /**
- * The environment every DeepSeek Harness process gets: the shared allow-list, so no provider's key reaches it
+ * The environment every DeepSeek process gets: the shared allow-list, so no provider's key reaches it
  * (`DEEPSEEK_API_KEY` included), Sotto's own harness folder as `DSH_HOME` (ADR-0138), the thread's sandbox mode,
  * and one placeholder key variable per model server route, which the adapter names in `keys`. A keyless server
  * ignores the value; the harness's OpenAI-compatible transport still requires one to be present.
@@ -60,7 +60,7 @@ export function deepseekEnvironment(homeDirectory: string, mode: DeepSeekSandbox
   return { ...env, ...keys, DSH_HOME: homeDirectory, DSH_PERMISSION_MODE: mode }
 }
 
-/** Where DeepSeek Harness is: `dsh` by the shared CLI lookup (ADR-0036). */
+/** Where DeepSeek is: `dsh` by the shared CLI lookup (ADR-0036). */
 export async function findDeepSeekExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
   return findCli({ name: 'dsh' }, { ...lookup, environment })
 }
@@ -74,7 +74,7 @@ export async function readDeepSeekVersion(executable: string, env: NodeJS.Proces
     (error, out) => resolve(error ? '' : typeof out === 'string' ? out : ''))
   })
   const version = stdout.trim().split(/\r?\n/u).at(-1)?.trim() ?? ''
-  if (!parseDeepSeekVersion(version)) throw new Error('Sotto could not read the installed DeepSeek Harness version. Reinstall it, then connect again.')
+  if (!parseDeepSeekVersion(version)) throw new Error('Sotto could not read the installed DeepSeek version. Reinstall it, then connect again.')
   return version
 }
 
@@ -130,7 +130,7 @@ export class DeepSeekRpc {
               if (frame.error) waiter.reject(new DeepSeekRejected(frame.error.code))
               else {
                 try { await waiter.apply(frame.result); waiter.resolve() }
-                catch (error) { waiter.reject(error instanceof DeepSeekRefusal ? error : new DeepSeekUncertain('DeepSeek Harness sent an answer Sotto could not read.')) }
+                catch (error) { waiter.reject(error instanceof DeepSeekRefusal ? error : new DeepSeekUncertain('DeepSeek sent an answer Sotto could not read.')) }
               }
             } else await this.receive(frame)
           } finally { queued -= size }
@@ -147,19 +147,19 @@ export class DeepSeekRpc {
   /** `timeoutMs` replaces the process's deadline for this one request, as the first one after a start takes the start's. */
   request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false, timeoutMs = this.timeoutMs): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (this.stopped) { reject(new DeepSeekUncertain('DeepSeek Harness stopped.')); return }
-      if (this.pending.size >= 128) { reject(new DeepSeekUncertain('DeepSeek Harness has too many unanswered requests. Reconnect before continuing.')); this.fail(); return }
+      if (this.stopped) { reject(new DeepSeekUncertain('DeepSeek stopped.')); return }
+      if (this.pending.size >= 128) { reject(new DeepSeekUncertain('DeepSeek has too many unanswered requests. Reconnect before continuing.')); this.fail(); return }
       const id = ++this.serial
-      const timer = completionOnly ? undefined : setTimeout(() => reject(new DeepSeekUncertain('DeepSeek Harness did not answer in time.')), timeoutMs)
+      const timer = completionOnly ? undefined : setTimeout(() => reject(new DeepSeekUncertain('DeepSeek did not answer in time.')), timeoutMs)
       this.pending.set(JSON.stringify(id), { resolve, reject, apply, timer })
       try { this.write({ jsonrpc: '2.0', id, method, params }) }
-      catch (error) { clearTimeout(timer); this.pending.delete(JSON.stringify(id)); reject(error instanceof Error ? error : new DeepSeekUncertain('DeepSeek Harness stopped.')) }
+      catch (error) { clearTimeout(timer); this.pending.delete(JSON.stringify(id)); reject(error instanceof Error ? error : new DeepSeekUncertain('DeepSeek stopped.')) }
     })
   }
   private encode(frame: unknown): string {
-    if (this.stopped || this.child.stdin.destroyed) throw new DeepSeekUncertain('DeepSeek Harness stopped before it was sent anything.')
+    if (this.stopped || this.child.stdin.destroyed) throw new DeepSeekUncertain('DeepSeek stopped before it was sent anything.')
     const line = JSON.stringify(frame) + '\n'
-    if (Buffer.byteLength(line) + this.child.stdin.writableLength > MAX_WRITE_BYTES) { this.fail(); throw new DeepSeekUncertain('DeepSeek Harness could not take that much at once.') }
+    if (Buffer.byteLength(line) + this.child.stdin.writableLength > MAX_WRITE_BYTES) { this.fail(); throw new DeepSeekUncertain('DeepSeek could not take that much at once.') }
     return line
   }
   write(frame: unknown): void { this.child.stdin.write(this.encode(frame)) }
@@ -168,8 +168,8 @@ export class DeepSeekRpc {
     return new Promise((resolve, reject) => {
       let line: string
       try { line = this.encode({ jsonrpc: '2.0', id, result }) } catch (error) { reject(error); return }
-      const timer = setTimeout(() => reject(new DeepSeekUncertain('DeepSeek Harness may not have received the answer.')), this.timeoutMs)
-      this.child.stdin.write(line, error => { clearTimeout(timer); if (error) reject(new DeepSeekUncertain('DeepSeek Harness may not have received the answer.')); else resolve() })
+      const timer = setTimeout(() => reject(new DeepSeekUncertain('DeepSeek may not have received the answer.')), this.timeoutMs)
+      this.child.stdin.write(line, error => { clearTimeout(timer); if (error) reject(new DeepSeekUncertain('DeepSeek may not have received the answer.')); else resolve() })
     })
   }
   refuse(id: string | number, code = -32601): void {
@@ -184,7 +184,7 @@ export class DeepSeekRpc {
   private fail(): void {
     if (this.stopped) return
     this.stopped = true
-    for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(new DeepSeekUncertain('DeepSeek Harness stopped before it answered.')) }
+    for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(new DeepSeekUncertain('DeepSeek stopped before it answered.')) }
     this.pending.clear(); this.child.kill(); this.lost()
   }
 }

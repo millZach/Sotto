@@ -6,14 +6,14 @@ import { DEEPSEEK_DEFAULT_EFFORT, DEEPSEEK_REASONING_EFFORTS, keylessServers } f
 import type { DeepSeekSandboxMode } from './deepseekRpc'
 
 /**
- * DeepSeek Harness's models and permission modes as Sotto names them (ADR-0138). The models are the user's own
+ * DeepSeek's models and permission modes as Sotto names them (ADR-0138). The models are the user's own
  * keyless model servers, one entry per model, grouped by server the way OpenCode groups by model source; a model
  * ID is `<server ID>/<model ID>`, so a thread is never read as running on another provider's model, and the pair
  * the harness encodes in its `model` config option is exactly that. A model reads images when its record says so and
  * the harness, started with Sotto's overlay, advertised image prompts.
  */
 
-/** The permission modes a DeepSeek Harness thread offers: Automatic is not one of them. */
+/** The permission modes a DeepSeek thread offers: Automatic is not one of them. */
 export const DEEPSEEK_RUNTIME_MODES: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'full-access']
 
 /** A permission mode as the harness's process sandbox (ADR-0138). The mode is a process's, so changing it restarts one. */
@@ -35,7 +35,7 @@ export function deepseekModelRoute(modelId: string): { serverId: string; model: 
 export function deepseekCatalog(servers: readonly OwnServer[], harnessImages = false): AgentModel[] {
   return keylessServers(servers).flatMap(server => server.models.map((model): AgentModel => ({
     id: `${server.id}/${model.id}`,
-    provider: 'DeepSeek Harness',
+    provider: 'DeepSeek',
     name: model.name,
     runtimeModes: [...DEEPSEEK_RUNTIME_MODES],
     ready: true,

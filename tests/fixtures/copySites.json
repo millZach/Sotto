@@ -49,6 +49,10 @@
   "src/main/agents/heldProviderGate.ts": {
     "structuredClone(": 2
   },
+  "src/main/agents/hermes.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/hostService.ts": {
     "shell()": 3
   },

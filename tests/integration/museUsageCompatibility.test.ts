@@ -147,7 +147,7 @@ describe('Muse and OpenCode in Usage', () => {
     const opencodeQuota = vi.fn(async () => unavailableProviderQuota('codex', 'unsupported'))
     opencode.readProviderQuota = opencodeQuota
     const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: {
-      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode, cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() } })
+      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode, cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), hermes: new FakeProviderHost() } })
     cleanup.push(async () => host.disconnect())
     const records: UsageTokenObservation[] = []
     const off = host.subscribeUsage!(record => records.push(record))

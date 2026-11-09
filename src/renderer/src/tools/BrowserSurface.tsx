@@ -10,6 +10,7 @@ import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { browserPages, useThreadBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserPane } from './BrowserPane'
+import type { ThreadHost } from './HostPageView'
 import { useOwlFeature } from '../state/owlFeature'
 import { ToolsChrome } from './ToolsChrome'
 import { shownNotice } from './toolsWords'
@@ -24,6 +25,8 @@ export interface BrowserSurfaceProps {
    * the way back from Tools for a task the player itself can show. It never pins.
    */
   readonly onFloat?: (() => void) | undefined
+  /** The paired host this thread runs on, where its browser runs there (ADR-0198); absent for a thread on this computer. */
+  readonly host?: ThreadHost | undefined
 }
 
 /**

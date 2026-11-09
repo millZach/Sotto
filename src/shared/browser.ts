@@ -143,4 +143,6 @@ export interface BrowserBridge {
   watch(request: BrowserWatchRequest): Promise<ToolsResult<void>>
   unwatch(request: z.infer<typeof browserRequestSchema>): Promise<ToolsResult<void>>
   onFrame(listener: (frame: HostBrowserFrame) => void): () => void
+  /** A paired host's thread: whether that host has a browser for its pages. */
+  available(request: { threadId: string }): Promise<ToolsResult<{ available: boolean }>>
 }

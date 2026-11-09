@@ -9,11 +9,11 @@ import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from '.
 import { parseProviderRecords, writeProviderAction } from './providerRecords'
 
 export const deepseekFixtureSkips: AdapterContractSkips = {
-  backgroundWork: 'DeepSeek Harness reports no work a turn leaves running.',
-  questions: 'DeepSeek Harness has no question route over ACP; the model asks in its reply (ADR-0138).',
-  restart: 'A resumed DeepSeek Harness session replays nothing; Sotto’s event store holds the history (ADR-0138).',
+  backgroundWork: 'DeepSeek reports no work a turn leaves running.',
+  questions: 'DeepSeek has no question route over ACP; the model asks in its reply (ADR-0138).',
+  restart: 'A resumed DeepSeek session replays nothing; Sotto’s event store holds the history (ADR-0138).',
   liveSettings: 'A permission mode is its process’s sandbox, so a mode change starts a new process by design (ADR-0138).',
-  settingsConfirmation: 'DeepSeek Harness confirms a settings change in Sotto’s own record; there is no confirmation to lose.',
+  settingsConfirmation: 'DeepSeek confirms a settings change in Sotto’s own record; there is no confirmation to lose.',
 }
 /** The one keyless server the fixture's record holds, as a test may replace it whole. */
 export const FIXTURE_SERVER: OwnServer = {
@@ -41,7 +41,7 @@ const running = (pid: number | undefined): boolean => {
 export const LOST_ACK_DEADLINE_MS = 2000
 
 /**
- * A fixture over the fake DeepSeek Harness client. The record it is given is a private copy of the fixture's
+ * A fixture over the fake DeepSeek client. The record it is given is a private copy of the fixture's
  * servers, which a test may replace before telling the adapter the record changed. Its request deadline is the
  * adapter's own unless a caller names one; a test that needs a sign of work lost scripts it with
  * `driver.delayNextAck` rather than shortening this.
@@ -66,7 +66,7 @@ export async function deepseekFixture(root?: string, requestTimeoutMs?: number, 
   const spawner = adapter as unknown as { spawn(...args: unknown[]): DeepSeekRpc }
   const spawn = spawner.spawn.bind(adapter)
   spawner.spawn = (...args) => { spawning = true; try { return spawn(...args) } finally { spawning = false } }
-  const checkViolations = async (): Promise<void> => { const text = await readLog(join(folder, 'violations.jsonl')); if (text) throw new Error(`Invalid DeepSeek Harness answer: ${text}`) }
+  const checkViolations = async (): Promise<void> => { const text = await readLog(join(folder, 'violations.jsonl')); if (text) throw new Error(`Invalid DeepSeek answer: ${text}`) }
   const requests = async (): Promise<RecordedRpc[]> => { await checkViolations(); return parseProviderRecords<RecordedRpc>(await readLog(join(folder, 'requests.jsonl'))) }
   const writeScript = async (value: Record<string, unknown>): Promise<void> => {
     let current: Record<string, unknown> = {}
@@ -101,11 +101,11 @@ export async function deepseekFixture(root?: string, requestTimeoutMs?: number, 
       typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }),
       completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }),
       // No question reaches the client on this surface; the contract skips its question case for this provider.
-      raiseQuestion: async () => { throw new Error('DeepSeek Harness has no question route to raise.') },
+      raiseQuestion: async () => { throw new Error('DeepSeek has no question route to raise.') },
       raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
       // The fake drops the next prompt's first sign of work: it shows nothing until the test moves the turn on.
       delayNextAck: async (method: string): Promise<void> => {
-        if (method !== 'session/prompt') throw new Error(`The DeepSeek Harness fixture cannot lose the acknowledgement of ${method}`)
+        if (method !== 'session/prompt') throw new Error(`The DeepSeek fixture cannot lose the acknowledgement of ${method}`)
         await writeScript({ dropPromptAck: true }); promptLost = true
       },
       requests,
