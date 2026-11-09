@@ -108,7 +108,7 @@ it('answers reads, retries and new calls on archived work as it did before the w
     const starting = new WatcherArchive(f.root, () => true)
     loading.mockRestore()
     const archived = f.control.watcherRecords.archive
-    Object.assign(f.control, { watcherArchive: starting })
+    Object.assign(f.control.watcherRecords, { archive: starting })
     const reading = call('read_operation', { operationId: laterOperation })
     await new Promise(resolve => setTimeout(resolve, 50))
     // A pass over the threads then waits for the index too, rather than take Watcher's archived start at the head of the
@@ -138,7 +138,7 @@ it('answers reads, retries and new calls on archived work as it did before the w
       record.localTakeovers = record.localTakeovers!.filter(item => item !== record.localTakeovers!.find(takeover => takeover.target.threadId === started.target.threadId))
       Object.assign(record.watches!.find(item => item.id === watched.id)!, { lastUserMessageId: watched.lastUserMessageId, pausedByUserMessageId: null })
     })
-    Object.assign(f.control, { watcherArchive: archived })
+    Object.assign(f.control.watcherRecords, { archive: archived })
   }
   expect(f.control.watcherRecords.view().operations.some(item => operations.includes(item.id))).toBe(false)
   expect(await asked()).toEqual(before)

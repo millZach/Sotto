@@ -103,6 +103,23 @@ describe('the new thread’s link back (ADR-0089: links are Sotto’s record)', 
 })
 
 describe('the answers grant, read as each command dispatches (ADR-0004)', () => {
+  it('retains the unsent move and draft when the initial send guard refuses', async () => {
+    const h = host(), ask = request()
+    const options = (h.moves as unknown as { options: { workspace: { setContinuedFrom: () => Promise<void> } } }).options
+    const link = options.workspace.setContinuedFrom
+    options.workspace.setContinuedFrom = async () => { h.state.mayAnswer = false }
+    const first = await h.moves.handle(ask, desktop)
+    expect(first).toMatchObject({ type: 'started', sent: false, message: HOST_THREAD_MOVE_WORDS.grantGone })
+    expect(h.threads).toHaveLength(1); expect(h.sent).toEqual([])
+    const readMoves = async () => JSON.parse(await readFile(join(directory, 'thread-moves.json'), 'utf8')) as { moves: { threadId: string; draftId: string; sent?: boolean }[] }
+    const before = (await readMoves()).moves[0]!
+    expect(before.sent).not.toBe(true)
+    options.workspace.setContinuedFrom = link
+    h.state.mayAnswer = true
+    expect(await h.moves.handle(ask, desktop)).toMatchObject({ type: 'started', threadId: before.threadId, sent: true })
+    expect((await readMoves()).moves[0]).toMatchObject({ threadId: before.threadId, draftId: before.draftId, sent: true })
+    expect(h.threads).toHaveLength(1); expect(h.sent).toEqual([before.threadId])
+  })
   it('refuses a start that would act without asking once the grant is taken away while it waits, and makes nothing', async () => {
     const h = host()
     let open!: () => void

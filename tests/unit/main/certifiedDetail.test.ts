@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { immutableActivities, isImmutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import { watcherDisplayPrompt, type WatcherMessageDisplay } from '../../../src/main/agents/watcherMessageDisplay'
+import { watcherDisplayPrompt } from '../../../src/main/agents/watcherMessageDisplay'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
@@ -16,7 +16,7 @@ const record = (id: string, output = 'first'): AgentActivity => ({ id, turnId: '
 const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 'Synthetic', modelId: 'fake', status: 'running', messages: [], requests: [], activities: immutableActivities([record('one'), record('two')]) })
 function fixture(enabled: boolean, directory = '', watcherEnabled = true) {
   const control = createAgentControl({ directory, host: new E2EAgentHost(), credentials: { has: () => false, available: () => false } as never, streamingPublishCost: enabled, watcherEnabled })
-  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; revisions: { certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number> }; watcherMessageDisplay?: WatcherMessageDisplay }
+  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; revisions: { certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number> } }
   return { control, detail, publish(value: AgentThread) { const revision = detail.detailRevision(value); return { revision, update: detail.detailUpdate(value, revision) } } }
 }
 
@@ -59,7 +59,7 @@ describe('certified activity detail under the streaming cost gate', () => {
     request.displayPrompt = proof
     f.detail.state.host.hostId = request.watcher.hostId
     f.detail.state.host.threads = [value]; f.detail.viewedThreadIds = [value.id]
-    const updateProof = () => f.detail.watcherMessageDisplay!.update(record.requests)
+    const updateProof = () => f.control.watcherRecords.display.update(record.requests)
     updateProof()
     let held = f.control.threadDetail(value.id)!
     expect(held.messages[0]!.text).toBe(original)
