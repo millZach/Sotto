@@ -835,10 +835,12 @@ private struct Conversation: View {
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
-                      open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
+                      open: openRuns.contains(row.id), last: last,
+                      pictures: model.showsAgentPictures(ref.hostID) ? RunPictures(ref: ref, by: provider) { viewing = $0 } : nil) { toggleRun(row.id, scroll) }
                 .equatable()
                 .benchRowFrame("run", row.id, in: .named(Self.pageSpace))
-            // The run's pictures stay in view whether it is open or folded (ADR-0170).
+            // The pictures that stand in the thread stay in view whether the run is open or folded (ADR-0170); the rest sit
+            // in its lines.
             if model.showsAgentPictures(ref.hostID) {
                 AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 }
                     .benchRowFrame("pictures", row.id, in: .named(Self.pageSpace))
@@ -1912,6 +1914,14 @@ private enum ReplySelection {
 /// through it, the line shows the working words with a slow light crossing them, and VoiceOver hears the step running
 /// now; once it has ended, how many steps it had and how long they took, quietly. A press opens the steps in place
 /// under their guide, and another folds them.
+/// What a run needs to show its steps' pictures in their lines (ADR-0170, pictures in steps): the thread they are read
+/// from, who made them, for the viewer's callouts, and how the viewer opens. Nil where a computer keeps no pictures.
+struct RunPictures {
+    let ref: ThreadRef
+    let by: String?
+    let open: (OpenPhotos) -> Void
+}
+
 private struct FoldedRun: View, Equatable {
     let runID: String
     let steps: [Activity]
@@ -1920,31 +1930,43 @@ private struct FoldedRun: View, Equatable {
     let open: Bool
     /// The conversation ends on this run, so the line's reach stays inside the page's end.
     let last: Bool
+    var pictures: RunPictures? = nil
     let toggle: () -> Void
     /// Drawn again only when what it shows changes; a press does the same for its run every time.
     static func == (a: Self, b: Self) -> Bool {
         a.runID == b.runID && a.steps == b.steps && a.seconds == b.seconds && a.working == b.working && a.open == b.open
-            && a.last == b.last
+            && a.last == b.last && a.pictures?.ref == b.pictures?.ref && a.pictures?.by == b.pictures?.by
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The video the folded line's strip set playing under it.
+    @State private var playing: String?
 
     var body: some View {
         let _ = BenchProbe.body("FoldedRun")
+        // Folded, the line shows the newest pictures of all its steps at its end; open, each step shows its own.
+        let items = pictures == nil || open ? [] : StepPictures.inSteps(steps)
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: toggle) {
-                if working {
-                    WorkingLine(open: open)
-                } else {
-                    summaryLine
+            HStack(spacing: Space.s2) {
+                Button(action: toggle) {
+                    if working {
+                        WorkingLine(open: open)
+                    } else {
+                        summaryLine
+                    }
+                }
+                .buttonStyle(FoldLineStyle())
+                .accessibilityLabel(StepRun.press(count: steps.count, open: open))
+                .accessibilityValue(spoken)
+                .accessibilityAddTraits(open ? .isSelected : [])
+                .accessibilityIdentifier("steps-run-\(runID)")
+                if let pictures, !items.isEmpty {
+                    Spacer(minLength: Space.s2)
+                    StepPictureStrip(ref: pictures.ref, items: items, run: steps, by: pictures.by, playing: $playing, open: pictures.open)
                 }
             }
-            .buttonStyle(FoldLineStyle())
-            .accessibilityLabel(StepRun.press(count: steps.count, open: open))
-            .accessibilityValue(spoken)
-            .accessibilityAddTraits(open ? .isSelected : [])
-            .accessibilityIdentifier("steps-run-\(runID)")
+            if let pictures, !items.isEmpty { StepPictureVideo(ref: pictures.ref, items: items, playing: playing) }
             if open {
-                StepTrail(steps: steps)
+                StepTrail(steps: steps, pictures: pictures)
                     .padding(.top, working ? Space.s2 : Space.s1)
                     .padding(.bottom, Space.s3 + Space.s1)
                     .transition(trailTransition)
@@ -2203,11 +2225,12 @@ private struct FoldLineStyle: ButtonStyle {
 /// A run of steps between two messages: small muted lines under a faint guide, quieter than the messages.
 private struct StepTrail: View {
     let steps: [Activity]
+    var pictures: RunPictures? = nil
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(steps) { record in
-                StepLine(record: record)
+                StepLine(record: record, run: steps, pictures: pictures)
             }
         }
         .padding(.vertical, 2)
@@ -2226,11 +2249,25 @@ private struct StepTrail: View {
 /// has a spinner and its time ticks.
 private struct StepLine: View {
     let record: Activity
+    /// The run the step is in, which a viewer opened from its pictures steps through.
+    var run: [Activity] = []
+    var pictures: RunPictures? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
     @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
+    /// The video the step's strip set playing under its line.
+    @State private var playing: String?
     var body: some View {
         let _ = BenchProbe.body("StepLine")
+        // The step's pictures sit at its line's end, before its time (ADR-0170, pictures in steps).
+        let items = pictures == nil ? [] : StepPictures.inSteps([record])
+        VStack(alignment: .leading, spacing: 0) {
+            line(items)
+            if let pictures, !items.isEmpty { StepPictureVideo(ref: pictures.ref, items: items, playing: playing) }
+        }
+    }
+
+    private func line(_ items: [StepPictures.Item]) -> some View {
         HStack(spacing: 7) {
             mark.frame(width: markRoom, height: markRoom)
             Text(verbatim: record.title)
@@ -2246,10 +2283,14 @@ private struct StepLine: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: Space.s2)
+            if let pictures, !items.isEmpty {
+                StepPictureStrip(ref: pictures.ref, items: items, run: run, by: pictures.by, playing: $playing, open: pictures.open)
+            }
             meta
         }
         .frame(minHeight: 26)
-        .accessibilityElement(children: .combine)
+        // A line with pictures keeps them apart, so each opens on its own.
+        .accessibilityElement(children: items.isEmpty ? .combine : .contain)
         .accessibilityIdentifier("step-\(record.id)")
     }
 

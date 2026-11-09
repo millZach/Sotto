@@ -2,7 +2,7 @@ import React, { memo, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Film, ImageIcon, Pause, Play } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import { msg, plural } from '@lingui/core/macro'
-import { WRITTEN_STEP_PREFIX, type AgentActivity, type AgentActivityMedia } from '../../../shared/agentActivity'
+import { WRITTEN_STEP_PREFIX, picturesStandInThread, type AgentActivity, type AgentActivityMedia } from '../../../shared/agentActivity'
 import { AttachmentViewer, type ViewerImage } from './AttachmentViewer'
 import type { ActivityGroup } from './threadActivityView'
 import { countVideoLoad, useThreadMediaSource, watchNear, watchOnScreen, type ThreadMediaOrigin } from './threadMediaSources'
@@ -13,7 +13,7 @@ import { OwlEasel } from './OwlEasel'
 import { CalloutLayer } from './callouts'
 
 /** One picture as a tile and the viewer know it: its handle and where it is found. */
-interface Shown { readonly origin: ThreadMediaOrigin; readonly media: AgentActivityMedia; readonly record: AgentActivity }
+export interface Shown { readonly origin: ThreadMediaOrigin; readonly media: AgentActivityMedia; readonly record: AgentActivity }
 
 const TYPE_NAMES: Record<AgentActivityMedia['mimeType'], string> = { 'image/png': 'PNG', 'image/jpeg': 'JPEG', 'image/gif': 'GIF', 'image/webp': 'WebP',
   'video/mp4': 'MP4', 'video/webm': 'WebM', 'video/quicktime': 'QuickTime' }
@@ -29,12 +29,12 @@ export function mediaDetails(media: AgentActivityMedia): string {
 const WRITTEN_STEP = msg({ message: 'Pictures and videos it wrote', comment: 'The step that holds the pictures and videos an agent wrote in its folder during a turn.' })
 
 /** The name of the step a picture came from: the host's words, or this window's for a step Sotto made itself. */
-function stepTitle(t: ReturnType<typeof useLingui>['t'], record: AgentActivity): string {
+export function stepTitle(t: ReturnType<typeof useLingui>['t'], record: AgentActivity): string {
   return record.id.startsWith(WRITTEN_STEP_PREFIX) ? t(WRITTEN_STEP) : record.title
 }
 
 /** "Picture 2": a picture's name on its tile and in the viewer, by its place among the turn's pictures. */
-function pictureName(t: ReturnType<typeof useLingui>['t'], number: number): string {
+export function pictureName(t: ReturnType<typeof useLingui>['t'], number: number): string {
   return t(msg({ message: `Picture ${number}`, comment: '{number} is the place of an agent\'s picture among the pictures of one turn.' }))
 }
 
@@ -95,7 +95,7 @@ function MediaTile({ shown, index, count, onOpen }: {
  * only enough to show its first frame; further away it lets go of it. It never plays until it is pressed, and it pauses
  * the moment it leaves the screen.
  */
-function VideoTile({ shown, number, count }: { readonly shown: Shown; readonly number: number; readonly count: number }): ReactNode {
+export function VideoTile({ shown, number, count }: { readonly shown: Shown; readonly number: number; readonly count: number }): ReactNode {
   const { t } = useLingui()
   const frame = useRef<HTMLDivElement>(null)
   const player = useRef<HTMLVideoElement>(null)
@@ -143,7 +143,9 @@ function MakingTile({ record }: { readonly record: AgentActivity }): ReactNode {
 const making = (record: AgentActivity): boolean => record.generates === 'image' && record.status === 'running' && !record.media?.length
 
 /**
- * The pictures a turn's agent made or looked at (ADR-0170), as tiles under its work, whether its steps are open or folded.
+ * The pictures of a turn that stand in the thread (ADR-0170), as tiles under its work, whether its steps are open or folded:
+ * what the agent showed through `sotto_media`, and an image the user asked it to make. Every other picture sits small in its
+ * step's row (`StepPictures`).
  * A press opens the viewer over the pane, where ← and → step through the turn's pictures. A step still making an image
  * shows the owl at the easel in its place. Nothing shows while the `inline-media` Owl feature is off, and a turn with no
  * pictures draws nothing.
@@ -155,7 +157,7 @@ export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadI
 }): ReactNode {
   const { t } = useLingui()
   const enabled = useOwlFeature('inline-media')
-  const shown = useMemo<readonly Shown[]>(() => !enabled || !threadId || !groups ? [] : groups.flatMap(group => group.records.flatMap(record =>
+  const shown = useMemo<readonly Shown[]>(() => !enabled || !threadId || !groups ? [] : groups.flatMap(group => group.records.flatMap(record => !picturesStandInThread(record) ? [] :
     (record.media ?? []).map(media => ({ media, record, origin: { threadId, activityId: record.id, mediaId: media.id } })))), [enabled, groups, threadId])
   // The viewer steps through the pictures; a video plays in its own tile.
   const pictures = useMemo(() => shown.filter(item => item.media.kind === 'image'), [shown])

@@ -6,7 +6,7 @@
 /* A finished turn folds its work to one line above the final reply, with a rule between the two. */
 .thread-work { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
 /* The fold's line and what the turn changed share a row; everything else takes a row of its own. */
-.thread-work > :not(.thread-work__summary, .thread-changes) { flex: 0 0 100%; min-width: 0; }
+.thread-work > :not(.thread-work__summary, .thread-changes, .step-pictures) { flex: 0 0 100%; min-width: 0; }
 .thread-work__headline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-message + .thread-work { margin-top: -8px; }
 .thread-work__summary {
@@ -188,7 +188,7 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
    its own under what came back. The row's button cannot hold another, so the slot at the end of the command keeps the room
    and names the anchor, and Copy, the row's next sibling, is placed on it. Each row scopes the name, so a row nested in
    another finds its own. Focus goes from the row to Copy, then into what came back. */
-.thread-activity__row { position: relative; anchor-scope: --step-command; }
+.thread-activity__row { position: relative; anchor-scope: --step-command, --step-pictures; }
 .thread-activity__copy-slot { display: inline-block; width: 30px; height: 1lh; vertical-align: top; anchor-name: --step-command; }
 .thread-activity__copy-command {
   position: absolute; position-anchor: --step-command; top: anchor(center); left: calc(anchor(left) + 6px); translate: 0 -50%;

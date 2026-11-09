@@ -15,6 +15,13 @@ import type { ActivityGroup } from '../../../src/renderer/src/agents/threadActiv
 
 vi.mock('../../../src/renderer/src/state/owlFeature', () => ({ useOwlFeature: (id: string) => id === 'inline-media' }))
 import { ThreadMediaTiles } from '../../../src/renderer/src/agents/ThreadMediaTiles'
+import { StepPicturesThreadContext, useStepPictures } from '../../../src/renderer/src/agents/StepPictures'
+
+/** A line's pictures (ADR-0170, pictures in steps), as a row draws them at its end. */
+function Line({ records }: { readonly records: readonly AgentActivity[] }): React.ReactNode {
+  const { strip } = useStepPictures(records)
+  return <>{strip}</>
+}
 
 const { english } = interfaceCatalogs(
   import.meta.glob<CompiledCatalog>(['../../../src/locales/*/en.po', '!../../../src/locales/main/en.po'], { eager: true }),
@@ -23,7 +30,7 @@ const { english } = interfaceCatalogs(
 const media = (index: number) => ({ id: `m${index}`, digest: String(index).repeat(64), kind: 'image' as const, mimeType: 'image/png' as const, sizeBytes: 40,
   width: 1280, height: 800, name: `shot-${index}.png`, source: 'tool' as const })
 const records: AgentActivity[] = [
-  { id: 'claude-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot', media: [media(0), media(1)] },
+  { id: 'sotto-shown-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot', media: [media(0), media(1)] },
   { id: `${WRITTEN_STEP_PREFIX}turn`, turnId: 'turn', sequence: 1, kind: 'file-change', status: 'completed', title: 'written', media: [media(2)] },
 ]
 const groups = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records }] as unknown as ActivityGroup[]
@@ -41,12 +48,16 @@ describe('a tile\'s words in a built app', () => {
     delete (window as unknown as { sotto?: unknown }).sotto
   })
 
-  it('names every tile and its step from the catalogs, and warns of no message', async () => {
+  it('names every tile, every picture in a step and its step from the catalogs, and warns of no message', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    render(<ThreadMediaTiles groups={groups} threadId="thread" />)
-    await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(3))
-    expect(screen.getByText('Picture 3')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open picture 3 of 3, from Pictures and videos it wrote' })).toBeTruthy()
+    render(<StepPicturesThreadContext.Provider value={{ threadId: 'thread', who: 'Claude Code' }}>
+      <ThreadMediaTiles groups={groups} threadId="thread" /><Line records={records} />
+    </StepPicturesThreadContext.Provider>)
+    await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(2))
+    await waitFor(() => expect(document.querySelectorAll('.step-pictures__thumb img[src]')).toHaveLength(1))
+    expect(screen.getByText('Picture 2')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open picture 2 of 2, from sotto_browser / screenshot' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open picture 1 of 1, from Pictures and videos it wrote' })).toBeTruthy()
     expect(warn.mock.calls.filter(call => String(call[0]).startsWith('Uncompiled message'))).toEqual([])
     warn.mockRestore()
   })

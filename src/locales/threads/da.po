@@ -6154,6 +6154,12 @@ msgstr ""
 msgid "Open {title}, the thread this one continues"
 msgstr ""
 
+#. The count before a step's newest pictures, which opens the viewer at the first of the rest.
+#. placeholder {0}: all.length
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Open all {0} pictures"
+msgstr ""
+
 #: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -6231,6 +6237,7 @@ msgstr ""
 msgid "Open panes"
 msgstr ""
 
+#: src/renderer/src/agents/StepPictures.tsx
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture"
 msgstr ""
@@ -6239,6 +6246,11 @@ msgstr ""
 #. placeholder {0}: stepTitle(t, shown.record)
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
+msgstr ""
+
+#. {number} of {count} pictures an agent's steps made; {title} names the step that made it.
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Open picture {number} of {count}, from {title}"
 msgstr ""
 
 #. {number} of {count} pictures in a turn; {title} names the step that made it; then how many callouts the agent placed on it.
@@ -6612,6 +6624,12 @@ msgstr ""
 msgid "Pictures and videos it wrote"
 msgstr ""
 
+#. Names the small pictures at the end of a step's line; {0} is how many it stands for.
+#. placeholder {0}: all.length
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Pictures: {0}"
+msgstr ""
+
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Plain ink"
 msgstr ""
@@ -6647,6 +6665,18 @@ msgstr ""
 #. {number} is the place of an agent's GIF among the pictures of one turn.
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Play GIF {number}"
+msgstr ""
+
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play video"
+msgstr ""
+
+#. {0} of {1} videos an agent's steps wrote; {2} names the step. Pressed again, the video under the line goes.
+#. placeholder {0}: videos.indexOf(shown) + 1
+#. placeholder {1}: videos.length
+#. placeholder {2}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play video {0} of {1}, from {2}"
 msgstr ""
 
 #. {number} is the place of an agent's video among the pictures and videos of one turn.

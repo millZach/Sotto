@@ -30,6 +30,7 @@ import {
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
+import { MOST_STEP_PICTURES, PictureScopeContext, StepPicturesSlot, usePictureScope, useStepPictures, withNested } from './StepPictures'
 import { Fold } from './Fold'
 import { folderKey } from './projectFolders'
 import './activity.css'
@@ -548,6 +549,9 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   // inside the row's own button, is drawn over it. A described one heads the well under the row instead (`StepWell`).
   const copied = open && record.kind === 'command' && record.command && !script && !purpose ? record.command : ''
   const copySlot = copied ? <span className="thread-activity__copy-slot" aria-hidden="true" /> : null
+  // The row's pictures sit at its end, before its time (ADR-0170, pictures in steps); folded, it shows the newest of all it holds.
+  const pictureRecords = useMemo(() => open ? [record] : withNested(record, children), [open, record, children])
+  const pictures = useStepPictures(pictureRecords)
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
@@ -557,6 +561,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
+      <StepPicturesSlot count={Math.min(pictures.count, MOST_STEP_PICTURES)} more={pictures.count > MOST_STEP_PICTURES} />
       {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
       <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
       {quiet || brief ? null : timed && timing ? <span title={timing}>{status}</span> : status}
@@ -577,6 +582,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
     {copied ? <CopyCommand command={copied} /> : null}
+    {pictures.strip}{pictures.player}
     <Fold open={open}><div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
       {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>
@@ -604,6 +610,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const lineCounts = recordsLineCounts(group.records)
   const canFold = !live && !bare && group.records.length > 0
   const name = [headline, summary, lineCounts ? spokenLineCounts(lineCounts) : ''].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
+  // Folded, its line shows the newest of its pictures; open, each row shows its own.
+  const pictures = useStepPictures(group.records, canFold && !expanded)
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined} data-bare={bare || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
@@ -615,7 +623,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
       {summary ? <span className="thread-activity__counts">{summary}</span> : null}
       {/* Once open, each row says its own. */}
       <LineCountMarks counts={expanded ? null : lineCounts} spoken={false} />
-    </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
+    </button> : null}
+    {canFold ? <>{pictures.strip}{pictures.player}</> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
     <TurnFailureReason turn={group.turn} />
@@ -644,15 +653,18 @@ function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure,
     [quiet, shared, records, group.turnId])
   const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
   const earlier = live && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
+  // A row's viewer steps through the pictures of its turn when the turn says which, or else of this group.
+  const outer = useContext(PictureScopeContext)
+  const scope = usePictureScope(records)
   const row = (item: ActivityItem): ReactNode => item.run
     ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
     : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />
   if (!shown.length) return null
-  return <ul id={id} className="thread-activity__rows">
+  return <PictureScopeContext.Provider value={outer ?? scope}><ul id={id} className="thread-activity__rows">
     {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
       onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
     {(earlier ? shown.slice(-LIVE_ROWS) : shown).map(row)}
-  </ul>
+  </ul></PictureScopeContext.Provider>
 }
 
 /** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
@@ -803,6 +815,9 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // "the plan stays in view"). Its record is still one of the steps under the line, a row that does not open the list again;
   // once the steps are open the checklist reads each item whole, as the opened plan did.
   const plan = useMemo(() => newestPlan(steps), [steps])
+  // Folded, the line shows the newest pictures of the turn's steps (ADR-0170, pictures in steps); open, each row shows its own.
+  const pictureScope = usePictureScope(steps)
+  const pictures = useStepPictures(steps, !open)
   const checklist = plan ? <PlanSteps record={plan} live /> : null
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
@@ -855,7 +870,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
+    <PictureScopeContext.Provider value={pictureScope}>
+      {pictures.strip}{pictures.player}
+      <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
+    </PictureScopeContext.Provider>
   </div>
 }
 
@@ -890,6 +908,9 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
   const Icon = run.kind === 'cloud' ? Smartphone : Globe
   const lastFailed = going ? run.steps.at(-1)!.failed : run.steps.some(step => stepUnfinished(step, true))
   const said = plainWords(headline)
+  // Folded, the line shows the newest pictures of its run; open, each step shows its own.
+  const records = useMemo(() => run.steps.map(step => step.record), [run.steps])
+  const pictures = useStepPictures(records, !open)
   return <Tag className="thread-browser" data-kind={run.kind} data-going={going || undefined} data-open={open || undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-browser__line tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
@@ -900,6 +921,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
       <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
+    {pictures.strip}{pictures.player}
     <Fold open={open}><ol id={listId} className="thread-browser__steps" aria-label={said}>
       {run.steps.map(step => {
         const unfinished = stepUnfinished(step, !going)
@@ -907,10 +929,18 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
         return <li key={step.record.id} data-failed={unfinished || undefined}>
           <StepIcon className="thread-browser__step-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
           <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
+          {open ? <BrowserStepPictures record={step.record} /> : null}
         </li>
       })}
     </ol></Fold>
   </Tag>
+}
+
+/** One browser step's pictures at the end of its line, once its run is open. */
+function BrowserStepPictures({ record }: { readonly record: AgentActivity }): ReactNode {
+  const records = useMemo(() => [record], [record])
+  const { strip, player } = useStepPictures(records)
+  return <>{strip}{player}</>
 }
 
 /**

@@ -43,6 +43,13 @@ export const MAX_ACTIVITY_MEDIA = 8
 export const WRITTEN_STEP_PREFIX = 'sotto-written-'
 /** The ID every step an agent showed pictures or videos in through `sotto_media` starts with (ADR-0170, request-only); titled in the agent's words. */
 export const SHOWN_STEP_PREFIX = 'sotto-shown-'
+/**
+ * Whether a step's pictures stand as tiles in the thread (ADR-0170, pictures in steps): the agent showed them through
+ * `sotto_media` or made the image the user asked for. Every other step's pictures sit small in the step's own row.
+ */
+export function picturesStandInThread(record: Pick<AgentActivity, 'id' | 'generates'>): boolean {
+  return record.id.startsWith(SHOWN_STEP_PREFIX) || record.generates === 'image'
+}
 /** The largest video an agent wrote that a tile plays on the desktop (ADR-0170, part 4), read from where it was written. */
 export const AGENT_VIDEO_MAX_BYTES = 200 * 1024 * 1024
 /** The largest the iPhone fetches to play, in parts (`thread-media-part`); a larger one says it plays on the desktop. */
