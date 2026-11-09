@@ -688,10 +688,6 @@ msgstr ""
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr ""
 
-#: src/main/tools/ipc.ts
-msgid "Comment on page isn't available for a page on the host machine yet. Nothing was captured."
-msgstr ""
-
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."
 msgstr ""
@@ -1231,6 +1227,10 @@ msgstr ""
 
 #: src/main/hosts/inactiveLocalHost.ts
 msgid "Saved thread ownership could not be read. Your saved answers have not changed."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
 msgstr ""
 
 #: src/main/agents/ipc.ts

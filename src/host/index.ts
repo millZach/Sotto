@@ -322,15 +322,15 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
         // The browser goes to both listeners; each lists it only to desktops (ADR-0198).
         const hostedBrowser = browser as HostBrowserTools | undefined
-        const moves = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
-          watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
+          watcherDesktops: desktops, delegation, ...hostUpdate, ...listenerServices,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,

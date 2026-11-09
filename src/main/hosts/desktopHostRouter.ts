@@ -1436,8 +1436,11 @@ export class DesktopHostRouter {
    */
   async tellBrowserSetting(connection: DesktopHostConnection, withoutAsking: boolean): Promise<void> {
     if (connection.kind !== 'remote' || !connection.browser || connection.available?.() === false) return
-    try { await connection.browser({ method: 'setting', payload: { withoutAsking } }) }
-    catch (error) { if (!(error instanceof HostConnectionError && error.code === 'forbidden')) throw error }
+    let answer: ToolsResult<unknown>
+    try { answer = await connection.browser({ method: 'setting', payload: { withoutAsking } }) }
+    catch (error) { if (error instanceof HostConnectionError && error.code === 'forbidden') return; throw error }
+    // The host holds it in memory but could not keep it on disk; said, so it is not taken as kept.
+    if (!answer.ok) throw new Error(answer.error.message)
   }
   /** Hears every connected host's browser pages, tasks and grants change, by this window's keys. Returns the way to stop. */
   subscribeBrowser(listener: (change: BrowserEvent) => void): () => void {

@@ -634,6 +634,11 @@ describe('desktop host routing', () => {
     const connection = [...router.remoteConnections()][0]!
     await router.tellBrowserSetting(connection, false)
     expect(browser).toHaveBeenLastCalledWith({ method: 'setting', payload: { withoutAsking: false } })
+    // A host that could not keep it says so; one that takes it only from a desktop that may answer refuses quietly.
+    browser.mockResolvedValueOnce({ ok: false, error: { code: 'unavailable', message: 'The host could not keep this setting.' } } as never)
+    await expect(router.tellBrowserSetting(connection, true)).rejects.toThrow('The host could not keep this setting.')
+    browser.mockRejectedValueOnce(new HostConnectionError('Not allowed.', 'forbidden'))
+    await expect(router.tellBrowserSetting(connection, true)).resolves.toBeUndefined()
     // This computer's own threads never reach a host's browser, and a host without the browser says to update it.
     await expect(router.hostedBrowser({ method: 'list', payload: { threadId: hostEntityKey(LOCAL, 'thread') } })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
     router.remove(REMOTE)

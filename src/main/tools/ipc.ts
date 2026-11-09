@@ -31,7 +31,7 @@ export interface HostedGitChanges {
 
 /**
  * Sotto's browser for a thread on a paired host, on that host through the router (ADR-0198). A pane draws its page from
- * pictures, so it has no view to mount and sends the user's input instead; Point at something and Comment on page stay
+ * pictures, so it has no view to mount and sends the user's input instead; Point at something and Screenshot to message stay
  * this computer's for now (ADR-0198, decision 7).
  */
 export interface HostedBrowser {
@@ -44,7 +44,7 @@ const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch'] as const
 const NOT_ON_HOST_PAGE: Partial<Record<typeof BROWSER_METHODS[number], MessageDescriptor>> = {
   mount: msg`This page is on the host machine, so it is drawn from its pictures. Nothing was changed.`,
   viewport: msg`A page on the host machine keeps the size of the pane that shows it. Nothing was changed.`,
-  capture: msg`Comment on page isn't available for a page on the host machine yet. Nothing was captured.`,
+  capture: msg`Screenshot to message isn't available for a page on the host machine yet. Nothing was captured.`,
   point: msg`Point at something isn't available for a page on the host machine yet. Nothing was changed.`,
 }
 const NOT_A_HOST_PAGE = msg`Only a page on a paired host takes this. Nothing was changed.`

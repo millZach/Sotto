@@ -131,8 +131,11 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-/** `browserWatches`: present once a desktop's hello accepted `browser`; the pages it watches, each with its stop. */
-interface Peer { browserWatches?: Map<string, () => void> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+/**
+ * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
+ * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
+ */
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -1090,6 +1093,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const unsubscribeBrowser = options.browser?.subscribe(change => {
     if (closing) return
     const threadId = browserThread(change)
+    // A page that closed takes every desktop's watch of it with it, so nothing keeps the closed page.
+    if (change.type === 'closed') for (const peer of peers) { peer.browserWatches?.get(change.pageId)?.stop?.(); peer.browserWatches?.delete(change.pageId) }
     for (const peer of peers) if (peer.ready && peer.browserWatches && !peer.frames.isClosed && (threadId === undefined || !hiddenThread(peer, threadId))) push(peer, { v: 1, event: 'browser', change })
   })
   /**
@@ -1099,6 +1104,19 @@ export async function startSocketServer(options: SocketServerOptions) {
   const pushFrame = (peer: Peer, frame: HostBrowserFrame): void => {
     if (peer.frames.isClosed || peer.frames.backlogged || !peer.browserWatches || frame.data.length > HOST_BROWSER_FRAME_MAX || !authenticated(peer)) return
     push(peer, { v: 1, event: 'browser-frame', frame })
+  }
+  /** Stops the stream a desktop holds for a page and marks a newer request for it. Returns that request's ticket. */
+  const endWatch = (watches: NonNullable<Peer['browserWatches']>, pageId: string): number => {
+    const current = watches.get(pageId)
+    current?.stop?.()
+    const ticket = (current?.ticket ?? 0) + 1
+    watches.set(pageId, { ticket })
+    return ticket
+  }
+  /** Ends every picture stream a desktop holds: its socket closed, or its hello no longer accepts `browser`. */
+  const endWatches = (peer: Peer): void => {
+    for (const watch of peer.browserWatches?.values() ?? []) watch.stop?.()
+    peer.browserWatches = undefined
   }
   /** Whether a desktop may answer a host's waiting browser request: one the launch script recorded, allowed to answer (ADR-0198). */
   const mayAnswerBrowser = (peer: Peer): boolean => (options.watcherDesktops?.has(peer.client.clientId) ?? false) && (options.mayAnswer?.(peer.client) ?? false)
@@ -1113,15 +1131,16 @@ export async function startSocketServer(options: SocketServerOptions) {
         return browser.answerAction(request.payload)
       case 'watch': {
         const { pageId } = request.payload
-        watches.get(pageId)?.(); watches.delete(pageId)
+        const ticket = endWatch(watches, pageId)
         const watching = await browser.watch(request.payload, frame => pushFrame(peer, frame))
         if (!watching.ok) return watching
-        if (peer.frames.isClosed || peer.browserWatches !== watches) { watching.value(); return { ok: true, value: undefined } }
-        watches.set(pageId, watching.value)
+        // A later watch or unwatch, a hello without `browser` or a closed socket while this one started leaves it nothing to do.
+        if (peer.frames.isClosed || peer.browserWatches !== watches || watches.get(pageId)?.ticket !== ticket) { watching.value(); return { ok: true, value: undefined } }
+        watches.set(pageId, { ticket, stop: watching.value })
         return { ok: true, value: undefined }
       }
       case 'unwatch':
-        watches.get(request.payload.pageId)?.(); watches.delete(request.payload.pageId)
+        endWatch(watches, request.payload.pageId)
         return { ok: true, value: undefined }
       case 'setting':
         // Turning asking off stands in for the user's answers, so only a desktop that may answer changes it (Zach, November 9).
@@ -1519,8 +1538,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (answeredBefore && !peer.productEvents) options.onProductEventAnswer?.()
         // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
         peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
-        // A desktop that shows this host's browser pages (ADR-0198). A hello again keeps the pages it watches.
+        // A desktop that shows this host's browser pages (ADR-0198). A hello again that still accepts it keeps the pages it
+        // watches; one that no longer does ends them and is sent no more.
         if ((request.accepts?.includes('browser') ?? false) && offers(peer, 'browser')) peer.browserWatches ??= new Map()
+        else endWatches(peer)
         // A desktop that takes this host's threads' messages for its Watcher.
         if ((request.accepts?.includes('watcher-tell') ?? false) && offers(peer, 'watcher-tell') && options.tellWatcher) {
           const tellPeer = peer
@@ -2139,7 +2160,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); for (const stop of peer.browserWatches?.values() ?? []) stop(); peer.browserWatches?.clear(); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

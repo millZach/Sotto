@@ -53,8 +53,9 @@ async function hostWithBrowser(options: { answers?: boolean; browser?: boolean }
     ...options.browser === false ? {} : { browser: { service, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } } } })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
   known.add(paired.clientId)
-  const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
-  return { server, desktop, pages, service, saved, close: async () => { desktop.frames.close(); await server.close(); await service.shutDown() } }
+  const session = fixture.host.pairing.signSession(paired.clientId)
+  const desktop = await rawPeer(server.descriptor.port, session)
+  return { server, desktop, session, pages, service, saved, close: async () => { desktop.frames.close(); await server.close(); await service.shutDown() } }
 }
 const result = (message: Record<string, unknown>) => (message as { result: { ok: boolean; value?: unknown; error?: { message: string } } }).result
 const pushed = (messages: readonly Record<string, unknown>[], event: string) => messages.filter(message => message.event === event)
@@ -111,6 +112,31 @@ describe('a paired host\'s browser over the socket (ADR-0198)', () => {
       expect(result(await allowed.desktop.call('answer', { op: 'browser', request: { method: 'answerAction', payload: answer } })).ok).toBe(true)
       expect(allowed.pages[0]!.state.url).toBe('http://127.0.0.1:5173/')
     } finally { await allowed.close() }
+  })
+
+  it('leaves no picture stream running after racing watches, an unwatch, or a hello that no longer accepts the browser', async () => {
+    const { desktop, session, pages, close } = await hostWithBrowser()
+    try {
+      await desktop.call('hello', { op: 'hello', accepts: ['browser'] })
+      const created = result(await desktop.call('create', { op: 'browser', request: { method: 'create', payload: { threadId: 'thread-1', workspaceId, url: 'http://127.0.0.1:5173/' } } }))
+      const pageId = (created.value as { id: string }).id
+      const watch = { op: 'browser', request: { method: 'watch', payload: { threadId: 'thread-1', workspaceId, pageId, size: { width: 800, height: 600 } } } }
+      // Two watches and an unwatch sent at once, before any answer: none is left delivering pictures.
+      for (const [id, operation] of [['w1', watch], ['w2', watch], ['u1', { op: 'browser', request: { method: 'unwatch', payload: { threadId: 'thread-1', workspaceId, pageId } } }]] as const) desktop.frames.send({ v: 1, id, session, ...operation })
+      await expect.poll(() => ['w1', 'w2', 'u1'].every(id => desktop.messages.some(message => message.id === id))).toBe(true)
+      expect(pages[0]!.watched).toBe(0)
+      expect(result(await desktop.call('w3', watch)).ok).toBe(true)
+      expect(pages[0]!.watched).toBe(1)
+      await desktop.call('hello-again', { op: 'hello', accepts: [] })
+      expect(pages[0]!.watched).toBe(0)
+      const refused = await desktop.call('w4', watch) as { ok: boolean; error: { code: string } }
+      expect(refused.error.code).toBe('invalid_request')
+      // A page that closes takes its watch records with it.
+      await desktop.call('hello-third', { op: 'hello', accepts: ['browser'] })
+      expect(result(await desktop.call('w5', watch)).ok).toBe(true)
+      expect(result(await desktop.call('close', { op: 'browser', request: { method: 'close', payload: { threadId: 'thread-1', workspaceId, pageId } } })).ok).toBe(true)
+      expect(pages[0]!.watched).toBe(0)
+    } finally { await close() }
   })
 
   it('reaches a desktop\'s own client: its requests, the host\'s changes and the pictures of a page it watches', async () => {

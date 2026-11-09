@@ -2524,6 +2524,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         hostRouter.subscribeBrowserFrames(frame => { windows.sendToMain(BROWSER_FRAME_EVENT, frame) }),
         hostRouter.subscribeConnected(connection => { void hostRouter.tellBrowserSetting(connection, workingCopySettings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed')) }),
       ] : []
+      // A host that connected before this was set up is told now, as a later one is on connecting.
+      if (pairedHostBrowser) for (const connection of hostRouter.remoteConnections()) void hostRouter.tellBrowserSetting(connection, workingCopySettings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed'))
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
       omarchySetup = platform === 'linux' ? new OmarchySetup({

@@ -689,10 +689,6 @@ msgstr "Climb needs connected Claude or Codex models for its judges, and none is
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 
-#: src/main/tools/ipc.ts
-msgid "Comment on page isn't available for a page on the host machine yet. Nothing was captured."
-msgstr "Comment on page isn't available for a page on the host machine yet. Nothing was captured."
-
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."
 msgstr "Completed file snapshot was unavailable."
@@ -1233,6 +1229,10 @@ msgstr "Saved remote drafts could not be read. The original file was preserved. 
 #: src/main/hosts/inactiveLocalHost.ts
 msgid "Saved thread ownership could not be read. Your saved answers have not changed."
 msgstr "Saved thread ownership could not be read. Your saved answers have not changed."
+
+#: src/main/tools/ipc.ts
+msgid "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
+msgstr "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
 
 #: src/main/agents/ipc.ts
 msgid "Screenshots cannot be attached in this window. Nothing was attached."
