@@ -674,6 +674,15 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const newest = turns.at(-1)
   const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
   const writing = live && !sending && !notWriting && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
+  // With replies shown when finished, the reply being written has no row, so the transcript's place keeper is told which
+  // it is, before its own effect runs, and holds a place read on it until it is whole.
+  const rows = useContext(MessageRowsContext)
+  const heldBack = streamText ? undefined : writing
+  useLayoutEffect(() => {
+    if (rows === null) return
+    rows.heldBack = heldBack
+    return () => { if (rows.heldBack === heldBack) rows.heldBack = undefined }
+  }, [rows, heldBack])
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   // Watcher's replies close to the one before, which share its header where nothing stands between them. Kept by their IDs, so

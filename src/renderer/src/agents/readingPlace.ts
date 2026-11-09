@@ -24,6 +24,11 @@ export class MessageRows {
   private readonly went = new Set<HTMLElement>()
   /** A row the order holds was taken off the page and put back, perhaps somewhere else. */
   private moved = false
+  /**
+   * The reply being written that the transcript holds back, with replies shown only when finished, so no row is drawn for
+   * it until it is whole. The message list says which, before the transcript keeps the reader's place.
+   */
+  heldBack: string | undefined
   /** Adds a drawn row; the function it returns lets that row go. */
   add(messageId: string, element: HTMLElement): () => void {
     this.byId.set(messageId, element)
@@ -121,11 +126,13 @@ export function readingPlace(scroller: HTMLElement, rows: MessageRows, threadId:
 
 /**
  * Scrolls the first of the place's messages still drawn back to where it was. The place that stands after: read afresh
- * once it is back, or held, at the scroll the transcript allows, while the transcript is too short to put it back or
- * none of its messages is drawn, as a reply held back while it is written is not (November 9, 2026).
+ * once it is back, or held, at the scroll the transcript allows, while the transcript is too short to put it back, or while
+ * none of its messages is drawn and one of them is the reply held back while it is written (November 9, 2026). A place
+ * whose messages went for any other reason, such as a finished turn folding them away, is read afresh as before.
  */
 export function keepReadingPlace(scroller: HTMLElement, rows: MessageRows, place: ReadingPlace): ReadingPlace | null {
-  if (place.marks.every(mark => rows.element(mark.messageId) === undefined)) return { ...place, top: scroller.scrollTop, held: true }
+  if (rows.heldBack !== undefined && place.marks.some(mark => mark.messageId === rows.heldBack)
+    && place.marks.every(mark => rows.element(mark.messageId) === undefined)) return { ...place, top: scroller.scrollTop, held: true }
   for (const mark of place.marks) {
     const row = rows.element(mark.messageId)
     if (row === undefined) continue

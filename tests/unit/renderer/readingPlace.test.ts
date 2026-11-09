@@ -124,10 +124,20 @@ describe('the rows a transcript draws', () => {
 })
 
 describe('a reading place none of whose messages is drawn', () => {
-  it('stays held where the scroll is, for the update that draws one of them again, as a reply held back while written', () => {
+  it('stays held where the scroll is when one of them is the reply held back while written, until it is drawn again', () => {
     const scroller = document.createElement('div')
     const place = { threadId: 'thread', marks: [{ messageId: 'answer', offset: -200 }], top: 300 }
-    expect(keepReadingPlace(scroller, new MessageRows(), place)).toEqual({ ...place, top: 0, held: true })
+    const rows = new MessageRows()
+    rows.heldBack = 'answer'
+    expect(keepReadingPlace(scroller, rows, place)).toEqual({ ...place, top: 0, held: true })
+  })
+
+  it('is read afresh when its messages went for another reason, as a finished turn folding them away', () => {
+    const scroller = document.createElement('div')
+    const place = { threadId: 'thread', marks: [{ messageId: 'step-1', offset: -200 }], top: 300 }
+    const rows = new MessageRows()
+    rows.heldBack = 'answer'
+    expect(keepReadingPlace(scroller, rows, place)).toBeNull()
   })
 })
 
