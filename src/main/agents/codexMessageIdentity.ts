@@ -87,13 +87,13 @@ export function messageOrigin<T extends CodexOrigin>(origins: readonly T[], turn
     (origin.messageId === item.clientId || !item.clientId && origin.turnId === turnId && origin.itemId === item.id))
 }
 
-export function identityTurn(turns: CodexTurnIdentity[], turnId: string): CodexTurnIdentity {
+export function ensureIdentityTurn(turns: CodexTurnIdentity[], turnId: string): CodexTurnIdentity {
   let turn = turns.find(turn => turn.turnId === turnId)
   if (!turn) { turn = { turnId, ordered: false, sealed: false, messages: [] }; turns.push(turn) }
   return turn
 }
 
-export function messageIdentity(turns: CodexTurnIdentity[], turn: CodexTurnIdentity, item: IdentityItem,
+export function upsertMessageIdentity(turns: CodexTurnIdentity[], turn: CodexTurnIdentity, item: IdentityItem,
   origin: CodexOrigin | undefined, createdAt: string, complete: boolean, preferredId = item.id): CodexMessageIdentity {
   let record = turn.messages.find(record => record.role === item.role && compatibleClient(record, item) && (record.nativeIds.includes(item.id) || origin?.messageId === record.id))
   if (!record) {
@@ -114,7 +114,7 @@ export function messageIdentity(turns: CodexTurnIdentity[], turn: CodexTurnIdent
  * A differing count/content/order never proves that repeated text is the same message. */
 export function reconcileMessageIdentities(turns: CodexTurnIdentity[], turnId: string, items: readonly IdentityItem[],
   origins: readonly CodexOrigin[], createdAt: string, rollout: readonly RolloutIdentity[] = [], terminal = true): CodexMessageIdentity[] {
-  const turn = identityTurn(turns, turnId)
+  const turn = ensureIdentityTurn(turns, turnId)
   const old = [...turn.messages]
   // Old records can learn their exact client identity from an existing receipt.
   for (const record of old) record.clientId ??= origins.find(origin => origin.messageId === record.id)?.messageId
@@ -163,7 +163,7 @@ export function reconcileMessageIdentities(turns: CodexTurnIdentity[], turnId: s
     let record = selected[index]
     if (!record) {
       const native = corroborated ? rollout[index]?.nativeId : undefined
-      record = messageIdentity(turns, turn, item, origin, createdAt, terminal || item.role === 'user', native ?? (corroborated ? rollout[index]?.eventId : undefined) ?? item.id)
+      record = upsertMessageIdentity(turns, turn, item, origin, createdAt, terminal || item.role === 'user', native ?? (corroborated ? rollout[index]?.eventId : undefined) ?? item.id)
       if (native) bindNativeId(record, native)
     } else {
       bindNativeId(record, item.id)
