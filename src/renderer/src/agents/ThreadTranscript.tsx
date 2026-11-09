@@ -240,8 +240,9 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
  * they arrive. Memoized on the message array and placement so composer keystrokes and status ticks do not repaint it.
  *
  * An assistant message with no text yet (a provider call that so far holds only tool use) draws no header.
- * With `streamText` off, the reply being written is held back until something follows it: activity after it,
- * a later message, or the end of the turn. Activity itself always appears as it runs.
+ * With `streamText` off, the reply being written is held back, and not drawn, until something follows it: activity after
+ * it, a later message, or the end of the turn. Meanwhile the working line says a reply is being written. Activity itself
+ * always appears as it runs.
  */
 const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
 
@@ -323,8 +324,8 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  */
 /** The model overseeing the thread drawn, where it is a Dynamic thread (ADR-0191): its replies carry a mark if it changed files itself. */
 const OverseenContext = createContext<string | undefined>(undefined)
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity, close = false }: {
-  readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, threadId, speaker, delegatedBy, forkable, work, workGroups, activity, close = false }: {
+  readonly message: AgentMessage; readonly provider: string; readonly writing: boolean
   /**
    * In Watcher's conversation, a reply written within five minutes of the Watcher reply before it. Where nothing stands
    * between the two, they share the first one's header (watcher.css), and this one's name and time wait beside Copy.
@@ -401,9 +402,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
     {work && activity ? <Fold open={workOpen}><div id={workId} className="thread-message__work-body">
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div></Fold> : null}
-    {writing && !streamText
-      ? <p className="thread-message__writing tt-paragraph" role="status">{t`Writing a reply…`}</p>
-      : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
+    <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {overseen !== undefined && message.role === 'assistant' && !writing ? <OverseerOwnChangeFor message={message} overseer={overseen} /> : null}
@@ -454,9 +453,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const failureWords = useContext(TurnFailureWordsContext)
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
+  // With replies shown when finished, the reply being written is not drawn at all: the working line already says
+  // "Writing a reply", so nothing says it twice (Zach's pick A, November 9, 2026).
   const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
     ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
+    : drawn(message) && (streamText || message.id !== writing) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
       delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId} close={close?.has(message.id)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
@@ -673,6 +674,15 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const newest = turns.at(-1)
   const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
   const writing = live && !sending && !notWriting && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
+  // With replies shown when finished, the reply being written has no row, so the transcript's place keeper is told which
+  // it is, before its own effect runs, and holds a place read on it until it is whole.
+  const rows = useContext(MessageRowsContext)
+  const heldBack = streamText ? undefined : writing
+  useLayoutEffect(() => {
+    if (rows === null) return
+    rows.heldBack = heldBack
+    return () => { if (rows.heldBack === heldBack) rows.heldBack = undefined }
+  }, [rows, heldBack])
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   // Watcher's replies close to the one before, which share its header where nothing stands between them. Kept by their IDs, so
