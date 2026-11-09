@@ -142,7 +142,7 @@ describe('any other request on its permission card (ADR-0185)', () => {
 
 describe('the words an adapter writes', () => {
   it('need no language, since the headless host sets none', () => {
-    for (const file of ['requestInput', 'claudeRequests', 'codexRequests', 'deepseekRequests', 'devinRequests', 'grokRequests', 'museRequests']) {
+    for (const file of ['requestInput', 'providers/claude/claudeRequests', 'providers/codex/codexRequests', 'deepseekRequests', 'devinRequests', 'grokRequests', 'museRequests']) {
       expect(readFileSync(join('src/main/agents', `${file}.ts`), 'utf8'), file).not.toContain('@lingui')
     }
   })
