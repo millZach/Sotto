@@ -1,10 +1,13 @@
 import { z } from 'zod'
+import type { BrowserInputRequest, BrowserWatchRequest, HostBrowserFrame } from './hostBrowser'
 import { UNSAFE_URL_CHARACTERS } from './externalLinks'
 import { fileWorkspaceSchema } from './files'
 import { toolTargetSchema, type ToolsResult } from './tools'
 
 export const BROWSER_CHANNEL = 'sotto:browser:'
 export const BROWSER_EVENT = `${BROWSER_CHANNEL}event`
+/** Pictures of a paired host's pages this window watches (ADR-0198), apart from the browser's other events. */
+export const BROWSER_FRAME_EVENT = `${BROWSER_CHANNEL}frame`
 /** What a page an agent asked to open says until it is opened: by the user's answer, the browser grant, or the user loading it. */
 export const BROWSER_WAITING_TO_OPEN = 'Waiting for you to open and share this page.'
 
@@ -134,4 +137,10 @@ export interface BrowserBridge {
   mount(request: z.infer<typeof browserMountSchema>): Promise<ToolsResult<void>>
   openLink(request: z.infer<typeof browserOpenLinkSchema>): Promise<ToolsResult<z.infer<typeof browserOpenResultSchema>>>
   onEvent(listener: (event: BrowserEvent) => void): () => void
+  /** A paired host's page (ADR-0198): the user's own input in the pane, sent on to the page. */
+  input(request: BrowserInputRequest): Promise<ToolsResult<void>>
+  /** A paired host's page: pictures of it at the pane's size until `unwatch`, heard through `onFrame`. */
+  watch(request: BrowserWatchRequest): Promise<ToolsResult<void>>
+  unwatch(request: z.infer<typeof browserRequestSchema>): Promise<ToolsResult<void>>
+  onFrame(listener: (frame: HostBrowserFrame) => void): () => void
 }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerToolsIpc } from '../../../src/main/tools/ipc'
 import { createToolsBridges } from '../../../src/preload/tools'
 import { safeBrowserUrl } from '../../../src/shared/browser'
+import { hostEntityKey } from '../../../src/shared/clientIdentity'
 
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
@@ -17,7 +18,7 @@ describe('tools IPC and preload boundary', () => {
     const { url, webContents: sender } = main
     const { mainFrame } = sender
     const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(36)
+    expect(handlers.size).toBe(39)
     for (const [channel, handler] of handlers) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
@@ -27,6 +28,38 @@ describe('tools IPC and preload boundary', () => {
     sender.getURL = () => 'https://example.invalid'
     for (const handler of handlers.values()) expect(() => handler({ sender, senderFrame: mainFrame }, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
     cleanup(); expect(handlers.size).toBe(0)
+  })
+  it('sends a paired host\'s thread\'s browser requests to its host, and refuses what a host\'s page cannot take (ADR-0198)', async () => {
+    const local = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, local]), ['dispose', vi.fn()]])
+    const request = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    const services = { terminal: make([]), gitChanges: make([]), hostedBrowser: { request },
+      browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point']) } as never as Parameters<typeof registerToolsIpc>[1]
+    const registry = ipcRegistry()
+    const { url, webContents: sender } = registry.main
+    registerToolsIpc(registry.ipc, services, () => [{ role: 'main', url, webContents: sender }])
+    const call = (name: string, payload: unknown) => registry.handlers.get(`sotto:browser:${name}`)!({ sender, senderFrame: sender.mainFrame }, payload) as Promise<{ ok: boolean; error?: { message: string } }>
+    const threadId = hostEntityKey('6f1c2d3e-4b5a-4c6d-8e7f-901234567890', 'thread-1')
+    const page = { threadId, workspaceId: 'a'.repeat(64), pageId: 'f6a804fd-77c9-497c-bc16-ce0d0a7b7a59' }
+    expect((await call('navigate', { ...page, url: 'http://127.0.0.1:5173/' })).ok).toBe(true)
+    expect(request).toHaveBeenLastCalledWith({ method: 'navigate', payload: { ...page, url: 'http://127.0.0.1:5173/' } })
+    expect((await call('watch', { ...page, size: { width: 800, height: 600 } })).ok).toBe(true)
+    expect(request).toHaveBeenLastCalledWith({ method: 'watch', payload: { ...page, size: { width: 800, height: 600 } } })
+    const input = { type: 'text', text: 'hello' }
+    expect((await call('input', { ...page, input })).ok).toBe(true)
+    expect(request).toHaveBeenLastCalledWith({ method: 'input', payload: { ...page, input } })
+    for (const refused of ['mount', 'viewport', 'capture', 'point']) {
+      const answer = await call(refused, { ...page, bounds: null })
+      expect(answer.ok).toBe(false)
+      expect(answer.error?.message).toMatch(/host machine/u)
+    }
+    expect((await call('navigate', { ...page, url: 'file:///etc/passwd' })).ok).toBe(false)
+    expect(request).toHaveBeenCalledTimes(3)
+    // A page on this computer is drawn by Electron, so it takes no pane input or picture watch.
+    expect((await call('input', { ...page, threadId: 'thread-here', input })).ok).toBe(false)
+    expect(local).not.toHaveBeenCalled()
+    await call('navigate', { ...page, threadId: 'thread-here', url: 'http://127.0.0.1:5173/' })
+    expect(local).toHaveBeenCalledOnce()
   })
   it('counts the terminal as used when a shell starts, and on no other call or refusal', async () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })

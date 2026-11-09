@@ -9,7 +9,7 @@ import type { AgentCapabilities, AgentCommand, AgentState } from '../../../src/s
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { composerEnterIntent } from '../../../src/renderer/src/agents/composerKeys'
-import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadComposer'
+import { sendThreadRevision } from '../../../src/renderer/src/agents/threadSubmission'
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { MessageRows } from '../../../src/renderer/src/agents/readingPlace'

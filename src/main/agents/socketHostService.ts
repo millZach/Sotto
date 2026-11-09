@@ -30,6 +30,8 @@ import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostF
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
+import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
+import type { BrowserEvent } from '../../shared/browser'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -119,6 +121,11 @@ export interface SocketHostServiceOptions {
    * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
    */
   crossMachineEnabled?: boolean
+  /**
+   * Sotto's browser for a host's own threads (ADR-0198), as this computer's `paired-host-browser` and `quiet-browser` Owl
+   * answers say at start: only then does its hello accept `browser`, so the host sends it pages, tasks and pictures.
+   */
+  pairedHostBrowser?: boolean
   /**
    * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
@@ -249,6 +256,8 @@ export class SocketHostService implements HostService {
   private readonly heldTells: { readonly askId: string; readonly ask: WatcherTellPush }[] = []
   /** Who hears the host say a delegation it holds for one of this desktop's callers moved (#1316 part 2). */
   private readonly remoteNewsListeners = new Set<(caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void>()
+  private readonly browserListeners = new Set<(change: BrowserEvent) => void>()
+  private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -407,7 +416,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -535,6 +544,9 @@ export class SocketHostService implements HostService {
             else for (const listener of [...this.tellListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
           }
         }
+        // Pushed only to a desktop whose hello accepted `browser` (ADR-0198); a picture only while this desktop watches its page.
+        else if (message.event === 'browser') { if (this.supportsBrowser) for (const listener of [...this.browserListeners]) { try { listener(message.change) } catch { /* A listener's failure is its own. */ } } }
+        else if (message.event === 'browser-frame') { if (this.supportsBrowser) for (const listener of [...this.frameListeners]) { try { listener(message.frame) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'delegation-remote-news') {
           // Only to a desktop whose hello accepted `delegation-remote` (#1316 part 2).
           if (this.supportsDelegationRemote) for (const listener of [...this.remoteNewsListeners]) {
@@ -848,7 +860,10 @@ export class SocketHostService implements HostService {
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
-  events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
+  events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
+    const events = [...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)
+    return structuredClone(limit !== undefined && limit >= 0 ? events.slice(0, limit) : events)
+  }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   async readShell(): Promise<AgentState> { const generation = this.generation, epoch = this.snapshotEpoch; const state = this.read(protocolAgentStateSchema, await this.call({ op: 'shell' })); this.sameGeneration(generation); if (epoch === this.snapshotEpoch) this.publish(state, true); return this.shell() }
@@ -1609,6 +1624,24 @@ export class SocketHostService implements HostService {
   subscribeCheckQueue(listener: () => void): () => void {
     this.checkListeners.add(listener)
     return () => { this.checkListeners.delete(listener) }
+  }
+  /** Whether this desktop drives the host's browser: its own Owl answers say so, and the host offers it (ADR-0198). */
+  get supportsBrowser(): boolean { return this.options.pairedHostBrowser === true && this.features.includes('browser') }
+  /** One of the host's browser requests, by the host's own IDs, answered as this computer's browser answers it. */
+  async browser<M extends HostBrowserMethod>(request: Extract<HostBrowserRequest, { method: M }>): Promise<HostBrowserResult<M>> {
+    if (this.options.pairedHostBrowser !== true) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    this.offers('browser')
+    return this.read(hostBrowserResultSchemas[request.method] as unknown as z.ZodType<HostBrowserResult<M>>, await this.call({ op: 'browser', request }))
+  }
+  /** Hears the host's browser pages, tasks and grants change. Returns the way to stop. */
+  subscribeBrowser(listener: (change: BrowserEvent) => void): () => void {
+    this.browserListeners.add(listener)
+    return () => { this.browserListeners.delete(listener) }
+  }
+  /** Hears pictures of the host's pages this desktop watches. Never logged or kept. Returns the way to stop. */
+  subscribeBrowserFrames(listener: (frame: HostBrowserFrame) => void): () => void {
+    this.frameListeners.add(listener)
+    return () => { this.frameListeners.delete(listener) }
   }
   private productEventAnswerTelling = false
   private productEventAnswerAgain = false

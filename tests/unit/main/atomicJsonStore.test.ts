@@ -503,6 +503,23 @@ describe('AtomicJsonStore', () => {
     await expect(store.read()).resolves.toEqual({ value: 'three' })
   })
 
+  it('uses the newest supplier when distinct callbacks share a queued latest write', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    const reads: string[] = []
+    const running = store.write({ value: 'running' })
+    const first = store.writeLatest(() => { reads.push('first'); return { value: 'first' } })
+    const second = store.writeLatest(() => { reads.push('second'); return { value: 'second' } })
+    const newest = store.writeLatest(() => { reads.push('newest'); return { value: 'newest' } })
+
+    expect(second).toBe(first)
+    expect(newest).toBe(first)
+    await Promise.all([running, first])
+
+    expect(reads).toEqual(['newest'])
+    await expect(store.read()).resolves.toEqual({ value: 'newest' })
+  })
+
   it('queues one more latest write for a call made while one is running, so no call is left unsaved', async () => {
     const filePath = join(await createRoot(), 'store.json')
     const store = createStore(filePath)
@@ -521,18 +538,22 @@ describe('AtomicJsonStore', () => {
     await expect(store.read()).resolves.toEqual({ value: 'two' })
   })
 
-  it('ends at a later latest call, not at a plain write made between two of them', async () => {
+  it.each(['write', 'writeSerialized'] as const)('keeps latest suppliers ordered around an explicit %s', async method => {
     const filePath = join(await createRoot(), 'store.json')
     const store = createStore(filePath)
-    let current = 'one'
-    const latest = (): Example => ({ value: current })
-    const first = store.writeLatest(latest)
-    const plain = store.write({ value: 'plain' })
-    current = 'newest'
-    const last = store.writeLatest(latest)
+    const first = store.writeLatest(() => ({ value: 'first' }))
+    const before = store.read()
+    const plain = method === 'write' ? store.write({ value: 'plain' }) : store.writeSerialized('{"value":"plain"}')
+    const after = store.read()
+    const last = store.writeLatest(() => ({ value: 'last' }))
 
     expect(last).not.toBe(first)
+    await expect(before).resolves.toEqual({ value: 'first' })
+    // Starting the first batch must not clear the batch queued after the explicit write.
+    const newest = store.writeLatest(() => ({ value: 'newest' }))
+    expect(newest).toBe(last)
     await Promise.all([first, plain, last])
+    await expect(after).resolves.toEqual({ value: 'plain' })
     await expect(store.read()).resolves.toEqual({ value: 'newest' })
   })
 })

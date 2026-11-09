@@ -334,7 +334,7 @@ test('the model menu turns Dynamic on, asking once which companies it may use, a
       await chip.click()
       const dynamic = page.getByRole('switch', { name: 'Dynamic' })
       await expect(dynamic).toHaveAttribute('aria-checked', 'false')
-      await expect(page.locator('.model-picker__foot')).toContainText('oversees and chooses a model for each piece. It does no work itself.')
+      await expect(page.locator('.model-picker__foot')).toHaveText('Dynamic')
       await dynamic.click()
       // The first time, a question names the companies, once.
       const asked = page.getByRole('dialog', { name: 'Turn on Dynamic for this thread?' })

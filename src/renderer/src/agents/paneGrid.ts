@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { focusInPane, type DropTarget } from './ThreadPanes'
+import type { DropTarget } from './ThreadPanes'
+import { focusInPane } from './paneDom'
 import { closePane, openBeside, replacePane, type SplitLayout, type SplitLayoutStore } from './splitLayout'
 
 /** The page's clock: a fixed time where a capture holds it still, otherwise ticking every `intervalMs` while `active`. */

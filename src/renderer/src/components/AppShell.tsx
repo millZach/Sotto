@@ -18,12 +18,10 @@ import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 import { ClickEffect } from './ClickEffect'
 import { useClickEffectOn } from '../state/clickEffect'
-import { pageShortcutFor, usePageShortcutLabels } from './pageShortcuts'
+import { claimRoomFocus, handRoomFocus, pageShortcutFor, usePageShortcutLabels, type AppRoom } from './pageShortcuts'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
-/** The rooms the switch flips between; Watcher's only while its gate is on. */
-export type AppRoom = 'dictate' | 'watcher' | 'threads'
 export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
@@ -69,21 +67,6 @@ export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: 
   return [...(dictation ? [dictate()] : []), ...(watcherOn ? [watcher] : []), threads()]
 }
 
-
-/**
- * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
- * own switch, and the one that was pressed is gone. Claimed once, by the switch whose lit room it names.
- */
-let handedFocus: { readonly room: AppRoom; readonly at: number } | null = null
-export function handRoomFocus(room: AppRoom): void { handedFocus = { room, at: Date.now() } }
-export function claimRoomFocus(room: AppRoom | null): boolean {
-  if (handedFocus === null || room === null) return false
-  // A press the new page never answered is forgotten rather than stealing focus later.
-  if (Date.now() - handedFocus.at > 2_000) { handedFocus = null; return false }
-  if (handedFocus.room !== room) return false
-  handedFocus = null
-  return true
-}
 
 /** The next tab an arrow, Home or End key reaches in a switch of `count` tabs, or null for any other key. */
 export function roomKeyTarget(key: string, index: number, count: number): number | null {

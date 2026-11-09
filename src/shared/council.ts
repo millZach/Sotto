@@ -161,7 +161,6 @@ export type CouncilSeatNote =
   | { readonly kind: 'not-ready'; readonly seat: number | 'chair' }
   | { readonly kind: 'no-seat'; readonly seat: number | 'chair' }
   | { readonly kind: 'remote'; readonly seat: number | 'chair' }
-  | { readonly kind: 'same-model'; readonly seats: readonly (number | 'chair')[] }
 
 export function councilSeatNotes(seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }): CouncilSeatNote[] {
   const notes: CouncilSeatNote[] = []
@@ -171,12 +170,6 @@ export function councilSeatNotes(seats: { readonly panelists: readonly (CouncilS
     else if (!inForce.ready) notes.push({ kind: 'not-ready', seat })
     else if (inForce.provider && COUNCIL_REMOTE_PROVIDERS.has(inForce.provider)) notes.push({ kind: 'remote', seat })
   }
-  const byModel = new Map<string, (number | 'chair')[]>()
-  for (const [seat, inForce] of all) if (inForce) {
-    const key = inForce.model?.id ?? inForce.modelId
-    byModel.set(key, [...byModel.get(key) ?? [], seat])
-  }
-  for (const held of byModel.values()) if (held.length > 1) notes.push({ kind: 'same-model', seats: held })
   return notes
 }
 

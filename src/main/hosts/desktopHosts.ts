@@ -1,4 +1,6 @@
 import type { SshTerminalHost } from './sshTerminal'
+import type { HostBrowserFrame, HostBrowserMethod, HostBrowserRequest } from '../../shared/hostBrowser'
+import type { BrowserEvent } from '../../shared/browser'
 import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
@@ -267,6 +269,8 @@ export class DesktopHosts {
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
     crossMachineEnabled?: boolean;
+    /** Sotto's browser for a host's own threads (ADR-0198): its socket accepts `browser` only where this is on. */
+    pairedHostBrowser?: boolean;
     /** Told when the user sends a host away, by its own ID, so that shells over SSH to it end (ADR-0183). */
     onHostLeft?: (hostId: string) => void;
     /** Whether this desktop wants its hosts' next prompts now (ADR-0173), present only while its `next-prompt` Owl answer is on. */
@@ -1556,7 +1560,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, pairedHostBrowser: this.options.pairedHostBrowser === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1607,6 +1611,10 @@ export class DesktopHosts {
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
       subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
+      // Sotto's browser for the host's own threads, where this computer and the host both offer it (ADR-0198).
+      ...socket.supportsBrowser ? { browser: <M extends HostBrowserMethod>(request: Extract<HostBrowserRequest, { method: M }>) => socket.browser(request),
+        subscribeBrowser: (listener: (change: BrowserEvent) => void) => socket.subscribeBrowser(listener),
+        subscribeBrowserFrames: (listener: (frame: HostBrowserFrame) => void) => socket.subscribeBrowserFrames(listener) } : {},
       // How this host names this computer's threads that delegated there (#1316 part 3).
       clientId: hello.clientId,
     }

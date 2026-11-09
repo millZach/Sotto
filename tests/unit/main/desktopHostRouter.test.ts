@@ -1,4 +1,6 @@
 // @vitest-environment node
+import type { BrowserEvent } from '../../../src/shared/browser'
+import type { HostBrowserFrame } from '../../../src/shared/hostBrowser'
 import { serialize } from 'node:v8'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
@@ -606,6 +608,45 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, threadFiles: vi.fn(), available: () => false })
     await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: 'This host is disconnected. Nothing was changed. Connect again to read its files.' } })
     await expect(router.threadFiles({ threadId: hostEntityKey('33333333-3333-4333-8333-333333333333', 'thread'), path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+  it('drives a paired host\'s browser by its own IDs, hands its pages and events back by the window\'s keys, and tells it the setting (ADR-0198)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64), pageId = 'f6a804fd-77c9-497c-bc16-ce0d0a7b7a59'
+    const page = { id: pageId, workspace: { threadId: 'thread', projectId: 'project', workingDirectory: '/home/forge/repo', workspaceId }, url: 'http://127.0.0.1:5173/', title: '', status: 'ready' as const,
+      error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null }
+    const browserListeners = new Set<(change: BrowserEvent) => void>(), frameListeners = new Set<(frame: HostBrowserFrame) => void>()
+    const browser = vi.fn(async (request: { method: string }) => request.method === 'setting' ? { ok: true as const, value: undefined } : { ok: true as const, value: page })
+    router.add(local.connection)
+    router.add({ ...remote.connection, browser: browser as never,
+      subscribeBrowser: listener => { browserListeners.add(listener); return () => browserListeners.delete(listener) },
+      subscribeBrowserFrames: listener => { frameListeners.add(listener); return () => frameListeners.delete(listener) } })
+    await expect(router.hostedBrowser({ method: 'navigate', payload: { threadId: key, workspaceId, pageId, url: 'http://127.0.0.1:5173/' } }))
+      .resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key, projectId: hostEntityKey(REMOTE, 'project') } } })
+    expect(browser).toHaveBeenLastCalledWith({ method: 'navigate', payload: { threadId: 'thread', workspaceId, pageId, url: 'http://127.0.0.1:5173/' } })
+
+    const changes: BrowserEvent[] = [], frames: HostBrowserFrame[] = []
+    router.subscribeBrowser(change => changes.push(change)); router.subscribeBrowserFrames(frame => frames.push(frame))
+    for (const listener of browserListeners) listener({ type: 'closed', threadId: 'thread', workspaceId, pageId })
+    for (const listener of frameListeners) listener({ pageId, data: 'AAAA', width: 800, height: 600 })
+    expect(changes).toEqual([{ type: 'closed', threadId: key, workspaceId, pageId }])
+    expect(frames).toEqual([{ pageId, data: 'AAAA', width: 800, height: 600 }])
+
+    const connection = [...router.remoteConnections()][0]!
+    await router.tellBrowserSetting(connection, false)
+    expect(browser).toHaveBeenLastCalledWith({ method: 'setting', payload: { withoutAsking: false } })
+    // A host that could not keep it says so; one that takes it only from a desktop that may answer refuses quietly.
+    browser.mockResolvedValueOnce({ ok: false, error: { code: 'unavailable', message: 'The host could not keep this setting.' } } as never)
+    await expect(router.tellBrowserSetting(connection, true)).rejects.toThrow('The host could not keep this setting.')
+    browser.mockRejectedValueOnce(new HostConnectionError('Not allowed.', 'forbidden'))
+    await expect(router.tellBrowserSetting(connection, true)).resolves.toBeUndefined()
+    // This computer's own threads never reach a host's browser, and a host without the browser says to update it.
+    await expect(router.hostedBrowser({ method: 'list', payload: { threadId: hostEntityKey(LOCAL, 'thread') } })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    router.remove(REMOTE)
+    router.add(remote.connection)
+    await expect(router.hostedBrowser({ method: 'list', payload: { threadId: key } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Sotto\'s browser isn\'t available on Forge. Nothing was changed. Update Sotto on Forge, then try again.' } })
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, browser: browser as never, available: () => false })
+    await expect(router.hostedBrowser({ method: 'list', payload: { threadId: key } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Forge is disconnected. Nothing was changed. Connect again to use its browser.' } })
   })
   it('joins a paired host\'s path in that host\'s own format, never this computer\'s', () => {
     expect(hostAbsolutePath('/home/forge/repo', 'src/a.ts')).toBe('/home/forge/repo/src/a.ts')
