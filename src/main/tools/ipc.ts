@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { namesHostThread } from '../../shared/clientIdentity'
 import { TERMINAL_CHANNEL } from '../../shared/terminal'
 import { BROWSER_CHANNEL } from '../../shared/browser'
+import { hostBrowserRequestSchema, type HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import { GIT_CHANGES_CHANNEL, gitPathRequestSchema, gitReviewRequestSchema, type GitChangeListing, type GitPathRequest, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
 import type { FilePath } from '../../shared/files'
 import { toolListRequestSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
@@ -28,6 +29,26 @@ export interface HostedGitChanges {
   copyPath(request: GitPathRequest): Promise<ToolsResult<FilePath>>
 }
 
+/**
+ * Sotto's browser for a thread on a paired host, on that host through the router (ADR-0198). A pane draws its page from
+ * pictures, so it has no view to mount and sends the user's input instead; Point at something and Comment on page stay
+ * this computer's for now (ADR-0198, decision 7).
+ */
+export interface HostedBrowser {
+  request(request: HostBrowserThreadRequest): Promise<ToolsResult<unknown>>
+}
+const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const
+/** The requests only a host's page takes: a page here is drawn by Electron, not from pictures. */
+const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch'] as const
+/** What each request a host's page cannot take says instead. */
+const NOT_ON_HOST_PAGE: Partial<Record<typeof BROWSER_METHODS[number], MessageDescriptor>> = {
+  mount: msg`This page is on the host machine, so it is drawn from its pictures. Nothing was changed.`,
+  viewport: msg`A page on the host machine keeps the size of the pane that shows it. Nothing was changed.`,
+  capture: msg`Comment on page isn't available for a page on the host machine yet. Nothing was captured.`,
+  point: msg`Point at something isn't available for a page on the host machine yet. Nothing was changed.`,
+}
+const NOT_A_HOST_PAGE = msg`Only a page on a paired host takes this. Nothing was changed.`
+
 const GIT_CHANGES_METHODS = ['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint'] as const
 /** What each Changes request a paired host's thread cannot have says instead. */
 const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], MessageDescriptor>> = {
@@ -36,7 +57,7 @@ const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], MessageDes
 }
 const NO_CHECKPOINTS = msg`Turn checkpoints are kept only for threads on this computer. Nothing was changed.`
 
-export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; featureUsed?: (feature: 'terminal') => void; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
+export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; hostedBrowser?: HostedBrowser; featureUsed?: (feature: 'terminal') => void; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
@@ -63,7 +84,19 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
     return answer
   })
   register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(focusedSchema.parse(payload)); return { ok: true, value: undefined } })
-  for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
+  /** A browser request for a thread on a paired host goes to that host, checked here as this computer's browser checks it. */
+  const browserOnHost = async (method: string, payload: unknown): Promise<ToolsResult<unknown>> => {
+    const hosted = services.hostedBrowser
+    if (!hosted) return { ok: false, error: { code: 'unavailable', message: t`This version of Sotto doesn't show a host's browser. Nothing was changed.` } }
+    const refused = NOT_ON_HOST_PAGE[method as typeof BROWSER_METHODS[number]]
+    if (refused) return { ok: false, error: { code: 'unavailable', message: i18n._(refused) } }
+    const parsed = hostBrowserRequestSchema.safeParse({ method, payload })
+    if (!parsed.success || parsed.data.method === 'setting') return { ok: false, error: { code: 'invalid-request', message: INVALID_REQUEST } }
+    return hosted.request(parsed.data)
+  }
+  for (const method of BROWSER_METHODS) register(BROWSER_CHANNEL + method, payload => namesHostThread(payload) ? browserOnHost(method, payload) : services.browser[method](payload))
+  for (const method of HOST_PAGE_METHODS) register(BROWSER_CHANNEL + method, payload => namesHostThread(payload) ? browserOnHost(method, payload)
+    : { ok: false, error: { code: 'invalid-request', message: i18n._(NOT_A_HOST_PAGE) } })
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))
   return () => {
     for (const channel of channels) ipc.removeHandler(channel)

@@ -101,9 +101,17 @@ msgstr "{host} could not read this thread's files. Nothing was changed. Try agai
 msgid "{host} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again."
 msgstr "{host} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again."
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} didn't answer the browser. Nothing was changed. Try again."
+msgstr "{host} didn't answer the browser. Nothing was changed. Try again."
+
 #: src/main/hosts/hostUpdate.ts
 msgid "{host} is already installing {to}, which cannot be stopped partway. Nothing was changed."
 msgstr "{host} is already installing {to}, which cannot be stopped partway. Nothing was changed."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} is disconnected. Nothing was changed. Connect again to use its browser."
+msgstr "{host} is disconnected. Nothing was changed. Connect again to use its browser."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "{host} is disconnected. Nothing was sent. Try again once it reconnects."
@@ -378,6 +386,10 @@ msgstr "A key snippet was installed by hand, but Hyprland is not using it. Sotto
 #: src/main/tools/browser.ts
 msgid "A new-window request was blocked. Use a link destination action or open this page externally."
 msgstr "A new-window request was blocked. Use a link destination action or open this page externally."
+
+#: src/main/tools/ipc.ts
+msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
+msgstr "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 
 #: src/main/omarchy/setup.ts
 msgid "A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone."
@@ -676,6 +688,10 @@ msgstr "Climb needs connected Claude or Codex models for its judges, and none is
 #: src/main/council/climbService.ts
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
+
+#: src/main/tools/ipc.ts
+msgid "Comment on page isn't available for a page on the host machine yet. Nothing was captured."
+msgstr "Comment on page isn't available for a page on the host machine yet. Nothing was captured."
 
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."
@@ -1014,6 +1030,10 @@ msgstr "On Linux a hold shortcut is one F key on its own, such as F9. With a mod
 msgid "Once you know the new key is the host's own, remove the old one from your known hosts on this computer:"
 msgstr "Once you know the new key is the host's own, remove the old one from your known hosts on this computer:"
 
+#: src/main/tools/ipc.ts
+msgid "Only a page on a paired host takes this. Nothing was changed."
+msgstr "Only a page on a paired host takes this. Nothing was changed."
+
 #: src/main/terminals/clipboard.ts
 msgid "Only a PNG image up to 10 MiB can be pasted into a terminal."
 msgstr "Only a PNG image up to 10 MiB can be pasted into a terminal."
@@ -1136,6 +1156,10 @@ msgstr "Phone access on the host could not be reached. Nothing was saved. Nothin
 #: src/main/tools/browser.ts
 msgid "Point at something is not available in this version of Sotto."
 msgstr "Point at something is not available in this version of Sotto."
+
+#: src/main/tools/ipc.ts
+msgid "Point at something isn't available for a page on the host machine yet. Nothing was changed."
+msgstr "Point at something isn't available for a page on the host machine yet. Nothing was changed."
 
 #: src/main/tools/browser.ts
 msgid "Point at something needs the theme's accent colour from the window."
@@ -1528,6 +1552,10 @@ msgstr "Sotto turned off start at boot on {name} but could not remove the unitâ€
 #: src/main/omarchy/setup.ts
 msgid "Sotto wears the theme it had before."
 msgstr "Sotto wears the theme it had before."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Sotto's browser isn't available on {host}. Nothing was changed. Update Sotto on {host}, then try again."
+msgstr "Sotto's browser isn't available on {host}. Nothing was changed. Update Sotto on {host}, then try again."
 
 #: src/main/omarchy/setup.ts
 msgid "Sottoâ€™s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again."
@@ -3004,6 +3032,10 @@ msgstr "This page belongs to a thread on another computer, so it is not shown he
 msgid "This page closed."
 msgstr "This page closed."
 
+#: src/main/tools/ipc.ts
+msgid "This page is on the host machine, so it is drawn from its pictures. Nothing was changed."
+msgstr "This page is on the host machine, so it is drawn from its pictures. Nothing was changed."
+
 #: src/main/tools/browser.ts
 msgid "This page is unavailable. Check the address or start its local server, then reload."
 msgstr "This page is unavailable. Check the address or start its local server, then reload."
@@ -3131,6 +3163,10 @@ msgstr "This tool request is invalid. Refresh the tools panel."
 #: src/main/tools/checkpoints.ts
 msgid "This turn changed Git history or staging. Review and restore it with Git."
 msgstr "This turn changed Git history or staging. Review and restore it with Git."
+
+#: src/main/tools/ipc.ts
+msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
+msgstr "This version of Sotto doesn't show a host's browser. Nothing was changed."
 
 #: src/main/agents/delegationIpc.ts
 msgid "This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to {model}. Nothing was started."

@@ -336,7 +336,7 @@ import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
-import { BROWSER_EVENT } from '../shared/browser'
+import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
@@ -375,6 +375,7 @@ type NativeDiagnostic =
   | OpenRouterSpeechModelsEvent
   | RecoveryNoticeLogEvent
   | 'omarchy-theme-missing'
+  | 'host-browser-setting-failed'
   | 'popup-load-failed'
   | 'popup-renderer-gone'
   | 'omarchy-theme-invalid'
@@ -817,6 +818,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
   // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
+  // Sotto's browser for a paired host's own threads (ADR-0198), on this computer's answers for it and the pane it builds on.
+  const pairedHostBrowser = owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
@@ -1261,7 +1264,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -2132,6 +2135,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       phoneAccess.settingsChanged()
       if (settings.localApps !== previous.localApps) localApps?.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
+      // Each host's browser asks as this computer's does (ADR-0198, decision 3), told now and on each connection.
+      if (grantDefaultChanged && pairedHostBrowser) for (const connection of hostRouter.remoteConnections()) void hostRouter.tellBrowserSetting(connection, settings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed'))
       if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
       const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
@@ -2510,7 +2515,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           list: request => hostRouter.gitChanges(request), review: request => hostRouter.gitReview(request),
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
+        ...pairedHostBrowser ? { hostedBrowser: { request: request => hostRouter.hostedBrowser(request) } } : {},
       }, () => windows.getTrustedRenderers())
+      // A paired host's browser (ADR-0198): its pages, tasks and grants reach the window as this computer's do, and its
+      // pictures on their own channel, never logged or kept.
+      const stopHostBrowser = pairedHostBrowser ? [
+        hostRouter.subscribeBrowser(event => { windows.sendToMain(BROWSER_EVENT, event) }),
+        hostRouter.subscribeBrowserFrames(frame => { windows.sendToMain(BROWSER_FRAME_EVENT, frame) }),
+        hostRouter.subscribeConnected(connection => { void hostRouter.tellBrowserSetting(connection, workingCopySettings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed')) }),
+      ] : []
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
       omarchySetup = platform === 'linux' ? new OmarchySetup({
@@ -2736,6 +2749,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()
         cleanupTools()
+        for (const stop of stopHostBrowser) stop()
         browserService = undefined
         // The quit drain already awaited this service's own dispose (ADR-0047); this just drops its IPC handlers.
         void cleanupCloudIphone()

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { safeBrowserUrl, type BrowserCapture } from '../../shared/browser'
 import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageEvidence, type PageFrame, type PageInput, type PagePicture } from '../../main/tools/pageAutomation'
+import type { HostPageInputRequest } from '../../shared/hostBrowser'
 import { DevToolsPipe } from './devToolsPipe'
 import { findBrowser } from './findBrowser'
 
@@ -43,13 +44,8 @@ export interface HostPageState {
 }
 /** One picture of the page as it changes, for a pane that shows it. JPEG, base64, at the size it was drawn. */
 export interface HostPageFrame { readonly data: string; readonly width: number; readonly height: number }
-export type HostInputModifiers = number
 /** The user's own input in a pane, sent on to the page as Chromium's input events. */
-export type HostPageInput =
-  | { readonly type: 'mouse'; readonly action: 'move' | 'down' | 'up'; readonly x: number; readonly y: number; readonly button: 'none' | 'left' | 'middle' | 'right'; readonly clickCount: number; readonly modifiers: HostInputModifiers }
-  | { readonly type: 'wheel'; readonly x: number; readonly y: number; readonly deltaX: number; readonly deltaY: number; readonly modifiers: HostInputModifiers }
-  | { readonly type: 'key'; readonly action: 'down' | 'up'; readonly key: string; readonly code: string; readonly keyCode: number; readonly text?: string; readonly modifiers: HostInputModifiers }
-  | { readonly type: 'text'; readonly text: string }
+export type HostPageInput = HostPageInputRequest
 
 export interface HostBrowserOptions {
   /** Where the browser is. Looked for in the usual places by default (`findBrowser`). */
