@@ -35,11 +35,20 @@ export interface OwnServersOpenCode {
 }
 
 /**
- * DeepSeek Harness as the record reaches it (ADR-0138): a nudge on every save. While its adapter runs, a keyless Add may
+ * DeepSeek as the record reaches it (ADR-0138): a nudge on every save. While its adapter runs, a keyless Add may
  * land on it alone, connected or not, since it reads the record when it connects and connects only once one is saved.
  */
 export interface OwnServersDeepSeek {
   changed(): void
+}
+
+/**
+ * Sotto's Hermes as the record reaches it: a keyed server's key is handed to it beside OpenCode's copy, so Hermes can run
+ * that server too, and taken back on Remove. Its saves are nudged through `deepSeek.changed` like DeepSeek's.
+ */
+export interface OwnServersHermes {
+  keepKey(sourceId: string, key: string): Promise<void>
+  forgetKey(sourceId: string): Promise<void>
 }
 
 export interface OwnServersOptions {
@@ -47,8 +56,10 @@ export interface OwnServersOptions {
   readonly directory: string
   /** Sotto's OpenCode, or undefined while it is held off this run. */
   readonly openCode: () => OwnServersOpenCode | undefined
-  /** Sotto's DeepSeek Harness (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
+  /** Sotto's DeepSeek (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
   readonly deepSeek?: () => OwnServersDeepSeek | undefined
+  /** Sotto's Hermes, or, while its adapter does not run, its folder alone, so Remove still deletes the key it kept. */
+  readonly hermes?: () => OwnServersHermes | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
@@ -96,7 +107,7 @@ export class OwnServers {
   private async save(servers: OwnServer[]): Promise<void> {
     await this.store.write(servers)
     this.loaded = Promise.resolve(servers)
-    // Every write is an add, a remove, or one of their rollbacks: DeepSeek Harness rebuilds from the new record.
+    // Every write is an add, a remove, or one of their rollbacks: DeepSeek rebuilds from the new record.
     try { this.options.deepSeek?.()?.changed() } catch { /* A consumer's trouble never fails the save. */ }
   }
   /** Runs `work` once every add or remove before it has finished. */
@@ -159,7 +170,7 @@ export class OwnServers {
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
-    // A keyless server needs no key kept anywhere, so DeepSeek Harness's adapter can take it on its own (ADR-0138).
+    // A keyless server needs no key kept anywhere, so DeepSeek's adapter can take it on its own (ADR-0138).
     const keyless = !(request.key?.trim())
     if (!openCode?.running() && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
     const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
@@ -192,6 +203,8 @@ export class OwnServers {
         void keeper.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
       }
+      // Hermes's copy is a second keeper's, not the add's: without it the server runs in OpenCode alone.
+      await this.options.hermes?.()?.keepKey(id, key).catch(() => { this.log('own-server-sign-in-failed') })
     } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
@@ -221,6 +234,12 @@ export class OwnServers {
       if (!await openCode!.signOut(id).catch(() => false)) {
         this.log('own-server-sign-out-failed')
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
+      }
+      // Hermes's copy goes only once OpenCode's has, so a refused sign-out leaves the server whole on both. One Hermes
+      // cannot delete stays listed with the server, and a second Remove finishes both, as after a record that cannot be written.
+      if (!await (this.options.hermes?.()?.forgetKey(id) ?? Promise.resolve()).then(() => true, () => false)) {
+        this.log('own-server-sign-out-failed')
+        return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))
       }
       try { await this.save(servers.filter(item => item.id !== id)) } catch {
         return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))

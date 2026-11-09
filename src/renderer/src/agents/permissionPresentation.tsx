@@ -28,15 +28,15 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
   }
 }
 /**
- * What each of DeepSeek Harness's three modes does, said as the harness doing it (ADR-0138), in the interface
+ * What each of DeepSeek's three modes does, said as the harness doing it (ADR-0138), in the interface
  * language. Its permissions are a sandbox boundary: Ask for approval denies a first attempt and the model asks to
  * retry it, and Allow edits also lets commands and network run inside the sandbox, so both say so.
  */
 export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
   switch (mode) {
-    case 'approval-required': return t`DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write.`
-    case 'auto-accept-edits': return t`DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary.`
-    case 'full-access': return t`DeepSeek Harness runs commands and edits files without asking, in the project and outside it.`
+    case 'approval-required': return t`DeepSeek denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write.`
+    case 'auto-accept-edits': return t`DeepSeek edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary.`
+    case 'full-access': return t`DeepSeek runs commands and edits files without asking, in the project and outside it.`
     default: return undefined
   }
 }

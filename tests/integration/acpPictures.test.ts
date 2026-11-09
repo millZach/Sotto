@@ -71,7 +71,7 @@ describe('pictures in an ACP tool result (ADR-0170)', () => {
     await heldByHandle(media, await pictured(f.host, id))
   })
 
-  it('DeepSeek Harness: puts them on the step by handle', async () => {
+  it('DeepSeek: puts them on the step by handle', async () => {
     const media = await store()
     const f = await deepseekFixture(undefined, undefined, {}, { captureMedia: media.capture }); cleanups.push(() => f.cleanup())
     const id = await started(f.host, f.root, f.modelId)

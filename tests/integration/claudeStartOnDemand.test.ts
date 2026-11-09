@@ -53,7 +53,7 @@ describe('Claude Code starts on demand', () => {
     await registry.flush()
     const native = new ConfiguredProviderHost({ directory: join(f.root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
       hosts: { claude: new SottoThreadHost('claude', f.adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-        muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+        muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), hermes: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
     const workspace = new WorkspaceHost(native, join(f.root, 'workspace'))
     const credentials = await testCredentials(f.root, { mode: 'unavailable' })
     const control: AgentControl = createAgentControl({ directory: join(f.root, 'control'), host: workspace, credentials, reasoner: e2eAgentReasoner })

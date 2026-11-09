@@ -100,7 +100,7 @@ describe('when a restart is due', () => {
 
   it('tells a restart note by how Sotto’s note begins, whichever provider it names, and the resume note too', () => {
     expect(isRestartNoteText(limitRestartNote('Claude Code'))).toBe(true)
-    expect(isRestartNoteText(`  ${limitRestartNote('DeepSeek Harness')}\n\nAlso: two checks failed.`)).toBe(true)
+    expect(isRestartNoteText(`  ${limitRestartNote('DeepSeek')}\n\nAlso: two checks failed.`)).toBe(true)
     expect(isRestartNoteText(RESUME_NOTE)).toBe(true)
     expect(isRestartNoteText('Pull request #74: 2 checks failed.')).toBe(false)
     expect(isRestartNoteText(`Please read this: ${'x'.repeat(80)} ${limitRestartNote('Codex')}`)).toBe(false)
