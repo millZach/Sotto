@@ -600,6 +600,47 @@ describe('a link to a Markdown file', () => {
     expect(opened).toHaveBeenLastCalledWith('thread', '/home/me/plan.md')
   })
 
+  // Every form agents were seen writing in real Claude Code and Codex replies on Windows and Linux (November 9, 2026).
+  it.each([
+    ['Codex on Windows: a slash before the drive, in angle brackets with a space', '[project instructions](</D:/Seduce Jensen/AGENTS.md>)', 'D:/Seduce Jensen/AGENTS.md'],
+    ['the same with a dot folder', '[run checklist](</D:/Seduce Jensen/.zstack/refinement-five-rounds.md>)', 'D:/Seduce Jensen/.zstack/refinement-five-rounds.md'],
+    ['a slash before the drive and a line', '[note](/C:/Users/zache/AppData/Roaming/sotto/docs/verification/note.md:12)', 'C:/Users/zache/AppData/Roaming/sotto/docs/verification/note.md:12'],
+    ['the drive first with forward slashes', '[audit](D:/Security%20Audit/SECURITY_AUDIT.md)', 'D:/Security Audit/SECURITY_AUDIT.md'],
+    ['the drive first in angle brackets with a line', '[brief](<D:/Talk to Text Application/AGENTS.md:80>)', 'D:/Talk to Text Application/AGENTS.md:80'],
+    ['backslashes and a dot folder (#2218)', '[CLAUDE.md](C:\\Users\\zache\\.claude\\CLAUDE.md)', 'C:\\Users\\zache\\.claude\\CLAUDE.md'],
+    ['backslashes and a dot folder in angle brackets', '[skill](<C:\\Users\\zache\\.agents\\skills\\review\\SKILL.md>)', 'C:\\Users\\zache\\.agents\\skills\\review\\SKILL.md'],
+    ['spaces without angle brackets, which Markdown leaves as text', 'Read [the audit](D:/Watcher Audit/Watcher audit 2026-11-05.md) first.', 'D:/Watcher Audit/Watcher audit 2026-11-05.md'],
+    ['backslashes and spaces without angle brackets', '[agents](D:\\Crash Sim\\.agents\\AGENTS.md)', 'D:\\Crash Sim\\.agents\\AGENTS.md'],
+    ['a home path with backslashes and a dot folder', '[instructions](<~\\.claude\\CLAUDE.md>)', '~\\.claude\\CLAUDE.md'],
+    ['a relative path with backslashes and a dot folder', '[instructions](<.\\.claude\\CLAUDE.md>)', '.\\.claude\\CLAUDE.md'],
+    ['doubled backslashes, which Markdown reads as one', '[audit](D:\\\\Watcher Audit\\\\audit.md)', 'D:\\Watcher Audit\\audit.md'],
+    ['a file URL', '[plan](file:///C:/Users/me/My%20Plans/plan.md)', 'C:/Users/me/My Plans/plan.md'],
+    ['a Linux path in angle brackets with a space and a line', '[report](</home/zach/Projects/Anime Rivals/.zstack/film.md:14>)', '/home/zach/Projects/Anime Rivals/.zstack/film.md:14'],
+    ['a Linux path with an encoded space', '[report](/home/zach/Projects/Anime%20Rivals/docs/full-film.md)', '/home/zach/Projects/Anime Rivals/docs/full-film.md'],
+    ['a home path', '[notes](~/notes/plan.md)', '~/notes/plan.md'],
+    ['a relative path', '[guide](docs/guide.md)', 'docs/guide.md'],
+    ['a relative path up a folder', '[note](../verification/2026-10-10-watcher-owl-gate.md)', '../verification/2026-10-10-watcher-owl-gate.md'],
+    ['a relative path into a dot folder', '[ADR](./.agents/adr/0002-ship-as-a-plugin.md)', './.agents/adr/0002-ship-as-a-plugin.md'],
+    ['a line anchor', '[socket](docs/host-protocol.md#L628)', 'docs/host-protocol.md#L628'],
+    ['a heading anchor', '[reading a failure](docs/ci.md#reading-a-failure)', 'docs/ci.md#reading-a-failure'],
+  ])('opens %s in the side panel', async (_form, text, path) => {
+    inThread(text)
+    await userEvent.click(screen.getByRole('link', { name: /in the side panel$/u }))
+    expect(opened).toHaveBeenLastCalledWith('thread', path)
+  })
+
+  it('shows any other file it mends in its folder', async () => {
+    inThread('[prototype](D:\\Watcher Audit\\.prototypes\\answers.html)')
+    await userEvent.click(screen.getByRole('link', { name: /in File Explorer$/u }))
+    expect((window as unknown as { sotto: { files: { revealLink: unknown } } }).sotto.files.revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: 'D:\\Watcher Audit\\.prototypes\\answers.html' })
+  })
+
+  it('leaves a link in code, a web page and an unlinked bracket as they were', () => {
+    inThread('`[a](D:/My Docs/a.md)` and [site](https://example.com) and [see](the notes below) and [x](not a path.md) and [web](https:/example.com/My File.md)')
+    expect(screen.getByText('[a](D:/My Docs/a.md)').tagName).toBe('CODE')
+    expect(screen.getAllByRole('link').map(link => link.textContent)).toEqual(['site'])
+  })
+
   it('still shows in its folder while the Owl answer is off, and stays inert outside a thread', () => {
     owl.panel = false
     const { unmount } = inThread('[plan](/home/me/plan.md) and `README.md`')
@@ -617,6 +658,8 @@ describe('file links in a thread', () => {
     expect(localFilePath('/Users/me/health/guides/Insulin%20Use.pdf')).toBe('/Users/me/health/guides/Insulin Use.pdf')
     expect(localFilePath('file:///Users/me/a%20b.pdf')).toBe('/Users/me/a b.pdf')
     expect(localFilePath('file:///C:/Users/me/a.pdf')).toBe('C:/Users/me/a.pdf')
+    expect(localFilePath('/D:/Seduce%20Jensen/AGENTS.md')).toBe('D:/Seduce Jensen/AGENTS.md')
+    expect(localFilePath('/C:\\Users\\me\\a.md')).toBe('C:\\Users\\me\\a.md')
     expect(localFilePath('C:\\Users\\me\\a.pdf')).toBe('C:\\Users\\me\\a.pdf')
     expect(localFilePath('~/Documents/a.pdf')).toBe('~/Documents/a.pdf')
     // Main drops a trailing location only when the path as written is not found.
