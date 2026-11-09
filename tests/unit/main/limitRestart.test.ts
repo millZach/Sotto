@@ -81,7 +81,7 @@ describe('restarting threads a usage limit stopped', () => {
     expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toEqual(scheduled)
     expect(f.live()).toEqual([expect.objectContaining({ delay: 3 * 60 * 60_000 + LIMIT_RESTART_GRACE_MS })])
     // The record is thread IDs and times only.
-    await expect.poll(f.saved).toEqual([{ threadId: 'workshop', ...scheduled, at: new Date(Date.parse(reset) + LIMIT_RESTART_GRACE_MS).toISOString(), restarts: 0 }])
+    await expect.poll(f.saved).toEqual([{ threadId: 'workshop', ...scheduled, at: new Date(Date.parse(reset) + LIMIT_RESTART_GRACE_MS).toISOString(), restarts: 0, turnId: 'workshop-1' }])
     // Published as the same object while nothing moved, so a broadcast lists the thread as it did.
     const once = f.restart.publish(f.host.threads[0]!)
     expect(f.restart.publish(once)).toBe(once)
@@ -218,6 +218,35 @@ describe('restarting threads a usage limit stopped', () => {
     expect(f.restart.scheduled('b')?.at).toBe(later)
     await f.fire()
     expect(f.delivered.map(item => [item.threadId, item.news.restarts])).toEqual([['b', 1]])
+  })
+
+  it('drops a restart once a later turn shows, even one first read after Sotto starts again (November 9, 2026)', async () => {
+    const f = await fixture({ threads: [thread('workshop'), thread('docs')] })
+    f.update('workshop', limitStop('workshop'))
+    await expect.poll(f.saved).toEqual([expect.objectContaining({ threadId: 'workshop', turnId: 'workshop-1' })])
+    // Sotto closes with the record saved; the user's send ran and finished before this run first reads the thread.
+    const again = await fixture({ saved: { version: 1, threads: await f.saved() }, threads: [thread('workshop', { status: 'idle', lastTurn: { id: 'workshop-2', status: 'completed' } })] })
+    expect(again.restart.scheduled('workshop')).toBeUndefined()
+    await expect.poll(again.saved).toEqual([])
+    // Still on the stopped turn after a start, it stays.
+    const still = await fixture({ saved: { version: 1, threads: await f.saved() }, threads: [thread('workshop', limitStop('workshop'))] })
+    expect(still.restart.scheduled('workshop')).toBeDefined()
+  })
+
+  it('drops the restarts a provider named no reset for once a turn of that provider finishes, and leaves timed ones and other providers', async () => {
+    const reset = new Date(START + 60 * 60_000).toISOString()
+    const f = await fixture({ threads: [thread('a'), thread('b'), thread('timed'), thread('devin', { providerId: 'devin' }), thread('worker')] })
+    f.update('a', limitStop('a')); f.update('b', limitStop('b'))
+    f.update('devin', limitStop('devin'))
+    f.update('timed', limitStop('timed', reset, 'timed-2'))
+    f.update('worker', { status: 'idle', lastTurn: { id: 'worker-1', status: 'completed' } })
+    expect(['a', 'b', 'devin'].map(id => f.restart.scheduled(id))).toEqual([undefined, undefined, expect.objectContaining({ provider: 'devin' })])
+    expect(f.restart.scheduled('timed')?.at).toBe(reset)
+    // A thread first seen already finished is no news of the limit.
+    const first = await fixture({ threads: [thread('a')] })
+    first.update('a', limitStop('a'))
+    first.host.threads.push(thread('late', { status: 'idle', lastTurn: { id: 'late-1', status: 'completed' } })); first.read()
+    expect(first.restart.scheduled('a')).toBeDefined()
   })
 
   it('saves a note as sent as soon as it is queued, so a start after a crash does not queue it again', async () => {
