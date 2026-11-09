@@ -4212,7 +4212,7 @@ export class AgentControl {
     this.pumping.add(threadId)
     const pending = (async () => {
       let succeeded = false
-      try { await Promise.resolve().then(work); succeeded = true }
+      try { await work(); succeeded = true }
       catch { this.state.error = options.failure; if (options.publish === 'changed') this.publish() }
       finally {
         const changed = this.syncFollowups()
