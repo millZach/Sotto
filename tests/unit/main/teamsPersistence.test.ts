@@ -28,6 +28,21 @@ async function teams(overrides: Partial<TeamServiceOptions> = {}) {
   return { service, directory, tokens }
 }
 
+it.each([true, false])('finishes startup after a cleanup save fails, with history %s', async keepHistory => {
+  const log = vi.fn()
+  vi.spyOn(AtomicJsonStore.prototype, 'read').mockResolvedValueOnce({ version: 1, ownName: '', leftOut: [], links: [],
+    messages: [{ id: 'interrupted', linkId: 'peer', teammate: 'Peer', direction: 'we-asked', ask: 'working-on', askWords: '',
+      state: 'asking', at: new Date().toISOString(), afterMessageId: null }], servePort: null, loopbackPort: null, deskReads: [] })
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('disk full'))
+  const { service, directory } = await teams({ keepHistory: () => keepHistory, log })
+  expect(log).toHaveBeenCalledWith('team-links-save-failed')
+  expect(service.get().unsaved).toBe(true)
+  expect(service.get().messages).toMatchObject(keepHistory ? [{ state: 'failed' }] : [])
+  expect(await service.command({ type: 'leave-out', project: 'project', leftOut: true })).toEqual({ status: 'ok' })
+  expect(service.get().unsaved).toBe(false)
+  expect(JSON.parse(await readFile(join(directory, 'team-links.json'), 'utf8')).leftOut).toEqual(['project'])
+})
+
 it('reports an unsaved sharing change, keeps its effect, and clears the warning when a retry saves', async () => {
   const { service, directory } = await teams()
   await service.command({ type: 'leave-out', project: 'project', leftOut: false })

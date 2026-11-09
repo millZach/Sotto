@@ -144,7 +144,9 @@ export class TeamService {
     for (const item of waited) Object.assign(item, { state: 'failed', answeredAt: new Date(this.now()).toISOString() })
     const heldWords = !this.options.keepHistory() && this.file.messages.length > 0
     if (heldWords) this.file.messages = []
-    if (waited.length || heldWords) await this.save()
+    // Keep this cleanup in memory if its save fails. save() publishes the unsaved warning, and a later command can
+    // persist it; a failed cleanup write must not leave Teams permanently waiting for startup.
+    if (waited.length || heldWords) await this.save().catch(() => undefined)
     await this.pairing.load()
     this.started = true
     this.closed = false

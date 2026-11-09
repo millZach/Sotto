@@ -59,7 +59,7 @@ describe('certified activity detail under the streaming cost gate', () => {
     request.displayPrompt = proof
     f.detail.state.host.hostId = request.watcher.hostId
     f.detail.state.host.threads = [value]; f.detail.viewedThreadIds = [value.id]
-    const updateProof = () => f.control.watcherRecords.display.update(record.requests)
+    const updateProof = () => f.control.watcherRecords.display!.update(record.requests)
     updateProof()
     let held = f.control.threadDetail(value.id)!
     expect(held.messages[0]!.text).toBe(original)
