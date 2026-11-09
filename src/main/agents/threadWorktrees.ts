@@ -366,6 +366,14 @@ const CACHE_DIRECTORY_SIGNATURE = 'Signature: 8a477f597d28d172789f06886806bc55'
 export const REMOVING_LOCK_REASON = 'Sotto is removing this folder'
 const RULE_KEEPS_IGNORED = 'This folder holds ignored files besides installed dependencies and build output, so a rule leaves it alone.'
 /** Whether `folder` holds a `CACHEDIR.TAG` file that begins with the standard's signature. A tag that cannot be read, as one an antivirus holds open on Windows, does not count. */
+/**
+ * Whether Git takes a remote's URL for a network address rather than a path. Git reads a URL with no colon, a slash before
+ * its first colon or a drive letter as a path (`url_is_local_not_ssh`), and `file://` names one.
+ */
+function networkUrl(url: string): boolean {
+  const colon = url.indexOf(':'), slash = url.search(/[\\/]/u)
+  return !/^file:\/\//iu.test(url) && colon >= 0 && (slash < 0 || slash > colon) && !/^[A-Za-z]:/u.test(url)
+}
 async function cacheTagged(folder: string): Promise<boolean> {
   const tag = join(folder, 'CACHEDIR.TAG')
   try {
@@ -1216,9 +1224,8 @@ export class ThreadWorktrees {
      * submodule itself. A path that does not resolve leads nowhere.
      */
     const remoteElsewhere = async (url: string, base: string, gitDirectory: string): Promise<boolean> => {
-      const file = /^file:\/\//iu.test(url), colon = url.indexOf(':'), slash = url.search(/[\\/]/u)
-      // Git reads a URL with no colon, a slash before its first colon or a drive letter as a path (`url_is_local_not_ssh`).
-      if (!file && colon >= 0 && (slash < 0 || slash > colon) && !/^[A-Za-z]:/u.test(url)) return true
+      if (networkUrl(url)) return true
+      const file = /^file:\/\//iu.test(url)
       let place: string
       try { place = await waited(realpath(file ? fileURLToPath(url) : resolve(base, url))) } catch { return false }
       const own = await waited(realpath(gitDirectory)).catch(() => gitDirectory)
@@ -1449,11 +1456,12 @@ export class ThreadWorktrees {
   /**
    * The ignored paths in `path` a rule may not remove (ADR-0041): all of `ignored` but the folders a build makes again,
    * which are those the repository marks with the `sotto-build-output` attribute, read from this checkout's own
-   * attributes, and those holding a `CACHEDIR.TAG` that begins with the standard's signature. A nested repository among
-   * `repositories`, each of which has a row in `ignored`, is kept too unless it is a tool's own copy inside such a tagged
-   * folder, as SwiftPM keeps of each dependency in `.build/`. When Git cannot answer, all of them are kept.
+   * attributes, and those holding a `CACHEDIR.TAG` that begins with the standard's signature. Every nested repository
+   * among `repositories` is kept, whatever marks or tags its own folder, unless it is a tool's own copy inside a tagged
+   * folder that nobody has worked in (`toolsOwnRepository`). When Git cannot answer, all of them are kept.
    */
-  async ruleKeptIgnored(path: string, ignored: readonly string[], repositories: WorktreeReclaimFacts['repositories'] = []): Promise<string[]> {
+  async ruleKeptIgnored(path: string, ignored: readonly string[], repositories: WorktreeReclaimFacts['repositories']): Promise<string[]> {
+    const rows = new Set(repositories.map(row => row.path))
     const folders = ignored.filter(entry => entry.endsWith('/'))
     const marked = new Set<string>()
     try {
@@ -1462,32 +1470,54 @@ export class ThreadWorktrees {
         const answers = (await this.git(path, ['check-attr', '-z', BUILD_OUTPUT_ATTRIBUTE, '--', ...folders.slice(offset, offset + 100)])).split('\0')
         for (let i = 0; i + 2 < answers.length; i += 3) if (answers[i + 2] === 'set') marked.add(answers[i]!)
       }
-    } catch { return [...ignored] }
-    const rows = new Map(repositories.map(row => [row.path, row]))
-    const tagged: string[] = [], kept: string[] = []
-    // A repository is never its own cache: only a folder Git itself reports ignored can be one.
-    for (const entry of ignored) if (!marked.has(entry)) (!rows.has(entry) && entry.endsWith('/') && await cacheTagged(join(path, entry)) ? tagged : kept).push(entry)
-    const held: string[] = []
-    for (const entry of kept) {
-      const row = rows.get(entry)
-      if (!row || !tagged.some(folder => entry.startsWith(folder)) || !await this.toolsOwnRepository(join(path, entry), row)) held.push(entry)
+    } catch { return [...new Set([...ignored, ...rows])].sort() }
+    const tagged: string[] = [], held: string[] = []
+    // A repository's row is answered below and never here: no mark or tag on its own folder says nobody worked in it.
+    for (const entry of ignored) {
+      if (rows.has(entry)) continue
+      if (entry.endsWith('/') && (rows.size || !marked.has(entry)) && await cacheTagged(join(path, entry))) tagged.push(entry)
+      else if (!marked.has(entry)) held.push(entry)
     }
-    return held
+    for (const row of repositories) if (!await this.toolsOwnRepository(path, row, tagged)) held.push(row.path)
+    return held.sort()
   }
 
   /**
-   * Whether a nested repository inside a tagged cache is the tool's own copy, which the tool fetches again (ADR-0041):
-   * a repository of its own with nothing uncommitted and no linked worktree, that is either bare, as a mirror is, or has
-   * every commit on a remote-tracking ref or a tag, as a clone nobody committed or stashed in does.
+   * Whether a nested repository is a tool's own copy that the tool fetches again and nobody has worked in (ADR-0041),
+   * as the pair SwiftPM keeps of each dependency in `.build/` is. Anything else answers no, and so does anything that
+   * cannot be read. It must be a repository of its own in a real folder inside a tagged cache, with nothing uncommitted,
+   * no linked worktree, no submodule history and one remote, and be one of:
+   * - a bare mirror of a network address, every ref still packed as the clone left it, since a push into it writes a
+   *   loose ref (and so does the tool's next fetch, after which the folder stays);
+   * - a clone of a bare repository on this computer, as that mirror is, which has a row of its own to answer for it;
+   *   the clone's HEAD has only ever been cloned and checked out, and every commit is on a remote-tracking ref or a tag.
    */
-  private async toolsOwnRepository(folder: string, row: WorktreeReclaimFacts['repositories'][number]): Promise<boolean> {
-    if (row.kind !== 'repository' || row.changeCount) return false
+  private async toolsOwnRepository(root: string, row: WorktreeReclaimFacts['repositories'][number], tagged: readonly string[]): Promise<boolean> {
+    if (!tagged.some(folder => row.path.startsWith(folder)) || row.kind !== 'repository' || row.changeCount) return false
     try {
+      const canonicalRoot = await realpath(root), folder = join(canonicalRoot, row.path)
+      // A link put where the repository was is not the repository the walk read.
+      if (!(await lstat(folder)).isDirectory() || pathKey(await realpath(folder)) !== pathKey(folder)) return false
       const marker = await lstat(join(folder, '.git')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
       // A `.git` file is a submodule or a worktree, whose history lives elsewhere.
       if (marker && !marker.isDirectory()) return false
-      if ((await readdir(join(folder, marker ? '.git' : '', 'worktrees')).catch(() => [])).length) return false
-      return !marker || (await this.git(folder, ['rev-list', '--count', '--all', '--not', '--remotes', '--tags'])).trim() === '0'
+      const gitDirectory = marker ? join(folder, '.git') : folder
+      for (const name of ['worktrees', 'modules']) if ((await readdir(join(gitDirectory, name)).catch(() => [])).length) return false
+      const remotes = (await this.git(folder, ['config', '--local', '--null', '--get-regexp', '^remote\\..*\\.url$'])).split('\0').filter(Boolean)
+      if (remotes.length !== 1) return false
+      const key = remotes[0]!.slice(0, remotes[0]!.indexOf('\n')), url = remotes[0]!.slice(key.length + 1)
+      if (!marker) {
+        const [bare, own] = (await this.git(folder, ['rev-parse', '--is-bare-repository', '--absolute-git-dir'])).trim().split('\n')
+        return bare === 'true' && pathKey(await realpath(own!)) === pathKey(folder) && networkUrl(url)
+          && (await this.git(folder, ['config', '--local', '--type=bool', '--get', `${key.slice(0, -'url'.length)}mirror`])).trim() === 'true'
+          && !(await readdir(join(folder, 'refs'), { recursive: true, withFileTypes: true })).some(entry => !entry.isDirectory())
+      }
+      const origin = await realpath(resolve(folder, url))
+      // Its remote is a bare repository on this computer: one inside the folder has a row of its own and is answered there.
+      if (await lstat(join(origin, '.git')).then(() => true, () => false)) return false
+      const log = (await readFile(join(gitDirectory, 'logs', 'HEAD'), 'utf8')).split('\n').filter(Boolean)
+      return log.length > 0 && log.every(line => /\t(?:clone|checkout): /u.test(line))
+        && (await this.git(folder, ['rev-list', '--count', '--all', '--not', '--remotes', '--tags'])).trim() === '0'
     } catch { return false }
   }
 

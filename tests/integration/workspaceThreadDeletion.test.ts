@@ -206,26 +206,25 @@ describe('deleting settled threads (ADR-0140)', () => {
     expect(await exists(built.path!)).toBe(false)
   })
 
-  it('lets a rule take a worktree whose tagged cache holds its tool’s own repositories, and keeps one edited there', async () => {
+  it('lets a rule take a worktree whose tagged cache holds its tool’s own repositories, and keeps one worked in there', async () => {
     const f = await fixture()
     const built = await f.checkout()
     const commit = (cwd: string, message: string) => git(cwd, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', message])
     await writeFile(join(built.path!, '.gitignore'), 'node_modules/\n*.log\n.build/\n')
     await git(built.path!, ['add', '.']); await commit(built.path!, 'Ignore the build folder')
-    // As SwiftPM leaves `.build/`: tagged, with a bare mirror of a dependency and a clone of the mirror.
-    const build = join(built.path!, '.build'), mirror = join(build, 'repositories', 'dep-08d244c7'), dependency = join(build, 'checkouts', 'dep')
-    await mkdir(mirror, { recursive: true }); await mkdir(join(build, 'checkouts'))
+    // As SwiftPM leaves `.build/`: tagged, with a mirror of a dependency whose remote is elsewhere and a clone of the mirror.
+    const upstream = join(f.root, 'upstream'), build = join(built.path!, '.build'), mirror = join(build, 'repositories', 'dep-08d244c7'), dependency = join(build, 'checkouts', 'dep')
+    await mkdir(upstream); await git(upstream, ['init']); await writeFile(join(upstream, 'Package.swift'), ''); await git(upstream, ['add', '.']); await commit(upstream, 'Dependency')
+    await mkdir(join(build, 'repositories'), { recursive: true }); await mkdir(join(build, 'checkouts'))
     await writeFile(join(build, 'CACHEDIR.TAG'), 'Signature: 8a477f597d28d172789f06886806bc55\n')
-    await git(mirror, ['init', '--bare']); await git(join(build, 'checkouts'), ['clone', mirror, 'dep'])
-    await writeFile(join(dependency, 'Package.swift'), 'tried in place')
+    await git(join(build, 'repositories'), ['clone', '--mirror', upstream, 'dep-08d244c7']); await git(mirror, ['remote', 'set-url', 'origin', 'https://example.invalid/dep.git'])
+    await git(join(build, 'checkouts'), ['clone', mirror, 'dep'])
+    await writeFile(join(dependency, 'notes.txt'), 'tried in place')
     f.adapter.state.threads[1]!.worktree = await f.worktrees.inspect(built)
     const host = await f.open()
     expect(await host.deleteThreads(['session-docs'], automatic)).toEqual({ deleted: [], kept: [{ threadId: 'session-docs', reason: 'worktree-files' }] })
     await expect(host.reclaimThreadWorktree('session-docs', { automatic: true })).rejects.toThrow('besides installed dependencies and build output')
-    await git(dependency, ['add', '.']); await commit(dependency, 'Dependency')
-    // A commit on no remote or tag is still someone's work there.
-    await expect(host.reclaimThreadWorktree('session-docs', { automatic: true })).rejects.toThrow('besides installed dependencies and build output')
-    await git(dependency, ['push', '--set-upstream', 'origin', 'HEAD'])
+    await rm(join(dependency, 'notes.txt'))
     expect((await host.previewThreadDeletion('session-docs', true)).kept).toBeNull()
     await host.reclaimThreadWorktree('session-docs', { automatic: true })
     expect(await exists(built.path!)).toBe(false)

@@ -2,7 +2,7 @@
 
 Accepted September 22, 2026.
 
-Amended November 9, 2026: the cleanup rules, Clear now and Clear settled threads after also take a tool's own repository inside a folder the tool tagged with a `CACHEDIR.TAG`, as SwiftPM keeps of each dependency, when nobody has worked in it. See the correction at the end.
+Amended November 9, 2026: the cleanup rules, Clear now and Clear settled threads after also take the mirror and the clone a tool keeps of a dependency inside a folder it tagged with a `CACHEDIR.TAG`, as SwiftPM does, when both read as untouched; every other nested repository still keeps the folder. See the correction at the end.
 
 Amended November 7, 2026: a submodule's row says when a commit it counts was fetched by its hash from one of its remotes and may already be there; the commit is still counted and still needs the tick (Zach's pick). See the correction at the end.
 
@@ -169,12 +169,17 @@ A submodule's row now says "1 commit on no remote branch. It was fetched from or
 
 The November 3 correction kept a folder for "a nested repository or worktree inside a marked folder". Building Sotto on a Mac runs SwiftPM in `native/coreml-asr/`, and SwiftPM keeps two repositories for each dependency in `.build/`: a bare mirror under `repositories/` and a clone of that mirror under `checkouts/`. So every worktree a Mac build had run in stayed, whatever the rules said and although `.build/` is both marked and tagged. On November 9 four clean worktrees of settled threads were held that way on Drake's Mac, about 3 GB each, on a disk that had run down to 10 GB free.
 
-Drake asked for the fix. The line below was worked out in the pull request and tightened in its review, rather than picked from variants:
+Drake asked for the fix, and chose the strict form below after its review. The first form took any repository in a tagged cache with nothing uncommitted, bare ones on the tag alone. The review showed five ways that deleted the only copy of someone's work, among them a repository at a marked path, a commit pushed to the mirror that is deleted in the same removal, and a commit under a tag made there. So the rule names what it recognises and keeps everything else:
 
-- **A tool's own repository goes with its cache.** A repository of its own inside an ignored folder holding a valid `CACHEDIR.TAG` no longer keeps the folder from a rule, Clear now or Clear settled threads after, when nobody has worked in it. The tag is the tool's word that what is under the folder can be made again, which is how backup tools already read it.
-- **Nobody has worked in it** means all of: no uncommitted change and no untracked file; no linked worktree of its own, inside the folder or outside it; and either it is bare, as a mirror is, or every commit any of its refs reaches is on a remote-tracking ref or a tag, which a commit or a stash made there is not. The list's own count, commits no remote-tracking ref has, could not be used: Sotto's FluidAudio checkout counts 76 that way, every one reachable from a tag, and its mirror 5,283, with nothing of the user's in either.
-- **What still keeps the folder.** Any repository in a tagged cache that fails one of those, as one does after someone tries a fix in a dependency's checkout, or commits in a package installed there from Git, as a tagged `.venv/` can hold. A repository inside a folder that is only marked with `sotto-build-output`: the mark is the repository's word rather than a tool's, and nothing Sotto builds puts a repository in such a folder. A repository that is itself the tagged folder. A submodule or linked worktree there, whose history lives elsewhere.
+- **Every nested repository keeps the folder from a rule**, whatever marks or tags its own folder, unless it is one of the two below. Each must be a repository of its own in a real folder inside an ignored folder holding a valid `CACHEDIR.TAG`, with no uncommitted change or untracked file, no linked worktree, inside the folder or outside it, no submodule history and exactly one remote. Anything that cannot be read keeps the folder.
+- **A tool's mirror.** A bare repository set up as a mirror (`remote.<name>.mirror`) of a network address, with every ref still packed, as `git clone --mirror` leaves it. A push into it writes a loose ref, so a mirror someone pushed to stays.
+- **A clone of it.** A repository whose one remote is a bare repository on this computer, whose `HEAD` log holds only its clone and checkouts, and whose every commit is on a remote-tracking ref or a tag. A commit, a stash, a reset or a pull made there adds to that log.
 
-A bare repository is taken on the tag alone: it has no files to work in, and commits reach it only by a push from somewhere that still has them.
+The count the removal question shows, commits no remote-tracking ref has, could not decide this: Sotto's FluidAudio checkout counts 76 that way, every one reachable from a tag, and its mirror 5,283, with nothing of the user's in either. A remote inside the folder could not be discounted either, as the November 7 correction does for a submodule: the clone's only remote is the mirror beside it.
 
-Both answers are asked again in the registry lane just before Git's lock is taken, so a cache that lost its tag, or a repository someone committed in, before then keeps the folder. **Remove worktree**, the question Settle asks and **Delete thread…** are unchanged: they still list every nested repository for the user to tick.
+What this costs and what it leaves:
+
+- **It errs towards keeping.** SwiftPM's own next fetch also writes loose refs, so a worktree whose dependencies were updated in place stays, as it did before. So does a repository in a folder that is only marked, since the mark is the repository's word rather than a tool's.
+- **One case no check on this computer closes.** Work pushed into the mirror whose refs were then packed again, with the clone's `HEAD` log cleared or expired, reads as untouched and goes with the folder. Only asking the remote would tell, and the November 7 correction ruled out a network call here. It takes several deliberate steps inside a build's cache, and Drake accepted it.
+
+Both answers are asked again in the registry lane just before Git's lock is taken, so a cache that lost its tag, or a repository someone worked in, before then keeps the folder. **Remove worktree**, the question Settle asks and **Delete thread…** are unchanged: they still list every nested repository for the user to tick.
