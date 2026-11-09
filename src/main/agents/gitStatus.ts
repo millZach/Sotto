@@ -748,10 +748,12 @@ export class GitStatusReader implements GitStatusSource {
       }
       return next.value
     }
-    const target = await this.headTarget(cwd, lookup.branch, lookup.upstream)
-    // Not pushed, or not on GitHub: nothing to ask, and nothing kept, so a push made in a terminal is seen as soon as the fetch brings its ref.
-    if (!target) return null
+    let host: string | undefined
     try {
+      const target = await this.headTarget(cwd, lookup.branch, lookup.upstream)
+      // Not pushed, or not on GitHub: nothing to ask, and nothing kept, so a push made in a terminal is seen as soon as the fetch brings its ref.
+      if (!target) return null
+      host = target.repository.host
       // Shared only with lookups of this clone since its last Git action: another clone's, asked before an action there, may not stand.
       const found = await this.heads.lookup(cwd, target.repository, target.head, ask, scope)
       // Only a pull request whose head is in the repository the branch is pushed to is the branch's own: a fork's branch of the same name is not.
@@ -763,12 +765,14 @@ export class GitStatusReader implements GitStatusSource {
       return keep({ epoch, failures: 0, nextAt: this.now() + fresh, value, tip, host: target.repository.host })
     } catch (error) {
       const record = this.pullRequests.get(key)
+      host ??= record?.host
+      const hostFields = host === undefined ? {} : { host }
       if (error instanceof GitHubRateLimited) {
-        this.pullRequests.set(key, record ? { ...record, host: target.repository.host } : { epoch: -1, failures: 0, nextAt: 0, value: null, tip, host: target.repository.host })
+        this.pullRequests.set(key, record ? { ...record, ...hostFields } : { epoch: -1, failures: 0, nextAt: 0, value: null, tip, ...hostFields })
         return record?.value ?? null
       }
       const failures = (record?.failures ?? 0) + 1
-      return keep({ epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null, tip: record?.tip ?? tip, host: target.repository.host })
+      return keep({ epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null, tip: record?.tip ?? tip, ...hostFields })
     }
   }
 
