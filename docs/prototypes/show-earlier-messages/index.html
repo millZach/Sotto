@@ -1,0 +1,171 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway (#214). Nothing here talks to Sotto. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Show earlier messages, when older history comes from the store (#214)</title>
+<style>
+  :root { --bg:#111214; --pane:#17181b; --row:#1d1f23; --text:#e8e8ea; --muted:#9a9ca3; --line:#2a2c31; --accent:#7cc4b5; --mark:#3a3420; --warn:#e0a84a; }
+  html[data-theme=light] { --bg:#f6f5f2; --pane:#ffffff; --row:#f1f0ec; --text:#1d1e21; --muted:#5f6168; --line:#dddbd5; --accent:#2f7f70; --mark:#fbefc8; --warn:#9a5b00; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { margin: 6px 0; }
+  .muted { color: var(--muted); }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin: 14px 0; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; background:transparent; color:var(--text); padding:7px 11px; font:inherit; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--accent); color:var(--bg); }
+  .grid { display:grid; grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); gap:16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .pane { background:var(--pane); border:1px solid var(--line); border-radius:12px; height: 420px; overflow:auto; padding: 10px; position: relative; }
+  .earlier { display:flex; justify-content:center; padding: 6px 0 10px; }
+  .earlier button, .act { border:1px solid var(--line); background:transparent; color:var(--text); padding:7px 12px; border-radius:8px; font:inherit; cursor:pointer; }
+  .earlier button:disabled { color: var(--muted); cursor: default; }
+  .msg { background:var(--row); border-radius:10px; padding:8px 12px; margin: 0 0 8px; }
+  .msg small { color: var(--muted); }
+  .msg.reading { outline: 2px solid var(--accent); }
+  .msg.arrived { background: var(--mark); }
+  .card { background:var(--pane); border:1px solid var(--line); border-radius:12px; padding: 12px 14px; }
+  .card dl { display:grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  .card dt { color: var(--muted); }
+  .card dd { margin: 0; }
+  .changed { color: var(--warn); font-weight: 600; }
+  .tabs { display:flex; gap:6px; flex-wrap: wrap; margin-top: 18px; }
+  .steps { margin-top: 8px; display:flex; flex-direction: column; gap: 6px; }
+  .steps .act[disabled] { opacity: .5; cursor: default; }
+  .note { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 10px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Show earlier messages, when the older messages come from the store</h1>
+  <p class="muted">Prototype for issue #214. A thread holds its newest 100 messages; 400 older ones are still in the store. You've already shown all 100, so the next press asks the store for 200 more. What should the pane do when they arrive?</p>
+  <p class="muted">The highlighted message is the one you were reading when you pressed. New arrivals are shaded.</p>
+
+  <div class="bar">
+    <span>Behaviour:</span>
+    <span class="seg" id="modes">
+      <button data-mode="now">Today (the bug)</button>
+      <button data-mode="keep">A. Lose nothing</button>
+      <button data-mode="show">B. Show what arrived</button>
+    </span>
+    <span class="seg" id="themes"><button data-theme="dark">Dark</button><button data-theme="light">Light</button></span>
+  </div>
+  <p class="note" id="explain"></p>
+
+  <div class="grid">
+    <div>
+      <div class="pane" id="pane"></div>
+    </div>
+    <div>
+      <div class="card"><dl id="state"></dl></div>
+      <div class="bar">
+        <button class="act" id="press">Press Show earlier messages</button>
+        <button class="act" id="arrive" disabled>The store answers (200 arrive)</button>
+        <button class="act" id="reset">Start again</button>
+      </div>
+      <div class="tabs"><strong>Walkthrough</strong></div>
+      <p class="muted">From the issue: open the thread, show the 20 hidden messages, then ask the store for more.</p>
+      <div class="steps" id="steps"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* The logic: a pure model of the transcript's window over a thread's messages. Messages are numbered by age, #1 oldest. */
+const PAGE = 80, STORE_TOTAL = 500, FIRST_LOADED = 100, FETCH = 200
+function initial() {
+  // The thread opens on its newest 100 messages (#401–#500); the pane draws the newest 80.
+  return { loadedFrom: STORE_TOTAL - FIRST_LOADED + 1, drawnFrom: STORE_TOTAL - PAGE + 1, asking: false, reading: STORE_TOTAL - PAGE + 1, arrived: null }
+}
+const hidden = s => s.drawnFrom - s.loadedFrom
+const inStore = s => s.loadedFrom - 1
+function buttonText(s) {
+  if (hidden(s) > 0) return `Show earlier messages (${hidden(s)})`
+  return inStore(s) > 0 ? 'Show earlier messages' : null
+}
+function press(s) {
+  if (s.asking) return s
+  const reading = s.drawnFrom
+  if (hidden(s) > 0) return { ...s, drawnFrom: Math.max(s.loadedFrom, s.drawnFrom - PAGE), reading, arrived: null }
+  if (inStore(s) > 0) return { ...s, asking: true, reading, arrived: null }
+  return s
+}
+function arrive(s, mode) {
+  if (!s.asking) return s
+  const loadedFrom = Math.max(1, s.loadedFrom - FETCH)
+  const arrived = { from: loadedFrom, to: s.loadedFrom - 1 }
+  const base = { ...s, asking: false, loadedFrom, arrived }
+  // Today: the pane forgets the row it was on and falls back to the newest 80 messages.
+  if (mode === 'now') return { ...base, drawnFrom: STORE_TOTAL - PAGE + 1 }
+  // A: the rows stay as they were; what arrived waits above as hidden history, and the count says how much.
+  if (mode === 'keep') return { ...base, drawnFrom: s.drawnFrom }
+  // B: the window widens by what arrived, so it shows above the reader, who stays where they were.
+  return { ...base, drawnFrom: loadedFrom }
+}
+</script>
+
+<script>
+/* The page around it: throwaway. */
+let mode = 'keep', state = initial(), last = null
+const pane = document.getElementById('pane')
+const EXPLAIN = {
+  now: 'Today: the 200 that arrived are not shown, 20 rows you had are taken away, and the pane jumps back to the newest 80.',
+  keep: 'A. Lose nothing: what you see stays exactly as it was. The 200 wait above, hidden, and the button now counts them; the next press shows them.',
+  show: 'B. Show what arrived: the 200 appear above the message you were reading, which stays where it was on screen. Scroll up to see them.',
+}
+function render() {
+  document.querySelectorAll('#modes button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)))
+  document.querySelectorAll('#themes button').forEach(b => b.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === b.dataset.theme)))
+  document.getElementById('explain').textContent = EXPLAIN[mode]
+  // Keep the row at the top of the pane where it was, as the real scroll anchor would.
+  const top = [...pane.querySelectorAll('.msg')].find(el => el.offsetTop + el.offsetHeight > pane.scrollTop)
+  const keepId = top?.dataset.id, keepOffset = top ? top.offsetTop - pane.scrollTop : 0
+  const label = buttonText(state)
+  let html = `<div class="earlier">${label ? `<button disabled>${state.asking ? 'Getting earlier messages…' : label}</button>` : '<span class="muted">The start of the thread</span>'}</div>`
+  for (let n = state.drawnFrom; n <= STORE_TOTAL; n++) {
+    const cls = ['msg', n === state.reading && state.arrived ? 'reading' : '', state.arrived && n >= state.arrived.from && n <= state.arrived.to ? 'arrived' : ''].join(' ')
+    html += `<div class="${cls}" data-id="${n}"><small>#${n}</small> ${n % 2 ? 'You' : 'Agent'}: message ${n}</div>`
+  }
+  pane.innerHTML = html
+  const again = keepId && pane.querySelector(`[data-id="${keepId}"]`)
+  if (again) pane.scrollTop = again.offsetTop - keepOffset
+  const fields = [
+    ['Rows on screen', STORE_TOTAL - state.drawnFrom + 1],
+    ['Oldest row on screen', `#${state.drawnFrom}`],
+    ['Hidden above (loaded, not shown)', hidden(state)],
+    ['Still only in the store', inStore(state)],
+    ['Button reads', label ?? '(none: the start of the thread)'],
+    ['Waiting for the store', state.asking ? 'yes' : 'no'],
+  ]
+  document.getElementById('state').innerHTML = fields.map(([k, v]) => {
+    const was = last?.find(f => f[0] === k)?.[1]
+    return `<dt>${k}</dt><dd class="${last && String(was) !== String(v) ? 'changed' : ''}">${v}</dd>`
+  }).join('')
+  last = fields
+  document.getElementById('arrive').disabled = !state.asking
+  document.getElementById('press').disabled = state.asking || !label
+}
+function dispatch(next) { state = next; render() }
+document.getElementById('press').onclick = () => dispatch(press(state))
+document.getElementById('arrive').onclick = () => dispatch(arrive(state, mode))
+document.getElementById('reset').onclick = () => { last = null; dispatch(initial()); pane.scrollTop = pane.scrollHeight; walk(0) }
+document.querySelectorAll('#modes button').forEach(b => b.onclick = () => { mode = b.dataset.mode; last = null; state = initial(); render(); pane.scrollTop = pane.scrollHeight; walk(0) })
+document.querySelectorAll('#themes button').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; render() })
+const STEPS = [
+  ['1. Open the thread at its end', () => { last = null; dispatch(initial()); pane.scrollTop = pane.scrollHeight }],
+  ['2. Press Show earlier messages (20)', () => { dispatch(press(state)); pane.scrollTop = 0 }],
+  ['3. Press Show earlier messages (asks the store)', () => dispatch(press(state))],
+  ['4. The store answers with 200 older messages', () => dispatch(arrive(state, mode))],
+]
+function walk(at) {
+  document.getElementById('steps').innerHTML = STEPS.map(([name], i) => `<button class="act" data-step="${i}" ${i !== at ? 'disabled' : ''}>${name}</button>`).join('')
+  document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => { const i = Number(b.dataset.step); STEPS[i][1](); walk(i + 1 < STEPS.length ? i + 1 : -1) })
+}
+render(); pane.scrollTop = pane.scrollHeight; walk(0)
+</script>
+</body>
+</html>
