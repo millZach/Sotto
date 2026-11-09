@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { readGitHubOrigin, readProjectOrigins } from '../../../src/main/agents/projectOrigins'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 
 const origins: Record<string, string> = {
   '/work/sotto': 'git@github.com:millZach/Sotto.git\n',

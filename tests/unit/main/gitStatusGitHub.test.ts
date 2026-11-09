@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { GitHubHosts } from '../../../src/main/agents/github'
-import { GitStatusReader, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { GitHubHosts } from '../../../src/main/agents/git/github'
+import { GitStatusReader, type RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 import { deferred } from '../../fixtures/deferred'
 
 /**

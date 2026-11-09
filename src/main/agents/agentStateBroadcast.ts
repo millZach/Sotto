@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
+import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentHostSnapshotBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -117,8 +117,9 @@ export function samePlainData(previous: unknown, next: unknown, depth = 0): bool
  * the next, and they were resent whole on every one, up to seventeen a second while a reply streamed. A part is compared
  * with `samePlainData`, identity first, so a part handed over unchanged costs one comparison.
  */
-function withKeptParts(whole: AgentStateBroadcast, parts: { readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> }): AgentStateBroadcast {
-  const top: Record<string, unknown> = {}, host: Record<string, unknown> = {}
+function withKeptParts(whole: CompleteAgentStateBroadcast, parts: { readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> }): AgentStateBroadcast {
+  const top: Record<string, unknown> = {}
+  const host: AgentHostSnapshotBroadcast = { threads: whole.host.threads }
   const kept: KeptPart[] = [], hostKept: KeptHostPart[] = []
   for (const [key, value] of Object.entries(whole)) {
     if (key === 'host') continue
@@ -127,11 +128,11 @@ function withKeptParts(whole: AgentStateBroadcast, parts: { readonly top: Readon
   }
   for (const [key, value] of Object.entries(whole.host)) {
     if (key !== 'threads' && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
-    else host[key] = value
+    else (host as Record<string, unknown>)[key] = value
   }
   if (hostKept.length) host.kept = hostKept
   // The parts left out are absent: the page puts them back from the broadcast it holds before anything reads the state.
-  return { ...top, ...kept.length ? { kept } : {}, host } as unknown as AgentStateBroadcast
+  return { ...top, ...kept.length ? { kept } : {}, host }
 }
 
 interface ThreadBase {
@@ -367,7 +368,7 @@ export class AgentStateBroadcaster {
       return { revision, models: models as AgentModel[] }
     })
     const threads = this.threads.encode(state.host.threads, state.host)
-    const whole: AgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
+    const whole: CompleteAgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
     // Measured from the broadcast the window last applied, which it holds the parts of: what did not change is left out.
     const parts = this.parts
     const payload = threads.payload.base !== null && parts?.revision === threads.payload.base ? withKeptParts(whole, parts) : whole

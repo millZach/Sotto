@@ -2,7 +2,7 @@ import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { PopupApp } from './popup/PopupApp'
-import { applyAppearance, appearancePreview, readCachedAppearance } from './state/appearance'
+import { applyAppearance, appearancePreview, readCachedAppearance, startAppearance } from './state/appearance'
 import { startInterfaceLanguage } from './state/interfaceLanguage'
 import type { AppSettings } from '../../shared/settings'
 import './styles/global.css'
@@ -13,6 +13,8 @@ const bridge = window.sottoPopup
 if (!bridge) throw new Error('Popup bridge is missing')
 
 // The popup wears the main window's look: the last one painted at once, then the saved one and every change to it.
+const stopAppearance = startAppearance()
+window.addEventListener('pagehide', stopAppearance, { once: true })
 applyAppearance(readCachedAppearance())
 const paint = (settings: AppSettings): void => {
   applyAppearance(appearancePreview.effective(settings))

@@ -131,7 +131,7 @@ it('admits a paired phone origin without an answers grant, keeps the computer de
   const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
   const sent = await peer.call('send', packet)
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
-  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecords.copy().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
   // The provider receives the phone's words as typed; the request rides beside them.
   expect(f.native(f.target.threadId).messages[0]?.text).toBe(packet.request.text)
@@ -159,7 +159,7 @@ it('shows phone instructions as typed: without the footer main once appended, an
   const typed = 'Synthetic older phone instruction'
   f.native(f.target.threadId).messages.find(row => row.id === older.rootUserMessageId)!.text = typed + footer
   // Saved before display proofs, so it carries none.
-  await f.control.updateWatcher(record => { delete record.requests.find(request => request.id === older.id)!.displayPrompt })
+  await f.control.watcherRecords.update(record => { delete record.requests.find(request => request.id === older.id)!.displayPrompt })
   // A later instruction in which the user typed an example note of their own.
   const example = `Explain this example:\n\n[Sotto Watcher request: ${randomUUID()}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads changes made for this message.]`
   await peer.call('send-example', f.send(peer.paired.clientId, randomUUID(), example)); await f.finish(f.target.threadId)
@@ -178,7 +178,7 @@ it('counts accepted paired phone instructions as user prompts while keeping actu
   const f = await fixture(true, true), peer = await f.pair()
   const text = 'Synthetic private phone instruction', packet = f.send(peer.paired.clientId, randomUUID(), text)
   expect(await peer.call('phone-user', packet)).toMatchObject({ ok: true, result: { status: 'ok' } })
-  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecords.copy().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages.some(message => message.text === text)).toBe(true)
   expect(f.native(f.target.threadId).messages.filter(message => message.role === 'user')).toHaveLength(1)
   expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
@@ -245,7 +245,7 @@ it('projects grouped replies with one row per thread and keeps remote owning car
   const reply = { id: 'reply', role: 'assistant' as const, text: 'Synthetic receipt reply', createdAt: '2026-10-11T10:00:00.000Z' }
   f.native(f.target.threadId).messages[0]!.createdAt = '2026-10-11T09:59:00.000Z'
   f.native(f.target.threadId).messages.push(reply)
-  await f.control.updateWatcher(record => { for (const operation of record.operations) operation.createdAt = '2026-10-11T10:00:01.000Z' })
+  await f.control.watcherRecords.update(record => { for (const operation of record.operations) operation.createdAt = '2026-10-11T10:00:01.000Z' })
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const page = f.phone.state(false)
   expect(page.receiptGroups).toHaveLength(1)
@@ -255,7 +255,7 @@ it('projects grouped replies with one row per thread and keeps remote owning car
     id: remoteTarget.threadId, hostId: remoteId, providerId: 'claude' as const, title: 'Forge worker', requests: [{ id: 'remote-question', kind: 'question' as const, text: 'Synthetic remote question', options: [] }] }] }
   f.watcher.useRemoteHosts({ hosts: () => [{ hostId: remoteId, reads: false, control: false, connected: true, permissionCeiling: 'approval-required' as const }], snapshot: () => remoteSnapshot,
     read: async () => null, control: async () => null, subscribe: () => () => undefined })
-  await f.control.updateWatcher(record => { record.requests.at(-1)!.participants.push({ target: remoteTarget, requestId: record.requests.at(-1)!.id,
+  await f.control.watcherRecords.update(record => { record.requests.at(-1)!.participants.push({ target: remoteTarget, requestId: record.requests.at(-1)!.id,
     startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 }) })
   expect(f.phone.state(true).needsYou).toMatchObject([{ target: remoteTarget, provider: 'claude', mayAnswer: false }])
   const shell = await peer.call('local-list', { op: 'shell' })
@@ -468,7 +468,7 @@ it('keeps standing watches through stopped and closed requests until explicit un
   expect(watched()).toBe(true)
   const shell = await peer.call('after-stop', { op: 'shell' })
   expect((shell.result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } }).host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher).toBe(true)
-  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+  await f.control.watcherRecords.update(record => { const request = record.requests.at(-1)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
   expect(watched()).toBe(true)
   expect(await f.watcher.unwatchThread({ target: worker })).toMatchObject({ status: 'ok' })
   expect(watched()).toBe(false)
@@ -479,7 +479,7 @@ it('shows a phone from before standing watches only the threads a request watche
   await old.call('send', f.send(old.paired.clientId))
   // Watcher started one thread for the request, which keeps its standing watch; another only takes part in the request.
   const standing = await f.start(), requestOnly = await f.start()
-  await f.control.updateWatcher(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== requestOnly.threadId) })
+  await f.control.watcherRecords.update(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== requestOnly.threadId) })
   type Page = { standingWatches?: unknown; watchedThreads: { target: { threadId: string }; watched: boolean; paused?: boolean }[] }
   const page = async (peer: typeof old, id: string) => ((await peer.call(id, { op: 'watcher-phone-read' })).result as { state: Page }).state
   const shell = async (peer: typeof old, id: string) => ((await peer.call(id, { op: 'shell' })).result as { watcher: Page; host: { threads: { id: string; watchedByWatcher?: boolean }[] } })
@@ -501,7 +501,7 @@ it('marks a thread taking part in an active request watched in the room, the pho
   const f = await fixture(), peer = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   // As on a paired host without standing watches: the thread takes part in the request and has no watch of its own.
-  await f.control.updateWatcher(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== worker.threadId) })
+  await f.control.watcherRecords.update(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== worker.threadId) })
   expect(f.watcher.state().standingWatches?.some(watch => watch.target.threadId === worker.threadId)).toBe(false)
   const room = () => f.watcher.state().watchedThreads.find(row => row.target.threadId === worker.threadId)
   const page = () => f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)
@@ -784,7 +784,7 @@ it('steers a phone message into Watcher’s running turn under the request it an
   const newsText = 'Synthetic phone steer: watch that thread again'
   expect(await peer.call('news-steer', f.send(clientId, randomUUID(), newsText, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok' } })
   const second = lastSteer(f)
-  const opened = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === second.messageId)!
+  const opened = f.control.watcherRecords.copy().requests.find(request => request.rootUserMessageId === second.messageId)!
   expect(opened).toMatchObject({ state: 'active', participants: [], phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(second.text).toBe(newsText + watcherRequestLine(watcherRequestNote(opened.id, f.control.hostId()!)))
   // The phone shows the words alone.
@@ -890,7 +890,7 @@ it('queues a phone message to go next when Watcher’s provider takes no steer, 
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === nextText)).toBe(true), { timeout: 30_000 })
   const delivered = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.text === nextText)!
   if (delivered.type !== 'send') throw new Error('The message was not sent')
-  const own = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === delivered.messageId)!
+  const own = f.control.watcherRecords.copy().requests.find(request => request.rootUserMessageId === delivered.messageId)!
   // Its request is the phone's, as one its own send opened would be.
   expect(own).toMatchObject({ state: 'active', phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
   expect(own.id).not.toBe(asked.id)
@@ -1110,9 +1110,9 @@ it('knows the threads Watcher started from an index of its record, for the phone
   expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
   // A change to something attribution does not read keeps the index: no walk of Watcher's history.
   const walks = vi.spyOn(f.watcher as unknown as { indexWatcherStarts: (record: unknown) => unknown }, 'indexWatcherStarts')
-  const before = f.control.watcherRecordView()
-  await f.control.updateWatcher(next => { next.lastRuntimeMode = next.lastRuntimeMode === 'auto' ? 'approval-required' : 'auto' })
-  expect(f.control.watcherRecordView()).not.toBe(before)
+  const before = f.control.watcherRecords.view()
+  await f.control.watcherRecords.update(next => { next.lastRuntimeMode = next.lastRuntimeMode === 'auto' ? 'approval-required' : 'auto' })
+  expect(f.control.watcherRecords.view()).not.toBe(before)
   expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
   // Another start is read on its own, from where the index left off.
   await f.finish(worker.threadId); await f.finish(f.target.threadId)

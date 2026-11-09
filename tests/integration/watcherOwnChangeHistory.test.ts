@@ -6,7 +6,7 @@ import { afterEach, expect, it } from 'vitest'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
-import { CodexActivityProjection, codexItemSchema } from '../../src/main/agents/codexActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../src/main/agents/providers/codex/codexActivity'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentMessage } from '../../src/shared/agents'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
@@ -36,7 +36,7 @@ async function fixture(events = false, history = true) {
   const closed = new Set<WorkspaceHost>()
   const close = async (host: WorkspaceHost) => { if (!closed.has(host)) { await host.close(); closed.add(host) } }
   const open = async (observed = true) => {
-    const host = new WorkspaceHost(provider, directory, () => history, undefined, true)
+    const host = new WorkspaceHost(provider, directory, { historyEnabled: () => history, watcherEnabled: true })
     cleanup.push(() => close(host))
     await host.initialize(); await host.connect(); host.observeThreads(observed ? [id] : [])
     return host

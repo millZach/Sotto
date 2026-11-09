@@ -1,5 +1,5 @@
 /**
- * Real WatcherService.observe and AgentControl.mutateWatcher/schema; no provider process or live state.
+ * Real WatcherService.observe and WatcherRecords.mutate/schema; no provider process or live state.
  * The snapshot seam replaces only the input ordinarily supplied by AgentControl.acceptSnapshot.
  */
 import { vi } from 'vitest'
@@ -67,7 +67,7 @@ export async function watcherObservePerformance(shape: ObserveShape) {
       if (shape.includeTakeoverMetadata) record.localTakeovers = targets.map((target, index) => ({ target, at: centerTime, lastRequestId: requestId,
         userDrafts: [{ draftId: uuid(1_000 + index), digest: 'f'.repeat(64), messageId: `old-user-${index}` }] }))
     }
-    f.control.mutateWatcher(next => Object.assign(next, record))
+    f.control.watcherRecords.mutate(next => Object.assign(next, record))
     const hostIdSpy = vi.spyOn(f.control, 'hostId').mockReturnValue(centerHostId)
     const snapshotSpy = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue(snapshot)
     const pendingSpy = vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
@@ -84,7 +84,7 @@ export async function watcherObservePerformance(shape: ObserveShape) {
     cleanups.push(() => watcher.close())
     const resetReads = () => { reads.id = 0; reads.role = 0 }
     const observe = () => watcher.observe(snapshot, new Set())
-    const state = (): Readonly<WatcherRecord> => f.control.watcherRecordView()
+    const state = (): Readonly<WatcherRecord> => f.control.watcherRecords.view()
     // Snapshot setup, schema setup and initial observation are excluded from timed/counted passes.
     observe(); resetReads()
     return { watcher, control: f.control, snapshot, observe, state, reads, resetReads,

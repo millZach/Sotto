@@ -18,8 +18,8 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 
 import { GrokAcpHost } from '../../src/main/agents/grok'
 import type { AgentHost } from '../../src/main/agents/host'

@@ -23,7 +23,8 @@ import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shown
 import { SHOWN_STEP_PREFIX, WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { sameJsonText, sameSnapshot } from './sameSnapshot'
+import { sameSnapshot } from './sameSnapshot'
+import { WorkspaceText } from './workspaceText'
 import { immutableActivities, immutableModels, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -36,7 +37,7 @@ import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { samePlainData } from './agentStateBroadcast'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type ShortTextTarget, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ProviderHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type ShortTextTarget, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
@@ -60,17 +61,17 @@ import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSet
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
-import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
+import { claudeSkillFolder, claudeSkillPath } from './providers/claude/claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
-import type { GitStatusSource } from './gitStatus'
-import { BringBackRefusal, GitActionRefusal, type BringBackOutcome, type GitActionEvent, type GitActions } from './gitActions'
+import type { GitStatusSource } from './git/gitStatus'
+import { BringBackRefusal, GitActionRefusal, type BringBackOutcome, type GitActionEvent, type GitActions } from './git/gitActions'
 import { BRING_BACK_FROM_DESKTOP, BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_QUESTION_GONE, bringBackTarget, incomingRefBranch, type BringBack, type BringBackAway, type WorktreeMadeFrom } from '../../shared/bringChangesBack'
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestPress, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
-import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
+import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './git/gitPullRequests'
 import { createdPullRequestUrls, endedTurn, OPENED_PULL_REQUESTS_MAX, openedDuringTurn, pullRequestUrlsIn } from './openedPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, withoutCutActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
@@ -256,55 +257,10 @@ function keepingHeld(records: AgentActivity[], held: readonly AgentActivity[]): 
   return records.map(record => { const was = byId.get(record.id); return was !== undefined && was !== record && samePlainData(was, record) ? was : record })
 }
 
-/** Where the serialized catalog goes in a saved workspace built without it, spliced back from its cache. */
-const CATALOG_PLACEHOLDER = 'sotto-catalog-placeholder-v1'
-/** Where the cheaper flush splices the threads' kept text into `workspace.json` (#1332). */
-const THREADS_PLACEHOLDER = 'sotto-threads-placeholder-v1'
-/**
- * The text of each item of a JSON array as `JSON.stringify` wrote it, which puts no space between tokens: the flush
- * serializes everything it must in one call and takes the threads' text apart here (#1332).
- */
-function jsonArrayItems(text: string): string[] {
-  const items: string[] = []
-  let depth = 0, start = 1, quoted = false
-  for (let at = 1; at < text.length - 1; at++) {
-    const code = text.charCodeAt(at)
-    if (quoted) { if (code === 92) at++; else if (code === 34) quoted = false; continue }
-    if (code === 34) quoted = true
-    else if (code === 123 || code === 91) depth++
-    else if (code === 125 || code === 93) depth--
-    else if (code === 44 && depth === 0) { items.push(text.slice(start, at)); start = at + 1 }
-  }
-  if (text.length > 2) items.push(text.slice(start, text.length - 1))
-  return items
-}
-/** A thread's text as the cheaper flush last put it in `workspace.json`, the record it was made from and whether local history was on (#1332). */
-interface ThreadText { readonly source: AgentThread; readonly history: boolean; readonly text: string }
 const modelProviderKey = (model: AgentModel): string => model.providerId ?? model.provider
-/**
- * The catalog as `workspace.json` keeps it with cheaper publish windows on: a provider's permission
- * modes are the same list on every one of its models (Devin's, today), so they are stored once, on
- * the first model that carries them, and read back onto the rest. A model whose modes differ from
- * its provider's first keeps its own.
- */
 /** Settled, by the provider or in Sotto (a project's settling reaches its threads' own record), or archived. */
 const closedHere = (thread: AgentThread): boolean => isThreadClosed(thread) || Boolean(thread.workspaceSettledAt)
 
-function catalogModelsForSave(models: readonly AgentModel[]): AgentModel[] {
-  const first = new Map<string, string>()
-  return models.map(model => {
-    if (model.providerModes === undefined) return model
-    const key = modelProviderKey(model)
-    const modes = JSON.stringify(model.providerModes)
-    if (first.get(key) === modes) {
-      const { providerModes, ...rest } = model
-      void providerModes
-      return rest
-    }
-    if (!first.has(key)) first.set(key, modes)
-    return model
-  })
-}
 /** Give every model its provider's stored modes back, sharing the one list, as the adapters publish it. */
 function expandProviderModes(models: AgentModel[]): void {
   const byProvider = new Map<string, NonNullable<AgentModel['providerModes']>>()
@@ -370,6 +326,21 @@ const workspaceSchema = z.object({
   clearedThreadIds: z.array(z.string().min(1).max(512)).default([]),
 })
 type Workspace = z.infer<typeof workspaceSchema>
+
+/** Construction policies, read once; omitted choices keep the existing workspace defaults. */
+export interface WorkspaceOptions {
+  readonly historyEnabled?: () => boolean
+  readonly worktreeRefreshDelayMs?: number
+  readonly watcherEnabled?: boolean
+  /** The providers held to Owl on this run. Absent holds every table provider. */
+  readonly heldProviders?: HeldProviders
+  readonly streamingPublishCostEnabled?: boolean
+  /** All thread-store writes go through this writer. */
+  readonly storeWriter?: (store: ThreadStore) => ThreadStoreWriter
+  /** The built worker by default; null explicitly writes on main. */
+  readonly storeWorker?: string | StoreWorkerOptions | null
+  readonly councilEnabled?: boolean
+}
 /**
  * What each thread babysits as `workspace.json` keeps it (ADR-0061 decision 10): on the thread's record, the published
  * fields beside what the thread was last told. Read from the file before the thread schema, which keeps only the published
@@ -528,11 +499,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** `touch`, answering the thread, for a write made on the spot: `this.touched(thread).title = title`. */
   private touched(thread: AgentThread): AgentThread { this.touch(thread.id); return thread }
   /** The next publication, save and release look at this thread again. An accept marks what it merged this way. */
-  private markChanged(id: string): void { this.unpublished.add(id); this.unsaved.add(id); this.releasable.add(id); this.unwritten.add(id) }
+  private markChanged(id: string): void { this.unpublished.add(id); this.unsaved.add(id); this.releasable.add(id); this.text.invalidate(id) }
   /** Anything about any thread may have changed: the next accept takes the inner host's publication in whole. */
   private touchAll(): void { this.remergeAll = true; this.markAllChanged() }
   /** The next publication, save and release look at every thread. */
-  private markAllChanged(): void { this.unpublishedAll = true; this.unsavedAll = true; this.releasableAll = true; this.unwrittenAll = true }
+  private markAllChanged(): void { this.unpublishedAll = true; this.unsavedAll = true; this.releasableAll = true; this.text.invalidateAll() }
   /**
    * Where the state lists a thread, without walking the list. The index is read again whenever the list is another or a
    * different length, and when what it names is not there; a thread taken in place keeps its place.
@@ -972,17 +943,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private savedOrganization: Workspace | undefined
   /** The same, as the compact text the cheaper flush last wrote; comparing text replaces cloning. */
   private savedOrganizationText: string | undefined
-  /**
-   * Each thread's text as the cheaper flush last put it in `workspace.json`, by thread ID, with the record it was made from
-   * and whether local history was on (#1332). A thread marked since (`unwritten`), or another record in its place, is
-   * serialized again; the rest keep their text, so a save that changed nothing serializes no thread.
-   */
-  private threadTexts = new Map<string, ThreadText>()
-  /** The threads whose saved text may differ from `threadTexts`'; all of them when set. */
-  private readonly unwritten = new Set<string>()
-  private unwrittenAll = true
-  /** The catalog's serialized form, kept while the certified catalog array itself is unchanged. */
-  private catalogTextCache: { readonly models: readonly AgentModel[]; readonly text: string } | undefined
+  private readonly text = new WorkspaceText()
   /** A failed activity migration keeps the legacy JSON payload recoverable this run. */
   private activityStoreUnavailable = false
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
@@ -2843,27 +2804,30 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       while (next.size > WAKE_UP_ASKS_KEPT) next.delete(next.keys().next().value!)
       this.wakeUpAskRecords.set(threadId, next)
       // Only `workspace.json` carries the asks, so only its save must look at the thread again (#1332).
-      this.unwritten.add(threadId)
+      this.text.invalidate(threadId)
     }
     this.dirty = true
     await this.flush()
   }
 
-  constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false,
-    /** The providers held to Owl on this run (ADR-0072), or, from before the held set, Muse's answer alone. Absent holds every one. */
-    heldProviders: HeldProviders | boolean = false,
-    /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
-    private readonly streamingPublishCostEnabled = false,
-    /**
-     * The writer every thread-store write goes through (#1457). Absent, the store worker's, which commits off main where the
-     * built worker sits beside this module and on main at once where it does not, as under the test runner.
-     */
-    storeWriter: (store: ThreadStore) => ThreadStoreWriter = store => new ThreadStoreWriterOnWorker(store),
-    /** The built store worker, or null to write on main; absent, the file beside this module, which the test runner lacks. */
-    storeWorker: string | StoreWorkerOptions | null = BUILT_STORE_WORKER,
-    private readonly councilEnabled = false) {
-    this.held = typeof heldProviders === 'boolean' ? heldProvidersOf({ muse: heldProviders }) : heldProviders
+  private readonly historyEnabled: () => boolean
+  private readonly worktreeRefreshDelayMs: number
+  private readonly watcherEnabled: boolean
+  private readonly streamingPublishCostEnabled: boolean
+  private readonly councilEnabled: boolean
+
+  constructor(private readonly inner: ProviderHost, private readonly directory: string, {
+    historyEnabled = () => true, worktreeRefreshDelayMs = WORKTREE_REFRESH_DELAY_MS, watcherEnabled = false,
+    heldProviders = heldProvidersOf({}), streamingPublishCostEnabled = false,
+    storeWriter = (store: ThreadStore) => new ThreadStoreWriterOnWorker(store), storeWorker = BUILT_STORE_WORKER,
+    councilEnabled = false,
+  }: WorkspaceOptions = {}) {
+    this.historyEnabled = historyEnabled
+    this.worktreeRefreshDelayMs = worktreeRefreshDelayMs
+    this.watcherEnabled = watcherEnabled
+    this.streamingPublishCostEnabled = streamingPublishCostEnabled
+    this.councilEnabled = councilEnabled
+    this.held = heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
       if (this.ready && this.threadVisible(record.threadId)) listener(record)
@@ -2887,7 +2851,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread, storeWorker)
     this.writes = storeWriter(this.threadStore)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
-    const parseWorkspace = (input: unknown): Workspace => { this.unwrittenAll = true; this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
+    const parseWorkspace = (input: unknown): Workspace => { this.text.invalidateAll(); this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
       // Whichever track wrote the file, every model reads back with its provider's modes on it.
       expandProviderModes(parsed.snapshot.models)
       if (!this.watcherEnabled || !this.councilEnabled || this.held.size) {
@@ -5086,83 +5050,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     void pending.finally(() => { if (lanes.get(key) === pending) lanes.delete(key) }).catch(() => undefined)
     return pending
   }
-  /**
-   * `workspace.json`'s text for the cheaper flush (#1332): the organization around a placeholder for the catalog and one for
-   * the threads, with the catalog's kept text and each thread's spliced in. A thread is serialized again only when it was
-   * marked since its text was made, another record took its place, or local history was turned on or off; a save whose
-   * threads did not change serializes none of them. While the store is unavailable the records ride in the file, so every
-   * thread is serialized, as before. The text is the same, byte for byte, as serializing the whole saved state, which the
-   * verifying mode (`SOTTO_VERIFY_THREAD_CHANGES=1`) checks on every save.
-   */
-  private organizationText(savedThread: (thread: AgentThread) => AgentThread, scrubThread: (thread: AgentThread) => void, keepActivities: boolean): string {
-    const history = this.historyEnabled()
-    const all = this.unwrittenAll || keepActivities
-    const kept = this.threadTexts, texts = new Map<string, ThreadText>()
-    const parts: string[] = []
-    // The threads serialized again, with where each goes, made in the same call as the organization around them.
-    const fresh: AgentThread[] = [], placed: { readonly at: number; readonly id: string; readonly source: AgentThread }[] = []
-    for (const thread of this.state.snapshot.threads) {
-      const source = this.preservedDormantThreads.get(thread.id) ?? thread
-      const held = all || this.unwritten.has(thread.id) ? undefined : kept.get(thread.id)
-      if (held && held.source === source && held.history === history) {
-        // A list that names a thread twice keeps the first's text, and the second is serialized every time.
-        if (!texts.has(thread.id)) texts.set(thread.id, held)
-        parts.push(held.text)
-        continue
-      }
-      const saved = savedThread(thread)
-      scrubThread(saved)
-      fresh.push(saved)
-      placed.push({ at: parts.length, id: thread.id, source })
-      parts.push('')
-    }
-    const outline: Workspace = { ...this.state, snapshot: { ...this.state.snapshot,
-      models: CATALOG_PLACEHOLDER as unknown as AgentModel[], threads: THREADS_PLACEHOLDER as unknown as AgentThread[] } }
-    const [organization, ...made] = jsonArrayItems(JSON.stringify([outline, ...fresh]))
-    for (let index = 0; index < placed.length; index++) {
-      const { at, id, source } = placed[index]!, text = made[index]!
-      parts[at] = text
-      if (!texts.has(id)) texts.set(id, { source, history, text })
-    }
-    this.threadTexts = keepActivities ? new Map() : texts
-    this.unwritten.clear()
-    this.unwrittenAll = false
-    const text = organization!
-      .replace(`"models":"${CATALOG_PLACEHOLDER}"`, () => `"models":${this.catalogText()}`)
-      .replace(`"threads":"${THREADS_PLACEHOLDER}"`, () => `"threads":[${parts.join(',')}]`)
-    if (verifyingThreadChanges()) {
-      const whole = { ...this.state, snapshot: { ...this.state.snapshot, models: CATALOG_PLACEHOLDER as unknown as AgentModel[],
-        threads: this.state.snapshot.threads.map(thread => { const saved = savedThread(thread); scrubThread(saved); return saved }) } }
-      if (JSON.stringify(whole).replace(`"models":"${CATALOG_PLACEHOLDER}"`, () => `"models":${this.catalogText()}`) !== text) throw new Error('The saved workspace text differs from the whole saved state: a thread changed without being marked.')
-    }
-    return text
-  }
-  /**
-   * After a read that changed nothing (#765), each thread's kept text follows its record to the copy `accept` put in its
-   * place, so the next save does not serialize every thread again (#1332). It follows only a copy that `JSON.stringify`
-   * would write as the same text, fields in the same order; any other is serialized again. `sameSnapshot` has already
-   * walked the same records, so this costs what that did.
-   */
-  private keepThreadTexts(previous: readonly AgentThread[]): void {
-    const threads = this.state.snapshot.threads
-    for (let at = 0; at < threads.length; at++) {
-      const thread = threads[at]!, old = previous[at]
-      if (!old || old === thread || old.id !== thread.id) continue
-      const held = this.threadTexts.get(thread.id)
-      if (held?.source === old && sameJsonText(old, thread)) this.threadTexts.set(thread.id, { ...held, source: thread })
-    }
-  }
-  /**
-   * The catalog's serialized form, remade only when the certified catalog array itself changes, so a
-   * flush that changed nothing about it never serializes it again (#991).
-   */
-  private catalogText(): string {
-    const models = this.state.snapshot.models
-    if (this.catalogTextCache?.models === models) return this.catalogTextCache.text
-    const text = JSON.stringify(catalogModelsForSave(models))
-    this.catalogTextCache = { models, text }
-    return text
-  }
   /** Drain accepted history writes without closing stores still used by shutdown cleanup. */
   flush(): Promise<void> {
     // The write window is where held appends commit; a caller who asks for a flush gets them too.
@@ -5212,7 +5099,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           }
           try {
             if (this.streamingPublishCostEnabled) {
-              const text = this.organizationText(savedThread, scrubThread, keepActivities)
+              const text = this.text.serialize({ state: this.state, preservedDormantThreads: this.preservedDormantThreads, history: this.historyEnabled(), savedThread, scrubThread, keepActivities })
               if (text !== this.savedOrganizationText) {
                 await this.store.writeSerialized(text)
                 this.savedOrganizationText = text
@@ -5386,7 +5273,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
     // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
     const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty,
-      marks: { remerge: [...this.remerge], remergeAll: this.remergeAll, unpublishedAll: this.unpublishedAll, unsavedAll: this.unsavedAll, releasableAll: this.releasableAll, unwrittenAll: this.unwrittenAll } }
+      marks: { remerge: [...this.remerge], remergeAll: this.remergeAll, unpublishedAll: this.unpublishedAll, unsavedAll: this.unsavedAll, releasableAll: this.releasableAll, unwrittenAll: this.text.allInvalidated } }
     this.accept(read)
     // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
     if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot) && sameSnapshot(before.organization, [this.state.projectAliases, this.state.creations])) {
@@ -5396,8 +5283,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // The state is what it was, so what the next accept, publication, save and release must look at is what it was too (#925).
       const { marks } = before
       for (const id of marks.remerge) this.remerge.add(id)
-      this.remergeAll = marks.remergeAll; this.unpublishedAll = marks.unpublishedAll; this.unsavedAll = marks.unsavedAll; this.releasableAll = marks.releasableAll; this.unwrittenAll = marks.unwrittenAll
-      this.keepThreadTexts(before.snapshot.threads)
+      this.remergeAll = marks.remergeAll; this.unpublishedAll = marks.unpublishedAll; this.unsavedAll = marks.unsavedAll; this.releasableAll = marks.releasableAll; this.text.restoreAllInvalidated(marks.unwrittenAll)
+      this.text.retain(before.snapshot.threads, this.state.snapshot.threads)
       if (this.dirty) this.writeSoon()
       return this.workspaceSnapshot()
     }

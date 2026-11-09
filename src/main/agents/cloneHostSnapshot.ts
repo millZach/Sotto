@@ -106,3 +106,12 @@ function cloneValue(value: unknown, copies: WeakMap<object, object>): unknown {
   for (const key of Object.keys(fields)) fields[key] = cloneValue(fields[key], copies)
   return copy
 }
+
+const frozenSaved = new WeakSet<object>()
+/** Freezes saved data all the way down. Plain schema data, so every container is an array or a plain object. */
+export function freezePlainData(value: unknown): void {
+  if (value === null || typeof value !== 'object' || frozenSaved.has(value)) return
+  frozenSaved.add(value)
+  for (const key of Object.keys(value)) freezePlainData((value as Record<string, unknown>)[key])
+  Object.freeze(value)
+}

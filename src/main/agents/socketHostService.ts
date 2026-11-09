@@ -143,8 +143,6 @@ export interface SocketHostServiceOptions {
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
-  /** Muse's answer alone, from before the held set; `heldProviders` wins. */
-  museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
   /**

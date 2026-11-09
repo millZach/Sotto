@@ -227,10 +227,6 @@ msgid "{name} would not turn on linger without an administrator. Without it, a u
 msgstr "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
 
 #: src/main/teams/teams.ts
-msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
-msgstr "{name}'s computer did not answer. Nothing changed. Try again when it is on."
-
-#: src/main/teams/teams.ts
 msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
 msgstr "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
 
@@ -1336,9 +1332,21 @@ msgstr "Sotto could not check the download on {name}."
 msgid "Sotto could not check the reloaded keys. Try again in your desktop session."
 msgstr "Sotto could not check the reloaded keys. Try again in your desktop session."
 
+#: src/main/teams/teams.ts
+msgid "Sotto could not confirm the link. Your teammate may have a partial link. Check both Teams tabs before trying again."
+msgstr "Sotto could not confirm the link. Your teammate may have a partial link. Check both Teams tabs before trying again."
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not confirm the renewal with {name}'s computer. Check the link before trying again."
+msgstr "Sotto could not confirm the renewal with {name}'s computer. Check the link before trying again."
+
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not download {to} on {name}."
 msgstr "Sotto could not download {to} on {name}."
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not finish that change. It may have partly taken effect. Check Teams before trying again."
+msgstr "Sotto could not finish that change. It may have partly taken effect. Check Teams before trying again."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not install {to} on {name}."
@@ -1419,6 +1427,10 @@ msgstr "Sotto could not save the shortcut or put your previous keys back. {probl
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not save the shortcut. Your previous keys are back in Hyprland."
 msgstr "Sotto could not save the shortcut. Your previous keys are back in Hyprland."
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not save the Teams changes. They are still active here, but may be lost when Sotto closes. Try again."
+msgstr "Sotto could not save the Teams changes. They are still active here, but may be lost when Sotto closes. Try again."
 
 #: src/main/agents/visualSandbox.ts
 msgid "Sotto could not seal this page from the network, so it is not shown."
@@ -3369,10 +3381,6 @@ msgstr "Your computer's credential store is locked, so Sotto cannot keep the lin
 #: src/main/omarchy/setup.ts
 msgid "Your keys run what they did before."
 msgstr "Your keys run what they did before."
-
-#: src/main/teams/teams.ts
-msgid "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
-msgstr "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
 
 #: src/main/teams/teams.ts
 msgid "Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked."

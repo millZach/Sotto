@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../src/main/agents/providers/claude/claude'
 import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const claudeFixtureSkips: AdapterContractSkips = {}

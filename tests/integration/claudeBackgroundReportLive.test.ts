@@ -15,7 +15,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 import type { AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 
 const LIVE = process.env.SOTTO_CLAUDE_LIVE === '1'

@@ -423,8 +423,8 @@ export class DesktopHostRouter {
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
-    /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
-    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
+    /** The providers held to Owl on this run; absent holds every one. */
+    heldProviders?: HeldProviders; streamingPublishCost?: boolean
     /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0140). */
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */

@@ -113,7 +113,7 @@ it('unsettles a settled thread whose background work still runs, keeping its wat
   const native = f.native()
   native.backgroundWork = [{ id: randomUUID(), type: 'subagent', label: 'Synthetic agent' }]
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  const watches = () => (f.control.watcherRecord().watches ?? []).filter(watch => watch.target.threadId === f.target.threadId).map(watch => watch.id)
+  const watches = () => (f.control.watcherRecords.copy().watches ?? []).filter(watch => watch.target.threadId === f.target.threadId).map(watch => watch.id)
   const watched = watches(), sends = f.workspace.adapters.codex.commands.filter(command => command.type === 'send').length
   expect(watched).toHaveLength(1)
   const requestId = f.service.state().requests.at(-1)!.id
@@ -159,7 +159,7 @@ it('answers an unsettle_thread retry as the first call did, restoring nothing ag
 
 it('restores only under the user’s own active request: not a standing watch’s, nor a thread the user stopped watching', async () => {
   const f = await fixture()
-  const watch = (f.control.watcherRecord().watches ?? []).find(item => item.target.threadId === f.target.threadId)!
+  const watch = (f.control.watcherRecords.copy().watches ?? []).find(item => item.target.threadId === f.target.threadId)!
   expect(await f.call('unsettle_thread', { requestId: watch.id, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
   expect(await f.service.unwatchThread({ target: f.target })).toMatchObject({ status: 'ok' })
   const requestId = f.service.state().requests.at(-1)!.id

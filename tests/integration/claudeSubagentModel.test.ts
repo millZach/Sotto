@@ -12,7 +12,7 @@ it.each([
     models: ['claude-opus-5-5'], row: { title: 'Review tests', status: 'running', assignmentCount: 1 } },
 ])('shows the model a Claude $kind ran on from its own transcript, on the row it already has', async ({ action, models, row: expected }) => {
   const fixture = await claudeFixture(undefined, 15_000)
-  const workspace = new WorkspaceHost(fixture.host, fixture.root, () => true)
+  const workspace = new WorkspaceHost(fixture.host, fixture.root, { historyEnabled: () => true })
   try {
     await workspace.connect()
     await workspace.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Models', path: fixture.root })

@@ -1,7 +1,7 @@
 // @vitest-environment node
 // A Claude turn that ends in error: the provider says what happened in plain words, for the thread that failed.
 import { afterEach, describe, expect, it } from 'vitest'
-import { CLAUDE_TURN_FAILED, claudeErrorReplyText, claudeLimitStop, claudeTurnFailure } from '../../src/main/agents/claudeTurnFailure'
+import { CLAUDE_TURN_FAILED, claudeErrorReplyText, claudeLimitStop, claudeTurnFailure } from '../../src/main/agents/providers/claude/claudeTurnFailure'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 

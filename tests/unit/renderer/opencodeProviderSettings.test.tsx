@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
+import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { agentContextFixture } from '../../fixtures/agentContext'

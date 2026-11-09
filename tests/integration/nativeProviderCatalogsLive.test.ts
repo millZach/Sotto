@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { discoverClaudeSkills } from '../../src/main/agents/claudeSkills'
+import { discoverClaudeSkills } from '../../src/main/agents/providers/claude/claudeSkills'
 import { ClaudeSubscriptionClient } from '../../src/main/agents/subscriptionClaude'
 
 describe("requires SOTTO_PHASE3_CATALOG_LIVE=1", () => {

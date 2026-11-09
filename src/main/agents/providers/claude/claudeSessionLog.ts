@@ -3,7 +3,7 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeNarration } from './claudeThinking'
-import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
+import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from '../../attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {

@@ -104,7 +104,7 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  const watch = () => control.watcherRecord().watches?.find(item => item.target.threadId === target.threadId)
+  const watch = () => control.watcherRecords.copy().watches?.find(item => item.target.threadId === target.threadId)
   return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA, watch,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
@@ -126,7 +126,7 @@ it.each(['manual-send', 'queue-followup', 'steer', 'native'] as const)(
       delivery: 'queue', text: machineText })
     expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
     if (queued.status !== 'ok') throw new Error('Synthetic automatic queue was not admitted')
-    const oldDraftId = f.control.watcherRecord().operations.find(item => item.id === queued.receipt.operationId)!.draftId
+    const oldDraftId = f.control.watcherRecords.copy().operations.find(item => item.id === queued.receipt.operationId)!.draftId
     const userText = 'Synthetic direct user takeover'
     if (origin === 'native') {
       // Another native client changes provider history without a Sotto command or stream echo.
@@ -148,7 +148,7 @@ it.each(['manual-send', 'queue-followup', 'steer', 'native'] as const)(
     expect(f.watch()!.generation).toBeGreaterThan(generation)
     expect(f.participationA()).toMatchObject({ state: 'participating', generation: f.watch()!.generation })
     expect(f.participationA().takeover).toBeUndefined()
-    expect(f.control.watcherRecord().operations.find(item => item.id === queued.receipt.operationId))
+    expect(f.control.watcherRecords.copy().operations.find(item => item.id === queued.receipt.operationId))
       .toMatchObject({ deliveryState: 'failed', refusalCode: 'THREAD_TAKEN_OVER' })
     await expect.poll(() => f.control.shell().followups?.some(item => item.draftId === oldDraftId) ?? false).toBe(false)
     // While the user's turn is on its way, Watcher may only steer.
@@ -259,7 +259,7 @@ it('lets request A and a fresh request B use an active watch after user reconfig
   const generation = f.watch()!.generation
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   // The user's change fences what Watcher had prepared, one generation on, and the watch keeps request A (ADR-0073).
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
   expect(f.watch()!.generation).toBeGreaterThan(generation)
   expect(f.participationA()).toMatchObject({ state: 'participating', generation: f.watch()!.generation })
   await expect.poll(() => f.row().paused).toBe(false)
@@ -287,7 +287,7 @@ it('resumes from an instruction queued to a busy Watcher after the user took ove
   const f = await fixture()
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
   await expect.poll(() => f.row().paused).toBe(false)
   expect(f.participationA().state).toBe('participating')
   // Watcher's turn for request A is still running, so the user's next instruction to it waits in its queue.
@@ -295,7 +295,7 @@ it('resumes from an instruction queued to a busy Watcher after the user took ove
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
   await f.advanceToQueuedTurn(f.watcherId, text)
   const head = f.thread(f.watcherId).lastUserMessageId
-  const carrying = f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
+  const carrying = f.control.watcherRecords.copy().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
   expect(carrying, 'the queued instruction has a request').toBeDefined()
   const fresh = await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic continuation from the queued instruction' })
@@ -311,7 +311,7 @@ it('resumes from an instruction queued to a busy Watcher after the user took ove
 async function queueAfterTakeover(f: Awaited<ReturnType<typeof fixture>>, text: string) {
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
   await expect.poll(() => f.row().paused).toBe(false)
   // The watch keeps request A's participation (ADR-0073); the takeover's order alone makes the next instruction fresh.
   expect(f.participationA().state).toBe('participating')
@@ -321,7 +321,7 @@ async function queueAfterTakeover(f: Awaited<ReturnType<typeof fixture>>, text: 
 }
 const carryingHead = (f: Awaited<ReturnType<typeof fixture>>) => {
   const head = f.thread(f.watcherId).lastUserMessageId
-  return f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
+  return f.control.watcherRecords.copy().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
 }
 
 it('keeps an instruction queued after a takeover fresh when the user renews a watch before it is read', async () => {
@@ -355,12 +355,12 @@ it('keeps an instruction steered into Watcher’s running turn after a takeover 
   // only when a turn starts, so the steered words have no way to carry a new request.
   const f = await fixture(), text = 'Synthetic instruction steered into Watcher after takeover'
   const draftId = await queueAfterTakeover(f, text)
-  const requests = f.control.watcherRecord().requests.length
+  const requests = f.control.watcherRecords.copy().requests.length
   const itemId = f.control.shell().followups!.find(item => item.draftId === draftId)!.id
   expect((await f.control.commandShell({ type: 'steer-followup', threadId: f.watcherId, itemId })).error).toBeNull()
   await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
   expect(f.thread(f.watcherId).status).toBe('running')
-  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(f.control.watcherRecords.copy().requests).toHaveLength(requests)
   // The watch keeps request A (ADR-0073), so the steered words can still reach the worker through it.
   const sent = await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic continuation of a steered instruction' })
@@ -376,13 +376,13 @@ it('keeps an instruction inside its request when the takeover was on a thread th
   expect(await f.watcher.watchThread({ target: otherTarget })).toMatchObject({ status: 'ok' })
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: other, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === other)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === other)).toBe(true)
   expect(f.participationA().state).toBe('participating')
   const text = 'Synthetic instruction after an unrelated takeover'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
-  const requests = f.control.watcherRecord().requests.length
+  const requests = f.control.watcherRecords.copy().requests.length
   await f.advanceToQueuedTurn(f.watcherId, text)
-  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(f.control.watcherRecords.copy().requests).toHaveLength(requests)
   expect(carryingHead(f)?.id).toBe(f.requestA)
   expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic continuation of request A' })).toMatchObject({ status: 'ok' })
@@ -394,13 +394,13 @@ it('keeps an instruction queued to a busy Watcher before the takeover inside req
   const text = 'Synthetic instruction queued to a busy Watcher before takeover'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
   await expect.poll(() => f.row().paused).toBe(false)
   expect(f.participationA().state).toBe('participating')
-  const requests = f.control.watcherRecord().requests.length
+  const requests = f.control.watcherRecords.copy().requests.length
   await f.advanceToQueuedTurn(f.watcherId, text)
   // It was given before the user's change, so it continues request A, which the watch keeps sending (ADR-0073).
-  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(f.control.watcherRecords.copy().requests).toHaveLength(requests)
   expect(carryingHead(f)?.id).toBe(f.requestA)
   const sent = await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic earlier continuation' })
@@ -411,16 +411,16 @@ it('keeps an instruction queued between two takeovers inside its earlier request
   const f = await fixture()
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.some(item => item.target.threadId === f.target.threadId)).toBe(true)
   expect(f.participationA().state).toBe('participating')
   const text = 'Synthetic instruction queued between two takeovers'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
   // The user changes the worker again before Watcher reads the instruction, so the instruction predates this takeover.
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'low' })).error).toBeNull()
   await expect.poll(() => f.row().paused).toBe(false)
-  const requests = f.control.watcherRecord().requests.length
+  const requests = f.control.watcherRecords.copy().requests.length
   await f.advanceToQueuedTurn(f.watcherId, text)
-  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(f.control.watcherRecords.copy().requests).toHaveLength(requests)
   expect(carryingHead(f)?.id).toBe(f.requestA)
   const sent = await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic continuation between takeovers' })
@@ -434,19 +434,19 @@ it('ends a request with no participants when its queued instruction starts a fre
   // Watcher is busy with request C, which never sent to the worker; the takeover's boundary still fences C.
   const requestC = await f.request('Synthetic request C without workers')
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.find(item => item.target.threadId === f.target.threadId)?.lastRequestId).toBe(requestC)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.find(item => item.target.threadId === f.target.threadId)?.lastRequestId).toBe(requestC)
   await expect.poll(() => f.row().paused).toBe(false)
   const text = 'Synthetic instruction queued behind request C'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
   await f.advanceToQueuedTurn(f.watcherId, text)
   const head = f.thread(f.watcherId).lastUserMessageId
-  const carrying = f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head)
+  const carrying = f.control.watcherRecords.copy().requests.find(item => item.rootUserMessageId === head)
   expect(carrying, 'the queued instruction has a fresh request').toBeDefined()
   expect(await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic continuation from the instruction behind C' })).toMatchObject({ status: 'ok' })
   // C ends with the turn its instruction moved to, as it would have had the instruction stayed with it.
   await f.finish(f.watcherId)
-  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+  await expect.poll(() => f.control.watcherRecords.copy().requests.find(item => item.id === requestC)?.state).toBe('closed')
   expect(await f.call('send_to_thread', { requestId: requestC, retryKey: randomUUID(), target: f.target,
     delivery: 'queue', text: 'Synthetic forbidden request C continuation' })).toMatchObject({ status: 'refused' })
 }, 60_000)
@@ -467,13 +467,13 @@ it('keeps a request with no participants open while an earlier instruction to it
   const ids = [later, earlier].map(draft => queued.find(item => item.draftId === draft.draftId)!.id)
   expect((await f.control.commandShell({ type: 'reorder-followups', threadId: f.watcherId, itemIds: ids })).error).toBeNull()
   await f.advanceToQueuedTurn(f.watcherId, later.text)
-  expect(f.control.watcherRecord().requests.find(item => item.rootUserMessageId === f.thread(f.watcherId).lastUserMessageId)?.id).not.toBe(requestC)
-  expect(f.control.watcherRecord().requests.find(item => item.id === requestC)).toMatchObject({ state: 'active', userFollowups: [{ draftId: earlier.draftId }] })
+  expect(f.control.watcherRecords.copy().requests.find(item => item.rootUserMessageId === f.thread(f.watcherId).lastUserMessageId)?.id).not.toBe(requestC)
+  expect(f.control.watcherRecords.copy().requests.find(item => item.id === requestC)).toMatchObject({ state: 'active', userFollowups: [{ draftId: earlier.draftId }] })
   // Removing that earlier instruction afterwards leaves C nothing to wait for, so it ends with Watcher's turn.
   const itemId = f.control.shell().followups!.find(item => item.draftId === earlier.draftId)!.id
   expect((await f.control.commandShell({ type: 'remove-followup', threadId: f.watcherId, itemId })).error).toBeNull()
   await f.finish(f.watcherId)
-  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+  await expect.poll(() => f.control.watcherRecords.copy().requests.find(item => item.id === requestC)?.state).toBe('closed')
 }, 60_000)
 
 it('ends a request with no participants when the only other instruction to it was removed', async () => {
@@ -491,7 +491,7 @@ it('ends a request with no participants when the only other instruction to it wa
   expect((await f.control.commandShell({ type: 'remove-followup', threadId: f.watcherId, itemId })).error).toBeNull()
   await f.advanceToQueuedTurn(f.watcherId, text)
   await f.finish(f.watcherId)
-  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+  await expect.poll(() => f.control.watcherRecords.copy().requests.find(item => item.id === requestC)?.state).toBe('closed')
 }, 60_000)
 
 it('delivers an instruction queued before the user stopped Watcher under a request of its own (#1184)', async () => {
@@ -501,7 +501,7 @@ it('delivers an instruction queued before the user stopped Watcher under a reque
   await expect.poll(() => f.row().paused).toBe(false)
   const text = 'Synthetic instruction queued before the user stopped Watcher'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
-  const requests = f.control.watcherRecord().requests.length
+  const requests = f.control.watcherRecords.copy().requests.length
   // Stop comes after the instruction, so the instruction is no longer the user's latest word.
   expect((await f.control.commandShell({ type: 'interrupt', threadId: f.watcherId })).error).toBeNull()
   await expect.poll(() => f.thread(f.watcherId).status).not.toBe('running')
@@ -511,9 +511,9 @@ it('delivers an instruction queued before the user stopped Watcher under a reque
   await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
   // The Stop ended the request the instruction was queued under; the instruction is the user's word and starts its own.
   const delivered = f.thread(f.watcherId).messages.findLast(item => item.role === 'user')!.id
-  expect(f.control.watcherRecord().requests).toHaveLength(requests + 1)
-  expect(f.control.watcherRecord().requests.find(item => item.rootUserMessageId === delivered)).toMatchObject({ state: 'active' })
-  expect(f.control.watcherRecord().requests.find(item => item.id === f.requestA)?.state).not.toBe('active')
+  expect(f.control.watcherRecords.copy().requests).toHaveLength(requests + 1)
+  expect(f.control.watcherRecords.copy().requests.find(item => item.rootUserMessageId === delivered)).toMatchObject({ state: 'active' })
+  expect(f.control.watcherRecords.copy().requests.find(item => item.id === f.requestA)?.state).not.toBe('active')
   // The stopped request stays stopped.
   expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic forbidden continuation after Stop' })).toMatchObject({ status: 'refused' })
@@ -526,14 +526,14 @@ it('holds requests to steering, and refuses unasked stops, until the user turn e
   const requestB = await f.request('Synthetic request B during the user turn')
   expect(f.participationA().state).toBe('participating')
   expect(f.row()).toMatchObject({ watched: true, paused: true })
-  const operations = f.control.watcherRecord().operations.length
+  const operations = f.control.watcherRecords.copy().operations.length
   const held = async () => {
     for (const requestId of [f.requestA, requestB]) for (const delivery of ['now', 'queue']) expect(await f.call('send_to_thread', {
       requestId, retryKey: randomUUID(), target: f.target, delivery, text: 'Synthetic held prompt during the user turn',
     })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
     for (const requestId of [f.requestA, requestB]) expect(await f.call('settle_thread', { requestId, retryKey: randomUUID(), target: f.target }))
       .toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-    expect(f.control.watcherRecord().operations).toHaveLength(operations)
+    expect(f.control.watcherRecords.copy().operations).toHaveLength(operations)
   }
   // Watcher's first turn still runs with the user's turn queued behind it: nothing may go ahead of the user's turn.
   await held()
@@ -543,7 +543,7 @@ it('holds requests to steering, and refuses unasked stops, until the user turn e
   await held()
   for (const requestId of [f.requestA, f.watchId]) expect(await f.call('stop_thread', { requestId, retryKey: randomUUID(), target: f.target }))
     .toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-  expect(f.control.watcherRecord().operations).toHaveLength(operations)
+  expect(f.control.watcherRecords.copy().operations).toHaveLength(operations)
   const steered = await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target: f.target, delivery: 'steer',
     expectedTurnId: f.thread(f.target.threadId).lastTurn?.id, text: 'Synthetic steer into the user turn' })
   expect(steered, JSON.stringify(steered)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
@@ -563,11 +563,11 @@ it('keeps a pre-existing nonparticipant request fenced through restart on a thre
   const requestB = await f.request('Synthetic request B before takeover')
   expect(f.watcher.state().requests.find(item => item.id === requestB)?.participants).toEqual([])
   // Watched for request A alone, as on an older paired host, the thread becomes the user's again (ADR-0073).
-  await f.control.updateWatcher(record => { record.watches = [] })
+  await f.control.watcherRecords.update(record => { record.watches = [] })
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   expect(f.participationA()).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-reconfigure' } })
   await f.restart()
-  expect(f.control.watcherRecord().watches ?? []).toEqual([])
+  expect(f.control.watcherRecords.copy().watches ?? []).toEqual([])
   expect(f.participationA()).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-reconfigure' } })
   for (const requestId of [f.requestA, requestB]) expect(await f.call('send_to_thread', {
     requestId, retryKey: randomUUID(), target: f.target, delivery: 'now', text: 'Synthetic old request after restart',
@@ -589,7 +589,7 @@ it('lets a request the user sends after taking over a thread watched for a reque
   const f = await fixture(), userText = 'Synthetic user takeover of a request-only thread'
   await f.finish(f.target.threadId)
   // Watched for request A alone: the user's own message takes the thread back from A (ADR-0073).
-  await f.control.updateWatcher(record => { record.watches = [] })
+  await f.control.watcherRecords.update(record => { record.watches = [] })
   expect((await f.control.commandShell({ type: 'manual-send', threadId: f.target.threadId, draftId: randomUUID(), text: userText })).error).toBeNull()
   await expect.poll(() => f.participationA()).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-send' } })
   await expect.poll(() => f.thread(f.target.threadId).lastTurn?.status).toBe('running')
@@ -612,7 +612,7 @@ it('lets a request the user sends after taking over a thread watched for a reque
   // watch decides (ADR-0073, October 19) and request A's participation follows it again.
   const sent = await send(requestB, 'now')
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
-  expect(f.control.watcherRecord().watches).toEqual([expect.objectContaining({ target: f.target })])
+  expect(f.control.watcherRecords.copy().watches).toEqual([expect.objectContaining({ target: f.target })])
   await f.finish(f.target.threadId)
 }, 60_000)
 
@@ -627,9 +627,9 @@ it('keeps an unparticipated worker’s takeover boundary through an unrelated ta
   }
   const target = await createWatchedWorker('Synthetic unparticipated worker')
   const other = await createWatchedWorker('Synthetic unrelated watched worker')
-  const participations = () => f.control.watcherRecord().requests.flatMap(request => request.participants)
+  const participations = () => f.control.watcherRecords.copy().requests.flatMap(request => request.participants)
     .filter(item => item.target.threadId === target.threadId)
-  const watch = () => f.control.watcherRecord().watches?.find(item => item.target.threadId === target.threadId)
+  const watch = () => f.control.watcherRecords.copy().watches?.find(item => item.target.threadId === target.threadId)
   const originalWatchId = watch()!.id
   expect(participations()).toEqual([])
 
@@ -639,7 +639,7 @@ it('keeps an unparticipated worker’s takeover boundary through an unrelated ta
   await f.finish(target.threadId)
   await expect.poll(() => watch()?.pausedByUserMessageId).toBeNull()
   expect(participations()).toEqual([])
-  expect(f.control.watcherRecord().localTakeovers).toContainEqual(expect.objectContaining({ target, lastRequestId: f.requestA }))
+  expect(f.control.watcherRecords.copy().localTakeovers).toContainEqual(expect.objectContaining({ target, lastRequestId: f.requestA }))
   expect(await f.watcher.unwatchThread({ target })).toMatchObject({ status: 'ok' })
   expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target,
     delivery: 'now', text: 'Synthetic forbidden continuation while unwatched' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
@@ -647,12 +647,12 @@ it('keeps an unparticipated worker’s takeover boundary through an unrelated ta
   // An unrelated takeover must not erase the first worker's boundary merely because it has no participation.
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: other.threadId, reasoningEffort: 'high' })).error).toBeNull()
   expect(participations()).toEqual([])
-  expect(f.control.watcherRecord().requests.find(request => request.id === f.requestA)?.state).toBe('active')
-  expect(f.control.watcherRecord().watchFences).toContainEqual(expect.objectContaining({ id: originalWatchId, target }))
+  expect(f.control.watcherRecords.copy().requests.find(request => request.id === f.requestA)?.state).toBe('active')
+  expect(f.control.watcherRecords.copy().watchFences).toContainEqual(expect.objectContaining({ id: originalWatchId, target }))
   expect(await f.watcher.watchThread({ target })).toMatchObject({ status: 'ok' })
   expect(watch()!.id).not.toBe(originalWatchId)
   // The unwatched worker's fence gives the renewed watch its takeover boundary again.
-  expect(f.control.watcherRecord().localTakeovers).toContainEqual(expect.objectContaining({ target, lastRequestId: f.requestA }))
+  expect(f.control.watcherRecords.copy().localTakeovers).toContainEqual(expect.objectContaining({ target, lastRequestId: f.requestA }))
   // The user's Watch gives the thread back, and a watched thread's takeover fences no request (ADR-0073).
   const resumed = await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target,
     delivery: 'now', text: 'Synthetic pre-user request continuation after rewatch' })
@@ -677,7 +677,7 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
     delivery: 'now', text: 'Synthetic running standing work' })
   expect(standing, JSON.stringify(standing)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   if (standing.status !== 'ok') throw new Error('Synthetic standing work was not admitted')
-  const messageId = f.control.watcherRecord().operations.find(item => item.id === standing.receipt.operationId)!.messageId
+  const messageId = f.control.watcherRecords.copy().operations.find(item => item.id === standing.receipt.operationId)!.messageId
   expect(messageId).toBeDefined()
   // Acceptance can precede the native user head even after the running turn is published. Steer only that send's turn.
   await expect.poll(() => {
@@ -699,7 +699,7 @@ it('keeps the latest takeover through restart while a request between two takeov
   const requestB = await f.request('Synthetic request between two user reconfigurations')
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'low' })).error).toBeNull()
   // The marker follows the latest takeover, which came after B. It still orders when an instruction starts a request.
-  const marker = f.control.watcherRecord().localTakeovers!.find(item => item.target.threadId === f.target.threadId)!
+  const marker = f.control.watcherRecords.copy().localTakeovers!.find(item => item.target.threadId === f.target.threadId)!
   expect(marker.lastRequestId).toBe(requestB)
   expect(f.participationA()).toMatchObject({ state: 'participating' })
   expect(f.participationA().takeover).toBeUndefined()
@@ -707,7 +707,7 @@ it('keeps the latest takeover through restart while a request between two takeov
   expect(await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic request that predates the latest takeover' })).toMatchObject({ status: 'ok' })
   await f.restart()
-  expect(f.control.watcherRecord().localTakeovers!.find(item => item.target.threadId === f.target.threadId)).toEqual(marker)
+  expect(f.control.watcherRecords.copy().localTakeovers!.find(item => item.target.threadId === f.target.threadId)).toEqual(marker)
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   const requestC = await f.request('Synthetic request after the latest reconfiguration')
@@ -719,11 +719,11 @@ it('keeps a legacy request-only takeover fenced until the user watches the threa
   const f = await fixture()
   await f.finish(f.target.threadId)
   // Watched for request A alone, as on an older paired host, the user's change takes the thread back (ADR-0073).
-  await f.control.updateWatcher(record => { record.watches = [] })
+  await f.control.watcherRecords.update(record => { record.watches = [] })
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   expect(f.participationA()).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-reconfigure' } })
   // Earlier records retained first-takeover provenance but not a reliable newest local takeover marker.
-  await f.control.updateWatcher(record => { delete record.localTakeovers })
+  await f.control.watcherRecords.update(record => { delete record.localTakeovers })
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic fresh request with legacy evidence')
   for (const requestId of [f.requestA, requestB]) {
@@ -734,7 +734,7 @@ it('keeps a legacy request-only takeover fenced until the user watches the threa
   }
   // The user's own Watch hands the thread back and establishes a boundary of its own; from then on the watch decides.
   expect(await f.watcher.watchThread({ target: f.target })).toMatchObject({ status: 'ok' })
-  expect(f.control.watcherRecord().localTakeovers).toContainEqual(expect.objectContaining({ target: f.target, lastRequestId: requestB }))
+  expect(f.control.watcherRecords.copy().localTakeovers).toContainEqual(expect.objectContaining({ target: f.target, lastRequestId: requestB }))
   const renewed = await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic legacy continuation under the renewed watch' })
   expect(renewed, JSON.stringify(renewed)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
@@ -750,7 +750,7 @@ it('still fences what Watcher prepared before a known direct delivery made in st
   await f.finish(f.target.threadId)
   await f.restart()
   // The user's stable delivery moves the watch and request A on a generation, but the watch keeps the thread (ADR-0073).
-  await expect.poll(() => f.control.watcherRecord().localTakeovers?.find(item => item.target.threadId === f.target.threadId)).toBeDefined()
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers?.find(item => item.target.threadId === f.target.threadId)).toBeDefined()
   await expect.poll(() => f.watch()!.generation).toBeGreaterThan(generation)
   expect(f.participationA()).toMatchObject({ state: 'participating', generation: f.watch()!.generation })
   expect(f.participationA().takeover).toBeUndefined()
@@ -769,7 +769,7 @@ it('orders a takeover after a request by retained requests when the clock moves 
   vi.setSystemTime(new Date('2026-10-17T10:05:00.000Z'))
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'low' })).error).toBeNull()
   // The second takeover's wall time is earlier than B's, but the retained request order puts it after B.
-  expect(f.control.watcherRecord().localTakeovers!.find(item => item.target.threadId === f.target.threadId)!.lastRequestId).toBe(requestB)
+  expect(f.control.watcherRecords.copy().localTakeovers!.find(item => item.target.threadId === f.target.threadId)!.lastRequestId).toBe(requestB)
   // That order still decides whether an instruction queued to a busy Watcher starts a request of its own.
   const text = 'Synthetic instruction queued after the rolled-back takeover'
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
@@ -788,7 +788,7 @@ it('lets a watched thread’s request send when its takeover frontier is missing
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic fresh request with missing frontier')
-  await f.control.updateWatcher(record => { record.localTakeovers!.find(item => item.target.threadId === f.target.threadId)!.lastRequestId = randomUUID() })
+  await f.control.watcherRecords.update(record => { record.localTakeovers!.find(item => item.target.threadId === f.target.threadId)!.lastRequestId = randomUUID() })
   // Under a standing watch the watch decides, not the takeover's ordering evidence (ADR-0073).
   expect(await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic request with unavailable ordering evidence' })).toMatchObject({ status: 'ok' })
@@ -812,17 +812,17 @@ it('keeps both queued user echoes inside their original fences', async () => {
 it('does not let an old queued sentinel hide a newer stable delivery', async () => {
   const f = await fixture()
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.target.threadId, draftId: randomUUID(), text: 'Synthetic old Owl queued user turn' })).error).toBeNull()
-  expect(f.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBe('unobserved-user-turn')
+  expect(f.control.watcherRecords.copy().watches![0]!.pausedByUserMessageId).toBe('unobserved-user-turn')
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic request before newer stable input')
-  expect(f.control.watcherRecord().localTakeovers![0]!.lastRequestId).toBe(f.requestA)
+  expect(f.control.watcherRecords.copy().localTakeovers![0]!.lastRequestId).toBe(f.requestA)
   await f.restart(false)
   const draftId = randomUUID()
   expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.target.threadId, draftId, text: 'Synthetic newer stable user turn' })).error).toBeNull()
   const itemId = f.control.shell().followups!.find(item => item.draftId === draftId)!.id
   expect((await f.control.commandShell({ type: 'steer-followup', threadId: f.target.threadId, itemId })).error).toBeNull()
   await f.restart()
-  await expect.poll(() => f.control.watcherRecord().localTakeovers!.find(item => item.target.threadId === f.target.threadId)?.lastRequestId).toBe(requestB)
+  await expect.poll(() => f.control.watcherRecords.copy().localTakeovers!.find(item => item.target.threadId === f.target.threadId)?.lastRequestId).toBe(requestB)
   // The newer stable input holds Watcher to steering while it runs, as the user's own turn (ADR-0073).
   expect(f.row()).toMatchObject({ watched: true, paused: true })
   expect(f.participationA().state).toBe('participating')

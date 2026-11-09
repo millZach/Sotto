@@ -28,7 +28,7 @@ describe('a host’s OpenCode sign-in through the preload (#1107)', () => {
     expect(ipc.invoke).toHaveBeenCalledWith(HOSTS_OPENCODE_SIGN_IN, { id: HOST, call: { action: 'key', request: { sourceId: 'anthropic', key: KEY } } })
     ipc.invoke.mockClear()
     // The window never asks a host for a page's address: main opens it.
-    expect(() => hosts.opencodeSignIn!({ id: HOST, call: { action: 'page', request: { attemptId: 'con_1' } } } as never)).toThrow()
+    await expect(hosts.opencodeSignIn!({ id: HOST, call: { action: 'page', request: { attemptId: 'con_1' } } } as never)).rejects.toThrow()
     expect(ipc.invoke).not.toHaveBeenCalled()
   })
 

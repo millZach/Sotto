@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { inTheWay } from '../../../src/main/agents/gitActions'
+import { inTheWay } from '../../../src/main/agents/git/gitActions'
 import { repositoryOf, trackedChanges } from '../../../src/main/agents/mainCheckout'
 
 describe('Keep main up to date reads Git and GitHub in their own words (ADR-0142)', () => {

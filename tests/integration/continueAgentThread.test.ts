@@ -275,7 +275,7 @@ describe('continuing a Codex agent as its own thread', () => {
     expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'create-thread')).toHaveLength(0)
     // The record is the workspace's own and is saved with it.
     await f.dispose(); await f.workspace.stop()
-    const reloaded = new WorkspaceHost(f.workspace.native, f.workspace.root, () => true)
+    const reloaded = new WorkspaceHost(f.workspace.native, f.workspace.root, { historyEnabled: () => true })
     await reloaded.initialize()
     expect(reloaded.workspaceSnapshot().threads.find(thread => thread.id === newThreadId)?.startedFrom).toMatchObject({ route: 'fork', from: 'agent' })
     reloaded.dispose()

@@ -16,7 +16,7 @@ describe('memory preload bridge', () => {
     expect(ipc.invoke).toHaveBeenLastCalledWith(MEMORY_GET)
     await expect(memory.command({ type: 'delete', id: 'id' })).resolves.toEqual(snapshot)
     expect(ipc.invoke).toHaveBeenLastCalledWith(MEMORY_COMMAND, { type: 'delete', id: 'id' })
-    expect(() => memory.command({ type: 'grant' } as unknown as MemoryCommand)).toThrow()
+    await expect(memory.command({ type: 'grant' } as unknown as MemoryCommand)).rejects.toThrow()
     ipc.invoke.mockResolvedValueOnce({ available: true })
     await expect(memory.get()).rejects.toThrow()
     const listener = vi.fn(), unsubscribe = memory.onChanged(listener)

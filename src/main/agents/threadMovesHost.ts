@@ -1,3 +1,4 @@
+import { sendOutcome } from './sendOutcome'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -250,10 +251,11 @@ export class HostThreadMoves {
       const there = this.options.control.watcherSnapshot().threads.find(thread => thread.id === threadId)
       const own = { runtimeMode: there?.runtimeMode, providerMode: there?.providerMode }
       let sent: AgentState | undefined
+      stopping()
       try { sent = await this.options.control.commandFromMove({ type: 'manual-send', threadId, draftId, text: request.prompt }, guard(own)) } catch { sent = undefined }
-      const delivery = sent?.deliveries?.find(item => item.threadId === threadId && item.draftId === draftId)
-      const went = delivery?.status === 'accepted' || delivery?.status === 'uncertain' || delivery?.status === 'submitting'
-        || sent?.deliveredDrafts?.some(item => item.threadId === threadId && item.draftId === draftId) === true
+      const outcome = sendOutcome(sent, threadId, draftId)
+      // A missing result may have followed dispatch. Keep the move's original draft, as for an uncertain send.
+      const went = !grantGone && outcome.status !== 'failed' && outcome.status !== 'queued'
       if (!went) return { type: 'started', moveId: request.moveId, threadId: record.threadId, ...held, sent: false, message: grantGone ? HOST_THREAD_MOVE_WORDS.grantGone : HOST_THREAD_MOVE_WORDS.notSent }
       record = { ...record, sent: true, updatedAt: new Date().toISOString() }
       await this.put(record).catch(() => undefined)

@@ -79,7 +79,7 @@ function headlessHostBuild(): Plugin {
           ssr: true, target: 'node24',
           outDir: resolve(__dirname, 'out/host'), emptyOutDir: true, minify: false,
           rollupOptions: {
-            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts') },
+            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/git/gitLauncherWorker.ts') },
             external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
             output: { format: 'cjs', entryFileNames: '[name].js' },
           },
@@ -112,7 +112,7 @@ export default defineConfig({
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
       // Git and gh launch on this worker thread, not on main's, which in Electron is the window's (`gitLauncher.ts`).
-      gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
+      gitLauncherWorker: resolve(__dirname, 'src/main/agents/git/gitLauncherWorker.ts'),
       // Main's hang watch runs on this worker thread, which can see main stop when main cannot (`hangWatchdog.ts`).
       hangWatchdogWorker: resolve(__dirname, 'src/main/performance/hangWatchdogWorker.ts'),
       // Parakeet runs in this utility process, so letting go of the model gives its memory back (`parakeetHelper.ts`).

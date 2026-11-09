@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looserModeStopped, permissionModeDrift } from '../../../src/main/agents/claudePermissionMode'
+import { looserModeStopped, permissionModeDrift } from '../../../src/main/agents/providers/claude/claudePermissionMode'
 
 describe('Claude Code permission mode drift (#657)', () => {
   it('ranks plan and dontAsk stricter than default, and auto between acceptEdits and bypassPermissions', () => {

@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BrowserAgentServer } from '../../src/main/agents/browserAgentServer'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 import { GrokAcpHost } from '../../src/main/agents/grok'
 
 const providers = ['codex', 'claude', 'grok'] as const

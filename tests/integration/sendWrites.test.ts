@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { CodexProcess, type RpcFrame } from '../../src/main/agents/codexProcess'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
+import { CodexProcess, type RpcFrame } from '../../src/main/agents/providers/codex/codexProcess'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
 import { codexFixture } from '../fixtures/codexFixture'

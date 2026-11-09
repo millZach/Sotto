@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
-import type { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
+import type { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
 
 it('checks only the selected Claude re-offer while preserving its neighboring re-offer and unresolved stdin write', async () => {
   let f = await claudeFixture()

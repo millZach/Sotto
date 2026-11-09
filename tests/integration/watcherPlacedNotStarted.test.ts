@@ -83,7 +83,7 @@ it('reads Watcher’s admitted starts from an index of the record, however long 
   const started = f.start('Synthetic indexed worker')
   await vi.waitFor(() => expect(held).toBe(1))
   // The same record with five thousand older operations before its own, every element read counted.
-  const record = f.control.watcherRecordView(), older = record.operations[0]!
+  const record = f.control.watcherRecords.view(), older = record.operations[0]!
   let reads = 0
   const operations = new Proxy([...Array.from({ length: 5_000 }, () => ({ ...older, id: randomUUID(), action: 'send' as const, deliveryState: 'accepted' as const })),
     ...record.operations], { get(target, property, receiver) {
@@ -91,7 +91,7 @@ it('reads Watcher’s admitted starts from an index of the record, however long 
     return Reflect.get(target, property, receiver) as unknown
   } })
   const long = { ...record, operations }
-  const view = vi.spyOn(f.control, 'watcherRecordView').mockReturnValue(long)
+  const view = vi.spyOn(f.control.watcherRecords, 'view').mockReturnValue(long)
   expect(f.service.startsNotYetSent()).toHaveLength(1)
   // The first read walks back from the newest only as far as the reserved start.
   expect(reads).toBeLessThanOrEqual(record.operations.length)
@@ -119,7 +119,7 @@ it('finds an old reserved start again in one read on every change, however much 
   const started = f.start('Synthetic long-running worker')
   await vi.waitFor(() => expect(held).toBe(1))
   // A worker reserved long ago: five thousand newer operations follow its start, and every element read is counted.
-  const record = f.control.watcherRecordView(), older = record.operations[0]!
+  const record = f.control.watcherRecords.view(), older = record.operations[0]!
   const newer = () => ({ ...older, id: randomUUID(), action: 'send' as const, deliveryState: 'accepted' as const })
   let reads = 0
   const counted = (operations: typeof record.operations) => new Proxy(operations, { get(target, property, receiver) {
@@ -127,7 +127,7 @@ it('finds an old reserved start again in one read on every change, however much 
     return Reflect.get(target, property, receiver) as unknown
   } })
   let operations = [...record.operations, ...Array.from({ length: 5_000 }, newer)]
-  const view = vi.spyOn(f.control, 'watcherRecordView').mockReturnValue({ ...record, operations: counted(operations) })
+  const view = vi.spyOn(f.control.watcherRecords, 'view').mockReturnValue({ ...record, operations: counted(operations) })
   // The first record walks back to it at most once.
   expect(f.service.startsNotYetSent()).toHaveLength(1)
   reads = 0

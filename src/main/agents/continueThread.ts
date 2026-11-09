@@ -1,3 +1,4 @@
+import { sendOutcome } from './sendOutcome'
 import { AGENT_TEXT_MAX, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentState, type AgentThread,
   type ThreadContinuedFrom, type ThreadContinuedIn } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
@@ -221,11 +222,12 @@ export class ContinueService {
       const sent = await this.options.control.commandShell({ type: 'manual-send', threadId: request.newThreadId, draftId: request.draftId, text: prefix + request.text,
         ...(request.attachments?.length ? { attachments: request.attachments } : {}), ...(request.files?.length ? { files: request.files } : {}) })
       // A send whose result the provider never gave may have gone, so the link is made for it as for one it took.
-      const delivery = sent.deliveries?.find(item => item.threadId === request.newThreadId && item.draftId === request.draftId)
-      const went = delivery?.status === 'accepted' || delivery?.status === 'uncertain' || delivery?.status === 'submitting'
-        || sent.deliveredDrafts?.some(item => item.threadId === request.newThreadId && item.draftId === request.draftId) === true
+      const outcome = sendOutcome(sent, request.newThreadId, request.draftId)
+      const delivery = outcome.delivery
+      // Missing evidence is unconfirmed too: keep this thread and draft instead of inviting a fresh send.
+      const went = outcome.status !== 'failed' && outcome.status !== 'queued'
       if (!went) refuse(sent.error ?? `${PROVIDER_LABELS[model.providerId]} didn’t take the first message, so nothing was sent. Check it under Settings → Providers, then continue again.`)
-      // The message went, so nothing below may turn this into a refusal: a link that could not be saved is the only loss.
+      // Delivery went or remains unconfirmed. A link failure must not invite a second send under a fresh identity.
       try {
         if (delivery?.messageId) await this.options.host.noteContinuedMessage(request.newThreadId, delivery.messageId)
         await this.options.host.addContinuedIn(source.id, { threadId: request.newThreadId, provider: model.providerId, at })

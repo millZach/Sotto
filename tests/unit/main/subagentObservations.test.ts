@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
-import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
 import { devinActivities } from '../../../src/main/agents/devinActivity'
 import { agentActivitySchema, mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'

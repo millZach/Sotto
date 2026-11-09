@@ -15,7 +15,7 @@ import { cursorCatalog, cursorModeArguments, cursorModelListSchema, cursorRuntim
 import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from './cursorRequests'
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
   readCursorSignIn, readCursorVersion, writeCursorConfig, writeCursorSideConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { watcherMayWrite } from './host'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -254,7 +254,7 @@ export interface CursorAcpOptions {
   captureMediaFile?: MediaFileCapture
 }
 
-export class CursorAcpHost implements AgentHost {
+export class CursorAcpHost implements ProviderHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}

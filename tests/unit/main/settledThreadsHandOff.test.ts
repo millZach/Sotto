@@ -29,7 +29,7 @@ async function run(root: string, registry: ThreadRegistry): Promise<{ adapter: T
   const empty = (): FakeProviderHost => new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST))
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new SottoThreadHost('codex', adapter, registry), claude: empty(), grok: empty(), devin: empty(), muse: empty(), opencode: empty(), cursor: empty(), deepseek: empty(), hermes: empty() } })
-  const workspace = new WorkspaceHost(native, join(root, 'workspace'), () => true, 600_000)
+  const workspace = new WorkspaceHost(native, join(root, 'workspace'), { historyEnabled: () => true, worktreeRefreshDelayMs: 600_000 })
   cleanup.push(async () => { workspace.disconnect(); await workspace.privacyChanged().catch(() => undefined); workspace.dispose() })
   await workspace.connect()
   return { adapter, workspace }

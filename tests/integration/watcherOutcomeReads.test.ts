@@ -87,10 +87,10 @@ it('reads a start as working, then answered with its turn\'s exact reply as the 
   expect(answered.reply?.messageId).toBe(answered.reference?.replyMessageId)
   // Reads and retries charge no budget.
   expect((await f.read(started.receipt.operationId)).limits.promptCount).toBe(1)
-  expect(f.control.watcherRecord().operations.find(item => item.id === started.receipt.operationId)).toMatchObject({ outcome: 'answered',
+  expect(f.control.watcherRecords.copy().operations.find(item => item.id === started.receipt.operationId)).toMatchObject({ outcome: 'answered',
     replyMessageId: answered.reference!.replyMessageId })
   // The record and the room hold identities only, never the reply's words.
-  expect(JSON.stringify(f.control.watcherRecord())).not.toContain('Synthetic worker reply')
+  expect(JSON.stringify(f.control.watcherRecords.copy())).not.toContain('Synthetic worker reply')
   expect(f.service.state().receipts.find(item => item.id === started.receipt.operationId)).toMatchObject({ outcome: 'answered' })
   // A phone sees the same outcome on its receipt row.
   const phone = new WatcherPhoneService(f.control, f.service).state(false)

@@ -3,7 +3,7 @@ import type { HostOsFamily } from '../../shared/hostFacts'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { WORKER_SYSTEM_WORDS, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult, type WorkerMachineSetting, type WorkerPlacementReceipt,
   type WorkerSystem } from '../../shared/workerMachine'
-import { sameRepository } from './github'
+import { sameRepository } from './git/github'
 
 type WatcherRefusalCode = WatcherRefusal['code']
 

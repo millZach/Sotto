@@ -9,7 +9,7 @@ import { OWN_SERVER_WORDS, ownServerRefusalWords, type AddResult, type CheckResu
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ModelPicker } from '../../../src/renderer/src/agents/ModelPicker'
 import { AddOwnServerDialog, OwnModelServers, ownServerName, parseContext } from '../../../src/renderer/src/agents/OwnModelServers'
-import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
+import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { agentContextFixture } from '../../fixtures/agentContext'

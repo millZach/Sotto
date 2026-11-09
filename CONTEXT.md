@@ -1023,7 +1023,7 @@ On Linux the title areas stay, with no minimise, maximise or close buttons and n
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/sendStages.ts` — the send stage clock each layer marks, and what counts as a reply's first output.
-- `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
+- `src/main/agents/providers/codex/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
 - `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which aggregates independent provider connections and routes each thread to its bound adapter.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
 - `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state; `threadSidebar.css` paints the sidebar, `threadsChrome.css` the page's own window chrome, and `threads.css` the page grid, workspace, pane header, transcript and composer.

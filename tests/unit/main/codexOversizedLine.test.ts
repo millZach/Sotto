@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { OversizedLine, PICTURE_CHARS } from '../../../src/main/agents/codexOversizedLine'
-import { CodexProcess, Uncertain } from '../../../src/main/agents/codexProcess'
+import { OversizedLine, PICTURE_CHARS } from '../../../src/main/agents/providers/codex/codexOversizedLine'
+import { CodexProcess, Uncertain } from '../../../src/main/agents/providers/codex/codexProcess'
 
 const picture = 'iVBORw0KGgo' + 'A'.repeat(PICTURE_CHARS * 2) + '=='
 /** What `OversizedLine` keeps of `text` when it arrives in pieces `size` characters long. */

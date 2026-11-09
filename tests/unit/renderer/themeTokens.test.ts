@@ -332,7 +332,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/newThread.css',
       'src/renderer/src/agents/folderBrowser.css',
       'src/renderer/src/agents/providerRecovery.css',
-      'src/renderer/src/agents/providers.css',
+      'src/renderer/src/features/settings/providers.css',
       'src/renderer/src/agents/opencodeSources.css',
       'src/renderer/src/agents/ownServers.css',
       'src/renderer/src/agents/serverMark.css',
@@ -424,7 +424,7 @@ describe('main-window theme tokens', () => {
       ['src/renderer/src/agents/requests/requestDraftRecovery.css', ['request-recovery']],
       ['src/renderer/src/agents/activity.css', ['thread-lifted']],
       ['src/renderer/src/agents/clientUpdates.css', ['client-updates']],
-      ['src/renderer/src/agents/providers.css', ['provider-detail__error']],
+      ['src/renderer/src/features/settings/providers.css', ['provider-detail__error']],
       ['src/renderer/src/agents/agents.css', ['agent-error', 'agent-notice']],
     ] as const
     const edges: string[] = []

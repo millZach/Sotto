@@ -285,6 +285,7 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
         target.messages.push({ id: messageId, role: 'user', text: command.text, createdAt: at })
         target.lastUserMessageId = messageId; target.lastTurn = { id: messageId, status: 'running' }; target.status = 'running'
         sent.push(command.threadId)
+        return { host: snapshot, deliveredDrafts: [{ threadId: command.threadId, draftId: command.draftId }] } as never
       }
       return { host: snapshot } as never
     },

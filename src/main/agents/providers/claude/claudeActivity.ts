@@ -1,12 +1,12 @@
-import { picturesIn, type MediaCapture } from './threadMedia'
+import { picturesIn, type MediaCapture } from '../../threadMedia'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
-import { observedSubagentStatus } from '../../shared/subagents'
+import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../../../shared/agentActivity'
+import { observedSubagentStatus } from '../../../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
 import { ClaudeThinking, THINKING_BLOCKS, claudeNarration, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
-import { thinkingSettledAs } from './thinkingActivity'
+import { thinkingSettledAs } from '../../thinkingActivity'
 import { CLAUDE_TRANSCRIPT_ID, type ClaudeModelTarget, type ClaudeSubagentTranscript } from './claudeSubagentModels'
 
 const text = (value: unknown): string | undefined => typeof value === 'string' ? value.slice(0, MAX_ACTIVITY_TEXT) : undefined

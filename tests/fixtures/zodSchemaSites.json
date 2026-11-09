@@ -5,13 +5,13 @@
       "reason": "Reads the host's credential file once when the host starts."
     }
   },
-  "src/main/agents/claude.ts": {
+  "src/main/agents/providers/claude/claude.ts": {
     "ClaudeStreamJsonHost.constructor": {
       "count": 3,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
-  "src/main/agents/codex.ts": {
+  "src/main/agents/providers/codex/codex.ts": {
     "CodexAppServerHost.constructor": {
       "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
@@ -47,13 +47,13 @@
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
-  "src/main/agents/githubBabysitReads.ts": {
+  "src/main/agents/git/githubBabysitReads.ts": {
     "loose": {
       "count": 1,
       "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
     }
   },
-  "src/main/agents/gitPullRequests.ts": {
+  "src/main/agents/git/gitPullRequests.ts": {
     "loose": {
       "count": 1,
       "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."

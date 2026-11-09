@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GrokRpc, findGrokExecutable, grokEnvironment } from '../../src/main/agents/grokRpc'
 import { discoverGrokSkills } from '../../src/main/agents/grokSkills'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 import { homedir } from 'node:os'
 import { isDeepStrictEqual } from 'node:util'
 

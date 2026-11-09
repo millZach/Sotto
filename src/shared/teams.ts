@@ -203,6 +203,8 @@ export interface TeamsSetup {
 }
 export type TeamsProblem = 'tailscale-off' | 'serve-off' | 'serve-denied' | 'serve-failed' | 'ports-taken' | 'credentials-locked'
 export interface TeamsState {
+  /** The current state has changes that could not be saved. Cleared by the next successful save. */
+  readonly unsaved: boolean
   readonly ownName: string
   readonly listening: boolean
   readonly code: { readonly text: string; readonly expiresAt: string } | null

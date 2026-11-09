@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 const THREADS = 40
 
@@ -43,7 +44,7 @@ async function fixture(history = { enabled: true }) {
     await rm(root, { recursive: true, force: true })
   })
   const adapter = new FakeProviderHost(state(root))
-  const host = new WorkspaceHost(adapter, root, () => history.enabled, undefined, false, false, true)
+  const host = new WorkspaceHost(adapter, root, { historyEnabled: () => history.enabled, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: true })
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   await host.connect()

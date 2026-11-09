@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
+import { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { claudeFixture } from '../fixtures/claudeFixture'
 

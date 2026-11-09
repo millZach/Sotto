@@ -248,7 +248,7 @@ export function TeamsPage({ bridge, state }: { readonly bridge: TeamsBridge; rea
     const quiet = value.type === 'read-setup'
     if (!quiet) { setBusy(true); setError(null) }
     void bridge.command(value).then(result => { if (!quiet && result.status === 'refused') setError(result.message) })
-      .catch(() => { if (!quiet) setError(t`Sotto could not do that. Nothing changed. Try again.`) }).finally(() => { if (!quiet) setBusy(false) })
+      .catch(() => { if (!quiet) setError(t`Sotto could not finish that change. It may have partly taken effect. Check Teams before trying again.`) }).finally(() => { if (!quiet) setBusy(false) })
   }
   const desksOf = useOpenDesks(), desksLink = state?.links.find(link => link.id === desksOf), closedDesks = useRef<string | null>(null)
   // Closing the desks brings focus back to the press that opened them.
@@ -263,13 +263,16 @@ export function TeamsPage({ bridge, state }: { readonly bridge: TeamsBridge; rea
   // The linked page needs this computer's tailnet name for what to share, and reading it sends nothing.
   useEffect(() => { if (linked && state?.setup === null) command({ type: 'read-setup' }) }, [linked])
   const closeDesks = (): void => { closedDesks.current = desksOf; setOpenDesks(null) }
+  const unsaved = state?.unsaved ? <p className="agent-error teams-page__error" role="status">{t`Teams has unsaved changes. They are active here, but may be lost when Sotto closes.`}</p> : null
   if (state && desksLink) return <div className="teams-page tt-paragraph" role="tabpanel" aria-labelledby="watcher-tab-teams">
+    {unsaved}
     <ListenProblem state={state} command={command} />
     <TeamDesks link={desksLink} state={state} bridge={bridge} onClose={closeDesks} />
   </div>
   const machine = state?.setup?.machine ?? t`this computer`
   return <div className="teams-page tt-paragraph" role="tabpanel" aria-labelledby="watcher-tab-teams">
     <div className="teams-page__column">
+      {unsaved}
       {error ? <p className="agent-error teams-page__error" role="alert">{error}</p> : null}
       {state === null ? <p className="teams-muted" role="status">{t`Opening Teams…`}</p> : !linked ? <>
         <header className="teams-page__intro">

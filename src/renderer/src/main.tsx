@@ -13,12 +13,14 @@ import './agents/threadSidebar.css'
 import './agents/threadsChrome.css'
 import './features/dictate/dictate.css'
 import './styles/crossing-settings.css'
-import { applyAppearance, readCachedAppearance } from './state/appearance'
+import { applyAppearance, readCachedAppearance, startAppearance } from './state/appearance'
 import { startInterfaceLanguage } from './state/interfaceLanguage'
 import { startWindowVisibility } from './state/windowVisibility'
 
 // Paint the last chosen look before settings arrive so a light room never
 // opens black for a frame; App re-applies from settings once they load.
+const stopAppearance = startAppearance()
+window.addEventListener('pagehide', stopAppearance, { once: true })
 applyAppearance(readCachedAppearance())
 startWindowVisibility()
 

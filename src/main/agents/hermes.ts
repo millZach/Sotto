@@ -19,7 +19,7 @@ import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type He
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
   findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
 import { HermesRuntime, hermesServers } from './hermesRuntime'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -173,7 +173,7 @@ export interface HermesAcpOptions {
   captureMedia?: MediaCapture
 }
 
-export class HermesAcpHost implements AgentHost {
+export class HermesAcpHost implements ProviderHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}

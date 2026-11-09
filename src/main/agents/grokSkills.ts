@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
-import { selectedSkill, claudeSkillPrompt } from './claudeSkills'
+import { selectedSkill, claudeSkillPrompt } from './providers/claude/claudeSkills'
 import { withCliPath } from './cliLookup'
 
 const inspectSchema = z.object({ skills: z.array(z.object({ name: z.string().min(1), description: z.string().default(''), enabled: z.boolean().optional(), userInvocable: z.boolean().optional(), source: z.object({ type: z.string(), path: z.string().min(1) }) })) })

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { answerRequest, pendingRequest } from '../../../src/main/agents/codexRequests'
+import { answerRequest, pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 
 const yesNo = [{ label: 'Yes', description: 'y' }, { label: 'No', description: 'n' }]
 function codex(questions: Array<Record<string, unknown>>) {

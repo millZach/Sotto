@@ -26,7 +26,7 @@ it('validates read-only accepted, native unconfirmed, draft and missing status w
     await expect(bridge.status(target)).rejects.toThrow()
   }
   expect(ipc.invoke.mock.calls.every(([channel]) => channel === REQUEST_DRAFT_STATUS)).toBe(true)
-  expect(() => bridge.status({ ...target, questions: [] })).toThrow()
+  await expect(bridge.status({ ...target, questions: [] })).rejects.toThrow()
 })
 
 it('keeps exact acceptance separate from an editable draft across the Check bridge', async () => {
@@ -91,7 +91,7 @@ it('exposes validated request draft persistence only to the main renderer', asyn
   await expect(bridge.discard({ target, revision: 1 })).rejects.toThrow()
   ipc.invoke.mockResolvedValue([{}])
   await expect(bridge.list(owner)).rejects.toThrow()
-  expect(() => bridge.save({ ...draft, revision: -1 })).toThrow()
+  await expect(bridge.save({ ...draft, revision: -1 })).rejects.toThrow()
   ipc.invoke.mockResolvedValue({ ...draft, selections: { wrong: { optionIds: [], other: false, text: 'Foreign' } } })
   await expect(bridge.get(target)).rejects.toThrow()
 })

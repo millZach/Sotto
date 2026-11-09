@@ -14,7 +14,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 import { WorkerRoles } from '../../src/main/agents/subagentRoles'
 
 /** Every rollout under the Codex home's sessions folder written since `since`. */

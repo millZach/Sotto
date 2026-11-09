@@ -243,7 +243,7 @@ it.each(['while it is dispatching', 'just after its failure is saved'])('fails a
     expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
     // The first prompt stays counted; the failed queued one is refunded once. The thread the user sent to holds no place.
     expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
-    expect(f.control.watcherRecord().reservations).toEqual([]); expect(f.service.startsInFlight()).toBe(0)
+    expect(f.control.watcherRecords.copy().reservations).toEqual([]); expect(f.service.startsInFlight()).toBe(0)
     const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
     expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
     // Were the same message to show up in the thread after all, the send was delivered and takes its refunded prompt back.

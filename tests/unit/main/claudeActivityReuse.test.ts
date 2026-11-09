@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
 
 /**
  * Every frame of a streamed Claude reply passes through the activity projector, and most of them are text that

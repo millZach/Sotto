@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
-import { GitHubHosts, GitHubRateLimit, GitHubRateLimited } from '../../../src/main/agents/github'
+import { GitHubHosts, GitHubRateLimit, GitHubRateLimited } from '../../../src/main/agents/git/github'
 import { runWorktreeGit } from '../../../src/main/agents/threadWorktrees'
 import { githubPullRequestMerged } from '../../../src/main/agents/worktreeCleanup'
 

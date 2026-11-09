@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterAll, expect, it } from 'vitest'
-import { CodexSessionLogWatcher, RolloutPositionFiles } from '../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher, RolloutPositionFiles } from '../../src/main/agents/providers/codex/codexSessionLog'
 import { codexFixture } from '../fixtures/codexFixture'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 

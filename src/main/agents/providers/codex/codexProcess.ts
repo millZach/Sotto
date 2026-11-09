@@ -1,5 +1,5 @@
 import { OversizedLine } from './codexOversizedLine'
-import { stderrRateExceeded } from './stderrRate'
+import { stderrRateExceeded } from '../../stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'

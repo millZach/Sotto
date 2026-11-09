@@ -4,7 +4,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { HostDelegationRelay, RelayUnanswered, type RelayDesktop } from '../../../src/main/agents/delegationRelayHost'
 import { DesktopDelegationRelay, RELAY_THIS_COMPUTER_ONLY, type RelayHostConnection } from '../../../src/main/agents/delegationRelayDesktop'
 import { hostDelegationMachines, RELAYED_HOST } from '../../../src/main/agents/hostDelegation'
@@ -16,6 +17,7 @@ import type { DelegationNews } from '../../../src/shared/delegation'
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     if (dirname(root) !== tmpdir() || !root.includes('sotto-relay-unit-')) throw new Error('Unexpected test directory')
     await rm(root, { recursive: true, force: true })
@@ -37,6 +39,17 @@ function desktop(relay: HostDelegationRelay, answer?: (ask: DelegationRelayAsk) 
   return { handle, asked }
 }
 const startAsk = { levels: 0, rootUserMessageId: 'root-1', runtimeMode: 'auto' as const, projectId: 'project-a', machine: DESKTOP, input: { work: 'code-review', brief: 'Review it.' }, waitMs: 1_000 }
+
+it.each(['host', 'desktop'] as const)('rejects an unreadable %s relay record', async side => {
+  const root = await folder()
+  const relay = side === 'host' ? new HostDelegationRelay(root) : new DesktopDelegationRelay(root, {
+    localHostId: () => DESKTOP, placement: { place: async () => { throw new Error('not called') } } as never,
+  })
+  const failure = new Error('relay record could not be read')
+  vi.spyOn(AtomicJsonStore.prototype, 'read').mockRejectedValueOnce(failure)
+  await expect(relay.load()).rejects.toBe(failure)
+  relay.close()
+})
 
 describe('the host side of the relay', () => {
   it('keeps swarm receipts through the relay, including target keys after a restart', async () => {

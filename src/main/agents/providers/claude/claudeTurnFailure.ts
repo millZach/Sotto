@@ -1,5 +1,5 @@
-import { claudeUsageLimitSentence, CLAUDE_SPENDING_LIMIT_SENTENCE } from '../../shared/limitStops'
-import type { TurnLimitStop } from '../../shared/limitRestart'
+import { claudeUsageLimitSentence, CLAUDE_SPENDING_LIMIT_SENTENCE } from '../../../../shared/limitStops'
+import type { TurnLimitStop } from '../../../../shared/limitRestart'
 import type { ClaudeFrame } from './claudeProtocol'
 
 /**

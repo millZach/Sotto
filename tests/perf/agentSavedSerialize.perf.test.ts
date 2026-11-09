@@ -35,7 +35,7 @@ type Inside = {
   answeredRequests: unknown[]
   savedOverLiveState(): Record<string, unknown>
   persist(): Promise<void>
-  mutateWatcher(update: (record: WatcherRecord) => void): void
+  watcherRecords: { mutate(update: (record: WatcherRecord) => void): void }
 }
 
 /** About the owner's Watcher record: hundreds of requests and operations and a thousand wake-up IDs. */
@@ -54,7 +54,7 @@ function ownerWatcherRecord(): WatcherRecord {
 
 /** The rest of the owner's shape: full receipt ledgers, and a draft and an unresolved delivery for each thread. */
 async function fill(inside: Inside): Promise<void> {
-  inside.mutateWatcher(record => Object.assign(record, ownerWatcherRecord()))
+  inside.watcherRecords.mutate(record => Object.assign(record, ownerWatcherRecord()))
   const receipts = (extra: object) => Array.from({ length: 128 }, (_, index) => ({ threadId: `thread-${index}`, draftId: randomUUID(), ...extra }))
   inside.state.deliveredDrafts = receipts({})
   inside.state.obsoleteDrafts = receipts({})

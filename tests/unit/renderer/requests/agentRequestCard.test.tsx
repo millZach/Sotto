@@ -11,8 +11,8 @@ import type { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPa
 import type { BrowserBridge, BrowserPage } from '../../../../src/shared/browser'
 import { textLinks } from '../../../../src/renderer/src/agents/requests/LinkedText'
 import { messageLinks } from '../../../../src/renderer/src/agents/requests/messageLinks'
-import { claudePending } from '../../../../src/main/agents/claudeRequests'
-import { pendingRequest } from '../../../../src/main/agents/codexRequests'
+import { claudePending } from '../../../../src/main/agents/providers/claude/claudeRequests'
+import { pendingRequest } from '../../../../src/main/agents/providers/codex/codexRequests'
 import { grokPending } from '../../../../src/main/agents/grokRequests'
 import {
   answerProgress, buildQuestionAnswers, EMPTY_SELECTION, isAnswered, isRequired, permissionAnswer, permissionSummary, pickOption, pickOther,
