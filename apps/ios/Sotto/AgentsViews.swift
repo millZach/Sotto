@@ -112,6 +112,7 @@ private struct AgentsPresenter: ViewModifier {
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .overThread()
             }
             .navigationDestination(item: $pushed) { target in ThreadView(ref: target, nested: true) }
             // Only once the delegated thread has gone: a swipe back that is cancelled leaves it open, and the sheet shut.
@@ -171,14 +172,9 @@ private struct AgentsSheet: View {
                     }
                     .padding(.top, Space.s2)
                     .accessibilityElement(children: .combine)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                        AgentsCountDetail(detail: counts.detail, needs: needs, working: rows.contains { $0.tone == .working } || (page?.summary.working ?? 0) > 0)
-                    }
-                    .padding(.top, Space.s2)
-                    .accessibilityElement(children: .combine)
                 }
+                // On the Duo the sections count themselves, so the summary of counts over them goes (Zach's pick B,
+                // November 9, 2026).
                 if problem {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Couldn’t read the agents on \(model.name(ref.hostID)). Nothing was changed. Try again.")
@@ -333,27 +329,6 @@ private extension EnvironmentValues {
     }
 }
 
-/// What needs the user in the warning colour and what works in the accent, on the Duo's Agents sheet.
-private struct AgentsCountDetail: View {
-    let detail: String
-    let needs: Bool
-    let working: Bool
-    var body: some View {
-        // `countLine` joins what needs the user and what works, in that order.
-        let parts = detail.components(separatedBy: " · ")
-        HStack(spacing: Space.s1) {
-            if needs, parts.count == 2 {
-                Text(verbatim: parts[0]).foregroundStyle(Palette.warningText)
-                Text(verbatim: "·").foregroundStyle(Palette.muted)
-                Text(verbatim: parts[1]).foregroundStyle(Palette.accentText)
-            } else {
-                Text(verbatim: detail).foregroundStyle(needs ? Palette.warningText : working ? Palette.accentText : Palette.muted)
-            }
-        }
-        .font(.sotto(.small, .semibold))
-    }
-}
-
 /// How long a row has worked, counting each second while it does.
 private struct RowElapsed: View {
     let elapsed: AgentsElapsed
@@ -377,6 +352,59 @@ private struct RowBody: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.agentsInSection) private var inSection
     var body: some View {
+        if inSection != nil, !typeSize.isAccessibilitySize { sectioned } else { listed }
+    }
+    /// In the Duo's sections the mark sits beside the name, so the words below take the row's whole width; the kind, the
+    /// time and the clock share a line, and where it runs is one line cut at its end (Zach's pick B, November 9, 2026).
+    private var sectioned: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: Space.s2) {
+                mark
+                    .frame(width: 24, height: 24)
+                    .background(Palette.fillSoft, in: Circle())
+                    .foregroundStyle(Palette.ink)
+                    .accessibilityHidden(true)
+                title.fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                Text(tag)
+                if case .unknown = row.elapsed {} else {
+                    Text(verbatim: "·")
+                    RowElapsed(elapsed: row.elapsed).monospacedDigit()
+                }
+                if let started = row.startedAt {
+                    Text(verbatim: "·")
+                    Text(started.formatted(date: .omitted, time: .shortened))
+                }
+            }
+            .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+            if let by = row.delegatedBy {
+                (row.watchedThrough(sheetWatched: sheetWatched)
+                    ? Text("Delegated by \(by) · Watched by Watcher through it", comment: "A delegated thread's line on the Agents sheet while Watcher watches the thread this sheet belongs to, which reaches it through the thread named; %@ is that thread's title.")
+                    : Text("Delegated by \(by)"))
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+            if let preview = row.preview {
+                Text(preview).font(.sotto(.small)).foregroundStyle(Palette.ink.opacity(0.86)).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !row.facts.isEmpty {
+                Text(verbatim: row.facts.joined(separator: " · "))
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+            if let status = row.status, inSection != false {
+                HStack(spacing: 6) {
+                    Light(tone: row.tone.light, size: 7, breathing: row.tone == .working)
+                    Text(status)
+                }
+                .font(.sotto(.small, row.tone == .done || row.tone == .quiet ? .regular : .semibold))
+                .foregroundStyle(row.tone.words)
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private var listed: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark
                 .frame(width: 28, height: 28)

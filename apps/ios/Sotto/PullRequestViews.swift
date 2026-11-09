@@ -61,6 +61,15 @@ struct PullRequestSheet: View {
 
     private var header: some View {
         HStack(spacing: Space.s2) {
+            // On the Duo the pull request's state and number stand in this row's empty start, so the title comes straight
+            // after the chips (Zach's pick B, November 9, 2026).
+            if duo != .none, case .shown(let detail) = phase {
+                HStack(spacing: Space.s2) {
+                    StatePill(state: detail.shownState)
+                    Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                }
+                .accessibilityElement(children: .combine)
+            }
             Spacer(minLength: 0)
             if let page = PullRequests.openable(url) {
                 Button { openURL(page) } label: {
@@ -260,11 +269,14 @@ private struct PullRequestBody: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: duo == .none ? Space.s2 : Space.s1 + 2) {
-            HStack(spacing: Space.s2) {
-                StatePill(state: detail.shownState)
-                Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+            // On the Duo the state and number stand in the sheet's top row instead.
+            if duo == .none {
+                HStack(spacing: Space.s2) {
+                    StatePill(state: detail.shownState)
+                    Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                }
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityElement(children: .combine)
             Text(verbatim: detail.title)
                 .font(.sotto(.title, .bold)).headingTracking(-0.4)
                 .foregroundStyle(Palette.ink)
@@ -300,10 +312,19 @@ private struct PullRequestBody: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        (Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(theme.color(.ink))
-                            + Text(verbatim: " · ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
-                            + Text(line.detail).font(.sotto(.small)).foregroundStyle(theme.color(.muted)))
+                        // One line while it fits; otherwise the detail drops whole to the next line rather than
+                        // breaking mid-phrase (Zach's pick B, November 9, 2026).
+                        ViewThatFits(in: .horizontal) {
+                            (Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(theme.color(.ink))
+                                + Text(verbatim: " · ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
+                                + Text(line.detail).font(.sotto(.small)).foregroundStyle(theme.color(.muted)))
+                                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                                Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            }
                             .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 0)
                 }

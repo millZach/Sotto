@@ -9,7 +9,7 @@ The iPhone Duo folds (ADR-0151). Folded, its cover screen is compact width, with
 ## The method
 
 1. **Captures from the real app.** `apps/ios/Scripts/duo-captures.sh` runs `DuoCaptureTests` on the iPhone Duo simulator on the `xcode-27` runner, folded and unfolded sideways, and keeps a picture of each surface in dark and light and a short video of each movement. The simulator can't turn the unfolded Duo upright (`--ui-orientation` and `XCUIDevice` both leave it sideways), so the judges score folded and sideways from the real app; upright changes are checked in their prototypes and on Zach's Duo. A push to a `duo-captures/<name>` branch runs it (`.github/workflows/ios-duo-captures.yml`), so a round's captures never restart the pull request's CI. `duo-captures/climb-before` is `main` at `235dd51b4` with only the capture lane added: the before of every image.
-2. **Judges.** Each round, three fresh judges (GPT-6.1 Sol, GPT-6 Astra and Claude Opus 5.5, Zach's pick) score the Duo layout out of 10 against the comparison set, from that round's captures, with no tools beyond reading the files they are given and no memory of earlier rounds. The comparison set is T3 Code, Claude and ChatGPT with Codex from Zach's own screenshots on his Duo, folded, sideways and upright, with T3's App Store images for its thread and approval views (Zach's T3 was offline), and Cursor's for the folded set. Those screenshots stay out of the repository: they show his own thread titles and tailnet addresses. Their brief carries the decisions below as fixed. The climb ends when every judge scores Sotto 9.5 or higher.
+2. **Judges.** Each round, three fresh judges (GPT-6.1 Sol, Claude Opus 5.5 and Claude Fable 5.2, Zach's pick; Fable 5.2 took GPT-6 Astra's seat from round 2 on, November 9, 2026) score the Duo layout out of 10 against the comparison set, from that round's captures, with no tools beyond reading the files they are given and no memory of earlier rounds. The comparison set is T3 Code, Claude and ChatGPT with Codex from Zach's own screenshots on his Duo, folded, sideways and upright, with T3's App Store images for its thread and approval views (Zach's T3 was offline), and Cursor's for the folded set. Those screenshots stay out of the repository: they show his own thread titles and tailnet addresses. Their brief carries the decisions below as fixed. The climb ends when every judge scores Sotto 9.5 or higher.
 3. **Zach decides.** A judge's finding becomes a change only through Zach. For each surface the judges want changed, a prototype with variants A, B and C opens on the Duo from a tailnet link, and a question card asks which to build, with a recommendation. Only the pick is built. A finding that would reverse an ADR gets its own prototype and question first, and the ADR is amended only on his answer.
 4. **Batched rounds.** A capture run takes most of an hour, so each round builds every pick Zach has made, then captures once and judges once.
 5. **One pull request** carries the capture lane, every change, the verification note with a before and after image of each surface and a short before and after video of each change, and the ADR amendments. The last check is Zach's on a TestFlight build on his Duo.
@@ -68,3 +68,24 @@ Zach's picks, from `docs/prototypes/ios-duo-climb/round-2.html`:
 | Pull request sheet | C, a fade above the dock, a tighter top and one-line statuses |
 
 Three findings were the capture: Watcher showed no way to the waiting question because every capture emptied Watcher's waiting cards (`--ui-watcher-nothing-waits`, now left off Watcher's own pictures); the pull request and Agents pictures showed Queue for Stop because they launched without `--ui-can-stop`; and the amber stroke on Watcher's reply box is the top-effort trace (ADR-0019) held still mid-lap. The folded sheets' hairline over their buttons stopped at the strip; it now meets the sheet's edge. Held for a later round, each raised by one judge: the folded Agents sheet's summary, Computers sideways, the rail's state pill, the New thread sheet's corners and long folded table cards.
+
+### Round 2 (November 9, 2026)
+
+Captures: `duo-captures/round-2` (run 42675473987; the folded reply box with its keyboard was lost in collection and not retaken, since round 2 changed nothing there). Scores: GPT-6.1 Sol 8.5, Claude Opus 5.5 9.0, Claude Fable 5.2 8.0. GPT-6 Astra also scored 8.5 before Zach gave its seat to Fable 5.2; that score is kept with the round's notes but not counted toward the bar. No judge asked for a reversal.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-3.html`:
+
+| Surface | Pick |
+|---|---|
+| Threads overview | B, Recent rows without the provider's name and with the time on the second line; Review on its own row; folded, a one-line note |
+| Watcher's question card | B, "Answer it on" the computer; the line over the card only when this iPhone can answer |
+| Watch on the rail | B, a smaller owl with a + that turns to a check |
+| State on the rail | A, Finished, and the working time folded too |
+| Beside a sheet | B, the reply box steps away |
+| Agents sheet | B, no summary of counts, the mark beside the name, where it runs on one line |
+| Pull request sheet's top | B, state and number in the top row, details whole |
+| Computers, sideways | B, two to a row, state under the name |
+| New thread sheet | B, no step words or footer |
+| A waiting permission's row | Permission, as built |
+
+Fixed without a pick, as part of the code pick: a long path broke inside a name, so a break now goes after a space or a slash first. Held, each raised by one judge: text under the reply box with the keyboard up (Fable), faint choice circles in dark (Astra), the amber glow in light (Opus), the Agents badge counting every agent in amber (Opus).

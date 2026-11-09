@@ -88,7 +88,7 @@ struct ThreadView: View {
         }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
-            RequestSheet(ref: ref, request: request).requestSheetDetents()
+            RequestSheet(ref: ref, request: request).requestSheetDetents().overThread()
         }
         .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
@@ -211,6 +211,19 @@ struct InteractivePop: UIViewControllerRepresentable {
     }
 }
 
+extension View {
+    /// Counts this sheet as standing over a thread while it shows (`AppModel.sheetsOverThread`).
+    func overThread() -> some View { modifier(OverThread()) }
+}
+private struct OverThread: ViewModifier {
+    @EnvironmentObject var model: AppModel
+    func body(content: Content) -> some View {
+        content
+            .onAppear { model.sheetsOverThread += 1 }
+            .onDisappear { model.sheetsOverThread = max(0, model.sheetsOverThread - 1) }
+    }
+}
+
 extension ToolbarContent {
     /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
     /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
@@ -239,8 +252,10 @@ struct ThreadStatePill: View {
                 VStack(spacing: 2) {
                     light
                     // One word stays on one line, shrinking rather than breaking, in every language.
-                    Text(word).lineLimit(word.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
-                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
+                    Text(railWord).lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                    // The rail shows how long it has been at it folded too, as it does unfolded (Zach's pick A,
+                    // November 9, 2026).
+                    if reachable, state.workInProgress, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
                 }
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                 .foregroundStyle(foreground)
@@ -266,6 +281,11 @@ struct ThreadStatePill: View {
     }
     @ViewBuilder private var light: some View {
         if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
+    }
+    /// On the rail a finished thread says Finished, the Agents sheet's word, where Done read like the teal Done that
+    /// closes every sheet (Zach's pick A, November 9, 2026).
+    private var railWord: String {
+        reachable && state == .done ? String(localized: "Finished", comment: "The heading over delegated threads and agents that have stopped working.") : word
     }
     private var word: String {
         guard reachable else { return String(localized: "Can’t reach it", comment: "A thread's state in its bar: its computer can't be reached") }
@@ -309,13 +329,28 @@ struct WatchToggle: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoTheme) private var theme
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             if tile {
+                // A smaller owl with a + at its corner, a check once on, so Watch reads as a switch and can't pass for
+                // the Watcher tab's owl a thumb below it (Zach's pick B, November 9, 2026).
                 Group {
-                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: DuoRailMetrics.owl).accessibilityHidden(true) }
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else {
+                        WatcherOwlMark(size: DuoRailMetrics.owl - 4).accessibilityHidden(true)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: watched ? "checkmark" : "plus")
+                                    .font(.system(size: 7, weight: .heavy))
+                                    .foregroundStyle(watched ? theme.color(.onAccent) : theme.color(.ink))
+                                    .frame(width: 14, height: 14)
+                                    .background(Circle().fill(watched ? theme.color(.accent) : theme.color(.fillSoft)))
+                                    .overlay(Circle().strokeBorder(watched ? theme.color(.accentSurface) : theme.color(.canvas), lineWidth: 1.5))
+                                    .offset(x: 6, y: 5)
+                                    .accessibilityHidden(true)
+                            }
+                    }
                 }
                 .foregroundStyle(watched ? Palette.accentText : Palette.muted)
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
@@ -400,7 +435,7 @@ struct ThreadMenu: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
         .sheet(isPresented: $showingPullRequest) {
             if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
-                PullRequestSheet(ref: ref, url: url, number: number)
+                PullRequestSheet(ref: ref, url: url, number: number).overThread()
             }
         }
     }
@@ -749,6 +784,10 @@ private struct Conversation: View {
                           openRequest: openRequest)
                     .equatable()
                     .readingWidth()
+                    // On the Duo the box steps away while a sheet stands over the thread, where unfolded it showed past
+                    // the sheet's edge (Zach's pick B, November 9, 2026).
+                    .opacity(duo != .none && model.sheetsOverThread > 0 ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: model.sheetsOverThread > 0)
                     .background(dockReader(proxy))
                     .sendWatchDock()
             }
@@ -1104,7 +1143,7 @@ private struct ThreadHero: View, Equatable {
         .background(edgeReader(\.minY, topMoved))
         .sheet(isPresented: $showingPullRequest) {
             if let pullRequest, let number = chips.pullRequest?.number {
-                PullRequestSheet(ref: ref, url: pullRequest.url, number: number)
+                PullRequestSheet(ref: ref, url: pullRequest.url, number: number).overThread()
             }
         }
     }
@@ -1740,7 +1779,9 @@ private struct WrappedCode: View {
                 let room = continued ? columns - 2 : columns
                 if rest.count <= room { out.append(Line(text: String(rest), continued: continued)); break }
                 var cut = rest.index(rest.startIndex, offsetBy: room)
-                if let space = rest[..<cut].lastIndex(of: " "), rest.distance(from: rest.startIndex, to: space) >= room / 2 {
+                // A break goes after a space or a path's slash in the line's second half, so a name isn't split in its
+                // middle ("terminal" / "Drawer.test.ts"); only a run with neither is cut at the edge.
+                if let space = rest[..<cut].lastIndex(where: { $0 == " " || $0 == "/" }), rest.distance(from: rest.startIndex, to: space) >= room / 2 {
                     cut = rest.index(after: space)
                 }
                 out.append(Line(text: String(rest[..<cut]), continued: continued))

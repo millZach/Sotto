@@ -1490,6 +1490,9 @@ struct RailAsk: Equatable {
     @Published var railAsked: RailAsk?
     /// The delegated thread showing over the thread it came from, if one is: the unfolded rail then carries its Back.
     @Published var railNested: ThreadRef?
+    /// How many sheets stand over a thread now: its request, its pull request or its Agents. On the Duo the thread's reply
+    /// box steps away while one is up, so nothing beside the sheet looks like a control (Zach's pick B, November 9, 2026).
+    @Published var sheetsOverThread = 0
     /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
     var listQuery = ""
 

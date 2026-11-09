@@ -93,6 +93,8 @@ struct ThreadsView: View, Equatable {
     /// third of the width can't hold a title and the page keeps one column. Every other iPhone shows the thread list.
     private var unfolded: Bool { duo.sideways || duo == .upright }
     private var inColumns: Bool { unfolded && !typeSize.isAccessibilitySize }
+    /// The folded Duo's cover screen, below the accessibility text sizes.
+    private var coverScreen: Bool { if case .folded = duo { return !typeSize.isAccessibilitySize } else { return false } }
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
@@ -254,7 +256,7 @@ struct ThreadsView: View, Equatable {
         // Every computer that can't be reached shares one note (#1849).
         let unreachable = model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }
         if query.isEmpty && !unreachable.isEmpty {
-            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting }, oneLine: inColumns)
+            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting }, oneLine: inColumns || coverScreen, headlineOnly: coverScreen)
         }
     }
 
@@ -540,6 +542,8 @@ private struct ConnectionNote: View {
     let trying: Bool
     /// Over the unfolded Duo's columns the note is one line, its two sentences side by side.
     var oneLine = false
+    /// On the folded Duo the one line is the headline alone, beside Try again (Zach's pick B, November 9, 2026).
+    var headlineOnly = false
     /// Their names, joined as the language joins a list: "Studio Mac and Desktop".
     private var names: String { ListFormatter.localizedString(byJoining: computers.map(\.name)) }
     @EnvironmentObject var model: AppModel
@@ -552,7 +556,7 @@ private struct ConnectionNote: View {
             Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
             if oneLine {
                 (headline.font(.sotto(.small, .semibold)).foregroundStyle(theme.color(.ink))
-                    + (trying ? Text(verbatim: "") : Text(verbatim: " ") + showing.font(.sotto(.small)).foregroundStyle(theme.color(.muted))))
+                    + (trying || headlineOnly ? Text(verbatim: "") : Text(verbatim: " ") + showing.font(.sotto(.small)).foregroundStyle(theme.color(.muted))))
                     .lineLimit(1)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
@@ -826,8 +830,10 @@ private struct RequestCard: View {
                 Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                     .paragraphDirection()
             }
+            // Its words line up with the note's, where the pill's own inset had set them in (November 9, 2026).
             NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(reviewWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                .padding(.leading, -Space.s3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -880,6 +886,7 @@ struct OneTapQuestion<More: View>: View {
     let sendID: String?
     let send: (String) -> Void
     let more: More
+    @Environment(\.duoLayout) private var duo
     init(options: [RequestOption], enabled: Bool, picked: Binding<String?>, sendID: String? = nil,
          send: @escaping (String) -> Void, @ViewBuilder more: () -> More) {
         self.options = options
@@ -899,15 +906,35 @@ struct OneTapQuestion<More: View>: View {
                 }
             }
             .disabled(!enabled)
-            HStack(spacing: Space.s2) {
-                more
-                Spacer(minLength: 0)
-                let button = Button("Send answer") { if let picked { send(picked) } }
-                    .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                    .disabled(!enabled || picked == nil)
-                if let sendID { button.accessibilityIdentifier(sendID) } else { button }
+            if duo != .none {
+                // On the Duo the way into the thread keeps one line: beside Send answer while both fit, otherwise on a
+                // row of its own lined up with the card's words, with Send answer under it (Zach's pick B, November 9,
+                // 2026), where it had wrapped to two lines in a narrow column.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Space.s2) {
+                        more.fixedSize()
+                        Spacer(minLength: Space.s2)
+                        sendButton
+                    }
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        more.padding(.leading, -Space.s3)
+                        HStack { Spacer(minLength: 0); sendButton }
+                    }
+                }
+            } else {
+                HStack(spacing: Space.s2) {
+                    more
+                    Spacer(minLength: 0)
+                    sendButton
+                }
             }
         }
+    }
+    @ViewBuilder private var sendButton: some View {
+        let button = Button("Send answer") { if let picked { send(picked) } }
+            .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
+            .disabled(!enabled || picked == nil)
+        if let sendID { button.accessibilityIdentifier(sendID) } else { button }
     }
 }
 
@@ -1095,15 +1122,19 @@ private struct ThreadRow: View {
                 // These rows stand only in the unfolded Duo's columns, where a thread that just finished carries a check in
                 // its light (Zach's pick A, November 9, 2026).
                 Light(tone: unread ? .accent : failed ? .danger : .off, finished: unread).padding(.top, 6)
+                // The name has the first line to itself and the second ends with the time, as the sidebar's rows do, so
+                // neither the name nor the computer is cut beside it (Zach's pick B, November 9, 2026).
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: failed ? Palette.dangerText : Palette.muted)
-                }
-                Spacer(minLength: Space.s2)
-                if let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) {
-                    Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                                  tone: failed ? Palette.dangerText : Palette.muted)
+                        Spacer(minLength: 0)
+                        if let ago = Words.agoShort(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) {
+                            Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).fixedSize()
+                        }
+                    }
                 }
             }
             .padding(.horizontal, Space.s4)
@@ -1119,7 +1150,8 @@ private struct ThreadRow: View {
         if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
         if !row.reachable { return "\(row.status.words) · \(row.computer)" }
         if failed { return "\(state.words) · \(row.computer)" }
-        return Words.place(row)
+        // The provider's mark stands for its name, as in the thread rows (Zach's pick B, November 9, 2026).
+        return Words.placeWithoutProvider(row)
     }
     /// The row as VoiceOver reads it; a thread that finished out of sight says so right after its name.
     private var label: String {

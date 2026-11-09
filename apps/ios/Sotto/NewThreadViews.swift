@@ -12,6 +12,7 @@ struct NewThreadSheet: View {
     let opened: (ThreadRef) -> Void
     private enum Step: Equatable { case computer, project, folders, options }
     @State private var step = Step.computer
+    @Environment(\.duoLayout) private var duo
     /// Whether the last move went forward, so the next page slides in from the side it came from.
     @State private var forward = true
     @State private var presses = 0
@@ -37,12 +38,21 @@ struct NewThreadSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            StepBar(filled: stepNumber)
-                .padding(.horizontal, Space.gutter)
-            Text(stepLabel)
-                .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Space.gutter).padding(.top, Space.s2)
+            // On the Duo the bars and the page's own heading say where you are, so the step's words go to VoiceOver alone
+            // and the footer that only repeated them goes (Zach's pick B, November 9, 2026).
+            if duo != .none {
+                StepBar(filled: stepNumber)
+                    .padding(.horizontal, Space.gutter)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(stepLabel)
+            } else {
+                StepBar(filled: stepNumber)
+                    .padding(.horizontal, Space.gutter)
+                Text(stepLabel)
+                    .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.gutter).padding(.top, Space.s2)
+            }
             if let notice = model.shareNotice {
                 Text(notice).font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
@@ -157,8 +167,8 @@ struct NewThreadSheet: View {
 
     @ViewBuilder private var footer: some View {
         switch step {
-        case .computer: FooterHint(text: String(localized: "Choose a computer to continue."))
-        case .project: FooterHint(text: String(localized: "Choose a project to continue."))
+        case .computer: if duo == .none { FooterHint(text: String(localized: "Choose a computer to continue.")) }
+        case .project: if duo == .none { FooterHint(text: String(localized: "Choose a project to continue.")) }
         case .folders: EmptyView()
         case .options: openButton
         }

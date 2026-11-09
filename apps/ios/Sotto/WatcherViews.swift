@@ -466,6 +466,7 @@ private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.duoLayout) private var duo
     let hostID: String
     /// Presses on the Watcher tab while Watcher shows: each one scrolls the page to its top, to Watcher's hero.
     let toTop: Int
@@ -812,13 +813,18 @@ private struct WatcherConversationPane: View {
         ForEach(workers, id: \.key) { card in
             waiting(card.key) {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
-                        Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.", comment: "%@ is a thread's title")
-                            .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                            .paragraphDirection()
+                    // On the Duo the line saying where an answer goes shows only while this iPhone can answer; when it
+                    // can't, the card says where to answer and nothing above it repeats that (Zach's pick B,
+                    // November 9, 2026).
+                    if duo == .none || answerableHere(card) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                            Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.", comment: "%@ is a thread's title")
+                                .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                                .paragraphDirection()
+                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
                     WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
                 }
             }
@@ -826,6 +832,11 @@ private struct WatcherConversationPane: View {
         ForEach(own, id: \.key) { card in
             waiting(card.key) { WatcherRequestCard(hostID: hostID, card: card, own: true, review: review) }
         }
+    }
+    /// Whether this iPhone can answer a worker's card where it is now.
+    private func answerableHere(_ card: WatcherPage.RequestCard) -> Bool {
+        guard case .answer(let place, let current) = model.watcherCardRoute(card, on: hostID) else { return false }
+        return current.supported && model.mayAnswer(at: place)
     }
     /// A card waiting on the user, where the page can scroll to it and say where it sits, so a reader can be held on it.
     private func waiting<Card: View>(_ key: String, @ViewBuilder _ card: () -> Card) -> some View {
@@ -1213,6 +1224,7 @@ private struct WatcherRequestCard: View {
     let card: WatcherPage.RequestCard
     let own: Bool
     let review: (ReviewedCard) -> Void
+    @Environment(\.duoLayout) private var duo
     @State private var picked: String?
     @State private var answered = 0
 
@@ -1350,7 +1362,22 @@ private struct WatcherRequestCard: View {
             if !current.supported {
                 note(String(localized: "Answer this one in Sotto on \(model.name(place.hostID)).", comment: "%@ is the computer's name"), reviews: false)
             } else if !model.mayAnswer(at: place) {
-                note(String(localized: "This iPhone can’t answer on \(model.name(place.hostID)) yet.", comment: "%@ is the computer's name"), reviews: true)
+                if duo != .none {
+                    // On the Duo it says where to answer, with Review on a row of its own, as the overview's cards do
+                    // (Zach's pick B, November 9, 2026).
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        Text(String(localized: "Answer it on \(model.name(place.hostID)).", comment: "On a question card when this iPhone can't answer on the thread's computer. %@ is the computer's name."))
+                            .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
+                        Button(reviewWords, action: openReview)
+                            .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                            .accessibilityIdentifier("watcher-card-review")
+                            .padding(.leading, -Space.s3)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    note(String(localized: "This iPhone can’t answer on \(model.name(place.hostID)) yet.", comment: "%@ is the computer's name"), reviews: true)
+                }
             } else if !card.connected {
                 let elsewhere = model.computerName(card.target.hostId) ?? computer
                 note(String(localized: "\(AgentNames.name(card.provider)) isn’t connected on \(elsewhere). Answer once it’s back.",

@@ -9,6 +9,10 @@ struct ComputerRoute: Hashable { let hostID: String }
 struct ComputersView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var textSize
+    /// Unfolded and sideways, computers stand as cards two to a row, each with its state under its name, where full-width
+    /// rows set the name and the state 860 points apart (Zach's pick B, November 9, 2026).
+    private var paired: Bool { duo.sideways && !textSize.isAccessibilitySize }
     var body: some View {
         SheetPage(washHeight: 330) {
             PageHeading(String(localized: "Computers"), subtitle: String(localized: "Each computer runs Sotto and shares its threads with this iPhone.")) {
@@ -23,27 +27,22 @@ struct ComputersView: View {
             }
             .padding(.top, Space.s1)
             if model.feedback != nil { FeedbackBanner().padding(.top, Space.s4) }
-            VStack(spacing: Space.s3) {
-                ForEach(model.computers, id: \.hostID) { computer in
-                    ComputerCard(hostID: computer.hostID, name: computer.name)
-                }
-                if duo != .none {
-                    let shape = RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    Button { model.startAdding() } label: {
-                        HStack(spacing: Space.s3) {
-                            Image(systemName: "plus").iconFont(16, weight: .semibold).accessibilityHidden(true)
-                            Text("Add a computer")
+            Group {
+                if paired {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s3, alignment: .top), GridItem(.flexible(), spacing: Space.s3, alignment: .top)],
+                              alignment: .leading, spacing: Space.s3) {
+                        ForEach(model.computers, id: \.hostID) { computer in
+                            ComputerCard(hostID: computer.hostID, name: computer.name, stateUnderName: true)
                         }
-                        .font(.sotto(.body, .semibold))
-                        .foregroundStyle(Palette.accentText)
-                        .padding(.horizontal, Space.s4)
-                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        .overlay(shape.strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-                        .contentShape(shape)
+                        addRow
                     }
-                    .buttonStyle(PressStyle())
-                    .disabled(!model.storageReady)
-                    .accessibilityIdentifier("computers-add")
+                } else {
+                    VStack(spacing: Space.s3) {
+                        ForEach(model.computers, id: \.hostID) { computer in
+                            ComputerCard(hostID: computer.hostID, name: computer.name)
+                        }
+                        if duo != .none { addRow }
+                    }
                 }
             }
             .padding(.top, Space.s6)
@@ -52,6 +51,25 @@ struct ComputersView: View {
         .navigationTitle("Computers")
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).toolbar(.hidden, for: .tabBar) }
+    }
+    /// The list's last row on the Duo: Add a computer.
+    private var addRow: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+        return Button { model.startAdding() } label: {
+            HStack(spacing: Space.s3) {
+                Image(systemName: "plus").iconFont(16, weight: .semibold).accessibilityHidden(true)
+                Text("Add a computer")
+            }
+            .font(.sotto(.body, .semibold))
+            .foregroundStyle(Palette.accentText)
+            .padding(.horizontal, Space.s4)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .overlay(shape.strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+            .contentShape(shape)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!model.storageReady)
+        .accessibilityIdentifier("computers-add")
     }
 }
 
@@ -63,6 +81,8 @@ private struct ComputerCard: View {
     @Environment(\.dynamicTypeSize) private var textSize
     let hostID: String
     let name: String
+    /// The state under the name with what it shared, for a card half the page wide.
+    var stateUnderName = false
     @State private var retries = 0
     private var status: ComputerStatus { model.status(hostID) }
     var body: some View {
@@ -95,7 +115,20 @@ private struct ComputerCard: View {
     /// The name with one line under it, and the computer's state at the trailing edge. At the largest text sizes the
     /// state goes under the name instead, so the name keeps the width.
     @ViewBuilder private var header: some View {
-        if textSize.isAccessibilitySize {
+        if stateUnderName {
+            HStack(alignment: .top, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    title
+                    HStack(spacing: Space.s2) {
+                        state
+                        Text(verbatim: "·").font(.sotto(.small)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        detail
+                    }
+                }
+                Spacer(minLength: Space.s2)
+                chevron.padding(.top, 6)
+            }
+        } else if textSize.isAccessibilitySize {
             HStack(spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
                     title
