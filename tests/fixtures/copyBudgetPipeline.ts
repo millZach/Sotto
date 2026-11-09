@@ -41,8 +41,8 @@ export interface CopyBudgetPipeline {
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
   resetCounts(): void
-  /** Flushes adapter changes and all scheduled event attribution in a controlled-event fixture. */
-  drainProductEvents(): void
+  /** Waits for adapter changes to reach the coordinator, then drains their scheduled event attribution. */
+  drainProductEvents(): Promise<void>
   /**
    * Holds the workspace's saves until the returned call, which makes the one save they came to. The workspace saves at
    * most once a 250 ms window while anything changes, so how many saves fall inside a stream depends on how long the
@@ -143,9 +143,12 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     adapter, control, streamIds, parentId,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },
-    drainProductEvents: () => {
+    drainProductEvents: async () => {
       if (!options.controlProductEvents) throw new Error('This fixture does not control product-event scheduling.')
-      adapter.publish(false)
+      await new Promise<void>(resolve => {
+        const off = workspace.subscribe(() => { off(); resolve() })
+        adapter.publish(false)
+      })
       while (eventWork.length) eventWork.shift()!()
     },
     holdSaves: () => {

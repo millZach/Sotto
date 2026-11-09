@@ -29,13 +29,13 @@ describe('product events on the update path', () => {
     const { pipeline, sent, stream } = await start()
     expect(sent).toEqual([])
     turn(pipeline, stream, 'turn-1', 'running')
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     pipeline.adapter.log.add(stream.id, { id: 'reply', role: 'assistant', text: 'A private reply', createdAt: new Date().toISOString() })
     for (let chunk = 0; chunk < 20; chunk += 1) { pipeline.adapter.log.appendText(stream.id, 'reply', ` private${chunk}`); pipeline.adapter.publish(true) }
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     stream.usage = { ...stream.usage!, total: { input: 20_340, output: 5_300, cached: 12_530 } }
     turn(pipeline, stream, 'turn-1', 'completed')
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     const turns = sent.filter(item => item.event === 'turn.completed')
     expect(turns).toHaveLength(1)
     expect(parseProductEvent('turn.completed', turns[0]!.properties)).not.toBeNull()
@@ -43,16 +43,16 @@ describe('product events on the update path', () => {
     expect((turns[0]!.properties as { durationMs: number }).durationMs).toBeGreaterThanOrEqual(0)
     expect(JSON.stringify(sent)).not.toMatch(/private|stream-0|Synthetic/)
     turn(pipeline, stream, 'turn-1', 'completed')
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     expect(sent.filter(item => item.event === 'turn.completed')).toHaveLength(1)
   })
 
   it('says a stopped turn stopped and a failed one failed', async () => {
     const { pipeline, sent, stream } = await start()
-    turn(pipeline, stream, 'turn-1', 'running'); pipeline.drainProductEvents()
-    turn(pipeline, stream, 'turn-1', 'interrupted'); pipeline.drainProductEvents()
-    turn(pipeline, stream, 'turn-2', 'running'); pipeline.drainProductEvents()
-    turn(pipeline, stream, 'turn-2', 'failed'); pipeline.drainProductEvents()
+    turn(pipeline, stream, 'turn-1', 'running'); await pipeline.drainProductEvents()
+    turn(pipeline, stream, 'turn-1', 'interrupted'); await pipeline.drainProductEvents()
+    turn(pipeline, stream, 'turn-2', 'running'); await pipeline.drainProductEvents()
+    turn(pipeline, stream, 'turn-2', 'failed'); await pipeline.drainProductEvents()
     expect(sent.map(item => (item.properties as { result: string }).result)).toEqual(['stopped', 'failed'])
   })
 
@@ -63,14 +63,14 @@ describe('product events on the update path', () => {
     await mkdir(project.path!, { recursive: true })
     const made = await pipeline.control.command({ type: 'create-thread', projectId: project.id, title: 'A private title', modelId: host.models.find(model => model.ready)!.id })
     expect(made.error).toBeFalsy()
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     expect(sent).toEqual([])
     await pipeline.control.command({ type: 'manual-send', threadId: made.activeThreadId!, text: 'A private prompt' })
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     expect(sent).toEqual([])
     const native = pipeline.adapter.state.threads.at(-1)!
     turn(pipeline, native, 'turn-1', 'running')
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     const started = sent.filter(item => item.event === 'thread.started')
     expect(started).toHaveLength(1)
     expect(parseProductEvent('thread.started', started[0]!.properties)).not.toBeNull()
@@ -83,10 +83,10 @@ describe('product events on the update path', () => {
     const id = pipeline.streamIds[0]!
     let turns = 0
     const startedBy = async (): Promise<unknown> => {
-      pipeline.drainProductEvents()
+      await pipeline.drainProductEvents()
       sent.length = 0; features.length = 0; turns += 1
-      turn(pipeline, stream, `turn-${turns}`, 'running'); pipeline.drainProductEvents()
-      turn(pipeline, stream, `turn-${turns}`, 'completed'); pipeline.drainProductEvents()
+      turn(pipeline, stream, `turn-${turns}`, 'running'); await pipeline.drainProductEvents()
+      turn(pipeline, stream, `turn-${turns}`, 'completed'); await pipeline.drainProductEvents()
       return (sent[0]!.properties as { startedBy: string }).startedBy
     }
     expect(await startedBy()).toBe('user')
@@ -106,7 +106,7 @@ describe('product events on the update path', () => {
 
   it('sends nothing for every thread already there when Sotto starts', async () => {
     const { pipeline, sent, features } = await start()
-    pipeline.drainProductEvents()
+    await pipeline.drainProductEvents()
     expect(sent).toEqual([]); expect(features).toEqual([])
   })
 })
