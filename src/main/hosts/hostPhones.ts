@@ -71,12 +71,14 @@ interface Entry {
   view: HostPhonesView
   /** The connect the view came from; a new one is read afresh. */
   generation?: number | undefined
-  reading?: Promise<void> | undefined
+  reading?: { generation: number; promise: Promise<void> } | undefined
   /** Until when an open dialog wants this host read again and again. */
   watchUntil: number
   timer?: ReturnType<typeof setInterval> | undefined
-  /** Commands go one at a time, so a read never lands between a command and the state it answered with. */
-  commands: Promise<unknown>
+  /** Reads and commands go one at a time, so an older read cannot replace a command's answer. */
+  pending: Promise<unknown>
+  /** Queued and running commands keep the dialog busy, including while they wait behind a read. */
+  pendingCommands: number
 }
 
 export class HostPhones {
@@ -116,23 +118,26 @@ export class HostPhones {
   async command(id: string, command: HostPhonesCommand): Promise<void> {
     const entry = this.entries.get(id), link = this.link(id)
     if (!entry || !link) throw new Error(t`This host is not connected, so its phone access cannot be changed. Nothing was changed. Connect it, then try again.`)
-    const run = entry.commands.then(async () => {
-      this.set(id, { busy: true })
+    entry.pendingCommands++
+    const run = entry.pending.then(async () => {
       let answer: Answer
       try { answer = await link.press(connection => this.post(connection, link, 'phones-command', { command }, HOST_ADMIN_COMMAND_TIMEOUT_MS)) }
       catch (error) {
         this.options.log?.('host-phones-command-failed')
-        this.set(id, { busy: false })
         throw new Error(this.failure(link.name, error), { cause: error })
       }
-      this.set(id, { busy: false, state: answer.state, error: undefined, readAt: new Date().toISOString() })
+      this.set(id, { state: answer.state, error: undefined, readAt: new Date().toISOString() })
       if (answer.error) throw new Error(answer.error)
       if (command.type === 'open-serve-setup') {
         if (!answer.url || !isTailscaleApprovalUrl(answer.url)) throw new Error(t`Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.`)
         await this.options.openExternal(answer.url)
       }
+    }).finally(() => {
+      entry.pendingCommands--
+      this.set(id, { busy: entry.pendingCommands > 0 })
     })
-    entry.commands = run.catch(() => undefined)
+    entry.pending = run.catch(() => undefined)
+    this.set(id, { busy: true })
     await run
   }
 
@@ -162,9 +167,10 @@ export class HostPhones {
   /** Reads a host's phone access. Only a read the dialog asked for (`open`) may open an admin connection for it. */
   private async read(id: string, open: boolean): Promise<void> {
     const entry = this.entries.get(id), link = this.link(id)
-    if (!entry || !link || entry.reading) return entry?.reading
-    entry.reading = (async () => {
-      await entry.commands
+    if (!entry || !link) return
+    if (entry.reading?.generation === link.generation) return entry.reading.promise
+    const run = entry.pending.then(async () => {
+      if (this.closed || entry.generation !== link.generation) return
       try {
         const request = (connection: PressConnection): Promise<Answer> => this.post(connection, link, 'phones', {}, READ_TIMEOUT_MS)
         const answer = open ? await link.press(request) : await link.pressIfOpen(request)
@@ -177,8 +183,10 @@ export class HostPhones {
         this.options.log?.('host-phones-read-failed')
         if (entry.generation === link.generation) this.set(id, { error: this.failure(link.name, error) })
       }
-    })().finally(() => { entry.reading = undefined })
-    return entry.reading
+    }).finally(() => { if (entry.reading?.promise === run) entry.reading = undefined })
+    entry.reading = { generation: link.generation, promise: run }
+    entry.pending = run
+    return run
   }
 
   /** One administrative request over a connection (see `hostAdminRequest`). */
@@ -199,7 +207,7 @@ export class HostPhones {
 
   private entry(id: string): Entry {
     let entry = this.entries.get(id)
-    if (!entry) { entry = { view: { id }, watchUntil: 0, commands: Promise.resolve() }; this.entries.set(id, entry) }
+    if (!entry) { entry = { view: { id }, watchUntil: 0, pending: Promise.resolve(), pendingCommands: 0 }; this.entries.set(id, entry) }
     return entry
   }
 
