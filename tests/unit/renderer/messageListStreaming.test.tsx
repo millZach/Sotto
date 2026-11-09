@@ -29,10 +29,10 @@ describe('assistant messages without text', () => {
 })
 
 describe('replies shown when finished', () => {
-  it('holds back the reply being written', () => {
+  it('holds back the reply being written and draws nothing for it, since the working line says so (November 9, 2026)', () => {
     mount([user, reply('a-1', 'Half a sent')], { streamText: false })
     expect(screen.queryByText('Half a sent')).not.toBeInTheDocument()
-    expect(screen.getByText('Writing a reply…')).toHaveAttribute('role', 'status')
+    expect(document.querySelector('[data-message-id="a-1"]')).toBeNull()
   })
 
   it('shows the reply once a tool call follows it, and leaves the running tool call to the working line', () => {
@@ -52,13 +52,11 @@ describe('replies shown when finished', () => {
     // The thread runs from the press, but the new prompt is drawn below the list until the history carries it.
     mount([user, reply('a-1', 'Yes, you are on it.')], { sending: true, streamText: false })
     expect(screen.getByText('Yes, you are on it.')).toBeInTheDocument()
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   })
 
   it('shows the whole reply when the turn ends', () => {
     mount([user, reply('a-1', 'All done.')], { running: false, streamText: false })
     expect(screen.getByText('All done.')).toBeInTheDocument()
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   })
 })
 
@@ -73,9 +71,8 @@ describe('a reply the provider is not writing now', () => {
     expect(document.querySelector('[data-message-id="a-1"] [aria-busy]')).toBeNull()
   })
 
-  it('shows the reply so far rather than Writing a reply while a request waits', () => {
+  it('shows the reply so far, not held back, while a request waits', () => {
     mount([user, reply('a-1', 'I want to run the benchmark.')], { notWriting: true, streamText: false })
     expect(screen.getByText('I want to run the benchmark.')).toBeInTheDocument()
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   })
 })

@@ -39,3 +39,13 @@ Zach asked for it on November 3, 2026, picked A of `docs/prototypes/markdown-sid
 **In Watcher's room** the file takes the beside pane's place, with the same divider. A thread already beside Watcher waits behind it with its draft and reading position, and Back to its title, the close button or Escape brings it back. Opening a thread puts the file away.
 
 **Not here.** The iPhone and the Android client have no file links. A link inside the open file does not open another file.
+
+## November 9 amendment: a link opens however the agent wrote the path
+
+Zach reported on November 9, 2026 that a link to a Markdown file that was there opened "This file is not on the computer this thread runs on". Codex on Windows had written `[project instructions](</D:/Seduce Jensen/AGENTS.md>)`, and Windows reads `/D:/...` as a folder on the current drive. A survey of ten days of Claude Code and Codex replies on the laptop and forge found the forms agents write: `/D:/...`, `D:/...` and `D:\...`, with or without angle brackets, spaces and `%20`, dot folders, `file:///`, `~/`, `./` and `../`, lines (`:12`, `#L12`), headings (`#reading-a-failure`) and folders outside the thread's. Every one of them opens now. This follows the decision above rather than changing it; what it settles:
+
+- **Drive first.** A path written `/D:/...`, as a `file:` URL's path or by Codex, is read as `D:/...`. The window does this for every link it draws, so Watcher finds the worker whose folder holds it. Main does it too, after trying the path as written, for a request that reaches it unchanged.
+- **A heading is a location.** A trailing `#fragment` without a folder separator is dropped when the path as written is not found, as `#L12` was.
+- **The path as the reply wrote it.** Markdown reads a backslash before punctuation as an escape, so `C:\Users\me\.claude\CLAUDE.md` lost the separator before `.claude` (#2218). A link whose path starts with a drive, `~` or `.` and a backslash keeps the path as written, with a doubled backslash read as one.
+- **A path with spaces and no brackets.** `[audit](D:/Watcher Audit/audit.md)` is not a link in Markdown, so it showed as text. Written as a name in brackets and a path that reads as a file (absolute, `~/`, `./`, `../`, `file://`, or relative with a folder and a file name), it is drawn as the link the agent meant. Code, web addresses and any other scheme are left as they are. A relative path that leads outside the thread's folder is still refused, as above.
+- **What agents are told.** Threads and Watcher are told to put the path in angle brackets, so a path with spaces stays a link, and threads to use forward slashes, as in `[plan.md](<D:/My Project/plan.md>)`.

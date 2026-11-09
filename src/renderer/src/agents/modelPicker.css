@@ -27,7 +27,21 @@
 .model-picker__dialog::backdrop { background: transparent; }
 /* Dynamic's switch at the menu's foot (ADR-0191), on a row of its own under the rail and the list. */
 .model-picker__dialog:has(> .model-picker__foot) { grid-template-rows: minmax(0, 1fr) auto; }
-.model-picker__foot { grid-column: 1 / -1; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
+.model-picker__foot { grid-column: 1 / -1; padding: 6px 12px 6px 16px; border-top: 1px solid var(--tt-hairline); }
+/* Align with the model names, beyond the provider rail. The provider note remains part of the list,
+   but gives up its own divider when this foot follows it. */
+.model-picker__dialog[data-rail] > .model-picker__foot { padding-left: 68px; }
+.model-picker__dialog:has(> .model-picker__foot) .model-picker__note { border-top: 0; padding-bottom: 8px; }
+/* The shared toggle's copy lays out as two grid items only while the turn fixes the switch. */
+.model-picker__foot .tt-toggle { grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 2px 8px; min-height: 26px; padding: 0; color: var(--tt-text); }
+.model-picker__foot .tt-toggle__copy { display: contents; }
+.model-picker__foot .tt-toggle__copy > strong { grid-column: 1; grid-row: 1; line-height: 26px; font-size: var(--tt-type-small); font-weight: 400; }
+.model-picker__foot .tt-toggle__copy > .tt-field__description { grid-column: 1 / -1; grid-row: 2; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
+.model-picker__foot .tt-toggle__track { grid-column: 2; grid-row: 1; justify-self: center; width: 30px; height: 18px; margin: 0; border-radius: var(--tt-radius-control); }
+.model-picker__foot .tt-toggle__thumb { width: 12px; height: 12px; border-radius: var(--tt-radius-tag); }
+.model-picker__foot .tt-toggle[aria-checked='true'] .tt-toggle__track { background: var(--tt-accent-wash); border-color: var(--tt-accent-border); }
+.model-picker__foot .tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--tt-accent); transform: translateX(12px); }
+.model-picker__foot .tt-toggle:active:not(:disabled) .tt-toggle__thumb { width: 12px; }
 .model-picker__suffix { color: var(--tt-accent-text); white-space: nowrap; }
 .model-picker__panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 /* Marks only: a provider costs the same here whatever it is called, which is what the tabs could not do.

@@ -13,6 +13,7 @@ import {
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
   type AxisPlacement, type DividerPlacement, type SplitLayout,
 } from './splitLayout'
+import { paneDomId, tabDomId } from './paneDom'
 import { shownCount } from '../state/interfaceNumbers'
 import './splitWorkspace.css'
 
@@ -111,17 +112,8 @@ export interface ThreadPanesProps {
   readonly measuredHeight?: number | undefined
 }
 
-export const paneDomId = (threadId: string): string => `thread-pane-${threadId}`
-const tabDomId = (threadId: string): string => `thread-pane-tab-${threadId}`
 /** Clicking or focusing these acts on the layout, not on the pane's thread, so it does not move the selection. */
 const CHROME = '[data-pane-chrome]'
-
-/** Put keyboard focus inside a pane: its composer when it can take text, its terminal, otherwise its transcript. */
-export function focusInPane(threadId: string): void {
-  const pane = document.getElementById(paneDomId(threadId))
-  const target = pane?.querySelector<HTMLElement>('.thread-workspace__compose :is(.prompt-editor[contenteditable="true"], textarea:not(:disabled))') ?? pane?.querySelector<HTMLElement>('.terminal-view textarea, [role="log"]')
-  target?.focus()
-}
 
 function useSize(fixedWidth: number | undefined, fixedHeight: number | undefined): readonly [React.RefObject<HTMLDivElement | null>, number, number] {
   const ref = useRef<HTMLDivElement>(null)

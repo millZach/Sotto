@@ -4,7 +4,7 @@ import { permissionValue } from './nativeRequests'
 import { cardUnderHeadline, commandCard, modelSummary, otherRequestCard } from './requestInput'
 
 /**
- * What DeepSeek Harness asks the user (ADR-0138, ADR-0004). Its one request is a sandbox escalation: a tool call
+ * What DeepSeek asks the user (ADR-0138, ADR-0004). Its one request is a sandbox escalation: a tool call
  * the sandbox denied, retried with `sandbox_permissions` and a `justification`, arrives as
  * `session/request_permission` carrying only the tool call's ID and two one-shot choices. The detail a card needs
  * is in the `tool_call` update the harness sends first, so the adapter buffers it and hands it here: the card
@@ -60,7 +60,7 @@ export function deepseekPending(wireId: string | number, method: string, params:
   const tool = detail.title?.trim() || 'a tool'
   const headline = command ? `Run in ${boundary ?? 'a wider sandbox'}: ${command}`
     : path ? `${tool} ${path} outside the sandbox`
-    : `DeepSeek Harness asks to use ${tool} outside the sandbox.`
+    : `DeepSeek asks to use ${tool} outside the sandbox.`
   // The escalation's own fields are said in words below; everything else in the input is an ordinary card's.
   const rest = input ? Object.fromEntries(Object.entries(input).filter(([name]) => name !== 'sandbox_permissions' && name !== 'justification')) : undefined
   const card = command ? commandCard(command.slice(0, TEXT_LIMIT), rest).context
@@ -97,7 +97,7 @@ export function deepseekPending(wireId: string | number, method: string, params:
 export function deepseekAnswer(pending: DeepSeekPending, approved?: boolean, permissionChoice?: string): unknown {
   if (permissionChoice) return { outcome: { outcome: 'selected', optionId: permissionValue(pending.request, permissionChoice, approved) } }
   const selected = pending.permission.options.find(option => option.kind === (approved === true ? 'allow_once' : 'reject_once'))
-  if (approved === true && !selected) throw new Error('DeepSeek Harness did not offer to allow this once. Nothing was approved.')
+  if (approved === true && !selected) throw new Error('DeepSeek did not offer to allow this once. Nothing was approved.')
   return selected ? { outcome: { outcome: 'selected', optionId: selected.optionId } } : { outcome: { outcome: 'cancelled' } }
 }
 

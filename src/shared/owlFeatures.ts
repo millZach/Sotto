@@ -46,7 +46,8 @@ export const OWL_FEATURES = [
   { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
-  { id: 'deepseek', name: 'DeepSeek Harness provider', owlSince: '2026-10-24', owner: 'docs/adr/0138-deepseek-harness-is-a-thread-provider.md', sentToStable: false },
+  { id: 'hermes', name: 'Hermes provider', owlSince: '2026-11-06', owner: 'src/main/agents/hermes.ts', sentToStable: false },
+  { id: 'deepseek', name: 'DeepSeek provider', owlSince: '2026-10-24', owner: 'docs/adr/0138-deepseek-harness-is-a-thread-provider.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },
   { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
@@ -72,6 +73,7 @@ export const OWL_FEATURES = [
   { id: 'next-turn-choice', name: 'A choice for the next turn while a thread works', owlSince: '2026-11-04', owner: 'docs/adr/0192-a-thread-keeps-a-choice-for-its-next-turn.md', sentToStable: false },
   { id: 'hide-menu-bar-icon', name: 'Hide the menu bar icon', owlSince: '2026-11-03', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
   { id: 'dynamic-threads', name: 'Dynamic threads', owlSince: '2026-11-04', owner: 'docs/adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md', sentToStable: false },
+  { id: 'paired-host-browser', name: 'Sotto\'s browser for a thread on a paired host', owlSince: '2026-11-08', owner: 'docs/adr/0198-a-paired-hosts-thread-browses-in-the-hosts-own-chromium.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

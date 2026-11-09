@@ -9,6 +9,7 @@ import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { startShortcut } from '../shared/dictationShortcuts'
 import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
+import { addressFromHost } from '../shared/hostBrowser'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
@@ -122,6 +123,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
+import { forgetHermesKey } from './agents/hermesRuntime'
 
 import {
   bootstrapSotto,
@@ -297,7 +299,7 @@ import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
-import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
+import { OwnServers, type OwnServerEvent, type OwnServersOpenCode, type OwnServersDeepSeek, type OwnServersHermes } from './ownModelServers/service'
 import { registerOwnServersIpc } from './ownModelServers/ipc'
 import { OwnCleanupMeasures, type OwnCleanupEvent } from './llm/ownServerCleanup'
 import { registerOwnServerCleanupIpc } from './llm/ownServerCleanupIpc'
@@ -336,7 +338,7 @@ import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
-import { BROWSER_EVENT } from '../shared/browser'
+import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
@@ -375,6 +377,7 @@ type NativeDiagnostic =
   | OpenRouterSpeechModelsEvent
   | RecoveryNoticeLogEvent
   | 'omarchy-theme-missing'
+  | 'host-browser-setting-failed'
   | 'popup-load-failed'
   | 'popup-renderer-gone'
   | 'omarchy-theme-invalid'
@@ -817,6 +820,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
   // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
+  // Sotto's browser for a paired host's own threads (ADR-0198), on this computer's answers for it and the pane it builds on.
+  const pairedHostBrowser = owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
@@ -884,8 +889,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
   // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
   // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: () => localRuntime?.ownServersDeepSeek, log: event => { logOperational(event) } }) : undefined
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes => localRuntime?.ownServersHermes ?? { keepKey: async () => {}, forgetKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id) }, log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
   // choice and measures are kept. E2E runs never reach a server.
@@ -1261,7 +1266,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -1405,7 +1410,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders, crossMachineEnabled) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders, crossMachineEnabled, pairedHostBrowser) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
     finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
@@ -2132,6 +2137,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       phoneAccess.settingsChanged()
       if (settings.localApps !== previous.localApps) localApps?.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
+      // Each host's browser asks as this computer's does (ADR-0198, decision 3), told now and on each connection.
+      if (grantDefaultChanged && pairedHostBrowser) for (const connection of hostRouter.remoteConnections()) void hostRouter.tellBrowserSetting(connection, settings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed'))
       if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
       const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
@@ -2510,7 +2517,24 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           list: request => hostRouter.gitChanges(request), review: request => hostRouter.gitReview(request),
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
+        ...pairedHostBrowser ? { hostedBrowser: { request: request => hostRouter.hostedBrowser(request),
+          openExternally: async ({ url, threadId }) => {
+            const hostId = parseHostEntityKey(threadId)?.hostId
+            const address = hostId ? desktopHosts.browserAddress(hostId) : undefined
+            try { await shell.openExternal(address ? addressFromHost(url, address) : url) }
+            catch { return { ok: false as const, error: { code: 'unavailable' as const, message: t`The system browser didn't open. Nothing was changed. Try again.` } } }
+            return { ok: true as const, value: { destination: 'external' as const } }
+          } } } : {},
       }, () => windows.getTrustedRenderers())
+      // A paired host's browser (ADR-0198): its pages, tasks and grants reach the window as this computer's do, and its
+      // pictures on their own channel, never logged or kept.
+      const stopHostBrowser = pairedHostBrowser ? [
+        hostRouter.subscribeBrowser(event => { windows.sendToMain(BROWSER_EVENT, event) }),
+        hostRouter.subscribeBrowserFrames(frame => { windows.sendToMain(BROWSER_FRAME_EVENT, frame) }),
+        hostRouter.subscribeConnected(connection => { void hostRouter.tellBrowserSetting(connection, workingCopySettings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed')) }),
+      ] : []
+      // A host that connected before this was set up is told now, as a later one is on connecting.
+      if (pairedHostBrowser) for (const connection of hostRouter.remoteConnections()) void hostRouter.tellBrowserSetting(connection, workingCopySettings.browserWithoutAsking).catch(() => logOperational('host-browser-setting-failed'))
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
       omarchySetup = platform === 'linux' ? new OmarchySetup({
@@ -2736,6 +2760,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()
         cleanupTools()
+        for (const stop of stopHostBrowser) stop()
         browserService = undefined
         // The quit drain already awaited this service's own dispose (ADR-0047); this just drops its IPC handlers.
         void cleanupCloudIphone()

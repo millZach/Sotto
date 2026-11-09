@@ -829,7 +829,7 @@ export function SettingsView({
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
               {councilOn ? <Card className="settings-section" id="settings-council" {...panelProps('settings-council')}>
-                <div className="settings-section__heading"><h2><Trans>Council</Trans></h2><p className="tt-paragraph"><Trans>Who sits on a Council, how its chamber is laid out, and how long a stage waits</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Council</Trans></h2></div>
                 <CouncilSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card> : null}
 
               <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2><Trans>Providers</Trans></h2><p className="tt-paragraph"><Trans>Accounts &amp; connections</Trans></p></div><ProvidersSettings compactIdle={{ checked: settings.compactIdleThreads, onChange: checked => void save({ compactIdleThreads: checked }) }} /></Card>

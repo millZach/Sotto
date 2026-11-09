@@ -14,7 +14,7 @@ import { isFenceClosed } from '../../../shared/diagramSource'
 import { useCopyImage, useTransientFlag, writeClipboard } from './richActions'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
-import { isMarkdownPath } from '../../../shared/files'
+import { isMarkdownPath, withDriveFirst } from '../../../shared/files'
 import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
@@ -28,6 +28,7 @@ import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
 import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
 import { flipsBelow } from './ReplyQuoteButton'
 import { rehypeSkillTokens, SkillToken } from './sentSkills'
+import { remarkFileLinks } from './fileLinkSource'
 import './rich-messages.css'
 import './runCommand.css'
 
@@ -89,11 +90,11 @@ export function localFilePath(raw: string | undefined): string | null {
       const url = new URL(value)
       if (url.host && url.host !== 'localhost') return null
       value = url.pathname
-      // file:///C:/Users becomes /C:/Users; Windows wants the drive first.
-      if (/^\/[a-z]:\//iu.test(value)) value = value.slice(1)
     } catch { return null }
   }
   try { value = decodeURIComponent(value) } catch { /* Kept as written: a literal % in a file name. */ }
+  // file:///C:/Users and Codex's </D:/Projects/notes.md> both lead with a slash; Windows wants the drive first.
+  value = withDriveFirst(value)
   // A network share or device path (\\host, //host, \\?\) would reach the network.
   if (/^[\\/]{2}/u.test(value)) return null
   // Any other scheme (http:, javascript:, vscode:) is not a file here; a Windows drive letter is, and so is a file named
@@ -477,7 +478,7 @@ const components: Components = {
   h1: heading(3, 1), h2: heading(4, 2), h3: heading(5, 3), h4: heading(6, 4), h5: heading(6, 5), h6: heading(6, 6),
   span: ({ node, ...props }) => typeof node?.properties.dataSkillToken === 'string' ? <SkillToken token={node.properties.dataSkillToken}>{props.children}</SkillToken> : <span {...props} />,
 }
-const remarkPlugins = [remarkGfm]
+const remarkPlugins = [remarkGfm, remarkFileLinks]
 const skillPlugins = [rehypeSkillTokens]
 
 const BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})/u

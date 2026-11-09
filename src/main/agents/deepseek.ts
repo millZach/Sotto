@@ -40,7 +40,7 @@ import { WatcherProfileRefusal } from './watcherProfile'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 
 /**
- * DeepSeek Harness as a thread provider (ADR-0138): one `dsh --profile acp` process per thread, started in the
+ * DeepSeek as a thread provider (ADR-0138): one `dsh --profile acp` process per thread, started in the
  * thread's folder with Sotto's own harness folder as `DSH_HOME` and a `--patch` overlay generated from the user's
  * own model servers, speaking ACP on stdio. The harness keeps the sessions and the tools, and runs only the user's
  * keyless servers in this version; Sotto keeps each thread's session ID, its settings and what it sent, by digest,
@@ -107,11 +107,11 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 }).passthrough() }).passthrough()
 const sessionNewSchema = z.object({ sessionId: z.string().min(1).max(512) }).passthrough()
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
-const PROCESS_LOST = 'DeepSeek Harness stopped before this reply finished, so it may be cut short. Send a message to carry on.'
+const PROCESS_LOST = 'DeepSeek stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 /** What Sotto says once to a thread that comes with Auto-accept edits, whose asking stops at the sandbox boundary (ADR-0138). */
-export const DEEPSEEK_ALLOW_EDITS_NOTICE = 'On DeepSeek Harness, Auto-accept edits runs commands and network inside the workspace sandbox without asking. It asks before anything crosses that boundary.'
-/** What Sotto says once to a thread that comes with Ask for approval on DeepSeek Harness (ADR-0138). */
-export const DEEPSEEK_ASK_NOTICE = 'On DeepSeek Harness, Ask for approval denies a first attempt and the model then asks to retry it. A model that does not ask simply fails the write.'
+export const DEEPSEEK_ALLOW_EDITS_NOTICE = 'On DeepSeek, Auto-accept edits runs commands and network inside the workspace sandbox without asking. It asks before anything crosses that boundary.'
+/** What Sotto says once to a thread that comes with Ask for approval on DeepSeek (ADR-0138). */
+export const DEEPSEEK_ASK_NOTICE = 'On DeepSeek, Ask for approval denies a first attempt and the model then asks to retry it. A model that does not ask simply fails the write.'
 
 /**
  * Where each update of one turn belongs. Replies are counted by segment, broken by a tool or a thought; tools and
@@ -168,7 +168,7 @@ export interface DeepSeekAcpOptions {
   /** Extra arguments ahead of `--profile`: a test's fake client process. */
   executableArgs?: readonly string[]
   environment?: NodeJS.ProcessEnv
-  /** Sotto's DeepSeek Harness folder (ADR-0138): `<userData>/deepseek` by default. */
+  /** Sotto's DeepSeek folder (ADR-0138): `<userData>/deepseek` by default. */
   homeDirectory?: string
   /** The user's own model servers, read at connect and again when the record changes. */
   servers?: () => Promise<readonly OwnServer[]>
@@ -232,7 +232,7 @@ export class DeepSeekAcpHost implements AgentHost {
   private harnessImages = false
   private generation = 0
   private writing = Promise.resolve()
-  private state: AgentHostSnapshot = { connected: false, name: 'DeepSeek Harness', version: '', projects: [], models: [], threads: [],
+  private state: AgentHostSnapshot = { connected: false, name: 'DeepSeek', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: false, permissions: true, interrupt: true, messageOrigin: true,
       reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: false, compact: false } }
   private readonly homeDirectory: string
@@ -275,7 +275,7 @@ export class DeepSeekAcpHost implements AgentHost {
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
-  /** Sotto's DeepSeek Harness folder, which every process runs as `DSH_HOME` (ADR-0138). */
+  /** Sotto's DeepSeek folder, which every process runs as `DSH_HOME` (ADR-0138). */
   get folder(): string { return this.homeDirectory }
   isConnected(): boolean { return this.state.connected }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -292,7 +292,7 @@ export class DeepSeekAcpHost implements AgentHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(this.aliases); return this.writing }
   /**
-   * ADR-0140: stop the thread's own DeepSeek Harness process if it has one, remove its alias and every per-thread
+   * ADR-0140: stop the thread's own DeepSeek process if it has one, remove its alias and every per-thread
    * record this adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the
    * alias store before this removal reaches disk (see there).
    */
@@ -332,7 +332,7 @@ export class DeepSeekAcpHost implements AgentHost {
   }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]
-    if (!alias) throw new Error('This DeepSeek Harness thread does not exist.')
+    if (!alias) throw new Error('This DeepSeek thread does not exist.')
     let thread = this.threads.get(id)
     if (!thread) {
       thread = { id, projectId: alias.projectId, title: alias.title, workingDirectory: alias.cwd, modelId: alias.modelId, runtimeMode: alias.runtimeMode,
@@ -345,11 +345,11 @@ export class DeepSeekAcpHost implements AgentHost {
     return thread
   }
   private assertGeneration(generation: number): void {
-    if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed before this could finish.')
+    if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek’s connection changed before this could finish.')
   }
 
   /**
-   * DeepSeek Harness cannot host Watcher in this version: its ACP surface carries no instructions channel and its
+   * DeepSeek cannot host Watcher in this version: its ACP surface carries no instructions channel and its
    * sandbox asks only at its boundary, so a Watcher thread is refused before its process starts (ADR-0138).
    */
   private async refuseWatcher(id: string): Promise<void> {
@@ -357,12 +357,12 @@ export class DeepSeekAcpHost implements AgentHost {
     let profile
     try { profile = await this.launchProfiles?.profileFor(id) }
     catch (error) {
-      if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed.')
+      if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek’s connection changed.')
       throw error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Nothing was sent.')
     }
-    if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed.')
+    if (generation !== this.generation) throw new DeepSeekUncertain('DeepSeek’s connection changed.')
     if (!profile) return
-    const reason = `DeepSeek Harness cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(this.options.heldProviders ?? heldProvidersOf({}))} model for Watcher.`
+    const reason = `DeepSeek cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(this.options.heldProviders ?? heldProvidersOf({}))} model for Watcher.`
     try { profile.revoke(reason) } catch { /* The refusal stands either way. */ }
     throw new WatcherProfileRefusal(reason)
   }
@@ -395,7 +395,7 @@ export class DeepSeekAcpHost implements AgentHost {
       this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http === true
       images = client.agentCapabilities.promptCapabilities?.image === true
     }, false, this.options.startTimeoutMs ?? 30_000)
-    if (protocol !== DEEPSEEK_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${DEEPSEEK_ACP_VERSION}, and this DeepSeek Harness client answered ACP ${protocol}.`)
+    if (protocol !== DEEPSEEK_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${DEEPSEEK_ACP_VERSION}, and this DeepSeek client answered ACP ${protocol}.`)
     return images
   }
   /**
@@ -422,11 +422,11 @@ export class DeepSeekAcpHost implements AgentHost {
   }
   /** This thread's own process, started in the thread's permission mode with the current overlay, ready for a session. */
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
-    if (!this.executable || !this.state.connected) throw new Error('Connect DeepSeek Harness before using its threads.')
+    if (!this.executable || !this.state.connected) throw new Error('Connect DeepSeek before using its threads.')
     // The revision is read before the overlay is written, so a change during the write leaves this process outdated.
     const patchRevision = this.patchRevision
     await this.writePatch()
-    if (!this.patchText) throw new Error('DeepSeek Harness has no model server it can run. Your thread is kept. Add a server without a key under Your own model servers, then send again.')
+    if (!this.patchText) throw new Error('DeepSeek has no model server it can run. Your thread is kept. Add a server without a key under Your own model servers, then send again.')
     const connection: Connection = { rpc: undefined as unknown as DeepSeekRpc, nonce: randomUUID(), clientRevision: this.clientRevision,
       patchRevision, mode: alias.runtimeMode, closing: false, model: undefined, effort: undefined, tools: new Map() }
     const rpc = this.spawn([...(this.options.executableArgs ?? []), '--profile', 'acp', '--patch', this.patchPath], cwd, alias.runtimeMode, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
@@ -445,16 +445,16 @@ export class DeepSeekAcpHost implements AgentHost {
     try {
       await mkdir(this.homeDirectory, { recursive: true })
       const executable = this.options.executable ?? await findDeepSeekExecutable(this.options.environment)
-      if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install DeepSeek Harness, then connect it again. Your threads are kept.')
+      if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install DeepSeek, then connect it again. Your threads are kept.')
       const version = await readDeepSeekVersion(executable, this.options.environment ?? process.env, this.options.executableArgs ?? [])
       this.assertGeneration(generation)
-      if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) < 0) throw new ProviderUnavailable('too-old', `DeepSeek Harness ${DEEPSEEK_CLI_VERSION} or newer is needed, and this one is ${version}. Update it, then connect again. Your threads are kept.`, version, DEEPSEEK_CLI_VERSION)
+      if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) < 0) throw new ProviderUnavailable('too-old', `DeepSeek ${DEEPSEEK_CLI_VERSION} or newer is needed, and this one is ${version}. Update it, then connect again. Your threads are kept.`, version, DEEPSEEK_CLI_VERSION)
       this.servers = await this.options.servers?.() ?? []
       this.assertGeneration(generation)
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
       const models = deepseekCatalog(this.servers)
-      if (!models.length) throw new ProviderUnavailable('signed-out', 'DeepSeek Harness runs your own model servers, and none it can run is saved yet. Add one under Your own model servers, then connect again. Your threads are kept.', version)
+      if (!models.length) throw new ProviderUnavailable('signed-out', 'DeepSeek runs your own model servers, and none it can run is saved yet. Add one under Your own model servers, then connect again. Your threads are kept.', version)
       this.executable = executable
       await this.writePatch()
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
@@ -479,7 +479,7 @@ export class DeepSeekAcpHost implements AgentHost {
       if (error instanceof WatcherProfileRefusal) throw error
       const refused = error instanceof ProviderUnavailable
       const detail = refused || error instanceof DeepSeekUncertain ? error.message : error instanceof Error && /^Sotto could not read/u.test(error.message) ? error.message : ''
-      const message = ['Could not connect DeepSeek Harness.', detail, refused ? '' : 'Connect again to retry.'].filter(Boolean).join(' ')
+      const message = ['Could not connect DeepSeek.', detail, refused ? '' : 'Connect again to retry.'].filter(Boolean).join(' ')
       if (refused) throw new ProviderUnavailable(error.problem, message, error.version, error.requiredVersion)
       throw new Error(message, { cause: error })
     }
@@ -487,7 +487,7 @@ export class DeepSeekAcpHost implements AgentHost {
   private markOpenFailed(id: string, error: unknown): void {
     if (!this.aliases[id]) return
     this.thread(id).status = 'error'
-    this.state.error = error instanceof Error && error.message ? error.message : 'A DeepSeek Harness thread could not be opened. Your thread is kept. Reconnect DeepSeek Harness to try again.'
+    this.state.error = error instanceof Error && error.message ? error.message : 'A DeepSeek thread could not be opened. Your thread is kept. Reconnect DeepSeek to try again.'
     this.emit()
   }
   /**
@@ -512,7 +512,7 @@ export class DeepSeekAcpHost implements AgentHost {
     })().catch(() => undefined)
   }
   /**
-   * DeepSeek Harness's client on disk was updated while Sotto stayed connected (ADR-0042, ADR-0038): find it again
+   * DeepSeek's client on disk was updated while Sotto stayed connected (ADR-0042, ADR-0038): find it again
    * and hold it to the floor; every new process starts from it, and each thread moves onto it as it goes idle.
    */
   async clientUpdated(): Promise<void> {
@@ -520,15 +520,15 @@ export class DeepSeekAcpHost implements AgentHost {
     const generation = this.generation
     const executable = this.options.executable ?? await findDeepSeekExecutable(this.options.environment).catch(() => undefined)
     if (generation !== this.generation || !this.state.connected) return
-    if (!executable) throw new Error('DeepSeek Harness was updated, but Sotto cannot find it now. Threads that are working carry on and nothing was lost. Check DeepSeek Harness, then connect it again.')
+    if (!executable) throw new Error('DeepSeek was updated, but Sotto cannot find it now. Threads that are working carry on and nothing was lost. Check DeepSeek, then connect it again.')
     let version: string
     try { version = await readDeepSeekVersion(executable, this.options.environment ?? process.env, this.options.executableArgs ?? []) }
     catch (error) {
       if (generation !== this.generation || !this.state.connected) return
-      throw new Error('DeepSeek Harness was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect DeepSeek Harness again to try the new version.', { cause: error })
+      throw new Error('DeepSeek was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect DeepSeek again to try the new version.', { cause: error })
     }
     if (generation !== this.generation || !this.state.connected) return
-    if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) < 0) throw new Error(`DeepSeek Harness was updated, but Sotto cannot run ${version}: ${DEEPSEEK_CLI_VERSION} or newer is needed. Threads that are working carry on and nothing was lost.`)
+    if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) < 0) throw new Error(`DeepSeek was updated, but Sotto cannot run ${version}: ${DEEPSEEK_CLI_VERSION} or newer is needed. Threads that are working carry on and nothing was lost.`)
     this.executable = executable; this.clientRevision++
     this.state.version = `${version} / ACP ${DEEPSEEK_ACP_VERSION}`
     if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) > 0) this.state.verifiedVersion = DEEPSEEK_CLI_VERSION
@@ -576,11 +576,11 @@ export class DeepSeekAcpHost implements AgentHost {
     await this.refuseWatcher(id)
     this.assertGeneration(generation)
     const alias = this.aliases[id]
-    if (!alias?.deepseekSessionId) throw new Error('DeepSeek Harness did not confirm this thread’s session. Your thread is kept. Start a new thread to carry on.')
+    if (!alias?.deepseekSessionId) throw new Error('DeepSeek did not confirm this thread’s session. Your thread is kept. Start a new thread to carry on.')
     const cwd = await existingWorkingDirectory(alias.cwd)
     this.assertGeneration(generation)
     const connection = await this.startProcess(id, alias, cwd)
-    if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek Harness’s connection changed while the thread was opening.') }
+    if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek’s connection changed while the thread was opening.') }
     this.connections.set(id, connection)
     if (this.stale(connection)) this.outdated.add(id)
     try {
@@ -588,7 +588,7 @@ export class DeepSeekAcpHost implements AgentHost {
       this.assertGeneration(generation)
       // A resumed session replays nothing (ADR-0138): the thread's history stays Sotto's, and the session continues.
       await connection.rpc.request('session/resume', { sessionId: alias.deepseekSessionId, cwd: alias.cwd, mcpServers }, value => { this.readSettings(connection, value) })
-      if (generation !== this.generation || this.connections.get(id) !== connection) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed while the thread was opening.')
+      if (generation !== this.generation || this.connections.get(id) !== connection) throw new DeepSeekUncertain('DeepSeek’s connection changed while the thread was opening.')
       await this.applySettings(alias, connection)
       this.log.pin(id); this.reaper.touch(id)
       const thread = this.thread(id)
@@ -597,7 +597,7 @@ export class DeepSeekAcpHost implements AgentHost {
     } catch (error) {
       if (this.connections.get(id) === connection) this.connections.delete(id)
       this.close(connection)
-      if (error instanceof DeepSeekRejected) throw new Error('DeepSeek Harness could not open this thread’s saved session. Your Sotto history is kept. Start a new thread to carry on; Sotto will not resend earlier work.', { cause: error })
+      if (error instanceof DeepSeekRejected) throw new Error('DeepSeek could not open this thread’s saved session. Your Sotto history is kept. Start a new thread to carry on; Sotto will not resend earlier work.', { cause: error })
       throw error
     }
   }
@@ -642,7 +642,7 @@ export class DeepSeekAcpHost implements AgentHost {
   }
   async snapshot(): Promise<AgentHostSnapshot> { return this.current() }
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
-    if (!this.aliases[id]?.deepseekSessionId) throw new Error('This DeepSeek Harness thread has no confirmed session.')
+    if (!this.aliases[id]?.deepseekSessionId) throw new Error('This DeepSeek thread has no confirmed session.')
     const generation = this.generation
     await this.refuseWatcher(id)
     this.assertGeneration(generation)
@@ -677,7 +677,7 @@ export class DeepSeekAcpHost implements AgentHost {
     const asked = deepseekPending(frame.id, frame.method, frame.params, id, toolCallId ? connection.tools.get(toolCallId) : undefined)
     if (!asked) {
       connection.rpc.refuse(frame.id)
-      const notice = unreadableRequest('DeepSeek Harness'); const thread = this.thread(id)
+      const notice = unreadableRequest('DeepSeek'); const thread = this.thread(id)
       thread.requestNotice = notice; this.state.error = notice; this.emit()
       return
     }
@@ -789,7 +789,7 @@ export class DeepSeekAcpHost implements AgentHost {
     this.changed(id)
     this.reaper.touch(id)
   }
-  /** The thread's own server as its turn record names it (ADR-0124): every DeepSeek Harness turn runs on one. */
+  /** The thread's own server as its turn record names it (ADR-0124): every DeepSeek turn runs on one. */
   private ownServerTurn(alias: Alias): OwnServerTurn | undefined {
     const route = deepseekModelRoute(alias.modelId)
     const server = route ? this.servers.find(item => item.id === route.serverId) : undefined
@@ -811,18 +811,18 @@ export class DeepSeekAcpHost implements AgentHost {
       catch (error) { if (error instanceof DeepSeekUncertain) return { accepted: false, uncertain: true }; throw error }
       this.assertGeneration(generation)
     }
-    if (command.type === 'steer') throw new Error('DeepSeek Harness takes no message while it works. Queue this follow-up instead.')
-    if (command.type === 'compact-thread') throw new Error('DeepSeek Harness cannot compact a thread.')
-    if (!this.state.connected) throw new Error('Connect DeepSeek Harness before managing threads.')
+    if (command.type === 'steer') throw new Error('DeepSeek takes no message while it works. Queue this follow-up instead.')
+    if (command.type === 'compact-thread') throw new Error('DeepSeek cannot compact a thread.')
+    if (!this.state.connected) throw new Error('Connect DeepSeek before managing threads.')
     if (command.type !== 'send' && command.type !== 'create-thread') return this.run(command, generation, watcherGuard)
-    if (this.dispatching.has(command.threadId)) throw new Error('DeepSeek Harness is already receiving work for this thread. Wait for its delivery result.')
+    if (this.dispatching.has(command.threadId)) throw new Error('DeepSeek is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)
     try { return await this.run(command, generation, watcherGuard) } finally { this.dispatching.delete(command.threadId); this.stopOutdated() }
   }
   private async run(command: AgentHostCommand, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
     try {
       if (command.type === 'create-project') {
-        if (!isAbsolute(command.path)) throw new Error('DeepSeek Harness projects need an absolute folder.')
+        if (!isAbsolute(command.path)) throw new Error('DeepSeek projects need an absolute folder.')
         if (!this.state.projects.some(project => project.id === command.projectId)) {
           this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
           await this.projectStore.write(this.state.projects)
@@ -832,14 +832,14 @@ export class DeepSeekAcpHost implements AgentHost {
       if (command.type === 'create-thread') return await this.create(command, generation, watcherGuard)
       if (command.type === 'configure-thread') return await this.configure(command, generation, watcherGuard)
       const id = command.threadId, alias = this.aliases[id]
-      if (!alias?.deepseekSessionId) throw new Error('DeepSeek Harness did not confirm this thread’s session. Your thread is kept. Do not repeat its creation automatically.')
+      if (!alias?.deepseekSessionId) throw new Error('DeepSeek did not confirm this thread’s session. Your thread is kept. Do not repeat its creation automatically.')
       if (command.type === 'interrupt') return await this.interrupt(id, alias, watcherGuard)
       const connection = await this.open(id)
-      if (generation !== this.generation || this.connections.get(id) !== connection) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed.')
+      if (generation !== this.generation || this.connections.get(id) !== connection) throw new DeepSeekUncertain('DeepSeek’s connection changed.')
       this.reaper.touch(id)
       if (command.type === 'send') return await this.send(command, alias, connection, generation, watcherGuard)
       if (command.type === 'answer') return await this.answer(command, alias, connection)
-      throw new Error('DeepSeek Harness does not take that action.')
+      throw new Error('DeepSeek does not take that action.')
     } catch (error) {
       if (error instanceof DeepSeekUncertain) return { accepted: false, uncertain: true }
       throw error
@@ -856,14 +856,14 @@ export class DeepSeekAcpHost implements AgentHost {
     const runtimeMode = this.runtimeModeOf(command)
     validateThreadOptions(this.state, { ...command, runtimeMode })
     const project = this.state.projects.find(item => item.id === command.projectId)
-    if (!project) throw new Error('Choose a DeepSeek Harness project first.')
+    if (!project) throw new Error('Choose a DeepSeek project first.')
     // A create that names no effort starts on the model's default and says so, so the chip names the effort it runs at.
     const reasoningEffort = command.reasoningEffort ?? this.model(command.modelId)?.defaultReasoningEffort
     const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, createdAt: new Date().toISOString(),
       modelId: command.modelId, ...(reasoningEffort ? { reasoningEffort } : {}), runtimeMode, turns: 0, origins: [], answeredRequestIds: [] }
     this.assertGeneration(generation)
     const connection = await this.startProcess(command.threadId, alias, alias.cwd)
-    if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek Harness’s connection changed.') }
+    if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek’s connection changed.') }
     // The process is the thread's from here, so what it says while its session is made reaches the thread.
     this.connections.set(command.threadId, connection)
     if (this.stale(connection)) this.outdated.add(command.threadId)
@@ -897,17 +897,17 @@ export class DeepSeekAcpHost implements AgentHost {
     if (value === undefined) throw new Error('This thread’s model is not one of your own model servers. Choose a model your servers offer, then send.')
     if (connection.model !== alias.modelId) {
       await connection.rpc.request('session/set_config_option', { sessionId: alias.deepseekSessionId, configId: 'model', value }, result => { this.readSettings(connection, result) })
-      if (connection.model !== alias.modelId) throw new Error('DeepSeek Harness did not confirm this thread’s model. Your thread and draft are kept. Choose the model again, then send.')
+      if (connection.model !== alias.modelId) throw new Error('DeepSeek did not confirm this thread’s model. Your thread and draft are kept. Choose the model again, then send.')
     }
     const efforts = this.model(alias.modelId)?.reasoningEfforts
     if (efforts?.length && alias.reasoningEffort && connection.effort !== alias.reasoningEffort) {
       await connection.rpc.request('session/set_config_option', { sessionId: alias.deepseekSessionId, configId: 'reasoning_effort', value: alias.reasoningEffort }, result => { this.readSettings(connection, result) })
-      if (connection.effort !== alias.reasoningEffort) throw new Error('DeepSeek Harness did not confirm this thread’s effort. Your thread and draft are kept. Choose the effort again, then send.')
+      if (connection.effort !== alias.reasoningEffort) throw new Error('DeepSeek did not confirm this thread’s effort. Your thread and draft are kept. Choose the effort again, then send.')
     }
   }
   private async configure(command: Extract<AgentHostCommand, { type: 'configure-thread' }>, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
     const id = command.threadId, alias = this.aliases[id]
-    if (!alias?.deepseekSessionId) throw new Error('DeepSeek Harness did not confirm this thread’s session. Your thread is kept.')
+    if (!alias?.deepseekSessionId) throw new Error('DeepSeek did not confirm this thread’s session. Your thread is kept.')
     if (command.providerMode !== undefined) throw new Error('That permission mode is not supported by this provider.')
     const runtimeMode = command.runtimeMode === undefined ? undefined : this.runtimeModeOf(command)
     const modelId = command.modelId ?? alias.modelId
@@ -918,7 +918,7 @@ export class DeepSeekAcpHost implements AgentHost {
     watcherGuard?.()
     if (modeChanges) { await this.loading.get(id)?.catch(() => undefined); await this.stopping.get(id); this.assertGeneration(generation) }
     // A process takes its sandbox when it starts, so a new mode means a new process, once the thread is quiet.
-    if (modeChanges && this.busy(id)) throw new Error('DeepSeek Harness is working on this thread. Its permission mode is unchanged. Change it once the thread is idle.')
+    if (modeChanges && this.busy(id)) throw new Error('DeepSeek is working on this thread. Its permission mode is unchanged. Change it once the thread is idle.')
     const settingsChange = modelId !== alias.modelId || reasoningEffort !== alias.reasoningEffort
     watcherGuard?.()
     alias.modelId = modelId
@@ -946,22 +946,22 @@ export class DeepSeekAcpHost implements AgentHost {
   private async send(command: Extract<AgentHostCommand, { type: 'send' }>, alias: Alias, connection: Connection, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
     const id = command.threadId
     const current = (): void => {
-      if (generation !== this.generation || this.connections.get(id) !== connection || !this.state.connected) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed. Delivery has not been confirmed.')
+      if (generation !== this.generation || this.connections.get(id) !== connection || !this.state.connected) throw new DeepSeekUncertain('DeepSeek’s connection changed. Delivery has not been confirmed.')
     }
     const index = this.indexOf(id, alias)
     const previous = index.sent(command.commandId, command.messageId)
     if (previous) {
-      if (previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This DeepSeek Harness message identity is already in use.')
+      if (previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This DeepSeek message identity is already in use.')
       return this.log.has(id, previous.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
     }
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
     const running = this.turns.get(id)
-    if (running && !running.ended) throw new Error('DeepSeek Harness is still working on this thread. Queue this follow-up.')
-    if (this.thread(id).requests.length) throw new Error('Answer DeepSeek Harness’s pending request before sending another message.')
+    if (running && !running.ended) throw new Error('DeepSeek is still working on this thread. Queue this follow-up.')
+    if (this.thread(id).requests.length) throw new Error('Answer DeepSeek’s pending request before sending another message.')
     // An image is refused here, before any bytes are read, unless the model's record and the harness both take images.
     const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     verifyFileMentions(command.text, command.files)
-    if (command.skills?.length) throw new Error('DeepSeek Harness takes no skills from the composer in this version.')
+    if (command.skills?.length) throw new Error('DeepSeek takes no skills from the composer in this version.')
     // Images go as ACP image blocks after the words; files that are not images are saved into the thread's folder and
     // named in a note after the words (ADR-0131).
     const delivered = await deliverAttachments(alias.cwd, attachments)
@@ -993,11 +993,11 @@ export class DeepSeekAcpHost implements AgentHost {
       if (superseded()) return
       const stop = promptAnswerSchema.parse(value).stopReason
       this.endTurn(id, stop === 'end_turn' ? 'completed' : stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
-        stop === 'refusal' ? 'DeepSeek Harness refused this turn. Nothing else was lost.' : undefined)
+        stop === 'refusal' ? 'DeepSeek refused this turn. Nothing else was lost.' : undefined)
       this.emit()
     }, true).catch((error: unknown) => {
       if (superseded() || turn.ended) return
-      this.endTurn(id, 'failed', connection.rpc.alive ? error instanceof DeepSeekRejected ? 'DeepSeek Harness refused this message. Nothing else was lost. Check the thread’s model server, then send again.' : undefined : PROCESS_LOST)
+      this.endTurn(id, 'failed', connection.rpc.alive ? error instanceof DeepSeekRejected ? 'DeepSeek refused this message. Nothing else was lost. Check the thread’s model server, then send again.' : undefined : PROCESS_LOST)
       this.emit()
     })
     return this.awaitTaken(command.commandId, turn, generation)
@@ -1024,7 +1024,7 @@ export class DeepSeekAcpHost implements AgentHost {
   }
   private async answer(command: Extract<AgentHostCommand, { type: 'answer' }>, alias: Alias, connection: Connection): Promise<AgentHostResult> {
     const pending = this.pending.get(command.requestId)
-    if (!pending || pending.threadId !== command.threadId) throw new Error('That DeepSeek Harness request is no longer waiting.')
+    if (!pending || pending.threadId !== command.threadId) throw new Error('That DeepSeek request is no longer waiting.')
     if (pending.connection !== connection) return { accepted: false, uncertain: true }
     if (pending.answering) return { accepted: false, uncertain: true }
     const result = deepseekAnswer(pending, command.approved, command.permissionChoice)

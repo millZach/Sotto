@@ -13,7 +13,7 @@ import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestS
  * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
  * brief. OpenCode joined in #1107 and Cursor with ADR-0128; a host sends either one's provider row, models and threads only
  * to a client whose hello accepts its feature, `provider-opencode` or `provider-cursor` (`PROVIDER_HOST_FEATURES` in
- * `hostProtocol.ts`). DeepSeek Harness is not one: its models come from this computer's own servers, which a host does
+ * `hostProtocol.ts`). DeepSeek is not one: its models come from this computer's own servers, which a host does
  * not keep yet (ADR-0138), so a host holds it.
  */
 export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'] as const satisfies readonly ProviderId[]
@@ -22,7 +22,7 @@ export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
 /**
  * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
  * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
- * threads, so a desktop or phone that does not know the provider never reads it there. DeepSeek Harness is the one
+ * threads, so a desktop or phone that does not know the provider never reads it there. DeepSeek is the one
  * provider hosts do not take yet (ADR-0138); a provider added to Sotto before hosts take it is held here until it joins
  * `HOST_PROVIDERS`, and is then sent only to peers that list its host feature.
  */
@@ -57,7 +57,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
  * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
  */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -82,6 +82,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   // OpenCode 2's guide: opencode.ai/docs installs OpenCode 1, which Sotto refuses (ADR-0087).
   opencode: 'https://opencode.ai/v2/docs/',
   cursor: 'https://cursor.com/docs/cli/installation',
+  hermes: 'https://github.com/NousResearch/hermes-agent',
   deepseek: 'https://github.com/deepseek-ai/deepseek-harness',
 }
 
@@ -92,7 +93,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`, and Cursor's `https://cursor.com/loginDeepControl`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [], hermes: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false

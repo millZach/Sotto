@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { TerminalBridge } from '../../../shared/terminal'
-import { paneDomId } from '../agents/ThreadPanes'
+import { paneDomId } from '../agents/paneDom'
 import { useOwlFeature } from '../state/owlFeature'
-import { drawerHeight, drawerShellSize } from './PaneTerminalDrawer'
+import { drawerHeight, drawerShellSize } from './paneTerminalGeometry'
 import { paneTerminalChromeStore, paneTerminalStore, type PaneTerminalChromeStore } from './paneTerminalStore'
 import { windowTerminalBridge, type TerminalStore } from './terminalStore'
 

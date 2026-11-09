@@ -12,7 +12,7 @@ export function AskedByLine({ askedBy }: { readonly askedBy: CouncilAskedByView 
   if (!askedBy) return null
   const provider = PROVIDER_LABELS[askedBy.provider], words = askedBy.words
   return <p className="council-entry__asked tt-paragraph">
-    {words ? t({ message: `Asked by ${provider} in this thread, because you said “${words}”`, comment: 'Under a Council an agent started at the user\'s request; the provider\'s name, then the user\'s own message quoted.' })
-      : t({ message: `Asked by ${provider} in this thread, at your request.`, comment: 'Under a Council an agent started at the user\'s request, when the user\'s words are not kept.' })}
+    {words ? t({ message: `Asked by ${provider}: “${words}”`, comment: 'Under a Council an agent started at the user\'s request; the provider\'s name, then the user\'s own message quoted.' })
+      : t({ message: `Asked by ${provider}`, comment: 'Under a Council an agent started at the user\'s request, when the user\'s words are not kept.' })}
   </p>
 }

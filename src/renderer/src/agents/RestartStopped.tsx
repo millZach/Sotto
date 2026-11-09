@@ -8,7 +8,7 @@ import { useWatcherEnabled } from '../state/watcherFeature'
 import type { AgentConnection } from './AgentContext'
 import { RESTART_STOPPED_FEATURE } from '../../../shared/limitRestart'
 import { useOwlFeature } from '../state/owlFeature'
-import { restartBandCancelLabel, restartBandLead, restartBandRest, restartGroups, restartStripWords, type RestartGroup } from './restartWords'
+import { restartBandCancelLabel, restartBandDismissLabel, restartBandLead, restartBandRest, restartGroups, restartStripWords, type RestartGroup } from './restartWords'
 import './restartStopped.css'
 
 type Command = AgentConnection['command']
@@ -21,7 +21,8 @@ export function useRestartStopped(): boolean {
 /**
  * Restarting stopped threads in the window (ADR-0144, Zach's pick B and C of the mock-up): a band at the top of the
  * Threads sidebar for each provider whose limit stopped threads, and a strip over a stopped thread's composer. Each says
- * when Sotto restarts the threads, and offers Don't restart while a restart is scheduled. Nothing here announces itself.
+ * when Sotto restarts the threads, and offers Don't restart while a restart is scheduled, or Dismiss when the provider did not
+ * say when its limit resets. Nothing here announces itself.
  */
 
 /**
@@ -69,7 +70,9 @@ function RestartBand({ group, command, onOpen }: { readonly group: RestartGroup;
     if (busy) return
     const search = band.current?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input') ?? null
     setBusy(true); setError(null)
-    void cancelRestarts(command, group.threads.map(thread => thread.id), t`Sotto could not confirm the restarts were called off. Press Don’t restart them again.`).then(refused => {
+    const unconfirmed = scheduled ? t`Sotto could not confirm the restarts were called off. Press Don’t restart them again.`
+      : t`Sotto could not confirm the note was dismissed. Press Dismiss again.`
+    void cancelRestarts(command, group.threads.map(thread => thread.id), unconfirmed).then(refused => {
       if (band.current === null || !band.current.isConnected) { search?.focus(); return }
       setBusy(false)
       setError(refused)
@@ -87,8 +90,9 @@ function RestartBand({ group, command, onOpen }: { readonly group: RestartGroup;
           onClick={() => { if (watcher) navigate?.('watcher'); else onOpen(thread.id) }}>{watcher ? 'Watcher' : thread.title}</button></li>
       })}
     </ul>
-    {scheduled ? <button type="button" className="restart-band__cancel tt-focusable" aria-label={restartBandCancelLabel(group)} aria-disabled={busy || undefined}
-      onClick={cancel}>{t`Don’t restart them`}</button> : null}
+    {/* With no reset said, nothing is scheduled to call off: Dismiss takes the note away and the threads wait for the user. */}
+    <button type="button" className="restart-band__cancel tt-focusable" aria-label={scheduled ? restartBandCancelLabel(group) : restartBandDismissLabel(group)}
+      aria-disabled={busy || undefined} onClick={cancel}>{scheduled ? t`Don’t restart them` : t`Dismiss`}</button>
     {error === null ? null : <p className="restart-band__error tt-paragraph" role="alert">{error}</p>}
   </div>
 }

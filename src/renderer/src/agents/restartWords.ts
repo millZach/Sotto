@@ -160,3 +160,12 @@ export function restartBandCancelLabel(group: RestartGroup): string {
   const count = group.threads.length, name = group.name, threads = shownCount(count)
   return plural(count, { one: `Don’t restart ${name}’s ${threads} thread`, other: `Don’t restart ${name}’s ${threads} threads` })
 }
+
+/**
+ * Dismiss's accessible name, on a band whose provider did not say when its limit resets: a press takes the band away and
+ * the threads wait for the user's next message.
+ */
+export function restartBandDismissLabel(group: RestartGroup): string {
+  const count = group.threads.length, name = group.name, threads = shownCount(count)
+  return plural(count, { one: `Dismiss the note about ${name}’s ${threads} thread`, other: `Dismiss the note about ${name}’s ${threads} threads` })
+}

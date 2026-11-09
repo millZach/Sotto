@@ -40,6 +40,7 @@ import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
+import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
@@ -124,7 +125,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
-  // Its Owl answers, and every provider hosts do not take yet: DeepSeek Harness, whose models need own servers (ADR-0138).
+  // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   // Restarting its own threads a usage limit stopped (ADR-0144), on the host's own Owl answer.
@@ -164,6 +165,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
+  // Sotto's browser for this host's own threads, in this machine's own Chromium (ADR-0198), on the host's Owl answers for
+  // it and for the browser pane it builds on. The runtime makes it before any thread starts. The last Let agents use the
+  // browser without asking a desktop sent is kept in this host's settings file, so a restart with no desktop holds it.
+  let browser: HostBrowserTools | undefined
   try {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
@@ -198,6 +203,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
+      ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
+        saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
       observeActiveThread: false, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
@@ -236,8 +243,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     })
     // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
     // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
-    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
-    // stays the desktop's.
+    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change.
     const agentHost = runtime.agentHost
     // Watcher runs on a desktop, so a thread here reaches it over that desktop's connection (ADR-0073, November 2, 2026).
     const tellWatcherRelay = watcherEnabled && runtime.watcher ? new HostTellWatcherRelay() : undefined
@@ -314,15 +320,17 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (heldMoves) { const held = heldMoves; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
         threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
-        const moves = { ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        // The browser goes to both listeners; each lists it only to desktops (ADR-0198).
+        const hostedBrowser = browser as HostBrowserTools | undefined
+        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
-          watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
+          watcherDesktops: desktops, delegation, ...hostUpdate, ...listenerServices,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
@@ -346,7 +354,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
         tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
-    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled(threadTools.map(tools => tools.close())); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()]); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -364,7 +372,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           threadMoves?.close()
           try { await listener?.close() } finally {
             // No thread's tool call is taken once the host is closing; a call already running ends with its service.
-            await Promise.allSettled(threadTools.map(tools => tools.close()))
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
@@ -376,7 +384,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return closing
       },
     }
-  } catch (error) { memory?.close(); throw error }
+  } catch (error) { await browser?.close().catch(() => undefined); memory?.close(); throw error }
 }
 
 export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessEnv = process.env): HeadlessHostOptions {

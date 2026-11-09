@@ -50,6 +50,10 @@
   "src/main/agents/heldProviderGate.ts": {
     "structuredClone(": 2
   },
+  "src/main/agents/hermes.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/hostService.ts": {
     "shell()": 3
   },
@@ -137,7 +141,7 @@
   "src/main/omarchy/setup.ts": {
     "structuredClone(": 3
   },
-  "src/main/tools/browser.ts": {
+  "src/main/tools/browserTasks.ts": {
     "structuredClone(": 3
   },
   "src/main/tools/cloudIphone/service.ts": {

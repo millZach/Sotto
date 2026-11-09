@@ -2,9 +2,10 @@ import { z } from 'zod'
 import { browserAgentOpenSchema, browserStartTaskSchema, browserAgentActionSchema, browserFinishTaskSchema, type BrowserAgentResult, type BrowserTask } from '../../shared/browser'
 import { cloudAgentOpenSchema, cloudAgentActionSchema, cloudAgentFinishSchema } from '../../shared/cloudIphone'
 import type { ToolsResult } from '../../shared/tools'
-import { BrowserAgentServer, type BrowserToolDefinition, type BrowserToolResult } from '../agents/browserAgentServer'
+import { BrowserAgentServer, HOST_BROWSER_INSTRUCTIONS, type BrowserToolDefinition, type BrowserToolResult } from '../agents/browserAgentServer'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
 import type { BrowserService } from './browser'
+import type { BrowserTasks, TaskPage } from './browserTasks'
 import type { CloudIphoneService } from './cloudIphone/service'
 
 const withoutTarget = { threadId: true, workspaceId: true } as const
@@ -102,9 +103,22 @@ async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unkn
   return unavailable()
 }
 
+/** What the browser tools ask of a browser, wherever it runs; the test iPhone is this computer's alone. */
+export type BrowserAgentService = Pick<BrowserTasks<TaskPage>, 'list' | 'tasks' | 'agentOpen' | 'startTask' | 'action' | 'finishTask' | 'waitForAction'> & Partial<Pick<BrowserService, 'phoneOpen'>>
+/** A paired host's threads get the browser and nothing of the test iPhone or the cloud iPhone (ADR-0198, decision 2). */
+const HOST_TOOLS = new Set(['browser_pages', 'browser_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish'])
+export const hostBrowserToolDefinitions: readonly BrowserToolDefinition[] = browserToolDefinitions.filter(tool => HOST_TOOLS.has(tool.name))
+
 /** The transport supplies the Sotto thread identity; agents cannot supply or replace it. */
 export function createBrowserAgentServer(service: () => BrowserService | undefined, cloudService?: () => CloudIphoneService | undefined): BrowserAgentServer {
-  return new BrowserAgentServer(browserToolDefinitions, async (threadId, name, args, context) => {
+  return browserAgentServer(browserToolDefinitions, undefined, service, cloudService)
+}
+/** A paired host's own threads, browsing in the host's Chromium (ADR-0198). */
+export function createHostBrowserAgentServer(service: BrowserAgentService): BrowserAgentServer {
+  return browserAgentServer(hostBrowserToolDefinitions, HOST_BROWSER_INSTRUCTIONS, () => service)
+}
+function browserAgentServer(definitions: readonly BrowserToolDefinition[], instructions: string | undefined, service: () => BrowserAgentService | undefined, cloudService?: () => CloudIphoneService | undefined): BrowserAgentServer {
+  return new BrowserAgentServer(definitions, async (threadId, name, args, context) => {
     const browser = service()
     if (!browser) return unavailable()
     const schema = inputs[name as keyof typeof inputs]
@@ -165,7 +179,7 @@ export function createBrowserAgentServer(service: () => BrowserService | undefin
     }
     const payload = { ...input.data, ...target }
     if (name === 'browser_open') return completed(await browser.agentOpen(payload))
-    if (name === 'iphone_open') return completed(await browser.phoneOpen(payload))
+    if (name === 'iphone_open') return browser.phoneOpen ? completed(await browser.phoneOpen(payload)) : unavailable()
     if (name === 'browser_start') {
       const result = await browser.startTask(payload)
       return taskResult(result)
@@ -176,5 +190,5 @@ export function createBrowserAgentServer(service: () => BrowserService | undefin
       return taskResult(result)
     }
     return unavailable()
-  })
+  }, instructions)
 }
