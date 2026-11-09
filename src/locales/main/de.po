@@ -2559,6 +2559,10 @@ msgstr ""
 msgid "The SSH settings for {host} are saved, but how Sotto connects did not change. Check that {host} is reachable with them, then choose again in Edit connection."
 msgstr ""
 
+#: src/main/index.ts
+msgid "The system browser didn't open. Nothing was changed. Try again."
+msgstr ""
+
 #: src/main/tools/terminal.ts
 msgid "The terminal could not start or save its session. Check that the shell is available and app storage is writable."
 msgstr ""

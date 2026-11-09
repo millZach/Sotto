@@ -10,6 +10,7 @@ import { appendBrowserFeedback } from './BrowserFeedback'
 import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type PointedName } from './BrowserPoint'
 import { browserPages, normalizeAddress, pageLabel, useThreadBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
+import { BrowserMachine } from './HostPageView'
 import { browsingWords, shortAddress } from './browserSteps'
 import type { BrowserSurfaceProps } from './BrowserSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -25,7 +26,7 @@ const SIZES = ['1600x1000', '1280x800', '820x560', '390x844'] as const
  * above it only with two or more pages, and while an agent works on the page, one strip at its foot. With no page, the
  * pane is an address field and the addresses this thread's browser opened this session.
  */
-export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: BrowserSurfaceProps): ReactNode {
+export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: onHost }: BrowserSurfaceProps): ReactNode {
   const { t } = useLingui()
   const browserTitle = t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' })
   const browser = useThreadBrowser(store, threadId)
@@ -34,12 +35,25 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const agentToolsUnavailable = !threadTakesSottoTools(owningThread)
+  // A paired host's thread (`onHost`) browses in the host's own Chromium (ADR-0198): the row says which machine, and
+  // Point at something, Screenshot to message and page sizes stay this computer's for now (decision 7).
   const [busy, setBusy] = useState(false)
   const address = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // Whether a paired host has a browser at all (Zach, November 9): with none, the pane says to install one, with Check again.
+  const [hostHasBrowser, setHostHasBrowser] = useState<boolean | null>(null)
+  const [checkingHost, setCheckingHost] = useState(false)
+  const checkHostBrowser = useCallback(async (): Promise<void> => {
+    if (!onHost || !bridge) return
+    setCheckingHost(true)
+    try { const result = await bridge.available({ threadId }); setHostHasBrowser(result.ok ? result.value.available : null) }
+    catch { setHostHasBrowser(null) }
+    finally { setCheckingHost(false) }
+  }, [onHost?.hostId, bridge, threadId])
+  useEffect(() => { void checkHostBrowser() }, [checkHostBrowser])
   const active = browser?.pages.find(page => page.id === browser.activePageId && !page.device) ?? null
   const activeId = active?.id ?? null
   const activeIdRef = useRef(activeId)
@@ -123,6 +137,14 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   }
   // The test iPhone is the thread's too, but Tools > iPhone shows it (ADR-0045).
   const pages = browserPages(browser.pages)
+  if (onHost && hostHasBrowser === false && pages.length === 0) {
+    const machine = onHost.name
+    return <><ToolsChrome title={browserTitle} /><div className="files-problem files-problem--root" role="status">
+      <strong>{t({ message: `${machine} has no browser for this thread.`, comment: '{machine} is the name of a paired host, as in forge.' })}</strong>
+      <p className="tt-paragraph">{t({ message: `Install Chromium or Google Chrome on ${machine}, then press Check again.`, comment: '{machine} is the name of a paired host, as in forge.' })}</p>
+      <button type="button" className="tt-button tt-focusable" disabled={checkingHost} onClick={() => void checkHostBrowser()}>{t`Check again`}</button>
+    </div></>
+  }
   const newPage = creating || pages.length === 0
   const page = newPage ? null : active
   const shown = draft !== null && draft.pageId === (newPage ? null : activeId) ? draft.text : page?.url ?? ''
@@ -145,7 +167,8 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
 
   const focusAddress = (): void => { requestAnimationFrame(() => address.current?.focus()) }
   const open = (url: string): void => {
-    const done = (ok: boolean): void => { if (ok) { setDraft(null); setCreating(false) } }
+    // A host's page that could not open may be a host with no browser, which the pane then says in full.
+    const done = (ok: boolean): void => { if (ok) { setDraft(null); setCreating(false) } else if (onHost) void checkHostBrowser() }
     if (newPage || !active) void store.create(bridge, threadId, url).then(done)
     else void store.navigate(bridge, threadId, active.id, url).then(done)
   }
@@ -158,7 +181,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   }
   const openExternally = (url: string): void => {
     if (!bridge) return
-    void bridge.openLink({ url, destination: 'external' }).then(result => { if (!result.ok) onStatus(t`Could not open the system browser`) }, () => onStatus(t`Could not open the system browser`))
+    // A host's page opens on this computer at the host's address, which main knows, so it names the page's thread.
+    const target = onHost && page ? { target: { threadId, workspaceId: page.workspace.workspaceId } } : {}
+    void bridge.openLink({ url, destination: 'external', ...target }).then(result => { if (!result.ok) onStatus(t`Could not open the system browser`) }, () => onStatus(t`Could not open the system browser`))
   }
   const focusTab = (id: string): void => document.getElementById(`browser-tab-${id}`)?.focus()
   const startNew = (): void => {
@@ -220,14 +245,14 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
       ...(!agentToolsUnavailable ? [{ id: 'share', label: page.sharedOrigin ? t`Stop sharing` : shareWithAgent, icon: <Share2 size={15} aria-hidden="true" />, disabled: busy, run: () => void pageAction('share') }] : []),
       ...(onFloat ? [{ id: 'float', label: t`Float the browser over the thread`, icon: <PictureInPicture2 size={15} aria-hidden="true" />, run: onFloat }] : []),
     ],
-    [
+    ...onHost ? [] : [[
       { id: 'fit', label: t`Fit the pane`, checked: current === 'fit', icon: check(current === 'fit'), disabled: busy, run: () => void pageAction('viewport', 'fit') },
       ...sizes.map(size => {
         const [width, height] = size.split('x')
         const label = t({ message: `Show at ${width} x ${height}`, comment: 'A browser page size in CSS pixels, such as Show at 1280 x 800.' })
         return { id: size, label, checked: current === size, icon: check(current === size), disabled: busy, run: () => void pageAction('viewport', size) }
       }),
-    ],
+    ]],
     ask,
   ] : [ask]
 
@@ -311,9 +336,10 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
         <span className="browser-pane__url">{shortAddress(page.url)}</span>{title && title !== shortAddress(page.url) ? <span className="browser-pane__title">{title}</span> : null}
       </span> : null}
     </form>
-    <button ref={pointButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={pointAtSomething} aria-pressed={pointing}
+    {onHost ? <BrowserMachine machine={onHost.name} /> : null}
+    {onHost ? null : <><button ref={pointButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={pointAtSomething} aria-pressed={pointing}
       title={pointing ? t`Stop pointing at the page` : t`Click something on the page to tell the agent about it`} disabled={!page || page.status === 'unavailable' || !bridge} onClick={togglePoint}><SquareDashedMousePointer size={16} aria-hidden="true" /></button>
-    <button type="button" className="files-icon tt-focusable" aria-label={screenshot} title={t`Add a picture of this page to the message`} disabled={!page || busy || !agents || !bridge} onClick={() => void screenshotToMessage()}><ImagePlus size={16} aria-hidden="true" /></button>
+    <button type="button" className="files-icon tt-focusable" aria-label={screenshot} title={t`Add a picture of this page to the message`} disabled={!page || busy || !agents || !bridge} onClick={() => void screenshotToMessage()}><ImagePlus size={16} aria-hidden="true" /></button></>}
     <PaneMenu groups={menu} label={t`More browser actions`} buttonClassName="files-icon" className="browser-pane__more" icon={<MoreHorizontal size={16} aria-hidden="true" />} />
   </div>
 
@@ -329,7 +355,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   const agentWaiting = tasks.find(item => item.threadId === threadId && !item.device && item.pendingAction !== null && pages.some(other => other.id === item.pageId))
   const agentWorking = tasks.find(item => item.threadId === threadId && !item.device && (item.status === 'working' || item.status === 'paused') && pages.some(other => other.id === item.pageId))
   const offer = (task: BrowserTask): ReactNode => <ElsewhereStrip task={task} page={pages.find(other => other.id === task.pageId)!} onShow={() => showAgentPage(task.pageId)} />
-  const strip = page && waiting?.pendingAction ? <RequestStrip key={waiting.id} task={waiting} store={store} bridge={bridge} onAnswered={focusAddress} />
+  // While the host is away its page stays open there and the agent keeps browsing; the pane says so over the last picture.
+  const strip = page && onHost && !onHost.connected ? <ReconnectStrip machine={onHost.name} />
+    : page && waiting?.pendingAction ? <RequestStrip key={waiting.id} task={waiting} store={store} bridge={bridge} onAnswered={focusAddress} />
     : page && working ? <AgentStrip task={working} pageUrl={page.url} store={store} bridge={bridge} onProblem={setProblem} />
       : page && elsewhere ? offer(elsewhere)
         : !page && agentWaiting?.pendingAction ? <RequestStrip key={agentWaiting.id} task={agentWaiting} store={store} bridge={bridge} onAnswered={focusAddress} />
@@ -358,7 +386,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
     {browser.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(browser.notice)}</p> : null}
     {page && pointing ? <PointLine hover={hover} /> : null}
 
-    {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null} cover={cover} onShown={setPageShown}
+    {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null} cover={cover} onShown={setPageShown} onHost={onHost}
       refused={browser.placementProblem?.pageId === page.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(page.url)}>{strip}</PageViewport>
       : <div className="browser-pane__empty">
         {opened.length > 0 ? <section className="browser-pane__opened" aria-labelledby="browser-pane-opened">
@@ -387,6 +415,15 @@ function AgentStrip({ task, pageUrl, store, bridge, onProblem }: { readonly task
       {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
       {paused ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}
     </button>
+  </div>
+}
+
+/** A paired host is away: its page stays open there, and the pane shows the last picture of it, greyed, until it is back. */
+function ReconnectStrip({ machine }: { readonly machine: string }): ReactNode {
+  const { t } = useLingui()
+  return <div className="browser-pane__strip" data-state="reconnecting" role="status">
+    <span className="browser-pane__dot" aria-hidden="true" />
+    <span className="browser-pane__strip-text"><span className="browser-pane__lead">{t({ message: `Reconnecting to ${machine}. The page stays open there, and the agent keeps browsing.`, comment: '{machine} is the name of a paired host, as in forge.' })}</span></span>
   </div>
 }
 

@@ -1128,7 +1128,8 @@ export const agentStateSchema = z.object({
    */
   checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
-  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
+  /** `browser`: the host offers Sotto's browser for its own threads to this computer (ADR-0198). */
+  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.literal(true).optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),

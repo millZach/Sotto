@@ -39,7 +39,7 @@ function fakeBrowser(missing = false) {
   const pages: FakePage[] = []
   const browser = {
     open: vi.fn(async () => { if (missing) throw new HostBrowserMissing(); const page = new FakePage(); pages.push(page); return page as unknown as HostBrowserPage }),
-    dispose: vi.fn(async () => undefined),
+    dispose: vi.fn(async () => undefined), available: vi.fn(async () => !missing),
   }
   return { browser: browser as unknown as HostBrowser & typeof browser, pages }
 }
@@ -158,6 +158,13 @@ describe('a host\'s browser service (ADR-0198)', () => {
     expect(value(await service.list({ threadId: workspace.threadId })).pages).toEqual([])
     expect(value(await service.tasks({ threadId: workspace.threadId }))[0]).toMatchObject({ status: 'failed', summary: 'This browser page closed.' })
     expect(events).toContainEqual({ type: 'closed', threadId: workspace.threadId, workspaceId, pageId: opened.task.pageId })
+  })
+
+  it('says whether the host has a browser, without starting one', async () => {
+    expect(value(await setup().service.available({ threadId: workspace.threadId }))).toEqual({ available: true })
+    const missing = setup({ missing: true })
+    expect(value(await missing.service.available({ threadId: workspace.threadId }))).toEqual({ available: false })
+    expect(missing.browser.open).not.toHaveBeenCalled()
   })
 
   it('closes every page and the browser when the host stops', async () => {

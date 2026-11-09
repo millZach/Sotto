@@ -27,7 +27,8 @@ export function browserBridgeFixture(options: { workspace: FileWorkspace; pages?
     controlTask: vi.fn<BrowserBridge['controlTask']>(), answerAction: vi.fn<BrowserBridge['answerAction']>(), mount: vi.fn<BrowserBridge['mount']>(async () => ({ ok: true, value: undefined })),
     stopGrant: vi.fn<BrowserBridge['stopGrant']>(async () => ({ ok: true, value: undefined })), openLink: vi.fn<BrowserBridge['openLink']>(), onEvent: events.subscribe,
     input: vi.fn<BrowserBridge['input']>(async () => ({ ok: true, value: undefined })), watch: vi.fn<BrowserBridge['watch']>(async () => ({ ok: true, value: undefined })),
-    unwatch: vi.fn<BrowserBridge['unwatch']>(async () => ({ ok: true, value: undefined })), onFrame: vi.fn<BrowserBridge['onFrame']>(() => () => undefined), ...options.commands,
+    unwatch: vi.fn<BrowserBridge['unwatch']>(async () => ({ ok: true, value: undefined })), onFrame: vi.fn<BrowserBridge['onFrame']>(() => () => undefined),
+    available: vi.fn<BrowserBridge['available']>(async () => ({ ok: true, value: { available: true } })), ...options.commands,
   }
   return { ...events, bridge, setPages: (next: BrowserPage[]) => { pages = next }, setTasks: (next: BrowserTask[]) => { tasks = next } }
 }

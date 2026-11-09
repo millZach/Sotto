@@ -47,6 +47,8 @@ export const hostBrowserRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('watch'), payload: browserWatchSchema }).strict(),
   z.object({ method: z.literal('unwatch'), payload: browserRequestSchema }).strict(),
   z.object({ method: z.literal('setting'), payload: browserSettingSchema }).strict(),
+  /** Whether the host has Chrome, Chromium or Edge for its thread's browser, so the pane can say to install one (Zach, November 9). */
+  z.object({ method: z.literal('available'), payload: toolListRequestSchema }).strict(),
 ])
 export type HostBrowserRequest = z.infer<typeof hostBrowserRequestSchema>
 export type HostBrowserMethod = HostBrowserRequest['method']
@@ -63,6 +65,7 @@ export const hostBrowserResultSchemas = {
   list: toolsResultSchema(browserListingSchema), create: pageResult, navigate: pageResult, back: pageResult, forward: pageResult, reload: pageResult,
   close: voidResult, tasks: toolsResultSchema(z.array(browserTaskSchema).max(64)), share: pageResult, controlTask: taskResult, answerAction: taskResult,
   stopGrant: voidResult, input: voidResult, watch: voidResult, unwatch: voidResult, setting: voidResult,
+  available: toolsResultSchema(z.object({ available: z.boolean() }).strict()),
 } as const satisfies Record<HostBrowserMethod, z.ZodType>
 
 export type HostBrowserResult<M extends HostBrowserMethod> = z.output<(typeof hostBrowserResultSchemas)[M]>
@@ -72,3 +75,18 @@ export const HOST_BROWSER_FRAME_MAX = 4 * 1024 * 1024
 /** One picture of a host's page for a pane showing it: base64 JPEG, at the size it was drawn. Never logged or saved. */
 export const hostBrowserFrameSchema = z.object({ pageId: z.uuid(), data: z.string().min(1).max(HOST_BROWSER_FRAME_MAX), width: z.number().int().min(1).max(8192), height: z.number().int().min(1).max(8192) }).strict()
 export type HostBrowserFrame = z.infer<typeof hostBrowserFrameSchema>
+
+/** The addresses that name the machine a page runs on, so on another computer they would name that one instead. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+/**
+ * A host's page as this computer opens it in its system browser (ADR-0198, decision 7): `localhost`, `127.0.0.1` and
+ * `[::1]` become the host's address as this computer reaches it, and any other address opens as it is.
+ */
+export function addressFromHost(url: string, hostAddress: string): string {
+  let parsed: URL
+  try { parsed = new URL(url) } catch { return url }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname) || !hostAddress) return url
+  parsed.hostname = hostAddress
+  return parsed.href
+}
+

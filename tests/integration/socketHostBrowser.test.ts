@@ -41,7 +41,7 @@ class FakePage {
 
 async function hostWithBrowser(options: { answers?: boolean; browser?: boolean } = {}) {
   const pages: FakePage[] = []
-  const browser = { open: async () => { const page = new FakePage(); pages.push(page); return page as unknown as HostBrowserPage }, dispose: async () => undefined } as unknown as HostBrowser
+  const browser = { open: async () => { const page = new FakePage(); pages.push(page); return page as unknown as HostBrowserPage }, dispose: async () => undefined, available: async () => true } as unknown as HostBrowser
   const listeners = new Set<(event: BrowserEvent) => void>()
   const saved: boolean[] = []
   const service = new HostBrowserService({ browser, withoutAsking: false, saveWithoutAsking: async value => { saved.push(value) },
@@ -80,6 +80,7 @@ describe('a paired host\'s browser over the socket (ADR-0198)', () => {
       pages[0]!.draw({ data: 'A'.repeat(4 * 1024 * 1024 + 1), width: 800, height: 600 })
 
       const input = { type: 'mouse', action: 'down', x: 10, y: 20, button: 'left', clickCount: 1, modifiers: 0 }
+      expect(result(await desktop.call('available', { op: 'browser', request: { method: 'available', payload: { threadId: 'thread-1' } } }))).toEqual({ ok: true, value: { available: true } })
       expect(result(await desktop.call('input', { op: 'browser', request: { method: 'input', payload: { threadId: 'thread-1', workspaceId, pageId, input } } })).ok).toBe(true)
       expect(pages[0]!.inputs).toEqual([input])
 

@@ -8,6 +8,7 @@ import { useOwlFeature } from '../state/owlFeature'
 import { pageLabel, useThreadBrowser, useThreadBrowserTasks, type ThreadBrowser } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
+import { HostPageView, threadHost, type ThreadHost } from './HostPageView'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 import {
   browserPlayerStore, clampBrowserPlayerRect, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE,
@@ -28,18 +29,23 @@ function pageHost(page: BrowserPage | undefined): string {
  * elsewhere steps aside for it): passing anything narrower here would make the player's own marker read as an
  * overlay over its own frame, since a ref only excludes elements *inside* it, never its own ancestors.
  */
-function BrowserPlayerFrame({ page, mount, boundary }: {
+function BrowserPlayerFrame({ page, mount, boundary, threadId, bridge, onHost }: {
   readonly page: BrowserPage | undefined
   readonly mount: (bounds: BrowserBounds | null) => void
   readonly boundary: React.RefObject<HTMLElement | null>
+  readonly threadId: string
+  readonly bridge: BrowserBridge | undefined
+  /** A paired host's page floats from its pictures (ADR-0198, decision 5), so nothing native is mounted for it. */
+  readonly onHost: ThreadHost | undefined
 }): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(boundary, host)
-  const show = page !== undefined && page.status !== 'unavailable' && covered === false
+  const show = !onHost && page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
     {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note tt-paragraph">{t`This page could not load.`}</p>
+      : onHost ? <HostPageView page={page} threadId={threadId} bridge={bridge} shown connected={onHost.connected} />
       : <div ref={host} className="browser-player__viewport" data-covered={covered || undefined}>
         {covered ? <p className="browser-player__frame-note tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
       </div>}
@@ -80,8 +86,9 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const chrome = useToolsPanelChrome(store)
   const quietBrowser = useOwlFeature('quiet-browser')
   const tasks = useThreadBrowserTasks(store.browser, focusedThreadId)
-  // Sotto's browser is this computer's, so a remote host's threads have no tasks here to watch.
-  const ids = state.host.threads.filter(thread => !thread.remoteHost).map(thread => thread.id).join('\n')
+  // A remote host's threads have tasks here to watch only where its browser reaches this computer (ADR-0198).
+  const hostedBrowser = useOwlFeature('paired-host-browser') && quietBrowser
+  const ids = state.host.threads.filter(thread => !thread.remoteHost || hostedBrowser && threadHost(state, thread.id)?.browser === true).map(thread => thread.id).join('\n')
   useEffect(() => { store.browser.watchTasks(bridge, ids.split('\n').filter(Boolean)) }, [bridge, store, ids])
 
   // The test iPhone's tasks float in the phone player instead (ADR-0045).
@@ -224,7 +231,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
       <button type="button" className="files-icon tt-focusable" aria-label={t`Shrink the browser to a pill`} title={t`Shrink`} onClick={shrinkToPill}><Minimize2 size={15} aria-hidden="true" /></button>
       <button type="button" className="files-icon tt-focusable" aria-label={t`Hide the browser; the agent keeps working`} title={t({ message: 'Hide', comment: 'Hides the browser player.' })} onClick={hideToComposer}><X size={15} aria-hidden="true" /></button>
     </div>
-    <BrowserPlayerFrame page={page} mount={mount} boundary={playerRoot} />
+    <BrowserPlayerFrame page={page} mount={mount} boundary={playerRoot} threadId={threadId} bridge={bridge} onHost={thread.remoteHost ? threadHost(state, threadId) : undefined} />
     <div className="browser-player__foot">
       {task.pendingAction ? <div className="browser-player__request" role="group" aria-label={t`Browser action permission`}>
         <p>{task.pendingAction.description}</p>

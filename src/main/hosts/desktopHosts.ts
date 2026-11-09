@@ -691,6 +691,17 @@ export class DesktopHosts {
     this.options.router.remove(held)
   }
   /** A saved host as a shell over SSH needs it, found by the host's own ID (ADR-0183). */
+  /**
+   * A paired host's address as this computer reaches it, for one of its pages opened in the system browser (ADR-0198,
+   * decision 7): its tailnet name where this computer learned one, else the name SSH reaches it at.
+   */
+  browserAddress(hostId: string): string | undefined {
+    const host = this.saved.find(item => item.hostId === hostId)
+    if (!host) return undefined
+    const learned = this.tailnet.get(host.id).address
+    if (learned) { try { return new URL(learned).hostname } catch { /* Not an address; SSH's name below. */ } }
+    return targetHost(host.target)
+  }
   terminalHost(hostId: string): SshTerminalHost | undefined {
     const host = this.saved.find(item => item.hostId === hostId)
     return host && { target: host.target, identityFile: host.identityFile, sshPort: host.sshPort }
