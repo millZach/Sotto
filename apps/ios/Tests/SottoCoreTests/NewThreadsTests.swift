@@ -87,6 +87,8 @@ final class NewThreadsTests: XCTestCase {
         let deepseek = try XCTUnwrap(NewThreads.availableModels(host).first)
         XCTAssertEqual(deepseek.label, "DeepSeek · Obsidian · deepseek-v4.1-flash")
         XCTAssertEqual(deepseek.startingPermission, "approval-required")
+        XCTAssertEqual(ThreadModel.label(providerID: "deepseek", source: "DeepSeek", name: "deepseek-v4.1-flash"), "DeepSeek · DeepSeek · deepseek-v4.1-flash",
+                       "A server the user named DeepSeek keeps its name")
     }
     func testProjectRegistrationAcceptsCursor() throws {
         let command = try Commands.createProject(providerID: "cursor", title: "Panel tools", path: "/home/zach/panel")

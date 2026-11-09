@@ -32,10 +32,11 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source, and
     /// "Cursor · Anthropic · Claude Sonnet 5.5" with a maker, so a Cursor thread on Claude never reads as Claude Code.
     public var label: String { Self.label(providerID: providerId, source: source, name: name) }
-    /// A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto".
+    /// A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto". A
+    /// DeepSeek Harness model's source is the user's own server, which keeps its name even when it is "DeepSeek" (ADR-0138).
     public static func label(providerID: String?, source: String?, name: String) -> String {
         let agent = AgentNames.name(providerID)
-        let named: String? = source?.isEmpty == false && source != agent ? source : nil
+        let named: String? = source?.isEmpty == false && (source != agent || providerID == "deepseek") ? source : nil
         return [agent, named, name].compactMap { $0 }.joined(separator: " · ")
     }
     public var startingEffort: String {
