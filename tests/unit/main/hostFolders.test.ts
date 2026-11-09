@@ -1,13 +1,16 @@
 // @vitest-environment node
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hostFolderCrumbs, listHostFolders } from '../../../src/main/agents/hostFolders'
 import { HOST_FOLDERS_MAX } from '../../../src/shared/hostFolders'
 
+vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
+
 const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
+afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-folders-'))
   roots.push(root)
@@ -48,6 +51,25 @@ describe('listHostFolders', () => {
     const result = await listHostFolders({ path: root })
     expect(result.status).toBe('listed')
     if (result.status === 'listed') expect(result.folders.map(folder => folder.name)).toEqual(['link', 'target'])
+  })
+
+  it('checks at most 16 symlink targets at once', async () => {
+    const root = await fixture()
+    const target = join(root, '.target'); await mkdir(target)
+    const links = Array.from({ length: 32 }, (_, index) => join(root, `link-${index}`))
+    await Promise.all(links.map(path => symlink(target, path, 'junction')))
+    const linkPaths = new Set(links)
+    const stat = fs.stat
+    let active = 0, peak = 0
+    vi.spyOn(fs, 'stat').mockImplementation(async path => {
+      if (!linkPaths.has(String(path))) return stat(path)
+      active += 1; peak = Math.max(peak, active)
+      try { return await stat(path) } finally { active -= 1 }
+    })
+    const result = await listHostFolders({ path: root })
+    expect(peak).toBe(16)
+    expect(result.status).toBe('listed')
+    if (result.status === 'listed') expect(result.folders).toHaveLength(links.length)
   })
 
   it('flags a folder that holds a Git repository', async () => {
