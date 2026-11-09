@@ -1,10 +1,12 @@
 # Hermes in the local Owl — November 6, 2026
 
+November 9, 2026: the Refuseless Keychain route and the pinned client path below were local to one Mac. The pull request replaced them with keyed own model servers (ADR-0124 amendment) and the ordinary CLI lookup, with 0.23.0 as the oldest Hermes allowed.
+
 Local branch `feat/hermes-local-owl-20261106`, based on `owl/council-combined-20261106` at `39384c6035a9b844be696b22dece6beff91501d3`. Council and Dynamic changes remain included. No push, PR, installation or Sotto launch.
 
 Hermes is held behind its Owl feature and runs only on this Mac. One Sotto-owned gateway uses `<userData>/hermes`; project-path homes keep native memory and skills, with an ACP viewer per open thread. Only Full access is offered (`dont_ask`, approvals off). Unexpected permission requests use Sotto's existing card with allow-once/reject only. The native generic command field and complete permission binding remain limitations.
 
-The pinned external client is `/Users/drakemorey/Developer/Tools/hermes-v0.23.0/.venv/bin/hermes`, upstream commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`, with ACP and MCP extras. No personal Hermes home, shell profile or launchd change. Config disables external-login adoption, fallback providers, title generation and update checks. Own-server routes are read from Sotto's record; there is no TensorFold-specific behavior. Refuseless uses the native `key_cmd` to capture the authorized Keychain item's value directly; keys are absent from configuration and Sotto logs.
+The pinned external client is `~/Developer/Tools/hermes-v0.23.0/.venv/bin/hermes`, upstream commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`, with ACP and MCP extras. No personal Hermes home, shell profile or launchd change. Config disables external-login adoption, fallback providers, title generation and update checks. Own-server routes are read from Sotto's record; there is no TensorFold-specific behavior. Refuseless uses the native `key_cmd` to capture the authorized Keychain item's value directly; keys are absent from configuration and Sotto logs.
 
 ## Checks
 
@@ -38,4 +40,4 @@ After installing at a quiet time, connect Hermes in Providers, create a Full acc
 
 The shared provider mark now uses the MIT-licensed Nous girl from Hermes v0.23.0: white in dark mode, black in light mode. Both originals are cropped to `350 0 4600 4600` and rasterized to transparent 128×128 PNGs, 12,030 bytes combined. This covers Providers, model pickers and every other caller of `ProviderMark`.
 
-Headless Playwright 1.64.1 rendered the actual component and application CSS at 12, 13, 14, 16, 17, 18 and 20px, with 32/64px references, in both themes at 1× and 2×. All 13 placements select exactly one loaded variant, including after a theme switch, and preserve their requested dimensions. Both renders were visually inspected: [1× PNG](/Users/drakemorey/Developer/Reports/hermes-provider-icon-2026-11-07/preview.png), [2× PNG](/Users/drakemorey/Developer/Reports/hermes-provider-icon-2026-11-07/preview@2x.png). Typecheck, targeted ESLint and the existing provider-mark unit file (3 tests) passed. No Sotto instance was launched for these checks. The local build is Owl `0.1.43-owl.20261106.6`.
+Headless Playwright 1.64.1 rendered the actual component and application CSS at 12, 13, 14, 16, 17, 18 and 20px, with 32/64px references, in both themes at 1× and 2×. All 13 placements select exactly one loaded variant, including after a theme switch, and preserve their requested dimensions. Both renders were visually inspected: [1× PNG](~/Developer/Reports/hermes-provider-icon-2026-11-07/preview.png), [2× PNG](~/Developer/Reports/hermes-provider-icon-2026-11-07/preview@2x.png). Typecheck, targeted ESLint and the existing provider-mark unit file (3 tests) passed. No Sotto instance was launched for these checks. The local build is Owl `0.1.43-owl.20261106.6`.

@@ -42,6 +42,15 @@ export interface OwnServersDeepSeek {
   changed(): void
 }
 
+/**
+ * Sotto's Hermes as the record reaches it: a keyed server's key is handed to it beside OpenCode's copy, so Hermes can run
+ * that server too, and taken back on Remove. Its saves are nudged through `deepSeek.changed` like DeepSeek's.
+ */
+export interface OwnServersHermes {
+  keepKey(sourceId: string, key: string): Promise<void>
+  forgetKey(sourceId: string): Promise<void>
+}
+
 export interface OwnServersOptions {
   /** Sotto's user data folder. */
   readonly directory: string
@@ -49,6 +58,8 @@ export interface OwnServersOptions {
   readonly openCode: () => OwnServersOpenCode | undefined
   /** Sotto's DeepSeek (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
   readonly deepSeek?: () => OwnServersDeepSeek | undefined
+  /** Sotto's Hermes, or undefined while its adapter does not run. */
+  readonly hermes?: () => OwnServersHermes | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
@@ -192,6 +203,8 @@ export class OwnServers {
         void keeper.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
       }
+      // Hermes's copy is a second keeper's, not the add's: without it the server runs in OpenCode alone.
+      await this.options.hermes?.()?.keepKey(id, key).catch(() => { this.log('own-server-sign-in-failed') })
     } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
@@ -218,6 +231,7 @@ export class OwnServers {
     const running = openCode?.running() === true
     if (server.keyed) {
       if (!running) return refusal('opencode-not-running', OWN_SERVER_WORDS.removeNeedsOpenCode(server.name))
+      await this.options.hermes?.()?.forgetKey(id).catch(() => { this.log('own-server-sign-out-failed') })
       if (!await openCode!.signOut(id).catch(() => false)) {
         this.log('own-server-sign-out-failed')
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))

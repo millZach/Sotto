@@ -297,7 +297,7 @@ import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
-import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
+import { OwnServers, type OwnServerEvent, type OwnServersOpenCode, type OwnServersDeepSeek, type OwnServersHermes } from './ownModelServers/service'
 import { registerOwnServersIpc } from './ownModelServers/ipc'
 import { OwnCleanupMeasures, type OwnCleanupEvent } from './llm/ownServerCleanup'
 import { registerOwnServerCleanupIpc } from './llm/ownServerCleanupIpc'
@@ -885,7 +885,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
   // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
   const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: () => localRuntime?.ownServersDeepSeek, log: event => { logOperational(event) } }) : undefined
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes, log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
   // choice and measures are kept. E2E runs never reach a server.

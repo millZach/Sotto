@@ -1,11 +1,10 @@
 import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { z } from 'zod'
-import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname } from 'node:path'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
-/** The local Owl client is pinned to the build tested with this adapter. */
+/** The oldest Hermes this adapter was tested with; a newer one runs and is shown as past the verified version. */
 export const HERMES_CLI_VERSION = '0.23.0'
 export const HERMES_ACP_VERSION = 1
 /** The client did not answer, or answered in a way that leaves the outcome unknown. */
@@ -47,9 +46,9 @@ export function hermesEnvironment(homeDirectory: string, keys: Readonly<Record<s
   return { ...env, ...keys, HERMES_HOME: homeDirectory }
 }
 
-/** Prefer the stable pinned install, then the shared CLI lookup. */
+/** The user's own `hermes`, found as every other provider's CLI is. */
 export async function findHermesExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
-  return findCli({ name: 'hermes', first: [join(lookup.home ?? homedir(), 'Developer', 'Tools', 'hermes-v0.23.0', '.venv', 'bin')] }, { ...lookup, environment })
+  return findCli({ name: 'hermes' }, { ...lookup, environment })
 }
 
 /** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */

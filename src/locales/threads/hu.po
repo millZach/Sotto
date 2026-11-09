@@ -4475,7 +4475,7 @@ msgid "Full access"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Full access on this Mac. Uses your own servers and the Refuseless Keychain item. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgid "Full access on this Mac. Uses your own model servers, keyed ones included. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
 msgstr ""
 
 #: src/renderer/src/agents/ActivityBody.tsx

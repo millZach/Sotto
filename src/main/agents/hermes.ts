@@ -18,7 +18,7 @@ import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, HE
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
   findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
-import { HermesRuntime, hermesAbliterationAvailable, hermesRefuselessAvailable, hermesServers } from './hermesRuntime'
+import { HermesRuntime, hermesServers } from './hermesRuntime'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { unreadableRequest } from './nativeRequests'
@@ -40,7 +40,7 @@ import { WatcherProfileRefusal } from './watcherProfile'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 
 /** One managed gateway, project homes, and one ACP viewer per thread. Sotto keeps message identity
- * and history; Hermes keeps native sessions, memory and skills. This local Owl supports Full access only. */
+ * and history; Hermes keeps native sessions, memory and skills. Sotto runs it with Full access only. */
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -435,10 +435,8 @@ export class HermesAcpHost implements AgentHost {
       await this.runtime.writeConfig(this.homeDirectory, this.servers)
       const version = await readHermesVersion(executable, this.runtime.env(), this.options.executableArgs ?? [])
       this.assertGeneration(generation)
-      if (compareHermesVersions(version, HERMES_CLI_VERSION) !== 0) throw new ProviderUnavailable('too-old', `This local Owl requires Hermes ${HERMES_CLI_VERSION}, and this one is ${version}. Use the pinned install, then connect again. Your threads are kept.`, version, HERMES_CLI_VERSION)
-      const refuseless = await hermesRefuselessAvailable()
-      const abliteration = await hermesAbliterationAvailable()
-      this.servers = hermesServers(await this.options.servers?.() ?? [], refuseless, abliteration)
+      if (compareHermesVersions(version, HERMES_CLI_VERSION) < 0) throw new ProviderUnavailable('too-old', `Sotto needs Hermes ${HERMES_CLI_VERSION} or later, and this one is ${version}. Update Hermes, then connect again. Your threads are kept.`, version, HERMES_CLI_VERSION)
+      this.servers = hermesServers(await this.options.servers?.() ?? [], await this.runtime.keys.read())
       this.assertGeneration(generation)
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
@@ -489,8 +487,7 @@ export class HermesAcpHost implements AgentHost {
     const generation = this.generation
     void (async () => {
       const saved = await this.options.servers?.()
-      const servers = saved ? hermesServers(saved, this.servers.some(server => server.id === 'own-refuseless'),
-        this.servers.some(server => server.id === 'own-abliteration')) : undefined
+      const servers = saved ? hermesServers(saved, await this.runtime.keys.read()) : undefined
       if (!servers || generation !== this.generation) return
       this.servers = servers
       this.state.models = hermesCatalog(servers, this.harnessImages)
@@ -502,6 +499,10 @@ export class HermesAcpHost implements AgentHost {
       this.emit()
     })().catch(() => undefined)
   }
+  /** A keyed server was added (ADR-0124): Hermes keeps its own copy of the key, as OpenCode does, and can run it from now on. */
+  async keepKey(id: string, key: string): Promise<void> { await this.runtime.keys.keep(id, key); this.ownServersChanged() }
+  /** A keyed server was removed: Hermes's copy of its key goes with it. */
+  async forgetKey(id: string): Promise<void> { await this.runtime.keys.forget(id); this.ownServersChanged() }
   /**
    * Hermes's client on disk was updated while Sotto stayed connected (ADR-0042, ADR-0038): find it again
    * and hold it to the floor; every new process starts from it, and each thread moves onto it as it goes idle.
@@ -519,7 +520,7 @@ export class HermesAcpHost implements AgentHost {
       throw new Error('Hermes was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Hermes again to try the new version.', { cause: error })
     }
     if (generation !== this.generation || !this.state.connected) return
-    if (compareHermesVersions(version, HERMES_CLI_VERSION) !== 0) throw new Error(`Hermes was updated, but Sotto cannot run ${version}: this local Owl is pinned to ${HERMES_CLI_VERSION}. Threads that are working carry on and nothing was lost.`)
+    if (compareHermesVersions(version, HERMES_CLI_VERSION) < 0) throw new Error(`Hermes was updated, but Sotto needs ${HERMES_CLI_VERSION} or later and this one is ${version}. Threads that are working carry on and nothing was lost.`)
     this.executable = executable; this.clientRevision++
     this.state.version = `${version} / ACP ${HERMES_ACP_VERSION}`
     if (compareHermesVersions(version, HERMES_CLI_VERSION) > 0) this.state.verifiedVersion = HERMES_CLI_VERSION

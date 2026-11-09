@@ -1,5 +1,8 @@
+import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { hermesConfig, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
+import { HermesKeys, hermesConfig, hermesEnvFile, hermesKeyVariable, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
 import { hermesCatalog, hermesModelValue, hermesSettingsOf } from '../../../src/main/agents/hermesModels'
 import { hermesAnswer, hermesPending } from '../../../src/main/agents/hermesRequests'
 import { hermesActivities } from '../../../src/main/agents/hermesActivity'
@@ -11,10 +14,14 @@ import type { OwnServer } from '../../../src/shared/ownModelServers'
 const spark: OwnServer = { id: 'own-spark', name: 'Spark', address: 'http://spark.local/v1', keyed: false,
   models: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek', context: 131072, thinking: true, images: false }] }
 
-describe('local Owl Hermes', () => {
-  it('keeps credentials out of config, disables login adoption and titles, and pins Full access', () => {
-    const servers = hermesServers([spark, { ...spark, id: 'keyed', keyed: true }], true, true)
-    const config = JSON.parse(hermesConfig(servers, '/project'))
+describe('Hermes', () => {
+  it('keeps keys out of config, disables login adoption and titles, and pins Full access', () => {
+    const keyed: OwnServer = { ...spark, id: 'own-paid', name: 'Paid', address: 'https://api.example.com/v1', keyed: true }
+    const servers = hermesServers([spark, keyed, { ...keyed, id: 'own-unkept' }], { 'own-paid': 'secret "key"' })
+    expect(servers.map(server => server.id)).toEqual(['own-spark', 'own-paid'])
+    const text = hermesConfig(servers, '/project')
+    expect(text).not.toContain('secret')
+    const config = JSON.parse(text)
     expect(config.auth.adopt_external_logins).toBe(false)
     expect(config.approvals.mode).toBe('off')
     expect(config.gateway.multiplex_profiles).toBe(true)
@@ -23,40 +30,29 @@ describe('local Owl Hermes', () => {
     expect(config.agent.reasoning_effort).toBe('high')
     expect(config.auxiliary.title_generation).toEqual({ enabled: false, model_upgrade_enabled: false })
     expect(config.terminal.cwd).toBe('/project')
-    expect(config.custom_providers.map((p: { name: string }) => p.name)).toEqual(['own-spark', 'own-refuseless'])
-    expect(config.custom_providers[1]).toMatchObject({ key_cmd: '/usr/bin/security find-generic-password -s refuseless -a default -w' })
-    expect(config.custom_providers[1]).not.toHaveProperty('api_key')
-    expect(config.providers['own-abliteration']).toEqual({ base_url: 'https://api.abliteration.ai/v1', api_mode: 'chat_completions',
-      key_cmd: '/usr/bin/security find-generic-password -s abliteration -a default -w',
-      models: ['abliterated-model-large-v2', 'abliterated-model-large-flash', 'abliterated-model'] })
-    expect(config.providers['own-abliteration']).not.toHaveProperty('api_key')
+    expect(config.custom_providers).toEqual([{ name: 'own-spark', base_url: 'http://spark.local/v1', api_mode: 'chat_completions', api_key: '', models: ['deepseek-v4.1-flash'] }])
+    expect(config.providers).toEqual({ 'own-paid': { base_url: 'https://api.example.com/v1', api_mode: 'chat_completions',
+      key_env: hermesKeyVariable('own-paid'), models: ['deepseek-v4.1-flash'] } })
+    expect(hermesKeyVariable('own-paid')).toBe('SOTTO_OWN_PAID_KEY')
+    expect(hermesEnvFile(servers, { 'own-paid': 'secret "key"' })).toBe('SOTTO_OWN_PAID_KEY="secret \\"key\\""\n')
+    expect(JSON.parse(hermesConfig([keyed])).model.key_env).toBe('SOTTO_OWN_PAID_KEY')
+    expect(JSON.parse(hermesConfig([spark]))).not.toHaveProperty('providers')
+    expect(hermesServers([], {})).toEqual([])
     expect(hermesEnvironment('/sotto/hermes', {}, { HOME: '/home', OPENAI_API_KEY: 'secret', ANTHROPIC_API_KEY: 'secret' }))
       .toEqual({ HOME: '/home', HERMES_HOME: '/sotto/hermes' })
     expect(hermesProjectHome('/sotto/hermes', '/project')).toMatch(/^\/sotto\/hermes\/profiles\/project-/u)
     expect(hermesProjectHome('/sotto/hermes', '/project')).not.toBe(hermesProjectHome('/sotto/hermes', '/other'))
   })
 
-  it('offers Abliteration only when available, keeping Refuseless unchanged and images off', () => {
-    const existing = hermesServers([spark], true)
-    const servers = hermesServers([spark], true, true)
-    expect(servers.slice(0, existing.length)).toEqual(existing)
-    expect(JSON.parse(hermesConfig(servers)).custom_providers).toEqual(JSON.parse(hermesConfig(existing)).custom_providers)
-    expect(JSON.parse(hermesConfig(existing))).not.toHaveProperty('providers')
-    expect(hermesServers([], false, false)).toEqual([])
-    expect(hermesServers([], false, true).map(server => server.id)).toEqual(['own-abliteration'])
-    expect(servers[2]?.models).toEqual([
-      { id: 'abliterated-model-large-v2', name: 'Abliterated Large V2', context: 1048576, thinking: false, images: false },
-      { id: 'abliterated-model-large-flash', name: 'Abliterated Large Flash', context: 1048576, thinking: true, images: false },
-      { id: 'abliterated-model', name: 'Abliterated Model', context: 262144, thinking: true, images: false },
-    ])
-    const catalog = hermesCatalog(servers, true).filter(model => model.source === 'Abliteration')
-    expect(catalog.map(model => model.id)).toEqual([
-      'own-abliteration/abliterated-model-large-v2', 'own-abliteration/abliterated-model-large-flash', 'own-abliteration/abliterated-model',
-    ])
-    for (const model of catalog) {
-      expect(model).not.toHaveProperty('supportsImages')
-      expect(hermesModelValue(model.id)).toBe(`custom:own-abliteration:${model.id.split('/')[1]}`)
-    }
+  it('keeps keys in one file only the user can read, and forgets them one at a time', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-hermes-keys-'))
+    try {
+      const keys = new HermesKeys(join(folder, 'own-server-keys.json'))
+      expect(await keys.read()).toEqual({})
+      await keys.keep('own-a', 'one'); await keys.keep('own-b', 'two'); await keys.forget('own-a')
+      expect(await keys.read()).toEqual({ 'own-b': 'two' })
+      if (process.platform !== 'win32') expect((await stat(join(folder, 'own-server-keys.json'))).mode & 0o777).toBe(0o600)
+    } finally { await rm(folder, { recursive: true, force: true }) }
   })
 
   it('maps server routes without offering unsupported reasoning or permission modes', () => {

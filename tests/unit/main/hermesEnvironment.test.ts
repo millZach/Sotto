@@ -23,7 +23,7 @@ afterEach(async () => {
 
 it.each(['bare', 'full'])('keeps discovered tools and removes only the private venv from every Hermes process with a %s PATH', async mode => {
   root = await mkdtemp(join(tmpdir(), 'sotto-hermes-env-'))
-  const bin = join(root, 'Developer', 'Tools', 'hermes-v0.23.0', '.venv', 'bin')
+  const bin = join(root, 'hermes-venv', 'bin')
   const userBin = join(root, 'user-bin')
   const nodeBin = join(root, 'node-bin')
   const brewBin = join(root, 'homebrew-bin')
@@ -35,7 +35,8 @@ it.each(['bare', 'full'])('keeps discovered tools and removes only the private v
   await writeFile(executable, '#!/private/hermes/python\n', { mode: 0o755 })
   await writeFile(join(nodeBin, 'node'), '#!/user/node\n', { mode: 0o755 })
   const environment = { HOME: root, PATH: mode === 'bare' ? userBin : [userBin, nodeBin].join(delimiter) }
-  const loginPath = [nodeBin, brewBin, localBin, userBin].join(delimiter)
+  // Found on the login shell's PATH, as any other provider's CLI is; its private venv is still kept off every child's PATH.
+  const loginPath = [nodeBin, brewBin, localBin, userBin, bin].join(delimiter)
   expect(await findHermesExecutable(environment, { home: root, platform: 'darwin', loginShellPath: async () => loginPath })).toBe(executable)
   const sharedPath = withCliPath(environment, executable).PATH!.split(delimiter)
   expect(sharedPath[0]).toBe(bin)

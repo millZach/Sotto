@@ -1,38 +1,50 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { OwnServer } from '../../shared/ownModelServers'
-import { keylessServers } from '../ownModelServers/deepseekPatch'
 import { hermesEnvironment, withHermesPath } from './hermesRpc'
 
-/** Check availability without reading the secret. Hermes's key_cmd captures it directly from Keychain. */
-export function hermesRefuselessAvailable(): Promise<boolean> {
-  if (process.platform !== 'darwin') return Promise.resolve(false)
-  return new Promise(resolve => {
-    execFile('/usr/bin/security', ['find-generic-password', '-s', 'refuseless', '-a', 'default'],
-      { encoding: 'utf8', maxBuffer: 8192, timeout: 10_000 }, error => resolve(!error))
-  })
+/**
+ * The keys of the user's own keyed servers, as Sotto's Hermes keeps them (ADR-0124): one file under Sotto's Hermes
+ * folder, readable by the user alone. A key arrives from the Add dialog once, beside OpenCode's copy, and leaves on Remove.
+ */
+export class HermesKeys {
+  constructor(private readonly path: string) {}
+  async read(): Promise<Record<string, string>> {
+    const text = await readFile(this.path, 'utf8').catch(() => '{}')
+    const parsed: unknown = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
+  }
+  async keep(id: string, key: string): Promise<void> { await this.write({ ...await this.read(), [id]: key }) }
+  async forget(id: string): Promise<void> {
+    const keys = await this.read()
+    if (!(id in keys)) return
+    delete keys[id]
+    await this.write(keys)
+  }
+  private async write(keys: Record<string, string>): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true })
+    const next = `${this.path}.next`
+    await writeFile(next, JSON.stringify(keys), { mode: 0o600 })
+    await rename(next, this.path)
+  }
 }
 
-/** Check availability without reading the secret, as for Refuseless. */
-export function hermesAbliterationAvailable(): Promise<boolean> {
-  if (process.platform !== 'darwin') return Promise.resolve(false)
-  return new Promise(resolve => {
-    execFile('/usr/bin/security', ['find-generic-password', '-s', 'abliteration', '-a', 'default'],
-      { encoding: 'utf8', maxBuffer: 8192, timeout: 10_000 }, error => resolve(!error))
-  })
+/** The variable a keyed server's key reaches Hermes by, from its profile's `.env`; the config names only the variable. */
+export function hermesKeyVariable(id: string): string {
+  return `SOTTO_${id.toUpperCase().replace(/[^A-Z0-9]/gu, '_')}_KEY`
 }
 
-export function hermesServers(servers: readonly OwnServer[], refuseless: boolean, abliteration = false): OwnServer[] {
-  return [...keylessServers(servers), ...(refuseless ? [{ id: 'own-refuseless', name: 'Refuseless', address: 'https://api.refuseless.com/v1', keyed: false,
-    models: [{ id: 'glm-5.3-flash-abliterated', name: 'GLM 5.3 Flash Abliterated', context: 131072, thinking: true, images: false }] }] : []),
-  ...(abliteration ? [{ id: 'own-abliteration', name: 'Abliteration', address: 'https://api.abliteration.ai/v1', keyed: false,
-    models: [
-      { id: 'abliterated-model-large-v2', name: 'Abliterated Large V2', context: 1048576, thinking: false, images: false },
-      { id: 'abliterated-model-large-flash', name: 'Abliterated Large Flash', context: 1048576, thinking: true, images: false },
-      { id: 'abliterated-model', name: 'Abliterated Model', context: 262144, thinking: true, images: false },
-    ] }] : [])]
+/** The servers Hermes can run: every keyless one, and each keyed one whose key Sotto's Hermes holds. */
+export function hermesServers(servers: readonly OwnServer[], keys: Readonly<Record<string, string>>): OwnServer[] {
+  return servers.filter(server => !server.keyed || keys[server.id] !== undefined)
+}
+
+/** A profile's `.env`: one line per keyed server, quoted so no character in a key can end its line early. */
+export function hermesEnvFile(servers: readonly OwnServer[], keys: Readonly<Record<string, string>>): string {
+  return servers.filter(server => server.keyed && keys[server.id] !== undefined)
+    .map(server => `${hermesKeyVariable(server.id)}=${JSON.stringify(keys[server.id])}\n`).join('')
 }
 
 export function hermesProjectHome(root: string, projectPath: string): string {
@@ -42,7 +54,6 @@ export function hermesProjectHome(root: string, projectPath: string): string {
 /** JSON is YAML: no interpolation of model names, addresses, paths or secrets. */
 export function hermesConfig(servers: readonly OwnServer[], cwd?: string): string {
   const first = servers[0]
-  const abliteration = servers.find(server => server.id === 'own-abliteration')
   return JSON.stringify({
     _config_version: 52,
     auth: { adopt_external_logins: false }, approvals: { mode: 'off' },
@@ -52,12 +63,13 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string): strin
       compression: { provider: 'auto', model: '' }, vision: { provider: 'auto', model: '' } },
     memory: { memory_enabled: true, user_profile_enabled: true },
     ...(cwd ? { terminal: { cwd } } : {}),
-    ...(first ? { model: { provider: `custom:${first.id}`, default: first.models[0]?.id, base_url: first.address, api_mode: 'chat_completions', context_length: first.models[0]?.context } } : {}),
-    // Hermes 0.23.0 preserves key_cmd only on the keyed providers map, not its legacy list.
-    ...(abliteration ? { providers: { [abliteration.id]: { base_url: abliteration.address, api_mode: 'chat_completions',
-      key_cmd: '/usr/bin/security find-generic-password -s abliteration -a default -w', models: abliteration.models.map(model => model.id) } } } : {}),
-    custom_providers: servers.filter(server => server.id !== 'own-abliteration').map(server => ({ name: server.id, base_url: server.address, api_mode: 'chat_completions',
-      ...(server.id === 'own-refuseless' ? { key_cmd: '/usr/bin/security find-generic-password -s refuseless -a default -w' } : { api_key: '' }), models: server.models.map(model => model.id) })),
+    ...(first ? { model: { provider: `custom:${first.id}`, default: first.models[0]?.id, base_url: first.address, api_mode: 'chat_completions', context_length: first.models[0]?.context,
+      ...(first.keyed ? { key_env: hermesKeyVariable(first.id) } : {}) } } : {}),
+    // Hermes 0.23.0 resolves a key only on its keyed `providers` map; its legacy `custom_providers` list runs keyless.
+    ...(servers.some(server => server.keyed) ? { providers: Object.fromEntries(servers.filter(server => server.keyed).map(server => [server.id,
+      { base_url: server.address, api_mode: 'chat_completions', key_env: hermesKeyVariable(server.id), models: server.models.map(model => model.id) }])) } : {}),
+    custom_providers: servers.filter(server => !server.keyed).map(server => ({ name: server.id, base_url: server.address, api_mode: 'chat_completions',
+      api_key: '', models: server.models.map(model => model.id) })),
   }, null, 2) + '\n'
 }
 
@@ -67,15 +79,21 @@ export class HermesRuntime {
   private stopping = false
   private starting: Promise<void> | undefined
   private closedWork = Promise.resolve()
-  constructor(readonly root: string, private readonly lost: () => void, private readonly environment: NodeJS.ProcessEnv = process.env) {}
+  readonly keys: HermesKeys
+  constructor(readonly root: string, private readonly lost: () => void, private readonly environment: NodeJS.ProcessEnv = process.env) {
+    this.keys = new HermesKeys(join(root, 'own-server-keys.json'))
+  }
 
   env(home = this.root, cwd = this.root): NodeJS.ProcessEnv {
     return { ...hermesEnvironment(home, {}, this.environment), PWD: cwd }
   }
   async writeConfig(home: string, servers: readonly OwnServer[], cwd?: string): Promise<void> {
     await mkdir(home, { recursive: true })
-    const path = join(home, 'config.yaml'), text = hermesConfig(servers, cwd)
-    if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
+    const keys = await this.keys.read()
+    for (const [name, text] of [['config.yaml', hermesConfig(servers, cwd)], ['.env', hermesEnvFile(servers, keys)]] as const) {
+      const path = join(home, name)
+      if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
+    }
   }
   private python(executable: string, script: string, args: string[] = []): Promise<void> {
     return new Promise((resolve, reject) => {

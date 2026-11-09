@@ -7,7 +7,7 @@ This is a local Owl fix only; no push, pull request, merge or installation.
 ## Cause
 
 `findHermesExecutable` finds the pinned
-`/Users/drakemorey/Developer/Tools/hermes-v0.23.0/.venv/bin/hermes`.
+`~/Developer/Tools/hermes-v0.23.0/.venv/bin/hermes`.
 The shared CLI lookup remembers its folder as a PATH prefix. All four Hermes
 launch paths passed their environment through `withCliPath`, placing that private
 venv before the user's tools. Hermes's launcher already has an absolute shebang
@@ -79,7 +79,7 @@ terminal. The bare run started with exactly:
 
 ```sh
 env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  /Users/drakemorey/.local/share/fnm/node-versions/v24.22.1/installation/bin/node \
+  ~/.local/share/fnm/node-versions/v24.22.1/installation/bin/node \
   /tmp/sotto-hermes-launch-probe.mjs bare
 ```
 
@@ -95,7 +95,7 @@ and settled idle.
 | Probe warning / model warning | Empty / absent | Empty / absent |
 | Non-login `node` | `/usr/local/bin/node`, `v24.14.0` | fnm multishell `bin/node`, `v25.8.2` |
 | Native terminal `node` | `/usr/local/bin/node`, `v24.14.0` | `/usr/local/bin/node`, `v24.14.0` |
-| `uv`, in both contexts | `/Users/drakemorey/.local/bin/uv`, `0.10.7` | Same |
+| `uv`, in both contexts | `~/.local/bin/uv`, `0.10.7` | Same |
 | `git`, in both contexts | `/usr/bin/git`, `2.54.0 (Apple Git-157)` | Same |
 | Sotto MCP discovery | 8 servers, all 30 tools | 8 servers, all 30 tools |
 
@@ -104,9 +104,9 @@ still uses its normal login-shell Node. Both resolve; this fix deliberately
 preserves that existing ordering.
 
 For the bare run, `withCliPath` added Hermes's venv, `/usr/local/bin`,
-`/Users/drakemorey/.local/bin`, macOS login paths and `/opt/homebrew/bin`.
+`~/.local/bin`, macOS login paths and `/opt/homebrew/bin`.
 The launch environment kept every addition except the venv. Its PATH began
-`/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/drakemorey/.local/bin`.
+`/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:~/.local/bin`.
 Neither revised launch PATH contained Hermes's venv. Hermes's unchanged
 login-shell setup can still include that folder later in the terminal PATH;
 `python3` resolves to `/usr/bin/python3` ahead of it.

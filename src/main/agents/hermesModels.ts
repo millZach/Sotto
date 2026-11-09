@@ -3,7 +3,7 @@ import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { keylessServers } from '../ownModelServers/deepseekPatch'
 
-/** Full access is the only mode in this local Owl. */
+/** Full access is the only mode Sotto runs Hermes in. */
 export const HERMES_RUNTIME_MODES: readonly AgentRuntimeMode[] = ['full-access']
 
 /** A saved or chosen model, split into the server and model IDs its wire pair names. */
