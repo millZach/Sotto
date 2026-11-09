@@ -12,6 +12,7 @@ import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { MemoryStore } from '../../../src/main/memory/store'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
@@ -128,6 +129,42 @@ describe('risky action classification', () => {
 })
 
 describe('authority at dispatch', () => {
+  it('rechecks a remote answer grant after saving its intent', async () => {
+    let allowed = true
+    const client: ClientIdentity = { clientId: 'phone', user: 'Fixture client', transport: 'socket' }
+    const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+      mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
+        : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
+    const recordAnswer = vi.fn()
+    Object.assign(f.host, { recordAnswer })
+    f.permission('May I edit this file?')
+    const { promise: waiting, resolve: held } = deferred<void>()
+    const { promise: gate, resolve: release } = deferred<void>()
+    const write = AtomicJsonStore.prototype.write
+    const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      const written = write.call(this, value)
+      if (value && typeof value === 'object' && 'outbox' in value && Array.isArray(value.outbox)
+        && value.outbox.some(item => item.type === 'answer')) return written.then(async () => { held(); await gate })
+      return written
+    })
+    const command = { type: 'answer', threadId: 'workshop', requestId: 'permission', answer: 'Allow', approved: true } as const
+    const pending = f.control.command(command, client)
+    try {
+      await waiting
+      allowed = false
+    } finally { release() }
+    expect((await pending).error).toBe(UNPAIRED_CLIENT_ERROR)
+    spy.mockRestore()
+    expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
+    expect(recordAnswer).not.toHaveBeenCalled()
+    expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.requests.some(request => request.id === 'permission')).toBe(true)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).not.toContainEqual(expect.objectContaining({ type: 'answer' }))
+    allowed = true
+    expect((await f.control.command(command, client)).error).toBeNull()
+    expect(f.host.executed.filter(command => command.type === 'answer')).toHaveLength(1)
+    expect(recordAnswer).toHaveBeenCalledOnce()
+  })
+
   it.each([false, true])('records one attribution for an uncertain answer with accepted %s', async accepted => {
     const f = await fixture()
     const recordAnswer = vi.fn()

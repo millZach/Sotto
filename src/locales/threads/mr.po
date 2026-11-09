@@ -624,6 +624,7 @@ msgstr ""
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
+#: src/renderer/src/agents/ChoiceChip.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{label}: {shown}"
@@ -929,7 +930,7 @@ msgid "{name}’s threads keep working until you update. Updating restarts its h
 msgstr ""
 
 #. A fixed chip's tooltip: its name, then why it cannot be pressed now.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/ChoiceChip.tsx
 msgid "{named}. {fixedReason}"
 msgstr ""
 
@@ -1004,6 +1005,7 @@ msgstr ""
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
 #. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr ""
@@ -1015,6 +1017,7 @@ msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
 msgstr ""
@@ -1044,18 +1047,19 @@ msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {wanted} is a model, effort or permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} has not confirmed {wanted}. The thread starts on {wanted} the next time it is used, and Sotto checks it then."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} keeps its own default until it confirms."
 msgstr ""
 
@@ -1080,27 +1084,27 @@ msgid "{provider} says"
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {mode} is the provider's own name for a permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} stays on {mode} until it confirms."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still asks for approval until it confirms."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still decides what to ask you about until it confirms."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still makes edits without asking until it confirms."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still runs anything without asking until it confirms."
 msgstr ""
 
@@ -1867,7 +1871,7 @@ msgid "Allow"
 msgstr ""
 
 #. A permission mode: the agent edits files without asking.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Allow edits"
 msgstr ""
 
@@ -2011,7 +2015,7 @@ msgstr ""
 msgid "Arrow"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
 msgstr ""
 
@@ -2020,7 +2024,7 @@ msgid "Ask about your threads, or say what to start or send"
 msgstr ""
 
 #. A permission mode: the agent asks before it acts.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
 msgstr ""
 
@@ -2094,7 +2098,7 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr ""
 
 #. A permission mode: the agent decides what to ask about.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Auto"
 msgstr ""
 
@@ -2535,7 +2539,7 @@ msgid "Choose branch"
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Choose model"
 msgstr ""
 
@@ -2725,24 +2729,24 @@ msgstr ""
 msgid "Code from the {sourceName} page"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
 msgstr ""
 
 #. {computer} is the name of the computer the thread runs on, such as forge.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex’s reviewer still answers what would come to you until it confirms."
 msgstr ""
 
@@ -3589,7 +3593,7 @@ msgstr ""
 msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor asks before commands, web requests and tools. It edits files inside the project without asking."
 msgstr ""
 
@@ -3609,7 +3613,7 @@ msgstr ""
 msgid "Cursor made a plan and waits for you before it starts."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it."
 msgstr ""
 
@@ -3629,7 +3633,7 @@ msgstr ""
 msgid "Cursor’s model makers"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you."
 msgstr ""
 
@@ -3646,15 +3650,15 @@ msgstr ""
 msgid "cut at {kib} KiB"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
 msgstr ""
 
@@ -4363,7 +4367,7 @@ msgstr ""
 msgid "Fit to window"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you."
 msgstr ""
 
@@ -4459,7 +4463,7 @@ msgid "From the address, if left empty"
 msgstr ""
 
 #. A permission mode: the agent runs anything without asking.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Full access"
 msgstr ""
 
@@ -4920,10 +4924,6 @@ msgstr ""
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Its models join the model menu under OpenCode, billed to your {sourceName} account."
-msgstr ""
-
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
-msgid "Its own Git branch and folder, checked out when it opens. Folders without Git are used as they are."
 msgstr ""
 
 #. Stands for a provider whose name is not known, inside a sentence.
@@ -5627,11 +5627,9 @@ msgstr ""
 msgid "New threads start with these. Change them for one thread in its composer."
 msgstr ""
 
-#. A working copy choice: the thread gets its own Git worktree.
 #: src/renderer/src/agents/branchToolbar.logic.ts
 #: src/renderer/src/agents/ForkFromHere.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
 msgid "New worktree"
 msgstr ""
 
@@ -6724,10 +6722,8 @@ msgctxt "skill source"
 msgid "Project"
 msgstr ""
 
-#. A working copy choice: the thread works in the folder of the project.
 #: src/renderer/src/agents/ThreadSidebar.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
 msgid "Project folder"
 msgstr ""
 
@@ -6758,6 +6754,7 @@ msgstr ""
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 #: src/renderer/src/agents/ContinueThread.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
@@ -8243,7 +8240,7 @@ msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its re
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 msgstr ""
 
@@ -9329,7 +9326,7 @@ msgstr ""
 msgid "This question has no choices Sotto can show."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "This Sotto cannot change what Watcher may do without asking."
 msgstr ""
 
@@ -10276,7 +10273,7 @@ msgstr ""
 msgid "Watcher starts its next turn on this choice."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Watcher’s permissions:"
 msgstr ""
 
@@ -10406,10 +10403,6 @@ msgstr ""
 #: src/renderer/src/agents/delegationWords.ts
 msgctxt "delegation outcome"
 msgid "Working"
-msgstr ""
-
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
-msgid "Working copy"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx

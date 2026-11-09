@@ -12,7 +12,7 @@ import type { AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn, type ThreadModelMoved } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
-import { sendThreadRevision } from './ThreadComposer'
+import { sendThreadRevision } from './threadSubmission'
 import { useWatchActions } from '../watcher/watcherRoom'
 import { watchAfterSend } from '../watcher/watchOnSend'
 import { followupsFor } from './ThreadFollowups'
@@ -999,12 +999,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
   // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
   const startsOn = useThreadStarts()
-  const startKey = startsOn && !watcher && thread.startedFrom ? JSON.stringify(thread.startedFrom) : undefined
-  const startSource = startKey === undefined ? undefined : state.host.threads.find(item => item.id === thread.startedFrom!.threadId)
+  const startedFrom = useShared(startsOn && !watcher ? thread.startedFrom : undefined)
+  const startSource = startedFrom === undefined ? undefined : state.host.threads.find(item => item.id === startedFrom.threadId)
   const sourceTitle = startSource?.title, sourceProvider = startSource?.providerId
-  const startView = useMemo(() => startKey === undefined ? null : threadStartView({ id: thread.id, startedFrom: JSON.parse(startKey) as NonNullable<typeof thread.startedFrom>, providerId: thread.providerId },
+  const startView = useMemo(() => startedFrom === undefined ? null : threadStartView({ id: thread.id, startedFrom, providerId: thread.providerId },
     sourceTitle === undefined ? undefined : { title: sourceTitle, providerId: sourceProvider }, command, window.sotto?.agents?.startHandover),
-  [startKey, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
+  [startedFrom, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
   const startHandoverWaiting = startView?.start.route === 'handover' && startView.start.handover !== undefined && startView.start.handover.sent === undefined
   // A fork's note goes under the last reply it copied, where its own conversation begins, or at the head while that
   // reply is not among the messages shown.

@@ -303,6 +303,8 @@ What does not change:
 
 An adapter must know which threads changed. Every path that changes a thread's state marks the thread. Until an adapter marks its own, a shim at its boundary works the changes out by comparing each thread's record with the one it published last. That costs one check per thread, as option 1 would, and only that adapter's threads pay it.
 
+By November 9, 2026, every adapter supplies its marked thread and rest readers. The temporary comparison shim is removed. First publications and recovery after a gap still use whole snapshots.
+
 **What it means for #1457.** Zach asked for #925 first, and option 2 is close to what #1457 needs:
 - **The workspace already holds the change.** Each publish tells it exactly which threads changed, so its saves and event batch look only at those.
 - **A store worker gets the changes as they are.** #1457 moves the thread store's writes off main, and the workspace can post it the upserts, removals and events unchanged. Moving the store off main then costs in proportion to the change.

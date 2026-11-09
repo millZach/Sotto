@@ -4,6 +4,7 @@ import { HOST_PHONES_WATCH_MS, HostPhones, type HostPhonesLink } from '../../../
 import { ADMIN_IDLE_MS, AdminConnection, type PressConnection } from '../../../src/main/hosts/adminConnection'
 import type { SshHostConnection } from '../../../src/main/hosts/sshLauncher'
 import type { PhonesState } from '../../../src/shared/phones'
+import { deferred, heldOperation } from '../../fixtures/deferred'
 
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
 const ID = '22222222-2222-4222-8222-222222222222'
@@ -22,12 +23,13 @@ function fixture() {
   /** How many times a request had to open a connection because none was open. */
   let signIns = 0
   const requests: { route: string; token: string; body: unknown }[] = []
-  let answer: (route: string, body: unknown) => { status?: number; body?: unknown } = () => ({ body: { v: 1, hostId: HOST_ID, state: state() } })
+  type Reply = { status?: number; body?: unknown }
+  let answer: (route: string, body: unknown) => Reply | Promise<Reply> = () => ({ body: { v: 1, hostId: HOST_ID, state: state() } })
   const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const route = String(url).replace('http://127.0.0.1:4500/v1/admin/', '')
     const body = JSON.parse(String(init?.body)) as unknown
     requests.push({ route, token: (init?.headers as Record<string, string>).Authorization!, body })
-    const reply = answer(route, body)
+    const reply = await answer(route, body)
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 })
   }) as unknown as typeof globalThis.fetch
   const press = vi.fn(async <T>(request: (connection: PressConnection) => Promise<T>): Promise<T> => {
@@ -49,6 +51,7 @@ function fixture() {
     closeAll: () => { current = undefined },
     signIns: () => signIns,
     disconnect: () => { links = []; for (const listener of listeners) listener() },
+    reconnect: () => { links = links.map(link => ({ ...link, generation: link.generation + 1 })); for (const listener of listeners) listener() },
   }
 }
 
@@ -75,6 +78,99 @@ it('reads a host once when it connects, and keeps what it said after it disconne
   disconnect()
   expect(phones.state()[0]!.state).toMatchObject({ enabled: true })
   await expect(phones.command(ID, { type: 'retry' })).rejects.toThrow('This host is not connected')
+  phones.close()
+})
+
+it('finishes an older read before executing a phone command', async () => {
+  vi.useFakeTimers()
+  const { phones, requests, answer } = fixture()
+  const { promise: waiting, resolve: started } = deferred<void>()
+  const { promise: gate, resolve: release } = deferred<void>()
+  answer(async route => {
+    if (route === 'phones') {
+      started()
+      await gate
+      return { body: { v: 1, hostId: HOST_ID, state: state() } }
+    }
+    return { body: { v: 1, hostId: HOST_ID, state: state({ enabled: true, phase: 'on' }) } }
+  })
+  await waiting
+  const changing = phones.command(ID, { type: 'set-enabled', enabled: true })
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(requests.map(request => request.route)).toEqual(['phones'])
+  } finally { release() }
+  await changing
+  expect(requests.map(request => request.route)).toEqual(['phones', 'phones-command'])
+  expect(phones.state()[0]?.state).toMatchObject({ enabled: true, phase: 'on' })
+  phones.close()
+})
+
+it('stays busy from command admission behind a read until every queued command finishes, including a failure', async () => {
+  const { phones, requests, answer } = fixture()
+  const read = heldOperation(), first = heldOperation(), second = heldOperation()
+  let commands = 0
+  answer(async route => {
+    if (route === 'phones') {
+      await read.wait()
+      return { body: { v: 1, hostId: HOST_ID, state: state() } }
+    }
+    if (++commands === 1) {
+      await first.wait()
+      return { body: { v: 1, hostId: HOST_ID, state: state({ enabled: true, phase: 'on' }) } }
+    }
+    await second.wait()
+    throw new Error('The host connection closed.')
+  })
+  await read.entered
+  const busy: boolean[] = []
+  const off = phones.subscribe(() => { busy.push(phones.state()[0]?.busy === true) })
+  const firstCommand = phones.command(ID, { type: 'show-code' })
+  const secondCommand = phones.command(ID, { type: 'show-code' })
+  const rejected = expect(secondCommand).rejects.toThrow('Phone access on forge could not be reached')
+  try {
+    expect(phones.state()[0]?.busy).toBe(true)
+    expect(requests.map(request => request.route)).toEqual(['phones'])
+    read.release()
+    await first.entered
+    expect(phones.state()[0]?.busy).toBe(true)
+    first.release()
+    await firstCommand
+    await second.entered
+    expect(phones.state()[0]?.busy).toBe(true)
+    expect(busy.every(Boolean)).toBe(true)
+    second.release()
+    await rejected
+    expect(phones.state()[0]?.busy).toBe(false)
+    expect(requests.map(request => request.route)).toEqual(['phones', 'phones-command', 'phones-command'])
+  } finally {
+    read.release(); first.release(); second.release()
+    await Promise.allSettled([firstCommand, rejected])
+    off()
+    phones.close()
+  }
+})
+
+it('reads a new connection after an older connection finishes its read', async () => {
+  vi.useFakeTimers()
+  const { phones, requests, answer, reconnect } = fixture()
+  const { promise: waiting, resolve: started } = deferred<void>()
+  const { promise: gate, resolve: release } = deferred<void>()
+  let reads = 0
+  answer(async () => {
+    if (++reads === 1) {
+      started()
+      await gate
+      return { body: { v: 1, hostId: HOST_ID, state: state() } }
+    }
+    return { body: { v: 1, hostId: HOST_ID, state: state({ enabled: true, phase: 'on' }) } }
+  })
+  await waiting
+  reconnect()
+  release()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(requests.map(request => request.route)).toEqual(['phones', 'phones'])
+  expect(phones.state()[0]?.state).toMatchObject({ enabled: true, phase: 'on' })
   phones.close()
 })
 
