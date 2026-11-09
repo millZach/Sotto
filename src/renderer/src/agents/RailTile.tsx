@@ -6,6 +6,7 @@ import { followRow, RowMenu, rowMenuPlace, type RowMenuPlace } from './RowMenu'
 import type { ThreadRow } from './threadFacts'
 import { threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
 import { ThreadNameField } from './ThreadName'
+import { snoozeThread, SnoozeUntil, useSnoozeMenu } from './threadSnooze'
 import type { PaneActions } from './ThreadSidebar'
 import type { useSettleThread } from './ThreadWorkingCopy'
 
@@ -38,6 +39,10 @@ export function RailTile({ row, panes, open, busy, watched, pressOpens, command,
   const tile = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<RowMenuPlace | null>(null)
   const [renaming, setRenaming] = useState(false)
+  // The snooze menu, and its Pick a date and time field (ADR-0175), beside the tile as a row's are beside the row.
+  const [snoozeMenu, setSnoozeMenu] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const snoozeGroups = useSnoozeMenu()
   // A finished rename hands the focus back to the tile, the rail's stop, as a row's does to the row.
   const restoreRenameFocus = useRef(false)
   useLayoutEffect(() => {
@@ -49,11 +54,13 @@ export function RailTile({ row, panes, open, busy, watched, pressOpens, command,
   const id = row.thread.id
   const title = row.thread.title
   const openBeside = (): void => panes.onOpenBeside(id)
+  const setSnooze = (until: number): void => snoozeThread(row.thread, until, command)
   const menuGroups = (): ReturnType<typeof threadMenu> => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: pressOpens }, {
     open: () => onOpen(id), openBeside, rename: () => setRenaming(true),
     settle: () => void settle(row.thread, row.project),
     restore: () => void command({ type: 'restore-thread', threadId: id }),
     watch: watchActions === null ? undefined : () => void watchActions.setThread(id, !watched),
+    ...panes.snoozing === true && row.settledBy === null ? { snooze: () => setSnoozeMenu(true) } : {},
   })
   return <>
     <button ref={tile} type="button" {...button} aria-keyshortcuts={offers.beside ? panes.openBesideChord?.label.keys : undefined}
@@ -64,6 +71,10 @@ export function RailTile({ row, panes, open, busy, watched, pressOpens, command,
       onContextMenu={event => { event.preventDefault(); tile.current?.focus(); setMenu(rowMenuPlace(event)) }}>{children}</button>
     {menu !== null ? <RowMenu label={t`Actions for ${title}`} groups={menuGroups()} anchor={() => tile.current} place={menu} side="end"
       onClose={restore => { setMenu(null); if (restore) tile.current?.focus() }} /> : null}
+    {snoozeMenu ? <RowMenu label={t`Snooze ${title}`} groups={snoozeGroups(setSnooze, () => setPicking(true))} anchor={() => tile.current} place="beside" side="end"
+      onClose={restore => { setSnoozeMenu(false); if (restore) tile.current?.focus() }} /> : null}
+    {picking ? <SnoozeUntil title={title} anchor={() => tile.current} side="end" onSnooze={setSnooze}
+      onDone={restore => { setPicking(false); if (restore) tile.current?.focus() }} /> : null}
     {renaming ? <RailRename title={title} anchor={() => tile.current} onRename={next => void command({ type: 'rename-thread', threadId: id, title: next })}
       onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /> : null}
   </>

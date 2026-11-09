@@ -22,7 +22,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId, type SubscriptionAccount } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -47,7 +47,7 @@ import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
-import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
+import { claudeErrorReplyText, claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
 import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, firstUnread, type OriginBucket } from './claudeSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
@@ -149,6 +149,10 @@ export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-or
  */
 const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, models: AgentHostSnapshot['models']): ClaudeSettings =>
   ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required', fastMode: speedRuns({ models }, value.modelId, speedAfterChange(value)) === 'fast' })
+/** Claude Code's catalog as every surface shows it: each model as ready as the account, its Default recommended, and older models of a line legacy. */
+const claudeCatalog = (account: SubscriptionAccount): AgentHostSnapshot['models'] =>
+  markLegacyModels(account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
+    ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) })))
 const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode && first.fastMode === second.fastMode
 /**
@@ -482,8 +486,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly configurationLaunches = new Set<string>()
   /** The error each thread's failed turn put on the provider, so that thread's next finished turn can take it down again. */
   private readonly turnFailures = new Map<string, string>()
-  /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
-  private readonly assistantErrors = new Map<string, string>()
+  /**
+   * The classification on a turn's last assistant message, when Claude Code gave one for a failed API call, with that
+   * reply's text, read only to tell the reason and when a usage limit resets (`claudeTurnFailure.ts`) and never shown.
+   */
+  private readonly assistantErrors = new Map<string, { readonly kind: string; readonly text?: string }>()
   private readonly logOrigins = new Map<string, Set<string>>()
   /** Each thread's origins by the digest of the text Sotto delivered with notes, keyed by the origin list it indexes. */
   private readonly deliveredIndex = new WeakMap<Alias['origins'], OriginIndex>()
@@ -684,8 +691,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await this.usage.load()
     const [account, executable, aliases, projects] = await Promise.all([this.client.status(), this.client.findExecutable(), this.readAliases(), this.projectStore.read()])
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.state.models = markLegacyModels(account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
-      ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) })))
+    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.state.models = claudeCatalog(account)
     delete this.state.problem; delete this.state.account
     if (!account.ready || !executable) {
       this.state.error = account.detail
@@ -749,7 +755,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /**
    * The client on disk was replaced while Sotto stayed connected (ADR-0042). Every thread runs its own CLI, so
    * nothing is disconnected: the client is found again (an update may have moved it), its version is read from
-   * the binary, and each CLI moves to it as its thread goes idle. An idle CLI stops now the way the reaper stops
+   * the binary and its models from its catalog, and each CLI moves to it as its thread goes idle. An idle CLI stops now the way the reaper stops
    * one, and the thread's next action starts the new client; a busy one finishes on the old client first. No turn
    * is cancelled and no request is answered. A new client Sotto cannot find or that does not answer is refused
    * with the sentence the update reports, and nothing moves to it.
@@ -763,6 +769,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const version = await this.client.version(executable)
     if (generation !== this.generation || !this.state.connected) return
     if (!version) throw new Error('Claude Code was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Claude Code again to try the new version.')
+    // The new client may list other models, as 2.1.321 moved `fable` from Fable 5.1 to Fable 5.2, so its catalog is read
+    // again as connecting reads it. One it cannot read leaves the menus as they were; the threads still move to it.
+    const account = await this.client.status()
+    if (generation !== this.generation || !this.state.connected) return
+    if (account.ready) this.state.models = claudeCatalog(account)
     // Set together, so a CLI is launched either from the old client and counted old, or from the new one.
     this.executable = executable; this.clientRevision++
     this.limits.clientChanged()
@@ -2006,7 +2017,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (typeof frame.uuid === 'string' && frame.uuid) { thread.lastTurn = { id: frame.uuid, status: 'running' }; this.selfTurns.set(id, frame.uuid) }
     }
     if (frame.type === 'assistant') {
-      if (typeof frame.error === 'string' && !frame.parent_tool_use_id) this.assistantErrors.set(id, frame.error)
+      if (typeof frame.error === 'string' && !frame.parent_tool_use_id) {
+        const said = claudeErrorReplyText(frame)
+        this.assistantErrors.set(id, { kind: frame.error, ...said === undefined ? {} : { text: said } })
+      }
       this.message(id, frame, false)
     }
     if (frame.type === 'stream_event') {
@@ -2046,8 +2060,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const answersCompaction = origin !== undefined && alias.compactInputIds?.at(-1) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
-      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
-      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, this.assistantErrors.get(id)) : undefined
+      const assistantError = this.assistantErrors.get(id)
+      const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, assistantError?.kind, assistantError?.text) : null
+      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, assistantError?.kind, undefined, assistantError?.text) : undefined
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined

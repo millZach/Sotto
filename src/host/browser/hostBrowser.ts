@@ -3,8 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import { safeBrowserUrl } from '../../shared/browser'
-import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../main/tools/pageAutomation'
+import { safeBrowserUrl, type BrowserCapture } from '../../shared/browser'
+import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageEvidence, type PageFrame, type PageInput, type PagePicture } from '../../main/tools/pageAutomation'
 import { DevToolsPipe } from './devToolsPipe'
 import { findBrowser } from './findBrowser'
 
@@ -543,7 +543,7 @@ export class HostPageAutomation extends PageAutomation {
     return { empty: frame.data.length === 0 || frame.width === 0 || frame.height === 0, width: frame.width, height: frame.height, dataUrl: `data:image/${frame.format};base64,${frame.data}` }
   }
   /** The evidence pictures the desktop keeps for a task (`EVIDENCE_PICTURES`), asked of Chromium. */
-  async evidence(capture: { width: number; height: number }): Promise<{ image: string; width: number; height: number } | null> {
+  async evidence(capture: BrowserCapture): Promise<PageEvidence | null> {
     if (this.host.closed || !capture.width) return null
     for (const step of EVIDENCE_PICTURES) {
       const frame = await this.snapshot(undefined, { format: 'jpeg', quality: step.quality, scale: Math.min(1, step.width / capture.width) }).catch(() => null)

@@ -1,5 +1,6 @@
 import { nativeImage, type NativeImage, type WebContents } from 'electron'
-import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from './pageAutomation'
+import type { BrowserCapture } from '../../shared/browser'
+import { EVIDENCE_LIMIT, EVIDENCE_PICTURES, PageAutomation, type PageDebugger, type PageEventListener, type PageEvidence, type PageFrame, type PagePicture } from './pageAutomation'
 
 export { BROWSER_COMMAND_DEADLINE_MS, cssIdentifier, type PointHandlers, type PointTarget, type PointedElement } from './pageAutomation'
 
@@ -49,8 +50,8 @@ export class BrowserAutomation extends PageAutomation {
     const size = image.getSize()
     return { empty: image.isEmpty(), width: size.width, height: size.height, dataUrl: image.toDataURL() }
   }
-  evidence(capturedImage: string): { image: string; width: number; height: number } | null {
-    const snapshot = nativeImage.createFromDataURL(capturedImage)
+  evidence(capture: BrowserCapture): PageEvidence | null {
+    const snapshot = nativeImage.createFromDataURL(capture.image)
     if (snapshot.isEmpty()) return null
     const size = snapshot.getSize()
     for (const step of EVIDENCE_PICTURES) {

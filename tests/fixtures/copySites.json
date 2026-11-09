@@ -141,7 +141,7 @@
   "src/main/omarchy/setup.ts": {
     "structuredClone(": 3
   },
-  "src/main/tools/browser.ts": {
+  "src/main/tools/browserTasks.ts": {
     "structuredClone(": 3
   },
   "src/main/tools/cloudIphone/service.ts": {

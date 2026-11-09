@@ -1,4 +1,6 @@
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
+import type { BrowserAgentTools } from './browserAgentServer'
+import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -96,6 +98,11 @@ type NativeHost = AgentHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
   directory: string
+  /**
+   * Sotto's browser tools for this runtime's threads (a paired host's, ADR-0198), made once their working copies can be
+   * resolved and given to every adapter before any thread starts, so a thread resumed at start has them too.
+   */
+  browserTools?(resolveBinding: (threadId: string) => FilesBinding | null): BrowserAgentTools
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   councilEnabled?: boolean
   watcherEnabled?: boolean
@@ -676,6 +683,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
+  if (options.browserTools) agentHost.useBrowserTools(options.browserTools(threadId => agentControl.filesBinding(threadId)))
   // Babysitting (ADR-0061): the thread's host reads each babysat pull request every two minutes, whether or not a
   // window is in front, and hands each thread its news as a wake-up through the thread's own send path (decision 8).
   // A quiet ending takes back what a waiting wake-up said of that pull request (decision 9). An ending on its own, or the

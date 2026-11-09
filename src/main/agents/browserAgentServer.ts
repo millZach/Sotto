@@ -13,10 +13,13 @@ export interface BrowserAgentTools {
 }
 const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again. To check a web or Expo-web build on a phone, use iphone_open: the test iPhone is a phone-sized page in this browser, not iOS.'
 
+/** A paired host's threads (ADR-0198): the browser runs on the host, and there is no test iPhone there yet. */
+export const HOST_BROWSER_INSTRUCTIONS = 'Use these tools for Sotto\'s browser, which runs on this machine, so localhost is this machine\'s. The user sees its pages in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again.'
+
 /** Thread-bound local MCP transport. Admission is never permission to read or operate a page. */
 export class BrowserAgentServer extends ThreadToolServer implements BrowserAgentTools {
-  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserAgentTools['call']) {
-    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions: BROWSER_INSTRUCTIONS, unavailable: 'This browser tool is unavailable.',
+  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserAgentTools['call'], instructions = BROWSER_INSTRUCTIONS) {
+    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable: 'This browser tool is unavailable.',
       failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions, invoke)
   }
   override async mcpServer(threadId: string): Promise<BrowserMcpServer> {
