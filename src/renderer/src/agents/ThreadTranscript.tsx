@@ -906,6 +906,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const followed = useRef(followSignal)
   const seen = useRef<string | undefined>(undefined)
   const firstRendered = useRef<{ readonly threadId: string; readonly messageId: string } | null>(null)
+  /**
+   * Show earlier messages asked the store for older history: the oldest message the thread held then, and how many presses
+   * are still waiting for an answer. What arrives before it is shown above the reader (Zach, November 9, 2026; #214;
+   * ADR-0016), and `keepAtLeast` is how many messages the window then shows, so going back to the end keeps them all.
+   */
+  const earlier = useRef<{ readonly threadId: string; readonly oldestId: string; readonly waiting: number } | null>(null)
+  const keepAtLeast = useRef(0)
   const [limit, setLimit] = useState(TRANSCRIPT_PAGE)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
@@ -958,6 +965,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const sendingSince = pending.find(item => item.item.mode !== 'queue' && (item.status === 'queued' || item.status === 'submitting'))?.item.startedAt
   // A direct send belongs to the turn starting now.
   const sending = pending.filter(item => item.item.mode !== 'queue')
+  // The store's answer to Show earlier messages has arrived above the oldest message the thread held: the window takes it in.
+  const askedEarlier = earlier.current
+  if (askedEarlier?.threadId === thread.id) {
+    const arrived = thread.messages.findIndex(message => message.id === askedEarlier.oldestId)
+    if (arrived > 0) {
+      // The reader's place, kept since the press, holds them on the message they were reading as these rows arrive above.
+      firstRendered.current = { threadId: thread.id, messageId: thread.messages[0]!.id }
+      keepAtLeast.current = thread.messages.length
+      earlier.current = askedEarlier.waiting > 1 ? { threadId: thread.id, oldestId: thread.messages[0]!.id, waiting: askedEarlier.waiting - 1 } : null
+    }
+  }
   const sameThread = firstRendered.current?.threadId === thread.id
   const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
   // While reading earlier history, retain the first rendered message. A sliding
@@ -1081,6 +1099,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
   }, [messages, thread.id])
+  // What arrived for Show earlier messages stays in the window if the reader later goes back to the end.
+  useLayoutEffect(() => {
+    if (keepAtLeast.current === 0) return
+    const shown = keepAtLeast.current
+    keepAtLeast.current = 0
+    setLimit(current => Math.max(current, shown))
+  })
 
   const toEnd = useCallback((): void => {
     const element = scroller.current
@@ -1098,6 +1123,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A different thread opens at its newest message with a fresh page.
   useLayoutEffect(() => {
     anchor.current = null
+    earlier.current = null
     seen.current = undefined
     landing.current = null
     setLimit(TRANSCRIPT_PAGE)
@@ -1324,13 +1350,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
-  /** Widens the history window from the store. What arrives goes above the reader, so the scroll anchor is
-   * kept and the retained first row is let go: the rows that arrive are the ones the press asked to see. */
+  /**
+   * Asks the store for older history. The rows on screen and the first one kept stay, and the reader's place (the message
+   * they are on, and where) holds them while it loads and as what arrives is shown above them (#214).
+   */
   const loadEarlier = (): void => {
     const element = scroller.current
-    if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
     following.current = false
-    firstRendered.current = null
+    if (element !== null) reading.current = readingPlace(element, rows, thread.id)
+    const oldest = thread.messages[0]
+    // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
+    const asked = earlier.current?.threadId === thread.id ? earlier.current : null
+    earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
     void command({ type: 'load-earlier-messages', threadId: thread.id })
   }
 

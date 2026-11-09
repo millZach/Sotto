@@ -931,6 +931,70 @@ describe('Thread transcript scrolling', () => {
     })
   })
 
+  /** Lays each drawn message out one row tall, in order, so the reader's place can measure where they read. */
+  function layOutRows(): void {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const log = this.closest('[role="log"]') as HTMLElement | null
+      if (this.getAttribute('role') === 'log') return DOMRect.fromRect({ x: 0, y: 0, width: 800, height: VIEW })
+      if (!log || !this.matches('.thread-message[data-message-id]')) return DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 })
+      const index = [...log.querySelectorAll('.thread-message[data-message-id]')].indexOf(this)
+      return DOMRect.fromRect({ x: 0, y: index * ROW - log.scrollTop, width: 800, height: ROW })
+    })
+  }
+  const storeMessage = (index: number) => ({ id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: new Date(NOW).toISOString() })
+  /** A thread holding its newest 100 messages, numbered 300–399, with the 300 before them in the store, shown to its oldest. */
+  async function heldToItsOldest() {
+    const state = manualState()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.messages = Array.from({ length: 100 }, (_, index) => storeMessage(300 + index))
+    thread.earlierAvailable = true
+    const mounted = mount(state)
+    layOutRows()
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (20)' }))
+    expect(screen.getByText('History 300', { exact: true })).toBeInTheDocument()
+    // The reader is at the top of what the pane holds, by the button, as they are to press it.
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+    return { ...mounted, transcript }
+  }
+  /** The store answers with the `count` messages before the oldest the thread holds. */
+  function storeAnswers(live: ReturnType<typeof mount>['live'], count: number): void {
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => {
+      if (item.id !== 'grok-previews') return item
+      const oldest = Number(item.messages[0]!.id.slice(1))
+      return { ...item, messages: [...Array.from({ length: count }, (_, index) => storeMessage(oldest - count + index)), ...item.messages] }
+    }) } }) })
+  }
+
+  it('shows the messages the store sends for Show earlier messages above the reader, who stays where they were (#214)', async () => {
+    const { live, transcript } = await heldToItsOldest()
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
+    await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
+    storeAnswers(live, 200)
+    expect(transcript.querySelectorAll('.thread-message')).toHaveLength(300)
+    expect(screen.getByText('History 100', { exact: true })).toBeInTheDocument()
+    // Every row the reader had is still there, and they are where they were: 200 rows arrived above them.
+    expect(screen.getByText('History 300', { exact: true })).toBeInTheDocument()
+    expect(transcript.scrollTop).toBe(200 * ROW)
+    // Going back to the end keeps all of them.
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
+    expect(transcript.querySelectorAll('.thread-message')).toHaveLength(300)
+  })
+
+  it('shows what each of two presses brings, when the second comes before the first is answered (#214)', async () => {
+    const { live, transcript } = await heldToItsOldest()
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
+    storeAnswers(live, 100)
+    storeAnswers(live, 100)
+    expect(transcript.querySelectorAll('.thread-message')).toHaveLength(300)
+    expect(screen.getByText('History 100', { exact: true })).toBeInTheDocument()
+    expect(transcript.scrollTop).toBe(200 * ROW)
+  })
+
   it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {
     const state = manualState()
     const thread = state.host.threads.find(item => item.id === 'grok-previews')!
