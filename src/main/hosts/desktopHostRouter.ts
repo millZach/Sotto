@@ -970,7 +970,7 @@ export class DesktopHostRouter {
     const threads = entries.flatMap(entry => entry.threads)
     const state: AgentState = {
       ...base, clientScoped: true,
-      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false, ...connection.kind === 'remote' && connection.browser ? { browser: true as const } : {} })),
+      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false, ...connection.kind === 'remote' && connection.browser ? { browser: this.hosts.get(connection.hostId)?.run ?? 1 } : {} })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
         projects: entries.flatMap(item => item.state.host.projects), threads,
         // The selected host's catalog is the same array as `host.models`, which structured clone sends once:

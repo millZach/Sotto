@@ -700,7 +700,9 @@ export class DesktopHosts {
     if (!host) return undefined
     const learned = this.tailnet.get(host.id).address
     if (learned) { try { return new URL(learned).hostname } catch { /* Not an address; SSH's name below. */ } }
-    return targetHost(host.target)
+    // The name the user's SSH configuration resolves the target to (`ssh -G`), since an alias means nothing to a browser.
+    const live = this.live.get(host.id)
+    return live?.ssh?.route.hostname ?? live?.from?.ssh?.route.hostname ?? targetHost(host.target)
   }
   terminalHost(hostId: string): SshTerminalHost | undefined {
     const host = this.saved.find(item => item.hostId === hostId)

@@ -80,6 +80,37 @@ describe('a paired host\'s page drawn from its pictures (ADR-0198)', () => {
     expect(document.activeElement).toBe(picture)
   })
 
+  it('says over the picture when a watch is refused or a click does not reach the page, until the next picture', async () => {
+    vi.useFakeTimers()
+    const browser = hostBridge()
+    vi.mocked(browser.bridge.watch).mockResolvedValueOnce({ ok: false, error: { code: 'unavailable', message: 'Forge is disconnected. Nothing was changed. Connect again to use its browser.' } })
+    vi.mocked(browser.bridge.input).mockResolvedValueOnce({ ok: false, error: { code: 'page-unavailable', message: 'This browser page has closed.' } })
+    render(<HostPageView page={page} threadId={threadId} bridge={browser.bridge} shown connected />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(screen.getByRole('alert').textContent).toBe('Forge is disconnected. Nothing was changed. Connect again to use its browser.')
+    fireEvent.pointerDown(screen.getByRole('application'), { button: 0, clientX: 160, clientY: 90 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByRole('alert').textContent).toBe('Your click or key didn\'t reach the page. Nothing was changed there. Try again.')
+    browser.draw({ pageId: PAGE, data: 'QUJD', width: 800, height: 600 })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('scales a click on a picture shrunk to fit back to the page, and watches again over a new connection', async () => {
+    vi.useFakeTimers()
+    const browser = hostBridge()
+    const view = render(<HostPageView page={page} threadId={threadId} bridge={browser.bridge} shown connected link={1} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    // Another desktop laid the page out at 1600 by 1200, so the 800 by 600 pane shows it at half size.
+    browser.draw({ pageId: PAGE, data: 'QUJD', width: 1600, height: 1200 })
+    fireEvent.pointerDown(screen.getByRole('application'), { button: 0, clientX: 500, clientY: 350, detail: 1 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(vi.mocked(browser.bridge.input).mock.calls.at(-1)?.[0].input).toMatchObject({ type: 'mouse', action: 'down', x: 800, y: 600 })
+    expect(browser.bridge.watch).toHaveBeenCalledTimes(1)
+    view.rerender(<HostPageView page={page} threadId={threadId} bridge={browser.bridge} shown connected link={2} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(browser.bridge.watch).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps the last picture greyed and sends nothing while the host is away', async () => {
     vi.useFakeTimers()
     const browser = hostBridge()
@@ -96,9 +127,13 @@ describe('a paired host\'s page drawn from its pictures (ADR-0198)', () => {
     expect(keyInput({ key: 'Enter', code: 'Enter', keyCode: 13, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }, 'down')).toMatchObject({ text: '\r' })
     expect(keyInput({ key: 'c', code: 'KeyC', keyCode: 67, altKey: false, ctrlKey: true, metaKey: false, shiftKey: false }, 'down')).not.toHaveProperty('text')
     expect(keyInput({ key: 'Tab', code: 'Tab', keyCode: 9, altKey: false, ctrlKey: false, metaKey: false, shiftKey: true }, 'down')).toBeNull()
+    expect(keyInput({ key: 'v', code: 'KeyV', keyCode: 86, altKey: false, ctrlKey: true, metaKey: false, shiftKey: false }, 'down')).toBeNull()
+    expect(keyInput({ key: 'v', code: 'KeyV', keyCode: 86, altKey: false, ctrlKey: false, metaKey: true, shiftKey: false }, 'down')).toBeNull()
+    expect(keyInput({ key: 'F6', code: 'F6', keyCode: 117, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }, 'down')).toBeNull()
+    expect(keyInput({ key: 'Escape', code: 'Escape', keyCode: 27, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }, 'down')).toMatchObject({ key: 'Escape' })
     const state = threadsStateFixture()
-    state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true, browser: true }]
-    expect(threadHost(state, threadId)).toEqual({ hostId: FORGE, name: 'forge', connected: true, browser: true })
+    state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true, browser: 3 }]
+    expect(threadHost(state, threadId)).toEqual({ hostId: FORGE, name: 'forge', connected: true, browser: true, link: 3 })
     expect(threadHost(state, 'visual-gate')).toBeUndefined()
     expect(addressFromHost('http://localhost:5173/sign-in?x=1#top', 'forge.tail5728ca.ts.net')).toBe('http://forge.tail5728ca.ts.net:5173/sign-in?x=1#top')
     expect(addressFromHost('http://127.0.0.1:3000/', 'forge')).toBe('http://forge:3000/')
@@ -108,7 +143,7 @@ describe('a paired host\'s page drawn from its pictures (ADR-0198)', () => {
 })
 
 describe('Tools > Browser for a paired host\'s thread (ADR-0198)', () => {
-  function setup(connection: { connected: boolean; browser?: true }) {
+  function setup(connection: { connected: boolean; browser?: number }) {
     const state = threadsStateFixture()
     const sample = state.host.threads.find(item => item.id === 'visual-gate')!
     state.host.threads = [{ ...sample, id: threadId, remoteHost: true, hostId: FORGE, hostLabel: 'forge', title: 'Check the sign-in page' }]
@@ -122,7 +157,7 @@ describe('Tools > Browser for a paired host\'s thread (ADR-0198)', () => {
   }
 
   it('shows the host\'s page with the row saying where it runs, without Point at something, Screenshot to message or page sizes', async () => {
-    const browser = setup({ connected: true, browser: true })
+    const browser = setup({ connected: true, browser: 1 })
     expect(await screen.findByRole('application', { name: 'Page: Sign in' })).toBeTruthy()
     expect(screen.getByTitle('This page runs on forge').textContent).toBe('on forge')
     expect(screen.queryByRole('button', { name: 'Point at something' })).toBeNull()
@@ -135,7 +170,7 @@ describe('Tools > Browser for a paired host\'s thread (ADR-0198)', () => {
   })
 
   it('says it is reconnecting over the last picture while the host is away', async () => {
-    setup({ connected: false, browser: true })
+    setup({ connected: false, browser: 1 })
     expect(await screen.findByText('Reconnecting to forge. The page stays open there, and the agent keeps browsing.')).toBeTruthy()
   })
 
@@ -143,7 +178,7 @@ describe('Tools > Browser for a paired host\'s thread (ADR-0198)', () => {
     const state = threadsStateFixture()
     const sample = state.host.threads.find(item => item.id === 'visual-gate')!
     state.host.threads = [{ ...sample, id: threadId, remoteHost: true, hostId: FORGE, hostLabel: 'forge', title: 'Check the sign-in page' }]
-    state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true, browser: true }]
+    state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true, browser: 3 }]
     const store = new ToolsPanelStore()
     act(() => { store.setOpen(true); store.setSurface('browser') })
     const available = vi.fn().mockResolvedValueOnce({ ok: true, value: { available: false } }).mockResolvedValue({ ok: true, value: { available: true } })

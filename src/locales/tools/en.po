@@ -3767,6 +3767,10 @@ msgstr "the failing checks pass"
 msgid "The host"
 msgstr "The host"
 
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "The host didn't answer, so this picture may be old. Nothing was changed. Try again."
+msgstr "The host didn't answer, so this picture may be old. Nothing was changed. Try again."
+
 #: src/renderer/src/tools/terminalStore.ts
 msgid "The image could not be pasted. Check the command before trying again."
 msgstr "The image could not be pasted. Check the command before trying again."
@@ -4477,3 +4481,7 @@ msgstr "Wrap long lines"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "You can merge once {list}."
 msgstr "You can merge once {list}."
+
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "Your click or key didn't reach the page. Nothing was changed there. Try again."
+msgstr "Your click or key didn't reach the page. Nothing was changed there. Try again."

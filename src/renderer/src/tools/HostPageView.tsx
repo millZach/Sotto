@@ -8,13 +8,14 @@ import type { HostBrowserFrame, HostPageInputRequest } from '../../../shared/hos
 import { pageLabel } from './browserStore'
 
 /** The host a paired host's thread runs on, as this window last heard: its name, whether it is connected, and whether it offers the browser. */
-export interface ThreadHost { readonly hostId: string; readonly name: string; readonly connected: boolean; readonly browser: boolean }
+/** `link` numbers the connection, so a page watched over one that was replaced is watched again over the new one. */
+export interface ThreadHost { readonly hostId: string; readonly name: string; readonly connected: boolean; readonly browser: boolean; readonly link: number }
 
 /** The paired host `threadId` runs on, or undefined for a thread on this computer (ADR-0198). */
 export function threadHost(state: AgentState | null | undefined, threadId: string): ThreadHost | undefined {
   const hostId = parseHostEntityKey(threadId)?.hostId
   const connection = hostId ? state?.connections?.find(item => item.hostId === hostId && item.kind === 'remote') : undefined
-  return connection ? { hostId: connection.hostId, name: connection.name, connected: connection.connected, browser: connection.browser === true } : undefined
+  return connection ? { hostId: connection.hostId, name: connection.name, connected: connection.connected, browser: connection.browser !== undefined, link: connection.browser ?? 0 } : undefined
 }
 
 /** Says on the pane's row which machine a page runs on (ADR-0198, decision 6), as a paired host's terminal does. */
@@ -42,9 +43,14 @@ export function inputModifiers(event: { altKey: boolean; ctrlKey: boolean; metaK
   return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0)
 }
 const BUTTONS = ['left', 'middle', 'right'] as const
-/** A key press as Chromium takes it. Tab and Shift+Tab are left to the window, so the keyboard can always leave the page. */
+/**
+ * A key press as Chromium takes it. Tab and Shift+Tab, and F6 for the window's regions, are left to the window, so the
+ * keyboard can always leave the page (Zach, November 9). Escape goes to the page, as it does on this computer's pages.
+ */
 export function keyInput(event: { key: string; code: string; keyCode: number; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, action: 'down' | 'up'): HostPageInputRequest | null {
-  if (event.key === 'Tab' || event.key === 'Unidentified' || event.key === 'Process' || event.key.length > 32 || event.code.length > 32) return null
+  // Paste is the window's: its paste event sends this computer's clipboard as text, which a key press would not carry.
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return null
+  if (event.key === 'Tab' || event.key === 'F6' || event.key === 'Unidentified' || event.key === 'Process' || event.key.length > 32 || event.code.length > 32) return null
   const typed = event.key === 'Enter' ? '\r' : event.key.length === 1 && !event.ctrlKey && !event.metaKey ? event.key : undefined
   return { type: 'key', action, key: event.key, code: event.code, keyCode: Math.min(255, Math.max(0, event.keyCode)), ...typed ? { text: typed } : {}, modifiers: inputModifiers(event) }
 }
@@ -60,18 +66,29 @@ function pageSize(element: HTMLElement): { width: number; height: number } | nul
  * The page lays out at this element's size. While the host is away the last picture stays, greyed, and nothing is sent.
  * Pictures are kept only as the one on screen.
  */
-export function HostPageView({ page, threadId, bridge, shown, connected }: {
+export function HostPageView({ page, threadId, bridge, shown, connected, link = 0 }: {
   readonly page: BrowserPage; readonly threadId: string; readonly bridge: BrowserBridge | undefined
   readonly shown: boolean; readonly connected: boolean
+  /** The host connection's number: a new one means the last one's watch ended with it, so the page is watched again. */
+  readonly link?: number
 }): ReactNode {
   const { t } = useLingui()
   const element = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const [frame, setFrame] = useState<HostBrowserFrame | null>(() => LAST_FRAMES.get(page.id) ?? null)
+  // What did not reach the host, said over the picture until the next picture comes.
+  const [problem, setProblem] = useState<string | null>(null)
   const target = { threadId, workspaceId: page.workspace.workspaceId, pageId: page.id }
   const targetKey = `${target.workspaceId}:${target.pageId}`
   const sending = useRef<Promise<unknown>>(Promise.resolve())
-  const live = shown && connected && bridge !== undefined
+  // A hidden or minimised window shows no page, so it is sent no pictures (ADR-0198, decision 5).
+  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
+  useEffect(() => {
+    const changed = (): void => setVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', changed)
+    return () => document.removeEventListener('visibilitychange', changed)
+  }, [])
+  const live = shown && connected && visible && bridge !== undefined
 
   useEffect(() => {
     const host = element.current
@@ -85,28 +102,40 @@ export function HostPageView({ page, threadId, bridge, shown, connected }: {
   }, [])
   useEffect(() => {
     if (!bridge) return
-    return bridge.onFrame(next => { if (next.pageId !== page.id) return; keepFrame(next); setFrame(next) })
+    return bridge.onFrame(next => { if (next.pageId !== page.id) return; keepFrame(next); setFrame(next); setProblem(null) })
   }, [bridge, page.id])
   // Watching follows the pane's size: a pause after a resize sends one watch, which takes the place of the last.
   useEffect(() => {
     if (!live || !size) return
-    const timer = setTimeout(() => { void bridge.watch({ ...target, size }).catch(() => undefined) }, 120)
+    const timer = setTimeout(() => {
+      void bridge.watch({ ...target, size }).then(result => { if (!result.ok) setProblem(result.error.message) },
+        () => setProblem(t`The host didn't answer, so this picture may be old. Nothing was changed. Try again.`))
+    }, 120)
     return () => clearTimeout(timer)
     // The target is read through its key, so a new object for the same page does not watch again.
-  }, [live, bridge, targetKey, size?.width, size?.height])
+  }, [live, bridge, targetKey, size?.width, size?.height, link])
   useEffect(() => {
     if (!live) return
     return () => { void bridge.unwatch(target).catch(() => undefined) }
-  }, [live, bridge, targetKey])
+  }, [live, bridge, targetKey, link])
 
   /** Sends the user's input in the order it was made; one that fails is dropped, as a lost click is. */
   const send = useCallback((input: HostPageInputRequest): void => {
     if (!live) return
-    sending.current = sending.current.then(() => bridge.input({ ...target, input })).catch(() => undefined)
+    const lost = t`Your click or key didn't reach the page. Nothing was changed there. Try again.`
+    sending.current = sending.current.then(() => bridge.input({ ...target, input })).then(result => { if (!result.ok) setProblem(lost) }, () => setProblem(lost))
   }, [live, bridge, targetKey])
+  const shownFrame = useRef(frame)
+  shownFrame.current = frame
+  /**
+   * Where a point in the picture is on the page. A picture is drawn at its own size or shrunk to fit, never enlarged, so
+   * a page another pane laid out larger is drawn smaller here, and the point is scaled back up by as much.
+   */
   const at = (event: { clientX: number; clientY: number }): { x: number; y: number } => {
     const rect = element.current!.getBoundingClientRect()
-    return { x: Math.max(0, Math.round(event.clientX - rect.left)), y: Math.max(0, Math.round(event.clientY - rect.top)) }
+    const drawn = shownFrame.current
+    const scale = drawn && rect.width > 0 && rect.height > 0 ? Math.min(1, rect.width / drawn.width, rect.height / drawn.height) : 1
+    return { x: Math.max(0, Math.round((event.clientX - rect.left) / scale)), y: Math.max(0, Math.round((event.clientY - rect.top) / scale)) }
   }
   const moving = useRef<number | null>(null)
   const lastMove = useRef<{ x: number; y: number; buttons: number; modifiers: number } | null>(null)
@@ -157,5 +186,6 @@ export function HostPageView({ page, threadId, bridge, shown, connected }: {
       onCompositionEnd={event => { if (event.data) send({ type: 'text', text: event.data.slice(0, 4000) }) }}>
       {frame ? <img className="host-page__frame" src={`data:image/jpeg;base64,${frame.data}`} alt="" draggable={false} data-size={`${frame.width}x${frame.height}`} /> : null}
     </div>
+    {problem ? <p className="browser-problem host-page__problem" role="alert">{problem}</p> : null}
   </div>
 }

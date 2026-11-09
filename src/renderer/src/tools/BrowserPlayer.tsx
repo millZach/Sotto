@@ -45,7 +45,7 @@ function BrowserPlayerFrame({ page, mount, boundary, threadId, bridge, onHost }:
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
     {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note tt-paragraph">{t`This page could not load.`}</p>
-      : onHost ? <HostPageView page={page} threadId={threadId} bridge={bridge} shown connected={onHost.connected} />
+      : onHost ? <HostPageView key={page.id} page={page} threadId={threadId} bridge={bridge} shown connected={onHost.connected} link={onHost.link} />
       : <div ref={host} className="browser-player__viewport" data-covered={covered || undefined}>
         {covered ? <p className="browser-player__frame-note tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
       </div>}

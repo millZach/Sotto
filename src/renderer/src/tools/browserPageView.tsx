@@ -70,7 +70,7 @@ export function PageViewport({ page, threadId, store, bridge, surface, refused, 
         <button type="button" className="files-link tt-focusable" onClick={() => void store.history(bridge, threadId, pageId, 'reload')}>{t`Try again`}</button>
         <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
       </div>
-    </div> : onHost ? <HostPageView page={page} threadId={threadId} bridge={bridge} shown={!cover} connected={onHost.connected} />
+    </div> : onHost ? <HostPageView page={page} threadId={threadId} bridge={bridge} shown={!cover} connected={onHost.connected} link={onHost.link} />
     : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
       {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
         <strong>{t`This page could not be shown.`}</strong>{' '}
