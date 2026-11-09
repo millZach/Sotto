@@ -264,6 +264,7 @@ describe('a thread whose history is read only after Sotto restarts', () => {
     const f = await fixture({ host })
     await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [] })
     await expect.poll(() => host.reads).toBeGreaterThan(0)
+    await f.control.followupsSettled()
     await expect.poll(() => f.control.get().followups?.[0]?.status).not.toBe('sending')
     expect(sends(f.host)).toEqual([])
     expect(f.control.get().followups).toEqual([expect.objectContaining({ text: 'Then add the tests.' })])
