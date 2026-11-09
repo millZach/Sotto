@@ -31,7 +31,7 @@ export type AtomicJsonFormat = 'pretty' | 'compact'
 export class AtomicJsonStore<T> {
   private operationTail: Promise<void> = Promise.resolve()
   /** The `writeLatest` write that is queued and has not started yet, which later calls share. */
-  private queuedLatest: Promise<void> | undefined
+  private queuedLatest: { latest: () => T; promise: Promise<void> } | undefined
 
   constructor(
     private readonly filePath: string,
@@ -83,19 +83,22 @@ export class AtomicJsonStore<T> {
   }
 
   /**
-   * Writes whatever `latest` returns when the write starts, sharing one write among every call made before it
+   * Writes whatever the newest `latest` returns when the write starts, sharing one write among every call made before it
    * does. A call made while a write is running queues one more, so the file always ends at a state no older than
    * the newest call, and a burst of calls costs at most the write in flight and one more. A `write` or
    * `writeSerialized` in between ends the sharing, so a later call queues behind it rather than in front.
    */
   writeLatest(latest: () => T): Promise<void> {
-    if (this.queuedLatest) return this.queuedLatest
-    const queued = this.enqueueOperation(async () => {
+    if (this.queuedLatest) {
+      this.queuedLatest.latest = latest
+      return this.queuedLatest.promise
+    }
+    const queued = { latest, promise: this.enqueueOperation((): Promise<void> => {
       if (this.queuedLatest === queued) this.queuedLatest = undefined
-      await this.writeImmediately(this.serialize(latest()))
-    })
+      return this.writeImmediately(this.serialize(queued.latest()))
+    }) }
     this.queuedLatest = queued
-    return queued
+    return queued.promise
   }
 
   exists(): Promise<boolean> {
