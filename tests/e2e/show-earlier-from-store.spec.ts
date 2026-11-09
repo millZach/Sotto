@@ -7,7 +7,7 @@ import { openThreads } from './support/sottoLaunch'
 /**
  * Show earlier messages in a thread whose newest ten turns are more than the pane's first 80 rows (#214): once the pane
  * shows every message the thread holds, the next press asks the store, and what arrives shows above the reader, who stays
- * where they were (Zach's pick B, November 9, 2026).
+ * where they were (Zach's pick B, November 9, 2026; ADR-0016).
  */
 const THREAD = 'release-notes'
 // Ten messages a turn, so the store's newest ten turns are 100 messages and the store holds 20 turns in all.

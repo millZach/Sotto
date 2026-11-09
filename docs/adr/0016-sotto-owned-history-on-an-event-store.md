@@ -475,3 +475,7 @@ is at the limit or its first record is marked cut, as it stays when a record is 
 lists first that is known to have started after that held record is new, as when a provider merges history under a
 record it streamed, and merges as before. A list that has cut nothing merges as before. A thread whose order was
 scrambled before this keeps that order: this change repairs none.
+
+## Amendment: what Show earlier messages brings from the store shows above the reader (November 9, 2026, #214)
+
+Once a pane shows every message it holds, **Show earlier messages** asks the store for the window before them. That press let go of the first row the pane kept, so when the older messages arrived the pane fell back to its newest 80: none of what arrived showed, and rows the reader had were taken away. Zach chose, from the prototype kept at the tag `prototype/show-earlier-messages`, that the press shows what arrived ("B. Show what arrived"), over keeping the rows as they were with the arrivals hidden above and counted on the button. The pane now keeps its rows while the store answers, shows every message that arrives above the oldest one it held, and holds the reader on the message they were reading.

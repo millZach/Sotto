@@ -907,11 +907,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const seen = useRef<string | undefined>(undefined)
   const firstRendered = useRef<{ readonly threadId: string; readonly messageId: string } | null>(null)
   /**
-   * Show earlier messages asked the store for older history: the oldest message the thread held then. What arrives before
-   * it is shown above the reader (Zach, November 9, 2026; #214), and `grow` widens the window by as much.
+   * Show earlier messages asked the store for older history: the oldest message the thread held then, and how many presses
+   * are still waiting for an answer. What arrives before it is shown above the reader (Zach, November 9, 2026; #214;
+   * ADR-0016), and `keepAtLeast` is how many messages the window then shows, so going back to the end keeps them all.
    */
-  const earlier = useRef<{ readonly threadId: string; readonly oldestId: string } | null>(null)
-  const grow = useRef(0)
+  const earlier = useRef<{ readonly threadId: string; readonly oldestId: string; readonly waiting: number } | null>(null)
+  const keepAtLeast = useRef(0)
   const [limit, setLimit] = useState(TRANSCRIPT_PAGE)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
@@ -969,11 +970,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   if (askedEarlier?.threadId === thread.id) {
     const arrived = thread.messages.findIndex(message => message.id === askedEarlier.oldestId)
     if (arrived > 0) {
+      // The reader's place, kept since the press, holds them on the message they were reading as these rows arrive above.
       firstRendered.current = { threadId: thread.id, messageId: thread.messages[0]!.id }
-      grow.current += arrived; earlier.current = null
-      // The rows on screen are still the ones drawn, so their height is where the anchor holds the reader from.
-      const element = scroller.current
-      if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
+      keepAtLeast.current = thread.messages.length
+      earlier.current = askedEarlier.waiting > 1 ? { threadId: thread.id, oldestId: thread.messages[0]!.id, waiting: askedEarlier.waiting - 1 } : null
     }
   }
   const sameThread = firstRendered.current?.threadId === thread.id
@@ -1101,10 +1101,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }, [messages, thread.id])
   // What arrived for Show earlier messages stays in the window if the reader later goes back to the end.
   useLayoutEffect(() => {
-    if (grow.current === 0) return
-    const widen = grow.current
-    grow.current = 0
-    setLimit(current => current + widen)
+    if (keepAtLeast.current === 0) return
+    const shown = keepAtLeast.current
+    keepAtLeast.current = 0
+    setLimit(current => Math.max(current, shown))
   })
 
   const toEnd = useCallback((): void => {
@@ -1145,8 +1145,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop; seenUpTo.current = lastMessageId }
     else if (arrived) setUnseen(true)
-    // The first row drawn moving, as when what Show earlier messages asked for arrives, also places the reader again.
-  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd, messages[0]?.id])
+  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
 
   // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
   // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
@@ -1352,16 +1351,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }
 
   /**
-   * Asks the store for older history. The rows on screen and the first one kept stay. While it loads, the reader's place
-   * (the message they are on, and where) holds them through whatever the pane shows meanwhile, and when what arrives is
-   * shown above them the scroll anchor holds them where they are (#214).
+   * Asks the store for older history. The rows on screen and the first one kept stay, and the reader's place (the message
+   * they are on, and where) holds them while it loads and as what arrives is shown above them (#214).
    */
   const loadEarlier = (): void => {
     const element = scroller.current
     following.current = false
     if (element !== null) reading.current = readingPlace(element, rows, thread.id)
     const oldest = thread.messages[0]
-    earlier.current = oldest ? { threadId: thread.id, oldestId: oldest.id } : null
+    // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
+    const asked = earlier.current?.threadId === thread.id ? earlier.current : null
+    earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
     void command({ type: 'load-earlier-messages', threadId: thread.id })
   }
 
