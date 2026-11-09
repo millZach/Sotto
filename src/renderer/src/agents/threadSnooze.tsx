@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useLingui } from '@lingui/react/macro'
 import { z } from 'zod'
 import type { AgentThread } from '../../../shared/agents'
+import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { useOwlFeature } from '../state/owlFeature'
 import type { PaneMenuItem } from './PaneMenu'
@@ -84,6 +85,14 @@ export function snoozeThreads(threadIds: readonly string[], until: number | null
   const kept = next.size ? next : NONE
   try { localStorage.setItem(THREAD_SNOOZES_KEY, JSON.stringify(Object.fromEntries([...kept].map(([id, at]) => [id, new Date(at).toISOString()])))); unsaved = null } catch { unsaved = kept }
   for (const listener of listeners) listener()
+}
+
+/** Snoozes one thread until `until`, or wakes it with null: on its host when the host keeps snoozes, else in this window. */
+export function snoozeThread(thread: AgentThread, until: number | null, command: AgentConnection['command']): void {
+  if (thread.snoozedUntil === undefined) { snoozeThreads([thread.id], until); return }
+  // A user's choice replaces any legacy entry still waiting to migrate.
+  snoozeThreads([thread.id], null)
+  void command({ type: 'snooze-thread', threadId: thread.id, until: until === null ? null : new Date(until).toISOString() })
 }
 
 /** A snoozed thread that needs you wakes for good, so answering it does not send it back to sleep. */
