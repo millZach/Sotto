@@ -58,7 +58,7 @@ export interface OwnServersOptions {
   readonly openCode: () => OwnServersOpenCode | undefined
   /** Sotto's DeepSeek (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
   readonly deepSeek?: () => OwnServersDeepSeek | undefined
-  /** Sotto's Hermes, or undefined while its adapter does not run. */
+  /** Sotto's Hermes, or, while its adapter does not run, its folder alone, so Remove still deletes the key it kept. */
   readonly hermes?: () => OwnServersHermes | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
@@ -231,10 +231,15 @@ export class OwnServers {
     const running = openCode?.running() === true
     if (server.keyed) {
       if (!running) return refusal('opencode-not-running', OWN_SERVER_WORDS.removeNeedsOpenCode(server.name))
-      await this.options.hermes?.()?.forgetKey(id).catch(() => { this.log('own-server-sign-out-failed') })
       if (!await openCode!.signOut(id).catch(() => false)) {
         this.log('own-server-sign-out-failed')
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
+      }
+      // Hermes's copy goes only once OpenCode's has, so a refused sign-out leaves the server whole on both. One Hermes
+      // cannot delete stays listed with the server, and a second Remove finishes both, as after a record that cannot be written.
+      if (!await (this.options.hermes?.()?.forgetKey(id) ?? Promise.resolve()).then(() => true, () => false)) {
+        this.log('own-server-sign-out-failed')
+        return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))
       }
       try { await this.save(servers.filter(item => item.id !== id)) } catch {
         return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))

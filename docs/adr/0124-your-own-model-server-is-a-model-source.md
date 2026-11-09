@@ -13,7 +13,8 @@ Add hands the key to Sotto's Hermes after Sotto's OpenCode has taken it, so a
 keyed add still needs OpenCode running and OpenCode stays the first keeper.
 Hermes keeps its copy in `own-server-keys.json` in Sotto's Hermes folder (mode
 600) and writes it to each Hermes profile's `.env`; the generated config names it
-only through `key_env`. Remove deletes Hermes's copy before OpenCode signs out.
+only through `key_env`. Remove deletes Hermes's copy, from its record and from
+the `.env` of the root and every profile at once, before OpenCode signs out.
 A server keyed before this is offered on OpenCode alone until it is added again.
 
 People run models on their own machines with SGLang, vLLM, Ollama, LM Studio, llama.cpp and similar servers, nearly all of which answer the OpenAI API. Sotto drives native clients, and the one that can already run any OpenAI-compatible model is OpenCode 2 ([ADR-0087](0087-opencode-is-a-thread-provider.md)), whose live test already runs a thread against a local server declared in its config. What Sotto lacked was a way to declare one: OpenCode lists models only from its catalog, the sign-ins in Sotto's OpenCode folder and its config, and never asks a custom server what models it has.

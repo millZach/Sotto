@@ -1,6 +1,7 @@
 import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { z } from 'zod'
+import { realpath } from 'node:fs/promises'
 import { delimiter, dirname } from 'node:path'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
@@ -46,9 +47,13 @@ export function hermesEnvironment(homeDirectory: string, keys: Readonly<Record<s
   return { ...env, ...keys, HERMES_HOME: homeDirectory }
 }
 
-/** The user's own `hermes`, found as every other provider's CLI is. */
+/**
+ * The user's own `hermes`, found as every other provider's CLI is, then followed to the file itself: pipx, uv and a
+ * hand-made link put a symlink on PATH, and Hermes's private Python sits beside the real script, not beside the link.
+ */
 export async function findHermesExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
-  return findCli({ name: 'hermes' }, { ...lookup, environment })
+  const found = await findCli({ name: 'hermes' }, { ...lookup, environment })
+  return found && await realpath(found).catch(() => found)
 }
 
 /** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */

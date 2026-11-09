@@ -1,8 +1,8 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { HermesKeys, hermesConfig, hermesEnvFile, hermesKeyVariable, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
+import { HermesKeys, HermesRuntime, hermesConfig, hermesEnvFile, hermesKeyVariable, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
 import { hermesCatalog, hermesModelValue, hermesSettingsOf } from '../../../src/main/agents/hermesModels'
 import { hermesAnswer, hermesPending } from '../../../src/main/agents/hermesRequests'
 import { hermesActivities } from '../../../src/main/agents/hermesActivity'
@@ -38,9 +38,12 @@ describe('Hermes', () => {
     expect(JSON.parse(hermesConfig([keyed])).model.key_env).toBe('SOTTO_OWN_PAID_KEY')
     expect(JSON.parse(hermesConfig([spark]))).not.toHaveProperty('providers')
     expect(hermesServers([], {})).toEqual([])
+    // The catalog offers what Hermes can run: the keyed server whose key it holds, and not the one it has none for.
+    expect(hermesCatalog(servers).map(model => model.id)).toEqual(['own-spark/deepseek-v4.1-flash', 'own-paid/deepseek-v4.1-flash'])
+    expect(hermesCatalog(hermesServers([keyed], { 'own-paid': 'k' })).map(model => [model.id, model.source])).toEqual([['own-paid/deepseek-v4.1-flash', 'Paid']])
     expect(hermesEnvironment('/sotto/hermes', {}, { HOME: '/home', OPENAI_API_KEY: 'secret', ANTHROPIC_API_KEY: 'secret' }))
       .toEqual({ HOME: '/home', HERMES_HOME: '/sotto/hermes' })
-    expect(hermesProjectHome('/sotto/hermes', '/project')).toMatch(/^\/sotto\/hermes\/profiles\/project-/u)
+    expect(hermesProjectHome('/sotto/hermes', '/project').startsWith(join('/sotto/hermes', 'profiles', 'project-'))).toBe(true)
     expect(hermesProjectHome('/sotto/hermes', '/project')).not.toBe(hermesProjectHome('/sotto/hermes', '/other'))
   })
 
@@ -53,6 +56,28 @@ describe('Hermes', () => {
       expect(await keys.read()).toEqual({ 'own-b': 'two' })
       if (process.platform !== 'win32') expect((await stat(join(folder, 'own-server-keys.json'))).mode & 0o777).toBe(0o600)
     } finally { await rm(folder, { recursive: true, force: true }) }
+  })
+
+  it('takes a removed key out of every .env at once, the root and each project profile, and keeps the others', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-hermes-forget-'))
+    try {
+      // Made up for this test; no real key goes near it.
+      const removed = 'made-up-removed-key-7d2a', kept = 'made-up-kept-key-41c9'
+      const paid = (id: string): OwnServer => ({ ...spark, id, name: id, address: `https://${id}.example.com/v1`, keyed: true })
+      const servers = [spark, paid('own-gone'), paid('own-stays')]
+      const runtime = new HermesRuntime(root, () => {})
+      await runtime.keys.keep('own-gone', removed); await runtime.keys.keep('own-stays', kept)
+      const homes = [root, hermesProjectHome(root, '/project-a'), hermesProjectHome(root, '/project-b')]
+      for (const home of homes) await runtime.writeConfig(home, servers, home === root ? undefined : '/project')
+      // A profile written while the Remove runs still never brings the removed key back.
+      await Promise.all([runtime.forgetKey('own-gone'), runtime.writeConfig(homes[2]!, servers, '/project')])
+      expect(await runtime.keys.read()).toEqual({ 'own-stays': kept })
+      for (const home of homes) {
+        const env = await readFile(join(home, '.env'), 'utf8')
+        expect(env.includes(removed), home).toBe(false)
+        expect(env).toContain(kept)
+      }
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('maps server routes without offering unsupported reasoning or permission modes', () => {

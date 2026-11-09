@@ -1,9 +1,12 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { OwnServer } from '../../shared/ownModelServers'
+import { endWithSotto } from './opencodeServer'
 import { hermesEnvironment, withHermesPath } from './hermesRpc'
+
+const HERMES_STOPPED = 'Hermes was disconnected before its gateway started. Your thread is kept. Connect Hermes again.'
 
 /**
  * The keys of the user's own keyed servers, as Sotto's Hermes keeps them (ADR-0124): one file under Sotto's Hermes
@@ -73,6 +76,24 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string): strin
   }, null, 2) + '\n'
 }
 
+/**
+ * Remove (ADR-0124): the key leaves Hermes's record and every `.env` under its folder, the root's and each project
+ * profile's, at once rather than when each profile is next written, which for a project never opened again is never.
+ * It needs no running Hermes, so a Remove while its adapter is held off still deletes the copy.
+ */
+export async function forgetHermesKey(root: string, id: string): Promise<void> {
+  await new HermesKeys(join(root, 'own-server-keys.json')).forget(id)
+  const line = `${hermesKeyVariable(id)}=`
+  const profiles = join(root, 'profiles')
+  const homes = [root, ...(await readdir(profiles, { withFileTypes: true }).catch(() => [])).filter(entry => entry.isDirectory()).map(entry => join(profiles, entry.name))]
+  for (const home of homes) {
+    const path = join(home, '.env')
+    const text = await readFile(path, 'utf8').catch(() => undefined)
+    const kept = text?.split('\n').filter(entry => !entry.startsWith(line)).join('\n')
+    if (kept !== undefined && kept !== text) await writeFile(path, kept, { mode: 0o600 })
+  }
+}
+
 /** One owned foreground gateway; ACP children only view its project-scoped sessions. */
 export class HermesRuntime {
   private child: ChildProcess | undefined
@@ -80,6 +101,8 @@ export class HermesRuntime {
   private starting: Promise<void> | undefined
   private closedWork = Promise.resolve()
   readonly keys: HermesKeys
+  private writes = Promise.resolve()
+  private stopCount = 0
   constructor(readonly root: string, private readonly lost: () => void, private readonly environment: NodeJS.ProcessEnv = process.env) {
     this.keys = new HermesKeys(join(root, 'own-server-keys.json'))
   }
@@ -87,13 +110,23 @@ export class HermesRuntime {
   env(home = this.root, cwd = this.root): NodeJS.ProcessEnv {
     return { ...hermesEnvironment(home, {}, this.environment), PWD: cwd }
   }
-  async writeConfig(home: string, servers: readonly OwnServer[], cwd?: string): Promise<void> {
-    await mkdir(home, { recursive: true })
-    const keys = await this.keys.read()
-    for (const [name, text] of [['config.yaml', hermesConfig(servers, cwd)], ['.env', hermesEnvFile(servers, keys)]] as const) {
-      const path = join(home, name)
-      if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
-    }
+  writeConfig(home: string, servers: readonly OwnServer[], cwd?: string): Promise<void> {
+    return this.inOrder(async () => {
+      await mkdir(home, { recursive: true })
+      const keys = await this.keys.read()
+      for (const [name, text] of [['config.yaml', hermesConfig(servers, cwd)], ['.env', hermesEnvFile(servers, keys)]] as const) {
+        const path = join(home, name)
+        if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
+      }
+    })
+  }
+  /** Remove (ADR-0124): see `forgetHermesKey`. One at a time with `writeConfig`, so no profile written meanwhile brings the key back. */
+  forgetKey(id: string): Promise<void> { return this.inOrder(() => forgetHermesKey(this.root, id)) }
+  /** Key writes one at a time, so a config written from keys read before a Remove never lands on disk after it. */
+  private inOrder(work: () => Promise<void>): Promise<void> {
+    const run = this.writes.then(work, work)
+    this.writes = run.catch(() => undefined)
+    return run
   }
   private python(executable: string, script: string, args: string[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -101,30 +134,52 @@ export class HermesRuntime {
         timeout: 65_000, maxBuffer: 4096 }, error => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve())
     })
   }
-  start(executable: string): Promise<void> {
+  /** How many times `stop` has run: a start begun before a stop never spawns a gateway after it. */
+  get stops(): number { return this.stopCount }
+  start(executable: string, stops = this.stopCount): Promise<void> {
+    if (stops !== this.stopCount) return Promise.reject(new Error(HERMES_STOPPED))
     if (this.starting) return this.starting
     if (this.child) return Promise.resolve()
-    this.stopping = false
-    const child = spawn(executable, ['gateway', 'run', '--quiet', '--no-supervise', '--external-supervisor'], {
-      cwd: this.root, env: withHermesPath(this.env(), executable), stdio: 'ignore', detached: process.platform !== 'win32', windowsHide: true,
-    })
-    this.child = child
-    this.closedWork = new Promise(resolve => {
-      child.once('error', () => { if (!this.stopping) this.lost() })
-      child.once('close', () => { if (this.child === child) this.child = undefined; resolve(); if (!this.stopping) this.lost() })
-    })
-    // Readiness only: discovery never starts a second owner, unlike `gateway ensure`.
-    this.starting = this.python(executable, 'import time\nfrom pathlib import Path\nfrom hermes_cli.gateway_runtime import discover_gateway_endpoint, attachable\nfrom hermes_constants import get_hermes_home\nend=time.monotonic()+55\nwhile time.monotonic()<end:\n if attachable(discover_gateway_endpoint(get_hermes_home(), timeout=1)): break\n time.sleep(.2)\nelse: raise SystemExit(1)').finally(() => { this.starting = undefined })
-    return this.starting
+    const starting: Promise<void> = this.endLeftBehind(executable).then(() => {
+      if (stops !== this.stopCount) throw new Error(HERMES_STOPPED)
+      this.stopping = false
+      const child = spawn(executable, ['gateway', 'run', '--quiet', '--no-supervise', '--external-supervisor'], {
+        cwd: this.root, env: withHermesPath(this.env(), executable), stdio: 'ignore', detached: process.platform !== 'win32', windowsHide: true,
+      })
+      this.child = child
+      this.closedWork = new Promise(resolve => {
+        child.once('error', () => { if (!this.stopping) this.lost() })
+        // A readiness poll outlives the gateway it waited for: the next start spawns afresh instead of awaiting it.
+        child.once('close', () => { if (this.child === child) { this.child = undefined; if (this.starting === starting) this.starting = undefined } resolve(); if (!this.stopping) this.lost() })
+      })
+      // Its own process group outlives Sotto unless signalled: an exit that skips `stop` ends it as OpenCode's server is ended.
+      endWithSotto(child, this.closedWork)
+      // Readiness only: discovery never starts a second owner, unlike `gateway ensure`.
+      return this.python(executable, 'import time\nfrom pathlib import Path\nfrom hermes_cli.gateway_runtime import discover_gateway_endpoint, attachable\nfrom hermes_constants import get_hermes_home\nend=time.monotonic()+55\nwhile time.monotonic()<end:\n if attachable(discover_gateway_endpoint(get_hermes_home(), timeout=1)): break\n time.sleep(.2)\nelse: raise SystemExit(1)')
+    }).finally(() => { if (this.starting === starting) this.starting = undefined })
+    this.starting = starting
+    return starting
   }
-  async project(executable: string, projectPath: string, servers: readonly OwnServer[]): Promise<string> {
+  /**
+   * A gateway an earlier Sotto left running in this folder, after a crash or force-quit, is stopped through Hermes's own
+   * record of it before a new one starts. The folder is Sotto's alone, so any gateway it records is Sotto's.
+   */
+  private async endLeftBehind(executable: string): Promise<void> {
+    if (!await stat(join(this.root, 'gateway.pid')).then(() => true, () => false)) return
+    await new Promise<void>(resolve => {
+      execFile(executable, ['gateway', 'stop', '-y'], { cwd: this.root, env: withHermesPath(this.env(), executable), timeout: 30_000, maxBuffer: 65_536 }, () => resolve())
+    })
+  }
+  /** `stops` is the count its caller saw before its own waits, so a Disconnect during them leaves no gateway behind. */
+  async project(executable: string, projectPath: string, servers: readonly OwnServer[], stops = this.stopCount): Promise<string> {
     const home = hermesProjectHome(this.root, projectPath)
     await this.writeConfig(home, servers, projectPath)
-    await this.start(executable)
+    await this.start(executable, stops)
     await this.python(executable, 'from pathlib import Path\nfrom gateway.control_socket import rescan_gateway_profiles\nfrom hermes_constants import get_hermes_home\nr=rescan_gateway_profiles(get_hermes_home(), timeout=30)\nassert isinstance(r,dict)', [])
     return home
   }
   stop(): void {
+    this.stopCount++; this.starting = undefined
     this.stopping = true
     const child = this.child
     if (!child) return

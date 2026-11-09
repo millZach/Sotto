@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
 import type { OwnServer } from '../../shared/ownModelServers'
-import { keylessServers } from '../ownModelServers/deepseekPatch'
 
 /** Full access is the only mode Sotto runs Hermes in. */
 export const HERMES_RUNTIME_MODES: readonly AgentRuntimeMode[] = ['full-access']
@@ -14,11 +13,11 @@ export function hermesModelRoute(modelId: string): { serverId: string; model: st
 }
 
 /**
- * The catalog's models, from the configured server routes. `harnessImages` is whether the harness
+ * The catalog's models, from the servers `hermesServers` kept: the keyless ones and each keyed one Hermes holds a key for. `harnessImages` is whether the harness
  * advertised image prompts; until it has, and when it said no, no model offers images.
  */
 export function hermesCatalog(servers: readonly OwnServer[], harnessImages = false): AgentModel[] {
-  return keylessServers(servers).flatMap(server => server.models.map((model): AgentModel => ({
+  return servers.flatMap(server => server.models.map((model): AgentModel => ({
     id: `${server.id}/${model.id}`,
     provider: 'Hermes',
     name: model.name,

@@ -98,9 +98,24 @@ describe('adding a server', () => {
     expect(calls).toEqual(['outdated', 'sign-in own-test0 key', 'hermes keep own-test0 key'])
     calls.length = 0
     await service.remove({ id: 'own-test0' })
-    expect(calls).toEqual(['hermes forget own-test0', 'sign-out own-test0', 'outdated', 'catalog'])
+    expect(calls).toEqual(['sign-out own-test0', 'hermes forget own-test0', 'outdated', 'catalog'])
+    calls.length = 0
+    // A refused sign-out leaves Hermes's copy too, so the server stays whole on both until a Remove succeeds.
+    await service.add({ name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] })
+    calls.length = 0
+    openCode.signOut = async id => { calls.push(`sign-out ${id}`); return false }
+    expect(await service.remove({ id: 'own-test1' })).toMatchObject({ status: 'refused', reason: 'sign-in-failed' })
+    expect(calls).toEqual(['sign-out own-test1'])
+    // And a copy Hermes cannot delete keeps the server listed, for a second Remove to finish.
+    openCode.signOut = async id => { calls.push(`sign-out ${id}`); return true }
+    hermes.forgetKey = async () => { throw new Error('disk') }
+    expect(await service.remove({ id: 'own-test1' })).toMatchObject({ status: 'refused', reason: 'removed-partly' })
+    expect((await saved()).map(server => server.id)).toEqual(['own-test1'])
     calls.length = 0
     openCode.signInWithKey = async () => false
+    await service.remove({ id: 'own-test1' })
+    openCode.signInWithKey = async () => false
+    calls.length = 0
     await service.add({ name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] })
     expect(calls.some(call => call.startsWith('hermes'))).toBe(false)
   })

@@ -408,13 +408,13 @@ export class HermesAcpHost implements AgentHost {
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
     if (!this.executable || !this.state.connected) throw new Error('Connect Hermes before using its threads.')
     // The revision is read before the overlay is written, so a change during the write leaves this process outdated.
-    const patchRevision = this.patchRevision
+    const patchRevision = this.patchRevision, stops = this.runtime.stops
     await this.writePatch()
-    if (!this.patchText) throw new Error('Hermes has no model server it can run. Your thread is kept. Add a server without a key under Your own model servers, then send again.')
+    if (!this.patchText) throw new Error('Hermes has no model server it can run. Your thread is kept. Add one under Your own model servers, then send again.')
     const connection: Connection = { rpc: undefined as unknown as HermesRpc, nonce: randomUUID(), clientRevision: this.clientRevision,
       patchRevision, mode: alias.runtimeMode, closing: false, replaying: false, model: undefined, effort: undefined, tools: new Map() }
     const project = this.state.projects.find(project => project.id === alias.projectId)
-    const home = await this.runtime.project(this.executable, project?.path ?? cwd, this.servers)
+    const home = await this.runtime.project(this.executable, project?.path ?? cwd, this.servers, stops)
     const rpc = this.spawn([...(this.options.executableArgs ?? []), 'acp'], cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: HermesRpc }).rpc = rpc
     try { this.readHarnessImages(connection, await this.handshake(rpc)) }
@@ -501,8 +501,8 @@ export class HermesAcpHost implements AgentHost {
   }
   /** A keyed server was added (ADR-0124): Hermes keeps its own copy of the key, as OpenCode does, and can run it from now on. */
   async keepKey(id: string, key: string): Promise<void> { await this.runtime.keys.keep(id, key); this.ownServersChanged() }
-  /** A keyed server was removed: Hermes's copy of its key goes with it. */
-  async forgetKey(id: string): Promise<void> { await this.runtime.keys.forget(id); this.ownServersChanged() }
+  /** A keyed server was removed: Hermes's copy of its key goes with it, from its record and every profile's `.env`. */
+  async forgetKey(id: string): Promise<void> { await this.runtime.forgetKey(id); this.ownServersChanged() }
   /**
    * Hermes's client on disk was updated while Sotto stayed connected (ADR-0042, ADR-0038): find it again
    * and hold it to the floor; every new process starts from it, and each thread moves onto it as it goes idle.
