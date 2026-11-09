@@ -931,6 +931,32 @@ describe('Thread transcript scrolling', () => {
     })
   })
 
+  it('shows the messages the store sends for Show earlier messages above the reader, who stays where they were (#214)', async () => {
+    const state = manualState()
+    const at = new Date(NOW).toISOString()
+    const message = (index: number) => ({ id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: at })
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    // The thread holds its newest 100 messages, numbered 200–299 here, and the store has the 200 before them.
+    thread.messages = Array.from({ length: 100 }, (_, index) => message(200 + index))
+    thread.earlierAvailable = true
+    const { live } = mount(state)
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (20)' }))
+    expect(screen.getByText('History 200', { exact: true })).toBeInTheDocument()
+    fireEvent.scroll(transcript)
+    const reading = transcript.scrollTop
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
+    await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
+    // The store answers with the 200 messages before them.
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews'
+      ? { ...item, messages: [...Array.from({ length: 200 }, (_, index) => message(index)), ...item.messages] } : item) } }) })
+    expect(transcript.querySelectorAll('.thread-message')).toHaveLength(300)
+    expect(screen.getByText('History 0', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('History 200', { exact: true })).toBeInTheDocument()
+    // Every row the reader had is still there, and they are where they were: 200 rows arrived above them.
+    expect(transcript.scrollTop).toBe(reading + 200 * ROW)
+  })
+
   it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {
     const state = manualState()
     const thread = state.host.threads.find(item => item.id === 'grok-previews')!
