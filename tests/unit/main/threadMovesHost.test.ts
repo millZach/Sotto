@@ -92,6 +92,21 @@ describe('the host’s record of moves', () => {
 })
 
 describe('the new thread’s link back (ADR-0089: links are Sotto’s record)', () => {
+  it('keeps the first prompt unsent if shutdown begins while its link is saved', async () => {
+    const h = host(), ask = request()
+    const { options } = h.moves as unknown as { options: ConstructorParameters<typeof HostThreadMoves>[1] }
+    const link = options.workspace.setContinuedFrom
+    options.workspace.setContinuedFrom = async () => { h.moves.close() }
+    await expect(h.moves.handle(ask, desktop)).rejects.toThrow('Sotto is stopping.')
+    expect(h.sent).toEqual([])
+    const before = JSON.parse(await readFile(join(directory, 'thread-moves.json'), 'utf8')).moves[0]
+    expect(before.sent).not.toBe(true)
+    options.workspace.setContinuedFrom = link
+    const restarted = new HostThreadMoves(directory, options)
+    expect(await restarted.handle(ask, desktop)).toMatchObject({ type: 'started', threadId: before.threadId, sent: true })
+    expect(h.threads).toHaveLength(1); expect(h.sent).toEqual([before.threadId])
+    expect(JSON.parse(await readFile(join(directory, 'thread-moves.json'), 'utf8')).moves[0].draftId).toBe(before.draftId)
+  })
   it('sends no first prompt until the link is saved, and fails the step for the desktop to ask again', async () => {
     const h = host(), ask = request()
     h.state.linkFails = 1

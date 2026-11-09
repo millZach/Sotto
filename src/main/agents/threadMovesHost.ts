@@ -251,6 +251,7 @@ export class HostThreadMoves {
       const there = this.options.control.watcherSnapshot().threads.find(thread => thread.id === threadId)
       const own = { runtimeMode: there?.runtimeMode, providerMode: there?.providerMode }
       let sent: AgentState | undefined
+      stopping()
       try { sent = await this.options.control.commandFromMove({ type: 'manual-send', threadId, draftId, text: request.prompt }, guard(own)) } catch { sent = undefined }
       const outcome = sendOutcome(sent, threadId, draftId)
       // A missing result may have followed dispatch. Keep the move's original draft, as for an uncertain send.
