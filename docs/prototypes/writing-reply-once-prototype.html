@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+PROTOTYPE — throwaway. Not shipped, not wired to providers.
+Question 1: with Settings › Threads › Response streaming set to show replies when finished, a running turn says
+"Writing a reply" twice: on its working line and in a placeholder message under it (Zach's screenshot, November 9, 2026,
+a Codex GPT-6.1-Sol thread). Which one stays, or how do they merge?
+A: the working line stays; no message shows until the reply is finished.
+B: the message stays; the working line goes back to its waiting words while the reply is written.
+C: one row: the message's header carries the working line, and the steps open from it.
+Question 2: the Threads sidebar's limit card when Claude Code gave no reset time. Should it also offer Dismiss?
+-->
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Writing a reply once · prototype</title>
+<style>
+:root{--bg:#141517;--panel:#1b1c1f;--card:#222327;--line:#2e3035;--text:#e8e8ea;--quiet:#a3a5ab;--accent:#8fb4ff;--warn:#e2b45c}
+[data-theme=light]{--bg:#f6f6f4;--panel:#fff;--card:#efefec;--line:#dcdcd8;--text:#1d1e20;--quiet:#5c5e63;--accent:#2c5fd0;--warn:#8a5a00}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px 14px 120px}
+h1{font-size:17px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 6px}
+p.note{color:var(--quiet);margin:0 0 12px;font-size:14px}
+.frame{max-width:640px;margin:0 auto}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.msg{margin:0 0 14px}
+.msg header{display:flex;gap:8px;align-items:baseline;font-size:13px;color:var(--quiet)}
+.msg header .who{color:var(--text);font-weight:600}
+.msg .body{margin-top:2px}
+.msg[data-role=user] .body{background:var(--card);border-radius:10px;padding:8px 10px}
+.writing{color:var(--quiet);font-style:italic}
+.live{display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--quiet);font-size:14px;background:none;border:0;font:inherit;cursor:pointer;width:100%;text-align:left}
+.live .word{color:var(--text)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:p 1.4s ease-in-out infinite;flex:none}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+@keyframes p{50%{opacity:.35}}
+.chev{margin-left:2px}
+.steps{border-left:2px solid var(--line);margin:2px 0 10px 3px;padding:2px 0 2px 12px;font-size:13px;color:var(--quiet)}
+.steps div{padding:2px 0}
+.arrow{color:var(--warn);font-size:12px;font-weight:600;margin-left:6px}
+.band{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;max-width:320px}
+.band ul{margin:6px 0 0;padding:0 0 0 2px;list-style:none}
+.band li button{background:none;border:0;color:var(--accent);font:inherit;padding:2px 0;cursor:pointer;text-align:left}
+.band .row{display:flex;justify-content:flex-end;margin-top:6px}
+.band .row button{background:none;border:1px solid var(--line);color:var(--text);font:inherit;font-size:13px;border-radius:7px;padding:3px 10px;cursor:pointer}
+.search{background:var(--card);border-radius:8px;padding:6px 10px;color:var(--quiet);font-size:14px;margin-bottom:8px;max-width:320px}
+.side{display:flex;gap:16px;flex-wrap:wrap}
+.side>div{flex:1 1 280px}
+.label{font-size:12px;color:var(--quiet);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px;box-shadow:0 6px 24px #0006;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 20px)}
+.bar button{background:none;border:0;color:var(--text);font:inherit;font-size:14px;padding:6px 12px;border-radius:999px;cursor:pointer}
+.bar button[aria-pressed=true]{background:var(--accent);color:#0b1020}
+.state{font:12px/1.4 ui-monospace,monospace;color:var(--quiet);background:var(--card);border-radius:8px;padding:8px;margin-top:10px;white-space:pre-wrap}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style></head><body><div class="frame">
+<h1>“Writing a reply” said once</h1>
+<p class="note">A Codex thread, replies set to show when finished. Today both rows below show at once (the “Now” variant). Pick which stays. Use the bar to switch variants and to finish the reply.</p>
+<div class="pane" id="pane"></div>
+<div class="state" id="state"></div>
+
+<h2>Limit card when Claude Code gave no reset time</h2>
+<p class="note">Sotto will also clear this card by itself once the threads run again. The question is whether the card also gets a Dismiss.</p>
+<div class="side">
+  <div><p class="label">Without Dismiss (as now)</p><div class="search">Search threads</div><div class="band" id="b1"></div></div>
+  <div><p class="label">With Dismiss</p><div class="search">Search threads</div><div class="band" id="b2"></div></div>
+</div>
+</div>
+<div class="bar" role="toolbar" aria-label="Prototype variants">
+  <button data-v="now">Now</button><button data-v="A">A</button><button data-v="B">B</button><button data-v="C">C</button>
+  <button id="finish">Finish reply</button><button id="theme">Light</button>
+</div>
+<script>
+const params=new URLSearchParams(location.search)
+let variant=params.get('variant')||'now', finished=false, open=false
+const words={now:'Now: both rows say it',A:'A: the working line stays; no message until the reply is finished',B:'B: the message stays; the line keeps its waiting words',C:'C: one row: the message header carries the working line'}
+const steps='<div class="steps"><div>Ran npm test · 14s</div><div>Edited threadActivityView.ts</div><div>Read ThreadTranscript.tsx</div></div>'
+const user='<article class="msg" data-role="user"><header><span class="who">You</span><time>9:10 am</time></header><div class="body">Fix the duplicate status and push.</div></article>'
+const reply='<article class="msg"><header><span class="who">Codex</span><time>9:11 am</time></header><div class="body">I fixed it and pushed the branch. CI is running.</div></article>'
+function line(word,mark){return `<button class="live" aria-expanded="${open}" onclick="open=!open;draw()"><i class="pulse"></i><span class="word">${word}</span><span class="chev">›</span>${mark?'<span class="arrow">← 1</span>':''}</button>${open?steps:''}`}
+function draw(){
+  let h=user
+  if(finished){h+=reply}
+  else if(variant==='now'){h+=line('Writing a reply',true)+'<article class="msg"><header><span class="who">Codex</span><time>9:11 am</time><span class="arrow">← 2</span></header><div class="body writing">Writing a reply…</div></article>'}
+  else if(variant==='A'){h+=line('Writing a reply')}
+  else if(variant==='B'){h+=line('Combing the desert')+'<article class="msg"><header><span class="who">Codex</span><time>9:11 am</time></header><div class="body writing">Writing a reply…</div></article>'}
+  else {h+=`<article class="msg"><header><span class="who">Codex</span><time>9:11 am</time></header><button class="live" style="padding:2px 0" aria-expanded="${open}" onclick="open=!open;draw()"><i class="pulse"></i><span class="word">Writing a reply</span><span class="chev">›</span></button>${open?steps:''}</article>`}
+  document.getElementById('pane').innerHTML=h
+  document.querySelectorAll('[data-v]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===variant)))
+  document.getElementById('finish').textContent=finished?'Start again':'Finish reply'
+  document.getElementById('state').textContent=`variant: ${words[variant]}\nreply: ${finished?'finished (all variants show the reply the same way)':'being written'}\nsteps: ${open?'open':'folded'}`
+}
+const band=d=>`<strong>Claude Code didn’t say when its limit resets,</strong> so Sotto can’t restart its 2 threads on its own. Send again once it resets.<ul><li><button>Watcher</button></li><li><button>Design climb: iOS app on the Duo (Duo layout only)</button></li></ul>${d?'<div class="row"><button onclick="this.closest(\'.band\').innerHTML=\'<em style=&quot;color:var(--quiet)&quot;>Dismissed. The threads wait for your next message.</em>\'">Dismiss</button></div>':''}`
+document.getElementById('b1').innerHTML=band(false);document.getElementById('b2').innerHTML=band(true)
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{variant=b.dataset.v;finished=false;history.replaceState(null,'','?variant='+variant);draw()})
+document.getElementById('finish').onclick=()=>{finished=!finished;draw()}
+document.getElementById('theme').onclick=e=>{const l=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=l?'light':'dark';e.target.textContent=l?'Dark':'Light'}
+draw()
+</script></body></html>
