@@ -233,7 +233,6 @@
 .thread-message[data-role='user'] .thread-message__copy { bottom: 6px; left: 9px; }
 .thread-message[data-role='user']:has(> .thread-message__copy) { margin-bottom: 28px; padding-bottom: 36px; }
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
-.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .thread-message__text { max-width: 42em; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
 /* The user's message is as wide as what they wrote, against the column's right edge, every corner the same. */
 .thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }

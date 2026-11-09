@@ -121,9 +121,11 @@ export function readingPlace(scroller: HTMLElement, rows: MessageRows, threadId:
 
 /**
  * Scrolls the first of the place's messages still drawn back to where it was. The place that stands after: read afresh
- * once it is back, or held, at the scroll the transcript allows, while the transcript is too short to put it back.
+ * once it is back, or held, at the scroll the transcript allows, while the transcript is too short to put it back or
+ * none of its messages is drawn, as a reply held back while it is written is not (November 9, 2026).
  */
 export function keepReadingPlace(scroller: HTMLElement, rows: MessageRows, place: ReadingPlace): ReadingPlace | null {
+  if (place.marks.every(mark => rows.element(mark.messageId) === undefined)) return { ...place, top: scroller.scrollTop, held: true }
   for (const mark of place.marks) {
     const row = rows.element(mark.messageId)
     if (row === undefined) continue

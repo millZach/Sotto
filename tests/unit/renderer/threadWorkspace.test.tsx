@@ -647,6 +647,15 @@ describe('Thread transcript scrolling', () => {
       visits = 0
       vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
       vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+      // As a browser does, content that got shorter than the scroll position moves the position to its end, and it stays
+      // there when the content grows again.
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function (this: HTMLElement) {
+        const top = tops.get(this) ?? 0
+        if (top === 0) return 0
+        const clamped = Math.max(0, Math.min(top, this.scrollHeight - VIEW))
+        if (clamped !== top) tops.set(this, clamped)
+        return clamped
+      })
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
         const log = this.closest<HTMLElement>('.thread-workspace__transcript')
         const drawn = log === null ? [] : drawnIn(log)
@@ -799,19 +808,18 @@ describe('Thread transcript scrolling', () => {
     })
 
     it('comes back to where they were reading when the answer is held back while written and then shown whole', () => {
-      // With replies shown once complete, the reopened turn's answer reads "Writing a reply…": the transcript grows too short
+      // With replies shown once complete, the reopened turn's answer is held back while written: the transcript grows too short
       // to keep the place, and the window can only scroll to its top. When the answer is whole again, so is the place.
       const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
       const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
       scrollTo(3 * ROW)
       expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
       update(() => ({ status: 'running' }))
-      expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+      expect(transcript.querySelector('[data-message-id="answer"]')).toBeNull()
       expect(transcript.scrollTop).toBe(0)
       // The window says it scrolled, to the end the transcript was cut to: that is neither the reader's scroll nor following.
       fireEvent.scroll(transcript)
       update(() => ({ status: 'idle' }))
-      expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
       expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
     })
 
@@ -822,7 +830,7 @@ describe('Thread transcript scrolling', () => {
       scrollTo(11 * ROW)
       expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
       update(() => ({ status: 'running' }))
-      expect(transcript.scrollTop).toBe(8 * ROW)
+      expect(transcript.scrollTop).toBe(7 * ROW)
       // The reader scrolls up before their scroll is heard; the answer comes back with the next update.
       tops.set(transcript, 6 * ROW)
       update(() => ({ status: 'idle' }))

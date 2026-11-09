@@ -10531,10 +10531,6 @@ msgstr "Write your answer…"
 msgid "Writing a reply"
 msgstr "Writing a reply"
 
-#: src/renderer/src/agents/ThreadTranscript.tsx
-msgid "Writing a reply…"
-msgstr "Writing a reply…"
-
 #. A file change, before the file's path.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Wrote"
