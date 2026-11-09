@@ -308,8 +308,8 @@ export class TeamService {
       answer = teamRedeemAnswerSchema.parse(await this.send(code.address, undefined, { command: 'redeem-code', code: code.code, name: ownName, address: this.address, token: mine.token }, SEND_TIMEOUT_MS))
     } catch { this.options.log?.('team-link-failed') }
     if (!answer || answer.status !== 'linked') {
-      await this.pairing.revoke(mine.clientId)
-      await this.stopListeningIfUnused()
+      try { await this.pairing.revoke(mine.clientId) }
+      finally { await this.stopListeningIfUnused() }
       this.publish()
       return { status: 'refused', message: answer
         ? t`Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked.`
@@ -429,7 +429,12 @@ export class TeamService {
     this.forgetCode()
     const paired = await this.pairing.redeem(message.code, message.name)
     const expiresAt = new Date(this.now() + TEAM_LINK_LIFETIME_MS).toISOString()
-    await this.addLink({ clientId: paired.clientId, name: message.name, address: message.address, expiresAt, token: message.token })
+    try {
+      await this.addLink({ clientId: paired.clientId, name: message.name, address: message.address, expiresAt, token: message.token })
+    } catch (error) {
+      // The link and credentials are installed. Keep the peer linked too; save() already published the unsaved warning.
+      if (!(error instanceof TeamSaveError)) throw error
+    }
     this.publish()
     this.options.log?.('team-linked')
     return { status: 'linked', name: this.file.ownName || this.options.hostname(), token: paired.token, expiresAt }

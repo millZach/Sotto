@@ -3,11 +3,13 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { PairedClients } from '../../../src/main/agents/pairing'
+import { startTeamListener } from '../../../src/main/teams/teamListener'
 import { TeamService, type TeamServiceOptions } from '../../../src/main/teams/teams'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { formatTeamCode } from '../../../src/shared/teams'
+import { formatTeamCode, parseTeamCode, teamRedeemAnswerSchema } from '../../../src/shared/teams'
 
-vi.mock('../../../src/main/teams/teamListener', () => ({ startTeamListener: async () => ({ port: 12345, close: async () => undefined }) }))
+vi.mock('../../../src/main/teams/teamListener', () => ({ startTeamListener: vi.fn(async () => ({ port: 12345, close: vi.fn(async () => undefined) })) }))
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -78,6 +80,53 @@ it('keeps a link that the peer already accepted when its local record cannot sav
   expect(answer).toMatchObject({ status: 'refused', message: expect.stringContaining('could not save') })
   expect(service.get()).toMatchObject({ unsaved: true, links: [{ name: 'Peer' }] })
   expect([...tokens.values()]).toContain('peer-token-with-enough-characters')
+})
+
+it('answers linked and authenticates the peer when the code maker cannot save the link', async () => {
+  const { service, tokens } = await teams()
+  expect(await service.command({ type: 'make-code', name: 'Me' })).toEqual({ status: 'ok' })
+  const code = parseTeamCode(service.get().code!.text)!.code
+  const { handle } = vi.mocked(startTeamListener).mock.calls.at(-1)![0]
+  const write = AtomicJsonStore.prototype.write
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+    return value && typeof value === 'object' && 'links' in value ? Promise.reject(new Error('disk full')) : write.call(this, value)
+  })
+
+  const answer = teamRedeemAnswerSchema.parse(await handle({ command: 'redeem-code', code, name: 'Peer',
+    address: 'https://peer.tail1.ts.net:8445/', token: 'peer-token-with-enough-characters' }, undefined))
+  expect(answer.status).toBe('linked')
+  if (answer.status !== 'linked') throw new Error('Expected a linked answer')
+  expect(service.get()).toMatchObject({ unsaved: true, listening: true, code: null, links: [{ name: 'Peer' }] })
+  expect(tokens.get(`team-link:${service.get().links[0]!.id}`)).toBe('peer-token-with-enough-characters')
+  expect(await handle({ command: 'check', back: false }, answer.token)).toEqual({ status: 'checked' })
+  expect(service.get().unsaved).toBe(true)
+})
+
+it('still rejects redemption when saving the peer credential fails', async () => {
+  const failure = new Error('credential store locked')
+  const { service } = await teams({ credentials: { available: () => true, get: () => '', set: async () => { throw failure } } })
+  await service.command({ type: 'make-code', name: 'Me' })
+  const code = parseTeamCode(service.get().code!.text)!.code
+  const { handle } = vi.mocked(startTeamListener).mock.calls.at(-1)![0]
+  await expect(handle({ command: 'redeem-code', code, name: 'Peer', address: 'https://peer.tail1.ts.net:8445/',
+    token: 'peer-token-with-enough-characters' }, undefined)).rejects.toBe(failure)
+  expect(service.get().links).toEqual([])
+})
+
+it('stops an unused listener even when revoking a refused link fails', async () => {
+  const unserve = vi.fn(async () => true)
+  const { service } = await teams({
+    tailscale: { status: async () => ({ state: 'running', dnsName: 'mine.tail1.ts.net', hostName: 'mine', others: [] }),
+      serveStatus: async () => ({}), serve: async () => ({ ok: true }), unserve },
+    fetch: vi.fn(async () => new Response(JSON.stringify({ status: 'refused', reason: 'code-rejected' }))) as typeof fetch,
+  })
+  vi.spyOn(PairedClients.prototype, 'revoke').mockRejectedValueOnce(new Error('disk full'))
+  expect(await service.command({ type: 'link', code: formatTeamCode('https://peer.tail1.ts.net:8445/', '123456'), name: 'Me' }))
+    .toMatchObject({ status: 'refused' })
+  expect(service.get()).toMatchObject({ listening: false, code: null, links: [] })
+  expect(unserve).toHaveBeenCalledWith(8445)
+  const listener = await vi.mocked(startTeamListener).mock.results.at(-1)!.value
+  expect(listener.close).toHaveBeenCalledOnce()
 })
 
 

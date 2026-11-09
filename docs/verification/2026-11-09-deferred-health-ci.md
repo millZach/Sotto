@@ -119,3 +119,18 @@ The permitted local unit checks use `NODE_OPTIONS=--no-experimental-webstorage` 
 Four complete unit files passed locally: `delegationNewsHidden` (14), `delegationEnds` (44), `requestInput` (20), and `settingsDictionary` (18). The additional targeted `restartResume` case passed (one selected, 40 unselected): **97 passing cases in total**. Production and Node-test TypeScript checks, scoped ESLint and whitespace checks passed during the repair.
 
 All **nine** failed assertions are classified **own-diff** and repaired. None is classified as a flake or pre-existing; no separate repair owner or rerun is needed. No full local suite, integration test, e2e test, app launch or CI rerun was used. The remaining blocker is the new GitHub run on the corrective head; its required checks must pass before merge.
+
+## Teams review follow-up on `53080393d`
+
+[Bug Bot review 5834102091](https://github.com/millZach/Sotto/pull/2367#pullrequestreview-5834102091) identified two regressions. Both were confirmed in the source and reproduced by new cases in `tests/unit/main/teamsPersistence.test.ts` before changing production code:
+
+- [T1](https://github.com/millZach/Sotto/pull/2367#discussion_r4519033359): the code maker installed its link and credentials, but a failed final record write escaped as `TeamSaveError`. The listener therefore refused the handshake and the peer revoked its token. The fix catches only `TeamSaveError` in `answerRedeem`, answers `linked`, and retains the existing unsaved warning. The regression checks the answer, retained peer token and link, and a successful authenticated check using the returned token. A separate control confirms that credential-write failures still reject and install no link.
+- [T2](https://github.com/millZach/Sotto/pull/2367#discussion_r4519033371): a rejected revoke skipped listener cleanup after a refused outbound link. Cleanup now runs in `finally`, still using the existing condition that no link or live code needs the listener. The regression checks refusal, no link, no live code, Tailscale Serve removal and listener closure before teardown.
+
+The first run had **2 failures and 8 passes**: T1 threw `TeamSaveError`; T2 left `listening: true`. After the fixes, the same file passed **10/10** with:
+
+```sh
+NODE_OPTIONS=--no-experimental-webstorage node node_modules/vitest/vitest.mjs run tests/unit/main/teamsPersistence.test.ts --reporter=verbose
+```
+
+Production and Node-test typechecks, scoped ESLint for the two changed TypeScript files, and `git diff --check` passed. No full suite, integration test, app launch or CI rerun was performed locally. The new head requires GitHub CI and a new merge instruction.
