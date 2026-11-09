@@ -4,7 +4,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { createInterface } from 'node:readline'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '../..')
 const binary = resolve(root, 'native/key-listener/build/sotto-key-listener')
@@ -32,10 +32,13 @@ function startHelper(args: string[] = []) {
 }
 
 describe.runIf(hasSwiftc)('macOS key listener helper', () => {
-  it('builds and passes its self-test', () => {
+  beforeAll(() => {
     execFileSync(process.execPath, [resolve(root, 'scripts/build-key-listener.mjs')], { cwd: root, stdio: 'inherit' })
-    expect(spawnSync(binary, ['--selftest'], { stdio: 'inherit' }).status).toBe(0)
   }, 180_000)
+
+  it('passes its self-test', () => {
+    expect(spawnSync(binary, ['--selftest'], { stdio: 'inherit' }).status).toBe(0)
+  })
 
   it('reports permission then its paste capability and exits 0 when stdin closes', async () => {
     const helper = startHelper()

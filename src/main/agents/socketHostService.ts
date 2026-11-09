@@ -860,7 +860,10 @@ export class SocketHostService implements HostService {
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
-  events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
+  events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
+    const events = [...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)
+    return structuredClone(limit !== undefined && limit >= 0 ? events.slice(0, limit) : events)
+  }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   async readShell(): Promise<AgentState> { const generation = this.generation, epoch = this.snapshotEpoch; const state = this.read(protocolAgentStateSchema, await this.call({ op: 'shell' })); this.sameGeneration(generation); if (epoch === this.snapshotEpoch) this.publish(state, true); return this.shell() }

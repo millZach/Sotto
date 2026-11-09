@@ -528,7 +528,7 @@ export interface SottoBridge {
   chooseSpeechModel(id: string): Promise<CommandResult>
   onSpeechModelStatus(listener: (status: SpeechModelStatus) => void): Unsubscribe
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
-  /** OpenRouter's text models, newest list on every call; no key is sent. */
+  /** OpenRouter's text models, newest list on every call; saved presets use the configured key. */
   listOpenRouterModels(): Promise<OpenRouterModelList>
   /** OpenRouter's speech models, best first (Owl `cloud-dictation`, ADR-0160); refused while that feature is off. */
   listCloudSpeechModels(): Promise<CloudSpeechModelList>

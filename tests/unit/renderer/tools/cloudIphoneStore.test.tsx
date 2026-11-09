@@ -113,6 +113,29 @@ describe('the cloud iPhone store', () => {
     expect(result).toEqual({ saved: false, problem: 'run.cloud rejected this key.' })
   })
 
+  describe.each(['setKey', 'answer', 'end'] as const)('%s failures', action => {
+    it.each(['transport rejection', 'parse rejection', 'synchronous throw'] as const)('reports a %s without changing saved state', async kind => {
+      const { bridge } = fakeBridge([session()])
+      const store = new CloudIphoneStore()
+      store.watch(bridge, 'workshop')
+      await store.loadStatus(bridge)
+      const sessions = store.sessionsFor('workshop')
+      const savedStatus = store.statusSnapshot()
+      const failure = kind === 'parse rejection' ? new SyntaxError('Invalid response') : new Error('The bridge went away.')
+      vi.mocked(bridge[action]).mockImplementationOnce((): Promise<never> => {
+        if (kind === 'synchronous throw') throw failure
+        return Promise.reject(failure)
+      })
+      const result = action === 'setKey' ? await store.setKey(bridge, 'key')
+        : action === 'answer' ? await store.answer(bridge, session(), true) : await store.end(bridge, session())
+      const unavailable = 'Cloud iPhone is not available in this window.'
+      expect(result).toEqual(action === 'setKey' ? { saved: false, problem: unavailable } : unavailable)
+      expect(store.sessionsFor('workshop')).toBe(sessions)
+      expect(store.statusSnapshot()).toBe(savedStatus)
+      expect(bridge.status).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('mounts only one session at a time, taking the previous one off first', async () => {
     const { bridge } = fakeBridge()
     const store = new CloudIphoneStore()

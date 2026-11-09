@@ -48,7 +48,7 @@ import { SessionReaper } from './sessionReaper'
 import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
-import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
+import { codexTurnIdentitySchema, compatibleClient, ensureIdentityTurn, upsertMessageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
 import { markSendStage } from './sendStages'
 import type { WatcherLaunchProfile, ThreadLaunchProfiles, WorkerRoleSource } from './host'
 import { CodexRoleFiles, codexTakesRoles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
@@ -1583,14 +1583,14 @@ export class CodexAppServerHost implements AgentHost {
     const text = item.type === 'agentMessage' ? item.text ?? '' : this.userItemText(item, alias.origins, turnId)
     const input = this.identityItem(item, alias.origins, turnId)!
     let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
-    const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
+    const identities = turnId ? ensureIdentityTurn(alias.messageIdentities, turnId) : undefined
     const known = identities?.messages.find(m => m.nativeIds.includes(item.id) && compatibleClient(m, input))
     if (item.type === 'agentMessage' && lifecycle.phase === 'history' && !lifecycle.terminal &&
       known?.complete && known.digest !== input.digest && this.log.has(id, known.id)) return
     if (lifecycle.phase !== 'history' && (lifecycle.phase === 'started' && known?.complete ||
       turnId && this.terminalTurns.has(turnKey(id, turnId)) && (known?.complete || identities?.sealed))) return
     if (!origin && item.type === 'userMessage' && known) origin = alias.origins.find(o => o.messageId === known.id && o.turnId === turnId && o.digest === input.digest && (!item.clientId || o.messageId === item.clientId))
-    const record = identities ? messageIdentity(alias.messageIdentities, identities, input, origin,
+    const record = identities ? upsertMessageIdentity(alias.messageIdentities, identities, input, origin,
       createdAt ?? this.turnDates.get(turnKey(id, turnId!)) ?? alias.createdAt, item.type === 'userMessage' || lifecycle.phase === 'completed' || lifecycle.terminal === true) : undefined
     if (origin) {
       origin.itemId ??= item.id; origin.turnId = turnId

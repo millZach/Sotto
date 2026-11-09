@@ -9,20 +9,18 @@ const thread = (id: string, fields: Partial<AgentThread> = {}): AgentThread => (
 
 /**
  * An adapter as the real ones are built: thread records it writes into in place, in the order they were added, and an
- * activity view that builds a new record for each thread on every read. `marking` gives the changes `thread` and `rest`.
+ * activity view that builds a new record for each thread on every read.
  */
 class Adapter {
   readonly threads = new Map<string, AgentThread>()
   readonly state: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), name: 'Synthetic', connected: true }
   views = 0
   readonly changes: AdapterThreadChanges
-  constructor(marking: boolean) {
+  constructor() {
     this.changes = new AdapterThreadChanges({
       view: historyFromEvents => { this.views++; return { ...this.state, threads: [...this.threads.values()].map(item => this.shown(item, historyFromEvents)) } },
-      ...(marking ? {
-        thread: (id: string, historyFromEvents: boolean) => { const item = this.threads.get(id); return item && this.shown(item, historyFromEvents) },
-        rest: () => restOf(this.state),
-      } : {}),
+      thread: (id, historyFromEvents) => { const item = this.threads.get(id); return item && this.shown(item, historyFromEvents) },
+      rest: () => restOf(this.state),
     })
   }
   add(id: string, fields: Partial<AgentThread> = {}): void { this.threads.set(id, thread(id, fields)); this.changes.mark(id) }
@@ -45,9 +43,9 @@ function subscriber(adapter: Adapter, historyFromEvents = false, verify = true) 
   return { map, received, off, last: () => received.at(-1)!, upserted: () => received.at(-1)!.upserts.map(record => record.id) }
 }
 
-describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s thread changes through %s', (_name, marking) => {
+describe('an adapter\'s thread changes', () => {
   it('publishes a whole first publication, then each change, a new thread and a removal, keeping the map equal to the view', () => {
-    const adapter = new Adapter(marking)
+    const adapter = new Adapter()
     adapter.add('a'); adapter.add('b'); adapter.add('c')
     const one = subscriber(adapter)
     adapter.changes.publish()
@@ -71,7 +69,7 @@ describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s 
   })
 
   it('carries the rest only when it changed', () => {
-    const adapter = new Adapter(marking)
+    const adapter = new Adapter()
     adapter.add('a')
     const one = subscriber(adapter)
     adapter.changes.publish()
@@ -83,7 +81,7 @@ describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s 
   })
 
   it('keeps both forms of the view, each with its own numbering and its own changes', () => {
-    const adapter = new Adapter(marking)
+    const adapter = new Adapter()
     adapter.add('a'); adapter.add('b')
     const full = subscriber(adapter, false), fromEvents = subscriber(adapter, true)
     adapter.changes.publish()
@@ -97,7 +95,7 @@ describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s 
   })
 
   it('delivers a thread marked from inside a listener exactly once, in the publication built after it (#925)', () => {
-    const adapter = new Adapter(marking)
+    const adapter = new Adapter()
     adapter.add('a'); adapter.add('b')
     const map = new ThreadMap({ wholeOf: () => adapter.whole(), verify: true })
     const received: AgentHostChanges[] = []
@@ -128,7 +126,7 @@ describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s 
   })
 
   it('stays correct when a resync listener marks and publishes from inside it', async () => {
-    const adapter = new Adapter(marking)
+    const adapter = new Adapter()
     adapter.add('a'); adapter.add('b')
     const map = new ThreadMap({ wholeOf: () => adapter.whole(), verify: true })
     let asked = false, resynced = false
@@ -151,7 +149,7 @@ describe.each([['the shim', false], ['marking', true]] as const)('an adapter\'s 
 
 describe('an adapter that marks its own thread changes', () => {
   it('reads only the threads it marked, and never the whole view after the first publication', () => {
-    const adapter = new Adapter(true)
+    const adapter = new Adapter()
     for (let index = 0; index < 50; index++) adapter.add(`t${index}`)
     const one = subscriber(adapter)
     adapter.changes.publish()
@@ -163,7 +161,7 @@ describe('an adapter that marks its own thread changes', () => {
   })
 
   it('leaves out a thread it marked that did not change', () => {
-    const adapter = new Adapter(true)
+    const adapter = new Adapter()
     adapter.add('a'); adapter.add('b')
     const one = subscriber(adapter)
     adapter.changes.publish()
@@ -173,7 +171,7 @@ describe('an adapter that marks its own thread changes', () => {
   })
 
   it('does not send a change nobody marked, which is why every path that changes a thread marks it', () => {
-    const adapter = new Adapter(true)
+    const adapter = new Adapter()
     adapter.add('a')
     subscriber(adapter)
     adapter.changes.publish()
@@ -182,7 +180,7 @@ describe('an adapter that marks its own thread changes', () => {
   })
 
   it('works out a publication bringing several new threads, and one after markAll, whole, in the view\'s order', () => {
-    const adapter = new Adapter(true)
+    const adapter = new Adapter()
     adapter.add('a')
     const one = subscriber(adapter)
     adapter.changes.publish()
@@ -201,7 +199,7 @@ describe('an adapter that marks its own thread changes', () => {
   })
 
   it('starts a form someone subscribes to later from a whole publication', () => {
-    const adapter = new Adapter(true)
+    const adapter = new Adapter()
     adapter.add('a')
     const full = subscriber(adapter)
     adapter.changes.publish()

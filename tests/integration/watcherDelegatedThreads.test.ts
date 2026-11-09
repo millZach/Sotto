@@ -25,7 +25,9 @@ async function fixture(settleWithoutAsking = false) {
   let control: AgentControl = f.control
   const make = (settledLookAfterMs: number, workerHost = false) => new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true,
     settleWithoutAsking: () => settleWithoutAsking, settledLookAfterMs, workerHost })
-  let service = make(0), tools = new WatcherToolServer(service)
+  // The first Watcher holds its look off (#2347). A test writes the record as an older build or a desktop left it, then
+  // restarts; with the look at 0 ms this Watcher could let a delegated thread's watch go, and fence it, before the restart.
+  let service = make(60_000), tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); await f.dispose(); await control.closed(); await workspace.stop() })
   await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()

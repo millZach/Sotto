@@ -29,12 +29,14 @@ import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes,
 import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
 import { draftBroadWork, draftEffortScore } from './effortSuggestion'
-import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
-import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
+import { sendThreadRevision } from './threadSubmission'
+import { THREAD_PROMPT_ID } from './paneDom'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
-import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
+import { ThreadOptions } from './ThreadOptions'
+import { watcherPermissionFixedReason } from './permissionPresentation'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useThreadStarts } from './ThreadStart'
 import { useWatcherSendGate } from '../watcher/WatcherHandover'
@@ -59,8 +61,6 @@ import './composer.css'
 import './reviewComments.css'
 
 type Command = AgentConnection['command']
-
-export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
 
 const NO_QUOTES: readonly ReplyQuote[] = []
 
@@ -92,40 +92,6 @@ function deliveryOnItsWay(status: SubmissionStatus): boolean {
  */
 function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boolean): boolean {
   return row.thread.status === 'running' || row.thread.requests.length > 0 || localAdmissions || followupsFor(state, row.thread.id).length > 0
-}
-
-/**
- * Send, queue or steer one revision of a thread's manual prompt. The echo in the transcript (or the
- * queue row) renders before the command leaves the renderer, and the composer is already empty.
- * With `retryDraftId` the prompt is sent again from its own copy, under the revision it already has.
- * Resolves true when main took it, false when it was refused, and null when main's answer never came.
- */
-export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string,
-  /** A step before the prompt goes, given its draft: Watcher's handover is told which draft carries it. A refusal keeps the prompt back. */
-  beforeSend?: (draftId: string) => Promise<string | null>): Promise<boolean | null> {
-  const threadId = row.thread.id
-  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
-  if (draft === null) return false
-  try {
-    const refused = beforeSend === undefined ? null : await beforeSend(draft.draftId)
-    // Refused before it left the window: it is back in the composer, with why under it.
-    if (refused !== null) { store.resolve(threadId, draft.draftId, refused, true); return false }
-    const payload = {
-      threadId, draftId: draft.draftId, text: draft.text,
-      ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}),
-      ...(draft.skills.length ? { skills: [...draft.skills] } : {}),
-      ...(draft.files?.length ? { files: [...draft.files] } : {}),
-    }
-    const result = await command(mode === 'queue' ? { type: 'queue-followup', ...payload } : mode === 'steer' ? { type: 'steer', ...payload } : { type: 'manual-send', ...payload })
-    // Exact queue ownership wins an unrelated shell error, even before its publication reaches the draft store.
-    const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
-      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error === null ? null : attachmentRefusal(result.error)
-    store.resolve(threadId, draft.draftId, error)
-    return result === null ? null : error === null
-  } catch {
-    store.resolve(threadId, draft.draftId, UNCONFIRMED_SUBMISSION[mode])
-    return null
-  }
 }
 
 /** Why the primary action is off, in one sentence; null when a prompt can go. */
