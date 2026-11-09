@@ -2333,8 +2333,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (facts.dirty) return { reason: 'uncommitted', facts }
     // A rule or Clear now takes a detached HEAD's folder only when a branch or remote branch has its commit (ADR-0041).
     if (facts.outsideLink || (!facts.branch && !(automatic && await this.worktrees.keptDetachedCommit(facts.path).catch(() => undefined)))) return { reason: 'worktree-error', facts }
-    // A rule or Clear now takes ignored dependencies and build output a build makes again, and nothing else ignored.
-    if (automatic && (facts.repositories.length || (await this.worktrees.ruleKeptIgnored(facts.path, facts.ignored)).length)) return { reason: 'worktree-files', facts }
+    // A rule or Clear now takes ignored dependencies, build output a build makes again and a tool's own repositories in a
+    // cache it tagged, and nothing else ignored or nested.
+    if (automatic && (await this.worktrees.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).length) return { reason: 'worktree-files', facts }
     return { reason: null, facts }
   }
   /**

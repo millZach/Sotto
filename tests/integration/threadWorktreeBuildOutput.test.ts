@@ -22,6 +22,18 @@ async function worktreeWith(gitignore: string, gitattributes = '') {
 async function put(folder: string, file: string, text = 'built') {
   await mkdir(folder, { recursive: true }); await writeFile(join(folder, file), text)
 }
+const commit = (cwd: string, message: string) => git(cwd, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', message])
+/** A tagged `.build/` as SwiftPM leaves it: a bare mirror of a dependency and a clone of the mirror, every commit on its remote. */
+async function swiftBuild(worktree: string) {
+  const build = join(worktree, '.build'), mirror = join(build, 'repositories', 'dep-08d244c7'), checkout = join(build, 'checkouts', 'dep')
+  await put(build, 'CACHEDIR.TAG', `${SIGNATURE}\n`)
+  await mkdir(mirror, { recursive: true }); await git(mirror, ['init', '--bare'])
+  await mkdir(join(build, 'checkouts'), { recursive: true }); await git(join(build, 'checkouts'), ['clone', mirror, 'dep'])
+  await writeFile(join(checkout, 'Package.swift'), '')
+  await git(checkout, ['add', '.']); await commit(checkout, 'Dependency')
+  await git(checkout, ['push', '--set-upstream', 'origin', 'HEAD'])
+  return { checkout }
+}
 
 describe('build output a cleanup rule may remove (ADR-0041)', () => {
   it('removes a folder whose only ignored files are dependencies and folders the repository marks as build output', async () => {
@@ -67,16 +79,46 @@ describe('build output a cleanup rule may remove (ADR-0041)', () => {
     expect(await readFile(join(a.path!, '.env'), 'utf8')).toBe('keep this secret')
   })
 
-  it('keeps a repository inside a marked or tagged folder', async () => {
-    const { service, a } = await worktreeWith('node_modules/\nout/\n.build/\n', '/out sotto-build-output\n')
-    await put(join(a.path!, '.build'), 'CACHEDIR.TAG', SIGNATURE)
-    for (const folder of ['out', '.build']) {
-      await mkdir(join(a.path!, folder, 'work'), { recursive: true }); await git(join(a.path!, folder, 'work'), ['init'])
-      await writeFile(join(a.path!, folder, 'work', 'notes.txt'), 'only here')
-    }
-    expect((await service.reclaimFacts(a)).repositories.map(item => item.path)).toEqual(['.build/work/', 'out/work/'])
+  // SwiftPM keeps a bare mirror of each dependency and a clone of it in `.build/`, which it tags. The mirror's commits
+  // are on no remote-tracking ref, and the clone's remote is the mirror beside it.
+  it('removes a folder whose tagged cache holds its tool’s own repositories', async () => {
+    const { service, a } = await worktreeWith('node_modules/\n.build/\n')
+    const { checkout } = await swiftBuild(a.path!)
+    const facts = await service.reclaimFacts(a)
+    expect(facts.repositories.map(item => [item.path, item.changeCount])).toEqual([['.build/checkouts/dep/', 0], ['.build/repositories/dep-08d244c7/', 0]])
+    // Asked without the repositories, their rows stay kept.
+    expect(await service.ruleKeptIgnored(facts.path, facts.ignored)).toEqual(['.build/checkouts/dep/', '.build/repositories/dep-08d244c7/'])
+    expect(await service.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).toEqual([])
+    expect((await service.reclaim(a, { automatic: true })).reclaimedAt).toBeTruthy()
+    await expect(lstat(checkout)).rejects.toThrow()
+    await expect(lstat(a.path!)).rejects.toThrow()
+  })
+
+  it.each(['an uncommitted change', 'a commit on no remote or tag', 'a stash', 'a linked worktree inside the folder', 'a linked worktree outside it'] as const)('keeps a tagged cache whose repository has %s', async work => {
+    const { root, service, a } = await worktreeWith('node_modules/\n.build/\n')
+    const { checkout } = await swiftBuild(a.path!)
+    if (work !== 'a linked worktree inside the folder' && work !== 'a linked worktree outside it') await writeFile(join(checkout, 'Package.swift'), '// a fix tried in place')
+    if (work === 'a commit on no remote or tag') { await git(checkout, ['add', '.']); await commit(checkout, 'A fix') }
+    if (work === 'a stash') await git(checkout, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'stash'])
+    if (work === 'a linked worktree inside the folder') await git(checkout, ['worktree', 'add', '-b', 'side', join(a.path!, '.build', 'side')])
+    if (work === 'a linked worktree outside it') await git(checkout, ['worktree', 'add', '-b', 'side', join(root, 'side')])
+    const facts = await service.reclaimFacts(a)
+    expect(await service.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).toContain(work === 'a linked worktree inside the folder' ? '.build/side/' : '.build/checkouts/dep/')
     await expect(service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies and build output')
-    expect(await readFile(join(a.path!, 'out', 'work', 'notes.txt'), 'utf8')).toBe('only here')
+    await expect(lstat(join(checkout, 'Package.swift'))).resolves.toBeTruthy()
+  })
+
+  it('keeps a repository inside a folder that is only marked, and one that is itself the tagged folder', async () => {
+    const { service, a } = await worktreeWith('node_modules/\nout/\nvendor/\n', '/out sotto-build-output\n')
+    await mkdir(join(a.path!, 'out', 'mirror'), { recursive: true }); await git(join(a.path!, 'out', 'mirror'), ['init', '--bare'])
+    // A bare repository has nothing uncommitted, so only its being the tagged folder itself keeps it.
+    await mkdir(join(a.path!, 'vendor')); await git(join(a.path!, 'vendor'), ['init', '--bare'])
+    await put(join(a.path!, 'vendor'), 'CACHEDIR.TAG', SIGNATURE)
+    const facts = await service.reclaimFacts(a)
+    expect(facts.repositories.map(item => [item.path, item.changeCount])).toEqual([['out/mirror/', 0], ['vendor/', 0]])
+    expect(await service.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).toEqual(['out/mirror/', 'vendor/'])
+    await expect(service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies and build output')
+    await expect(lstat(join(a.path!, 'out', 'mirror', 'HEAD'))).resolves.toBeTruthy()
   })
 
   // The mark is in the repository's own .git/info/attributes, which reaches its linked worktrees, so losing it leaves the

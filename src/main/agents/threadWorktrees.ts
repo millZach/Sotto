@@ -1449,10 +1449,11 @@ export class ThreadWorktrees {
   /**
    * The ignored paths in `path` a rule may not remove (ADR-0041): all of `ignored` but the folders a build makes again,
    * which are those the repository marks with the `sotto-build-output` attribute, read from this checkout's own
-   * attributes, and those holding a `CACHEDIR.TAG` that begins with the standard's signature. When Git cannot answer,
-   * all of them are kept.
+   * attributes, and those holding a `CACHEDIR.TAG` that begins with the standard's signature. A nested repository among
+   * `repositories`, each of which has a row in `ignored`, is kept too unless it is a tool's own copy inside such a tagged
+   * folder, as SwiftPM keeps of each dependency in `.build/`. When Git cannot answer, all of them are kept.
    */
-  async ruleKeptIgnored(path: string, ignored: readonly string[]): Promise<string[]> {
+  async ruleKeptIgnored(path: string, ignored: readonly string[], repositories: WorktreeReclaimFacts['repositories'] = []): Promise<string[]> {
     const folders = ignored.filter(entry => entry.endsWith('/'))
     const marked = new Set<string>()
     try {
@@ -1462,9 +1463,32 @@ export class ThreadWorktrees {
         for (let i = 0; i + 2 < answers.length; i += 3) if (answers[i + 2] === 'set') marked.add(answers[i]!)
       }
     } catch { return [...ignored] }
-    const kept: string[] = []
-    for (const entry of ignored) if (!marked.has(entry) && !(entry.endsWith('/') && await cacheTagged(join(path, entry)))) kept.push(entry)
-    return kept
+    const rows = new Map(repositories.map(row => [row.path, row]))
+    const tagged: string[] = [], kept: string[] = []
+    // A repository is never its own cache: only a folder Git itself reports ignored can be one.
+    for (const entry of ignored) if (!marked.has(entry)) (!rows.has(entry) && entry.endsWith('/') && await cacheTagged(join(path, entry)) ? tagged : kept).push(entry)
+    const held: string[] = []
+    for (const entry of kept) {
+      const row = rows.get(entry)
+      if (!row || !tagged.some(folder => entry.startsWith(folder)) || !await this.toolsOwnRepository(join(path, entry), row)) held.push(entry)
+    }
+    return held
+  }
+
+  /**
+   * Whether a nested repository inside a tagged cache is the tool's own copy, which the tool fetches again (ADR-0041):
+   * a repository of its own with nothing uncommitted and no linked worktree, that is either bare, as a mirror is, or has
+   * every commit on a remote-tracking ref or a tag, as a clone nobody committed or stashed in does.
+   */
+  private async toolsOwnRepository(folder: string, row: WorktreeReclaimFacts['repositories'][number]): Promise<boolean> {
+    if (row.kind !== 'repository' || row.changeCount) return false
+    try {
+      const marker = await lstat(join(folder, '.git')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+      // A `.git` file is a submodule or a worktree, whose history lives elsewhere.
+      if (marker && !marker.isDirectory()) return false
+      if ((await readdir(join(folder, marker ? '.git' : '', 'worktrees')).catch(() => [])).length) return false
+      return !marker || (await this.git(folder, ['rev-list', '--count', '--all', '--not', '--remotes', '--tags'])).trim() === '0'
+    } catch { return false }
   }
 
   /** Whether a local branch or remote-tracking ref has `commit`; tags do not count. */
@@ -1496,14 +1520,15 @@ export class ThreadWorktrees {
     const detachedCommit = facts.branch ? undefined : await this.keptDetachedCommit(facts.path)
     if (!facts.branch && !detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
     if (facts.outsideLink) throw new Error(`This folder contains a link to another folder (${facts.outsideLink}). Remove the link first so nothing outside the folder is touched. Nothing was changed.`)
-    if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored)).length) throw new Error(RULE_KEEPS_IGNORED)
+    if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).length) throw new Error(RULE_KEEPS_IGNORED)
     if (!options.automatic && facts.ignored.length && !options.confirmedIgnored) throw new Error('This folder holds ignored files. Nothing was removed. Choose Remove worktree to review them.')
     if (!options.automatic && ((facts.ignored.length && !options.confirmedIgnored) || (options.confirmedIgnored && JSON.stringify([...options.confirmedIgnored].sort()) !== JSON.stringify(facts.ignored)))) throw new Error('The ignored items changed. Nothing was removed. Close this question and choose Remove worktree again to review them.')
     // A row confirmed without the note on commits fetched from a remote read "not on any remote" for them, as a client
     // from before the note shows it, so the note is not held against it. A row confirmed with the note must still have it.
     const confirmable = facts.repositories.map((row, index) => row.fetchedByHash && !options.confirmedRepositories?.[index]?.fetchedByHash
       ? { path: row.path, changeCount: row.changeCount, unpushedCommitCount: row.unpushedCommitCount, kind: row.kind } : row)
-    if (facts.repositories.length && JSON.stringify(options.confirmedRepositories) !== JSON.stringify(confirmable)) throw new Error('The nested work changed. Nothing was removed. Choose Remove worktree again to review it.')
+    // A rule was answered above: the only repositories it takes are a tool's own, in a cache the tool tagged.
+    if (!options.automatic && facts.repositories.length && JSON.stringify(options.confirmedRepositories) !== JSON.stringify(confirmable)) throw new Error('The nested work changed. Nothing was removed. Choose Remove worktree again to review it.')
     // A rule never answers the confirmation on the user's behalf.
     if (facts.dirty && (options.automatic || !options.withUncommittedChanges)) throw new Error(RECLAIM_WORKTREE_NEEDS_CONFIRMATION)
     // A linked worktree's .git is a file; a directory there is a repository of its own and is never removed.
@@ -1530,7 +1555,7 @@ export class ThreadWorktrees {
         const registration = (await gitDirectories(facts.path))?.gitDir
         // Asked last, just before the lock: a build folder may have lost its mark or its cache tag, the folder may have moved
         // to another commit, or the last branch with its commit been deleted.
-        if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored)).length) throw new Error(RULE_KEEPS_IGNORED)
+        if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored, facts.repositories)).length) throw new Error(RULE_KEEPS_IGNORED)
         if (detachedCommit && await this.keptDetachedCommit(facts.path) !== detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
         // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
         // crash, a quit or a file kept in use is one Sotto recognises and finishes (#1297). The checks above covered
