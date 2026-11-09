@@ -198,6 +198,10 @@ describe('remote command allow-list', () => {
       'next-prompts-wanted',
       // A desktop's answer for the host's product events (ADR-0179), which only decides whether the host sends its own.
       'product-events-answer',
+      // Sotto's browser for the host's own threads (ADR-0198), only for a desktop whose hello accepted `browser`. Driving,
+      // sharing and Stop are the user's own acts there; answering a waiting request and the setting need a recorded desktop
+      // whose remote-answer policy lets it answer, checked in the socket server.
+      'browser',
       // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
       // same thread records `shell` carries, with the same trust.
       'settled-threads']
