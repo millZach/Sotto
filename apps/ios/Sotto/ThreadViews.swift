@@ -1885,7 +1885,7 @@ private struct MarkdownTableView: View {
             VStack(alignment: .leading, spacing: 2) {
                 cardTitle(row)
                 if !short.isEmpty {
-                    Text(joined(short.map { row[$0] }))
+                    Text(joined(short, of: row))
                         .font(.sotto(.small).monospacedDigit())
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1924,14 +1924,29 @@ private struct MarkdownTableView: View {
         }
     }
 
-    /// Cells on one line, each with its inline Markdown, joined with " · ".
-    private func joined(_ cells: [MarkdownInline]) -> AttributedString {
+    /// A row's cells on one line, each with its inline Markdown, joined with " · ". A value that can't say what it is on
+    /// its own, a bare yes or no, a number or a mark, keeps its column's name before it ("Fixed: No"), where the pick's
+    /// "Not fixed" named itself.
+    private func joined(_ columns: [Int], of row: [MarkdownInline]) -> AttributedString {
         var line = AttributedString()
-        for (index, cell) in cells.enumerated() {
+        for (index, column) in columns.enumerated() {
             if index > 0 { line.append(AttributedString(" · ")) }
-            line.append(InlineStyle.render(cell, theme: theme))
+            let header = table.header[column]
+            if !header.source.isEmpty, !Self.namesItself(row[column].text) {
+                line.append(InlineStyle.render(header, theme: theme))
+                line.append(AttributedString(": "))
+            }
+            line.append(InlineStyle.render(row[column], theme: theme))
         }
         return line
+    }
+
+    private static let bareAnswers: Set<String> = ["yes", "no", "y", "n", "true", "false", "on", "off", "n/a", "na", "none"]
+
+    /// Whether a short value says what it is without its column: words do, a bare answer, number or mark doesn't.
+    static func namesItself(_ value: String) -> Bool {
+        let words = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return words.contains(where: \.isLetter) && !bareAnswers.contains(words.lowercased())
     }
 
     /// A card's value; a centred column reads as leading, since a card has no column to centre it in.
