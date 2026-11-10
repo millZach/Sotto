@@ -1,0 +1,161 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway (#228): how a started Grok thread's effort chip says why it can't change. ?variant=a|b|c -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why a Grok thread's effort is fixed (#228)</title>
+<style>
+  :root { --bg:#111214; --pane:#17181b; --elev:#1f2125; --row:#25272c; --text:#e8e8ea; --muted:#9a9ca3; --faint:#6d7078; --line:#2e3036; --accent:#7cc4b5; --focus:#7cc4b5; }
+  html[data-theme=light] { --bg:#f6f5f2; --pane:#ffffff; --elev:#ffffff; --row:#efeee9; --text:#1d1e21; --muted:#5f6168; --faint:#8a8c92; --line:#dddbd5; --accent:#2f7f70; --focus:#2f7f70; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 Figtree, system-ui, sans-serif; padding-bottom: 110px; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .note { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 12px 0; }
+  .grid { display:grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; margin-top: 14px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .surface { background:var(--pane); border:1px solid var(--line); border-radius:12px; padding: 12px 14px; }
+  .transcript { min-height: 120px; display:flex; flex-direction:column; gap:8px; }
+  .msg { background: var(--row); border-radius: 10px; padding: 8px 12px; max-width: 85%; }
+  .msg.me { align-self: flex-end; }
+  .composer { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--elev); position: relative; }
+  .composer textarea { width:100%; border:0; background:transparent; color:var(--text); font:inherit; resize:none; outline:0; min-height: 40px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; position: relative; }
+  .chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+  .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .chip[disabled], .chip[aria-disabled=true] { color: var(--faint); cursor: default; }
+  .chip.fact { border-style: dashed; color: var(--muted); }
+  .chip svg { width: 12px; height: 12px; }
+  .card { position:absolute; left: 90px; bottom: 36px; width: min(292px, calc(100vw - 48px)); background: var(--elev); border:1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: 0 16px 48px rgba(0,0,0,.4); z-index: 5; }
+  .card .word { font-weight:600; font-size: 15px; margin: 0; }
+  .card .line { color: var(--muted); font-size: 12.5px; margin: 2px 0 0; }
+  .card .track { position: relative; height: 22px; border-radius: 11px; background: var(--row); margin-top: 12px; opacity: .45; }
+  .card .fill { position:absolute; inset: 0 auto 0 0; width: 62%; border-radius: 11px; background: color-mix(in srgb, var(--accent) 55%, var(--row)); }
+  .card .thumb { position:absolute; top: -2px; left: calc(62% - 13px); width: 26px; height: 26px; border-radius: 50%; background: var(--text); }
+  .card .ends { display:flex; justify-content:space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
+  .card button.act { margin-top: 10px; border:1px solid var(--line); background:transparent; color:var(--text); border-radius:8px; padding:6px 10px; font:inherit; font-size: 13px; cursor:pointer; }
+  .tip { position:absolute; bottom: 36px; left: 90px; max-width: 260px; padding: 6px 9px; border:1px solid var(--line); border-radius: 8px; background: var(--elev); font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.3); z-index: 5; }
+  @media (max-width: 520px) { .card, .tip { left: 8px; right: 8px; width: auto; max-width: none; } }
+  .under { margin: 6px 2px 0; color: var(--muted); font-size: 12.5px; min-height: 18px; }
+  .phone { width: 300px; max-width: 100%; margin: 0 auto; border: 1px solid var(--line); border-radius: 30px; padding: 14px 12px 18px; background: var(--pane); }
+  .phone .bar { font-size: 12px; color: var(--muted); text-align:center; margin-bottom: 10px; }
+  .phone .box { border:1px solid var(--line); border-radius: 18px; padding: 8px 10px; background: var(--elev); position: relative; }
+  .phone .box .ph { color: var(--faint); margin-bottom: 6px; }
+  .phone .sheet { margin-top: 10px; border:1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: var(--elev); font-size: 13px; }
+  .phone .sheet .row { display:flex; justify-content:space-between; padding: 6px 0; border-top: 1px solid var(--line); }
+  .phone .sheet .row:first-child { border-top: 0; }
+  .phone .sheet .row.off { color: var(--faint); }
+  .state { margin-top: 12px; font-size: 12.5px; }
+  .state dl { display:grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+  .state dt { color: var(--muted); }
+  .state dd { margin: 0; }
+  .barbtns { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display:flex; gap:6px; background: var(--pane); border:1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.35); flex-wrap: wrap; justify-content: center; max-width: calc(100% - 20px); }
+  .barbtns button { border:0; background:transparent; color:var(--text); padding: 7px 11px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .barbtns button[aria-pressed=true] { background: var(--accent); color: var(--bg); }
+  .sep { width:1px; background: var(--line); margin: 4px 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Why a started Grok thread's effort can't change</h1>
+  <p class="muted">Prototype for issue #228. Grok can't change reasoning effort once a thread has sent, so the chip stays fixed. Today it's just greyed out, with nothing said, and it reads as broken. Each variant says why and what to do instead. Try it with the mouse and with Tab, Enter and Escape. Other providers stay as they are today.</p>
+  <p class="note" id="explain"></p>
+  <div class="grid">
+    <section class="surface">
+      <h2>Desktop: a Grok thread after its first message</h2>
+      <div class="transcript">
+        <div class="msg me">Tidy the release notes script.</div>
+        <div class="msg">Done. I split the changelog step out and added a dry run.</div>
+      </div>
+      <div class="composer">
+        <textarea aria-label="Message" placeholder="Reply to Grok…"></textarea>
+        <div class="chips" id="chips"></div>
+        <div id="pop"></div>
+      </div>
+      <p class="under" id="under" role="status"></p>
+      <div class="state"><dl id="state"></dl></div>
+    </section>
+    <section class="surface">
+      <h2>iPhone: the same thread</h2>
+      <div class="phone">
+        <div class="bar">Release notes script · Grok</div>
+        <div class="box"><div class="ph">Reply to Grok…</div><div class="chips" id="phoneChips"></div></div>
+        <div id="phoneSheet"></div>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin-top:10px">The iPhone holds the chip the same way today. Tap it to see each variant there.</p>
+    </section>
+  </div>
+</main>
+<div class="barbtns" role="toolbar" aria-label="Variants">
+  <button data-variant="today">Today</button>
+  <button data-variant="a">A. Card explains</button>
+  <button data-variant="b">B. Fixed chip with tip</button>
+  <button data-variant="c">C. Line under the chips</button>
+  <span class="sep"></span>
+  <button data-theme="dark">Dark</button><button data-theme="light">Light</button>
+</div>
+<script>
+const WHY = 'Grok keeps the effort a thread started on. To use another level, start a new thread.'
+const EXPLAIN = {
+  today: 'Today: the chip is disabled. It can\'t be focused, nothing says why, and a screen reader hears only "Reasoning effort, dimmed".',
+  a: 'A. The chip still opens its card. The card shows the level with the slider dimmed and says why it is fixed. Tab reaches the chip and Enter opens the card; a screen reader hears the reason as the chip\'s description.',
+  b: 'B. The chip is drawn as a fixed fact: a dashed edge and a lock, opening nothing. Pointing at it, or reaching it with Tab, shows the reason in a small tip; a screen reader hears the reason as its description.',
+  c: 'C. The chip looks as it does today, but Tab can reach it. While it has focus or the pointer, a line under the chips says why; a screen reader hears that line.',
+}
+const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
+let variant = new URLSearchParams(location.search).get('variant') || 'a'
+if (!EXPLAIN[variant]) variant = 'a'
+let open = false, tip = false, line = false, phoneOpen = false
+function render() {
+  const hadFocus = document.activeElement?.id === 'effort'
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  document.querySelectorAll('button[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === b.dataset.theme)))
+  document.getElementById('explain').textContent = EXPLAIN[variant]
+  const model = '<button class="chip" title="Model">Grok 4.7 Build ' + CHEV + '</button>'
+  const perm = '<button class="chip">Ask for approval ' + CHEV + '</button>'
+  let effort
+  if (variant === 'today') effort = '<button class="chip" disabled aria-label="Reasoning effort">High ' + CHEV + '</button>'
+  else if (variant === 'a') effort = `<button class="chip" id="effort" aria-label="Reasoning effort" aria-describedby="why" aria-expanded="${open}">High ${CHEV}</button><span id="why" hidden>${WHY}</span>`
+  else if (variant === 'b') effort = `<button class="chip fact" id="effort" aria-disabled="true" aria-label="Reasoning effort, High" aria-describedby="why">${LOCK} High</button><span id="why" hidden>${WHY}</span>`
+  else effort = `<button class="chip" id="effort" aria-disabled="true" aria-label="Reasoning effort" aria-describedby="under">High ${CHEV}</button>`
+  document.getElementById('chips').innerHTML = model + effort + perm
+  reason()
+  const e = document.getElementById('effort')
+  if (e) {
+    if (variant === 'a') e.onclick = () => { open = !open; render(); document.getElementById('effort').focus() }
+    if (variant === 'b') { e.onmouseenter = e.onfocus = () => { tip = true; reason() }; e.onmouseleave = e.onblur = ev => { if (ev.type === 'mouseleave' && document.activeElement === e) return; tip = false; reason() } }
+    if (variant === 'c') { e.onmouseenter = e.onfocus = () => { line = true; reason() }; e.onmouseleave = e.onblur = ev => { if (ev.type === 'mouseleave' && document.activeElement === e) return; line = false; reason() } }
+  }
+  // iPhone
+  const pEffort = variant === 'b' ? `<button class="chip fact" id="pe">${LOCK} High</button>` : `<button class="chip" id="pe" ${variant === 'today' ? 'disabled' : ''}>High ${CHEV}</button>`
+  document.getElementById('phoneChips').innerHTML = '<button class="chip">Grok 4.7 Build</button>' + pEffort
+  const pe = document.getElementById('pe')
+  if (variant !== 'today') pe.onclick = () => { phoneOpen = !phoneOpen; render() }
+  document.getElementById('phoneSheet').innerHTML = !phoneOpen || variant === 'today' ? ''
+    : variant === 'a' ? `<div class="sheet"><b>Reasoning effort</b><p class="muted" style="margin:4px 0 8px">${WHY}</p>${['Low', 'Medium', 'High', 'XHigh'].map(l => `<div class="row off"><span>${l}</span><span>${l === 'High' ? '✓' : ''}</span></div>`).join('')}</div>`
+    : `<div class="sheet">${WHY}</div>`
+  history.replaceState(null, '', `?variant=${variant}`)
+  if (hadFocus) document.getElementById('effort')?.focus()
+}
+function reason() {
+  document.getElementById('pop').innerHTML = variant === 'a' && open
+    ? `<div class="card" role="dialog" aria-label="Reasoning effort"><p class="word">High</p><p class="line">${WHY}</p><div class="track"><div class="fill"></div><div class="thumb"></div></div><div class="ends"><span>Faster</span><span>More thorough</span></div></div>`
+    : variant === 'b' && tip ? `<div class="tip" role="tooltip">${WHY}</div>` : ''
+  document.getElementById('under').textContent = variant === 'c' && line ? WHY : ''
+  document.getElementById('state').innerHTML = [
+    ['Variant', variant], ['Chip reachable with Tab', variant === 'today' ? 'no' : 'yes'], ['Card open', String(variant === 'a' && open)],
+    ['Reason showing', String((variant === 'a' && open) || (variant === 'b' && tip) || (variant === 'c' && line))],
+    ['Screen reader hears', variant === 'today' ? 'Reasoning effort, dimmed' : `Reasoning effort, High. ${WHY}`],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')
+}
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && open) { open = false; render(); document.getElementById('effort')?.focus() } })
+document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => { variant = b.dataset.variant; open = tip = line = phoneOpen = false; render() })
+document.querySelectorAll('button[data-theme]').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; render() })
+render()
+</script>
+</body>
+</html>
