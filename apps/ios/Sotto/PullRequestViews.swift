@@ -111,7 +111,10 @@ struct PullRequestSheet: View {
                     Button { jump(to: each, proxy: proxy) } label: {
                         HStack(spacing: 6) {
                             Text(each.title)
-                            if each.flagged(detail) { Circle().fill(Palette.danger).frame(width: 7, height: 7).accessibilityHidden(true) }
+                            // On the Duo the chips carry no dots: red ones read as unread badges and repeated the status
+                            // lines just below. VoiceOver still names a part that failed (Zach's round 7 pick A, November
+                            // 10, 2026).
+                            if each.flagged(detail) && duo == .none { Circle().fill(Palette.danger).frame(width: 7, height: 7).accessibilityHidden(true) }
                         }
                     }
                     .buttonStyle(ChipStyle(selected: part == each, tight: isFolded))
