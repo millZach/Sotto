@@ -1291,7 +1291,7 @@ struct CardSurface: ViewModifier {
     @ViewBuilder private var glow: some View {
         switch tone {
         case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
-        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4, working: true)
         case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
         case .plain, .online: EmptyView()
         }
@@ -1380,6 +1380,8 @@ private struct GlowLayer: View {
     /// What the card's shape is filled with under the glow; nil leaves it clear.
     let base: ThemeRGB?
     let period: Double?
+    /// A Working card's glow, which reaches less far than a Needs you card's on the Duo (`CardGlowReach`).
+    var working = false
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
@@ -1403,8 +1405,8 @@ private struct GlowLayer: View {
         .accessibilityHidden(true)
     }
     private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
-    private var blur: CGFloat { CardGlowReach.blur(glow, duo: duo, scheme: scheme) }
-    private var drop: CGFloat { CardGlowReach.drop(glow, duo: duo, scheme: scheme) }
+    private var blur: CGFloat { CardGlowReach.blur(glow, duo: duo, scheme: scheme, working: working) }
+    private var drop: CGFloat { CardGlowReach.drop(glow, duo: duo, scheme: scheme, working: working) }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
@@ -1415,21 +1417,27 @@ private struct GlowLayer: View {
 
 /// How far a card's glow reaches, so what stands near a card can keep clear of it.
 enum CardGlowReach {
-    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
-    static func blur(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
-        CGFloat(glow.radius(18)) * reach(duo: duo, scheme: scheme)
+    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow. `working` is a Working card's.
+    static func blur(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        CGFloat(glow.radius(18)) * reach(duo: duo, scheme: scheme, working: working)
     }
-    static func drop(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
-        CGFloat(glow.radius(10)) * reach(duo: duo, scheme: scheme)
+    static func drop(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        CGFloat(glow.radius(10)) * reach(duo: duo, scheme: scheme, working: working)
     }
     /// How far below the card's bottom edge the glow shows: its drop, then its blur. Nothing at no glow.
-    static func below(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
-        glow.shows ? drop(glow, duo: duo, scheme: scheme) + blur(glow, duo: duo, scheme: scheme) : 0
+    static func below(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        glow.shows ? drop(glow, duo: duo, scheme: scheme, working: working) + blur(glow, duo: duo, scheme: scheme, working: working) : 0
     }
     /// On the Duo in light, a glow reaches a sixth as far at the same strength, so it keeps its core and ends close to the
     /// card's edge rather than washing across the gutters onto the next card; dark keeps the full reach. Round 4 took it
     /// to a third (Zach's pick B, November 9, 2026) and round 6 tightened it again (his pick A, November 10, 2026).
-    private static func reach(duo: DuoLayout, scheme: ColorScheme) -> CGFloat { duo != .none && scheme == .light ? 1.0 / 6 : 1 }
+    /// Folded and sideways, a Working card's teal reaches half as far again, in dark and light, at the same strength, so
+    /// the Needs you cards' amber stands out and the teal halos no longer meet in the gutters (Zach's round 8 pick A,
+    /// November 10, 2026). Status lights keep their own glow.
+    private static func reach(duo: DuoLayout, scheme: ColorScheme, working: Bool) -> CGFloat {
+        let base: CGFloat = duo != .none && scheme == .light ? 1.0 / 6 : 1
+        return working && duo != .none && duo != .upright ? base / 2 : base
+    }
 }
 
 /// The still glow: the card's shape with a soft shadow drawn once.
