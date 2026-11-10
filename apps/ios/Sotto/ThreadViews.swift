@@ -730,9 +730,11 @@ private struct Conversation: View {
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             #endif
         }
-        .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
+        // The page ends at its end marker, with no room under it. The scroll view's bottom anchor keeps the page's own
+        // bottom at the box when anything changes size, and following keeps the end marker there; 16 points of room under
+        // the marker set the two 16 points apart, and a frame drawn between them moved the words that far after Send (#2301).
+        .frame(maxWidth: .infinity, minHeight: max(0, visible), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
-        .padding(.bottom, Space.s4)
         .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
