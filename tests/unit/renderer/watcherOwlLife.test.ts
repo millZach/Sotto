@@ -113,7 +113,7 @@ describe('the thread owls’ lives (ADR-0199)', () => {
 
   it('starts nothing for a thread seen for the first time, whose owl is on its way out of the moon', () => {
     const lives = new OwlLives()
-    expect(lives.take([watched('a', 'awake', { told: 3 }), watched('b', 'asleep')], 1, nowhere)).toEqual([])
+    expect(lives.take([watched('a', 'awake', { told: 3, failed: true, settled: true }), watched('b', 'asleep')], 1, nowhere)).toEqual({ told: [], finished: [], failed: [], settled: [] })
     expect(lives.moving(1)).toBe(false)
   })
 
@@ -140,10 +140,18 @@ describe('the thread owls’ lives (ADR-0199)', () => {
   it('names the threads Watcher has sent a message since they were last taken, and forgets a thread that left', () => {
     const lives = new OwlLives()
     lives.take([watched('a', 'awake', { told: 1 }), watched('b', 'awake', { told: 1 })], 1, nowhere)
-    expect(lives.take([watched('a', 'awake', { told: 2 }), watched('b', 'awake', { told: 1 })], 2, nowhere)).toEqual(['a'])
-    expect(lives.take([watched('a', 'awake', { told: 2 })], 3, nowhere)).toEqual([])
+    expect(lives.take([watched('a', 'awake', { told: 2 }), watched('b', 'awake', { told: 1 })], 2, nowhere).told).toEqual(['a'])
+    expect(lives.take([watched('a', 'awake', { told: 2 })], 3, nowhere).told).toEqual([])
     // Watched again, it is a newcomer: nothing is started for what it was told before.
-    expect(lives.take([watched('a', 'awake', { told: 2 }), watched('b', 'awake', { told: 4 })], 4, nowhere)).toEqual([])
+    expect(lives.take([watched('a', 'awake', { told: 2 }), watched('b', 'awake', { told: 4 })], 4, nowhere).told).toEqual([])
+  })
+
+  it('tells the wood whose turn finished, whose failed and whose work settled, each once', () => {
+    const lives = new OwlLives()
+    lives.take([watched('a', 'awake'), watched('b', 'awake'), watched('c', 'asleep')], 1, nowhere)
+    const news = lives.take([watched('a', 'asleep'), watched('b', 'asleep', { failed: true }), watched('c', 'asleep', { settled: true })], 2, nowhere)
+    expect(news).toEqual({ told: [], finished: ['a'], failed: ['b'], settled: ['c'] })
+    expect(lives.take([watched('a', 'asleep'), watched('b', 'asleep', { failed: true }), watched('c', 'asleep', { settled: true })], 3, nowhere)).toEqual({ told: [], finished: [], failed: [], settled: [] })
   })
 
   it('draws a hopping owl a row higher, and leaves one in flight where it is', () => {
