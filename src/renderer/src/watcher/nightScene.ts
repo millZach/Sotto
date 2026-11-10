@@ -239,6 +239,21 @@ export function inMargin(layout: SceneLayout, x: number): boolean {
 }
 
 /**
+ * The moon's halo in the living night scene (ADR-0199): a soft wash of the accent round the moon, strongest at its rim
+ * and gone at `reach`, kept to the moon's own margin and below the header, so no word of the conversation or the
+ * header ever stands on it. `x`, `y` are the moon's centre within the wash's own box.
+ */
+export interface MoonHalo { readonly left: number; readonly top: number; readonly width: number; readonly height: number; readonly x: number; readonly y: number; readonly reach: number }
+/** How far the halo reaches, in moon radii. */
+export const HALO_REACH = 3.8
+
+export function moonHalo(layout: Pick<SceneLayout, 'width' | 'header' | 'column' | 'moon'>): MoonHalo {
+  const left = layout.column.right + COLUMN_GAP, reach = layout.moon.r * HALO_REACH
+  return { left, top: layout.header, width: Math.max(0, layout.width - left), height: Math.max(0, layout.moon.y + reach - layout.header),
+    x: layout.moon.x - left, y: layout.moon.y - layout.header, reach }
+}
+
+/**
  * How much of the scene shows in the column, as a share of the margins': the user's pick on October 23, 2026 is 85%, by
  * day and by night (variant D). The words keep 4.5:1 by the column's ink ceiling (`SceneInk.column`), not by this share.
  */

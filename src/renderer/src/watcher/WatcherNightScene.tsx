@@ -5,10 +5,11 @@ import { useLingui } from '@lingui/react/macro'
 import type { WatcherScene } from '../../../shared/watcherScene'
 import { slimMoving } from '../agents/slimComposer'
 import { useClickEffectChosen } from '../state/clickEffect'
+import { useOwlFeature } from '../state/owlFeature'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, calmStepDelay, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
-  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
+  addRipple, calmStepDelay, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, moonHalo, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  type Box, type Look, type MoonHalo, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
 import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
@@ -158,6 +159,10 @@ interface Target {
  * The scene is set in the place the user picked in Settings → Appearance (ADR-0149). A new place is drawn whole in the
  * frame it is picked, under a copy of the last place's landscape that fades away over it, so the scene never shows a
  * blank frame; with motion reduced the new place simply replaces the last in that one frame.
+ *
+ * With the living night scene (ADR-0199, an Owl feature) a place that has layers is drawn as line art: lines take
+ * their own characters, what is in front hides what is behind, and the moon has a halo, a wash of the accent under the
+ * landscape in the moon's own margin.
  */
 export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glowing = false, onOpen, onShowAll }: {
   /** Whether the scene shows: the room and Watcher's conversation can be read. When it turns false the scene fades and stops. */
@@ -183,11 +188,13 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
   const reduced = useReducedMotion()
   const still = reduced || held
   const clickEffect = useClickEffectChosen()
+  const living = useOwlFeature('living-night-scene')
   // With motion reduced the owl still goes from perch to perch, in a few calm steps; a capture's clock holds it at home.
   const calm = reduced && !held
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
   const [targets, setTargets] = useState<readonly Target[]>([])
   const [tip, setTip] = useState<Target | null>(null)
+  const [halo, setHalo] = useState<MoonHalo | null>(null)
   const origin = useRef<number | null>(null)
   // The owls and where Watcher's owl sits outlive the scene stepping away: it comes back with every owl where it was.
   const kept = useRef<{ family: OwlFamily | null; watcher: WatcherOwlState }>({ family: null, watcher: { at: 'home', side: 'left', flight: null, next: 0 } })
@@ -198,6 +205,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
   const glowingRef = useRef(glowing)
   const placeRef = useRef(place)
   const movePlaceRef = useRef<() => void>(() => undefined)
+  const livingRef = useRef(living)
+  const setLivingRef = useRef<() => void>(() => undefined)
   const leaving = useRef(phase === 'leaving')
   const wakeRef = useRef<() => void>(() => undefined)
   const takeOwlsRef = useRef<() => void>(() => undefined)
@@ -218,6 +227,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
   useEffect(() => { clickEffectRef.current = clickEffect }, [clickEffect])
   useEffect(() => { glowingRef.current = glowing; wakeRef.current() }, [glowing])
   useEffect(() => { placeRef.current = place; movePlaceRef.current() }, [place])
+  useEffect(() => { livingRef.current = living; setLivingRef.current() }, [living])
   // A tip goes with its owl when the owl leaves, and takes the owl's new words and place while it stays.
   useEffect(() => { setTip(current => current === null ? null : targets.find(target => target.key === current.key) ?? null) }, [targets])
   // A tip that is showing answers Escape, as everything that opens does.
@@ -240,6 +250,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
     if (pixel === null) return
     const painter = new NightScenePainter(land, owl)
     painter.setPlace(placeRef.current)
+    painter.setLineArt(livingRef.current)
     /** A copy of the last place's landscape, fading out over the new one as it fades in. */
     let outgoing: { readonly canvas: HTMLCanvasElement; readonly timer: number } | null = null
     const endFade = (): void => {
@@ -297,6 +308,15 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       }
     }
     const tipBelow = (top: number): boolean => top - TIP_HEIGHT - 6 < (layout?.header ?? 0)
+    /** The moon's halo, which shows wherever the landscape shows as line art, changed only when it moves or goes. */
+    let haloKey = ''
+    const syncHalo = (): void => {
+      const next = layout !== null && painter.linesShown ? moonHalo(layout) : null
+      const key = next === null ? '' : JSON.stringify(next)
+      if (key === haloKey) return
+      haloKey = key
+      setHalo(next)
+    }
     /** The perched thread owls' buttons, and the pile's, changed only when they move or their words do. */
     const syncTargets = (t: number, poses: readonly ThreadOwlPose[], pile: SceneFrame['pile']): void => {
       if (family === null) return
@@ -402,6 +422,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       }
       painter.setPlace(placeRef.current)
       if (counted) pane.dataset.nightScenePlace = painter.place
+      syncHalo()
       if (!drawn) return
       halt()
       delay = 0
@@ -409,6 +430,18 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       frame(performance.now())
     }
     movePlaceRef.current = movePlace
+    /** The living night scene came or went: the landscape is drawn the new way in this same frame. */
+    const setLiving = (): void => {
+      if (disposed || !painter.setLineArt(livingRef.current)) return
+      if (counted) pane.dataset.nightSceneDrawn = painter.linesShown ? 'lines' : 'density'
+      syncHalo()
+      if (!painter.ready || layout === null) return
+      halt()
+      delay = 0
+      last = Number.NEGATIVE_INFINITY
+      frame(performance.now())
+    }
+    setLivingRef.current = setLiving
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
@@ -465,7 +498,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       }
       const t = clock()
       layout = next
-      if (counted) { pane.dataset.nightSceneLayouts = String(++layouts); pane.dataset.nightScenePlace = painter.place }
+      syncHalo()
+      if (counted) { pane.dataset.nightSceneLayouts = String(++layouts); pane.dataset.nightScenePlace = painter.place; pane.dataset.nightSceneDrawn = painter.linesShown ? 'lines' : 'density' }
       // A new layout ends every flight where it was going.
       if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: watcher.next }
       if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
@@ -540,6 +574,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       takeOwlsRef.current = () => undefined
       settleRef.current = () => undefined
       movePlaceRef.current = () => undefined
+      setLivingRef.current = () => undefined
+      setHalo(null)
       endFade()
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
@@ -560,7 +596,10 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
   const paneWidth = back.current?.parentElement?.clientWidth ?? Number.POSITIVE_INFINITY
   const tipStyle = tip === null ? undefined
     : { left: `${Math.max(TIP_HALF, Math.min(paneWidth - TIP_HALF, tip.box.x + tip.box.w / 2))}px`, top: `${tip.below ? tip.box.y + tip.box.h : tip.box.y}px` } as CSSProperties
+  const haloStyle = halo === null ? undefined
+    : { left: halo.left, top: halo.top, width: halo.width, height: halo.height, '--halo-x': `${halo.x}px`, '--halo-y': `${halo.y}px`, '--halo-reach': `${halo.reach}px` } as CSSProperties
   return <>
+    {halo !== null ? <i className="watcher-scene watcher-scene--halo" style={haloStyle} data-leaving={fading} aria-hidden="true" /> : null}
     <canvas ref={back} className="watcher-scene watcher-scene--land" data-leaving={fading} aria-hidden="true" />
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
     {/* The owls' buttons answer the pointer only; All threads is the keyboard's way to the same threads. */}

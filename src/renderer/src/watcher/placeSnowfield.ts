@@ -130,4 +130,4 @@ function snowAmbience(g: SceneLayout): Ambience {
   }
 }
 
-export const SNOWFIELD: ScenePlace = { draw: drawSnowfield, stars: 1.2, ambience: snowAmbience }
+export const SNOWFIELD: ScenePlace = { draw: drawSnowfield, stars: 1.2, ambience: snowAmbience, layers: null }

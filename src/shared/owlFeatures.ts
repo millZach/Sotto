@@ -74,6 +74,7 @@ export const OWL_FEATURES = [
   { id: 'hide-menu-bar-icon', name: 'Hide the menu bar icon', owlSince: '2026-11-03', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
   { id: 'dynamic-threads', name: 'Dynamic threads', owlSince: '2026-11-04', owner: 'docs/adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md', sentToStable: false },
   { id: 'paired-host-browser', name: 'Sotto\'s browser for a thread on a paired host', owlSince: '2026-11-08', owner: 'docs/adr/0198-a-paired-hosts-thread-browses-in-the-hosts-own-chromium.md', sentToStable: false },
+  { id: 'living-night-scene', name: 'Watcher\'s living night scene', owlSince: '2026-11-10', owner: 'docs/adr/0199-watchers-night-scene-comes-to-life.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

@@ -189,4 +189,5 @@ export const HARBOUR: ScenePlace = {
   draw: drawHarbour,
   stars: 1,
   ambience: harbourAmbience,
+  layers: null,
 }

@@ -220,7 +220,7 @@ Watcher is told to keep your still-applicable constraints and pending decisions 
 
 The composer puts your prompt on its own row, with the permissions, model and effort in words under it. When a prompt looks like hard work, the effort word offers a higher level, such as "Medium → High"; press it to use that level.
 
-Watcher's room has a night scene drawn in text characters beside the conversation, with an owl for each thread it watches. Settings → Appearance → **Watcher scene** sets it in the Night wood, a Harbour, a Snowfield or the Desert; its colours come from your theme.
+Watcher's room has a night scene drawn in text characters beside the conversation, with an owl for each thread it watches. Settings → Appearance → **Watcher scene** sets it in the Night wood, a Harbour, a Snowfield or the Desert; its colours come from your theme. In Sotto Owl the Night wood is drawn as line art: a ridge, a branch and a trunk's edge are lines rather than speckle, a tree hides the hill behind it, and the moon has a halo.
 
 Your Watcher messages show what you wrote; Sotto's added routing text still reaches the provider. Older desktop messages without a saved boundary can still show it. User-authored text and later native edits stay whole.
 

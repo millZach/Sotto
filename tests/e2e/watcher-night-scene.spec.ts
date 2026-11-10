@@ -320,6 +320,10 @@ test.describe("Watcher's night scene on the built app", () => {
           expect(await pageBoundProblems(page), `conversation at ${width}x${height}`).toEqual([])
           // An owl for each watched thread: on the trees, or at the smallest window on the rail of eyes.
           await expect(owlButtons(page)).toHaveCount(3)
+          // On Owl the night wood is drawn as line art among its trees, with the moon's halo under it (ADR-0199); the
+          // rail of eyes at the smallest window is drawn as it was, with no halo.
+          await expect(page.locator('#watcher-pane')).toHaveAttribute('data-night-scene-drawn', width >= 1280 ? 'lines' : 'density')
+          await expect(page.locator('#watcher-pane > .watcher-scene--halo')).toHaveCount(width >= 1280 ? 1 : 0)
           await sceneHolds(page, `owls-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `thread-owls-${appearance}-${width}x${height}.png`)
         }
