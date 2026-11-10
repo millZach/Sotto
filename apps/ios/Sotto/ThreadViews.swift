@@ -3390,6 +3390,7 @@ struct RequestSheet: View {
     @Environment(\.dismiss) private var systemDismiss
     @Environment(\.sheetClose) private var sheetClose
     @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     let place: RequestPlace
     let request: AgentRequest
     /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
@@ -3958,7 +3959,10 @@ struct RequestSheet: View {
                 sendingLine(current)
                 skipLine(current)
                 HStack(spacing: Space.s2) {
-                    Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true))
+                    // On the Duo in light, Not now is a ring on the sheet's own fill, so it can't read as the greyed Send
+                    // answer beside it (Zach's round 6 pick A, November 10, 2026).
+                    Button("Not now") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: duo != .none && scheme == .light ? .outline : .soft, wide: true))
                     // Every question skipped sends a skip, so the button says so (ADR-0135).
                     Group {
                         if let questions = current.questions, !questions.isEmpty, questions.allSatisfy(isSkipped) {

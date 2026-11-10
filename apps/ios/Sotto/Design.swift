@@ -1754,8 +1754,9 @@ private struct PressBody: View {
 }
 
 /// The capsule buttons. Primary is the one accent action on a surface; soft and ghost are the others; danger
-/// removes or stops something.
-enum PillKind { case primary, soft, ghost, danger }
+/// removes or stops something. Outline is soft's action as a ring on the surface's own fill, where a soft fill would
+/// read as a primary that can't be pressed yet.
+enum PillKind { case primary, soft, ghost, danger, outline }
 
 struct PillButtonStyle: ButtonStyle {
     var kind: PillKind = .soft
@@ -1791,6 +1792,7 @@ private struct PillBody: View {
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
             .foregroundStyle(greyedPrimary ? Palette.muted : foreground)
             .modifier(PillGround(fill: fill, glass: drawn == .soft))
+            .overlay { if drawn == .outline { Capsule().strokeBorder(Palette.ink.opacity(0.3), lineWidth: 1.5) } }
             .glow(Capsule(), color: theme.color(.accent), alpha: 0.4, radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
             .opacity(enabled || greyedPrimary ? 1 : 0.42)
@@ -1801,7 +1803,7 @@ private struct PillBody: View {
     private var foreground: ThemeRole {
         switch drawn {
         case .primary: return Palette.onAccent
-        case .soft: return Palette.ink
+        case .soft, .outline: return Palette.ink
         case .ghost: return Palette.accentText
         case .danger: return Palette.dangerText
         }
@@ -1810,7 +1812,7 @@ private struct PillBody: View {
         switch drawn {
         case .primary: return Palette.accent
         case .soft: return Palette.fillSoft
-        case .ghost: return ThemeRole.clear
+        case .ghost, .outline: return ThemeRole.clear
         case .danger: return Palette.danger.opacity(Tint.dangerButton)
         }
     }
