@@ -1096,6 +1096,8 @@ private struct WorkingCard: View {
     /// Watched for the step the open thread is running, which the thread's history carries.
     @EnvironmentObject var detailStore: DetailStore
     @Environment(\.duoLayout) private var duo
+    /// The height of the name's first line, which the light and the time centre on when they stand on its row.
+    @ScaledMetric(relativeTo: .body) private var titleLine: CGFloat = TextScale.lead.size * 1.2
     let row: HostedThread
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
@@ -1121,21 +1123,32 @@ private struct WorkingCard: View {
     @ViewBuilder private var link: some View {
         NavigationLink(value: ThreadRoute(ref: row.ref)) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: Space.s2) {
-                    Light(tone: .accent, breathing: true)
-                    Text(state.words).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
-                    Spacer(minLength: Space.s2)
-                    if duo != .none {
+                if duo.sideways {
+                    // Sideways, under a column already headed Working now, the card drops its Working line: the light
+                    // starts the name's row and the time ends it (Zach's round 8 pick A, November 10, 2026).
+                    HStack(alignment: .top, spacing: Space.s2) {
+                        Light(tone: .accent, breathing: true).frame(height: titleLine)
+                        CardTitle(title: row.thread.title).frame(maxWidth: .infinity, alignment: .leading)
                         ShortAge(iso: row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
-                    } else if let since = Words.date(row.thread.summary?.runningTurnStartedAt) {
-                        ElapsedText(since: since).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted)
-                    } else if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
-                        Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                            .frame(height: titleLine)
                     }
+                } else {
+                    HStack(spacing: Space.s2) {
+                        Light(tone: .accent, breathing: true)
+                        Text(state.words).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
+                        Spacer(minLength: Space.s2)
+                        if duo != .none {
+                            ShortAge(iso: row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+                        } else if let since = Words.date(row.thread.summary?.runningTurnStartedAt) {
+                            ElapsedText(since: since).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted)
+                        } else if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
+                            Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                        }
+                    }
+                    .frame(minHeight: 18)
+                    CardTitle(title: row.thread.title)
+                        .padding(.top, Space.s2)
                 }
-                .frame(minHeight: 18)
-                CardTitle(title: row.thread.title)
-                    .padding(.top, Space.s2)
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
                           text: duo != .none ? Words.placeWithoutProvider(row) : place)
                     .padding(.top, Space.s1)
