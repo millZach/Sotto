@@ -947,12 +947,17 @@ struct ThreadListHeading: View {
     let title: String
     let count: Int
     let id: String
+    @Environment(\.duoLayout) private var duo
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
     var body: some View {
+        // Folded, it starts on the left edge the page's title and banner share, where it stood a third edge between them
+        // and the names (the Duo design climb's round 6). Beside a thread it keeps its inset.
         HStack(spacing: Space.s2) {
             Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
             Text("\(count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
-        .padding(.horizontal, Space.s3)
+        .padding(.leading, folded ? 0 : Space.s3)
+        .padding(.trailing, Space.s3)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s1)
         .accessibilityElement(children: .combine)
@@ -1086,6 +1091,9 @@ struct ThreadListRow: View, Equatable {
         // Folded, a row's time ends its second line too, as the sidebar's does, so the name has its line to itself (Zach's
         // round 6 pick A, November 10, 2026).
         let timeEndsLine = side || (folded && !large)
+        // Folded, the time ends on the right edge the banner and the search button share, with no gap or padding after
+        // it, where it ended 27 points short (the Duo design climb's round 6). Beside a thread the row keeps its own.
+        let flush = folded && timeEndsLine
         // A thread waiting on the user gives the time it last changed, when it asked, as its Needs you card does; one at
         // work gives how long its turn has run. A waiting row once said "22m" beside its card's "3m" (the Duo design
         // climb's round 6).
@@ -1119,12 +1127,13 @@ struct ThreadListRow: View, Equatable {
                     }
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
-                Spacer(minLength: Space.s1)
+                if !flush { Spacer(minLength: Space.s1) }
                 if !large, !timeEndsLine, let ago {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
                 }
             }
-            .padding(.horizontal, Space.s3)
+            .padding(.leading, Space.s3)
+            .padding(.trailing, flush ? 0 : Space.s3)
             .padding(.vertical, Space.s2 + 2)
             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .background { if chosen { RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ThemeRole(.accentSurface)) } }
