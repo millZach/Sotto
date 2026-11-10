@@ -175,7 +175,9 @@ private struct AgentsSheet: View {
                         .padding(.trailing, foldedStrip)
                 }
                 // Folded, the first row starts below the clock, where its button had run into it once rows went wide.
-                if foldedStrip > 0 { Color.clear.frame(height: Space.s5) }
+                // A first section's heading is short enough to stand beside the clock, so it keeps its place under the
+                // title and the room goes under it instead (`lifted`).
+                if foldedStrip > 0 && (problem || rows.isEmpty) { Color.clear.frame(height: Space.s5) }
                 if duo == .none {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                         Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
@@ -209,7 +211,10 @@ private struct AgentsSheet: View {
                     // On the Duo they stand under what they're doing, what needs the user first (Zach's pick B, November 8,
                     // 2026). A section's heading says what its rows' status lines would; Finished and Failed rows keep
                     // theirs, since the words differ row to row.
-                    ForEach(AgentsSection.sections(rows)) { section in
+                    ForEach(Array(AgentsSection.sections(rows).enumerated()), id: \.element.id) { index, section in
+                        // Folded, the first heading stands just under the title, clear of the clock's strip, and its rows
+                        // keep the place they had below the clock (the Duo design climb's round 6).
+                        let lifted = index == 0 && foldedStrip > 0 && !problem
                         VStack(alignment: .leading, spacing: Space.s2) {
                             HStack(spacing: Space.s2) {
                                 Light(tone: section.tone.light, size: 7, breathing: section.tone == .working)
@@ -217,7 +222,9 @@ private struct AgentsSheet: View {
                                 Text("\(section.rows.count)").font(.sotto(.small)).monospacedDigit().foregroundStyle(Palette.muted)
                             }
                             .padding(.horizontal, Space.s1)
+                            .padding(.trailing, lifted ? foldedStrip : 0)
                             .accessibilityElement(children: .combine)
+                            if lifted { Color.clear.frame(height: Space.s5 + Space.s3 - Space.s2) }
                             agentRows(section.rows)
                                 .environment(\.agentsInSection, section.showsStatus)
                         }
