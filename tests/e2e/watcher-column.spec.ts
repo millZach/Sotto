@@ -403,10 +403,11 @@ test.describe("Watcher's conversation column on the built app", () => {
     test.setTimeout(4 * 60_000)
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { live: true }), async (launched) => {
       const { page } = launched
-      // Every roll is 0: Watcher's owl leaves home after the shortest stay and flies to the other tree, across the column.
-      await page.addInitScript(() => { Math.random = () => 0 })
+      // In the living night scene, which Owl has, Watcher's owl flies when Watcher sends a thread a message (ADR-0199):
+      // the first watched thread's owl sits in the other tree, so the flight to call to it crosses the column. The
+      // message goes once the room has been open a while, so the scene sees it arrive.
       await openThreads(page)
-      await seedRoom(page)
+      await seedWatcherRoom(page, { watched: ['footer-links', 'visual-gate', 'weekly-note'], idPrefix: 'column', told: { thread: 'footer-links', afterMs: 15_000 } })
       await openRoom(page)
       await resizeContentWindow(launched, 1280, 800)
       await readBack(page, 0)

@@ -8,12 +8,14 @@ import { useClickEffectChosen } from '../state/clickEffect'
 import { useOwlFeature } from '../state/owlFeature'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, calmStepDelay, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, moonHalo, nextPlace, owlAt, planFlight, sceneInk, stayAt,
-  type Box, type Look, type MoonHalo, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
+  addRipple, calmStepDelay, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, moonHalo, nextPlace, owlAt, placeOf, planFlight, sceneInk, stayAt,
+  type Box, type Look, type MoonHalo, type OwlStage, type Point, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
 import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
+import { headOf, OwlLives, roundPerch } from './owlLife'
+import type { AmbientGlyph } from './scenePlace'
 import { watchResolution } from './watchResolution'
 import type { OpenThread } from './WatcherOverview'
 import './nightScene.css'
@@ -162,7 +164,10 @@ interface Target {
  *
  * With the living night scene (ADR-0199, an Owl feature) a place that has layers is drawn as line art: lines take
  * their own characters, what is in front hides what is behind, and the moon has a halo, a wash of the accent under the
- * landscape in the moon's own margin.
+ * landscape in the moon's own margin. Each thread owl acts out its thread (`owlFamily.ts`, `owlLife.ts`), and Watcher's
+ * owl no longer flies at random: it flies to the tree of a thread Watcher has sent a message and calls to its owl, which
+ * answers. Its eyes follow the pointer while it moves in a margin, and a thread owl hops when pointed at. With motion
+ * reduced none of that moves, and Watcher's owl goes from perch to perch in its calm steps as before.
  */
 export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glowing = false, onOpen, onShowAll }: {
   /** Whether the scene shows: the room and Watcher's conversation can be read. When it turns false the scene fades and stops. */
@@ -207,6 +212,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
   const movePlaceRef = useRef<() => void>(() => undefined)
   const livingRef = useRef(living)
   const setLivingRef = useRef<() => void>(() => undefined)
+  const hopRef = useRef<(key: string) => void>(() => undefined)
   const leaving = useRef(phase === 'leaving')
   const wakeRef = useRef<() => void>(() => undefined)
   const takeOwlsRef = useRef<() => void>(() => undefined)
@@ -273,6 +279,16 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
     let look: Look | null = null
     let stage: OwlStage | null = null
     let targetKey = ''
+    // The living night scene (ADR-0199): what the thread owls are doing, the threads Watcher has sent a message and the
+    // one its owl is calling to now, what its owl looks at meanwhile, and where the pointer last was.
+    const lives = new OwlLives()
+    const calls: string[] = []
+    let round: { readonly key: string; stage: 'fly' | 'call' | 'answer' | 'rest'; at: number; flown: boolean; crossing: number } | null = null
+    let callWatch: { readonly at: Point; readonly since: number; readonly until: number } | null = null
+    let pointer: { readonly x: number; readonly y: number; readonly t: number } | null = null
+    let gazeFrom: number | null = null
+    /** Whether the owls' lives move now: the feature is on, motion is not reduced or held, and the margins have trees. */
+    const alive = (): boolean => livingRef.current && !stillRef.current && layout?.mode === 'trees'
     /** When the last frame started, and how long after it the next is due; null while nothing moves. */
     let last = Number.NEGATIVE_INFINITY
     let delay: number | null = 0
@@ -302,10 +318,42 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       if (layout?.mode !== 'trees' || (stillRef.current && !calmRef.current)) return
       const flight = watcher.flight
       if (flight !== null && t >= flight.t0 + flight.dur) watcher = { at: flight.to, side: flight.side, flight: null, next: t + stayAt(flight.to, Math.random()) }
-      if (watcher.flight === null && t >= watcher.next) {
+      // In the living night scene it flies only to call to a thread's owl; with motion reduced it keeps its calm steps.
+      if (watcher.flight === null && t >= watcher.next && !alive()) {
         const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random(), layout.lane === null), t, calmRef.current)
         watcher = { ...watcher, flight: next }
       }
+    }
+    /**
+     * Watcher has sent a thread a message: its owl flies to the tree that thread's owl sits in, unless it is there
+     * already, and calls to it, a note crossing between them; the thread owl looks up, is happy, and answers.
+     */
+    const stepRound = (t: number): void => {
+      if (layout === null || family === null) return
+      if (round === null) {
+        const key = calls.shift()
+        if (key === undefined) return
+        round = { key, stage: 'fly', at: t, flown: false, crossing: 1 }
+      }
+      const asked = round
+      const pose = family.poses(t).find(item => item.owl.key === asked.key && !item.flying && item.owl.animation === null)
+      if (pose === undefined) { round = null; return }
+      const head = (): Point => { const at = placeOf(layout!, watcher.at, watcher.side); return { x: at.x, y: at.y - 50 * layout!.s } }
+      if (asked.stage === 'fly') {
+        if (watcher.flight !== null) return
+        const want = roundPerch(layout, pose.x)
+        if (watcher.at !== want && !asked.flown) { watcher = { ...watcher, flight: planFlight(layout, watcher, want, t, false) }; asked.flown = true; return }
+        asked.stage = 'call'; asked.at = t + 0.45
+      } else if (asked.stage === 'call' && t >= asked.at) {
+        asked.crossing = lives.call(head(), headOf(pose), t, true)
+        callWatch = { at: headOf(pose), since: t, until: t + asked.crossing * 2 + 1.4 }
+        lives.act(asked.key, 'lookup', t, asked.crossing)
+        asked.stage = 'answer'; asked.at = t + asked.crossing
+      } else if (asked.stage === 'answer' && t >= asked.at) {
+        lives.act(asked.key, 'happy', t, 2)
+        lives.call(headOf(pose), head(), t + 0.25, false)
+        asked.stage = 'rest'; asked.at = t + asked.crossing + 0.9
+      } else if (asked.stage === 'rest' && t >= asked.at) round = null
     }
     const tipBelow = (top: number): boolean => top - TIP_HEIGHT - 6 < (layout?.header ?? 0)
     /** The moon's halo, which shows wherever the landscape shows as line art, changed only when it moves or goes. */
@@ -346,11 +394,25 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       family.step(t)
       stepWatcher(t)
       ripples = liveRipples(ripples, t, isStill)
-      const trees = layout.mode === 'trees'
-      const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill && !isCalm, calm: isCalm, look, watch: family.newcomer(t) }) : null
+      const trees = layout.mode === 'trees', living = alive()
+      lives.step(t)
+      if (living) stepRound(t)
+      else if (round !== null || calls.length > 0 || callWatch !== null) { round = null; calls.length = 0; callWatch = null }
+      if (callWatch !== null && t > callWatch.until) callWatch = null
+      // Its eyes follow the pointer while it moves in a margin, and let go a moment after it stops.
+      if (living && pointer !== null && t - pointer.t < 1 && inMargin(layout, pointer.x) && pointer.y > layout.header) {
+        gazeFrom ??= t
+        look = { x: pointer.x, y: pointer.y, t: Math.max(gazeFrom, t - 0.8) }
+      } else gazeFrom = null
+      const watch = callWatch !== null ? { at: callWatch.at, since: callWatch.since } : family.newcomer(t)
+      const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill && !isCalm, calm: isCalm, look, watch }) : null
+      lives.watcherFlying = owlNow?.stage === 'flying'
       const marker = family.marker, count = family.pileCount, poses = family.poses(t)
       const pile = marker !== null && count > 0 ? { spot: marker, count } : null
-      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, watcherGlows: glowingRef.current, owls: poses, whirl: family.whirl(t), pile })
+      // A hopping owl is drawn a row higher; its button stays where it sits.
+      const shown = living ? poses.map(pose => lives.lifted(pose, t)) : poses
+      const life = livingRef.current && trees ? { lives, step: lives.stepOf(shown, t, isStill), cells: (emit: AmbientGlyph) => lives.glyphs(shown, t, isStill, emit) } : null
+      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, watcherGlows: glowingRef.current, owls: shown, whirl: family.whirl(t), pile, life })
       if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
       // And what it drew behind the words over the column, so a test can see a ripple or an owl crossing under them.
       if (painted && counted) pane.dataset.nightSceneBehind = `${painter.behind.ripple},${painter.behind.owl}`
@@ -360,7 +422,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       const looking = look !== null && t - look.t < 1.8
       // At rest only the trees' stars and owls, or the rail's waking and glowing eyes, change; with neither, nothing waits.
       const restless = layout.mode === 'trees' || (layout.mode === 'rail' && family.owls.some(item => item.mood !== 'asleep'))
-      delay = frameDelay(family.moving(t) || (owlNow?.stage === 'flying' && !isCalm) || looking, ripples.length, isStill || !restless)
+      delay = frameDelay(family.moving(t) || (owlNow?.stage === 'flying' && !isCalm) || looking || (living && lives.moving(t)), ripples.length, isStill || !restless)
       // With motion reduced the scene draws nothing between changes, so it wakes for the owl's next calm step, or for
       // when it next sets off.
       if (isCalm && trees) {
@@ -383,9 +445,24 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       if (disposed || family === null || layout === null) return
       const t = clock()
       for (const at of family.update(owlsRef.current, t, motion())) ripples = addRipple(ripples, { x: layout.moon.x, y: layout.moon.y, t: at })
+      takeLives(t)
       wake()
     }
     takeOwlsRef.current = takeOwls
+    /** The living night scene takes what changed in the watched threads, and queues Watcher's owl a call to each one told. */
+    const takeLives = (t: number): void => {
+      if (!livingRef.current || family === null) return
+      const poses = family.poses(t)
+      const told = lives.take(owlsRef.current, t, key => { const pose = poses.find(item => item.owl.key === key); return pose === undefined ? null : { x: pose.x, y: pose.y } })
+      // A few at most wait their turn: a burst of messages is one flight and a few calls, not a queue to work through.
+      for (const key of told) if (alive() && calls.length < 4 && !calls.includes(key) && round?.key !== key) calls.push(key)
+    }
+    hopRef.current = key => {
+      const t = clock()
+      if (disposed || !alive() || lives.actOf(key, t) !== null) return
+      lives.act(key, 'hop', t, 0.3)
+      wake()
+    }
     /** Motion reduced or restored: every flight ends where it was going, and owls come and go the new way from now. */
     const settle = (): void => {
       if (disposed || family === null || layout === null) return
@@ -505,7 +582,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
       if (watcher.next === 0) watcher = { ...watcher, next: t + stayAt('home', Math.random()) }
       ripples = []
-      if (family === null) { family = new OwlFamily(next); family.update(owlsRef.current, t, motion()) }
+      if (family === null) { family = new OwlFamily(next); family.update(owlsRef.current, t, motion()); takeLives(t) }
       else {
         // Back from stepping away, or a new size: every owl keeps its spot, and threads watched or let go meanwhile
         // come and go now.
@@ -558,9 +635,19 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       if (!inMargin(layout, x) || y < layout.header) return
       if (!clickEffectRef.current) ripples = addRipple(liveRipples(ripples, t, stillRef.current), { x, y, t })
       look = { x, y, t }
+      gazeFrom = null
       wake()
     }
     pane.addEventListener('pointerdown', press)
+    // The living night scene's owl watches the pointer in the margins. The scene wakes for the first move there; after
+    // that its own frames follow the pointer, so a moving pointer never draws faster than the scene does.
+    const move = (event: PointerEvent): void => {
+      if (!alive() || layout === null) return
+      const base = pane.getBoundingClientRect()
+      pointer = { x: event.clientX - base.left, y: event.clientY - base.top + pane.scrollTop, t: clock() }
+      if (gazeFrom === null && inMargin(layout, pointer.x) && pointer.y > layout.header) wake()
+    }
+    pane.addEventListener('pointermove', move)
 
     // The glyph face may still be loading; the scene is drawn again once it has.
     const font = `10.5px ${getComputedStyle(ink).fontFamily}`
@@ -584,6 +671,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', scheduleLayout)
       pane.removeEventListener('pointerdown', press)
+      pane.removeEventListener('pointermove', move)
+      hopRef.current = () => undefined
       setTargets([])
       setTip(null)
     }
@@ -607,7 +696,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       {targets.map(target => { const title = target.title; return <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
         aria-label={target.open === null ? say`Show all threads` : say`Open ${title} beside Watcher`}
         style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
-        onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
+        onPointerEnter={() => { setTip(target); if (target.open !== null) hopRef.current(target.key) }} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
         onClick={event => {
           setTip(null)
           if (target.open === null) { onShowAll(); return }

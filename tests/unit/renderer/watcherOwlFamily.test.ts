@@ -33,7 +33,7 @@ describe('a thread owl’s mood', () => {
   })
 
   it('draws shut eyes asleep, round eyes awake and big ones waiting, and blinks a working owl now and then', () => {
-    const owl = (mood: OwlMood): FamilyOwl => ({ key: 'k', title: 't', threadId: 't', mood, spot: 0, animation: null, order: 0 })
+    const owl = (mood: OwlMood): FamilyOwl => ({ key: 'k', title: 't', threadId: 't', mood, failed: false, asks: null, spot: 0, animation: null, order: 0 })
     const at = 1 // not mid-blink for order 0
     expect(owlGlyphs({ owl: owl('asleep'), flying: false }, at, { rail: false, still: false })).toEqual(['{-,-}', '/)__)', ' " " '])
     expect(owlGlyphs({ owl: owl('awake'), flying: false }, at, { rail: false, still: false })[0]).toBe('{o,o}')
