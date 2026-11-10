@@ -33,8 +33,8 @@ struct NewThreadSheet: View {
     /// A permission default that would let the thread act without asking, held back because this computer doesn't
     /// let this iPhone answer. Cleared once the user picks a permission themselves.
     @State private var heldBack = false
-    /// Held sideways, how tall the sheet stands, the room its step has, and how tall the step's content stands in its
-    /// scroll view, so Sotto's own sheet fits its step (`sidewaysFit`).
+    /// Folded or held sideways, how tall the sheet stands, the room its step has, and how tall the step's content stands
+    /// in its scroll view, so the sheet fits its step (`stepFit`).
     @State private var sheetHeight: CGFloat = 0
     @State private var pageRoom: CGFloat = 0
     @State private var stepHeight: CGFloat?
@@ -77,7 +77,8 @@ struct NewThreadSheet: View {
             footer
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { sheetHeight = $0 }
-        .preference(key: RequestSheetFit.self, value: sidewaysFit)
+        .preference(key: RequestSheetFit.self, value: sheetClose == nil ? nil : stepFit)
+        .modifier(FoldedStepDetents(on: foldedStrip > 0, fit: stepFit))
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .foregroundStyle(Palette.ink)
         // In Sotto's own sheet, held sideways on the Duo, the ground runs on up behind the grabber, where the sheet's own
@@ -91,17 +92,20 @@ struct NewThreadSheet: View {
     }
 
     /// Held sideways, Sotto's own sheet is as tall as its step, as the question sheet fits its choices, where a full-height
-    /// sheet left its lower half blank. It never stands shorter than `sidewaysFloor`, so the step bar and the sheet's top
-    /// keep still between the steps that hold less than that. Choosing a folder takes the full height (Zach's round 7
-    /// pick A, November 10, 2026).
-    private var sidewaysFit: CGFloat? {
-        guard sheetClose != nil, step != .folders, let stepHeight, sheetHeight > 0 else { return nil }
+    /// sheet left its lower half blank. It never stands shorter than `stepFloor`, so the step bar and the sheet's top keep
+    /// still between the steps that hold less than that. Choosing a folder takes the full height (Zach's round 7 pick A,
+    /// November 10, 2026). Folded, iOS's sheet fits its step the same way, on the same floor, where its last choice ended
+    /// with a fifth of the sheet empty; at the accessibility text sizes it stays full height, as the question sheet does
+    /// (his round 8 pick A, November 10, 2026).
+    private var stepFit: CGFloat? {
+        guard sheetClose != nil || (foldedStrip > 0 && !typeSize.isAccessibilitySize),
+              step != .folders, let stepHeight, sheetHeight > 0 else { return nil }
         let rest = sheetHeight - pageRoom
-        return max(rest + stepHeight, Self.sidewaysFloor - DuoSheetLayer.grabber)
+        return max(rest + stepHeight, Self.stepFloor - DuoSheetLayer.grabber)
     }
-    /// The least the sideways sheet stands, its grabber included: room for the step bar, a step's heading and two rows of
-    /// choices, two to a row.
-    static let sidewaysFloor: CGFloat = 400
+    /// The least the fitted sheet stands, the sideways sheet's grabber included: room for the step bar, a step's heading
+    /// and two rows of choices, two to a row.
+    static let stepFloor: CGFloat = 400
 
     // MARK: Header, steps and footer
 
@@ -928,5 +932,20 @@ struct CreationPendingRow: View {
         .confirmationDialog("Dismiss this unconfirmed action?", isPresented: $dismissing, titleVisibility: .visible) {
             Button("Dismiss unconfirmed action") { model.acknowledgeUnknown(operation.id) }
         } message: { Text("The computer may already have created it. Check its projects and threads first. Dismissing sends nothing.") }
+    }
+}
+
+/// Folded, iOS's New thread sheet stands as tall as its step (`NewThreadSheet.stepFit`), and full height while it has no
+/// fit, such as when choosing a folder. Anywhere else the sheet keeps iOS's own height.
+private struct FoldedStepDetents: ViewModifier {
+    let on: Bool
+    let fit: CGFloat?
+    @ViewBuilder func body(content: Content) -> some View {
+        if on {
+            let heights: Set<PresentationDetent> = if let fit { [.height(fit)] } else { [.large] }
+            content.presentationDetents(heights)
+        } else {
+            content
+        }
     }
 }
