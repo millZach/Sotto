@@ -32,6 +32,7 @@ export function FixedEffortChip({ level, provider, quiet, trace }: {
   const [focused, setFocused] = useState(false)
   const [away, setAway] = useState(false)
   const rest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const pointerOnChip = useRef(false)
   useEffect(() => () => clearTimeout(rest.current), [])
   const shown = !away && (rested || focused)
   // A tip the pointer brought up goes with Escape wherever the focus is, as the model chip's card does.
@@ -47,10 +48,10 @@ export function FixedEffortChip({ level, provider, quiet, trace }: {
     <button type="button" className={`${quiet ? 'split-chip-effort__trigger' : 'thread-chip'} effort-fixed__chip tt-focusable`} aria-disabled="true"
       aria-label={t({ message: `${label}, ${word}`, comment: 'A reasoning effort chip that cannot be changed: the setting\'s name, then the level it stays on, such as High.' })}
       aria-describedby={id}
-      onPointerEnter={() => { clearTimeout(rest.current); rest.current = setTimeout(() => setRested(true), TIP_REST_MS) }}
-      onPointerLeave={() => { clearTimeout(rest.current); setRested(false); setAway(false) }}
+      onPointerEnter={() => { pointerOnChip.current = true; clearTimeout(rest.current); rest.current = setTimeout(() => setRested(true), TIP_REST_MS) }}
+      onPointerLeave={() => { pointerOnChip.current = false; clearTimeout(rest.current); setRested(false); setAway(false) }}
       onFocus={event => { if (event.currentTarget.matches(':focus-visible')) setFocused(true) }}
-      onBlur={() => { setFocused(false); setAway(false) }}
+      onBlur={() => { setFocused(false); setAway(false); if (!pointerOnChip.current) setRested(false) }}
       onClick={() => { setAway(false); setRested(true) }}
       onKeyDown={event => { if (event.key === 'Escape' && shown) { event.preventDefault(); event.stopPropagation(); setAway(true) } }}>
       <Lock size={11} aria-hidden="true" />

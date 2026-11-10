@@ -320,6 +320,11 @@ describe('independent provider settings', () => {
     expect(screen.getByRole('tooltip', { hidden: true })).toHaveAttribute('data-shown')
     fireEvent.keyDown(chip, { key: 'Escape' })
     expect(screen.getByRole('tooltip', { hidden: true })).not.toHaveAttribute('data-shown')
+    // A press from the keyboard shows it too, and leaving the chip puts it away.
+    fireEvent.click(chip)
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveAttribute('data-shown')
+    fireEvent.blur(chip)
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toHaveAttribute('data-shown')
     expect(command).not.toHaveBeenCalled()
   })
   it('keeps the effort chip a choice where the provider can change a started thread', () => {
