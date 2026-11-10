@@ -1,0 +1,567 @@
+<!doctype html>
+<!--
+  VERDICT (November 10, 2026): the owner picked A, "Notes on the page"; the look as light, dark or match the system on
+  the first note; carrying on to dictation when no agent is ready, with what is left listed on the last note; and
+  the walk for new users and again from Help, as Set up Sotto. Shown that the terminal drawn here would need a terminal
+  outside a thread (ADR-0111) and main typing a command on stable (ADR-0139), he picked the Sign in dialog paired hosts
+  already have (ADR-0037) instead, with Sign in on the folded row; the terminal below is what was weighed, not what was
+  built. Recorded in ADR-0200. B and C are kept here as the record of what was weighed.
+
+  PROTOTYPE — throwaway. Question: what should first-run setup look like once it is a walk over Sotto's real pages
+  instead of a card of ten steps followed by a tour? Raised by the owner on November 10, 2026. His picks so far, by
+  question card that day: the shape is "Guided on the real pages"; setup's first part is done when a first thread is
+  open; the walk then carries on through dictation, Tailscale, other computers and the iPhone, each with a skip; an
+  agent that is installed but not signed in gets a button that opens Sotto's terminal on the client's own sign-in
+  (this amends ADR-0063 decision 3); an agent that is not installed keeps Install guide; the Threads tour is removed;
+  straight to stable.
+
+  Three variants of how the guide shows, via ?variant=A|B|C:
+    A  Notes on the page: the control is lit, the rest is dimmed, and a note sits beside it.
+    B  Guide beside the page: a list of the whole walk docked at the window's edge; the page stays live.
+    C  One line across the top: a single band over the page; the page stays live.
+  Also ?stop=<id>, ?agents=mixed|none|ready, ?os=win|linux, ?zoom=1 (the window at full size, for a phone).
+  Everything that would leave Sotto (a folder picker, a browser, a real terminal, a microphone) is simulated, and the
+  dashed "Pretend…" buttons stand in for what the user does outside Sotto. No IPC, no network beyond the page, no
+  persistence.
+  Run: from the repository root, serve the folder (any static server) and open
+  /docs/prototypes/guided-setup-prototype.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto guided setup — prototype</title>
+<link rel="icon" href="data:,">
+<style>
+@font-face{font-family:Figtree;src:url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'),url('figtree-latin.woff2') format('woff2');font-weight:300 900}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#121217;color:#e4e5f1;font:15px/1.5 Figtree,system-ui,sans-serif;padding:14px 14px 190px}
+h1.top{font-size:19px;margin:0 0 2px;font-weight:650}
+p.sub{margin:0 0 12px;color:#a3a5bd;max-width:900px}
+#stage{position:relative;margin:0 auto;overflow:hidden;border-radius:10px}
+#stage[data-zoom="1"]{overflow:auto;max-height:72vh;border:1px solid #2c2d3a;-webkit-overflow-scrolling:touch}
+#scaler{transform-origin:0 0;width:1080px;height:720px}
+
+/* ---------- the window ---------- */
+.win{--canvas:#1b1c26;--side:#22232e;--card:#252733;--inset:#1c1d27;--line:#30323f;--text:#d5d7ee;--muted:#9a9cb6;
+  --accent:#7ea2ff;--primary:#b9bde6;--on-primary:#16171f;--ok:#63d6a8;--warn:#f0b454;--err:#ff6f6f;--raised:#2b2d3b;--soft:#c0c2d8;--hover:#2f3140;--edge:#191a22;
+  position:relative;width:1080px;height:720px;display:grid;grid-template-columns:280px minmax(0,1fr);overflow:hidden;
+  background:var(--canvas);color:var(--text);font:14px/1.45 Figtree,system-ui,sans-serif;border-radius:10px;border:1px solid #2c2d3a}
+.win[data-look=light]{--canvas:#f5f5fa;--side:#eaebf3;--card:#ffffff;--inset:#eff0f6;--line:#d9dae6;--text:#22232e;--muted:#5d5f76;--accent:#3d63dd;--primary:#2c2e4a;--on-primary:#ffffff;--ok:#197a56;--warn:#935600;--err:#c2332f;--raised:#ffffff;--soft:#3b3d52;--hover:#dfe0ec;--edge:#d9dae6}
+.win[data-variant=B]{grid-template-columns:220px minmax(0,1fr) 262px}
+.win[data-variant=B] .page{padding:22px 18px}.win[data-variant=B] .set{grid-template-columns:118px minmax(0,1fr)}.win[data-variant=B] .side__top .ib{padding:6px}
+.win button{font:inherit;color:inherit;cursor:pointer}
+.win :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ico{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.side{background:var(--side);display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--edge)}
+.side__top{display:flex;align-items:center;gap:6px;padding:10px 12px}
+.mark{width:22px;height:22px;border-radius:6px;background:var(--accent);display:grid;place-items:center;flex:none}
+.mark svg{width:16px;height:16px}
+.mark--big{width:44px;height:44px;border-radius:12px}.mark--big svg{width:32px;height:32px}
+.side__top .grow{flex:1}
+.ib{background:none;border:0;border-radius:8px;padding:6px 8px;display:inline-flex;align-items:center;gap:6px;color:var(--text)}
+.ib:hover{background:var(--hover)}
+.search{margin:2px 10px 10px;padding:8px 10px;border-radius:8px;background:var(--inset);color:var(--muted);border:1px solid var(--line);font-size:13px}
+.side__list{flex:1;padding:4px 12px;color:var(--muted);font-size:13.5px;min-height:0}
+.proj{color:var(--text);font-weight:600;display:flex;gap:8px;align-items:center;padding:6px 0}
+.thr{padding:7px 10px 7px 26px;border-radius:8px;color:var(--text)}
+.thr[data-on=true]{background:var(--hover)}
+.side__foot{display:flex;gap:2px;padding:10px 12px;align-items:center}
+.side__foot .ib[data-on=true]{background:var(--hover)}
+.side__foot i{width:1px;height:18px;background:var(--line);margin:0 6px}
+.main{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
+.page{flex:1;min-height:0;overflow:auto;padding:26px 34px}
+.page h2{font-size:22px;font-weight:600;margin:0 0 4px}
+.page .lead{color:var(--muted);margin:0 0 16px;max-width:600px}
+.empty{height:100%;display:grid;place-content:center;justify-items:center;gap:8px;text-align:center;color:var(--muted)}
+.empty b{color:var(--text);font-size:18px;font-weight:600}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:9px 14px;font-weight:550;display:inline-flex;gap:8px;align-items:center;white-space:nowrap}
+.win .btn--primary{background:var(--primary);color:var(--on-primary);border-color:transparent}
+.win .btn--ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn[disabled]{opacity:.5;cursor:default}
+.win .btn--pretend{border:1.5px dashed var(--warn);background:none;color:var(--warn);font-weight:500;font-size:12.5px;padding:6px 10px}
+.card{background:var(--card);border-radius:12px;padding:4px;margin:0 0 16px;max-width:640px}
+.card h3{font-size:13px;font-weight:650;margin:10px 12px 6px;color:var(--muted)}
+.row{display:grid;grid-template-columns:auto minmax(96px,1fr) auto auto;gap:12px;align-items:center;padding:11px 12px;background:var(--inset);margin:2px;border-radius:9px}
+.row .name{display:grid}.row .name b{font-weight:600}.row .name span{color:var(--muted);font-size:12.5px}
+.state{font-size:12.5px;font-weight:600;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.state[data-kind=ready]{color:var(--ok)}.state[data-kind=needs]{color:var(--warn)}.state[data-kind=none]{color:var(--muted)}
+.pm{width:28px;height:28px;border-radius:8px;background:var(--hover);display:grid;place-items:center;font-weight:700;font-size:12px}
+.set{display:grid;grid-template-columns:150px minmax(0,1fr);height:100%}
+.set__nav{border-right:1px solid var(--line);padding:22px 8px;display:grid;align-content:start;gap:2px;font-size:13.5px;color:var(--muted)}
+.set__nav span{padding:7px 10px;border-radius:8px}.set__nav span[data-on=true]{background:var(--hover);color:var(--text);font-weight:600}
+.field{display:flex;gap:10px;align-items:center;padding:11px 12px;background:var(--inset);margin:2px;border-radius:9px}
+.field .grow{flex:1;min-width:0}.field small{display:block;color:var(--muted);font-size:12.5px}
+.sel{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);min-width:180px;color:var(--muted)}
+.toggle{width:36px;height:20px;border-radius:6px;background:#3a3c4b;border:0;position:relative;flex:none}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:4px;background:var(--text);transition:left .15s}
+.toggle[aria-checked=true]{background:var(--primary)}.toggle[aria-checked=true]::after{left:19px;background:var(--on-primary)}
+.code{font:600 22px/1 ui-monospace,monospace;letter-spacing:3px;color:var(--text)}
+.thread{height:100%;display:flex;flex-direction:column}
+.thread__head{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;font-weight:600}
+.chip{font-size:12px;padding:3px 8px;border-radius:6px;background:var(--hover);color:var(--muted);font-weight:550}
+.thread__body{flex:1;display:grid;place-content:center;color:var(--muted)}
+.composer{margin:0 20px 18px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 12px 10px}
+.composer div{color:var(--muted);min-height:44px}
+.composer footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
+.wave{display:flex;gap:5px;align-items:center;height:60px}.wave i{width:5px;border-radius:3px;background:var(--accent);height:14px}
+.wave[data-live=true] i{animation:w 0.9s ease-in-out infinite}.wave i:nth-child(2n){animation-delay:.15s}.wave i:nth-child(3n){animation-delay:.3s}
+@keyframes w{50%{height:46px}}
+.term{position:absolute;left:0;right:0;bottom:0;height:230px;background:#0e0f14;border-top:1px solid var(--line);display:flex;flex-direction:column;z-index:30}
+.term header{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #24252f;font-size:13px;color:#9a9cb6}
+.term header b{color:#d5d7ee;font-weight:600}.term header .grow{flex:1}.win .term .btn--ghost{color:#9a9cb6}.win .term .btn--pretend{color:#f0b454;border-color:#f0b454}
+.term pre{margin:0;padding:12px 14px;font:13px/1.55 ui-monospace,'Spline Sans Mono',monospace;color:#c9cbe0;white-space:pre-wrap;overflow:auto}
+.term pre em{color:var(--ok);font-style:normal}.term pre u{color:var(--accent);text-decoration:none}
+.note-inline{color:var(--muted);font-size:12.5px;margin:6px 14px 10px}
+.warn{color:var(--warn)}.ok{color:var(--ok)}
+
+/* ---------- the guide, three ways ---------- */
+.ring{box-shadow:0 0 0 2px var(--accent),0 0 0 6px color-mix(in srgb,var(--accent) 22%,transparent)!important;border-radius:10px;position:relative;z-index:21}
+.hole{position:absolute;border-radius:12px;box-shadow:0 0 0 2000px rgb(8 9 14 / 62%),0 0 0 2px var(--accent);pointer-events:none;z-index:20;transition:all .18s}
+.dim{position:absolute;inset:0;background:rgb(8 9 14 / 62%);z-index:20}
+.gnote{position:absolute;z-index:25;width:330px;background:var(--raised);border-radius:14px;padding:16px 16px 12px;box-shadow:0 18px 50px rgb(0 0 0 / 55%)}
+.g h4{margin:0 0 4px;font-size:15.5px;font-weight:650}
+.g p{margin:0 0 8px;color:var(--soft);font-size:13.5px}
+.looks{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--inset);margin:2px 0 10px}
+.looks button{border:0;background:none;border-radius:8px;padding:7px 12px;font-weight:550;color:var(--muted)}
+.looks button[aria-checked=true]{background:var(--hover);color:var(--text)}
+.g .status{font-size:12.5px;font-weight:600;margin:0 0 10px}
+.g__foot{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.g__foot .grow{flex:1}
+.g__count{font-size:12px;color:var(--muted)}
+.g .btn{padding:7px 12px;font-size:13.5px}
+.g .quit{background:none;border:0;color:var(--muted);font-size:12.5px;text-decoration:underline;padding:6px 2px}
+.dock{background:#20212b;border-left:1px solid #191a22;display:flex;flex-direction:column;min-height:0}
+.dock header{padding:14px 16px 8px;display:flex;align-items:center;gap:8px;font-weight:650}
+.dock header .grow{flex:1}
+.dock ol{list-style:none;margin:0;padding:0 8px 8px;overflow:auto;flex:1}
+.dock li{border-radius:10px;padding:5px 10px;display:grid;grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:13.5px;color:var(--muted)}
+.dock li[data-now=true]{background:#2b2d3b;color:var(--text);padding:12px 10px}
+.dock li .dot{width:16px;height:16px;border-radius:5px;border:1.5px solid #4a4c5e;margin-top:2px;display:grid;place-items:center}
+.dock li[data-done=true] .dot{background:var(--ok);border-color:var(--ok);color:#10261d}
+.dock li[data-skip=true] .dot{border-style:dashed}
+.dock li .dot svg{width:11px;height:11px;stroke-width:3}
+.dock li button.t{background:none;border:0;padding:0;text-align:left;font-weight:600;color:inherit}
+.dock .grp{font-size:11.5px;letter-spacing:.02em;color:#7f8199;padding:7px 10px 1px;display:block}
+.band{display:flex;gap:12px;align-items:center;padding:9px 14px;background:#2b2d3b;border-bottom:1px solid #191a22;min-height:54px}
+.band .txt{flex:1;min-width:0;font-size:13.5px;color:#c0c2d8}.band .txt b{color:var(--text);font-weight:650;margin-right:6px}
+.band .dots{display:flex;gap:4px}.band .dots i{width:14px;height:3px;border-radius:2px;background:#4a4c5e}
+.band .dots i[data-done=true]{background:var(--ok)}.band .dots i[data-now=true]{background:var(--accent)}
+
+/* ---------- the page around the window ---------- */
+#about{max-width:900px;margin:14px auto 0;background:#1b1c26;border-radius:12px;padding:14px 16px}
+#about h2{font-size:16px;margin:0 0 4px}
+#about .said{border-left:3px solid #7ea2ff;padding:2px 0 2px 12px;margin:8px 0;color:#d5d7ee}
+#about .said b{display:block}
+#about ul{margin:6px 0 0;padding-left:18px;color:#a3a5bd}
+#about .new{color:#f0b454}
+#bar{position:fixed;left:8px;right:8px;bottom:8px;background:#2a2b38;border:1px solid #3b3d4e;border-radius:14px;padding:8px 10px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;justify-content:center;z-index:99;box-shadow:0 10px 40px #000a}
+#bar .grp{display:flex;gap:4px;align-items:center;font-size:13px;color:#a3a5bd}
+#bar button{font:inherit;font-size:13.5px;color:#e4e5f1;background:#1b1c26;border:1px solid #3b3d4e;border-radius:9px;padding:8px 11px;cursor:pointer;min-height:38px}
+#bar button[aria-pressed=true]{background:#b9bde6;color:#16171f;border-color:transparent;font-weight:650}
+#bar button{white-space:nowrap;flex:none}
+#bar .more{display:flex;gap:8px 14px;align-items:center}
+@media (max-width:760px){
+  body{padding-bottom:140px}
+  #bar{gap:6px;padding:6px 8px;justify-content:flex-start}
+  #bar button{padding:6px 9px;min-height:36px;font-size:12.5px}
+  #bar .more{max-width:100%;overflow-x:auto;flex-wrap:nowrap;gap:10px;padding-bottom:2px}
+}
+</style>
+</head>
+<body>
+<h1 class="top">Sotto guided setup — prototype</h1>
+<p class="sub">Setup as a walk over the real pages, drawn three ways. Press the lit control in the window, or use Back and Next below. Dashed "Pretend…" buttons stand in for what happens outside Sotto.</p>
+<div id="stage"><div id="scaler"><div class="win" id="win"></div></div></div>
+<div id="about"></div>
+<div id="bar"></div>
+
+<script>
+const I = {
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+  thread: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  chart: '<line x1="6" x2="6" y1="20" y2="14"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="18" x2="18" y1="20" y2="10"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folderPlus: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="12" x2="12" y1="10" y2="16"/><line x1="9" x2="15" y1="13" y2="13"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  term: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  link: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  owl: '<circle cx="8.5" cy="11" r="2.6"/><circle cx="15.5" cy="11" r="2.6"/><path d="M4 6l3 2M20 6l-3 2M11 15l1 1.5 1-1.5"/>',
+}
+const ico = (name, extra = '') => `<svg class="ico" viewBox="0 0 24 24" ${extra}>${I[name]}</svg>`
+const owlMark = big => `<span class="mark${big ? ' mark--big' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="#10121c" stroke-width="2" stroke-linecap="round">${I.owl}</svg></span>`
+
+const q = new URLSearchParams(location.search)
+const AGENT_SETS = {
+  mixed: { codex: 'signed-out', claude: 'signed-out', grok: 'missing', devin: 'missing' },
+  none: { codex: 'missing', claude: 'missing', grok: 'missing', devin: 'missing' },
+  ready: { codex: 'ready', claude: 'ready', grok: 'signed-out', devin: 'missing' },
+}
+const AGENTS = [
+  { id: 'codex', name: 'Codex', letter: 'Cx', command: 'codex login', account: 'ChatGPT Plus · 0.59.1' },
+  { id: 'claude', name: 'Claude Code', letter: 'Cl', command: 'claude auth login', account: 'Claude Max · 2.1.4' },
+  { id: 'grok', name: 'Grok Build', letter: 'Gk', command: 'grok login', account: 'SuperGrok · 1.0.40' },
+  { id: 'devin', name: 'Devin', letter: 'Dv', command: 'devin auth login', account: 'Devin · 3000.11.92' },
+]
+const S = {
+  variant: ['A', 'B', 'C'].includes(q.get('variant')) ? q.get('variant') : 'A',
+  os: q.get('os') === 'linux' ? 'linux' : 'win',
+  agentSet: AGENT_SETS[q.get('agents')] ? q.get('agents') : 'mixed',
+  zoom: q.get('zoom') === '1',
+  stop: 0, agents: {}, terminal: null, termDone: false, project: false, thread: false, mic: 'idle', model: null,
+  omarchy: false, tried: false, tailscale: false, tsOpened: false, hosts: 0, beta: false, phones: false, phoneTold: false, code: false,
+  skipped: new Set(), guided: new Set(), over: false, look: q.get('look') === 'light' ? 'light' : 'system',
+}
+S.agents = { ...AGENT_SETS[S.agentSet] }
+const anyReady = () => Object.values(S.agents).includes('ready')
+const readyAgent = () => AGENTS.find(agent => S.agents[agent.id] === 'ready')
+const key = () => S.os === 'linux' ? 'F9' : 'Ctrl+Shift+Space'
+
+/** The walk. `page` is the real page the stop is on; `target` is the real control it lights. */
+function stops() {
+  const ready = readyAgent()
+  const list = [
+    { id: 'welcome', group: 'Start', page: 'threads', target: null, title: 'Talk to your computer and your coding agents',
+      body: 'Sotto runs Codex, Claude Code, Grok Build and Devin threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks.',
+      short: 'This walk sets up your first thread, then dictation, other computers and your iPhone.', done: () => true, start: true },
+    { id: 'agents', group: 'First thread', page: 'providers', target: '#providers', title: 'Sign in to a coding agent',
+      body: 'A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens a terminal on that agent\'s own sign-in.',
+      short: 'A thread runs on an agent you already have. Sign in opens a terminal on its own sign-in.',
+      status: () => anyReady() ? ['ok', `${ready.name} is ready.`] : S.terminal ? ['warn', 'Finish the sign-in in the terminal below.'] : Object.values(S.agents).every(v => v === 'missing') ? ['warn', 'None is installed yet. Install one, then press Check again.'] : ['warn', 'None is ready yet. A thread needs one.'],
+      done: anyReady },
+    { id: 'project', group: 'First thread', page: 'threads', target: '#add-project', title: 'Add a project folder',
+      body: 'A project is a folder your agents work in, usually a Git repository. Press Add project and choose one.',
+      short: 'A project is a folder your agents work in. Press Add project and choose one.',
+      status: () => S.project ? ['ok', 'sotto-site is added.'] : null, done: () => S.project, needsAgent: true },
+    { id: 'thread', group: 'First thread', page: 'threads', target: () => S.thread ? '#composer' : '#new-thread', title: () => S.thread ? 'This is a thread' : 'Start your first thread',
+      body: () => S.thread ? `Type what you want done, or press ${key()} and say it. The agent\'s work shows here, and it asks you before anything that needs your say.` : `Press New thread. It opens in sotto-site on ${ready ? ready.name : 'your agent'}.`,
+      short: () => S.thread ? `Type what you want done, or press ${key()} and say it.` : 'Press New thread. It opens in sotto-site.',
+      status: () => S.thread ? ['ok', 'Your first thread is open. The rest is optional.'] : null, done: () => S.thread, needsAgent: true },
+    ...(S.os === 'linux' ? [{ id: 'omarchy', group: 'Dictation', page: 'dictation', target: '#omarchy', title: 'Set up Sotto in Omarchy',
+      body: 'Three changes to your Omarchy settings: the F9 and Super+Ctrl+X keys, the owl in the bar, and the theme. Remove any of them later here.',
+      short: 'Three changes to your Omarchy settings: the keys, the owl in the bar, and the theme.',
+      status: () => S.omarchy ? ['ok', 'All three are set up.'] : null, done: () => S.omarchy }] : []),
+    { id: 'mic', group: 'Dictation', page: 'dictation', target: '#mic', title: 'Check your microphone',
+      body: 'Press Test microphone and say a few words. Sotto opens the microphone only while you dictate or run this test.',
+      short: 'Press Test microphone and say a few words.',
+      status: () => S.mic === 'heard' ? ['ok', 'Sotto heard you. Your microphone works.'] : S.mic === 'listening' ? ['warn', 'Listening. Say something.'] : null, done: () => S.mic === 'heard' },
+    { id: 'model', group: 'Dictation', page: 'dictation', target: '#models', title: 'Choose a speech model',
+      body: 'Sotto turns your voice into text on this computer, and your audio never leaves it. Download one; you can carry on while it does.',
+      short: 'Sotto turns your voice into text on this computer. Download a model; you can carry on while it does.',
+      status: () => S.model ? ['ok', `${S.model} is downloading. Dictation works as soon as it finishes.`] : null, done: () => !!S.model },
+    { id: 'shortcut', group: 'Dictation', page: 'dictate', target: '#dictate', title: 'Try the shortcut',
+      body: () => S.os === 'linux' ? 'Hold F9, say something, and let go. Your words arrive wherever you were typing.' : `Press ${key()}, say something, and press it again. Your words arrive wherever you were typing.`,
+      short: () => S.os === 'linux' ? 'Hold F9, say something, and let go.' : `Press ${key()}, say something, and press it again.`,
+      status: () => S.tried ? ['ok', 'That worked.'] : null, done: () => S.tried },
+    { id: 'tailscale', group: 'Elsewhere', page: 'hosts', target: '#tailscale', title: 'Tailscale joins your devices',
+      body: 'Other computers and your iPhone reach this computer over Tailscale. Only using this computer? Skip the next three.',
+      short: 'Other computers and your iPhone reach this computer over Tailscale.',
+      status: () => S.tailscale ? ['ok', 'Tailscale is on. This computer is laptop.'] : S.tsOpened ? ['warn', 'Install it and sign in, then press Check again.'] : ['warn', 'Tailscale is not installed on this computer.'], done: () => S.tailscale },
+    { id: 'computers', group: 'Elsewhere', page: 'hosts', target: '#hosts', title: 'Run threads on another computer',
+      body: 'Add host lists the computers on your tailnet and in your SSH configuration, and sets Sotto up on the one you choose.',
+      short: 'Add host lists the computers on your tailnet and sets Sotto up on the one you choose.',
+      status: () => S.hosts ? ['ok', 'forge is added.'] : null, done: () => S.hosts > 0 },
+    { id: 'iphone', group: 'Elsewhere', page: 'hosts', target: '#phones', title: 'Answer threads from your iPhone',
+      body: 'Get the beta from TestFlight, turn on Let phones connect, then show a pairing code and enter it in the app.',
+      short: 'Get the beta, turn on Let phones connect, then show a pairing code.',
+      status: () => S.code ? ['ok', 'Enter this code in the iPhone app.'] : S.phoneTold ? ['warn', 'Phones need Tailscale on this computer first.'] : null, done: () => S.phones },
+    { id: 'end', group: 'Done', page: 'threads', target: null, title: 'That\'s setup',
+      body: () => 'Settings has how Sotto looks, and each part of this walk. Help starts the walk again.', short: 'Settings has how Sotto looks, and each part of this walk.', done: () => true, end: true },
+  ]
+  return list
+}
+const val = v => typeof v === 'function' ? v() : v
+const stopNow = () => stops()[S.stop]
+const indexOf = id => stops().findIndex(stop => stop.id === id)
+
+function go(delta) {
+  const list = stops()
+  let next = S.stop + delta
+  // A project and a thread need a connected agent: with none ready the walk passes over them rather than dead-ending.
+  while (list[next] && list[next].needsAgent && !anyReady()) next += delta
+  S.stop = Math.max(0, Math.min(list.length - 1, next))
+  S.terminal = null
+  render()
+}
+function forward() {
+  const stop = stopNow()
+  if (!val(stop.done)) S.skipped.add(stop.id); else S.skipped.delete(stop.id)
+  go(1)
+}
+
+/* ---------- pages ---------- */
+function sidebar(page) {
+  const foot = [['dictate', 'mic', 'Dictate'], ['watcher', 'owl', 'Watcher'], ['threads', 'thread', 'Threads'], null, ['usage', 'chart', 'Usage'], ['settings', 'gear', 'Settings'], ['help', 'help', 'Help']]
+  const on = page === 'dictate' ? 'dictate' : page === 'threads' ? 'threads' : 'settings'
+  return `<aside class="side">
+    <div class="side__top">${owlMark()}<span class="grow"></span>
+      <button class="ib" id="add-project" aria-label="Add project" data-act="project">${ico('folderPlus')}</button>
+      <button class="ib" id="new-thread" data-act="thread">${ico('pen')}New thread</button></div>
+    <div class="search">Search threads</div>
+    <div class="side__list">${S.project ? `<div class="proj">${ico('folder')}sotto-site</div>${S.thread ? '<div class="thr" data-on="true">New thread</div>' : ''}` : 'Add a project folder to start.'}</div>
+    <div class="side__foot">${foot.map(item => item ? `<button class="ib" aria-label="${item[2]}" title="${item[2]}" data-on="${item[0] === on}">${ico(item[1])}</button>` : '<i></i>').join('')}</div>
+  </aside>`
+}
+function pageThreads() {
+  if (S.thread) {
+    const agent = readyAgent()
+    return `<div class="thread"><div class="thread__head">New thread <span class="chip">${agent ? agent.name : ''}</span><span class="chip">sotto-site</span></div>
+      <div class="thread__body">Nothing sent yet.</div>
+      <div class="composer" id="composer"><div>Ask ${agent ? agent.name : 'your agent'} to do something…</div><footer><span>${ico('mic')}</span><button class="btn btn--primary" disabled>Send</button></footer></div></div>`
+  }
+  return `<div class="page"><div class="empty">${ico('thread', 'style="width:30px;height:30px"')}<b>No threads yet.</b><span>${S.project ? 'Start a thread to begin working with your agent.' : 'Add a project folder, then start a thread.'}</span></div></div>`
+}
+function settings(on, content) {
+  const nav = ['Application', 'Appearance', 'Dictation', 'Cleanup', 'Providers', 'Hosts & phones', 'Notifications', 'Usage', 'Advanced']
+  return `<div class="set"><nav class="set__nav">${nav.map(name => `<span data-on="${name === on}">${name}</span>`).join('')}</nav><div class="page">${content}</div></div>`
+}
+function pageProviders() {
+  const rows = AGENTS.map(agent => {
+    const state = S.agents[agent.id]
+    const signing = S.terminal === agent.id && !S.termDone
+    const [kind, word, detail] = state === 'ready' ? ['ready', 'Ready', agent.account]
+      : signing ? ['needs', 'Signing in…', 'Finish it in the terminal below.']
+      : state === 'signed-out' ? ['needs', 'Not signed in', 'Installed on this computer.']
+      : ['none', 'Not installed', S.guided.has(agent.id) ? 'Install guide opened in your browser. Install it, then press Check again.' : 'Not found on this computer.']
+    const action = state === 'signed-out' && !signing ? `<button class="btn btn--primary" data-act="signin:${agent.id}">${ico('term')}Sign in</button>`
+      : state === 'missing' ? `<button class="btn" data-act="guide:${agent.id}">${ico('link')}Install guide</button>` : '<span></span>'
+    return `<div class="row"><span class="pm">${agent.letter}</span><span class="name"><b>${agent.name}</b><span>${detail}</span></span>
+      <span class="state" data-kind="${kind}">${kind === 'ready' ? ico('check') : ''}${word}</span>${action}</div>`
+  }).join('')
+  return settings('Providers', `<h2>Providers</h2><p class="lead">The coding agents on this computer. Each one uses your own account with its maker.</p>
+    <div class="card" id="providers">${rows}
+      <div class="field" style="background:none"><span class="grow" style="color:var(--muted);font-size:13px">${Object.values(S.agents).filter(v => v === 'ready').length} of ${AGENTS.length} ready.</span><button class="btn" data-act="check">Check again</button></div></div>`)
+}
+function pageDictation() {
+  const mic = S.mic === 'heard' ? '<b class="ok">Sotto heard you. Your microphone works.</b>' : S.mic === 'listening' ? '<b>Listening. Say something.</b>' : '<b>Not tested yet.</b>'
+  const models = [['Parakeet Ultra', 'Moondream', '25 European languages. 671 MB, from GitHub.'], ['Parakeet v3', 'NVIDIA', '25 European languages. 670 MB, from GitHub.'], ['Parakeet v2', 'NVIDIA', 'English only. 661 MB, from GitHub.']]
+  return settings('Dictation', `<h2>Dictation</h2><p class="lead">The microphone, the speech model and the shortcut.</p>
+    ${S.os === 'linux' ? `<div class="card" id="omarchy"><h3>Omarchy</h3><div class="field"><span class="grow"><b>F9 and Super+Ctrl+X, the owl in the bar, the Omarchy theme</b><small>${S.omarchy ? 'All three are set up.' : 'Not set up.'}</small></span><button class="btn ${S.omarchy ? '' : 'btn--primary'}" data-act="omarchy">${S.omarchy ? 'Remove' : 'Set up all three'}</button></div></div>` : ''}
+    <div class="card" id="mic"><h3>Microphone</h3><div class="field"><span class="sel">System default</span><span class="grow"></span></div>
+      <div class="field"><div class="wave" data-live="${S.mic === 'listening'}" style="height:28px">${'<i></i>'.repeat(7)}</div><span class="grow">${mic}</span><button class="btn ${S.mic === 'heard' ? '' : 'btn--primary'}" data-act="mic">${ico('mic')}${S.mic === 'heard' ? 'Test again' : S.mic === 'listening' ? 'Stop test' : 'Test microphone'}</button></div></div>
+    <div class="card" id="models"><h3>Speech model</h3>${models.map(([name, maker, detail], at) => `<div class="field"><span class="grow"><b>${name}, by ${maker}</b><small>${S.model === name ? 'Downloading… 12%' : detail}</small></span><button class="btn ${S.model === name || (!S.model && at === 0) ? 'btn--primary' : ''}" data-act="model:${name}">${S.model === name ? ico('check') : ''}Download ${name}</button></div>`).join('')}</div>
+    <div class="card"><h3>Shortcut</h3><div class="field"><span class="grow">${S.os === 'linux' ? 'Omarchy keys' : 'Dictation shortcut'}</span><span class="chip">${S.os === 'linux' ? 'F9 · Super+Ctrl+X' : key()}</span></div></div>`)
+}
+function pageDictate() {
+  return `<div class="page"><div class="empty" id="dictate" style="height:auto;padding:70px 30px;max-width:560px;margin:40px auto;border-radius:14px">
+    <div class="wave" data-live="false">${'<i></i>'.repeat(9)}</div><b>${S.os === 'linux' ? 'Hold F9 to talk' : `Press ${key()} to talk`}</b>
+    <span>${S.tried ? '“This is what I just said.”' : 'Your words arrive wherever you were typing.'}</span>
+    <button class="btn btn--pretend" data-act="tried">Pretend I used the shortcut</button></div></div>`
+}
+function pageHosts() {
+  const ts = S.tailscale ? `<div class="field"><span class="grow"><b class="ok">Tailscale is on.</b><small>This computer is laptop on your tailnet.</small></span></div>`
+    : `<div class="field"><span class="grow"><b>Tailscale is not installed.</b><small>${S.tsOpened ? 'Opened in your browser. Install it and sign in, then check again.' : 'Other computers and phones reach this one over it.'}</small></span><button class="btn ${S.tsOpened ? '' : 'btn--primary'}" data-act="ts-get">${ico('link')}Get Tailscale</button><button class="btn" data-act="ts-check">Check again</button></div>
+       <p class="note-inline"><button class="btn btn--pretend" data-act="ts-on">Pretend I installed Tailscale</button></p>`
+  const phones = `<div class="field"><span class="grow"><b>Install the beta</b><small>${S.beta ? '<span class="ok">Opened in your browser.</span>' : 'Opens Apple\'s TestFlight page in your browser.'}</small></span><button class="btn" data-act="beta">${ico('link')}Get the iPhone beta</button></div>
+    <div class="field"><button class="toggle" role="switch" aria-checked="${S.phones}" aria-label="Let phones connect" data-act="phones"></button><span class="grow"><b>Let phones connect</b><small>${S.phoneTold && !S.tailscale ? '<span class="warn">Phones need Tailscale on this computer. Get Tailscale above, then turn this on.</span>' : 'Only phones you pair can connect.'}</small></span>
+      ${S.phones ? (S.code ? '<span class="code">4821 0937</span>' : '<button class="btn btn--primary" data-act="code">Show a pairing code</button>') : ''}</div>`
+  return settings('Hosts & phones', `<h2>Hosts &amp; phones</h2><p class="lead">Other computers that run your threads, and the phones that can reach this one.</p>
+    <div class="card" id="tailscale"><h3>Tailscale</h3>${ts}</div>
+    <div class="card" id="hosts"><h3>Hosts</h3>${S.hosts ? '<div class="field"><span class="grow"><b>forge</b><small>Connected over your tailnet.</small></span></div>' : ''}<div class="field" style="background:none"><span class="grow" style="color:var(--muted);font-size:13px">${S.hosts ? '' : 'No other computers yet.'}</span><button class="btn" data-act="host">Add host</button></div></div>
+    <div class="card" id="phones"><h3>Phones</h3>${phones}</div>`)
+}
+function terminal() {
+  if (!S.terminal) return ''
+  const agent = AGENTS.find(a => a.id === S.terminal)
+  const lines = S.termDone
+    ? `<u>$</u> ${agent.command}\nOpening your browser to sign in…\n<em>Signed in.</em>\n\n${agent.name} is ready. This terminal closes by itself.`
+    : `<u>$</u> ${agent.command}\nOpening your browser to sign in…\nWaiting for you to finish in the browser.`
+  return `<div class="term"><header>${ico('term')}<b>Terminal</b>Signing in to ${agent.name}<span class="grow"></span>${S.termDone ? '' : '<button class="btn btn--pretend" data-act="term-done">Pretend I signed in</button>'}<button class="btn btn--ghost" data-act="term-close">Close</button></header><pre>${lines}</pre></div>`
+}
+
+/* ---------- the guide ---------- */
+function guideParts() {
+  const list = stops(), stop = list[S.stop], done = val(stop.done)
+  const status = stop.status ? stop.status() : null
+  const forwardLabel = stop.start ? 'Start' : stop.end ? 'Done' : stop.id === 'thread' && done ? 'Continue to dictation' : done ? 'Continue' : 'Skip for now'
+  const count = `${S.stop + 1} of ${list.length}`
+  const buttons = `${S.stop > 0 && !stop.end ? '<button class="btn btn--ghost" data-act="back">Back</button>' : ''}
+    <button class="btn ${done || stop.start ? 'btn--primary' : ''}" data-act="${stop.end ? 'finish' : 'forward'}">${forwardLabel}</button>`
+  const quit = stop.end ? '' : `<button class="quit" data-act="quit">${stop.id === 'thread' && done ? 'Finish here' : 'Skip setup'}</button>`
+  const left = stop.end ? leftOver() : ''
+  return { list, stop, done, status, count, buttons, quit, left }
+}
+function leftOver() {
+  const where = { agents: 'Settings › Providers', project: 'Add project, in the sidebar', thread: 'New thread, in the sidebar', omarchy: 'Settings › Dictation', mic: 'Settings › Dictation', model: 'Settings › Dictation', shortcut: 'the Dictate page', tailscale: 'Settings › Hosts & phones', computers: 'Settings › Hosts & phones', iphone: 'Settings › Hosts & phones' }
+  const open = stops().filter(stop => where[stop.id] && !val(stop.done))
+  if (!open.length) return '<p class="status ok">Everything in the walk is set up.</p>'
+  return `<p style="margin-bottom:4px">Still to do:</p><ul style="margin:0 0 10px;padding-left:18px;color:#c0c2d8;font-size:13px">${open.map(stop => `<li>${val(stop.title)}: ${where[stop.id]}</li>`).join('')}</ul>`
+}
+function guideNote() { // A
+  const g = guideParts()
+  return `<div class="gnote g" id="gnote" role="dialog" aria-label="Setup">
+    ${g.stop.start ? owlMark(true) + '<div style="height:10px"></div>' : ''}
+    <h4>${val(g.stop.title)}</h4><p>${val(g.stop.body)}</p>
+    ${g.stop.start ? `<div class="looks" role="radiogroup" aria-label="Appearance">${[['light', 'Light'], ['system', S.os === 'linux' ? 'Match Linux' : 'Match Windows'], ['dark', 'Dark']].map(([id, label]) => `<button role="radio" aria-checked="${S.look === id}" data-act="look:${id}">${label}</button>`).join('')}</div>
+      <p style="font-size:12.5px;color:var(--muted)">Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings.</p>` : ''}
+    ${g.status ? `<p class="status ${g.status[0]}">${g.status[1]}</p>` : ''}${g.left}
+    <div class="g__foot"><span class="g__count">${g.count}</span>${g.quit}<span class="grow"></span>${g.buttons}</div></div>`
+}
+function guideDock() { // B
+  const g = guideParts()
+  let group = ''
+  const items = g.list.map((stop, at) => {
+    const head = stop.group !== group ? `<span class="grp">${group = stop.group}</span>` : ''
+    const now = at === S.stop, shown = !stop.start && !stop.end && val(stop.done)
+    const blocked = stop.needsAgent && !anyReady()
+    return `${head}<li data-now="${now}" data-done="${shown}" data-skip="${S.skipped.has(stop.id) && !shown}"><span class="dot">${shown ? ico('check') : ''}</span><div class="g">
+      <button class="t" data-act="jump:${at}">${val(stop.title)}</button>${blocked && !now ? '<div style="font-size:12px">Needs an agent first.</div>' : ''}
+      ${now ? `<p style="margin-top:4px">${val(stop.body)}</p>${g.status ? `<p class="status ${g.status[0]}">${g.status[1]}</p>` : ''}${g.left}<div class="g__foot">${g.buttons}</div>` : ''}</div></li>`
+  }).join('')
+  return `<aside class="dock" aria-label="Setup"><header>${owlMark()}Set up Sotto<span class="grow"></span><button class="quit g" style="background:none;border:0;color:var(--muted);text-decoration:underline;font-size:12.5px" data-act="quit">Hide</button></header><ol>${items}</ol></aside>`
+}
+function guideBand() { // C
+  const g = guideParts()
+  return `<div class="band g" role="region" aria-label="Setup">${owlMark()}
+    <div class="txt"><b>${val(g.stop.title)}</b>${val(g.stop.short)}${g.status ? ` <span class="${g.status[0]}" style="font-weight:600">${g.status[1]}</span>` : ''}
+      <div class="dots" style="margin-top:5px">${g.list.map((stop, at) => `<i data-now="${at === S.stop}" data-done="${at < S.stop && val(stop.done)}"></i>`).join('')}</div></div>
+    ${g.quit}${g.buttons}</div>`
+}
+
+/* ---------- render ---------- */
+function render() {
+  const win = document.getElementById('win')
+  const stop = stopNow()
+  const page = val(stop.page)
+  const body = { threads: pageThreads, providers: pageProviders, dictation: pageDictation, dictate: pageDictate, hosts: pageHosts }[page]()
+  win.dataset.variant = S.over ? 'X' : S.variant
+  win.dataset.look = S.look === 'light' ? 'light' : 'dark'
+  const band = !S.over && S.variant === 'C' ? guideBand() : ''
+  win.innerHTML = `${sidebar(page)}<section class="main">${band}${body}${terminal()}</section>${!S.over && S.variant === 'B' ? guideDock() : ''}`
+  const target = S.over ? null : val(stop.target) && win.querySelector(val(stop.target))
+  if (!S.over && S.variant === 'A') {
+    win.insertAdjacentHTML('beforeend', target ? '<div class="hole" id="hole"></div>' : '<div class="dim"></div>')
+    win.insertAdjacentHTML('beforeend', guideNote())
+    placeNote(win, target)
+  } else if (target) target.classList.add('ring')
+  renderAbout(stop)
+  renderBar()
+  fit()
+  const params = new URLSearchParams({ variant: S.variant, stop: stop.id, agents: S.agentSet, os: S.os, ...(S.zoom ? { zoom: '1' } : {}) })
+  history.replaceState(null, '', `?${params}`)
+}
+function placeNote(win, target) {
+  const note = win.querySelector('#gnote'), W = 1080, H = 720, gap = 16
+  const nh = note.offsetHeight, nw = note.offsetWidth
+  if (!target) { note.style.left = `${(W - nw) / 2}px`; note.style.top = `${(H - nh) / 2}px`; return }
+  const scale = win.getBoundingClientRect().width / W, wr = win.getBoundingClientRect(), tr = target.getBoundingClientRect()
+  const t = { left: (tr.left - wr.left) / scale, top: (tr.top - wr.top) / scale, width: tr.width / scale, height: tr.height / scale }
+  const hole = win.querySelector('#hole'), pad = 6
+  Object.assign(hole.style, { left: `${t.left - pad}px`, top: `${t.top - pad}px`, width: `${t.width + pad * 2}px`, height: `${t.height + pad * 2}px` })
+  const termTop = S.terminal ? H - 230 : H
+  let left, top
+  if (t.left + t.width + gap + nw < W - gap) { left = t.left + t.width + gap + pad; top = t.top }
+  else if (t.top + t.height + gap + nh < termTop - gap) { left = t.left + t.width - nw; top = t.top + t.height + gap + pad }
+  else if (t.top - gap - nh > gap) { left = t.left + t.width - nw; top = t.top - gap - pad - nh }
+  else { left = t.left - gap - pad - nw; top = t.top }
+  note.style.left = `${Math.max(gap, Math.min(W - nw - gap, left))}px`
+  note.style.top = `${Math.max(gap, Math.min(termTop - nh - gap, top))}px`
+}
+function fit() {
+  const stage = document.getElementById('stage'), scaler = document.getElementById('scaler')
+  stage.dataset.zoom = S.zoom ? '1' : '0'
+  const room = Math.min(document.body.clientWidth - 28, 1080)
+  const scale = S.zoom ? 1 : Math.min(1, room / 1080)
+  scaler.style.transform = `scale(${scale})`
+  stage.style.width = S.zoom ? `${room}px` : `${1080 * scale}px`
+  stage.style.height = S.zoom ? '' : `${720 * scale}px`
+  if (S.zoom) {
+    const lit = document.querySelector('#gnote, .dock li[data-now=true], .band, .ring')
+    if (lit) { const r = lit.getBoundingClientRect(), s = stage.getBoundingClientRect(); stage.scrollLeft += r.left - s.left - 20; stage.scrollTop += r.top - s.top - 60 }
+  }
+}
+const NEW = {
+  welcome: ['No setup card. Sotto opens on the real Threads page and the walk starts there.', '<span class="new">Added November 10 from your pick:</span> light, dark or match the system on this first note. It repaints the window at once. Themes stay in Settings › Appearance.', 'The welcome\'s privacy lines sit in this note; the product events notice follows the walk, as it follows the tour today.'],
+  agents: ['<span class="new">New on the real page:</span> Sign in on a signed-out agent\'s row in Settings › Providers. It opens Sotto\'s terminal on the client\'s own sign-in command. This amends ADR-0063 decision 3 ("signs in to nothing").', 'Not installed keeps Install guide, as today. Every row uses the same four states in the same words; a client\'s own error sentence is not shown raw.', 'With no agent ready, Skip for now passes over the project and the thread and goes on to dictation, and the last note lists what is left. Try it with "Agents: none installed" below.'],
+  project: ['The lit control is the sidebar\'s own Add project. The folder picker is simulated here.'],
+  thread: ['The lit control is the sidebar\'s own New thread. Once the thread is open the guide moves to the composer: this is the point you chose as "setup\'s first part is done".', 'From here every stop is optional: Continue to dictation, or Finish here.'],
+  omarchy: ['Linux only. One button for the three Omarchy changes, on Settings › Dictation where they can be removed.'],
+  mic: ['The same microphone test as today, on Settings › Dictation where it already lives.'],
+  model: ['The same three downloads as today, on Settings › Dictation.'],
+  shortcut: ['On the Dictate page. Today\'s setup has a paste field instead.'],
+  tailscale: ['<span class="new">New stop,</span> as you asked: Tailscale before other computers and the iPhone, because both need it.', 'Get Tailscale opens its download page in the browser; Check again looks for it.'],
+  computers: ['The lit control is Settings › Hosts & phones\' own Add host, so the note uses that page\'s word. The real Add host dialog opens from it.'],
+  iphone: ['Without Tailscale the switch does not turn on, and says why, with Get Tailscale on the same page. Today the switch stays on beside "nothing was changed".'],
+  end: ['The last note lists whatever was skipped and where it lives. There is no separate tour.', 'Help starts the walk again, as you picked on November 10.'],
+}
+function renderAbout(stop) {
+  const g = guideParts()
+  const names = { A: 'A · Notes on the page', B: 'B · Guide beside the page', C: 'C · One line across the top' }
+  const how = { A: 'The control is lit and the rest of the window is dimmed. The note sits beside the control.', B: 'The whole walk is a list docked at the window\'s right edge. The page stays live and nothing is dimmed; any item can be opened out of order.', C: 'One band across the top of the page. The page stays live and nothing is dimmed.' }
+  document.getElementById('about').innerHTML = S.over
+    ? '<h2>Setup is closed</h2><p style="color:#a3a5bd;margin:0">This is Sotto with no guide showing. Use Back below to reopen the walk.</p>'
+    : `<h2>${names[S.variant]} — stop ${g.count}</h2><p style="color:#a3a5bd;margin:0">${how[S.variant]}</p>
+      <div class="said"><b>${val(stop.title)}</b>${val(S.variant === 'C' ? stop.short : stop.body)}${g.status ? `<br><span style="color:${g.status[0] === 'ok' ? '#63d6a8' : '#f0b454'}">${g.status[1]}</span>` : ''}</div>
+      <ul>${(NEW[stop.id] || []).map(line => `<li>${line}</li>`).join('')}</ul>`
+}
+function renderBar() {
+  const press = (on, act, label) => `<button aria-pressed="${on}" data-bar="${act}">${label}</button>`
+  document.getElementById('bar').innerHTML = `
+    <span class="grp">${press(S.variant === 'A', 'v:A', 'A Notes')}${press(S.variant === 'B', 'v:B', 'B Beside')}${press(S.variant === 'C', 'v:C', 'C Line')}</span>
+    <span class="grp"><button data-bar="prev">◀ Back</button><button data-bar="next">Next ▶</button><button data-bar="reset">Restart</button></span>
+    <span class="more"><span class="grp">${press(S.zoom, 'zoom', 'Full size')}</span>
+    <span class="grp">Agents ${press(S.agentSet === 'mixed', 'a:mixed', 'signed out')}${press(S.agentSet === 'none', 'a:none', 'none installed')}${press(S.agentSet === 'ready', 'a:ready', 'ready')}</span>
+    <span class="grp">${press(S.os === 'win', 'o:win', 'Windows')}${press(S.os === 'linux', 'o:linux', 'Linux')}</span></span>`
+}
+
+/* ---------- presses ---------- */
+document.getElementById('win').addEventListener('click', event => {
+  const el = event.target.closest('[data-act]')
+  if (!el) return
+  const [act, arg] = el.dataset.act.split(':')
+  if (act === 'forward') return forward()
+  if (act === 'back') return go(-1)
+  if (act === 'finish' || act === 'quit') { S.over = true; return render() }
+  if (act === 'jump') { S.stop = Number(arg); S.terminal = null; return render() }
+  if (act === 'look') S.look = arg
+  if (act === 'signin') { S.terminal = arg; S.termDone = false }
+  if (act === 'term-done') { S.termDone = true; S.agents[S.terminal] = 'ready'; render(); return void setTimeout(() => { S.terminal = null; render() }, 1600) }
+  if (act === 'term-close') S.terminal = null
+  if (act === 'guide') S.guided.add(arg)
+  if (act === 'project') { if (!anyReady()) return; S.project = true }
+  if (act === 'thread') { if (!S.project || !anyReady()) return; S.thread = true; S.stop = indexOf('thread') }
+  if (act === 'omarchy') S.omarchy = !S.omarchy
+  if (act === 'mic') { if (S.mic === 'listening') S.mic = 'idle'; else { S.mic = 'listening'; render(); return void setTimeout(() => { if (S.mic === 'listening') { S.mic = 'heard'; render() } }, 1500) } }
+  if (act === 'model') S.model = arg
+  if (act === 'tried') S.tried = true
+  if (act === 'ts-get') S.tsOpened = true
+  if (act === 'ts-on') { S.tailscale = true; S.phoneTold = false }
+  if (act === 'host') S.hosts = 1
+  if (act === 'beta') S.beta = true
+  if (act === 'phones') { if (!S.tailscale) S.phoneTold = true; else { S.phones = !S.phones; if (!S.phones) S.code = false } }
+  if (act === 'code') S.code = true
+  render()
+})
+document.getElementById('bar').addEventListener('click', event => {
+  const el = event.target.closest('[data-bar]')
+  if (!el) return
+  const [act, arg] = el.dataset.bar.split(':')
+  if (act === 'v') { S.variant = arg; S.over = false }
+  if (act === 'prev') { if (S.over) S.over = false; else return go(-1) }
+  if (act === 'next') { S.over = false; return forward() }
+  if (act === 'a') { S.agentSet = arg; S.agents = { ...AGENT_SETS[arg] }; S.terminal = null; if (!anyReady()) { S.project = false; S.thread = false; if (stopNow().needsAgent) S.stop = indexOf('agents') } }
+  if (act === 'o') { const id = stopNow().id; S.os = arg; S.stop = Math.max(0, indexOf(id)) }
+  if (act === 'zoom') S.zoom = !S.zoom
+  if (act === 'reset') return void (location.href = location.pathname + `?variant=${S.variant}`)
+  render()
+})
+addEventListener('resize', fit)
+const first = indexOf(q.get('stop'))
+if (first > 0) {
+  // A link to a later stop opens with what the earlier stops would have set up.
+  if (S.agentSet !== 'none') {
+    if (first >= indexOf('project') && !anyReady()) S.agents.codex = 'ready'
+    if (first >= indexOf('thread')) S.project = true
+    if (first > indexOf('thread')) S.thread = true
+  }
+  S.stop = stops()[first].needsAgent && !anyReady() ? indexOf('agents') : first
+}
+document.fonts?.ready.then(render)
+render()
+</script>
+</body>
+</html>
