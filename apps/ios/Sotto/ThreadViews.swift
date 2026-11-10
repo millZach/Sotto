@@ -1584,10 +1584,13 @@ private struct MarkdownTableView: View {
     @ScaledMetric(relativeTo: .footnote) private var cellWidth: CGFloat = 180
     /// The widest a card's labels run before they wrap, leaving the rest of the row to the value.
     @ScaledMetric(relativeTo: .footnote) private var labelWidth: CGFloat = 140
+    /// On the Duo held sideways, a column whose words run no wider than this keeps them on one line.
+    @ScaledMetric(relativeTo: .footnote) private var shortColumn: CGFloat = 120
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         ViewThatFits(in: .horizontal) {
-            grid
+            wide
             cards
         }
         .background(Palette.code, in: shape)
@@ -1596,6 +1599,47 @@ private struct MarkdownTableView: View {
     }
 
     private var columns: Range<Int> { 0..<table.header.count }
+
+    /// The Duo held sideways sizes each column by its words (`ProportionalColumns`); every other phone keeps the grid.
+    @ViewBuilder private var wide: some View {
+        if duo.sideways { proportionalGrid } else { grid }
+    }
+
+    private var proportionalGrid: some View {
+        ProportionalColumns(columns: table.header.count, cap: cellWidth, shortColumn: shortColumn) {
+            ForEach(columns, id: \.self) { column in
+                proportionalCell(table.header[column], column: column, header: true)
+            }
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                ForEach(columns, id: \.self) { column in
+                    proportionalCell(row[column], column: column, header: false)
+                }
+            }
+        }
+    }
+
+    /// A cell of the proportional grid; a row under the header carries the hairline above it.
+    private func proportionalCell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
+        let layout = table.alignments[column].layout
+        return cellText(text, column: column, header: header)
+            .frame(maxWidth: .infinity, alignment: layout.frame)
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.dense(Space.s2, density))
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, header ? 0 : 1)
+            .overlay(alignment: .top) {
+                if !header { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            }
+    }
+
+    private func cellText(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
+        Text(InlineStyle.render(text, theme: theme))
+            .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
+            .foregroundStyle(header ? Palette.muted : Palette.ink)
+            .multilineTextAlignment(table.alignments[column].layout.text)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
 
     private var grid: some View {
         Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -1619,12 +1663,7 @@ private struct MarkdownTableView: View {
     private func cell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
         let layout = table.alignments[column].layout
         return CappedWidth(width: cellWidth) {
-            Text(InlineStyle.render(text, theme: theme))
-                .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
-                .foregroundStyle(header ? Palette.muted : Palette.ink)
-                .multilineTextAlignment(layout.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            cellText(text, column: column, header: header)
         }
         .frame(maxWidth: column == 0 ? .infinity : nil, alignment: layout.frame)
         .padding(.horizontal, Space.s3)
@@ -1733,6 +1772,67 @@ private struct CappedWidth: Layout {
     }
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
+/// A table's cells, row by row, `columns` to a row, on the Duo held sideways (the Duo design climb's round 6): each
+/// column takes the width in proportion to how wide its words run on one line, so a short column doesn't stand wide while
+/// a long one wraps narrow. A column whose words fit `shortColumn` keeps them on one line. Its ideal width is the grid's,
+/// each column's words up to `cap`, so the table takes the grid's place, or the cards', under the same test.
+private struct ProportionalColumns: Layout {
+    let columns: Int
+    let cap: CGFloat
+    let shortColumn: CGFloat
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard columns > 0 else { return .zero }
+        let natural = naturalWidths(subviews)
+        let width = proposal.width ?? natural.reduce(0) { $0 + min($1, cap) }
+        let heights = rowHeights(subviews, widths: shares(natural, in: width))
+        return CGSize(width: width, height: heights.reduce(0, +))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard columns > 0 else { return }
+        let widths = shares(naturalWidths(subviews), in: bounds.width)
+        var y = bounds.minY
+        for (row, height) in rowHeights(subviews, widths: widths).enumerated() {
+            var x = bounds.minX
+            for column in 0..<columns where row * columns + column < subviews.count {
+                subviews[row * columns + column].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: widths[column], height: height))
+                x += widths[column]
+            }
+            y += height
+        }
+    }
+    /// Each column's widest cell with its words on one line.
+    private func naturalWidths(_ subviews: Subviews) -> [CGFloat] {
+        var widths = Array(repeating: CGFloat(0), count: columns)
+        for (index, view) in subviews.enumerated() {
+            widths[index % columns] = max(widths[index % columns], view.sizeThatFits(.unspecified).width)
+        }
+        return widths
+    }
+    /// The width shared in proportion to the columns' words; a column whose share would wrap words that fit
+    /// `shortColumn` keeps that width instead, and the rest share what is left.
+    private func shares(_ natural: [CGFloat], in width: CGFloat) -> [CGFloat] {
+        let floors = natural.map { min($0, shortColumn) }
+        var held = Set<Int>()
+        while true {
+            let open = natural.indices.filter { !held.contains($0) }
+            let room = width - held.reduce(0) { $0 + floors[$1] }
+            let words = open.reduce(0) { $0 + natural[$1] }
+            guard words > 0 else { return floors }
+            let short = open.filter { natural[$0] * room / words < floors[$0] }
+            if short.isEmpty { return natural.indices.map { held.contains($0) ? floors[$0] : natural[$0] * room / words } }
+            held.formUnion(short)
+        }
+    }
+    /// Each row as tall as its tallest cell at its column's width.
+    private func rowHeights(_ subviews: Subviews, widths: [CGFloat]) -> [CGFloat] {
+        stride(from: 0, to: subviews.count, by: columns).map { start in
+            (start..<min(start + columns, subviews.count)).reduce(CGFloat(0)) { tallest, index in
+                max(tallest, subviews[index].sizeThatFits(ProposedViewSize(width: widths[index - start], height: nil)).height)
+            }
+        }
     }
 }
 
