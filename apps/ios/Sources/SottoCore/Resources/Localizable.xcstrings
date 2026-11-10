@@ -4801,6 +4801,198 @@
         }
       }
     },
+    "%@ keeps the effort a thread started on. To use another level, start a new thread." : {
+      "comment" : "Why a started thread's effort can't be changed. %@ is the agent's name, such as Grok Build.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتفظ %@ بالجهد الذي بدأت به المحادثة. لاستخدام مستوى آخر، ابدأ محادثة جديدة."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "থ্রেড যে প্রচেষ্টা নিয়ে শুরু হয়েছিল, %@ সেটাই রাখে। অন্য মাত্রা ব্যবহার করতে নতুন থ্রেড শুরু করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ponechává úsilí, se kterým vlákno začalo. Chcete-li jinou úroveň, začněte nové vlákno."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ beholder den indsats, en tråd startede med. Start en ny tråd for at bruge et andet niveau."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ behält den Aufwand bei, mit dem ein Thread begonnen hat. Für eine andere Stufe starte einen neuen Thread."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το %@ κρατά την προσπάθεια με την οποία ξεκίνησε ένα νήμα. Για άλλο επίπεδο, ξεκινήστε νέο νήμα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ keeps the effort a thread started on. To use another level, start a new thread."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantiene el esfuerzo con el que empezó el hilo. Para usar otro nivel, inicia un hilo nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantiene el esfuerzo con el que empezó el hilo. Para usar otro nivel, inicia un hilo nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantiene el esfuerzo con el que empezó el hilo. Para usar otro nivel, inicia un hilo nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ pitää päättelytason, jolla ketju aloitettiin. Jos haluat toisen tason, aloita uusi ketju."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ conserve l’effort avec lequel le fil a commencé. Pour un autre niveau, commencez un nouveau fil."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "थ्रेड जिस प्रयास पर शुरू हुआ था, %@ उसी को बनाए रखता है। दूसरा स्तर चाहिए तो नया थ्रेड शुरू करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ megtartja azt az erőfeszítést, amellyel a szál indult. Másik szinthez indíts új szálat."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantiene l’impegno con cui è iniziato il thread. Per usare un altro livello, avvia un nuovo thread."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ では、スレッド開始時の推論レベルが変わりません。別のレベルを使うには、新しいスレッドを始めてください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "थ्रेड ज्या प्रयत्नावर सुरू झाला तोच %@ ठेवतो. दुसरी पातळी हवी असल्यास नवीन थ्रेड सुरू करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ beholder innsatsen en tråd startet med. Start en ny tråd for å bruke et annet nivå."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ houdt de inspanning aan waarmee een thread begon. Start een nieuwe thread voor een ander niveau."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ zachowuje wysiłek, z jakim rozpoczął się wątek. Aby użyć innego poziomu, rozpocznij nowy wątek."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantém o esforço com que a conversa começou. Para usar outro nível, inicie uma nova conversa."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mantém o esforço com que a conversa começou. Para usar outro nível, inicie uma nova conversa."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ păstrează efortul cu care a pornit firul. Pentru alt nivel, pornește un fir nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ behåller den ansträngning en tråd startade med. Starta en ny tråd för att använda en annan nivå."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "த்ரெட் தொடங்கிய முயற்சி நிலையை %@ மாற்றாமல் வைத்திருக்கும். வேறு நிலையைப் பயன்படுத்த புதிய த்ரெட்டைத் தொடங்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "థ్రెడ్ ఏ ప్రయత్నంతో ప్రారంభమైందో %@ దాన్నే ఉంచుతుంది. వేరే స్థాయి కావాలంటే కొత్త థ్రెడ్‌ను ప్రారంభించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, bir sohbetin başladığı çaba düzeyini korur. Başka bir düzey için yeni bir sohbet başlatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ зберігає зусилля, з яким розпочався тред. Щоб використати інший рівень, розпочніть новий тред."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تھریڈ جس محنت پر شروع ہوا تھا، %@ اسی کو برقرار رکھتا ہے۔ دوسرا درجہ استعمال کرنے کے لیے نیا تھریڈ شروع کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 会保持会话开始时的推理强度。要使用其他强度，请新建一个会话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 會保持對話開始時的推理強度。要使用其他強度，請新建一個對話。"
+          }
+        }
+      }
+    },
     "%@ no longer offers %@, so this thread now uses %@." : {
       "comment" : "A note in a thread: its model was retired by the provider (first), and Sotto moved it to another (third).",
       "extractionState" : "manual",

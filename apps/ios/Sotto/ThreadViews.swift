@@ -2773,7 +2773,9 @@ private struct ThreadSettingsPill: View {
     }
 
     @ViewBuilder private var effortRow: some View {
-        if let effortName {
+        if let effortName, let reason = panel.effortFixedReason {
+            FixedSettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName, reason: reason)
+        } else if let effortName {
             Menu {
                 ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
                     option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {

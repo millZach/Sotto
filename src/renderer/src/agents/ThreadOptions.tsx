@@ -24,6 +24,8 @@ import { providerKey } from './threadFacts'
 import { nextTurnChoiceOf, nextTurnKinds, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, settingValuesInForce, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
+import { FixedEffortChip } from './FixedEffortChip'
+import { isTopEffort } from '../../../shared/topEffort'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
@@ -499,7 +501,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       }} />
       {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('fast')} describedBy={describedFor('fast')}
         onChange={changeSpeed} />}
-      {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
+      {/* Where the provider keeps a started thread's model, it keeps its effort too, and the chip says so (#228). */}
+      {modelDisabled && (quiet ? levels.length > 0 : efforts.length > 0)
+        ? <FixedEffortChip level={reasoning} provider={stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })} quiet={Boolean(quiet)}
+          trace={isTopEffort(levels, reasoning)} />
+      : quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('effort') || kept.has('fast')} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={dynamic.overseeing ? null : suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}

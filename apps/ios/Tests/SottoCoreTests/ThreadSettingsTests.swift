@@ -115,6 +115,16 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(ThreadSettings.unconfirmed(speedOnly, threadID: "t"), [.speed], "A null speed still names the speed")
         XCTAssertNil(panel(speedOnly)?.fixed, "A speed with no result holds nothing back")
     }
+    /// Where the agent keeps a started thread's model, its effort stays too, and the sheet says why (#228).
+    func testAStartedThreadWhoseAgentKeepsItsEffortSaysWhy() throws {
+        let grok = #"{"id":"grok-build","name":"Grok 4.7 Build","provider":"Grok Build","providerId":"grok","ready":true,"reasoningEfforts":["low","high"],"runtimeModes":["approval-required","full-access"]}"#
+        let json = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"grok","requests":[],"modelId":"grok-build","status":"idle","reasoningEffort":"high"}],"projects":[],"models":[\#(grok)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true,"configureThreadModel":false}}}"#
+        let value = try XCTUnwrap(panel(JSONDecoder().decode(Shell.self, from: Data(json.utf8))))
+        XCTAssertFalse(value.pressable(.effort))
+        XCTAssertTrue(value.pressable(.permissions))
+        XCTAssertEqual(value.effortFixedReason, "Grok Build keeps the effort a thread started on. To use another level, start a new thread.")
+        XCTAssertNil(try XCTUnwrap(panel(shell())).effortFixedReason, "An agent that changes a started thread's effort says nothing")
+    }
     func testAPhoneThatCantAnswerCanOnlyKeepTheThreadAsking() throws {
         let value = try XCTUnwrap(panel(shell(), mayAnswer: false))
         XCTAssertTrue(value.mayChoose(try XCTUnwrap(value.permissions.first { $0.id == "approval-required" })))

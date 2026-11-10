@@ -241,6 +241,11 @@ public enum ThreadSettingWords {
         default: return nil
         }
     }
+    /// Why a started thread's effort can't change, where its agent keeps the level the thread began on (#228), as the
+    /// desktop's fixed effort chip says it (`fixedEffortReason` in `FixedEffortChip.tsx`).
+    public static func effortFixed(provider: String) -> String {
+        String(localized: "\(provider) keeps the effort a thread started on. To use another level, start a new thread.", bundle: .module, comment: "Why a started thread's effort can't be changed. %@ is the agent's name, such as Grok Build.")
+    }
     /// The line above the box while a permission change waits: what is still in force, in the agent's name. Under
     /// Codex's Allow actions a reviewer model answers in the user's place, so that caption says so.
     public static func inForce(provider: String, runtimeMode: String?, providerModeName: String?, providerID: String? = nil) -> String {
@@ -542,6 +547,9 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
             permissionPending: pendingPermission, caption: caption, notices: notices, drawn: drawn, unpressed: unpressed)
     }
 
+    /// Why the effort stays as it is, where the agent keeps a started thread's model and effort (Grok, #228); nil where
+    /// the effort can change or the model offers no levels. The sheet's Effort row shows it, a lock in place of its menu.
+    public var effortFixedReason: String? { modelFixed && !efforts.isEmpty ? ThreadSettingWords.effortFixed(provider: provider) : nil }
     /// Whether a chip of this kind can be pressed now.
     public func pressable(_ kind: ThreadSettingKind) -> Bool {
         guard fixed == nil else { return false }
