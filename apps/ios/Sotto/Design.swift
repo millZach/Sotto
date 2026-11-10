@@ -423,6 +423,8 @@ struct Light: View {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         Group {
             if tone == .off {
@@ -436,7 +438,7 @@ struct Light: View {
                 .frame(width: disc, height: disc)
                 .background {
                     if glow.shows {
-                        let reach = Light.haloRadius(disc, glow)
+                        let reach = Light.haloRadius(disc, glow, reach: haloReach)
                         Circle()
                             .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
                                                  startRadius: disc * 0.3, endRadius: reach))
@@ -445,14 +447,14 @@ struct Light: View {
                 }
             } else if moving {
                 // The same dot and halo drawn by Core Animation, which breathes it without the app's help.
-                BreathingLight(color: theme.rgb(role), glow: glow)
+                BreathingLight(color: theme.rgb(role), glow: glow, reach: haloReach)
                     .allowsHitTesting(false)
             } else {
                 // A gradient halo rather than a shadow: it costs nothing to move or fade.
                 Circle().fill(color)
                     .background {
                         if glow.shows {
-                            let reach = Light.haloRadius(size, glow)
+                            let reach = Light.haloRadius(size, glow, reach: haloReach)
                             Circle()
                                 .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
                                                      startRadius: size * 0.3, endRadius: reach))
@@ -468,7 +470,14 @@ struct Light: View {
     /// At the standard glow the halo reaches as far past the dot as the shadow it replaced did (about 13 points, whatever
     /// the dot's size), starting a little softer than the dot so the core stays the dot itself.
     static let haloStrength = 0.45
-    static func haloRadius(_ size: CGFloat, _ glow: PhoneGlow) -> CGFloat { size / 2 + CGFloat(glow.radius(13)) }
+    /// `reach` scales how far the halo runs past the dot.
+    static func haloRadius(_ size: CGFloat, _ glow: PhoneGlow, reach: CGFloat = 1) -> CGFloat {
+        size / 2 + CGFloat(glow.radius(13)) * reach
+    }
+    /// On the Duo in light the halo keeps its core and ends close to the dot, about 4 points past it at the standard glow
+    /// rather than 13, so a dot reads as a light rather than a cloud on the pale room; dark keeps the full reach (Zach's
+    /// round 6 pick A, November 10, 2026).
+    private var haloReach: CGFloat { duo != .none && scheme == .light ? 0.3 : 1 }
     private var role: ThemeRoleName {
         switch tone {
         case .accent: return .accent
@@ -484,9 +493,10 @@ struct Light: View {
 private struct BreathingLight: UIViewRepresentable {
     let color: ThemeRGB
     let glow: PhoneGlow
+    let reach: CGFloat
     func makeUIView(context: Context) -> LightLoopView { LightLoopView(frame: .zero) }
     func updateUIView(_ view: LightLoopView, context: Context) {
-        view.paint(color, glow: glow)
+        view.paint(color, glow: glow, reach: reach)
         view.running = true
     }
 }
@@ -507,12 +517,14 @@ final class LightLoopView: LoopingView {
     required init?(coder: NSCoder) { fatalError("LightLoopView is made in code") }
     private var painted: ThemeRGB?
     private var glow = PhoneGlow(PhoneGlow.standard)
-    func paint(_ color: ThemeRGB, glow: PhoneGlow) {
+    private var reach: CGFloat = 1
+    func paint(_ color: ThemeRGB, glow: PhoneGlow, reach: CGFloat) {
         // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
-        guard color != painted || glow != self.glow else { return }
-        let reaches = glow != self.glow
+        guard color != painted || glow != self.glow || reach != self.reach else { return }
+        let reaches = glow != self.glow || reach != self.reach
         painted = color
         self.glow = glow
+        self.reach = reach
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
@@ -530,7 +542,7 @@ final class LightLoopView: LoopingView {
         let side = min(bounds.width, bounds.height)
         dot.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
         dot.cornerRadius = side / 2
-        let radius = Light.haloRadius(side, glow)
+        let radius = Light.haloRadius(side, glow, reach: reach)
         halo.frame = CGRect(x: bounds.midX - radius, y: bounds.midY - radius, width: radius * 2, height: radius * 2)
         halo.locations = [NSNumber(value: Double(side * 0.3 / radius)), NSNumber(value: 1.0)]
     }
@@ -1386,9 +1398,10 @@ private struct GlowLayer: View {
     /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
     private var blur: CGFloat { CGFloat(glow.radius(18)) * reach }
     private var drop: CGFloat { CGFloat(glow.radius(10)) * reach }
-    /// On the Duo in light, a glow reaches a third as far at the same strength, a tighter ring that no longer washes
-    /// across the gutters onto the next card; dark keeps the full reach (Zach's pick B, November 9, 2026, round 4).
-    private var reach: CGFloat { duo != .none && scheme == .light ? 1.0 / 3 : 1 }
+    /// On the Duo in light, a glow reaches a sixth as far at the same strength, so it keeps its core and ends close to the
+    /// card's edge rather than washing across the gutters onto the next card; dark keeps the full reach. Round 4 took it
+    /// to a third (Zach's pick B, November 9, 2026) and round 6 tightened it again (his pick A, November 10, 2026).
+    private var reach: CGFloat { duo != .none && scheme == .light ? 1.0 / 6 : 1 }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
