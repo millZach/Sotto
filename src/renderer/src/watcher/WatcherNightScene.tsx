@@ -14,6 +14,7 @@ import {
 import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
+import { OwlHunt } from './owlHunt'
 import { headOf, OwlLives, roundPerch } from './owlLife'
 import { busyOf, WoodLife } from './woodLife'
 import type { AmbientGlyph } from './scenePlace'
@@ -293,15 +294,17 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
     let gazeFrom: number | null = null
     /** Whether the owls' lives move now: the feature is on, motion is not reduced or held, and the margins have trees. */
     const alive = (): boolean => livingRef.current && !stillRef.current && layout?.mode === 'trees'
-    // The night wood's own life, while the scene is set there among trees; and Watcher's owl's dive for a mouse, with
-    // the place on the ground it sits in meanwhile, which stands in for its perch in the other tree.
+    // The night wood's own life, while the scene is set there among trees; and Watcher's owl's dive for a mouse
+    // (`owlHunt.ts`), during which the place on the ground it sits in stands in for its perch in the other tree.
     let wood: WoodLife | null = null
-    let hunt: { stage: 'mouse' | 'dive' | 'sit' | 'home'; at: number } | null = null
-    let perch: Point | null = null
-    const owlLayout = (): SceneLayout => perch === null ? layout! : { ...layout!, visit: perch }
-    /** The wood's life is made for the layout it is in, and goes where the living scene, the night wood or its trees do. */
+    const hunt = new OwlHunt()
+    const owlLayout = (): SceneLayout => hunt.layoutFor(layout!)
+    /**
+     * The wood's life is made for the layout it is in, and goes where the living scene, the night wood or its trees do.
+     * A hunt under way ends with it, and an owl on the ground is home at once: its place there is gone with the wood.
+     */
     const syncWood = (): void => {
-      hunt = null; perch = null
+      watcher = hunt.end(watcher)
       wood = livingRef.current && layout !== null && layout.mode === 'trees' && painter.place === 'night-wood'
         ? new WoodLife(layout, clock(), Math.random, painter.linesShown ? { code: cell => painter.landCode(cell), strength: cell => painter.landStrength(cell) } : null) : null
     }
@@ -310,29 +313,6 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       let working = 0
       for (const owl of owlsRef.current) if (owl.mood === 'awake') working++
       return { busy: busyOf(working, owlsRef.current.length), working }
-    }
-    /** While nothing works and its owl is home, a mouse comes out under Watcher's tree and the owl dives for it, and misses. */
-    const startHunt = (t: number): void => {
-      if (wood === null || hunt !== null || round !== null || calls.length > 0 || watcher.flight !== null || watcher.at !== 'home') return
-      const at = wood.mouse(t)
-      if (at === null) return
-      perch = at
-      hunt = { stage: 'mouse', at: t + 1.5 }
-    }
-    const stepHunt = (t: number): void => {
-      if (hunt === null || wood === null || perch === null) return
-      if (hunt.stage === 'mouse' && t >= hunt.at) {
-        watcher = { ...watcher, flight: planFlight(owlLayout(), watcher, 'tree', t, false) }
-        hunt.stage = 'dive'
-      } else if (hunt.stage === 'dive') {
-        const flight = watcher.flight
-        // The mouse bolts a moment before the owl lands on where it was.
-        if (flight !== null && t >= flight.t0 + flight.dur - 0.8) wood.bolt(t)
-        if (flight === null) { hunt.stage = 'sit'; hunt.at = t + 2.6; callWatch = { at: { x: perch.x + 320, y: perch.y - 30 }, since: t, until: t + 1.9 } }
-      } else if (hunt.stage === 'sit' && t >= hunt.at) {
-        watcher = { ...watcher, flight: planFlight(owlLayout(), watcher, 'home', t, false) }
-        hunt.stage = 'home'
-      } else if (hunt.stage === 'home' && watcher.flight === null) { hunt = null; perch = null }
     }
     /** When the last frame started, and how long after it the next is due; null while nothing moves. */
     let last = Number.NEGATIVE_INFINITY
@@ -443,17 +423,24 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       lives.step(t)
       const { busy, working } = roomNow()
       if (living) {
-        if (hunt === null) stepRound(t)
+        if (!hunt.under) stepRound(t)
         if (wood !== null) {
           const animal = wood.step(t, busy, working)
-          if (animal === 'hunt') startHunt(t)
-          else if (animal !== null) wood.animalOut(animal, t)
-          stepHunt(t)
+          if (animal === 'hunt') {
+            // The owl hunts from home: one left in the other tree by its last call flies home first, and a hunt that
+            // cannot start now, the owl in the air or a call under way, keeps its turn.
+            const began = hunt.start(t, layout, watcher, wood, round === null && calls.length === 0)
+            watcher = began.watcher
+            if (began.outcome === 'later') wood.again(t)
+          } else if (animal !== null) wood.animalOut(animal, t)
+          const hunted = hunt.step(t, layout, watcher, wood)
+          watcher = hunted.watcher
+          if (hunted.look !== null) callWatch = hunted.look
         }
-      } else if (round !== null || calls.length > 0 || callWatch !== null || hunt !== null) {
-        // Motion reduced or held, or the feature gone: whatever was under way ends, and the owl is home.
-        if (perch !== null) watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
-        round = null; calls.length = 0; callWatch = null; hunt = null; perch = null
+      } else if (round !== null || calls.length > 0 || callWatch !== null || hunt.under) {
+        // Motion reduced or held, or the feature gone: whatever was under way ends, and an owl on the ground is home.
+        watcher = hunt.end(watcher)
+        round = null; calls.length = 0; callWatch = null
       }
       if (callWatch !== null && t > callWatch.until) callWatch = null
       // Its eyes follow the pointer while it moves in a margin, and let go a moment after it stops.
@@ -644,10 +631,9 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
         return
       }
       const t = clock()
-      // A new layout ends the owl's dive where it began, at home.
-      if (perch !== null) watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
       layout = next
       syncHalo()
+      // The wood is made again for the new layout, which ends the owl's dive where it began, at home.
       syncWood()
       if (counted) { pane.dataset.nightSceneLayouts = String(++layouts); pane.dataset.nightScenePlace = painter.place; pane.dataset.nightSceneDrawn = painter.linesShown ? 'lines' : 'density' }
       // A new layout ends every flight where it was going.

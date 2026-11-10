@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { CELL, groundAt, layoutScene, seeded, type SceneMeasure } from '../../../src/renderer/src/watcher/nightScene'
 import type { AmbientGlyph } from '../../../src/renderer/src/watcher/scenePlace'
 import {
-  ANIMAL_EVERY, busyOf, FIREFLIES, GUST_EVERY, MOST_HAPPENINGS, QUICK_WOOD_STEPS, QUIET_AFTER, QUIET_ANIMALS, riverAt, WOOD_STEPS, WoodLife, type LandGlyphs,
+  ANIMAL_EVERY, ANIMAL_RETRY, busyOf, FIREFLIES, GUST_EVERY, MOST_HAPPENINGS, QUICK_WOOD_STEPS, QUIET_AFTER, QUIET_ANIMALS, riverAt, WOOD_STEPS, WoodLife, type LandGlyphs,
 } from '../../../src/renderer/src/watcher/woodLife'
 
 function room(width: number, height: number): SceneMeasure {
@@ -91,6 +91,30 @@ describe('the wood’s life (ADR-0199)', () => {
     for (let t = 0; t < QUIET_AFTER - 2; t += 0.5) again.step(t, 0, 0)
     again.step(QUIET_AFTER - 1, 0.3, 1)
     for (let t = QUIET_AFTER; t < QUIET_AFTER * 2 - 2; t += 0.5) expect(again.step(t, 0, 0)).toBeNull()
+  })
+
+  it('lets an animal that could not come out keep its turn, and sends it again a few seconds on', () => {
+    // W3: the hunt's turn was used up when Watcher's owl could not start it, and the next animal took its place.
+    const wood = calm()
+    const next = (from: number, to: number): { readonly animal: string; readonly t: number } | null => {
+      for (let t = from; t < to; t += 0.5) { const animal = wood.step(t, 0, 0); if (animal !== null) return { animal, t } }
+      return null
+    }
+    const out: string[] = []
+    let t = 0
+    while (out.length < 3) { const sent = next(t, t + ANIMAL_EVERY * 2)!; out.push(sent.animal); t = sent.t + 0.5 }
+    const hunt = next(t, t + ANIMAL_EVERY * 2)!
+    expect([...out, hunt.animal]).toEqual([...QUIET_ANIMALS])
+    // It could not start: it is sent again soon, and is still the hunt, twice over.
+    for (let tries = 0, at = hunt.t; tries < 2; tries++) {
+      wood.again(at)
+      const again = next(at + 0.5, at + ANIMAL_EVERY)!
+      expect(again.animal).toBe('hunt')
+      expect(again.t - at).toBeLessThanOrEqual(ANIMAL_RETRY + 0.5)
+      at = again.t
+    }
+    // Once it has come out, the turn passes on to the first again.
+    expect(next(hunt.t + ANIMAL_RETRY * 3, hunt.t + ANIMAL_EVERY * 3)!.animal).toBe('fox')
   })
 
   it('answers a finished turn with a shooting star, a failed one with bats from the bare tree, and settled work with a meteor shower', () => {
@@ -199,7 +223,12 @@ describe('the wood’s life (ADR-0199)', () => {
     const wood = calm()
     wood.gust(1); wood.finished(1); wood.failed(1); wood.settled(1); wood.animalOut('fox', 1); wood.animalOut('cloud', 1)
     const still = frame(wood, 41.3, { still: true })
-    expect(still).toEqual(frame(wood, 41.3, { still: true }))
+    // W1: whenever it is painted again, for an owl's calm step or a new size, they are where they were. They were
+    // drawn at the scene's live clock, so each such painting moved every one of them.
+    for (const t of [0, 3, 44, 41.3, 5000.7]) expect(frame(wood, t, { still: true }), `painted again at ${t}`).toEqual(still)
+    expect(still.length).toBeGreaterThan(40)
+    // Moving, the same wood does change from one moment to another.
+    expect(frame(wood, 60)).not.toEqual(frame(wood, 64))
     expect(still.some(mark => '/^v>?*='.includes(mark.glyph) && mark.over && !mark.accent)).toBe(false)
     expect(still.filter(mark => mark.accent && !mark.over).length).toBeGreaterThan(0)
     expect(wood.stepOf(3, true)).toBe(0)

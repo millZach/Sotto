@@ -1,5 +1,5 @@
 import { CELL, clamp, gridFor, groundAt, lerp, seeded, type Point, type SceneLayout } from './nightScene'
-import type { AmbientGlyph } from './scenePlace'
+import { STILL_AMBIENCE_T, type AmbientGlyph } from './scenePlace'
 
 /**
  * The night wood's life in Watcher's living night scene (ADR-0199, decisions 9 to 11; Zach's pick E, "the wood mirrors
@@ -42,6 +42,8 @@ export const GUST_EVERY = { quiet: 26, busy: 6 } as const
 /** How long nothing must have worked before an animal comes out, and how long between one and the next, in seconds. */
 export const QUIET_AFTER = 20
 export const ANIMAL_EVERY = 90
+/** How long before an animal that could not come out is tried again, in seconds. */
+export const ANIMAL_RETRY = 5
 /** Fireflies in a room where everything works and in one where nothing does. */
 export const FIREFLIES = { busy: 5, quiet: 16 } as const
 /** Glints on the river, wisps of mist, meteors in a shower and bats in a flock. */
@@ -190,6 +192,15 @@ export class WoodLife {
     return QUIET_ANIMALS[this.animal++ % QUIET_ANIMALS.length]!
   }
 
+  /**
+   * The animal `step` just sent out could not come, such as the hunt while Watcher's owl is in the air: it keeps its
+   * turn, and is sent again a few seconds on, rather than the turn passing to the next.
+   */
+  again(t: number): void {
+    this.animal = Math.max(0, this.animal - 1)
+    this.nextAnimal = t + ANIMAL_RETRY
+  }
+
   /** Whether something quick is crossing at `t`, or about to: the scene draws more often while one does. */
   quick(t: number): boolean {
     return this.happenings.some(h => QUICK.has(h.kind) && t <= h.t0 + h.dur)
@@ -228,10 +239,12 @@ export class WoodLife {
    * The frame's glyphs at `t`, nearest first, since the painter gives a cell to the first that asks: what is happening,
    * the fireflies, the leaves, the river, the wind in the grass and the crowns, a cloud, and the mist. `busy` is the
    * room's, 0 to 1. `pointer` is where the pointer rests in the pane, which the fireflies keep clear of. Holding still,
-   * the fireflies, the river's glints and the mist stand where they rest, and nothing happens.
+   * the fireflies, the river's glints and the mist stand where they rest, and nothing happens: they are drawn as at one
+   * fixed moment, the one a place's own moving glyphs hold still at, so a scene painted again for another reason, an
+   * owl's calm step or a new size, shows them where they were.
    */
-  glyphs(t: number, still: boolean, busy: number, pointer: Point | null, emit: AmbientGlyph): void {
-    const g = this.layout, { w: cw, h: ch } = CELL, W = g.width
+  glyphs(now: number, still: boolean, busy: number, pointer: Point | null, emit: AmbientGlyph): void {
+    const g = this.layout, { w: cw, h: ch } = CELL, W = g.width, t = still ? STILL_AMBIENCE_T : now
     const sprite = (lines: readonly string[], x: number, y: number, strength: number, accents: string): void => {
       const width = Math.max(...lines.map(line => line.length)), c0 = Math.round(x / cw - width / 2), r0 = Math.floor((y - 1) / ch) - lines.length + 1
       lines.forEach((line, k) => { for (let j = 0; j < line.length; j++) if (line[j] !== ' ') emit((c0 + j + 0.5) * cw, (r0 + k + 0.5) * ch, line[j]!, accents.includes(line[j]!), strength, true) })
