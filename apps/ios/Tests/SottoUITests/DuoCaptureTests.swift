@@ -139,6 +139,9 @@ import UIKit
                 app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap(); sleep(2)
             }
             if unfolded, app.buttons["duo-sidebar"].exists {
+                // Back to the newest turn first, further than `thread-earlier` went up, so the shot shows a reader at the
+                // end keeping it as the column widens, not one who had scrolled up (the Duo design climb's round 6).
+                scrollPage(by: -480)
                 clip("sidebar-hide") { app.buttons["duo-sidebar"].tap(); sleep(2) }
                 shot("thread-sidebar-hidden")
                 clip("sidebar-show") { app.buttons["duo-sidebar"].tap(); sleep(2) }
