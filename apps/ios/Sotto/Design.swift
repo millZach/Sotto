@@ -1403,19 +1403,33 @@ private struct GlowLayer: View {
         .accessibilityHidden(true)
     }
     private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
-    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
-    private var blur: CGFloat { CGFloat(glow.radius(18)) * reach }
-    private var drop: CGFloat { CGFloat(glow.radius(10)) * reach }
-    /// On the Duo in light, a glow reaches a sixth as far at the same strength, so it keeps its core and ends close to the
-    /// card's edge rather than washing across the gutters onto the next card; dark keeps the full reach. Round 4 took it
-    /// to a third (Zach's pick B, November 9, 2026) and round 6 tightened it again (his pick A, November 10, 2026).
-    private var reach: CGFloat { duo != .none && scheme == .light ? 1.0 / 6 : 1 }
+    private var blur: CGFloat { CardGlowReach.blur(glow, duo: duo, scheme: scheme) }
+    private var drop: CGFloat { CardGlowReach.drop(glow, duo: duo, scheme: scheme) }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
         if reduceMotion { return 0.8 }
         return 0.55
     }
+}
+
+/// How far a card's glow reaches, so what stands near a card can keep clear of it.
+enum CardGlowReach {
+    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
+    static func blur(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
+        CGFloat(glow.radius(18)) * reach(duo: duo, scheme: scheme)
+    }
+    static func drop(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
+        CGFloat(glow.radius(10)) * reach(duo: duo, scheme: scheme)
+    }
+    /// How far below the card's bottom edge the glow shows: its drop, then its blur. Nothing at no glow.
+    static func below(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme) -> CGFloat {
+        glow.shows ? drop(glow, duo: duo, scheme: scheme) + blur(glow, duo: duo, scheme: scheme) : 0
+    }
+    /// On the Duo in light, a glow reaches a sixth as far at the same strength, so it keeps its core and ends close to the
+    /// card's edge rather than washing across the gutters onto the next card; dark keeps the full reach. Round 4 took it
+    /// to a third (Zach's pick B, November 9, 2026) and round 6 tightened it again (his pick A, November 10, 2026).
+    private static func reach(duo: DuoLayout, scheme: ColorScheme) -> CGFloat { duo != .none && scheme == .light ? 1.0 / 6 : 1 }
 }
 
 /// The still glow: the card's shape with a soft shadow drawn once.

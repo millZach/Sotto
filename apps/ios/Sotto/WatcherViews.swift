@@ -475,6 +475,8 @@ private struct WatcherConversationPane: View {
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoGlow) private var glow
+    @Environment(\.colorScheme) private var scheme
     @State private var follow = WatcherFollow()
     /// The height between the status bar and the box, so a short conversation sits at the bottom with the hero still at
     /// the top.
@@ -557,6 +559,7 @@ private struct WatcherConversationPane: View {
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("watcher-working")
+                            .padding(.top, workingClearance(under: page))
                         }
                         // What goes next, after Watcher's turn: a quiet line for each of the user's follow-ups (#1229, pick B).
                         ForEach(page?.followups ?? []) { item in
@@ -636,6 +639,14 @@ private struct WatcherConversationPane: View {
         // Where the page meets the status bar, its own ground fades in once it moves, as on a tab's page: no band.
         .overlay(alignment: .top) { TopFadeView(fade: topFade) }
         .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
+    }
+
+    /// Folded or sideways, the working line under a card waiting on the user starts where the card's glow ends, so the
+    /// amber halo never browns its teal (the Duo design climb's round 8). The page's own gap counts toward it; elsewhere,
+    /// and with no card above it, the line keeps the page's gap.
+    private func workingClearance(under page: WatcherPage?) -> CGFloat {
+        guard duo != .none, duo != .upright, page?.needsYou.isEmpty == false else { return 0 }
+        return max(0, CardGlowReach.below(glow, duo: duo, scheme: scheme) - Space.dense(Space.s5, density))
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
