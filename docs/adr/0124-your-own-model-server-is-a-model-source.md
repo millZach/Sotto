@@ -8,6 +8,15 @@ Zach asked for local inference for anyone who runs a model: "use whatever model 
 
 ## Context
 
+Amendment, November 9, 2026: Hermes (Owl) also runs servers added with a key.
+Add hands the key to Sotto's Hermes after Sotto's OpenCode has taken it, so a
+keyed add still needs OpenCode running and OpenCode stays the first keeper.
+Hermes keeps its copy in `own-server-keys.json` in Sotto's Hermes folder (mode
+600) and writes it to each Hermes profile's `.env`; the generated config names it
+only through `key_env`. Remove deletes Hermes's copy, from its record and from
+the `.env` of the root and every profile at once, before OpenCode signs out.
+A server keyed before this is offered on OpenCode alone until it is added again.
+
 People run models on their own machines with SGLang, vLLM, Ollama, LM Studio, llama.cpp and similar servers, nearly all of which answer the OpenAI API. Sotto drives native clients, and the one that can already run any OpenAI-compatible model is OpenCode 2 ([ADR-0087](0087-opencode-is-a-thread-provider.md)), whose live test already runs a thread against a local server declared in its config. What Sotto lacked was a way to declare one: OpenCode lists models only from its catalog, the sign-ins in Sotto's OpenCode folder and its config, and never asks a custom server what models it has.
 
 What the user calls a harness is, in Sotto's words, the **provider**. The server is a **model source**, as Anthropic or OpenRouter are under OpenCode.
@@ -63,3 +72,62 @@ Drake chose how a thread on one of the user's own servers shows what its server 
 - **What the figures are.** The graph, the first word and the words per second are what this window saw of the turn, kept in memory until the window closes, rather than anything a record carries: OpenCode stamps a reply with the time its step began, before the server sent anything, so no record says when the first word came, and adding that time to both adapters' turn records was more than this needed. So a window that did not see the wait (opened part-way through a turn, or reloaded) has no first-word time and no dashes, the text it finds already written is where it starts counting, and a retry after the first word is no wait for it. Words per second show once text has come in pieces less than 1.5 seconds apart, so a reply that lands whole shows none, and the average leaves out gaps longer than that, a tool running. Context used is the thread's usage, as the compaction offer reads it, so it shows only for a provider that says how full its context is: DeepSeek Harness does, OpenCode does not (its profile's `reportsContext` is false), so OpenCode threads have no Context used row. Giving them one would mean reading the context from OpenCode's token counts in main and the model's size from the saved server, which was more plumbing than this needed. The bar shows only when the usage also says the window's size.
 
 The mark is drawn in the renderer from what it already has; main, its update path and the turn records are unchanged.
+
+## Amended November 10, 2026: Hermes's official installer
+
+Hermes's official installer keeps Python packages per Hermes data root. Sotto's
+separate Hermes folder can therefore have no packages even though the installed
+Hermes works in the user's terminal. When the version check reports that missing
+environment, Sotto explains it and gives a `hermes pm repair` command with
+`HERMES_HOME` set to Sotto's folder. It says the command downloads Python packages
+and asks the user to connect again afterwards. Other version failures ask the user
+to check Hermes in a terminal, without prescribing a reinstall.
+
+Sotto does not run the repair itself: connecting a provider does not silently
+download packages. The user's own Hermes home and dependency environment stay
+separate. This also covers a missing environment after an update, should Hermes
+require it again; that update case has not been observed.
+
+For gateway readiness and profile rescans, a venv install keeps using the Python
+beside its executable. With no adjacent Python, Sotto uses the published
+`hermes --run-module` interface and Python's standard-library `timeit` module,
+with one execution and one repeat, to run each helper statement once. The
+launcher selects its own interpreter and activates its packages. Sotto does not
+parse shell wrappers, modify bootstrap code, copy a dependency environment, or
+guess a store path. A failed helper still fails the operation. Readiness only
+discovers the gateway Sotto started; it never starts a second owner.
+
+Only a folder with that adjacent Python is removed from the toolchain PATH.
+An official launcher in a shared folder such as `~/.local/bin` keeps that folder
+and its other tools available. [The verification note](../verification/2026-11-10-hermes-official-install.md)
+records the native check and the in-app check still owed.
+
+
+## Amended November 10, 2026: Hermes can keep the key alone
+
+A keyed server can be added while Sotto's OpenCode is connected or Hermes's
+adapter runs. This replaces the November 9 requirement that OpenCode take the
+key first. When OpenCode is connected it still takes the key first, and Hermes
+gets its copy when available. Otherwise Hermes takes the key alone. The adapter
+need not be connected yet: saving a first server lets Hermes connect to it.
+
+The server record has an optional `keyKeeper`, `opencode` or `hermes`, naming the
+provider that first took the key, never the key itself. An older keyed record
+without that field means OpenCode. A Hermes-only keyed server is left out of
+OpenCode's generated model sources, including when OpenCode connects later.
+There is no automatic key transfer; remove and add it again with OpenCode
+connected to use it there. This amends decisions 2 and 3.
+
+Remove asks OpenCode to sign out only for a key it took, and clears Hermes's key
+file and every profile copy even while its adapter is off. Only then does the
+server leave the record. A failed add clears a possibly saved key before rolling
+back its record too; if cleanup or the record write fails, the server stays
+listed for Remove to finish. An unreadable key store or profile is a failed
+cleanup, not proof that no key remains. Failed temporary key writes are cleared
+too. This replaces the old rollback that could forget a server after an
+unconfirmed OpenCode sign-out.
+
+Check again still sends no saved key. If the server asks for one, the row says
+it answered but its models could not be read again. The dialog and rows make no
+promise that OpenCode can run every server. No host, setting, dependency or
+permission rule changes.

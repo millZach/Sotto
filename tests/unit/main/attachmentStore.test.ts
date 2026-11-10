@@ -1,11 +1,12 @@
 // @vitest-environment node
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, truncate, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentStore, inlineStager, MISMATCHED_ATTACHMENT, MISSING_ATTACHMENT, MISSING_REMOTE_ATTACHMENT, UNOWNED_ATTACHMENT_GRACE_MS } from '../../../src/main/agents/attachmentStore'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE } from '../../../src/shared/agents'
+import { SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, VIDEO_TOO_LARGE } from '../../../src/shared/agents'
 import { handleOf, PIXEL_PNG, pngOfSize } from '../../fixtures/stagedImages'
 import { deferred } from '../../fixtures/deferred'
 
@@ -334,5 +335,76 @@ describe('a sent file read a part at a time (ADR-0131, October 25 amendment)', (
     vi.mocked(readFile).mockClear()
     expect((await store.readPart(handle.digest, 8 * MiB, 8 * MiB))!.equals(file.bytes.subarray(8 * MiB))).toBe(true)
     expect(readFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('a video staged from where it is (ADR-0131, November 9 amendment)', () => {
+  const clip = Buffer.alloc(64 * 1024, 5)
+  const digest = createHash('sha256').update(clip).digest('hex')
+
+  it('copies a video into the store, hashing what it read, and keeps it on disk with history off', async () => {
+    const root = await directory()
+    const source = join(root, 'clip.mov'); await writeFile(source, clip)
+    const store = new AttachmentStore(root, { acceptsFiles: true, historyEnabled: () => false }); await store.load()
+    const handle = await store.stageFile({ name: 'clip.mov', mimeType: 'video/quicktime', path: source })
+    expect(handle).toMatchObject({ name: 'clip.mov', mimeType: 'video/quicktime', sizeBytes: clip.length, digest })
+    expect((await readFile(join(folder(root), `${digest}.bin`))).equals(clip)).toBe(true)
+    expect(store.inMemory(digest)).toBe(false)
+    expect(store.contentPath(digest)).toBe(join(folder(root), `${digest}.bin`))
+    expect((await index(root)).entries.map(entry => entry.digest)).toEqual([digest])
+    // The original stays where it was; only the store's copy is the store's.
+    expect((await readFile(source)).equals(clip)).toBe(true)
+    const restarted = new AttachmentStore(root, { acceptsFiles: true }); await restarted.load()
+    expect(restarted.keeps(handle)).toBe(true)
+  })
+
+  it('moves a host\'s checked upload in rather than copying it', async () => {
+    const root = await directory()
+    const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    await mkdir(store.uploadFolder, { recursive: true })
+    const upload = join(store.uploadFolder, 'upload.part'); await writeFile(upload, clip)
+    await store.stageFile({ name: 'clip.mov', mimeType: 'video/mp4', path: upload }, { move: { digest } })
+    await expect(readdir(store.uploadFolder)).resolves.toEqual([])
+    expect((await readFile(join(folder(root), `${digest}.bin`))).equals(clip)).toBe(true)
+  })
+
+  it('keeps a small video staged by its bytes on disk with history off, and takes a memory-only copy to disk', async () => {
+    const root = await directory()
+    const store = new AttachmentStore(root, { acceptsFiles: true, historyEnabled: () => false }); await store.load()
+    await store.stage({ name: 'small.mov', mimeType: 'video/quicktime', bytes: clip })
+    expect(store.inMemory(digest)).toBe(false)
+    expect(store.contentPath(digest)).toBe(join(folder(root), `${digest}.bin`))
+    // The same bytes first kept in memory as another kind of file reach disk when a video's copy of them is staged.
+    const other = await directory()
+    const memory = new AttachmentStore(other, { acceptsFiles: true, historyEnabled: () => false }); await memory.load()
+    await memory.stage({ name: 'clip.bin', mimeType: 'application/octet-stream', bytes: clip })
+    expect(memory.inMemory(digest)).toBe(true)
+    const source = join(other, 'clip.mov'); await writeFile(source, clip)
+    await memory.stageFile({ name: 'clip.mov', mimeType: 'video/quicktime', path: source })
+    expect(memory.inMemory(digest)).toBe(false)
+    expect((await readFile(join(folder(other), `${digest}.bin`))).equals(clip)).toBe(true)
+  })
+
+  it('removes the video parts a host that stopped left behind when it loads, and nothing else', async () => {
+    const root = await directory()
+    const store = new AttachmentStore(root, { acceptsFiles: true })
+    await mkdir(store.uploadFolder, { recursive: true })
+    await writeFile(join(store.uploadFolder, `${crypto.randomUUID()}.part`), clip)
+    await writeFile(join(store.uploadFolder, 'notes.txt'), 'not a part')
+    await store.load()
+    expect(await readdir(store.uploadFolder)).toEqual(['notes.txt'])
+  })
+
+  it('refuses an image, a video past 500 MiB, and anything at all from a store that keeps no files', async () => {
+    const root = await directory()
+    const source = join(root, 'clip.mov'); await writeFile(source, clip)
+    const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    await expect(store.stageFile({ name: 'pixel.png', mimeType: 'image/png', path: source })).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+    const huge = join(root, 'huge.mov'); await writeFile(huge, ''); await truncate(huge, 500 * 1024 * 1024 + 1)
+    await expect(store.stageFile({ name: 'huge.mov', mimeType: 'video/mp4', path: huge })).rejects.toThrow(VIDEO_TOO_LARGE)
+    const without = new AttachmentStore(await directory()); await without.load()
+    await expect(without.stageFile({ name: 'clip.mov', mimeType: 'video/mp4', path: source })).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+    // Each is refused before anything is written.
+    await expect(readdir(folder(root))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

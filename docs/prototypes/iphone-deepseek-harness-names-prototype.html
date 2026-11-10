@@ -1,0 +1,189 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. DeepSeek Harness on the iPhone: what its models and threads are called and which mark they carry.
+  Today the iPhone has no name for the provider, so it says "The agent" and draws no mark. Variants A, B and C name it;
+  switch them with the yellow bar or ?variant=today|A|B|C, and the surface with the chips at the top.
+  The provider marks are the desktop's own (src/renderer/src/agents/ProviderMark.tsx), drawn in the colour of the words
+  beside them as the iPhone draws every mark (apps/ios/Sotto/ProviderMarks.swift).
+  Zach picked B, "DeepSeek", on November 8, 2026, and approved the ADR-0138 amendment shown under the variants;
+  ADR-0138's November 8 amendment records the pick.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto iPhone: DeepSeek Harness's name and mark, prototype</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0b0c0f; color: #e8eaee; font-family: Figtree, -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; text-align: left; }
+:root { --canvas: #040507; --raised: #111419; --menu: rgba(38,41,48,.96); --line: rgba(255,255,255,.08); --ink: #eef0f3; --muted: #9aa0aa; --fillSoft: rgba(255,255,255,.08); --accentText: #63d0c1; --warn: #f0b45a; }
+.controls { padding: 12px 12px 4px; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.controls h1 { font-size: 17px; margin: 0; font-weight: 600; }
+.controls p { margin: 0; font-size: 13px; color: #a0a5ae; line-height: 1.4; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { font-size: 13px; padding: 8px 12px; border-radius: 999px; background: #1b1d22; color: #c9ccd2; }
+.chip[aria-pressed="true"] { background: #e8eaee; color: #0b0c0f; font-weight: 600; }
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; background: #ffd84a; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); z-index: 100; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.switcher button { min-width: 44px; height: 40px; border-radius: 999px; font-size: 14px; color: #111; text-align: center; padding: 0 10px; font-weight: 700; }
+.switcher button[aria-pressed="true"] { background: #111; color: #ffd84a; }
+#stage { display: flex; justify-content: center; padding: 10px 0 8px; }
+.notes { max-width: 760px; margin: 0 auto; padding: 4px 16px 100px; font-size: 14px; line-height: 1.5; color: #c9ccd2; }
+.notes h2 { font-size: 15px; margin: 18px 0 6px; color: #fff; }
+.notes ul { padding-left: 18px; margin: 4px 0; }
+.notes blockquote { margin: 8px 0; padding: 10px 12px; background: #15181d; border-left: 3px solid #ffd84a; border-radius: 6px; color: #dfe2e6; }
+.notes code { font: 12.5px ui-monospace, Menlo, monospace; color: #e8eaee; }
+.device { position: relative; overflow: hidden; border-radius: 46px; background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 10px #000, 0 0 0 11px #2a2c31, 0 30px 80px rgba(0,0,0,.6); width: 390px; height: 780px; flex: none; }
+@media (max-width: 430px) {
+  #stage { padding: 0; }
+  .device { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; box-shadow: none; }
+  .statusbar { visibility: hidden; }
+}
+.statusbar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 14px 34px 0; font-weight: 600; font-size: 16px; }
+.screen { position: absolute; top: 50px; left: 0; right: 0; bottom: 0; overflow-y: auto; }
+.mark { width: 14px; height: 14px; flex: none; fill: currentColor; display: inline-block; vertical-align: -2px; }
+.nomark { display: none; }
+.pagepad { padding: 8px 20px 120px; }
+.nav { display: flex; justify-content: space-between; align-items: center; height: 44px; padding: 0 16px; font-size: 16px; color: var(--accentText); font-weight: 600; }
+.nav b { color: var(--ink); }
+.crumbs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 18px; }
+.crumb { font-size: 13px; padding: 6px 10px; border-radius: 999px; background: var(--fillSoft); color: var(--ink); }
+h3 { margin: 0; font-size: 26px; letter-spacing: -.4px; }
+.subtitle { color: var(--muted); font-size: 14.5px; margin: 4px 0 14px; }
+.path { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 16px; }
+.field { background: var(--raised); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; }
+.field .k { font-size: 12.5px; color: var(--muted); }
+.field .v { font-size: 16px; margin-top: 2px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.field .v .chev { color: var(--muted); font-size: 12px; }
+.field.open { outline: 2px solid rgba(99,208,193,.5); }
+.popup { position: absolute; left: 20px; right: 20px; top: 340px; border-radius: 14px; background: var(--menu); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); box-shadow: 0 18px 50px rgba(0,0,0,.6); overflow: hidden; z-index: 20; }
+.popup .opt { display: flex; gap: 10px; align-items: center; padding: 12px 14px; font-size: 15.5px; border-top: 1px solid var(--line); }
+.popup .opt:first-child { border-top: 0; }
+.popup .opt .tick { width: 16px; font-weight: 700; flex: none; }
+.popup .opt.hl { background: rgba(255,216,74,.12); }
+.start { margin-top: 18px; height: 50px; border-radius: 25px; background: var(--accentText); color: #04110f; font-weight: 700; display: grid; place-items: center; font-size: 16px; }
+.start.off { opacity: .45; }
+.warn { color: var(--warn); font-size: 13.5px; margin-top: 12px; line-height: 1.4; }
+.convo { padding: 10px 18px; font-size: 15.5px; line-height: 1.5; color: #d7dade; }
+.convo .u { margin: 8px 0 14px auto; width: fit-content; max-width: 80%; background: #1c2027; border-radius: 18px; padding: 10px 14px; }
+.dock { position: absolute; left: 12px; right: 12px; bottom: 26px; }
+.card { border-radius: 26px; background: #15181d; box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+.words { padding: 14px 16px 4px; font-size: 15.5px; color: #6f7580; }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; }
+.round { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--fillSoft); flex: none; font-size: 18px; }
+.spacer { flex: 1; }
+.pill { height: 34px; border-radius: 17px; background: rgba(255,255,255,.16); display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 10px; font-size: 13.5px; font-weight: 600; white-space: nowrap; max-width: 250px; overflow: hidden; }
+.pill .dim { color: var(--muted); font-weight: 500; }
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
+.sheet { position: absolute; z-index: 30; left: 0; right: 0; bottom: 0; height: 60%; border-radius: 22px 22px 0 0; background: #1a1d23; box-shadow: 0 -10px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); margin: 7px auto 4px; flex: none; }
+.sheet .title { display: flex; align-items: center; padding: 6px 18px 10px; font-weight: 700; font-size: 20px; }
+.sheet .title .done { margin-left: auto; color: var(--accentText); font-weight: 600; font-size: 16px; }
+.sheet .scroll { overflow-y: auto; flex: 1; padding: 0 12px 30px; }
+.block { background: rgba(255,255,255,.05); border-radius: 12px; overflow: hidden; margin-bottom: 14px; }
+.hdr { padding: 4px 6px 6px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.item { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 14px; font-size: 16px; }
+.item + .item { border-top: 1px solid var(--line); }
+.item .tick { width: 16px; color: var(--accentText); font-weight: 700; flex: none; }
+.item .name { flex: 1; min-width: 0; }
+.item .sub { display: block; font-size: 12.5px; color: var(--muted); font-weight: 400; }
+.item .count { color: var(--muted); font-size: 13px; }
+.item .disc { color: var(--muted); font-size: 13px; }
+.item.hl { background: rgba(255,216,74,.10); }
+.list { padding: 4px 0 120px; }
+.tl-title { padding: 6px 20px 10px; font-size: 30px; font-weight: 700; letter-spacing: -.5px; }
+.proj { padding: 14px 20px 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.trow { padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.trow .t { font-size: 16px; font-weight: 600; }
+.trow .place { display: flex; align-items: center; gap: 5px; font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+.trow.hl { background: rgba(255,216,74,.08); }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: #ffd84a; color: #111; margin-left: 6px; vertical-align: 2px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <h1>DeepSeek Harness on the iPhone: its name and mark</h1>
+  <p>Today the iPhone doesn't know DeepSeek Harness, so its models and threads say <b>The agent</b> and carry no mark. A, B and C give it a name and the desktop's whale. Highlighted rows are the ones that change. Switch the variant with the yellow bar. <a href="#notes" style="color:#ffd84a">What each variant means and the ADR change ↓</a></p>
+  <div class="group" role="group" aria-label="Surface">
+    <button class="chip" data-surface="new">New thread: Model</button>
+    <button class="chip" data-surface="sheet">Reply box settings</button>
+    <button class="chip" data-surface="list">Threads list</button>
+  </div>
+</div>
+<div id="stage"><div class="device"><div class="statusbar"><span>6:10</span><span>●●● 87%</span></div><div class="screen" id="screen"></div></div></div>
+<div class="switcher" role="group" aria-label="Variant">
+  <button data-variant="today">Today</button><button data-variant="A">A</button><button data-variant="B">B</button><button data-variant="C">C</button>
+</div>
+<div class="notes" id="notes"></div>
+<script>
+const MARKS = {"codex":{"viewBox":"0 0 256 260","path":"M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"},"claude":{"viewBox":"0 0 256 257","path":"m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"},"opencode":{"viewBox":"0 0 32 40","path":"M24 8H8V32H24V8ZM32 40H0V0H32V40Z"},"deepseek":{"viewBox":"0 0 24 24","path":"M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"}};
+const SERVER = 'Obsidian', MODEL = 'deepseek-v4.1-flash';
+const VARIANTS = {
+  today: { name: 'The agent', mark: false, server: true, words: 'What ships now. The iPhone has no name for DeepSeek Harness, so it says “The agent”, and draws no mark.' },
+  A: { name: 'DeepSeek Harness', mark: true, server: true, words: 'The provider’s full name, as the desktop and the glossary write it, then the server, then the model: the same shape as OpenCode’s “OpenCode · Obsidian · deepseek-v4.1-flash”.' },
+  B: { name: 'DeepSeek', mark: true, server: true, words: 'A shorter name. It reads like the DeepSeek company or its model, which OpenCode also offers, and doesn’t match the desktop’s “DeepSeek Harness”.' },
+  C: { name: 'DeepSeek Harness', mark: true, server: false, words: 'The full name without the server. Shorter, but two servers with the same model would read the same, and OpenCode keeps its model source.' },
+}
+const q = new URLSearchParams(location.search)
+let variant = VARIANTS[q.get('variant')] ? q.get('variant') : 'A'
+let surface = ['new', 'sheet', 'list'].includes(q.get('surface')) ? q.get('surface') : 'new'
+const svg = id => { const m = MARKS[id]; return m ? '<svg class="mark" viewBox="' + m.viewBox + '" aria-hidden="true"><path d="' + m.path + '"/></svg>' : '' }
+const ds = () => VARIANTS[variant]
+const dsMark = () => ds().mark ? svg('deepseek') : ''
+const dsLabel = () => [ds().name, ds().server ? SERVER : null, MODEL].filter(Boolean).join(' · ')
+function renderNew() {
+  const opts = [
+    ['Claude Code · Opus 4.7', false], ['Codex · GPT-6.1 Sol', false], ['OpenCode · OpenCode Zen · Big Pickle', false],
+    ['OpenCode · ' + SERVER + ' · ' + MODEL, false], [dsLabel(), true],
+  ]
+  return '<div class="nav"><span>‹ Back</span><b>New thread</b><span>Cancel</span></div><div class="pagepad">' +
+    '<div class="crumbs"><span class="crumb">💻 Laptop</span><span class="crumb">📁 DeepSeek Sama</span></div>' +
+    '<h3>How should it work?</h3><div class="subtitle">These start from your new thread defaults.</div><div class="path">D:\\DeepSeek Sama</div>' +
+    '<div class="field open"><div class="k">Model</div><div class="v"><span>' + dsLabel() + '</span><span class="chev">⌃⌄</span></div></div>' +
+    '<div class="field"><div class="k">Effort</div><div class="v"><span>High</span><span class="chev">⌃⌄</span></div></div>' +
+    '<div class="field"><div class="k">Working copy</div><div class="v"><span>Project folder</span><span class="chev">⌃⌄</span></div></div>' +
+    '<div class="field"><div class="k">Permissions</div><div class="v"><span>Ask before actions</span><span class="chev">⌃⌄</span></div></div>' +
+    '<div class="start">Start thread</div></div>' +
+    '<div class="popup" role="list">' + opts.map(([t, sel]) => '<div class="opt' + (sel ? ' hl' : '') + '"><span class="tick">' + (sel ? '✓' : '') + '</span><span>' + t + '</span></div>').join('') + '</div>'
+}
+function renderSheet() {
+  return '<div class="nav"><span>‹ Threads</span><b>Sama’s pipeline</b><span>•••</span></div>' +
+    '<div class="convo"><div class="u">Read the README and list what the pipeline still needs.</div><p>It still needs a test for the import step and a config check before the run starts…</p></div>' +
+    '<div class="dock"><div class="card"><div class="words">Reply…</div><div class="row"><span class="round">+</span><span class="pill">' + dsMark() + '<span>' + MODEL + '</span><span class="dim">High</span><span class="dim">⌄</span></span><span class="spacer"></span><span class="round">↑</span></div></div></div>' +
+    '<div class="scrim"></div><div class="sheet"><div class="grab"></div><div class="title">Thread settings<span class="done">Done</span></div><div class="scroll">' +
+    '<div class="hdr">In use</div><div class="block"><div class="item hl"><span class="tick">✓</span>' + dsMark() + '<span class="name">' + MODEL + '<span class="sub">' + ds().name + '</span></span><span class="disc">☆</span></div></div>' +
+    '<div class="hdr">Models</div><div class="block"><div class="item hl">' + dsMark() + '<span class="name">' + ds().name + '</span><span class="count">1</span><span class="disc">›</span></div></div>' +
+    '<div class="block"><div class="item"><span class="name">Effort</span><span class="count">High</span></div><div class="item"><span class="name">Permissions</span><span class="count">Ask before actions</span></div></div>' +
+    '</div></div>'
+}
+function renderList() {
+  const row = (t, id, name, hl) => '<div class="trow' + (hl ? ' hl' : '') + '"><div class="t">' + t + '</div><div class="place">' + (id === 'deepseek' ? dsMark() : svg(id)) + '<span>' + name + ' on Laptop</span></div></div>'
+  return '<div class="tl-title">Threads</div><div class="list"><div class="proj">DeepSeek Sama</div>' +
+    row('Sama’s pipeline', 'deepseek', ds().name, true) + row('Check the import step', 'claude', 'Claude Code', false) +
+    '<div class="proj">Deepseek opencode</div>' + row('Free model trial', 'opencode', 'OpenCode', false) + row('Desk notes', 'deepseek', ds().name, true) + '</div>'
+}
+function render() {
+  document.getElementById('screen').innerHTML = surface === 'new' ? renderNew() : surface === 'sheet' ? renderSheet() : renderList()
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  document.querySelectorAll('[data-surface]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.surface === surface)))
+  document.getElementById('notes').innerHTML = '<h2>' + (variant === 'today' ? 'Today' : 'Variant ' + variant) + (variant === 'A' ? ' <span class="badge">Recommended</span>' : '') + '</h2><p>' + ds().words + '</p>' + NOTES
+  history.replaceState(null, '', '?variant=' + variant + '&surface=' + surface)
+}
+const NOTES = `
+<h2>What else changes, whichever you pick</h2>
+<ul>
+<li><b>New folders work.</b> Starting DeepSeek Harness with Browse another folder stops failing with “This request changed or is not supported on this iPhone.”</li>
+<li><b>Older iPhones get none of it.</b> A computer sends DeepSeek Harness’s models and threads only to an iPhone that says it knows them (a <code>provider-deepseek</code> host feature, as OpenCode and Cursor have), so an older build never shows “The agent” rows again.</li>
+<li><b>Forge still has no DeepSeek Harness.</b> A host doesn’t keep its own model servers yet, so it offers none, for this computer or a phone.</li>
+<li><b>Still Owl.</b> All of it stays behind the DeepSeek Harness Owl feature; stable shows none of it.</li>
+</ul>
+<h2>The ADR-0138 amendment this needs</h2>
+<p>ADR-0138’s “Hosts and phones” says a phone sees none of DeepSeek Harness. The laptop already sends it to your iPhone, so this reverses the phone half. Proposed amendment, dated November 8, 2026:</p>
+<blockquote>Phones, amended November 8, 2026: a paired iPhone may start and run DeepSeek Harness threads on the computer whose own-servers record holds their models. The computer sends DeepSeek Harness’s rows, models, projects and threads only to a client whose hello accepts <code>provider-deepseek</code>, and the iPhone names the provider “DeepSeek Harness” with the desktop’s whale. Headless hosts still hold the provider until they keep their own servers (ADR-0124’s later phase), and the provider stays an Owl feature.</blockquote>
+`
+document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => { variant = b.dataset.variant; render() })
+document.querySelectorAll('[data-surface]').forEach(b => b.onclick = () => { surface = b.dataset.surface; render() })
+render()
+</script>
+</body>
+</html>

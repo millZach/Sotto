@@ -167,11 +167,6 @@ msgstr "{checked, plural, one {# check} other {# checks}}"
 msgid "{chosen}, and skipped {skipped}"
 msgstr "{chosen}, and skipped {skipped}"
 
-#. {clientName} is a provider's client, such as Claude Code.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
-msgstr "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
-
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
 msgstr "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
@@ -184,10 +179,6 @@ msgstr "{count, plural, one {{done} of # angle done} other {{done} of # angles d
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{count, plural, one {{files} file} other {{files} files}}"
 msgstr "{count, plural, one {{files} file} other {{files} files}}"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
-msgstr "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{count, plural, one {{projectTitle} {threads} thread} other {{projectTitle} {threads} threads}}"
@@ -247,6 +238,10 @@ msgstr "{count, plural, one {Changed {files} file} other {Changed {files} files}
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
 msgstr "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Dismiss the note about {name}’s {threads} thread} other {Dismiss the note about {name}’s {threads} threads}}"
+msgstr "{count, plural, one {Dismiss the note about {name}’s {threads} thread} other {Dismiss the note about {name}’s {threads} threads}}"
 
 #: src/renderer/src/agents/restartWords.ts
 msgid "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
@@ -483,55 +478,6 @@ msgstr "{includedCount, plural, one {{files} file of {total} (more than Sotto li
 msgid "{includedCount, plural, one {{files} file of {total}} other {{files} files of {total}}}"
 msgstr "{includedCount, plural, one {{files} file of {total}} other {{files} files of {total}}}"
 
-#. {installed} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed, and that is what is published."
-msgstr "{installed} is installed, and that is what is published."
-
-#. {installed} and {published} are version numbers.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed; {published} is published."
-msgstr "{installed} is installed; {published} is published."
-
-#. {installed} and {published} are version numbers; {command} is a terminal command.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with {command}."
-msgstr "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with {command}."
-
-#. {installed} and {published} are version numbers.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with the installer you used."
-msgstr "{installed} is installed; {published} is published. Sotto cannot update this copy. Update it with the installer you used."
-
-#. {installed} and {published} are version numbers.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed; {published} is published. Your threads keep working while it installs."
-msgstr "{installed} is installed; {published} is published. Your threads keep working while it installs."
-
-#. {installed} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. Devin updates with the Devin app."
-msgstr "{installed} is installed. Devin updates with the Devin app."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. mise does not list {to} yet, so Sotto could not install it. Try again later."
-msgstr "{installed} is installed. mise does not list {to} yet, so Sotto could not install it. Try again later."
-
-#. {installed} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. Sotto could not read the published version. Check again to try."
-msgstr "{installed} is installed. Sotto could not read the published version. Check again to try."
-
-#. {installed} is a version number; {error} is the reason the update gave.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. The last update did not finish: {error}"
-msgstr "{installed} is installed. The last update did not finish: {error}"
-
-#. {installed} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. The last update did not finish."
-msgstr "{installed} is installed. The last update did not finish."
-
 #. Read before a suggested next prompt: its kind, such as Verify.
 #: src/renderer/src/agents/NextList.tsx
 msgid "{intentName}: "
@@ -597,10 +543,6 @@ msgstr "{kindWord}: {name}, {stateWord}"
 msgid "{label} code block"
 msgstr "{label} code block"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{label} details"
-msgstr "{label} details"
-
 #. {label} is Show changes or Show commits; {title} is the project.
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{label} in {title}"
@@ -617,9 +559,15 @@ msgstr "{label} models"
 msgid "{label} source"
 msgstr "{label} source"
 
+#. A reasoning effort chip that cannot be changed: the setting's name, then the level it stays on, such as High.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{label}, {word}"
+msgstr "{label}, {word}"
+
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
+#: src/renderer/src/agents/ChoiceChip.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{label}: {shown}"
@@ -644,11 +592,6 @@ msgstr "{level} effort"
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{limit, plural, one {{provider} takes one skill per message. Remove {heldToken} to choose another.} other {{provider} takes # skills per message. Remove {heldToken} to choose another.}}"
 msgstr "{limit, plural, one {{provider} takes one skill per message. Remove {heldToken} to choose another.} other {{provider} takes # skills per message. Remove {heldToken} to choose another.}}"
-
-#. {line} is a sentence about the installed client; {verified} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{line} It is newer than the {verified} Sotto has checked."
-msgstr "{line} It is newer than the {verified} Sotto has checked."
 
 #. {line} says how the wait for the review went.
 #: src/renderer/src/agents/delegationWords.ts
@@ -705,22 +648,6 @@ msgid "{modelCount} · Free with OpenCode Zen"
 msgstr "{modelCount} · Free with OpenCode Zen"
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
-msgstr "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece. It does no work itself."
-msgstr "{modelName} oversees and chooses a model for each piece. It does no work itself."
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
-msgstr "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
-msgid "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
-msgstr "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
-
-#: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 msgstr "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 
@@ -748,14 +675,9 @@ msgstr "{most, plural, one {Attach up to # screenshot at a time.} other {Attach 
 msgid "{museReviews, plural, one {Muse review} other {# Muse reviews}}"
 msgstr "{museReviews, plural, one {Muse review} other {# Muse reviews}}"
 
-#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{name} (Claude Code’s choice)"
-msgstr "{name} (Claude Code’s choice)"
-
 #: src/renderer/src/agents/ownServerWords.ts
-msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
-msgstr "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+msgid "{name} answered in {ms} ms and asks for its key. The key stays with its provider, so Sotto could not read its models again."
+msgstr "{name} answered in {ms} ms and asks for its key. The key stays with its provider, so Sotto could not read its models again."
 
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -941,7 +863,7 @@ msgid "{name}’s threads keep working until you update. Updating restarts its h
 msgstr "{name}’s threads keep working until you update. Updating restarts its host, so they are unavailable for a few seconds."
 
 #. A fixed chip's tooltip: its name, then why it cannot be pressed now.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/ChoiceChip.tsx
 msgid "{named}. {fixedReason}"
 msgstr "{named}. {fixedReason}"
 
@@ -1016,6 +938,7 @@ msgstr "{provider} did not report this agent’s result."
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
 #. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr "{provider} did not switch to {wanted}. {error}"
@@ -1027,6 +950,7 @@ msgstr "{provider} did not switch to {wanted}. The thread is on {model} at Stand
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
 msgstr "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
@@ -1050,26 +974,27 @@ msgstr "{provider} forked {agent} from {source} into this thread, {time}. It car
 msgid "{provider} gave no summary of this command."
 msgstr "{provider} gave no summary of this command."
 
-#. {provider} is a provider's name; {chosen} and {fit} are permission modes.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
-msgstr "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
-
 #. {provider} is a provider's name or "The provider"; {wanted} is a model, effort or permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} has not confirmed {wanted}. The thread starts on {wanted} the next time it is used, and Sotto checks it then."
 msgstr "{provider} has not confirmed {wanted}. The thread starts on {wanted} the next time it is used, and Sotto checks it then."
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
 msgstr "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} keeps its own default until it confirms."
 msgstr "{provider} keeps its own default until it confirms."
+
+#. Why a started thread's reasoning effort chip opens nothing. {provider} is a provider's name, such as Grok Build.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{provider} keeps the effort a thread started on. To use another level, start a new thread."
+msgstr "{provider} keeps the effort a thread started on. To use another level, start a new thread."
 
 #. {provider} is a provider, such as Claude Code; {from} and {to} are model names, such as Opus 5.5.
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -1092,34 +1017,29 @@ msgid "{provider} says"
 msgstr "{provider} says"
 
 #. {provider} is a provider's name or "The provider"; {mode} is the provider's own name for a permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} stays on {mode} until it confirms."
 msgstr "{provider} stays on {mode} until it confirms."
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still asks for approval until it confirms."
 msgstr "{provider} still asks for approval until it confirms."
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still decides what to ask you about until it confirms."
 msgstr "{provider} still decides what to ask you about until it confirms."
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still makes edits without asking until it confirms."
 msgstr "{provider} still makes edits without asking until it confirms."
 
 #. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} still runs anything without asking until it confirms."
 msgstr "{provider} still runs anything without asking until it confirms."
-
-#. {provider} is a provider's name.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "{provider} uses its own permission profiles; a new thread starts on its first."
-msgstr "{provider} uses its own permission profiles; a new thread starts on its first."
 
 #. Under a masked answer field. {provider} is the coding agent’s name, such as Codex.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -1802,8 +1722,12 @@ msgid "Added {doneName}"
 msgstr "Added {doneName}"
 
 #: src/renderer/src/agents/ownServerWords.ts
-msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
-msgstr "Added {name}. Its models are in the model menu under {name}, with OpenCode."
+msgid "Added {name}. Its models are in the model menu under {name}, with providers that can use them."
+msgstr "Added {name}. Its models are in the model menu under {name}, with providers that can use them."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Added with a key"
+msgstr "Added with a key"
 
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Adding files..."
@@ -1830,10 +1754,6 @@ msgstr "Address"
 #: src/renderer/src/agents/composerSkills.ts
 msgid "Admin"
 msgstr "Admin"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history."
-msgstr "After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history."
 
 #. Watcher's work in reply to news Sotto told it.
 #: src/renderer/src/agents/threadActivityView.ts
@@ -1879,7 +1799,7 @@ msgid "Allow"
 msgstr "Allow"
 
 #. A permission mode: the agent edits files without asking.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Allow edits"
 msgstr "Allow edits"
 
@@ -2023,7 +1943,7 @@ msgstr "Arrange in a single row"
 msgid "Arrow"
 msgstr "Arrow"
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
 msgstr "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
 
@@ -2032,7 +1952,7 @@ msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
 
 #. A permission mode: the agent asks before it acts.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
 msgstr "Ask for approval"
 
@@ -2060,10 +1980,6 @@ msgstr "Asking {inSentence} for a summary…"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"
 msgstr "Asking the server for its models…"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
-msgstr "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
 
 #. When a stopped thread restarts today, as in "Restarts at 3:00 pm".
 #. When babysitting ended today, as in "Ended at 4:05 pm".
@@ -2106,7 +2022,7 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
 
 #. A permission mode: the agent decides what to ask about.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Auto"
 msgstr "Auto"
 
@@ -2412,17 +2328,12 @@ msgid "Check {name} again"
 msgstr "Check {name} again"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Check again"
 msgstr "Check again"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Check for client updates"
-msgstr "Check for client updates"
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Check out feature branch & continue"
@@ -2459,10 +2370,6 @@ msgstr "checked the cloud iPhone"
 msgid "Checking the folder…"
 msgstr "Checking the folder…"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Checking the published version…"
-msgstr "Checking the published version…"
-
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Checking the thread…"
 msgstr "Checking the thread…"
@@ -2472,7 +2379,6 @@ msgid "Checking..."
 msgstr "Checking..."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -2480,18 +2386,6 @@ msgstr "Checking…"
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Checkout pull request"
 msgstr "Checkout pull request"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 
 #. A keyboard hint: Enter chooses the highlighted computer.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -2547,13 +2441,9 @@ msgid "Choose branch"
 msgstr "Choose branch"
 
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Choose model"
 msgstr "Choose model"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Choose model. {modelName} oversees new threads"
-msgstr "Choose model. {modelName} oversees new threads"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Choose model. {modelNameNow} oversees this thread"
@@ -2577,7 +2467,6 @@ msgid "Choose the default projects directory on this computer"
 msgstr "Choose the default projects directory on this computer"
 
 #: src/renderer/src/agents/ProviderModelList.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Choose what new threads start with in Settings > Threads."
 msgstr "Choose what new threads start with in Settings > Threads."
 
@@ -2628,10 +2517,6 @@ msgstr "Clear the default projects directory on this computer"
 #: src/renderer/src/agents/browserLine.ts
 msgid "clicked in the page"
 msgstr "clicked in the page"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Client update checks are off, so Sotto does not know what is published."
-msgstr "Client update checks are off, so Sotto does not know what is published."
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Client updates"
@@ -2706,6 +2591,18 @@ msgstr "Close pane"
 msgid "Close the reply"
 msgstr "Close the reply"
 
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Close video"
+msgstr "Close video"
+
+#. {0} of {1} videos an agent's steps wrote; {2} names the step. A press takes the video under the line away.
+#. placeholder {0}: videos.indexOf(shown) + 1
+#. placeholder {1}: videos.length
+#. placeholder {2}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Close video {0} of {1}, from {2}"
+msgstr "Close video {0} of {1}, from {2}"
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Close without adding a model source"
 msgstr "Close without adding a model source"
@@ -2737,24 +2634,24 @@ msgstr "Code"
 msgid "Code from the {sourceName} page"
 msgstr "Code from the {sourceName} page"
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 msgstr "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
 msgstr "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
 
 #. {computer} is the name of the computer the thread runs on, such as forge.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
 msgstr "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
 msgstr "Codex runs any command and edits any file without asking, anywhere on this computer and online."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex’s reviewer still answers what would come to you until it confirms."
 msgstr "Codex’s reviewer still answers what would come to you until it confirms."
 
@@ -2836,10 +2733,6 @@ msgstr "Compact"
 msgid "Compact context"
 msgstr "Compact context"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Compact idle threads"
-msgstr "Compact idle threads"
-
 #. One part of a list of what a turn did, starting lowercase.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "compacted the context"
@@ -2891,37 +2784,12 @@ msgstr "conflict"
 msgid "Conflicted"
 msgstr "Conflicted"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Connect"
-msgstr "Connect"
-
-#. {computerName} is the name of a saved host.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Connect {computerName} to change its projects directory."
-msgstr "Connect {computerName} to change its projects directory."
-
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Connect {label}"
-msgstr "Connect {label}"
-
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Connect {label} to load its models."
-msgstr "Connect {label} to load its models."
-
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Connect providers"
 msgstr "Connect providers"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Connect this provider to read its installed version."
-msgstr "Connect this provider to read its installed version."
-
 #. A host's status.
-#. A provider's status.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Connected"
 msgstr "Connected"
 
@@ -2931,7 +2799,6 @@ msgid "connecting"
 msgstr "connecting"
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -3013,7 +2880,6 @@ msgstr "Continued in a {provider} thread. You can still send here."
 #: src/renderer/src/agents/HostUpdates.tsx
 #: src/renderer/src/agents/MessageContent.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -3040,10 +2906,6 @@ msgstr "Copied message as Markdown"
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copied reply as Markdown"
 msgstr "Copied reply as Markdown"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Copy"
-msgstr "Copy"
 
 #. {label} is the code's language, such as TypeScript.
 #: src/renderer/src/agents/MessageContent.tsx
@@ -3123,10 +2985,6 @@ msgstr "Copy link"
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy message as Markdown"
 msgstr "Copy message as Markdown"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Copy Muse login command"
-msgstr "Copy Muse login command"
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy options"
@@ -3218,10 +3076,6 @@ msgstr "Could not change the workspace. Your choice is retained."
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Could not change where the worktree starts from."
 msgstr "Could not change where the worktree starts from."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Could not check for client updates. Try again."
-msgstr "Could not check for client updates. Try again."
 
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
@@ -3479,15 +3333,6 @@ msgstr "could not type into the page"
 msgid "could not type on the cloud iPhone"
 msgstr "could not type on the cloud iPhone"
 
-#. {providerName} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Could not update {providerName}. Try again."
-msgstr "Could not update {providerName}. Try again."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Could not update this provider. Try again."
-msgstr "Could not update this provider. Try again."
-
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Could not use that worktree. Your choice is retained."
 msgstr "Could not use that worktree. Your choice is retained."
@@ -3601,7 +3446,7 @@ msgstr "Current worktree"
 msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
 msgstr "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor asks before commands, web requests and tools. It edits files inside the project without asking."
 msgstr "Cursor asks before commands, web requests and tools. It edits files inside the project without asking."
 
@@ -3621,27 +3466,19 @@ msgstr "Cursor is signed out on this computer."
 msgid "Cursor made a plan and waits for you before it starts."
 msgstr "Cursor made a plan and waits for you before it starts."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it."
 msgstr "Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
-msgstr "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Cursor’s CLI is not installed on this computer. Install it with Cursor’s guide, then connect again."
 msgstr "Cursor’s CLI is not installed on this computer. Install it with Cursor’s guide, then connect again."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Cursor’s install guide could not be opened. Try again."
-msgstr "Cursor’s install guide could not be opened. Try again."
-
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Cursor’s model makers"
 msgstr "Cursor’s model makers"
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you."
 msgstr "Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you."
 
@@ -3658,21 +3495,17 @@ msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
 msgid "cut at {kib} KiB"
 msgstr "cut at {kib} KiB"
 
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
-msgstr "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "DeepSeek denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+msgstr "DeepSeek denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
-msgstr "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "DeepSeek edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+msgstr "DeepSeek edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
-msgstr "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
-msgstr "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "DeepSeek runs commands and edits files without asking, in the project and outside it."
+msgstr "DeepSeek runs commands and edits files without asking, in the project and outside it."
 
 #. A badge on a Git ref: the repository's default branch.
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -3689,14 +3522,6 @@ msgstr "Default"
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Default branch"
 msgstr "Default branch"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Default permissions for new threads"
-msgstr "Default permissions for new threads"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Default projects directory"
-msgstr "Default projects directory"
 
 #. {computerName} is the name of a saved host.
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
@@ -3804,11 +3629,6 @@ msgstr "Details"
 msgid "Diagram view"
 msgstr "Diagram view"
 
-#. A provider's status: switched off.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Disabled"
-msgstr "Disabled"
-
 #. Discards a saved answer; asks first.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Discard"
@@ -3839,27 +3659,15 @@ msgstr "Discard this draft?"
 msgid "Discarding…"
 msgstr "Discarding…"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Disconnect"
-msgstr "Disconnect"
-
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Disconnect {label}"
-msgstr "Disconnect {label}"
-
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Disconnected"
 msgstr "Disconnected"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Disconnecting…"
-msgstr "Disconnecting…"
 
 #: src/renderer/src/agents/BringChangesBack.tsx
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/RestartStopped.tsx
 #: src/renderer/src/agents/SettleToast.tsx
 #: src/renderer/src/agents/SidebarFrame.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -4020,6 +3828,10 @@ msgstr "Each file must be 25 MB or smaller. Nothing was attached. Choose a small
 msgid "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
 msgstr "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one."
+msgstr "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one."
+
 #. Choose which files to commit.
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Edit"
@@ -4059,11 +3871,6 @@ msgstr "Editing {name} and {more} more"
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Effort"
 msgstr "Effort"
-
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Enable {label}"
-msgstr "Enable {label}"
 
 #. A body its host sent cut shows only this part.
 #: src/renderer/src/agents/ActivityBody.tsx
@@ -4200,11 +4007,6 @@ msgstr "Expand diagram"
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Expand sidebar"
 msgstr "Expand sidebar"
-
-#. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
-msgid "Extra high"
-msgstr "Extra high"
 
 #. An action or turn that failed.
 #. An action or turn that failed.
@@ -4374,7 +4176,7 @@ msgstr "Fit to view"
 msgid "Fit to window"
 msgstr "Fit to window"
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you."
 msgstr "Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you."
 
@@ -4470,7 +4272,7 @@ msgid "From the address, if left empty"
 msgstr "From the address, if left empty"
 
 #. A permission mode: the agent runs anything without asking.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Full access"
 msgstr "Full access"
 
@@ -4627,7 +4429,7 @@ msgid "Hide until this branch changes"
 msgstr "Hide until this branch changes"
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "High"
 msgstr "High"
 
@@ -4743,21 +4545,9 @@ msgstr "Ink"
 msgid "Install beside {from}"
 msgstr "Install beside {from}"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Install Devin CLI and run devin auth login before connecting."
-msgstr "Install Devin CLI and run devin auth login before connecting."
-
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Install guide"
 msgstr "Install guide"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Installation steps"
-msgstr "Installation steps"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Installed client"
-msgstr "Installed client"
 
 #. {title} is the title of a page an agent made.
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
@@ -4808,10 +4598,6 @@ msgstr "It isn't working now."
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "It replied"
 msgstr "It replied"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "It runs with OpenCode."
-msgstr "It runs with OpenCode."
 
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "It shows here when it is done"
@@ -4932,10 +4718,6 @@ msgstr "Its models join the model menu under OpenCode on {host}, billed to your 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Its models join the model menu under OpenCode, billed to your {sourceName} account."
 msgstr "Its models join the model menu under OpenCode, billed to your {sourceName} account."
-
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
-msgid "Its own Git branch and folder, checked out when it opens. Folders without Git are used as they are."
-msgstr "Its own Git branch and folder, checked out when it opens. Folders without Git are used as they are."
 
 #. Stands for a provider whose name is not known, inside a sentence.
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -5080,10 +4862,6 @@ msgstr "Keep this branch"
 msgid "Key"
 msgstr "Key"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Key kept by OpenCode"
-msgstr "Key kept by OpenCode"
-
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Last activity unavailable"
 msgstr "Last activity unavailable"
@@ -5163,10 +4941,6 @@ msgstr "Loading files…"
 msgid "Loading messages…"
 msgstr "Loading messages…"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Loading providers…"
-msgstr "Loading providers…"
-
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Loading skills…"
 msgstr "Loading skills…"
@@ -5185,7 +4959,6 @@ msgstr "local changes block the update"
 
 #. Heading of a provider’s connection on this computer, in Settings > Providers.
 #: src/renderer/src/agents/CursorConnection.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Local connection"
 msgstr "Local connection"
 
@@ -5209,7 +4982,7 @@ msgid "looked at the screen"
 msgstr "looked at the screen"
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Low"
 msgstr "Low"
 
@@ -5274,12 +5047,12 @@ msgid "Mark-up tools"
 msgstr "Mark-up tools"
 
 #. A reasoning effort level, the highest some models offer.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Max"
 msgstr "Max"
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Medium"
 msgstr "Medium"
 
@@ -5309,7 +5082,7 @@ msgid "Messages you sent"
 msgstr "Messages you sent"
 
 #. A reasoning effort level.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Minimal"
 msgstr "Minimal"
 
@@ -5355,12 +5128,7 @@ msgstr "Model sources Sotto’s OpenCode on {host} can use"
 msgid "Model the new thread starts on"
 msgstr "Model the new thread starts on"
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Model, reasoning effort and permissions."
-msgstr "Model, reasoning effort and permissions."
-
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Models"
 msgstr "Models"
 
@@ -5471,30 +5239,10 @@ msgstr "Moved {subject}"
 msgid "Much longer. For stubborn problems."
 msgstr "Much longer. For stubborn problems."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Muse is still running with its sandbox off. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
-msgstr "Muse is still running with its sandbox off. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Muse is still running with its sandbox on. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
-msgstr "Muse is still running with its sandbox on. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Muse login command copied."
-msgstr "Muse login command copied."
-
 #. A kind of delegated work: a code review done on Muse.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Muse review"
 msgstr "Muse review"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks."
-msgstr "Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Muse's shell commands and file tools run inside its sandbox on this computer."
-msgstr "Muse's shell commands and file tools run inside its sandbox on this computer."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Name"
@@ -5532,8 +5280,6 @@ msgstr "Navigate"
 msgid "Near the model's limit. Slow and costly."
 msgstr "Near the model's limit. Slow and costly."
 
-#. A provider's status.
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs attention"
@@ -5622,27 +5368,9 @@ msgstr "New thread in {projectTitle}"
 msgid "New thread with this draft"
 msgstr "New thread with this draft"
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "New threads"
-msgstr "New threads"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "New threads start with"
-msgstr "New threads start with"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "New threads start with these on every connected computer. Change them for one thread in its composer."
-msgstr "New threads start with these on every connected computer. Change them for one thread in its composer."
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "New threads start with these. Change them for one thread in its composer."
-msgstr "New threads start with these. Change them for one thread in its composer."
-
-#. A working copy choice: the thread gets its own Git worktree.
 #: src/renderer/src/agents/branchToolbar.logic.ts
 #: src/renderer/src/agents/ForkFromHere.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
 msgid "New worktree"
 msgstr "New worktree"
 
@@ -5750,10 +5478,6 @@ msgstr "No model is ready to start this thread. Connect a provider or choose one
 msgid "No model source matches “{typed}”."
 msgstr "No model source matches “{typed}”."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "No models were returned. Refresh this provider to check again."
-msgstr "No models were returned. Refresh this provider to check again."
-
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "No other ready model is on the list in Settings."
 msgstr "No other ready model is on the list in Settings."
@@ -5765,6 +5489,10 @@ msgstr "No preview for this file type"
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "No projects on this host yet."
 msgstr "No projects on this host yet."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "No provider can add this server right now, so nothing was saved. Connect OpenCode or Hermes under Providers, then add the server again."
+msgstr "No provider can add this server right now, so nothing was saved. Connect OpenCode or Hermes under Providers, then add the server again."
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "No recent worktrees."
@@ -5802,13 +5530,18 @@ msgstr "No way to sign in from Sotto"
 msgid "No working link. This question is about a prototype, and no page it names opens."
 msgstr "No working link. This question is about a prototype, and no page it names opens."
 
+#. A reasoning effort level: no reasoning before the answer.
+#: src/renderer/src/agents/effortNames.ts
+msgid "None"
+msgstr "None"
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "None of {provider}’s skills here can be chosen from a message."
 msgstr "None of {provider}’s skills here can be chosen from a message."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "None yet. Add a model server you run to use its models in OpenCode threads."
-msgstr "None yet. Add a model server you run to use its models in OpenCode threads."
+msgid "None yet. Add a model server to use its models in threads."
+msgstr "None yet. Add a model server to use its models in threads."
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "None yet. Draw on the picture."
@@ -5832,9 +5565,7 @@ msgid "not connected"
 msgstr "not connected"
 
 #. A host's status.
-#. A provider's status.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Not connected"
 msgstr "Not connected"
 
@@ -5899,10 +5630,6 @@ msgstr "not settled"
 #: src/renderer/src/agents/continuations.ts
 msgid "not signed in"
 msgstr "not signed in"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Not signed in"
-msgstr "Not signed in"
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Note"
@@ -6031,18 +5758,9 @@ msgstr "On {hostName}"
 msgid "On hold"
 msgstr "On hold"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
-msgstr "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
-
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "one of its agents"
 msgstr "one of its agents"
-
-#. {provider} is a provider's name.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
-msgstr "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
@@ -6149,6 +5867,12 @@ msgstr "Open {title}, the check on {machine}, to read all of its reply"
 msgid "Open {title}, the thread this one continues"
 msgstr "Open {title}, the thread this one continues"
 
+#. The count before a step's newest pictures, which opens the viewer at the first of the rest.
+#. placeholder {0}: all.length
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Open all {0} pictures"
+msgstr "Open all {0} pictures"
+
 #: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -6206,10 +5930,6 @@ msgstr "Open in system browser"
 msgid "Open it"
 msgstr "Open it"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Open Muse installation guide"
-msgstr "Open Muse installation guide"
-
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Open on the left"
 msgstr "Open on the left"
@@ -6218,14 +5938,11 @@ msgstr "Open on the left"
 msgid "Open on the right"
 msgstr "Open on the right"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Open OpenCode installation guide"
-msgstr "Open OpenCode installation guide"
-
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Open panes"
 msgstr "Open panes"
 
+#: src/renderer/src/agents/StepPictures.tsx
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture"
 msgstr "Open picture"
@@ -6235,6 +5952,11 @@ msgstr "Open picture"
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
 msgstr "Open picture {number} of {count}, from {0}"
+
+#. {number} of {count} pictures an agent's steps made; {title} names the step that made it.
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Open picture {number} of {count}, from {title}"
+msgstr "Open picture {number} of {count}, from {title}"
 
 #. {number} of {count} pictures in a turn; {title} names the step that made it; then how many callouts the agent placed on it.
 #. placeholder {0}: callouts.length
@@ -6334,34 +6056,18 @@ msgstr "Open Watcher"
 msgid "Open Watcher’s room"
 msgstr "Open Watcher’s room"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again."
-msgstr "OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again."
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode and Hermes keep keys in their own Sotto folders. Adding with Hermes alone needs no OpenCode."
+msgstr "OpenCode and Hermes keep keys in their own Sotto folders. Adding with Hermes alone needs no OpenCode."
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 msgstr "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
-msgstr "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
-msgstr "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
-msgstr "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
-
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "OpenCode model sources on {host}"
 msgstr "OpenCode model sources on {host}"
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
-msgstr "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
 
 #. {ten} is the number 10. {host} is the server’s address and port, such as spark-head:8888; keep it as it is.
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -6607,6 +6313,12 @@ msgstr "Picture to mark up: {name}"
 msgid "Pictures and videos it wrote"
 msgstr "Pictures and videos it wrote"
 
+#. Names the small pictures at the end of a step's line; {0} is how many it stands for.
+#. placeholder {0}: all.length
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Pictures: {0}"
+msgstr "Pictures: {0}"
+
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Plain ink"
 msgstr "Plain ink"
@@ -6644,6 +6356,23 @@ msgstr "Plans the work and runs it as a team of agents. Uses many more tokens."
 msgid "Play GIF {number}"
 msgstr "Play GIF {number}"
 
+#. The count before a step's newest pictures when it stands for videos alone; a press plays the first of them under the line.
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play the next video"
+msgstr "Play the next video"
+
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play video"
+msgstr "Play video"
+
+#. {0} of {1} videos an agent's steps wrote; {2} names the step. A press plays it in a tile under the line.
+#. placeholder {0}: videos.indexOf(shown) + 1
+#. placeholder {1}: videos.length
+#. placeholder {2}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/StepPictures.tsx
+msgid "Play video {0} of {1}, from {2}"
+msgstr "Play video {0} of {1}, from {2}"
+
 #. {number} is the place of an agent's video among the pictures and videos of one turn.
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Play video {number}"
@@ -6657,10 +6386,6 @@ msgstr "Point me at a problem."
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "PR #{number} - {state}: {title}"
 msgstr "PR #{number} - {state}: {title}"
-
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Preparing agent configuration…"
-msgstr "Preparing agent configuration…"
 
 #: src/renderer/src/agents/PageSidebar.tsx
 #: src/renderer/src/agents/ThreadsView.tsx
@@ -6735,10 +6460,8 @@ msgctxt "skill source"
 msgid "Project"
 msgstr "Project"
 
-#. A working copy choice: the thread works in the folder of the project.
 #: src/renderer/src/agents/ThreadSidebar.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
 msgid "Project folder"
 msgstr "Project folder"
 
@@ -6746,9 +6469,7 @@ msgstr "Project folder"
 msgid "Project folder pending"
 msgstr "Project folder pending"
 
-#. A Settings card about where new projects go.
 #. A heading over the projects a new thread can start in.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
 #: src/renderer/src/agents/ProjectChooser.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Projects"
@@ -6766,9 +6487,10 @@ msgstr "Prototype ready"
 msgid "Prototype ready for review"
 msgstr "Prototype ready for review"
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
 #: src/renderer/src/agents/ContinueThread.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/FixedEffortChip.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
@@ -6974,7 +6696,6 @@ msgstr "Reasoning effort"
 msgid "Recent worktrees"
 msgstr "Recent worktrees"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 msgid "Reconnect"
 msgstr "Reconnect"
@@ -6982,10 +6703,6 @@ msgstr "Reconnect"
 #: src/renderer/src/agents/requests/threadRequests.ts
 msgid "Reconnect {provider} to answer."
 msgstr "Reconnect {provider} to answer."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Reconnect Muse to apply the shell sandbox setting"
-msgstr "Reconnect Muse to apply the shell sandbox setting"
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Reconnect to continue your saved draft."
@@ -7025,19 +6742,10 @@ msgstr "Redo ({modKey}+Shift+Z)"
 msgid "Refresh"
 msgstr "Refresh"
 
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Refresh {label}"
-msgstr "Refresh {label}"
-
 #: src/renderer/src/agents/FilePicker.tsx
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Refreshing"
 msgstr "Refreshing"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Refreshing…"
-msgstr "Refreshing…"
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Refs"
@@ -7197,22 +6905,6 @@ msgstr "renamed"
 msgid "Renamed"
 msgstr "Renamed"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
-msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
-msgstr "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread."
-msgstr "Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread."
-msgstr "Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread."
-
 #. Where an action's time came from; {provider} is the provider's name.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Reported by {provider}"
@@ -7332,15 +7024,6 @@ msgstr "Resumed"
 msgid "Retry"
 msgstr "Retry"
 
-#. {label} is a provider's name; the button connects it again.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Retry {label}"
-msgstr "Retry {label}"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Retry connection"
-msgstr "Retry connection"
-
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Retry loading messages"
 msgstr "Retry loading messages"
@@ -7406,10 +7089,6 @@ msgstr "Run in terminal: {command}"
 msgid "Run on"
 msgstr "Run on"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Run these commands in a terminal on this computer, then check again."
-msgstr "Run these commands in a terminal on this computer, then check again."
-
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "Run this page"
 msgstr "Run this page"
@@ -7449,10 +7128,6 @@ msgstr "Runs on {hostName}"
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Runs on this computer"
 msgstr "Runs on this computer"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Runs with OpenCode"
-msgstr "Runs with OpenCode"
 
 #. Where a continued thread works: the folder this thread works in.
 #. Where a continued thread works: the folder this thread works in.
@@ -7707,12 +7382,8 @@ msgid "Setup did not finish."
 msgstr "Setup did not finish."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
-msgstr "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Shell sandbox"
-msgstr "Shell sandbox"
+msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads."
+msgstr "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads."
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Shift+Enter for a new line"
@@ -7924,10 +7595,6 @@ msgstr "Sign Sotto’s OpenCode in to a model source to use its models in OpenCo
 msgid "Sign Sotto’s OpenCode on {host} in to a model source to use its models in OpenCode threads there. That account pays for them."
 msgstr "Sign Sotto’s OpenCode on {host} in to a model source to use its models in OpenCode threads there. That account pays for them."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sign-in steps"
-msgstr "Sign-in steps"
-
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -7942,7 +7609,6 @@ msgid "Signing in to {sourceName}"
 msgstr "Signing in to {sourceName}"
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Signing in…"
 msgstr "Signing in…"
 
@@ -8000,6 +7666,7 @@ msgstr "Skipped."
 msgid "Snooze"
 msgstr "Snooze"
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Snooze {title}"
 msgstr "Snooze {title}"
@@ -8100,6 +7767,10 @@ msgstr "Sotto could not confirm the folder was saved. Check the folder shown in 
 msgid "Sotto could not confirm the new order. Check the queue before changing it again."
 msgstr "Sotto could not confirm the new order. Check the queue before changing it again."
 
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Sotto could not confirm the note was dismissed. Press Dismiss again."
+msgstr "Sotto could not confirm the note was dismissed. Press Dismiss again."
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the queue resumed."
 msgstr "Sotto could not confirm the queue resumed."
@@ -8157,8 +7828,20 @@ msgid "Sotto could not discard this saved answer. It is still kept."
 msgstr "Sotto could not discard this saved answer. It is still kept."
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
+msgstr "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish removing {name}. It is still listed. Remove it again."
+msgstr "Sotto could not finish removing {name}. It is still listed. Remove it again."
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish that, so nothing was changed. Try again."
 msgstr "Sotto could not finish that, so nothing was changed. Try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not keep the key for {name}, so nothing was saved. Try adding the server again."
+msgstr "Sotto could not keep the key for {name}, so nothing was saved. Try adding the server again."
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Sotto could not open that folder."
@@ -8249,7 +7932,7 @@ msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its re
 msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 msgstr "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 
@@ -8266,10 +7949,6 @@ msgstr "Sotto did not start this host, so it cannot restart it. Update it on {na
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Sotto has no choice it can send for this request. Answer it in the provider’s app."
 msgstr "Sotto has no choice it can send for this request. Answer it in the provider’s app."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sotto has not read this client's version yet. Check again to read it."
-msgstr "Sotto has not read this client's version yet. Check again to read it."
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto has started sending this message, so it can’t be changed."
@@ -8294,14 +7973,6 @@ msgstr "Sotto restarted before the brief was sent. Nothing was sent."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
 msgstr "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
-msgstr "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
-msgstr "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto turned it down. {nothing}"
@@ -8328,15 +7999,6 @@ msgstr "Sotto will not send your last prompt twice."
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Sotto will not send your last prompt twice. Reconnect to check it."
 msgstr "Sotto will not send your last prompt twice. Reconnect to check it."
-
-#. {requiredVersion} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sotto works with OpenCode {requiredVersion} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one."
-msgstr "Sotto works with OpenCode {requiredVersion} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
-msgstr "Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result."
@@ -8469,10 +8131,6 @@ msgstr "Starting the cloud iPhone…"
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "Starting the page."
 msgstr "Starting the page."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Starting the update…"
-msgstr "Starting the update…"
 
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Starting…"
@@ -8830,10 +8488,6 @@ msgstr "The code could not be copied. Select it and copy it yourself."
 msgid "The code works until {until}."
 msgstr "The code works until {until}."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The command could not be copied. Select muse login and copy it yourself."
-msgstr "The command could not be copied. Select muse login and copy it yourself."
-
 #. Stands for a branch's name when Git gives none.
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "the default branch"
@@ -8850,11 +8504,6 @@ msgstr "The draft could not be discarded. It is still saved. Try again."
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "The draft is deleted and cannot be brought back."
 msgstr "The draft is deleted and cannot be brought back."
-
-#. Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
-msgstr "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
 
 #. Linux: what shows a file in its folder. Read inside "Show in {manager}: {file}".
 #: src/renderer/src/agents/MessageContent.tsx
@@ -8954,15 +8603,6 @@ msgstr "The model it asked for was not ready on this computer, or Sotto could no
 msgid "the model's default effort"
 msgstr "the model's default effort"
 
-#. {clientName} is a provider's client, such as Claude Code.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The models {clientName} offers you now."
-msgstr "The models {clientName} offers you now."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The Muse guide could not be opened. Try again."
-msgstr "The Muse guide could not be opened. Try again."
-
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "The note is free now. It stays where you put it."
 msgstr "The note is free now. It stays where you put it."
@@ -8982,10 +8622,6 @@ msgstr "The note now moves with the circle."
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "The note now moves with the pen line."
 msgstr "The note now moves with the pen line."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The OpenCode guide could not be opened. Try again."
-msgstr "The OpenCode guide could not be opened. Try again."
 
 #. Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.
 #. Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.
@@ -9026,6 +8662,7 @@ msgstr "the provider"
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #: src/renderer/src/agents/ThreadOptions.tsx
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "The provider"
@@ -9044,7 +8681,6 @@ msgid "the provider's default"
 msgstr "the provider's default"
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "the published version"
 msgstr "the published version"
 
@@ -9073,9 +8709,9 @@ msgstr "The saved answer belongs to a different question. Reload the original an
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr "The server does not say how much context this model has. Type it from the model’s page."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The shell sandbox setting was not saved, so Muse keeps the one it had. Try again."
-msgstr "The shell sandbox setting was not saved, so Muse keeps the one it had. Try again."
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The server’s address, on this computer, your network, your tailnet or the internet."
+msgstr "The server’s address, on this computer, your network, your tailnet or the internet."
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
@@ -9107,24 +8743,9 @@ msgstr "The thread runs on this host; it was chosen when the thread was made."
 msgid "The thread that delegated"
 msgstr "The thread that delegated"
 
-#. Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
-msgstr "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
-
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "The update ran, but the version did not move"
 msgstr "The update ran, but the version did not move"
-
-#. {installed} is a version number; {command} is a terminal command.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The update ran, but this client still reports {installed}. Try again, or run {command} yourself to see what it says."
-msgstr "The update ran, but this client still reports {installed}. Try again, or run {command} yourself to see what it says."
-
-#. {installed} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "The update ran, but this client still reports {installed}. Try again."
-msgstr "The update ran, but this client still reports {installed}. Try again."
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "The usual balance of speed and care."
@@ -9205,10 +8826,6 @@ msgstr "This computer already had as many new threads working as Threads in flig
 msgid "This computer isn't connected to {machine}, so nothing was started there. Start it on {machine} instead, or try again when this computer is back."
 msgstr "This computer isn't connected to {machine}, so nothing was started there. Start it on {machine} instead, or try again when this computer is back."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there."
-msgstr "This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there."
-
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "This context is large and hasn’t been updated for over an hour."
 msgstr "This context is large and hasn’t been updated for over an hour."
@@ -9281,6 +8898,10 @@ msgid "This host cannot keep files yet. Update Sotto there, then attach them aga
 msgstr "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
 
 #: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached."
+msgstr "This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
 msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
 msgstr "This host is disconnected. Connect again before attaching files. Nothing was attached."
 
@@ -9321,11 +8942,6 @@ msgstr "This pane has no reply box to take a marked copy."
 msgid "This prompt was kept after a new thread was refused. Use Restore prompt to bring it back. Nothing was sent."
 msgstr "This prompt was kept after a new thread was refused. Use Restore prompt to bring it back. Nothing was sent."
 
-#. Stands for a provider whose name is not known, at the start of a sentence.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "This provider"
-msgstr "This provider"
-
 #. {branch} is a Git branch name.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "This pushes from {branch}, the default branch. Push there, or check out a feature branch and continue on it."
@@ -9335,7 +8951,7 @@ msgstr "This pushes from {branch}, the default branch. Push there, or check out 
 msgid "This question has no choices Sotto can show."
 msgstr "This question has no choices Sotto can show."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "This Sotto cannot change what Watcher may do without asking."
 msgstr "This Sotto cannot change what Watcher may do without asking."
 
@@ -9457,6 +9073,10 @@ msgstr "This turn"
 msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr "This turn runs on {now}. The next turn starts on {next}."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there."
+msgstr "This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there."
+
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
 msgstr "This window cannot show the page."
@@ -9480,10 +9100,6 @@ msgstr "Thread panes"
 #: src/renderer/src/agents/optionChipNames.ts
 msgid "Thread permissions"
 msgstr "Thread permissions"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Thread providers"
-msgstr "Thread providers"
 
 #: src/renderer/src/agents/optionChipNames.ts
 msgid "Thread reasoning"
@@ -9522,22 +9138,6 @@ msgstr "Threads on this server send your code and messages to it, so whoever run
 #: src/renderer/src/agents/RestartStopped.tsx
 msgid "Threads to restart"
 msgstr "Threads to restart"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Threads with Cursor"
-msgstr "Threads with Cursor"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Threads with DeepSeek Harness"
-msgstr "Threads with DeepSeek Harness"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Threads with Muse"
-msgstr "Threads with Muse"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Threads with OpenCode"
-msgstr "Threads with OpenCode"
 
 #. {fallbackHint} says where else to look, such as "Its steps are below."
 #: src/renderer/src/agents/InteractiveVisual.tsx
@@ -9604,7 +9204,6 @@ msgstr "Took too long to draw."
 #: src/renderer/src/agents/InteractiveVisual.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ownServerTurnWords.ts
-#: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 #: src/renderer/src/agents/SkillPicker.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -9644,10 +9243,6 @@ msgstr "Try again, putting your last message back in the composer"
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again, sending your last message to {name} again"
 msgstr "Try again, sending your last message to {name} again"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Try updating Muse again"
-msgstr "Try updating Muse again"
 
 #. Comes before the name of a thread whose last turn failed, in the Needs you card: Turn failed in Streaming WAV stall.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -9708,14 +9303,9 @@ msgid "Ultra fast"
 msgstr "Ultra fast"
 
 #. The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.
-#: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/effortNames.ts
 msgid "Ultracode"
 msgstr "Ultracode"
-
-#. A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Ultracode effort"
-msgstr "Ultracode effort"
 
 #. Tooltip on the suggestion to switch the thread to Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.
 #: src/renderer/src/agents/SplitChipEffort.tsx
@@ -9822,19 +9412,13 @@ msgid "Up to 2.5x faster output, at twice the price per token."
 msgstr "Up to 2.5x faster output, at twice the price per token."
 
 #. A button that installs the published version of a provider's client.
-#. A button that installs the published version of a provider's client.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Update"
 msgstr "Update"
 
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Update {host} to delete its threads"
 msgstr "Update {host} to delete its threads"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Update {label} to {version}"
-msgstr "Update {label} to {version}"
 
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -9865,22 +9449,6 @@ msgstr "update it with {runIt}"
 msgid "update it with the installer you used"
 msgstr "update it with the installer you used"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Update Muse"
-msgstr "Update Muse"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Update Muse with the installer or package manager you used. Then check again."
-msgstr "Update Muse with the installer or package manager you used. Then check again."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Update OpenCode 2 with the installer or package manager you used. Then check again."
-msgstr "Update OpenCode 2 with the installer or package manager you used. Then check again."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Update to {version}"
-msgstr "Update to {version}"
-
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Update when they finish"
 msgstr "Update when they finish"
@@ -9906,10 +9474,6 @@ msgstr "Updated the plan"
 msgid "Updating"
 msgstr "Updating"
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Updating {label} to {version}"
-msgstr "Updating {label} to {version}"
-
 #. {name} is the name of a saved host; {step} is the step it is on, of four.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Updating {name} · {step} of 4"
@@ -9933,19 +9497,6 @@ msgstr "Updating {name} to the published version…"
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Updating clients"
 msgstr "Updating clients"
-
-#. {published} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Updating to {published}…"
-msgstr "Updating to {published}…"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Updating to the published version…"
-msgstr "Updating to the published version…"
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Updating…"
-msgstr "Updating…"
 
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Uploading {buildPath} to run.cloud and starting the simulator."
@@ -9979,6 +9530,10 @@ msgstr "Use {modelName}'s default, {defaultLevel}"
 #: src/renderer/src/agents/requests/requestAnswers.ts
 msgid "Use {toolName}"
 msgstr "Use {toolName}"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Use its models with a connected provider."
+msgstr "Use its models with a connected provider."
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Use Left and Right arrow keys to resize. Hold Shift for larger steps. Home chooses the narrowest width; End chooses the widest."
@@ -10036,11 +9591,6 @@ msgstr "Uses a sign-in already on this computer."
 msgid "Uses the local branch as it is."
 msgstr "Uses the local branch as it is."
 
-#. {clientName} is a provider's client, such as Claude Code.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Uses your {clientName} sign-in on this computer."
-msgstr "Uses your {clientName} sign-in on this computer."
-
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
 msgstr "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
@@ -10048,14 +9598,6 @@ msgstr "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, an
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
 msgstr "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control."
-msgstr "Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting."
-msgstr "Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting."
 
 #. The browser line while the agent uses Sotto's browser and has opened no address.
 #: src/renderer/src/agents/browserLine.ts
@@ -10082,6 +9624,10 @@ msgstr "Video {number}"
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Video {number} of {count}, from {0}"
 msgstr "Video {number} of {count}, from {0}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
+msgstr "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "View PR"
@@ -10207,19 +9753,6 @@ msgstr "Waiting on you"
 msgid "Waiting to start on “{prompt}”."
 msgstr "Waiting to start on “{prompt}”."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Waiting to update"
-msgstr "Waiting to update"
-
-#. {published} is a version number.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Waiting to update to {published}. Your threads keep working."
-msgstr "Waiting to update to {published}. Your threads keep working."
-
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Waiting to update to the published version. Your threads keep working."
-msgstr "Waiting to update to the published version. Your threads keep working."
-
 #. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "Waiting, {waited}"
@@ -10282,7 +9815,7 @@ msgstr "Watcher message"
 msgid "Watcher starts its next turn on this choice."
 msgstr "Watcher starts its next turn on this choice."
 
-#: src/renderer/src/agents/ThreadOptions.tsx
+#: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Watcher’s permissions:"
 msgstr "Watcher’s permissions:"
 
@@ -10348,10 +9881,6 @@ msgstr "What’s on your mind?"
 msgid "What’s the plan?"
 msgstr "What’s the plan?"
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Where a new project goes. Each computer has its own folder."
-msgstr "Where a new project goes. Each computer has its own folder."
-
 #: src/renderer/src/agents/addProject.ts
 msgid "Where should this project live?"
 msgstr "Where should this project live?"
@@ -10363,10 +9892,6 @@ msgstr "Where should we start?"
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Where the new thread works"
 msgstr "Where the new thread works"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Where the server listens, on this computer, your network or your tailnet."
-msgstr "Where the server listens, on this computer, your network or your tailnet."
 
 #. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
 #: src/renderer/src/agents/DelegatedWork.tsx
@@ -10413,10 +9938,6 @@ msgstr "Working"
 msgctxt "delegation outcome"
 msgid "Working"
 msgstr "Working"
-
-#: src/renderer/src/agents/WorkingCopyFieldset.tsx
-msgid "Working copy"
-msgstr "Working copy"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Working copy details"
@@ -10531,10 +10052,6 @@ msgstr "Write your answer…"
 msgid "Writing a reply"
 msgstr "Writing a reply"
 
-#: src/renderer/src/agents/ThreadTranscript.tsx
-msgid "Writing a reply…"
-msgstr "Writing a reply…"
-
 #. A file change, before the file's path.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Wrote"
@@ -10546,6 +10063,11 @@ msgstr "Wrote"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Wrote {subject}"
 msgstr "Wrote {subject}"
+
+#. A reasoning effort level, one step above High. XHigh is its name; keep it as it is.
+#: src/renderer/src/agents/effortNames.ts
+msgid "XHigh"
+msgstr "XHigh"
 
 #. Who sent a thread's last message.
 #. Who wrote a message: the user.
@@ -10648,10 +10170,6 @@ msgstr "Your own server: add a model server you run"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Your own server…"
 msgstr "Your own server…"
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
-msgstr "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Your saved draft is kept. Check any earlier send in the previous provider before using it again."

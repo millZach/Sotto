@@ -60,7 +60,7 @@ export function clientUpdateHost(directory: string, home: string) {
   delete process.env.npm_config_prefix
   const where: Record<ProviderId, string> = {
     claude: join(installs, 'claude', 'latest', 'claude'), codex: join(installs, 'codex', 'latest', 'bin', 'codex'),
-    grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'), muse: join(home, 'nowhere', 'muse'), opencode: join(home, 'nowhere', 'opencode'), cursor: join(home, 'nowhere', 'cursor'), deepseek: join(home, 'nowhere', 'dsh'),
+    grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'), muse: join(home, 'nowhere', 'muse'), opencode: join(home, 'nowhere', 'opencode'), cursor: join(home, 'nowhere', 'cursor'), deepseek: join(home, 'nowhere', 'dsh'), hermes: join(home, 'nowhere', 'dsh'),
   }
   const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
   /** The client a mise argument names: its tool, or an update's `<tool>@<version>`, the version that was published. */

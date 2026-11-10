@@ -78,6 +78,18 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(try model().label, "Codex · Model")
         XCTAssertEqual(ThreadModel.label(providerID: "opencode", source: "", name: "Big Pickle"), "OpenCode · Big Pickle")
     }
+    /// A DeepSeek Harness thread starts in a new folder too (ADR-0138, November 8 amendment), and its model reads its own
+    /// server between DeepSeek and the model.
+    func testProjectRegistrationAcceptsDeepSeekAndItsModelReadsItsServer() throws {
+        let command = try Commands.createProject(providerID: "deepseek", title: "DeepSeek Sama", path: #"D:\DeepSeek Sama"#)
+        XCTAssertEqual(command["provider"], .string("deepseek"))
+        let host = try JSONDecoder().decode(HostSnapshot.self, from: Data(#"{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"native:deepseek:model:own-1%2Fdeepseek-v4.1-flash","name":"deepseek-v4.1-flash","provider":"DeepSeek Harness","providerId":"deepseek","source":"Obsidian","ready":true,"runtimeModes":["approval-required","auto-accept-edits","full-access"]}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"deepseek","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":false,"permissions":true,"projects":true,"threads":true}}]}"#.utf8))
+        let deepseek = try XCTUnwrap(NewThreads.availableModels(host).first)
+        XCTAssertEqual(deepseek.label, "DeepSeek · Obsidian · deepseek-v4.1-flash")
+        XCTAssertEqual(deepseek.startingPermission, "approval-required")
+        XCTAssertEqual(ThreadModel.label(providerID: "deepseek", source: "DeepSeek", name: "deepseek-v4.1-flash"), "DeepSeek · DeepSeek · deepseek-v4.1-flash",
+                       "A server the user named DeepSeek keeps its name")
+    }
     func testProjectRegistrationAcceptsCursor() throws {
         let command = try Commands.createProject(providerID: "cursor", title: "Panel tools", path: "/home/zach/panel")
         XCTAssertEqual(command["provider"], .string("cursor"))

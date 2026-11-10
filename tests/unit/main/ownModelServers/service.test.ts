@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OWN_SERVERS_UNREAD, registerOwnServersIpc } from '../../../../src/main/ownModelServers/ipc'
-import { addressSuffix, OWN_SERVERS_FILE, OwnServers, type OwnServerEvent, type OwnServersOpenCode } from '../../../../src/main/ownModelServers/service'
+import { addressSuffix, OWN_SERVERS_FILE, OwnServers, type OwnServerEvent, type OwnServersHermes, type OwnServersOpenCode } from '../../../../src/main/ownModelServers/service'
+import { openCodeProviders } from '../../../../src/main/ownModelServers/providerBlock'
+import { hermesServers } from '../../../../src/main/agents/hermesRuntime'
 import {
   OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, type CheckResult, type OwnServer,
 } from '../../../../src/shared/ownModelServers'
@@ -31,17 +33,134 @@ let directory: string
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-own-servers-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
-function servers(options: { openCode?: OwnServersOpenCode | undefined; deepSeek?: boolean; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
+function servers(options: { openCode?: OwnServersOpenCode | undefined; deepSeek?: boolean; hermes?: OwnServersHermes; forgetHermesKey?: (id: string) => Promise<void>; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
   const events: OwnServerEvent[] = []
   const deepSeekCalls: string[] = []
   let next = 0
   const service = new OwnServers({ directory, openCode: () => options.openCode,
     deepSeek: () => options.deepSeek ? { changed: () => { deepSeekCalls.push('changed') } } : undefined,
-    log: event => events.push(event), newId: () => `test${next++}`,
+    hermes: () => options.hermes, log: event => events.push(event), newId: () => `test${next++}`,
+    ...(options.forgetHermesKey ? { forgetHermesKey: options.forgetHermesKey } : {}),
     ...(options.check ? { check: options.check } : {}), ...(options.now ? { now: options.now } : {}) })
   return { service, events, deepSeekCalls }
 }
 const saved = async (): Promise<OwnServer[]> => JSON.parse(await readFile(join(directory, OWN_SERVERS_FILE), 'utf8')) as OwnServer[]
+
+describe('a keyed server with Hermes alone', () => {
+  function fakeHermes() {
+    const keys: Record<string, string> = {}
+    const hermes = {
+      keepKey: vi.fn(async (id: string, key: string) => { keys[id] = key }),
+      forgetKey: vi.fn(async (id: string) => { delete keys[id] }),
+    }
+    return { hermes, keys }
+  }
+  const request = { name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] }
+
+  it.each([false, true])('adds with OpenCode absent or stopped (stopped: %s), and keeps the key out of the record and reply', async stopped => {
+    const { hermes, keys } = fakeHermes()
+    const { openCode, calls } = fakeOpenCode({ running: false })
+    const { service, events } = servers({ ...(stopped ? { openCode } : {}), hermes })
+    const result = await service.add(request)
+    expect(result).toMatchObject({ status: 'ok', server: { keyed: true, keyKeeper: 'hermes' } })
+    expect(hermes.keepKey).toHaveBeenCalledExactlyOnceWith('own-test0', KEY)
+    expect(hermesServers(await service.list(), keys)).toHaveLength(1)
+    expect(calls).toEqual([])
+    expect(JSON.stringify([result, await saved(), events])).not.toContain(KEY)
+  })
+
+  it('does not mistake offline key cleanup for an adapter that can keep a key', async () => {
+    const { service } = servers({ deepSeek: true, forgetHermesKey: async () => {} })
+    expect(await service.add(request)).toMatchObject({ status: 'refused', reason: 'opencode-not-running' })
+    expect(await service.list()).toEqual([])
+  })
+
+  it('rolls back when Hermes throws after keeping a key, without echoing the error', async () => {
+    const { hermes, keys } = fakeHermes()
+    hermes.keepKey.mockImplementation(async (id, key) => { keys[id] = key; throw new Error(KEY) })
+    const { service, events } = servers({ hermes })
+    const result = await service.add(request)
+    expect(result).toEqual({ status: 'refused', reason: 'sign-in-failed', message: OWN_SERVER_WORDS.signInFailed('Paid') })
+    expect(hermes.forgetKey).toHaveBeenCalledExactlyOnceWith('own-test0')
+    expect(keys).toEqual({})
+    expect(await saved()).toEqual([])
+    expect(await service.list()).toEqual([])
+    expect(JSON.stringify([result, events])).not.toContain(KEY)
+  })
+
+  it('keeps a failed add listed if Hermes cannot clear its key, then lets Remove finish', async () => {
+    const { hermes, keys } = fakeHermes()
+    hermes.keepKey.mockImplementation(async (id, key) => { keys[id] = key; throw new Error(KEY) })
+    hermes.forgetKey.mockRejectedValueOnce(new Error(KEY))
+    const { service, events } = servers({ hermes })
+    const result = await service.add(request)
+    expect(result).toMatchObject({ status: 'refused', reason: 'added-partly' })
+    expect((await saved())[0]).toMatchObject({ keyKeeper: 'hermes' })
+    expect(keys['own-test0']).toBe(KEY)
+    expect(JSON.stringify([result, events])).not.toContain(KEY)
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(keys).toEqual({})
+    expect(await saved()).toEqual([])
+  })
+
+  it('keeps a failed add listed if rolling back the record fails', async () => {
+    const { hermes, keys } = fakeHermes()
+    hermes.keepKey.mockImplementation(async () => {
+      await rm(join(directory, OWN_SERVERS_FILE)); await mkdir(join(directory, OWN_SERVERS_FILE))
+      throw new Error(KEY)
+    })
+    const { service } = servers({ hermes })
+    expect(await service.add(request)).toMatchObject({ status: 'refused', reason: 'added-partly' })
+    expect((await service.list())[0]).toMatchObject({ keyKeeper: 'hermes' })
+    expect(keys).toEqual({})
+  })
+
+  it('removes with Hermes alone, retaining the record until its key is gone', async () => {
+    const { hermes, keys } = fakeHermes()
+    const { service } = servers({ hermes })
+    await service.add(request)
+    hermes.forgetKey.mockRejectedValueOnce(new Error(KEY))
+    expect(await service.remove({ id: 'own-test0' })).toMatchObject({ status: 'refused', reason: 'removed-partly' })
+    expect(await saved()).toHaveLength(1)
+    expect(keys['own-test0']).toBe(KEY)
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(await saved()).toEqual([])
+    expect(keys).toEqual({})
+  })
+
+  it('removes after Hermes is turned off, using its folder cleanup without OpenCode', async () => {
+    const { hermes, keys } = fakeHermes()
+    await servers({ hermes }).service.add(request)
+    const offline = servers({ forgetHermesKey: hermes.forgetKey }).service
+    expect(await offline.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(keys).toEqual({})
+    expect(await saved()).toEqual([])
+  })
+
+  it('does not offer Hermes’s keyed server on OpenCode when it connects later, or ask OpenCode to sign it out', async () => {
+    const { hermes, keys } = fakeHermes()
+    const { openCode, calls, answers } = fakeOpenCode({ running: false })
+    await servers({ openCode, hermes }).service.add(request)
+    answers.running = true
+    const { service } = servers({ openCode, hermes })
+    const restored = await service.list()
+    expect(restored[0]).toMatchObject({ keyKeeper: 'hermes' })
+    expect(openCodeProviders(restored)).toEqual({})
+    expect(hermesServers(restored, keys)).toEqual(restored)
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(calls).toEqual(['outdated', 'catalog'])
+    expect(keys).toEqual({})
+  })
+
+  it('checks again without taking the key back from Hermes', async () => {
+    const { hermes } = fakeHermes()
+    const check = vi.fn(async (): Promise<CheckResult> => ({ status: 'refused', reason: 'key-needed', message: 'asks' }))
+    const { service } = servers({ hermes, check })
+    await service.add(request)
+    expect(await service.checkSaved({ id: 'own-test0' })).toMatchObject({ status: 'ok', keyKept: true, models: [model] })
+    expect(check).toHaveBeenCalledExactlyOnceWith(request.address, undefined)
+  })
+})
 
 describe('adding a server', () => {
   it('saves it, tells OpenCode, and reads the catalog again on a fresh process', async () => {
@@ -79,12 +198,45 @@ describe('adding a server', () => {
     let onDisk: OwnServer[] = []
     openCode.signInWithKey = async (id, key) => { onDisk = await saved(); calls.push(`sign-in ${id} ${key === KEY ? 'key' : 'other'}`); return true }
     const result = await service.add({ name: 'Spark', address: 'http://spark-head:8888', key: `  ${KEY} `, models: [model] })
-    expect(result).toMatchObject({ status: 'ok', server: { id: 'own-test0', keyed: true } })
+    expect(result).toMatchObject({ status: 'ok', server: { id: 'own-test0', keyed: true, keyKeeper: 'opencode' } })
     // The process the key went to was started with the server already saved.
     expect(onDisk.map(server => server.id)).toEqual(['own-test0'])
     expect(calls).toEqual(['outdated', 'sign-in own-test0 key'])
     expect(await readFile(join(directory, OWN_SERVERS_FILE), 'utf8')).not.toContain(KEY)
     expect(JSON.stringify([result, events])).not.toContain(KEY)
+  })
+
+  it('hands Hermes its own copy of the key once OpenCode has taken it, and takes it back on Remove', async () => {
+    const { openCode, calls } = fakeOpenCode()
+    const hermes: OwnServersHermes = {
+      keepKey: async (id, key) => { calls.push(`hermes keep ${id} ${key === KEY ? 'key' : 'other'}`) },
+      forgetKey: async id => { calls.push(`hermes forget ${id}`) },
+    }
+    const { service } = servers({ openCode, hermes })
+    await service.add({ name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] })
+    expect(calls).toEqual(['outdated', 'sign-in own-test0 key', 'hermes keep own-test0 key'])
+    calls.length = 0
+    await service.remove({ id: 'own-test0' })
+    expect(calls).toEqual(['sign-out own-test0', 'hermes forget own-test0', 'outdated', 'catalog'])
+    calls.length = 0
+    // A refused sign-out leaves Hermes's copy too, so the server stays whole on both until a Remove succeeds.
+    await service.add({ name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] })
+    calls.length = 0
+    openCode.signOut = async id => { calls.push(`sign-out ${id}`); return false }
+    expect(await service.remove({ id: 'own-test1' })).toMatchObject({ status: 'refused', reason: 'sign-in-failed' })
+    expect(calls).toEqual(['sign-out own-test1'])
+    // And a copy Hermes cannot delete keeps the server listed, for a second Remove to finish.
+    openCode.signOut = async id => { calls.push(`sign-out ${id}`); return true }
+    hermes.forgetKey = async () => { throw new Error('disk') }
+    expect(await service.remove({ id: 'own-test1' })).toMatchObject({ status: 'refused', reason: 'removed-partly' })
+    expect((await saved()).map(server => server.id)).toEqual(['own-test1'])
+    calls.length = 0
+    openCode.signInWithKey = async () => false
+    await service.remove({ id: 'own-test1' })
+    openCode.signInWithKey = async () => false
+    calls.length = 0
+    await service.add({ name: 'Paid', address: 'https://api.example.com/v1', key: KEY, models: [model] })
+    expect(calls.some(call => call.startsWith('hermes'))).toBe(false)
   })
 
   it('takes the record out again when OpenCode does not take the key', async () => {
@@ -99,15 +251,31 @@ describe('adding a server', () => {
     expect(events).toEqual(['own-server-sign-in-failed', 'own-server-add-refused'])
   })
 
-  it('still takes the record out when OpenCode cannot forget the key either, and says so in the log', async () => {
+  it('keeps a successful OpenCode add when Hermes cannot take its optional copy, and clears both on Remove', async () => {
+    const { openCode } = fakeOpenCode()
+    const hermes: OwnServersHermes = { keepKey: async () => { throw new Error(KEY) }, forgetKey: vi.fn(async () => {}) }
+    const { service, events } = servers({ openCode, hermes })
+    const result = await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] })
+    expect(result).toMatchObject({ status: 'ok', server: { keyKeeper: 'opencode' } })
+    expect(events).toEqual(['own-server-sign-in-failed', 'own-server-added'])
+    expect(JSON.stringify([result, events])).not.toContain(KEY)
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(hermes.forgetKey).toHaveBeenCalledExactlyOnceWith('own-test0')
+    expect(await saved()).toEqual([])
+  })
+
+  it('keeps the record when OpenCode cannot forget a possibly saved key, until Remove can finish', async () => {
     const { openCode } = fakeOpenCode({ signIn: false })
     const { service, events } = servers({ openCode })
     let declared: OwnServer[] = []
     openCode.signOut = async () => { declared = await saved(); return false }
-    expect(await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] })).toMatchObject({ reason: 'sign-in-failed' })
+    expect(await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] })).toMatchObject({ reason: 'added-partly' })
     expect(declared.map(server => server.id)).toEqual(['own-test0'])
-    expect(await saved()).toEqual([])
+    expect(await saved()).toEqual(declared)
     expect(events).toEqual(['own-server-sign-in-failed', 'own-server-sign-out-failed', 'own-server-add-refused'])
+    openCode.signOut = async () => true
+    expect(await service.remove({ id: 'own-test0' })).toEqual({ status: 'ok' })
+    expect(await saved()).toEqual([])
   })
 
   it('says the server stayed, without its key, when the record cannot be written back after a refused key', async () => {
@@ -244,6 +412,18 @@ describe('removing a server', () => {
 })
 
 describe('the record', () => {
+  it('treats an old keyed record as OpenCode’s key, requiring it to sign out before removal', async () => {
+    const old: OwnServer = { id: 'own-old', name: 'Old', address: 'https://api.example.com/v1', keyed: true, models: [model] }
+    await writeFile(join(directory, OWN_SERVERS_FILE), JSON.stringify([old]))
+    const { openCode, calls, answers } = fakeOpenCode({ running: false })
+    const { service } = servers({ openCode })
+    expect(openCodeProviders(await service.list())).toHaveProperty(old.id)
+    expect(await service.remove({ id: old.id })).toMatchObject({ status: 'refused', reason: 'opencode-not-running' })
+    answers.running = true
+    expect(await service.remove({ id: old.id })).toEqual({ status: 'ok' })
+    expect(calls).toEqual(['sign-out own-old', 'outdated', 'catalog'])
+  })
+
   it('reads what an earlier run saved, and starts empty without one', async () => {
     expect(await servers().service.list()).toEqual([])
     const server: OwnServer = { id: 'own-abc', name: 'Spark', address: 'http://spark-head:8888/v1', keyed: false, models: [model] }

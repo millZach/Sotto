@@ -1079,14 +1079,17 @@ private struct Conversation: View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
-                        opensFiles: model.opensSentFiles(ref.hostID), providerID: model.thread(ref)?.providerId) { viewing = $0 }.equatable()
+                        opensFiles: model.opensSentFiles(ref.hostID), providerID: model.thread(ref)?.providerId,
+                        showsVideos: model.stagesVideos(ref.hostID)) { viewing = $0 }.equatable()
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
-                      open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
+                      open: openRuns.contains(row.id), last: last,
+                      pictures: model.showsAgentPictures(ref.hostID) ? RunPictures(ref: ref, by: provider) { viewing = $0 } : nil) { toggleRun(row.id, scroll) }
                 .equatable()
                 .benchRowFrame("run", row.id, in: .named(Self.pageSpace))
-            // The run's pictures stay in view whether it is open or folded (ADR-0170).
+            // The pictures that stand in the thread stay in view whether the run is open or folded (ADR-0170); the rest sit
+            // in its lines.
             if model.showsAgentPictures(ref.hostID) {
                 AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 }
                     .benchRowFrame("pictures", row.id, in: .named(Self.pageSpace))
@@ -1522,13 +1525,16 @@ private struct MessageView: View, Equatable {
     let opensFiles: Bool
     /// The provider's ID, for its mark beside its name on the Duo.
     var providerID: String? = nil
+    /// Whether its computer takes videos (`video-staging`, with `attach-any-file`), so sent videos are tiles; elsewhere a
+    /// sent video is the file it was before.
+    var showsVideos = false
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.duoLayout) private var duo
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
-            && a.providerID == b.providerID
+            && a.providerID == b.providerID && a.showsVideos == b.showsVideos
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")
@@ -1546,16 +1552,19 @@ private struct MessageView: View, Equatable {
     }
 
     /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages,
-    /// and under the photos their files, each a pill that opens it in Quick Look where the computer hands files back.
+    /// then their videos as tiles that say where the video is (ADR-0131, November 9 amendment), and under them their files,
+    /// each a pill that opens it in Quick Look where the computer hands files back.
     private var userMessage: some View {
         let attachments = message.attachments ?? []
         let photos = attachments.filter(\.hasPreview)
-        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) } : []
+        let videos = showsVideos ? attachments.filter { !$0.hasPreview && Videos.isVideo($0) } : []
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) && !(showsVideos && Videos.isVideo($0)) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
+            if !videos.isEmpty { SentVideoTiles(ref: ref, videos: videos) }
             if !files.isEmpty { SentFilePills(ref: ref, messageID: message.id, attachments: files) }
-            if !message.text.isEmpty || photos.count + files.count != attachments.count {
-                content(ink: Palette.bubbleInk, drawn: Set(files.map(\.id)))
+            if !message.text.isEmpty || photos.count + videos.count + files.count != attachments.count {
+                content(ink: Palette.bubbleInk, drawn: Set((videos + files).map(\.id)))
                     .padding(.horizontal, Space.s4)
                     .padding(.vertical, Space.dense(Space.s3, density))
                     .background(Palette.bubble, in: bubble)
@@ -2445,6 +2454,14 @@ private enum ReplySelection {
 /// through it, the line shows the working words with a slow light crossing them, and VoiceOver hears the step running
 /// now; once it has ended, how many steps it had and how long they took, quietly. A press opens the steps in place
 /// under their guide, and another folds them.
+/// What a run needs to show its steps' pictures in their lines (ADR-0170, pictures in steps): the thread they are read
+/// from, who made them, for the viewer's callouts, and how the viewer opens. Nil where a computer keeps no pictures.
+struct RunPictures {
+    let ref: ThreadRef
+    let by: String?
+    let open: (OpenPhotos) -> Void
+}
+
 private struct FoldedRun: View, Equatable {
     let runID: String
     let steps: [Activity]
@@ -2453,31 +2470,43 @@ private struct FoldedRun: View, Equatable {
     let open: Bool
     /// The conversation ends on this run, so the line's reach stays inside the page's end.
     let last: Bool
+    var pictures: RunPictures? = nil
     let toggle: () -> Void
     /// Drawn again only when what it shows changes; a press does the same for its run every time.
     static func == (a: Self, b: Self) -> Bool {
         a.runID == b.runID && a.steps == b.steps && a.seconds == b.seconds && a.working == b.working && a.open == b.open
-            && a.last == b.last
+            && a.last == b.last && a.pictures?.ref == b.pictures?.ref && a.pictures?.by == b.pictures?.by
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The video the folded line's strip set playing under it.
+    @State private var playing: String?
 
     var body: some View {
         let _ = BenchProbe.body("FoldedRun")
+        // Folded, the line shows the newest pictures of all its steps at its end; open, each step shows its own.
+        let items = pictures == nil || open ? [] : StepPictures.inSteps(steps)
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: toggle) {
-                if working {
-                    WorkingLine(open: open)
-                } else {
-                    summaryLine
+            HStack(spacing: Space.s2) {
+                Button(action: toggle) {
+                    if working {
+                        WorkingLine(open: open)
+                    } else {
+                        summaryLine
+                    }
+                }
+                .buttonStyle(FoldLineStyle())
+                .accessibilityLabel(StepRun.press(count: steps.count, open: open))
+                .accessibilityValue(spoken)
+                .accessibilityAddTraits(open ? .isSelected : [])
+                .accessibilityIdentifier("steps-run-\(runID)")
+                if let pictures, !items.isEmpty {
+                    Spacer(minLength: Space.s2)
+                    StepPictureStrip(ref: pictures.ref, items: items, run: steps, by: pictures.by, playing: $playing, open: pictures.open)
                 }
             }
-            .buttonStyle(FoldLineStyle())
-            .accessibilityLabel(StepRun.press(count: steps.count, open: open))
-            .accessibilityValue(spoken)
-            .accessibilityAddTraits(open ? .isSelected : [])
-            .accessibilityIdentifier("steps-run-\(runID)")
+            if let pictures, !items.isEmpty { StepPictureVideo(ref: pictures.ref, items: items, playing: playing) }
             if open {
-                StepTrail(steps: steps)
+                StepTrail(steps: steps, pictures: pictures)
                     .padding(.top, working ? Space.s2 : Space.s1)
                     .padding(.bottom, Space.s3 + Space.s1)
                     .transition(trailTransition)
@@ -2736,11 +2765,12 @@ private struct FoldLineStyle: ButtonStyle {
 /// A run of steps between two messages: small muted lines under a faint guide, quieter than the messages.
 private struct StepTrail: View {
     let steps: [Activity]
+    var pictures: RunPictures? = nil
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(steps) { record in
-                StepLine(record: record)
+                StepLine(record: record, run: steps, pictures: pictures)
             }
         }
         .padding(.vertical, 2)
@@ -2759,40 +2789,53 @@ private struct StepTrail: View {
 /// has a spinner and its time ticks.
 private struct StepLine: View {
     let record: Activity
+    /// The run the step is in, which a viewer opened from its pictures steps through.
+    var run: [Activity] = []
+    var pictures: RunPictures? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
     @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
     @Environment(\.duoLayout) private var duo
+    /// The video the step's strip set playing under its line.
+    @State private var playing: String?
     var body: some View {
         let _ = BenchProbe.body("StepLine")
-        Group {
-            if duo == .none {
-                line(whole: false)
-            } else if running {
-                // On the Duo the running step's command always stands on its own line under Running and its timer, a size
-                // larger and at the conversation's full strength, where beside them it was a fine grey strand (Zach's pick
-                // A, November 9, 2026, round 5).
-                stacked(strong: true)
-            } else {
-                // On the Duo a command that doesn't fit beside its step goes whole on a line under it, rather than cut in
-                // the middle (Zach, November 9, 2026, the Duo design climb's round 2).
-                ViewThatFits(in: .horizontal) {
-                    line(whole: true)
-                    stacked(strong: false)
+        // The step's pictures sit at its line's end, before its time (ADR-0170, pictures in steps).
+        let items = pictures == nil ? [] : StepPictures.inSteps([record])
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if duo == .none {
+                    line(items, whole: false)
+                } else if running {
+                    // On the Duo the running step's command always stands on its own line under Running and its timer, a
+                    // size larger and at the conversation's full strength, where beside them it was a fine grey strand
+                    // (Zach's pick A, November 9, 2026, round 5).
+                    stacked(items, strong: true)
+                } else {
+                    // On the Duo a command that doesn't fit beside its step goes whole on a line under it, rather than cut
+                    // in the middle (Zach, November 9, 2026, the Duo design climb's round 2).
+                    ViewThatFits(in: .horizontal) {
+                        line(items, whole: true)
+                        stacked(items, strong: false)
+                    }
                 }
             }
+            // A line with pictures keeps them apart, so each opens on its own.
+            .accessibilityElement(children: items.isEmpty ? .combine : .contain)
+            .accessibilityIdentifier("step-\(record.id)")
+            if let pictures, !items.isEmpty { StepPictureVideo(ref: pictures.ref, items: items, playing: playing) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("step-\(record.id)")
     }
 
-    /// The step over two lines: its kind and time, then its command whole under them, `strong` a size larger in ink.
-    private func stacked(strong: Bool) -> some View {
+    /// The step over two lines: its kind, its pictures and time, then its command whole under them, `strong` a size
+    /// larger in ink.
+    private func stacked(_ items: [StepPictures.Item], strong: Bool) -> some View {
         VStack(alignment: .leading, spacing: strong ? 3 : 1) {
             HStack(spacing: 7) {
                 mark.frame(width: markRoom, height: markRoom)
                 verb
                 Spacer(minLength: Space.s2)
+                strip(items)
                 meta
             }
             .frame(minHeight: 26)
@@ -2811,7 +2854,7 @@ private struct StepLine: View {
     }
 
     /// The step on one line; `whole` keeps the command whole, so it fits or doesn't, where elsewhere it is cut.
-    private func line(whole: Bool) -> some View {
+    private func line(_ items: [StepPictures.Item], whole: Bool) -> some View {
         HStack(spacing: 7) {
             mark.frame(width: markRoom, height: markRoom)
             verb
@@ -2819,9 +2862,16 @@ private struct StepLine: View {
                 if whole { subjectText(subject).fixedSize() } else { subjectText(subject).lineLimit(1).truncationMode(.middle) }
             }
             Spacer(minLength: Space.s2)
+            strip(items)
             meta
         }
         .frame(minHeight: 26)
+    }
+
+    @ViewBuilder private func strip(_ items: [StepPictures.Item]) -> some View {
+        if let pictures, !items.isEmpty {
+            StepPictureStrip(ref: pictures.ref, items: items, run: run, by: pictures.by, playing: $playing, open: pictures.open)
+        }
     }
     private var verb: some View {
         Text(verbatim: record.title)
@@ -3308,7 +3358,9 @@ private struct ThreadSettingsPill: View {
     }
 
     @ViewBuilder private var effortRow: some View {
-        if let effortName {
+        if let effortName, let reason = panel.effortFixedReason {
+            FixedSettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName, reason: reason)
+        } else if let effortName {
             Menu {
                 ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
                     option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {

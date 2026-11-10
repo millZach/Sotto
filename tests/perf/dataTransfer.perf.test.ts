@@ -33,6 +33,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { WatcherRecords } from '../../src/main/agents/watcherRecords'
 import { AgentControl } from '../../src/main/agents/control'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentState } from '../../src/shared/agents'
@@ -123,7 +124,7 @@ const COUNTED: [object, string, string, ((result: unknown, args: unknown[]) => n
   // Main receiving a piece of a list the store worker read back, and owning its records.
   [StoreWorker.prototype, 'readAnswered', 'storeWorker.readAnswered', (_, args) => (args[0] as { activities?: unknown[] }).activities?.length ?? 0],
   [AgentControl.prototype, 'persist', 'control.persist'],
-  [AgentControl.prototype, 'mutateWatcher', 'control.mutateWatcher'],
+  [WatcherRecords.prototype, 'mutate', 'watcherRecords.mutate'],
 ]
 const nativeMethods = new Map<string, (...args: unknown[]) => unknown>()
 function count(name: string, ms: number, size: number): void {
@@ -499,9 +500,9 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
     peer.frames.send({ v: 1, id, session: peer === desktop ? sessions[0] : sessions[1], ...operation })
     for (let waited = 0; !peer.messages.some(message => message.id === id); waited++) { if (waited > 4_000) throw new Error(`no answer to ${id}`); await step(); await io(2) }
   }
-  const desktopAccepts = ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'provider-opencode', 'provider-cursor', 'watcher-reads']
+  const desktopAccepts = ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'watcher-reads']
   await ask(desktop, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: desktopAccepts })
-  await ask(phone, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'changed-thread-records'] })
+  await ask(phone, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'changed-thread-records'] })
   const helloBytes = { desktop: Buffer.byteLength(nativeStringify(desktop.messages.find(message => message.id === 'hello'))), phone: Buffer.byteLength(nativeStringify(phone.messages.find(message => message.id === 'hello'))) }
   const streamIds = p.streamSessions.map(session => p.control.shell().host.threads.find(thread => thread.title === `Synthetic thread ${session}`)?.id).filter((id): id is string => id !== undefined)
   // The desktop's own client of this host, as main runs it for a paired host: its work per push is profiled below.

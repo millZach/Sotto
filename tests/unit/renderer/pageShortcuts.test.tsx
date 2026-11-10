@@ -2,8 +2,7 @@ import React from 'react'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { claimRoomFocus } from '../../../src/renderer/src/components/AppShell'
-import { usePageShortcuts, type PageShortcutsInput } from '../../../src/renderer/src/components/pageShortcuts'
+import { claimRoomFocus, usePageShortcuts, type PageShortcutsInput } from '../../../src/renderer/src/components/pageShortcuts'
 import type { AppNavigation } from '../../../src/renderer/src/state/AppContext'
 import type { ThreadShortcutChoices } from '../../../src/shared/threadShortcuts'
 

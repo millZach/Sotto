@@ -13,9 +13,11 @@ type Row = WatcherRoomState['watchedThreads'][number]
 
 /**
  * `release-notes` of the design fixture as a Watcher with a conversation of 24 messages, `<idPrefix>-0` to
- * `<idPrefix>-23`, watching `watched`. Reloads the window so the stand-in takes the seed, and opens Threads.
+ * `<idPrefix>-23`, watching `watched`. Reloads the window so the stand-in takes the seed, and opens Threads. With
+ * `told`, Watcher sends that watched thread a message `afterMs` after the reload: its row then holds one message sent.
  */
-export async function seedWatcherRoom(page: Page, { watched, idPrefix }: { readonly watched: readonly string[]; readonly idPrefix: string }): Promise<void> {
+export async function seedWatcherRoom(page: Page, { watched, idPrefix, told }: { readonly watched: readonly string[]; readonly idPrefix: string
+  readonly told?: { readonly thread: string; readonly afterMs: number } }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -30,6 +32,8 @@ export async function seedWatcherRoom(page: Page, { watched, idPrefix }: { reado
       receipts: [], recoveryNotice: null, observedAt: new Date(E2E_THREADS_NOW).toISOString(),
     },
     created: identity,
+    ...told === undefined ? {} : { script: [{ afterMs: told.afterMs, state: { watchedThreads: watched.map(threadId => threadId !== told.thread ? row(threadId) : { ...row(threadId),
+      participation: [{ requestId: randomUUID(), startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target(threadId), promptCount: 1 }] }) } }] },
   }
   await page.evaluate(async ({ key, seed, idPrefix, now }) => {
     localStorage.setItem(key, JSON.stringify(seed))

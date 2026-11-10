@@ -1,4 +1,6 @@
 import { KeptThumbnails, MEDIA_TILE_DEFAULT_SCALE } from '../agents/mediaThumbnail'
+import type { HostBrowserFrame, HostBrowserMethod, HostBrowserRequest, HostBrowserResult, HostBrowserThreadRequest } from '../../shared/hostBrowser'
+import type { BrowserEvent } from '../../shared/browser'
 import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
@@ -13,7 +15,7 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { mediaTileScale, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_VIDEOS, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
@@ -49,6 +51,10 @@ import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usage
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
 export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
+  /** Sotto's browser for the host's own threads, by the host's IDs (ADR-0198); absent where this computer or the host leaves it out. */
+  browser?<M extends HostBrowserMethod>(request: Extract<HostBrowserRequest, { method: M }>): Promise<HostBrowserResult<M>>
+  subscribeBrowser?(listener: (change: BrowserEvent) => void): () => void
+  subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
   service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
@@ -61,6 +67,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   mediaPart?(request: AgentThreadMediaPartRequest): Promise<ThreadVideoPart | null>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
   stage?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
+  /** Stages a video from its path on this computer, on the host that runs the thread (ADR-0131, November 9 amendment). */
+  stageFile?(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle>
   content?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
@@ -153,6 +161,13 @@ const toolReadRefusal = {
     ? t`${host} could not read this thread's files. Nothing was changed. Try again.`
     : surface === 'changes' ? t`${host} could not read this thread's changes. Nothing was changed. Try again.`
       : t`${host} could not read this thread's agents. Nothing was changed. Try again.`,
+}
+
+/** A host's browser request that did not reach the host's browser, in words the pane shows where the answer would go. */
+const hostBrowserRefusal = {
+  unavailable: (host: string): string => t`Sotto's browser isn't available on ${host}. Nothing was changed. Update Sotto on ${host}, then try again.`,
+  disconnected: (host: string): string => t`${host} is disconnected. Nothing was changed. Connect again to use its browser.`,
+  failed: (host: string): string => t`${host} didn't answer the browser. Nothing was changed. Try again.`,
 }
 
 /** Files and Changes show a refusal where the answer would go, so a read the host could not make answers as one. */
@@ -343,6 +358,8 @@ export class DesktopHostRouter {
   private readonly changeListeners = new Set<() => void>()
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
+  private readonly browserListeners = new Set<(change: BrowserEvent) => void>()
+  private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
@@ -408,8 +425,8 @@ export class DesktopHostRouter {
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
-    /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
-    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
+    /** The providers held to Owl on this run; absent holds every one. */
+    heldProviders?: HeldProviders; streamingPublishCost?: boolean
     /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0140). */
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
@@ -632,6 +649,16 @@ export class DesktopHostRouter {
     }))
     if (connection.kind === 'remote' && connection.service.subscribeNextPrompts) off.push(connection.service.subscribeNextPrompts(entry => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.nextPromptChanged(connection.hostId, { ...entry, threadId: hostEntityKey(connection.hostId, entry.threadId) })
+    }))
+    // A host's browser (ADR-0198): its pages, tasks and grants by this window's keys, and pictures of the pages it watches.
+    if (connection.kind === 'remote' && connection.subscribeBrowser) off.push(connection.subscribeBrowser(change => {
+      if (this.hosts.get(connection.hostId)?.connection !== connection) return
+      const scoped = mapHostReferences(change, id => hostEntityKey(connection.hostId, id))
+      for (const listener of [...this.browserListeners]) { try { listener(scoped) } catch { /* A listener's failure is its own. */ } }
+    }))
+    if (connection.kind === 'remote' && connection.subscribeBrowserFrames) off.push(connection.subscribeBrowserFrames(frame => {
+      if (this.hosts.get(connection.hostId)?.connection !== connection) return
+      for (const listener of [...this.frameListeners]) { try { listener(frame) } catch { /* A listener's failure is its own. */ } }
     }))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
@@ -945,7 +972,7 @@ export class DesktopHostRouter {
     const threads = entries.flatMap(entry => entry.threads)
     const state: AgentState = {
       ...base, clientScoped: true,
-      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false })),
+      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false, ...connection.kind === 'remote' && connection.browser ? { browser: this.hosts.get(connection.hostId)?.run ?? 1 } : {} })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
         projects: entries.flatMap(item => item.state.host.projects), threads,
         // The selected host's catalog is the same array as `host.models`, which structured clone sends once:
@@ -1319,6 +1346,17 @@ export class DesktopHostRouter {
     }
     return connection.stage({ name: request.name, mimeType: request.mimeType, bytes: request.bytes, ...(request.dimensions ? { dimensions: request.dimensions } : {}) })
   }
+  /**
+   * A video too large for the window goes from its path to the host that runs the thread: this computer's store reads it
+   * in a stream, and a remote host is sent it in parts (ADR-0131, November 9 amendment).
+   */
+  async stageAttachmentFile(request: AgentAttachmentStageFileRequest): Promise<AgentAttachmentHandle> {
+    if (this.options.attachAnyFile !== true) throw new Error(inInterfaceLanguage(SCREENSHOT_WRONG_TYPE))
+    const { connection } = this.target(request.threadId ?? undefined)
+    if (!connection.stageFile) throw new Error(inInterfaceLanguage(HOST_CANNOT_STAGE_VIDEOS))
+    if (connection.available?.() === false) throw new Error(HOST_DISCONNECTED_BEFORE_FILES)
+    return connection.stageFile({ name: request.name, mimeType: request.mimeType, path: request.path })
+  }
   async attachmentContent(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null> {
     const { connection } = this.target(request.threadId ?? undefined)
     if (!connection.content || connection.available?.() === false) return null
@@ -1387,6 +1425,45 @@ export class DesktopHostRouter {
     if (!thread) return undefined
     return { hostId: connection.hostId, projectId: hostEntityKey(connection.hostId, thread.projectId), workingDirectory: thread.workingDirectory,
       projectFolder: host.projects.find(project => project.id === thread.projectId)?.path }
+  }
+  /**
+   * One of a host's browser requests for its thread (ADR-0198), by this window's key for the thread. The key's host-local ID
+   * goes to that host, and every thread and project ID in its answer comes back as this window's key. A request the host
+   * could not take answers as a refusal the pane shows, in words that say whether to update or reconnect.
+   */
+  async hostedBrowser(request: HostBrowserThreadRequest): Promise<ToolsResult<unknown>> {
+    const refusal = (message: string): ToolsResult<unknown> => ({ ok: false, error: { code: 'unavailable', message } })
+    let target: { connection: DesktopHostConnection; id: string | undefined }
+    try { target = this.target(request.payload.threadId) } catch (error) { return refusal(error instanceof Error ? error.message : t`Connect a host in Settings > Hosts & phones to continue.`) }
+    const { connection, id } = target
+    if (connection.kind !== 'remote' || !connection.browser || !id) return refusal(hostBrowserRefusal.unavailable(connection.name))
+    if (connection.available?.() === false) return refusal(hostBrowserRefusal.disconnected(connection.name))
+    let answer: ToolsResult<unknown>
+    try { answer = await connection.browser({ ...request, payload: { ...request.payload, threadId: id } } as HostBrowserThreadRequest) }
+    catch (error) { return refusal(error instanceof HostConnectionError ? error.message : hostBrowserRefusal.failed(connection.name)) }
+    return mapHostReferences(answer, value => hostEntityKey(connection.hostId, value))
+  }
+  /**
+   * Tells one host this computer's **Let agents use the browser without asking**; a host without the browser is told nothing.
+   * A host takes it only from a desktop that may answer there, so its refusal of one that may not is not a failure.
+   */
+  async tellBrowserSetting(connection: DesktopHostConnection, withoutAsking: boolean): Promise<void> {
+    if (connection.kind !== 'remote' || !connection.browser || connection.available?.() === false) return
+    let answer: ToolsResult<unknown>
+    try { answer = await connection.browser({ method: 'setting', payload: { withoutAsking } }) }
+    catch (error) { if (error instanceof HostConnectionError && error.code === 'forbidden') return; throw error }
+    // The host holds it in memory but could not keep it on disk; said, so it is not taken as kept.
+    if (!answer.ok) throw new Error(answer.error.message)
+  }
+  /** Hears every connected host's browser pages, tasks and grants change, by this window's keys. Returns the way to stop. */
+  subscribeBrowser(listener: (change: BrowserEvent) => void): () => void {
+    this.browserListeners.add(listener)
+    return () => { this.browserListeners.delete(listener) }
+  }
+  /** Hears pictures of the host pages this computer watches. Never logged or kept. Returns the way to stop. */
+  subscribeBrowserFrames(listener: (frame: HostBrowserFrame) => void): () => void {
+    this.frameListeners.add(listener)
+    return () => { this.frameListeners.delete(listener) }
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

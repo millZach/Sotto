@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MessageRows, revealLift, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
+import { keepReadingPlace, MessageRows, revealLift, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
 
 /**
  * The rows a transcript draws keep themselves in the order shown (#1452). What that costs is counted as the page would do
@@ -120,6 +120,24 @@ describe('the rows a transcript draws', () => {
     second.remove()
     expect(shown(rows, transcript)).toEqual(['m-0'])
     expect(rows.element('second')).toBeUndefined()
+  })
+})
+
+describe('a reading place none of whose messages is drawn', () => {
+  it('stays held where the scroll is when one of them is the reply held back while written, until it is drawn again', () => {
+    const scroller = document.createElement('div')
+    const place = { threadId: 'thread', marks: [{ messageId: 'answer', offset: -200 }], top: 300 }
+    const rows = new MessageRows()
+    rows.heldBack = 'answer'
+    expect(keepReadingPlace(scroller, rows, place)).toEqual({ ...place, top: 0, held: true })
+  })
+
+  it('is read afresh when its messages went for another reason, as a finished turn folding them away', () => {
+    const scroller = document.createElement('div')
+    const place = { threadId: 'thread', marks: [{ messageId: 'step-1', offset: -200 }], top: 300 }
+    const rows = new MessageRows()
+    rows.heldBack = 'answer'
+    expect(keepReadingPlace(scroller, rows, place)).toBeNull()
   })
 })
 

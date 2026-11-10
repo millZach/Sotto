@@ -3,11 +3,11 @@ import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, ClaudeWritePending, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
-import { runToExit } from '../../../src/main/agents/gitLauncher'
+import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, ClaudeWritePending, type ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
+import { runToExit } from '../../../src/main/agents/git/gitLauncher'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
-vi.mock('../../../src/main/agents/gitLauncher', () => ({ runToExit: vi.fn(), stopProcessTree: vi.fn() }))
+vi.mock('../../../src/main/agents/git/gitLauncher', () => ({ runToExit: vi.fn(), stopProcessTree: vi.fn() }))
 
 type FakeChild = EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; kill: ReturnType<typeof vi.fn> }
 

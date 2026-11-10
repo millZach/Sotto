@@ -14,6 +14,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import { readsArrived } from '../../fixtures/storeWriterEquivalence'
 import { builtStoreWorker } from '../../fixtures/storeWorker'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 // A thread nobody has open keeps its activity records in the thread store, not in memory (#918). Every case runs with the
 // records read back on main, as under the test runner, and on the store worker as the build compiles it (#1457, step 3).
@@ -46,7 +47,13 @@ async function stored(saved: AgentActivity[], history: () => boolean = () => tru
     host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose()
   }
   const open = async () => {
-    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, placement)
+    const host = new WorkspaceHost(provider, directory, {
+      historyEnabled: history,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: false,
+      storeWorker: placement,
+    })
     cleanup.push(() => close(host))
     await host.initialize()
     return host

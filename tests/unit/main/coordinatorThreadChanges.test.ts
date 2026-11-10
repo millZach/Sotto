@@ -131,9 +131,9 @@ async function stack(control: TestControlOptions = {}, threads = 6, projectEach 
   const adapter = new StreamingAdapter(providerState(root, sessions, projectEach))
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), hermes: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   await mkdir(join(root, 'workspace'), { recursive: true })
-  const workspace = new WorkspaceHost(native, join(root, 'workspace'), () => true, 600_000)
+  const workspace = new WorkspaceHost(native, join(root, 'workspace'), { historyEnabled: () => true, worktreeRefreshDelayMs: 600_000 })
   cleanup.push(async () => { workspace.disconnect(); await workspace.privacyChanged().catch(() => undefined); workspace.dispose() })
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })

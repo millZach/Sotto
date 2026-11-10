@@ -397,9 +397,16 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     hosts: { claude, codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
-      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek') } })
+      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek'), hermes: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('hermes') } })
   shadows.tapSwitchChanges(native)
-  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter, options.storeWorker)
+  const workspace = new WorkspaceHost(native, root, {
+    historyEnabled: () => true,
+    watcherEnabled: owl,
+    heldProviders: held,
+    streamingPublishCostEnabled: owl,
+    ...(options.storeWriter ? { storeWriter: options.storeWriter } : {}),
+    ...(options.storeWorker !== undefined ? { storeWorker: options.storeWorker } : {}),
+  })
   shadows.tapAccept(workspace)
   shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')
@@ -537,7 +544,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         const result = await watcher.watchThread({ target: { hostId: localHostId, threadId } })
         if (result.status !== 'ok') throw new Error(`Watcher did not watch a thread: ${JSON.stringify(result)}`)
       }
-      await control.updateWatcher(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
+      await control.watcherRecords.update(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
       // Older closed work moves to Watcher's archive (#1759), as it would have long before a record grew this long.
       await watcher.archiveSettled()
       // Watcher's own conversation, as long as its record makes it (#1759): its thread is bound to a provider session
@@ -554,14 +561,14 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       adapter.emit()
       // One of those starts is a check still holding its place, as a running check does: the pass on every publish reads it
       // by its position, and so must not grow with the history behind it (#1312).
-      const started = control.watcherRecord().operations.findLast(item => item.action === 'start' && item.target.hostId === localHostId)
+      const started = control.watcherRecords.copy().operations.findLast(item => item.action === 'start' && item.target.hostId === localHostId)
       if (started) {
         const queue = watcher as unknown as { joinChecks(ticket: string, title: string): unknown; adoptCheck(check: unknown, operationId: string, threadId: string): void }
         queue.adoptCheck(queue.joinChecks(started.id, 'A check'), started.id, started.target.threadId)
       }
     } else {
       // Stable starts no Watcher and keeps the record an Owl build left, whole (ADR-0072).
-      control.mutateWatcher(record => {
+      control.watcherRecords.mutate(record => {
         record.watches = watched.map((threadId, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
           target: { hostId: localHostId, threadId }, createdAt: AT, generation: 0 }))
         addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' }, streamed)
@@ -575,8 +582,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       // and all, so work that grew with what was read back would grow here; the owner's is shown back to its first message.
       await control.command({ type: 'load-earlier-messages', threadId: watcherThreadId,
         throughMessageId: `watcher-prompt-${Math.max(0, counts.requests - WATCHER_LIVE_CLOSED_REQUESTS - Math.round(10 * (scale.watcher ?? 1)))}` })
-      await control.watcherArchiveSettled()
-      recalledWatcherOperations = control.watcherRecalledWork().operations.length
+      await control.watcherRecords.settled()
+      recalledWatcherOperations = control.watcherRecords.recalledWork().operations.length
     }
   } catch (error) { await stop(); throw error }
 
@@ -615,7 +622,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     },
     watcherToolCall: async (): Promise<void> => {
       if (!tools) return
-      const record = control.watcherRecordView(), current = record.current!
+      const record = control.watcherRecords.view(), current = record.current!
       const operation = record.operations.find(item => item.target.hostId === localHostId)!
       const result = await tools.call(current.target.threadId, 'read_operation', { operationId: operation.id })
       if (result.isError) throw new Error(`Watcher's read of its receipt was refused: ${JSON.stringify(result.structuredContent)}`)

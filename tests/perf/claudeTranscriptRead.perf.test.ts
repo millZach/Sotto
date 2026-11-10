@@ -13,7 +13,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
-import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
+import { ClaudeSessionLog } from '../../src/main/agents/providers/claude/claudeSessionLog'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 
 const roots: string[] = []

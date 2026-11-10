@@ -16,6 +16,7 @@ import { CertifyingProviderHost } from '../fixtures/certifyingProviderHost'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { readsArrived, readsInFlight, storedIn } from '../fixtures/storeWriterEquivalence'
 import { builtStoreWorker } from '../fixtures/storeWorker'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 /**
  * Opening a stored thread over the store worker as the build compiles it (#1457, step 3 of docs/plans/store-worker.md):
@@ -63,13 +64,18 @@ describe('a stored thread read back on the store worker', () => {
         activities: [record(`more-${index}`, 0)] })
     }
     provider.state.threads[0]!.activities = structuredClone(saved)
-    const first = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, null)
+    const first = new WorkspaceHost(provider, directory, { historyEnabled: history, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: false, storeWorker: null })
     await first.initialize()
     await first.connect()
     first.disconnect(); await first.privacyChanged(); first.dispose()
     for (const thread of provider.state.threads) delete thread.activities
-    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined,
-      options.onMain ? null : options.timing ? { path: worker.path, timing: options.timing } : worker.path)
+    const host = new WorkspaceHost(provider, directory, {
+      historyEnabled: history,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: false,
+      storeWorker: options.onMain ? null : options.timing ? { path: worker.path, timing: options.timing } : worker.path,
+    })
     cleanup.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
     const told: { ids: readonly string[]; activities: string[] | undefined }[] = []
     provider.observeThreads = ids => {

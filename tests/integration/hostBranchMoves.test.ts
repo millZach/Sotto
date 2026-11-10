@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
 import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, type BranchMoveFolders } from '../../src/main/agents/branchMoves'
-import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { BRANCH_TRANSFERS_MAX, branchMoveWords, incomingRef } from '../../src/shared/branchMoves'
 import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
 

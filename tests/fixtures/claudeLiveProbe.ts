@@ -5,7 +5,7 @@ import { mkdtemp, readFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 import { ClaudeSubscriptionClient } from '../../src/main/agents/subscriptionClaude'
 
 async function main() {

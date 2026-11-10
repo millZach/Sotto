@@ -2,7 +2,7 @@ import { lstat, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
-import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import type { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 
 /** Recover only the same synthetic native session after the old harness removed fixture metadata. */
 export async function recoverWatcherLiveCodex(host: CodexAppServerHost, options: {

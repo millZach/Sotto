@@ -1,6 +1,6 @@
 # Splitting up AgentControl
 
-`AgentControl` in `src/main/agents/control.ts` is about 7,100 lines. This plan moves out the parts that hold their own state and call back the least, under a size budget (ADR-0190), then stops at a checkpoint. It removes about 1,250 lines. The send path, about 2,400 lines, gets its own design after that.
+`AgentControl` in `src/main/agents/control.ts` is about 7,100 lines. This plan moves out the parts that hold their own state and call back the least, under a size budget (ADR-0190), then stops at a checkpoint. It removes about 1,150 lines. The send path, about 2,400 lines, gets its own design after that.
 
 Zach picked this plan on November 4, 2026. It changes nothing a user sees.
 
@@ -15,12 +15,14 @@ Every part of the class shares `state`, `dependencies`, `disposed` and the outbo
 | 3 | Client updates | ~285 | 6 | 9% |
 | 4 | Thread titles | ~140 | 8 | 13% |
 | 5 | Detail revisions | ~100 | 1 | 11% |
-| 6 | Broadcast, with detail delivery | ~400 | to be measured | about 10% |
+| 6 | Detail sends | ~130 | 7, all reads | about 10% |
 | 7 | Saved file: reading and writing `agents.json` and Watcher's file | ~340 | 4 | 18% |
 
 Saved file comes last because it reads the most shared state (39 fields), and tests replace its `persist` method 26 times.
 
-PR 5 was "Thread detail, ~255 lines" until November 5. Reading it closely showed two parts. The revision a detail stands at, and what it was read from, is touched outside its own methods only by the privacy reset, broadcast's pruning, `dispose` and the diff's signature, so it moved on its own. The rest — the snapshots each window holds, the detail listeners and the revisions published — is read and written all through `broadcastDetail` and `detailUpdate`, so it moves with broadcast in PR 6. How messages are presented (`presentedMessages` and its caches) calls into Watcher's section and stays until Watcher's section moves.
+PR 5 was "Thread detail, ~255 lines" until November 5. Reading it closely showed two parts. The revision a detail stands at, and what it was read from, is touched outside its own methods only by the privacy reset, broadcast's pruning, `dispose` and the diff's signature, so it moved on its own. The rest — the snapshots each window holds, the detail listeners and the revisions published — is read and written all through `broadcastDetail` and `detailUpdate`, so it moves in PR 6. How messages are presented (`presentedMessages` and its caches) calls into Watcher's section and stays until Watcher's section moves.
+
+PR 6 was "Broadcast, with detail delivery, ~400 lines" until November 6. Only detail sends moved: what each detail listener holds and was last sent, touched outside its own methods only by the privacy reset, `rememberPreviews` and `dispose`. The shell broadcast did not, because it is not yet a seam: `shellOf` reads 16 of the coordinator's members, and `broadcastPatch` and `marksMoved` are written from the snapshot intake and five other places. It joins the work below that needs its own design.
 
 ## Rules for every move
 
@@ -33,12 +35,15 @@ PR 5 was "Thread detail, ~255 lines" until November 5. Reading it closely showed
 
 ## Checkpoint after PR 7
 
-The file should be about 5,850 lines, which alone does not fix it. Check whether moved modules stayed small, whether agents and tests found them easier to work in, and how many conflicts the moves caused.
+The file should be about 6,150 lines: the moves take out about 1,150, and features keep landing in it meanwhile. That alone does not fix it. Check whether moved modules stayed small, whether agents and tests found them easier to work in, and how many conflicts the moves caused.
+
+November 9: Zach reopened the deferred code-health concerns, including Watcher ownership and followup lifecycle. The [followup plan](2026-11-09-deferred-code-health.md#adr-0190-checkpoint) records the design comparison and resumes those bounded changes before PRs 6 and 7 are complete. Combined saved-file assembly and broadcast remain in Control. Watcher records move into one owner; the send lifecycle stays in Control. The remaining exclusions below still apply.
 
 Out of this plan until then:
 
 - **Watcher's section, about 480 lines.** 45% of this block changed in the last 7 days, so moving it now would conflict constantly. It waits for a quieter stretch.
 - **The send path, about 2,400 lines.** Admission, `execute` (498 lines), `dispatchPending` (278), `pumpFollowups` (273), answers, drafts and set-aside. These call each other heavily and rely on ordering, and the permission checks of ADR-0004 run here. Compare a few designs before committing to one.
+- **The shell broadcast, about 250 lines.** `shellOf`, `broadcastThreads`, the record cache and the coalescing timer. It reads most of the coordinator's state to build the shell, and the snapshot intake writes its patch and marks, so a module would need a wide interface or a change to how the intake reports what moved.
 - **Attachment and media methods, about 145 lines.** They have no state of their own and may only forward calls. A module has to pass the deletion test.
 
 ## Risks

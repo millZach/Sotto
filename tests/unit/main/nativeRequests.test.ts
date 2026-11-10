@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { claudePending, claudeAnswer } from '../../../src/main/agents/claudeRequests'
-import { pendingRequest, answerRequest } from '../../../src/main/agents/codexRequests'
+import { claudePending, claudeAnswer } from '../../../src/main/agents/providers/claude/claudeRequests'
+import { pendingRequest, answerRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 import { grokPending, grokAnswer } from '../../../src/main/agents/grokRequests'
 import { needsPerson } from '../../../src/main/agents/nativeRequests'
 

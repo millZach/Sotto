@@ -21,7 +21,7 @@ const THREAD = 'grok-previews'
 const BASE: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, skills: true }
 const mountedEditors = new Set<PromptEditorElement['editor']>()
 
-// The shape src/main/agents/claudeSkills.ts builds from the CLI's initialize commands.
+// The shape src/main/agents/providers/claude/claudeSkills.ts builds from the CLI's initialize commands.
 const path = (name: string): string => `claude-command:C%3A%2Fworkshop:${name}`
 const CLAUDE: AgentSkillCatalog = {
   threadId: THREAD, providerId: 'claude', cwd: 'C:/workshop', status: 'ready', errors: [], maxSkillsPerMessage: 1,

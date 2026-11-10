@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountSettings'
+import { AgentSetupFields } from '../../../src/renderer/src/features/settings/AgentAccountSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))

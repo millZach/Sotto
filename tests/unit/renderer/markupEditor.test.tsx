@@ -25,7 +25,7 @@ import { contrastRatio } from '../../../src/shared/themes/color'
 
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
 const WHOLE = 'data:image/png;base64,iVBORw0KGgo='
-const record: AgentActivity = { id: 'claude-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot',
+const record: AgentActivity = { id: 'sotto-shown-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot',
   media: [{ id: 'm0', digest: '0'.repeat(64), kind: 'image', mimeType: 'image/png', sizeBytes: 40, width: 1000, height: 500, name: 'checkout.png', source: 'tool' }] }
 const groups = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [record] }] as unknown as ActivityGroup[]
 

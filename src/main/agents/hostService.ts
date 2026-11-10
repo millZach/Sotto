@@ -7,7 +7,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_FILES, HOST_CANNOT_STAGE_SCREENSHOTS, type AgentAttachmentFileUpload, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -289,6 +289,13 @@ export interface HostService {
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
+  /**
+   * Keeps a video whose parts reached this host on disk (`video-staging`, ADR-0131, November 9 amendment), moving the
+   * checked file into the store whatever the history setting.
+   */
+  stageAttachmentFile?(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle>
+  /** Where a video's parts are written on their way to the store; set only where `stageAttachmentFile` is. */
+  readonly videoUploadFolder?: string | undefined
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   /** The branches a thread's folder offers, read on request (ADR-0027). */
@@ -395,6 +402,8 @@ export interface LocalHostControl {
   threadMediaPart?(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart>
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
+  stageAttachmentFile?(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle>
+  readonly attachmentUploadFolder?: string | undefined
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   /** The changed files of a thread's folder, for the commit dialog (ADR-0027). */
@@ -632,6 +641,12 @@ export class LocalHostService implements HostService {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)
   }
+  stageAttachmentFile(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle> {
+    if (!this.control.stageAttachmentFile || this.options.fileStaging !== true) return Promise.reject(new Error(HOST_CANNOT_STAGE_FILES))
+    return this.control.stageAttachmentFile(file)
+  }
+  /** Where a video's parts go on their way to the store, only while this host keeps files at all. */
+  get videoUploadFolder(): string | undefined { return this.options.fileStaging === true ? this.control.attachmentUploadFolder : undefined }
   async attachmentContent(digest: string): Promise<AgentAttachmentContent | null> { return await this.control.attachmentContent?.(digest) ?? null }
   gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
     if (!this.control.gitRefs) return Promise.reject(new Error('Branches are unavailable on this host.'))

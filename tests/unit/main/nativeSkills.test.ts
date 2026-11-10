@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { claudeCatalog, claudeSkillPrompt } from '../../../src/main/agents/claudeSkills'
+import { claudeCatalog, claudeSkillPrompt } from '../../../src/main/agents/providers/claude/claudeSkills'
 import { grokCatalog, grokSkillPrompt } from '../../../src/main/agents/grokSkills'
 
 it('uses Claude native advertised catalog identities, scope and one slash expansion', () => {

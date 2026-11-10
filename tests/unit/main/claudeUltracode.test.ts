@@ -2,7 +2,7 @@
 // How a Claude thread's level reaches Claude Code (ADR-0148): Ultracode is the `ultracode` session setting beside a real
 // effort, at launch and in place, and never an effort of its own.
 import { describe, expect, it } from 'vitest'
-import { flagSettingsArguments, nativeEffort, settingsSteps } from '../../../src/main/agents/claude'
+import { flagSettingsArguments, nativeEffort, settingsSteps } from '../../../src/main/agents/providers/claude/claude'
 
 const settings = (reasoningEffort: string | undefined, modelId = 'opus') => ({ modelId, reasoningEffort, runtimeMode: 'approval-required' as const, fastMode: false })
 const requests = (steps: ReturnType<typeof settingsSteps>) => steps?.map(step => step.request)

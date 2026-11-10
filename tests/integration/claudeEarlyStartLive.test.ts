@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 import { median, round } from '../fixtures/perfBench'
 
 const LIVE = process.env.SOTTO_CLAUDE_LIVE === '1'

@@ -284,6 +284,11 @@
 .thread-nav__status[data-prototype] > svg { flex: none; display: inline-block; margin-right: 5px; vertical-align: -2px; color: var(--tt-accent-text); }
 
 .provider-mark { display: block; flex: none; fill: currentColor; }
+.provider-mark--hermes > img { width: 100%; height: 100%; }
+.provider-mark__on-light { display: none; }
+.provider-mark__on-dark { display: block; }
+:root[data-theme='light'] .provider-mark__on-light { display: block; }
+:root[data-theme='light'] .provider-mark__on-dark { display: none; }
 .provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: var(--tt-radius-tag); font-size: var(--tt-type-micro); font-weight: 600; line-height: 1; }
 
 @media (max-width: 820px) {

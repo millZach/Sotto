@@ -4,10 +4,11 @@ import {
   RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star,
 } from './nightScene'
-import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
+import { glowStep, owlGlyphs, pileLabel, spriteCells, type OwlLivesView, type ThreadOwlPose } from './owlFamily'
 import { ambienceStep, ambienceTime, type Ambience, type AmbientGlyph } from './scenePlace'
 import { SCENE_PLACES } from './scenePlaces'
 import { MASK, poly } from './sceneDraw'
+import { CELL_PX, LINE_PX, pickGlyph, RAISED, settleRaised, type GlyphPick } from './sceneGlyph'
 
 /**
  * Draws Watcher's night scene in the room's side margins, on two canvases: the landscape on one, under everything in
@@ -19,10 +20,18 @@ import { MASK, poly } from './sceneDraw'
  * drawn on their own canvas. A frame whose picture would not change is not painted at all.
  * Between the margins the sky and the hills show at the column's share, still whatever the words over them do, with no
  * glyph stronger than the words written over it allow (`SceneInk.column`). Trees, owls and ripples stay in the margins.
+ *
+ * As line art, for the living night scene (ADR-0199), a place that has layers is drawn a layer at a time on a finer
+ * field: what is in front takes a cell whole, each layer's ink is as strong as it is near, and in the margins a cell
+ * holding a line takes the line's own character (`sceneGlyph.ts`). Watcher's owl is drawn the same way. Under the
+ * conversation a cell is still drawn by density, since a solid line there reads as an underline of the words above it.
+ * A place with no layers, the rail of eyes and everything while line art is off are drawn exactly as they were.
  */
 
 /** Field pixels per glyph cell, a side. */
 export const SS = 2
+/** The least a layer's strongest pixel in a cell must be, of 255, for the layer to take the cell from those behind it. */
+const LAYER_INK = 36
 /** The glyphs' size, which fills a 7 by 12 cell. */
 export const GLYPH_PX = 10.5
 
@@ -153,6 +162,20 @@ export interface SceneFrame {
   readonly whirl: number
   /** The "+N" pile, in the last spot, while there is one. */
   readonly pile: { readonly spot: Spot; readonly count: number } | null
+  /** What the living night scene adds (ADR-0199), or nothing where it is off or the margins have no trees. */
+  readonly life?: SceneLife | null
+}
+
+/**
+ * What the living night scene adds to a frame (ADR-0199): how the thread owls are posed, and a few glyphs round them.
+ * The glyphs go through the painter's guard as a place's moving glyphs do: one to a cell, at the cell's share and under
+ * the column's ceiling, never under still words, a star or an owl.
+ */
+export interface SceneLife {
+  readonly lives: OwlLivesView
+  /** Changes whenever the glyphs would, so the frame is painted again only then. */
+  readonly step: string | number
+  readonly cells: (emit: AmbientGlyph) => void
 }
 
 /** A perched thread owl's cells, for its button in the room. */
@@ -198,6 +221,19 @@ export class NightScenePainter {
   private readonly owlCanvas = makeCanvas()
   private readonly owlAccentCanvas = makeCanvas()
   private readonly effect: RippleEffect = { ring: 0, dx: 0, dy: 0 }
+  /** Whether the landscape and Watcher's owl are asked to be drawn as line art (ADR-0199). */
+  private lineArt = false
+  /** Line art's own character and ink for each landscape cell, or null while every cell is drawn by density. */
+  private lineGlyph: Uint16Array | null = null
+  private lineStrength = new Float32Array(0)
+  /** Line art's character for each of Watcher's owl's cells, where its outline is a line there, for the frame being drawn. */
+  private owlGlyph = new Uint16Array(0)
+  private owlLines = false
+  private readonly owlLineCanvas = makeCanvas()
+  /** A field nothing reads, for the owl's eyes while only its ink is wanted. */
+  private readonly spare = makeCanvas()
+  private readonly pick: GlyphPick = { code: 0, strength: 0 }
+  private readonly owlPx = new Uint8ClampedArray(CELL_PX)
 
   constructor(private readonly back: HTMLCanvasElement, private readonly front: HTMLCanvasElement) {}
 
@@ -207,11 +243,13 @@ export class NightScenePainter {
     const layout = layoutScene(measure), grid = gridFor(measure.width, measure.height)
     const cells = grid.cols * grid.rows
     for (const canvas of [this.owlCanvas, this.owlAccentCanvas]) { canvas.width = grid.cols * SS; canvas.height = grid.rows * SS }
-    if (!this.buildLand(layout, grid)) { this.layout = null; return null }
-    this.owlInk = new Float32Array(cells); this.owlAccent = new Float32Array(cells); this.owlTrail = new Float32Array(cells)
-    this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
+    // The grid's noise comes before the land: line art's fills take their ramp step from it as density's do.
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
+    if (!this.buildLand(layout, grid)) { this.layout = null; return null }
+    this.owlInk = new Float32Array(cells); this.owlAccent = new Float32Array(cells); this.owlTrail = new Float32Array(cells)
+    this.owlGlyph = new Uint16Array(cells)
+    this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.behindCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
@@ -250,6 +288,7 @@ export class NightScenePainter {
       readField(fx, this.land, grid, 0, 0, grid.cols, grid.rows); readField(ax, this.landAccent, grid, 0, 0, grid.cols, grid.rows)
       this.ambience = place.ambience?.(layout) ?? null
     }
+    this.buildLines(layout, grid)
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land, place.stars) : []
     this.starAt = new Int32Array(cells).fill(-1)
     this.stars.forEach((star, index) => { this.starAt[star.i] = index })
@@ -257,8 +296,86 @@ export class NightScenePainter {
     return true
   }
 
+  /**
+   * Line art's character for every landscape cell (ADR-0199), where it is asked for, the margins have trees and the
+   * place has layers; otherwise none, and every cell is drawn by density. Each layer is drawn in turn on a field sixty
+   * pixels to a cell, kept only while this runs, and only the part of the pane that layer draws in is read back. A nearer layer that
+   * covers a cell takes it whole, so a trunk never shares a cell with the hill behind it, and each layer's ink is as
+   * strong as it is near.
+   */
+  private buildLines(layout: SceneLayout, grid: Grid): void {
+    this.lineGlyph = null
+    const layers = SCENE_PLACES[this.placeId].layers
+    if (!this.lineArt || layers === null || layout.mode !== 'trees') return
+    const { cols, rows, cw, ch } = grid, cells = cols * rows, { w: pw, h: ph } = LINE_PX
+    const canvas = makeCanvas()
+    canvas.width = cols * pw; canvas.height = rows * ph
+    const ctx = context(canvas, true)
+    if (ctx === null) return
+    const top = new Uint8ClampedArray(cells * CELL_PX), tone = new Float32Array(cells).fill(1)
+    for (const name of layers.order) {
+      const box = layers.bounds(name, layout)
+      const c0 = clamp(Math.floor(box.x / cw), 0, cols), c1 = clamp(Math.ceil((box.x + box.w) / cw), 0, cols)
+      const r0 = clamp(Math.floor(box.y / ch), 0, rows), r1 = clamp(Math.ceil((box.y + box.h) / ch), 0, rows)
+      if (c1 <= c0 || r1 <= r0) continue
+      // Only the part this layer is read in is cleared: what the layers before it left there goes, and the rest is never read.
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(c0 * pw, r0 * ph, (c1 - c0) * pw, (r1 - r0) * ph)
+      ctx.setTransform(pw / cw, 0, 0, ph / ch, 0, 0)
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'butt'; ctx.fillStyle = MASK; ctx.strokeStyle = MASK
+      layers.draw(name, ctx, layout)
+      const data = ctx.getImageData(c0 * pw, r0 * ph, (c1 - c0) * pw, (r1 - r0) * ph).data, stride = (c1 - c0) * pw
+      const share = layers.tone[name] ?? 1
+      for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+        const from = ((r - r0) * ph * stride + (c - c0) * pw) * 4 + 3
+        // The layer takes the cell once any pixel of it is strong enough; most cells of a layer hold nothing.
+        let taken = false
+        for (let y = 0; y < ph && !taken; y++) for (let x = 0; x < pw; x++) if (data[from + (y * stride + x) * 4]! >= LAYER_INK) { taken = true; break }
+        if (!taken) continue
+        const i = r * cols + c, at = i * CELL_PX
+        for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) top[at + y * pw + x] = data[from + (y * stride + x) * 4]!
+        tone[i] = share
+      }
+    }
+    const glyph = new Uint16Array(cells), strength = new Float32Array(cells)
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c, x = (c + 0.5) * cw, y = (r + 0.5) * ch
+      // Lines are drawn in the margins only: under the conversation a ridge stays a row of dots.
+      const picked = pickGlyph(top, i * CELL_PX, inMargin(layout, x) && !inLane(layout, x, y), this.noise[i] ?? 0.5, this.pick)
+      glyph[i] = picked.code
+      strength[i] = Math.min(1, picked.strength * tone[i]!)
+    }
+    settleRaised(glyph, strength, cols)
+    // The rest of the painter asks a cell's density whether it holds a glyph: a star and what moves keep off one that does.
+    for (let i = 0; i < cells; i++) if (glyph[i] !== 0) this.land[i] = Math.max(this.land[i]!, 0.1)
+    this.lineGlyph = glyph; this.lineStrength = strength
+  }
+
   /** The place the scene is set in. */
   get place(): WatcherScene { return this.placeId }
+
+  /** Whether the landscape shows as line art now: asked for, among trees, in a place that has layers. */
+  get linesShown(): boolean { return this.lineGlyph !== null }
+
+  /** Line art's character for a landscape cell, 0 for none or while cells are drawn by density: for a crown to sway in. */
+  landCode(cell: number): number { return this.lineGlyph?.[cell] ?? 0 }
+  /** That character's ink, 0 to 1. */
+  landStrength(cell: number): number { return this.lineGlyph === null ? 0 : this.lineStrength[cell] ?? 0 }
+
+  /**
+   * Asks for the scene as line art, or as it always was (ADR-0199): the landscape is worked out now, and the next frame
+   * shows it whole. Returns whether the ask changed.
+   */
+  setLineArt(on: boolean): boolean {
+    if (on === this.lineArt) return false
+    this.lineArt = on
+    const layout = this.layout
+    if (layout === null) return true
+    if (!this.buildLand(layout, this.grid)) { this.invalidate(); return true }
+    this.painted = ''
+    this.paintGlyphs()
+    return true
+  }
 
   /**
    * Sets the scene in another place: its landscape is drawn now, and the next frame shows it whole. The owls, the moon
@@ -357,6 +474,21 @@ export class NightScenePainter {
     // In the column, where the conversation's words pass over it, no glyph is stronger than they allow.
     const cap = this.marginCells[i] ? 1 : ink.column.ink, accentCap = this.marginCells[i] ? 1 : ink.column.accent
     const tone = (accent: boolean, strength: number): string => accent ? inkAt(ink.accent, Math.min(accentCap, strength)) : inkAt(ink.ink, Math.min(cap, strength))
+    // As line art the cell shows its own character in its own ink, in place of the ramp's for its density. A ripple's
+    // ring and a star are as they were.
+    const lines = this.lineGlyph
+    if (lines !== null) {
+      const code = lines[j]!, held = code === 0 ? 0 : Math.max(0.1, this.land[j]! * q)
+      ring = Math.min(1, ring) * (0.5 + 0.5 * q)
+      if (code === 0 && ring < 0.08 && star <= 0) return false
+      if (ring > held + 0.05) { ctx.fillStyle = tone(true, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
+      const starHere = this.starAt[i]! >= 0 ? this.stars[this.starAt[i]!]! : null
+      const lit = this.landAccent[j]! > 0.3 || starHere?.accent === true
+      if (star > held) { ctx.fillStyle = tone(lit, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
+      if (code === 0) return false
+      ctx.fillStyle = tone(lit, Math.min(1, (this.lineStrength[j]! * q + ring * 0.2) * (lit ? 1.25 : 1))); ctx.fillText(String.fromCharCode(code), x, y)
+      return true
+    }
     const d = this.land[j]! * q
     ring = Math.min(1, ring) * (0.5 + 0.5 * q)
     if (d < 0.1 && ring < 0.08 && star <= 0) return false
@@ -373,13 +505,14 @@ export class NightScenePainter {
   private summary(frame: SceneFrame, owlLines: readonly (readonly string[])[]): string {
     const { t, still } = frame, { cw, ch } = this.grid
     // Only the trees have stars, so only they change with the twinkle's step.
-    const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still)]
+    const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still), frame.life?.step ?? 0]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
     if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10),
       Math.round(w.bank * 40), Math.round(w.squash * 50), Math.round(w.legs * 8), frame.watcherGlows === true ? glowStep(t, still) : -1)
     frame.owls.forEach((pose, k) => {
-      parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]![0]!, pose.owl.mood,
+      // Every row, since a living owl may change its body or its feet and keep its face.
+      parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]!.join(''), pose.owl.mood,
         pose.owl.mood === 'waiting' ? glowStep(t, still) : 0)
     })
     if (frame.pile !== null) parts.push('p', frame.pile.count)
@@ -392,8 +525,8 @@ export class NightScenePainter {
     const back = context(this.back), front = context(this.front)
     if (layout === null || ink === null || back === null || front === null) return false
     const { t, still, ripples } = frame
-    const rail = layout.mode === 'rail'
-    const owlLines = frame.owls.map(pose => owlGlyphs(pose, t, { rail, still }))
+    const rail = layout.mode === 'rail', lives = frame.life?.lives ?? null
+    const owlLines = frame.owls.map(pose => owlGlyphs(pose, t, { rail, still, lives }))
     const summary = this.summary(frame, owlLines)
     if (summary === this.painted) return false
     this.painted = summary
@@ -463,7 +596,7 @@ export class NightScenePainter {
 
     // What moves in the place: a few glyphs, held to each cell's share and the column's ceiling, never under still words,
     // a star, an owl or a ripple, and over the landscape's glyphs only where the place asks.
-    if (this.ambience !== null) {
+    if (this.ambience !== null || frame.life != null) {
       const stamp = ++this.frameCount
       const emit: AmbientGlyph = (x, y, glyph, accent, strength, over) => {
         const c = Math.floor(x / cw), r = Math.floor(y / ch)
@@ -476,7 +609,9 @@ export class NightScenePainter {
         if (over) back.clearRect(c * cw, r * ch, cw, ch)
         back.fillStyle = inkAt(accent ? ink.accent : ink.ink, Math.min(cap, strength * q)); back.fillText(glyph, (c + 0.5) * cw, (r + 0.5) * ch)
       }
-      this.ambience.cells(ambienceTime(this.ambience, t, still), emit)
+      // What the living night scene adds comes first, so a `?` over an owl is never lost to a snowflake.
+      frame.life?.cells(emit)
+      this.ambience?.cells(ambienceTime(this.ambience, t, still), emit)
     }
 
     // The moon's whirlpool: three arms turning inward, in the accent, over a moon that gives way under them.
@@ -556,12 +691,15 @@ export class NightScenePainter {
         if (flying && d < 0.24 && Math.max(dense(c - 1, r), dense(c + 1, r), dense(c, r - 1), dense(c, r + 1), dense(c - 1, r - 1), dense(c + 1, r - 1), dense(c - 1, r + 1), dense(c + 1, r + 1)) < 0.34) continue
         const eye = this.owlAccent[i]! > eyeBar
         const strength = eye ? 1 : 0.5 + 0.5 * d
-        glyph(c, r, eye ? '@' : rampGlyph(flying ? d : d + (this.noise[i]! - 0.5) * 0.08), eye || glow !== null, glow === null || eye ? strength : glow * strength)
+        // As line art, the character whose line fits the owl's outline there, where it has one.
+        const lined = this.owlLines ? this.owlGlyph[i]! : 0
+        glyph(c, r, eye ? '@' : lined !== 0 ? String.fromCharCode(lined) : rampGlyph(flying ? d : d + (this.noise[i]! - 0.5) * 0.08), eye || glow !== null, glow === null || eye ? strength : glow * strength)
       }
     }
     if (frame.watcher === null || frame.watcher.pose.spread <= 0.05) this.owlTrail.fill(0)
     for (const { pose, lines, cells } of sprites) {
-      const waiting = pose.owl.mood === 'waiting', base = pose.owl.mood === 'asleep' ? 0.5 : 0.85
+      // An owl whose turn just finished is as bright as a working one while it is happy, then as faint as a sleeper.
+      const waiting = pose.owl.mood === 'waiting', base = pose.owl.mood === 'asleep' && lives?.actOf(pose.owl.key, t)?.kind !== 'happy' ? 0.5 : 0.85
       const strength = waiting ? (0.8 + 0.2 * glowStep(t, still)) * pose.alpha : 0
       for (let k = 0; k < lines.length; k++) for (let j = 0; j < lines[k]!.length; j++) {
         const g = lines[k]![j]!
@@ -589,7 +727,7 @@ export class NightScenePainter {
     const layout = this.layout!, grid = this.grid
     const previous = this.owlBox
     if (previous !== null) for (let r = previous.r0; r < previous.r0 + previous.rn; r++) for (let c = previous.c0; c < previous.c0 + previous.cn; c++) {
-      this.owlInk[r * grid.cols + c] = 0; this.owlAccent[r * grid.cols + c] = 0
+      this.owlInk[r * grid.cols + c] = 0; this.owlAccent[r * grid.cols + c] = 0; this.owlGlyph[r * grid.cols + c] = 0
     }
     const pad = 84 * pose.s
     const c0 = clamp(Math.floor((pose.x - pad) / grid.cw), 0, grid.cols), c1 = clamp(Math.ceil((pose.x + pad) / grid.cw), 0, grid.cols)
@@ -599,5 +737,37 @@ export class NightScenePainter {
     prepare(ox, grid, layout); prepare(oax, grid, layout)
     drawOwl(ox, oax, pose)
     readField(ox, this.owlInk, grid, c0, r0, c1 - c0, r1 - r0); readField(oax, this.owlAccent, grid, c0, r0, c1 - c0, r1 - r0)
+    this.readOwlLines(pose, previous, c0, r0, c1 - c0, r1 - r0)
+  }
+
+  /**
+   * While the landscape shows as line art, Watcher's owl does too: it is drawn again on the finer field, only around
+   * it, and each of its cells that holds a line takes the line's character. A line along the top of a cell is drawn
+   * as `-` there, since the cell above is the owl's own.
+   */
+  private readOwlLines(pose: OwlPose, previous: CellBox | null, c0: number, r0: number, cn: number, rn: number): void {
+    this.owlLines = false
+    if (this.lineGlyph === null || cn <= 0 || rn <= 0) return
+    const hx = context(this.owlLineCanvas, true), nowhere = context(this.spare)
+    if (hx === null || nowhere === null) return
+    const grid = this.grid, { w: pw, h: ph } = LINE_PX
+    // The finer field is made only once line art shows, so a scene drawn by density never holds it. Only the owl draws
+    // on it, so only where it was and where it is now is cleared.
+    const canvas = this.owlLineCanvas
+    if (canvas.width !== grid.cols * pw || canvas.height !== grid.rows * ph) { canvas.width = grid.cols * pw; canvas.height = grid.rows * ph }
+    hx.setTransform(1, 0, 0, 1, 0, 0)
+    if (previous !== null) hx.clearRect(previous.c0 * pw, previous.r0 * ph, previous.cn * pw, previous.rn * ph)
+    hx.clearRect(c0 * pw, r0 * ph, cn * pw, rn * ph)
+    hx.setTransform(pw / grid.cw, 0, 0, ph / grid.ch, 0, 0)
+    hx.globalAlpha = 1; hx.globalCompositeOperation = 'source-over'; hx.lineCap = 'butt'; hx.fillStyle = MASK; hx.strokeStyle = MASK
+    drawOwl(hx, nowhere, pose)
+    const data = hx.getImageData(c0 * pw, r0 * ph, cn * pw, rn * ph).data, stride = cn * pw, cell = this.owlPx
+    for (let r = 0; r < rn; r++) for (let c = 0; c < cn; c++) {
+      const from = (r * ph * stride + c * pw) * 4 + 3
+      for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) cell[y * pw + x] = data[from + (y * stride + x) * 4]!
+      const code = pickGlyph(cell, 0, true, 0.5, this.pick).code
+      this.owlGlyph[(r0 + r) * grid.cols + c0 + c] = code === RAISED ? 45 : code
+    }
+    this.owlLines = true
   }
 }

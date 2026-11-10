@@ -64,7 +64,7 @@ export const WATCHER_PULL_REQUEST_NEWS_PROMPT = `A watched thread that pushed to
  * What Watcher is told while linked Markdown files open in the side panel (ADR-0120, November 3 amendment): Sotto reads a full
  * path inside a thread's folder from that thread's machine, wherever Watcher runs.
  */
-export const WATCHER_MARKDOWN_LINKS_PROMPT = `When you name a Markdown file a worker made, or one you made, link it in your reply by its full path as the worker gave it, as in [plan.md](/full/path/to/plan.md). Sotto opens that link in a side panel beside you, read only, from the machine of the thread whose folder holds the file. Do not shorten a worker's path to ~/ or to a relative one: it would be read from your own machine.`
+export const WATCHER_MARKDOWN_LINKS_PROMPT = `When you name a Markdown file a worker made, or one you made, link it in your reply by its full path as the worker gave it, inside angle brackets, as in [plan.md](</full/path/to/plan.md>), so a path with spaces stays a link. Sotto opens that link in a side panel beside you, read only, from the machine of the thread whose folder holds the file. Do not shorten a worker's path to ~/ or to a relative one: it would be read from your own machine.`
 
 /**
  * Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines,

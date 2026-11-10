@@ -511,10 +511,10 @@ private struct DefaultsPanel: View {
                     }
                 }
                 RowDivider()
-                DefaultRow(label: String(localized: "Effort", comment: "A new-thread default: the model’s reasoning effort."), spoken: String(localized: "New thread effort"), value: effort.isEmpty ? Self.computersChoice : effort.capitalized, identifier: "setting-default-effort") {
+                DefaultRow(label: String(localized: "Effort", comment: "A new-thread default: the model’s reasoning effort."), spoken: String(localized: "New thread effort"), value: effort.isEmpty ? Self.computersChoice : EffortWords.name(effort), identifier: "setting-default-effort") {
                     Picker("Effort", selection: saving($effort)) {
                         Text(Self.computersChoice).tag("")
-                        ForEach(efforts(models), id: \.self) { Text($0.capitalized).tag($0) }
+                        ForEach(efforts(models), id: \.self) { Text(EffortWords.name($0)).tag($0) }
                     }
                 }
                 RowDivider()

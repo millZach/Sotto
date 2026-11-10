@@ -1,5 +1,5 @@
 import { THINKING_TITLE, isTerminalActivity, thinkingText, type AgentActivity } from '../../shared/agentActivity'
-import { object } from './claudeProtocol'
+import { object } from './providers/claude/claudeProtocol'
 
 /**
  * How a provider that streams ACP thought chunks (`agent_thought_chunk`) turns them into Thinking rows. Grok Build and

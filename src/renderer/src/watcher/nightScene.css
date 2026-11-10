@@ -8,6 +8,11 @@
 .watcher-pane { isolation: isolate; }
 .watcher-scene { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 1; transition: opacity 700ms ease; }
 .watcher-scene--land { z-index: -1; }
+/* The moon's halo in the living night scene (ADR-0199): a soft wash of the theme's accent round the moon, under the
+   landscape's glyphs, in the moon's own margin and below the header, so no word ever stands on it. The scene sets its
+   box and where the moon is in it; it fades with the scene. */
+.watcher-scene--halo { z-index: -1;
+  background: radial-gradient(circle var(--halo-reach) at var(--halo-x) var(--halo-y), color-mix(in srgb, var(--tt-accent) 24%, transparent) 0, color-mix(in srgb, var(--tt-accent) 10%, transparent) 38%, transparent 100%); }
 .watcher-scene--owl { z-index: 3; }
 /* The thread owls' buttons, over their glyphs: the pointer's way to a thread's name and to the thread. */
 .watcher-scene--owls { z-index: 4; }

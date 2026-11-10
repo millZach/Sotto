@@ -100,7 +100,7 @@ describe('when a restart is due', () => {
 
   it('tells a restart note by how Sotto’s note begins, whichever provider it names, and the resume note too', () => {
     expect(isRestartNoteText(limitRestartNote('Claude Code'))).toBe(true)
-    expect(isRestartNoteText(`  ${limitRestartNote('DeepSeek Harness')}\n\nAlso: two checks failed.`)).toBe(true)
+    expect(isRestartNoteText(`  ${limitRestartNote('DeepSeek')}\n\nAlso: two checks failed.`)).toBe(true)
     expect(isRestartNoteText(RESUME_NOTE)).toBe(true)
     expect(isRestartNoteText('Pull request #74: 2 checks failed.')).toBe(false)
     expect(isRestartNoteText(`Please read this: ${'x'.repeat(80)} ${limitRestartNote('Codex')}`)).toBe(false)
@@ -165,12 +165,21 @@ describe('the band at the top of the Threads sidebar', () => {
     expect(bands()).toHaveLength(1)
   })
 
-  it('leaves a provider that never said when its limit resets to the user, with no button', () => {
-    mount([stopped('d1', 'Release notes draft', { providerId: 'devin', scheduledRestart: { provider: 'devin', stoppedAt: minutesAgo(3) } }),
+  it('leaves a provider that never said when its limit resets to the user, and Dismiss takes the note away (November 9, 2026)', async () => {
+    const live = mount([stopped('d1', 'Release notes draft', { providerId: 'devin', scheduledRestart: { provider: 'devin', stoppedAt: minutesAgo(3) } }),
       stopped('d2', 'iPhone sheet copy', { providerId: 'devin', scheduledRestart: { provider: 'devin', stoppedAt: minutesAgo(2) } })])
     const [band] = bands()
     expect(band).toHaveTextContent('Devin didn’t say when its limit resets, so Sotto can’t restart its 2 threads on its own. Send again once it resets.')
     expect(within(band!).queryByRole('button', { name: /Don’t restart/ })).toBeNull()
+    const dismiss = within(band!).getByRole('button', { name: 'Dismiss the note about Devin’s 2 threads' })
+    expect(dismiss).toHaveTextContent('Dismiss')
+    expect([...band!.querySelectorAll('button')].at(-1)).toBe(dismiss)
+    dismiss.focus()
+    fireEvent.click(dismiss)
+    await waitFor(() => expect(sent(live, 'cancel-restart')).toEqual([{ type: 'cancel-restart', threadId: 'd1' }, { type: 'cancel-restart', threadId: 'd2' }]))
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => ({ ...thread, scheduledRestart: undefined })) } }) })
+    expect(bands()).toEqual([])
+    expect(screen.getByRole('searchbox', { name: 'Search threads' })).toHaveFocus()
   })
 
   it('is not there on stable', () => {

@@ -16,6 +16,7 @@ import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 
 vi.mock('electron', async () => (await import('../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge } from '../../src/preload'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 class EventProvider extends FakeProviderHost {
   private readonly events = new Set<(event: ThreadHostEvent) => void>()
@@ -40,7 +41,7 @@ async function fixture(history: () => boolean = () => true, initialize = true) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-history-retry-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const adapter = new EventProvider()
-  const host = new WorkspaceHost(adapter, directory, history, undefined, false, false, true)
+  const host = new WorkspaceHost(adapter, directory, { historyEnabled: history, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: true })
   cleanup.push(async () => { await host.close().catch(() => undefined) })
   if (initialize) {
     await host.initialize()

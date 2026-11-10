@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Ultracode on a Claude Code thread (ADR-0148): the level past Max on a model with Extra high, kept per thread like any
+// Ultracode on a Claude Code thread (ADR-0148): the level past Max on a model with XHigh, kept per thread like any
 // level, and run as Claude Code's `ultracode` session setting beside the effort this machine's setting names. The CLI
 // launches with it, takes it in place, and is brought to the setting's level before every prompt that needs it.
 import { randomUUID } from 'node:crypto'
@@ -51,7 +51,7 @@ async function send(f: Fixture, id: string, text: string): Promise<void> {
   await expect.poll(async () => (await shown(f, id)).status).toBe('idle')
 }
 
-it('offers Ultracode after Max on a model with Extra high, and nowhere else', async () => {
+it('offers Ultracode after Max on a model with XHigh, and nowhere else', async () => {
   const f = await fixture({ value: 'xhigh' })
   const catalog = (await f.host.snapshot()).models
   expect(catalog.find(model => model.id === 'fixture-opus')?.reasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
@@ -64,7 +64,7 @@ it('launches a thread on Ultracode at the setting\'s effort with ultracode on, a
   const id = await thread(f, 'fixture-opus', 'ultracode')
   expect((await shown(f, id)).reasoningEffort).toBe('ultracode')
   const args = (await launchArgs(f)).at(-1)!
-  // Claude Code has no effort called ultracode: the level runs at Extra high with the session setting on.
+  // Claude Code has no effort called ultracode: the level runs at XHigh with the session setting on.
   expect(flag(args, '--effort')).toBe('xhigh')
   expect(JSON.parse(flag(args, '--settings')!)).toEqual({ fastMode: false, ultracode: true })
   expect(await f.liveSettings.effective(id)).toMatchObject({ reasoningEffort: 'xhigh', ultracode: true })

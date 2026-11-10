@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AGENT_TEXT_MAX } from '../../../src/shared/agents'
 import { classifyRiskyAction } from '../../../src/main/agents/authority'
-import { claudePending } from '../../../src/main/agents/claudeRequests'
-import { pendingRequest } from '../../../src/main/agents/codexRequests'
+import { claudePending } from '../../../src/main/agents/providers/claude/claudeRequests'
+import { pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 import { deepseekPending } from '../../../src/main/agents/deepseekRequests'
 import { grokPending } from '../../../src/main/agents/grokRequests'
 import { museApprovalPending, type MuseApproval } from '../../../src/main/agents/museRequests'
@@ -142,7 +142,7 @@ describe('any other request on its permission card (ADR-0185)', () => {
 
 describe('the words an adapter writes', () => {
   it('need no language, since the headless host sets none', () => {
-    for (const file of ['requestInput', 'claudeRequests', 'codexRequests', 'deepseekRequests', 'devinRequests', 'grokRequests', 'museRequests']) {
+    for (const file of ['requestInput', 'providers/claude/claudeRequests', 'providers/codex/codexRequests', 'deepseekRequests', 'devinRequests', 'grokRequests', 'museRequests']) {
       expect(readFileSync(join('src/main/agents', `${file}.ts`), 'utf8'), file).not.toContain('@lingui')
     }
   })

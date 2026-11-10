@@ -47,4 +47,13 @@ describe('a server as OpenCode is told about it', () => {
     const env = opencodeEnvironment({ PATH: '/bin' }, folders, 'pw', [spark])
     expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).providers['own-spark1'].settings.baseURL).toBe('http://spark-head:8888/v1')
   })
+
+  it('leaves Hermes-only keys out of every OpenCode process, while keeping old keyed records and keyless servers', () => {
+    const hermes: OwnServer = { ...spark, id: 'own-hermes', keyKeeper: 'hermes' }
+    const openCode: OwnServer = { ...spark, id: 'own-opencode', keyKeeper: 'opencode' }
+    const keyless: OwnServer = { ...spark, id: 'own-keyless', keyed: false }
+    const env = opencodeEnvironment({}, opencodeFolders('/tmp/sotto/opencode'), 'pw', [spark, hermes, openCode, keyless])
+    expect(Object.keys(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).providers)).toEqual(['own-spark1', 'own-opencode', 'own-keyless'])
+    expect(env.OPENCODE_CONFIG_CONTENT).not.toContain(hermes.id)
+  })
 })

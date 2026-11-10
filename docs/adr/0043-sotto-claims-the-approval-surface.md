@@ -24,4 +24,4 @@ Claiming the surface is not enough if the CLI runs in another permission mode th
 
 **Stricter carries on, with one note.** A CLI that asks or refuses more than the user chose takes nothing from them, so the turn goes on and the thread gets one line saying Claude Code runs a stricter mode and may ask or refuse more. It is said once per CLI, not on every turn. Claude Code may also land there itself, as a session that enters `plan` does.
 
-The check is in `src/main/agents/claudePermissionMode.ts` and `ClaudeStreamJsonHost.checkPermissionMode`; `tests/integration/claudePermissionModeDrift.test.ts` drives both directions through the fake CLI.
+The check is in `src/main/agents/providers/claude/claudePermissionMode.ts` and `ClaudeStreamJsonHost.checkPermissionMode`; `tests/integration/claudePermissionModeDrift.test.ts` drives both directions through the fake CLI.

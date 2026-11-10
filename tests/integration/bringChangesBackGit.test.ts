@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BringBackRefusal, GitActions } from '../../src/main/agents/gitActions'
-import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { BringBackRefusal, GitActions } from '../../src/main/agents/git/gitActions'
+import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { initializeGitRepository, runFixtureGit } from '../fixtures/gitRepository'
 
 /**

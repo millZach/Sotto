@@ -62,7 +62,7 @@ it.each(['retained-corrupt', 'write-refused', 'foreign-host', 'corrupt-identity'
   await writeFile(join(path, 'workspace.json'), original)
   if (failure === 'corrupt-identity') await writeFile(join(path, 'host.json'), '{broken')
   if (failure === 'write-refused') vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('Disk unavailable'))
-  const host = new WorkspaceHost(new FakeProviderHost(), path, () => failure === 'retained-corrupt')
+  const host = new WorkspaceHost(new FakeProviderHost(), path, { historyEnabled: () => failure === 'retained-corrupt' })
   await expect(host.initialize()).rejects.toThrow()
   host.disconnect(); host.dispose()
   expect(await readFile(join(path, 'workspace.json'), 'utf8')).toBe(original)

@@ -1,7 +1,8 @@
 import { t } from '@lingui/core/macro'
 import {
   ATTACHED_FILE_TOO_LARGE, ATTACHED_FILES_NEED_A_FOLDER, ATTACHED_IMAGE_TOO_LARGE, ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL, ATTACHMENTS_TOO_LARGE_IN_TOTAL,
-  ATTACHMENTS_TOO_MANY, FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH, HOST_CANNOT_STAGE_FILES, HOST_DISCONNECTED_BEFORE_FILES,
+  ATTACHMENTS_TOO_MANY, FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH, HOST_CANNOT_STAGE_FILES, HOST_CANNOT_STAGE_VIDEOS, HOST_DISCONNECTED_BEFORE_FILES,
+  VIDEO_HAS_NO_PATH, VIDEO_TOO_LARGE, VIDEOS_TOO_LARGE_IN_TOTAL,
 } from '../../../shared/agents'
 
 /**
@@ -14,6 +15,9 @@ export const fileTooLarge = (): string => t`Each file must be 25 MB or smaller. 
 export const imageTooLarge = (): string => t`Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image.`
 export const imagesTooLargeInTotal = (): string => t`Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones.`
 export const attachmentsTooLargeInTotal = (): string => t`Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.`
+/** A video has its own limit and total, apart from the 50 MB for everything else (ADR-0131, November 9 amendment). */
+export const videoTooLarge = (): string => t`Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one.`
+export const videosTooLargeInTotal = (): string => t`Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video.`
 export const imagesNotRead = (name: string): string =>
   t({ message: `This model does not read images. Choose a model with image support, or remove ${name}.`, comment: '{name} is the file name of the image, such as "screenshot.png".' })
 /** A draft that answers a question or a permission request takes no attachments. */
@@ -55,6 +59,10 @@ export function attachmentRefusal(sentence: string): string {
   if (unread) return imagesNotRead(unread[1]!)
   switch (sentence) {
     case HOST_CANNOT_STAGE_FILES: return t`This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.`
+    case HOST_CANNOT_STAGE_VIDEOS: return t`This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached.`
+    case VIDEO_HAS_NO_PATH: return t`This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there.`
+    case VIDEO_TOO_LARGE: return videoTooLarge()
+    case VIDEOS_TOO_LARGE_IN_TOTAL: return videosTooLargeInTotal()
     case HOST_DISCONNECTED_BEFORE_FILES: return t`This host is disconnected. Connect again before attaching files. Nothing was attached.`
     case FILE_UPLOAD_INCOMPLETE: return t`This file did not reach the host whole. Nothing was attached. Attach it again.`
     case FILE_UPLOAD_MISMATCH: return t`This file changed on its way to the host. Nothing was attached. Attach it again.`

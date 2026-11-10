@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { copyHashing } from './hashedCopy'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_FILE_BYTES, agentAttachmentHandleSchema, agentMimeTypeSchema, attachmentDigestSchema, attachmentLimitBytes, bytesHaveRasterSignature,
-  ATTACHED_FILE_TOO_LARGE, isImageAttachment, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, type AgentAttachment, type AgentAttachmentDimensions,
+import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_VIDEO_BYTES, agentAttachmentHandleSchema, agentMimeTypeSchema, attachmentDigestSchema, attachmentLimitBytes, bytesHaveRasterSignature,
+  ATTACHED_FILE_TOO_LARGE, isImageAttachment, isVideoAttachment, SCREENSHOT_NOT_ITS_TYPE, VIDEO_TOO_LARGE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, type AgentAttachment, type AgentAttachmentDimensions,
   type AgentAttachmentHandle, type AgentImageMimeType } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -22,7 +23,7 @@ const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const
 export const UNOWNED_ATTACHMENT_GRACE_MS = 60 * 60_000
 
 const entrySchema = z.object({ digest: attachmentDigestSchema, mimeType: agentMimeTypeSchema,
-  sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), stagedAt: z.number().finite() }).strict()
+  sizeBytes: z.number().int().min(1).max(AGENT_MAX_VIDEO_BYTES), stagedAt: z.number().finite() }).strict()
   .refine(entry => entry.sizeBytes <= attachmentLimitBytes(entry.mimeType))
 type Entry = z.infer<typeof entrySchema>
 const indexSchema = z.object({ version: z.literal(1), entries: z.array(z.unknown()) })
@@ -144,6 +145,9 @@ export class AttachmentStore {
         this.held.set(match[1]!, { digest: match[1]!, mimeType, sizeBytes: size, stagedAt: entry?.stagedAt ?? now, unownedSince: now, lastStagedAt: entry?.stagedAt ?? now })
       }
       if (saved.entries.length !== this.held.size || saved.entries.some(entry => !this.held.has(entry.digest))) await this.writeIndex()
+      // The parts of videos a host was receiving when it stopped (`video-staging`): no upload outlives the process.
+      const parts = await readdir(this.uploadFolder).catch(() => [] as string[])
+      await Promise.all(parts.filter(name => name.endsWith('.part')).map(name => unlink(join(this.uploadFolder, name)).catch(() => undefined)))
     })
   }
   private writeIndex(): Promise<void> {
@@ -159,10 +163,12 @@ export class AttachmentStore {
    * setting, for bytes that were already on disk elsewhere (`inlineStager`) and so are not new.
    */
   stage(input: { readonly name: string; readonly mimeType: string; readonly bytes: Uint8Array; readonly dimensions?: AgentAttachmentDimensions | undefined },
-    { onDisk = false, digest: known }: { readonly onDisk?: boolean
+    { onDisk: asked = false, digest: known }: { readonly onDisk?: boolean
       /** The bytes' SHA-256, from a caller in main that has just hashed them (the thread media store), so they are not hashed twice. */
       readonly digest?: string } = {}): Promise<AgentAttachmentHandle> {
     const image = isImageAttachment(input.mimeType)
+    // A video is kept on disk whatever the history setting, as the user chose for videos (ADR-0131, November 9 amendment).
+    const onDisk = asked || isVideoAttachment(input.mimeType)
     if (!image && (!this.acceptsFiles || !agentMimeTypeSchema.safeParse(input.mimeType).success)) return Promise.reject(new RefusedImage(SCREENSHOT_WRONG_TYPE))
     if (input.bytes.byteLength < 1 || input.bytes.byteLength > attachmentLimitBytes(input.mimeType)) {
       return Promise.reject(new RefusedImage(image ? SCREENSHOT_TOO_LARGE : ATTACHED_FILE_TOO_LARGE))
@@ -210,6 +216,74 @@ export class AttachmentStore {
     })
   }
   /**
+   * Keeps an attached file that is already on this computer, read from its path rather than handed over as bytes: a
+   * video too large to pass through memory (ADR-0131, November 9 amendment). `move` takes a host's finished upload, whose
+   * size and digest it has just checked, out of this store's own folder; anything else is copied, hashed as it is read,
+   * so the digest is of exactly the bytes kept. The content is on disk whatever the history setting, as the user chose
+   * for videos. Images still go by `stage`, which checks their signature.
+   */
+  async stageFile(input: { readonly name: string; readonly mimeType: string; readonly path: string },
+    { move }: { readonly move?: { readonly digest: string } } = {}): Promise<AgentAttachmentHandle> {
+    const video = isVideoAttachment(input.mimeType)
+    if (isImageAttachment(input.mimeType) || !this.acceptsFiles || !agentMimeTypeSchema.safeParse(input.mimeType).success) throw new RefusedImage(SCREENSHOT_WRONG_TYPE)
+    const info = await stat(input.path)
+    if (!info.isFile() || info.size < 1 || info.size > attachmentLimitBytes(input.mimeType)) throw new RefusedImage(video ? VIDEO_TOO_LARGE : ATTACHED_FILE_TOO_LARGE)
+    await mkdir(this.folder, { recursive: true })
+    let source = input.path, digest = move?.digest, sizeBytes = info.size
+    if (!move) {
+      source = join(this.folder, `${randomUUID()}.tmp-${process.pid}`)
+      try { ({ digest, sizeBytes } = await copyHashing(input.path, source, 0o600)) }
+      catch (error) { await unlink(source).catch(() => undefined); throw error }
+      if (sizeBytes < 1 || sizeBytes > attachmentLimitBytes(input.mimeType)) { await unlink(source).catch(() => undefined); throw new RefusedImage(video ? VIDEO_TOO_LARGE : ATTACHED_FILE_TOO_LARGE) }
+    }
+    const parsed = agentAttachmentHandleSchema.safeParse({ id: randomUUID(), name: input.name.trim() || 'File', mimeType: input.mimeType, sizeBytes, digest })
+    if (!parsed.success) {
+      if (!move) await unlink(source).catch(() => undefined)
+      throw new RefusedImage('Could not read this file’s name or size. Nothing was attached. Try again.')
+    }
+    const handle = parsed.data
+    return this.enqueue(async () => {
+      const now = this.now()
+      const existing = this.held.get(handle.digest)
+      if (existing && !existing.memory) {
+        existing.unownedSince = existing.unownedSince === null ? null : now; existing.lastStagedAt = now
+        await unlink(source).catch(() => undefined)
+        return handle
+      }
+      // Content kept only in memory, staged while history was off, now reaches disk with this copy, as a video must.
+      if (existing) {
+        await this.renameInto(source, this.file(existing))
+        const kept: Held = { ...existing, unownedSince: existing.unownedSince === null ? null : now, lastStagedAt: now }
+        delete kept.memory
+        this.held.set(handle.digest, kept)
+        try { await this.writeIndex() }
+        catch (error) { this.held.set(handle.digest, existing); await unlink(this.file(existing)).catch(() => undefined); throw error }
+        return handle
+      }
+      const held: Held = { digest: handle.digest, mimeType: handle.mimeType, sizeBytes, stagedAt: now, unownedSince: now, lastStagedAt: now }
+      await this.renameInto(source, this.file(held))
+      this.held.set(handle.digest, held)
+      try { await this.writeIndex() }
+      catch (error) {
+        this.held.delete(handle.digest)
+        await unlink(this.file(held)).catch(() => undefined)
+        throw error
+      }
+      return handle
+    })
+  }
+  /**
+   * The file a digest's content is kept in, for a reader that streams it rather than reading it whole, as a video is
+   * copied into a working folder; null when this store does not keep it or keeps it only in memory. The reader checks
+   * the digest of what it read.
+   */
+  /** Where a host writes a video's parts on their way here, inside this store's folder so the finished file moves in. */
+  get uploadFolder(): string { return join(this.folder, 'uploads') }
+  contentPath(digest: string): string | null {
+    const held = this.held.get(digest)
+    return held && !held.memory ? this.file(held) : null
+  }
+  /**
    * Keeps content first staged as a file under the image type it was just staged as. The image's file is written and
    * indexed before the file's copy goes, and `read` follows the new entry, so nothing that names the digest loses it.
    */
@@ -237,6 +311,10 @@ export class AttachmentStore {
       await handle.close().catch(() => undefined); await unlink(temporary).catch(() => undefined); throw error
     }
     await handle.close()
+    await this.renameInto(temporary, target)
+  }
+  /** Renames a file this store wrote into its place, retrying while Windows holds the target; the file goes if it cannot. */
+  private async renameInto(temporary: string, target: string): Promise<void> {
     for (let attempt = 0; ; attempt += 1) {
       try { await rename(temporary, target); return }
       catch (error) {
@@ -365,3 +443,4 @@ export class AttachmentStore {
   /** Waits for every stage and sweep already asked for. */
   idle(): Promise<void> { return this.enqueue(async () => undefined) }
 }
+

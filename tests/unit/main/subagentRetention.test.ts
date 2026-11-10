@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
-import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity, type ObservedAgent } from '../../../src/shared/agentActivity'
 
 const assignmentCount = 5_000

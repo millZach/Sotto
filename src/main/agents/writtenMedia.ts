@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { MAX_ACTIVITY_MEDIA, type AgentActivityMedia } from '../../shared/agentActivity'
 import { AGENT_MAX_IMAGE_BYTES } from '../../shared/agents'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 import { videoHandle } from './shownMedia'
 import type { ThreadMediaStore } from './threadMedia'
 

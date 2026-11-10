@@ -380,11 +380,15 @@ describe('SettingsRepository', () => {
   it('projects whether the shell pill is in use into reads and never saves it', async () => {
     const { filePath } = await createRepository()
     let inUse = false
-    const linux = new SettingsRepository(filePath, { shellPillInUse: () => inUse })
+    let projections = 0
+    const linux = new SettingsRepository(filePath, { shellPillInUse: () => { projections += 1; return inUse } })
     expect((await linux.get()).shellPillInUse).toBe(false)
+    expect(projections).toBe(1)
     inUse = true
     expect((await linux.get()).shellPillInUse).toBe(true)
+    expect(projections).toBe(2)
     expect((await linux.update({ showWidgetWhenIdle: false })).shellPillInUse).toBe(true)
+    expect(projections).toBe(3)
     // A rollback saves a projected snapshot back; the projection still stays out of the file.
     await linux.save({ ...(await linux.get()), shellPillInUse: true })
     expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toHaveProperty('shellPillInUse')

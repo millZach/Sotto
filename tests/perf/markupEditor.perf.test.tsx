@@ -31,7 +31,7 @@ import * as replyAttach from '../../src/renderer/src/agents/replyAttach'
 const RUNS = 5
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
 const WHOLE = 'data:image/png;base64,iVBORw0KGgo='
-const record: AgentActivity = { id: 'claude-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot',
+const record: AgentActivity = { id: 'sotto-shown-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot',
   media: [{ id: 'm0', digest: '0'.repeat(64), kind: 'image', mimeType: 'image/png', sizeBytes: 40, width: 1920, height: 1200, name: 'checkout.png', source: 'tool' }] }
 const groups = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [record] }] as unknown as ActivityGroup[]
 /** The same picture with three callouts an agent placed on it (part 6): drawn over it and listed beside it. */
@@ -40,7 +40,7 @@ const CALLOUTS = [
   { n: 2, x: 0.055, y: 0.365, w: 0.453, h: 0.083, note: 'The card number field has no label.' },
   { n: 3, x: 0.49, y: 0.815, w: 0.51, h: 0.088, note: 'At 390 wide the Pay button runs off the screen.' },
 ]
-const marked = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [{ ...record, id: 'claude-tool-marked', media: [{ ...record.media![0]!, callouts: CALLOUTS }] }] }] as unknown as ActivityGroup[]
+const marked = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [{ ...record, id: 'sotto-shown-tool-marked', media: [{ ...record.media![0]!, callouts: CALLOUTS }] }] }] as unknown as ActivityGroup[]
 
 /** A thread pane's reply box, which takes the marked copy; before part 5 there was none, and the tiles render bare. */
 const added: File[][] = []

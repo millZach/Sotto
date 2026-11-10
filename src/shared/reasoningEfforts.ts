@@ -11,6 +11,21 @@ export function effortKey(id: string): string {
   return id.toLowerCase().replace(/[-_\s]/gu, '')
 }
 
+/** The level an id names, whatever its spelling: `extrahigh` is `xhigh`, so every name for it is one (#227). */
+export function effortLevel(id: string): string {
+  const key = effortKey(id)
+  return key === 'extrahigh' ? 'xhigh' : key
+}
+
+/**
+ * A level's name in English, for words Sotto writes for an agent to read, such as a Council's verdict sent to a thread:
+ * the names the window shows (`effortNames.ts`), and a level Sotto does not know as the provider names it, capitalised.
+ */
+const EFFORT_WORDS: Readonly<Record<string, string>> = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max', ultracode: 'Ultracode' }
+export function effortWords(id: string): string {
+  return EFFORT_WORDS[effortLevel(id)] ?? id.charAt(0).toUpperCase() + id.slice(1)
+}
+
 /**
  * The levels whose place is known. Anything else keeps its place beside the provider's own neighbours. Ultracode is
  * above Max (ADR-0148), so a default of Ultracode lands on another provider's highest level.

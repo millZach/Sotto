@@ -8,12 +8,12 @@ import { fitEffort } from '../../../src/shared/workerRoles'
 import { nearestReasoningEffort } from '../../../src/shared/newThreadDefaults'
 
 describe('withUltracode', () => {
-  it('puts Ultracode after Max on a model with Extra high, the models Claude Code runs it on', () => {
+  it('puts Ultracode after Max on a model with XHigh, the models Claude Code runs it on', () => {
     expect(withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
     expect(withUltracode(['low', 'medium', 'high', 'xhigh'])).toEqual(['low', 'medium', 'high', 'xhigh', 'ultracode'])
   })
 
-  it('leaves a model without Extra high, or without levels, as it was', () => {
+  it('leaves a model without XHigh, or without levels, as it was', () => {
     expect(withUltracode(['low', 'medium', 'high', 'max'])).toEqual(['low', 'medium', 'high', 'max'])
     expect(withUltracode([])).toEqual([])
   })
@@ -43,7 +43,7 @@ describe('ultracodeRunsAt', () => {
     expect(ultracodeRunsAt([], 'xhigh')).toBeUndefined()
   })
 
-  it('starts at Extra high, which is what Claude Code runs for --effort ultracode', () => {
+  it('starts at XHigh, which is what Claude Code runs for --effort ultracode', () => {
     expect(DEFAULT_ULTRACODE_EFFORT).toBe('xhigh')
     expect(defaultAgentConfiguration().claudeUltracodeEffort).toBe('xhigh')
     // A configuration saved before the setting existed reads as the default.

@@ -7,9 +7,9 @@ import { describeAdapterContract } from './adapterContract'
 import { deepseekFixture, deepseekFixtureSkips, FIXTURE_SERVER } from '../fixtures/fakeDeepSeekFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 
-describeAdapterContract('DeepSeek Harness ACP', session => deepseekFixture(undefined, undefined, session), deepseekFixtureSkips)
+describeAdapterContract('DeepSeek ACP', session => deepseekFixture(undefined, undefined, session), deepseekFixtureSkips)
 
-describe('DeepSeek Harness ACP adapter', () => {
+describe('DeepSeek ACP adapter', () => {
   let f: Awaited<ReturnType<typeof deepseekFixture>> | undefined
   afterEach(async () => { const previous = f; f = undefined; await previous?.cleanup() })
   const open = async (title = 'DeepSeek thread', options: { runtimeMode?: 'approval-required' | 'auto-accept-edits' | 'full-access'; modelId?: string } = {}) => {
@@ -27,11 +27,11 @@ describe('DeepSeek Harness ACP adapter', () => {
   it('lists the keyless servers’ models, grouped by server, with efforts and the three modes', async () => {
     f = await deepseekFixture()
     const snapshot = await f.host.connect()
-    expect(snapshot.name).toBe('DeepSeek Harness')
+    expect(snapshot.name).toBe('DeepSeek')
     expect(snapshot.version).toContain('0.2.1-rc.2')
     expect(snapshot.models.map(model => [model.id, model.name, model.source, model.provider])).toEqual([
-      ['own-fixture/fixture-model', 'Fixture Model', 'Fixture Server', 'DeepSeek Harness'],
-      ['own-fixture/fixture-plain', 'Fixture Plain', 'Fixture Server', 'DeepSeek Harness'],
+      ['own-fixture/fixture-model', 'Fixture Model', 'Fixture Server', 'DeepSeek'],
+      ['own-fixture/fixture-plain', 'Fixture Plain', 'Fixture Server', 'DeepSeek'],
     ])
     const [thinking, plain] = snapshot.models
     expect(thinking!.reasoningEfforts).toEqual(['off', 'low', 'high', 'max'])

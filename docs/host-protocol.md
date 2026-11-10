@@ -105,6 +105,8 @@ October 17, 2026 contract (#1107, [ADR-0087](adr/0087-opencode-is-a-thread-provi
 
 October 23, 2026 contract ([ADR-0128](adr/0128-cursor-is-a-thread-provider.md)): every listener lists `provider-cursor`, which works exactly as `provider-opencode` above, for Cursor: a host sends Cursor's provider row, models, projects, threads and everything else that names it only to a client whose hello accepts `provider-cursor`, filters Watcher's answers and a phone's Watcher state the same way, and hides every Cursor thread from any other client. The desktop accepts it, and so do the iPhone and Android clients from ADR-0128 on. A host signs its own Cursor in with the provider sign-in request in the `page` shape: a page and no code, finished on Cursor's side.
 
+November 8, 2026 contract ([ADR-0138, November 8 amendment](adr/0138-deepseek-harness-is-a-thread-provider.md)): every listener lists `provider-deepseek`, which works exactly as `provider-opencode` above, for DeepSeek: the desktop's phone listener sends DeepSeek's provider row, models, projects, threads and everything else that names it only to a client whose hello accepts `provider-deepseek`, and hides every DeepSeek thread from any other client. A headless host lists it too but holds the provider, so it sends nothing of DeepSeek to anyone. The iPhone accepts it from this contract on; the Android client does not.
+
 October 18, 2026 contract ([ADR-0025, October 18 amendment](adr/0025-headless-host-and-client-identity.md)): a headless host lists `activity-bodies` on both listeners, for desktops only, and the desktop's own phone listener never lists it. A desktop that accepts it is sent activity records with their long bodies cut ([Cut bodies](#cut-bodies)) and reads one record whole with `activity-body`. The desktop's host client accepts it whenever the host lists it; an older host goes on sending whole records.
 
 October 21, 2026 contract ([ADR-0103](adr/0103-the-iphone-lists-a-threads-agents.md)): a host whose Owl answer turns on the iPhone's Agents view lists `agents-view`, to desktops and phones alike, and answers `thread-delegations`. Where delegation does not run, as on a headless host, every thread reads as having no delegated threads, and the phone lists its sub-agents alone, from `subagent-page` and `subagent-assignments`. A stable host lists neither, and the phone shows nothing of the view.
@@ -277,6 +279,8 @@ A shell push whose `state` is byte for byte the state of the last shell push wri
 | `host-update-step` | `step` | Which step a `host-update` this client asked for is on: `download`, `check`, `install` or `restart`. Only to the client that asked, and only once its hello accepted `host-update`. |
 | `delegations-changed` | `threadIds` | The host's threads whose delegations changed, batched per pass (#1310). Only to a desktop whose hello accepted `delegation-views`, and never naming a thread that client is not sent. |
 | `check-queue` | `checks` | The host's own check queue, the running check first (#1312). Only to a desktop whose hello accepted `check-queue-views`: once after its hello's answer, and again whenever the queue changes. See "The check queue in the desktop's window" below. |
+| `browser` | `change` | A page, task or browser grant of the host's browser changed, as this computer's browser tells its window (`page`, `closed`, `task`, `browser-grant`). Only to a desktop whose hello accepted `browser`, and never about a thread that desktop is not sent. See "A host's browser" below. |
+| `browser-frame` | `frame` | A picture of one of the host's pages, `{ pageId, data, width, height }`, a base64 JPEG. Only to a desktop watching that page; dropped, not queued, while that desktop's socket is behind, and dropped when larger than 4 MiB. |
 
 A message whose ID starts `visual:` is a visual an agent drew in its thread (ADR-0056). Its `text` is the visual's title, intro and numbered steps, then a line saying the visual is in Sotto on the computer. The desktop keeps the drawing itself in a `visual` field that no socket client is sent, in a `detail`, a `detail-delta` or a read, so a client shows the text as it would any reply.
 
@@ -525,6 +529,22 @@ The desktop answers with the request `watcher-tell-answer` `{ askId, answer }`, 
 A thread's READY TO MERGE (`ready_to_merge`, #2229) travels the same way under `watcher-ready`, which a desktop accepts in its hello beside `watcher-tell`. The host pushes `{ v: 1, event: "watcher-tell-ask", askId, ask }` with `ask` as `{ threadId, ready: { pullRequest, head } }`, a GitHub pull request URL and a full commit ID and no words, only to a desktop that accepted `watcher-ready`; to any other, it is as if none were connected. The answer is `watcher-tell-answer`, as above, and is never `requestOpened: true`.
 
 The host asks the desktop connected last. It asks the next only when one answers `no-watcher` or its socket would not take the push. One that does not answer may have taken it, so no other is asked. Nothing is kept on the host. Phones are never offered this.
+
+## A host's browser (November 9, 2026)
+
+A thread on a headless host browses in the host's own Chrome, Chromium or Edge ([ADR-0198](adr/0198-a-paired-hosts-thread-browses-in-the-hosts-own-chromium.md)). The host offers `browser` only while its `paired-host-browser` and `quiet-browser` Owl features are on, and only to desktops; a phone is never offered it. A desktop accepts it in its hello when its own two Owl answers are on.
+
+The request `browser` carries `request: { method, payload }`, and answers with a `ToolsResult`, as this computer's browser answers its window. `payload` names the host's own thread ID; the desktop's router swaps its key for it and swaps it back in the answer. The methods are this computer's browser's, `list`, `create`, `navigate`, `back`, `forward`, `reload`, `close`, `tasks`, `share`, `controlTask`, `answerAction` and `stopGrant`, with the same payloads, and five of the host's own:
+
+- `input` `{ threadId, workspaceId, pageId, input }`: the user's click, key, typed text or scroll in a pane, where `input` is `{ type: "mouse", action, x, y, button, clickCount, modifiers }`, `{ type: "wheel", x, y, deltaX, deltaY, modifiers }`, `{ type: "key", action, key, code, keyCode, text?, modifiers }` or `{ type: "text", text }`. It is the user acting, so it needs no browser grant.
+- `watch` `{ threadId, workspaceId, pageId, size: { width, height } }`: the page lays out at the pane's size and the host pushes `browser-frame` pictures of it to this desktop until `unwatch` or the socket closes. A second `watch` of the same page replaces the first.
+- `unwatch` `{ threadId, workspaceId, pageId }`.
+- `available` `{ threadId }`: whether the host has Chrome, Chromium or Edge for its pages, `{ available }`, without starting it, so the pane can say to install one.
+- `setting` `{ withoutAsking }`: this computer's **Let agents use the browser without asking**, which a desktop sends on connecting and whenever it changes. The host keeps the last value it took in its own settings file.
+
+`answerAction` and `setting` are refused `forbidden` unless the desktop is one the launch script recorded and its `remote-answer` policy lets it answer, as for `host-update`: turning asking off stands in for answers (Zach, November 9, 2026). A desktop that may not answer still sends its setting, and takes the refusal quietly. Every other method needs only a desktop that accepted `browser`. A desktop that did not accept it is refused `invalid_request`, and a request naming a thread that desktop is not sent is refused `forbidden`.
+
+Pictures are never written to disk or logged on either side. The desktop's window receives them on its own channel, `sotto:browser:frame`, apart from the browser's other events.
 
 ## Remote delegation (October 27, 2026)
 

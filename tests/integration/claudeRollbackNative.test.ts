@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../src/main/agents/providers/claude/claude'
 
 const artifacts = evidenceDirectory('artifacts/phase-four-native-chats')
 

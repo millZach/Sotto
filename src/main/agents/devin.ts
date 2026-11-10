@@ -7,7 +7,7 @@ import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchem
 import { mergeAgentActivities } from '../../shared/agentActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ProviderUnavailable } from './providerProblem'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
@@ -204,7 +204,7 @@ export interface DevinAcpOptions {
 }
 
 /** Devin owns its account and tools. Sotto saves only session/dispatch identities in this adapter. */
-export class DevinAcpHost implements AgentHost {
+export class DevinAcpHost implements ProviderHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
   profileRefusalHandler(id: string) {

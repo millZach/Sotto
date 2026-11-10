@@ -15,7 +15,7 @@ const raws: SocketFrames[] = []
 afterEach(() => { for (const frames of raws.splice(0)) frames.close() })
 
 /** Every provider the fixture runs, so a phone is sent each one's threads and models. */
-const PROVIDERS = ['provider-opencode', 'provider-cursor']
+const PROVIDERS = ['provider-opencode', 'provider-cursor', 'provider-deepseek']
 
 /** The fake provider's catalog now: one ready model and one it reports not ready. The models it listed before stay, not ready. */
 async function catalog(): Promise<void> {

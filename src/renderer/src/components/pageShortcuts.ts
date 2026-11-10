@@ -7,7 +7,24 @@ import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useDictationOn } from '../state/dictationFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { handRoomFocus, type AppRoom } from './AppShell'
+
+/** The rooms the switch flips between; Watcher's only while its gate is on. */
+export type AppRoom = 'dictate' | 'watcher' | 'threads'
+
+/**
+ * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
+ * own switch, and the one that was pressed is gone. Claimed once, by the switch whose lit room it names.
+ */
+let handedFocus: { readonly room: AppRoom; readonly at: number } | null = null
+export function handRoomFocus(room: AppRoom): void { handedFocus = { room, at: Date.now() } }
+export function claimRoomFocus(room: AppRoom | null): boolean {
+  if (handedFocus === null || room === null) return false
+  // A press the new page never answered is forgotten rather than stealing focus later.
+  if (Date.now() - handedFocus.at > 2_000) { handedFocus = null; return false }
+  if (handedFocus.room !== room) return false
+  handedFocus = null
+  return true
+}
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 

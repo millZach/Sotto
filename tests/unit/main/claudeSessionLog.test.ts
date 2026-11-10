@@ -4,9 +4,9 @@ import { appendFile, chmod, mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText, firstUnread, type OriginBucket } from '../../../src/main/agents/claudeSessionLog'
+import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText, firstUnread, type OriginBucket } from '../../../src/main/agents/providers/claude/claudeSessionLog'
 import { attachedFilesNote, browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
-import { CLAUDE_MAX_FRAME_BYTES, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import { CLAUDE_MAX_FRAME_BYTES, type ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
 
 const roots: string[] = []
 afterEach(async () => {

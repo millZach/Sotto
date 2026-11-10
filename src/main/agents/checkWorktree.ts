@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { access, constants, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { findCli, withCliPath } from './cliLookup'
-import { launchProcess, stopProcessTree } from './gitLauncher'
+import { launchProcess, stopProcessTree } from './git/gitLauncher'
 import { nativeEnvironment } from './subscriptionCodex'
 
 /**

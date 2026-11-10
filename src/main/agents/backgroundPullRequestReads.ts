@@ -1,9 +1,9 @@
 import { homedir } from 'node:os'
 import { z } from 'zod'
-import { isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
-import { pullRequestObservation, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import { isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './git/github'
+import { pullRequestObservation, type DetailAnswer, type PullRequestFingerprint } from './git/githubBabysitReads'
 import { gateOf, requiredChecksOf } from './babysitNews'
-import type { RunGitCommand } from './gitStatus'
+import type { RunGitCommand } from './git/gitStatus'
 import type { PullRequestObservation } from './watcherEvidence'
 
 /**

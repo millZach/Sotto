@@ -58,12 +58,14 @@ export const e2eScenarioSchema = z.enum([
   'design-threads-empty',
   'phase3-workspace',
   'queued-steering',
-  /** The test Claude model offers Ultracode past Max, as Claude Code's catalog does on a model with Extra high (ADR-0148). */
+  /** The test Claude model offers Ultracode past Max, as Claude Code's catalog does on a model with XHigh (ADR-0148). */
   'ultracode',
   /** The test Claude model also offers Fast, so the composer draws its speed's bolt (ADR-0168). */
   'composer-speed',
   /** Climb's scripted provider reports exact turn identities through setup, judging and builder replies. */
   'council-climb',
+  /** The test model is Grok's, and Grok keeps a started thread's model and effort, so its effort chip is fixed (#228). */
+  'grok-fixed-effort',
 ])
 
 export const e2eSnapshotSchema = z.object({

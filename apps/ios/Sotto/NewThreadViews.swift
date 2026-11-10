@@ -391,9 +391,9 @@ struct NewThreadSheet: View {
                 }
             }
             if let chosenModel, let efforts = chosenModel.reasoningEfforts, !efforts.isEmpty {
-                FieldBox(label: String(localized: "Effort", comment: "The field for how hard a new thread's model reasons."), value: effort.isEmpty ? String(localized: "Choose an effort") : effort.capitalized, identifier: "new-thread-effort") {
+                FieldBox(label: String(localized: "Effort", comment: "The field for how hard a new thread's model reasons."), value: effort.isEmpty ? String(localized: "Choose an effort") : EffortWords.name(effort), identifier: "new-thread-effort") {
                     Picker("Effort", selection: $effort) {
-                        ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
+                        ForEach(efforts, id: \.self) { Text(EffortWords.name($0)).tag($0) }
                     }
                 }
             }

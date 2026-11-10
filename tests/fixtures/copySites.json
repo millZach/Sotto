@@ -8,23 +8,12 @@
     "copyUnshared(": 1,
     "copyOver(": 1
   },
-  "src/main/agents/claude.ts": {
-    "structuredClone(": 3,
-    "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 1
-  },
   "src/main/agents/cloneHostSnapshot.ts": {
     "cloneHostSnapshot(": 1
   },
-  "src/main/agents/codex.ts": {
-    "structuredClone(": 3,
-    "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 1
-  },
   "src/main/agents/control.ts": {
-    "structuredClone(": 21,
-    "watcherRecord()": 2,
-    "clonePlainData(": 2
+    "structuredClone(": 17,
+    "clonePlainData(": 1
   },
   "src/main/agents/cursor.ts": {
     "cloneHostSnapshot(": 1,
@@ -33,6 +22,9 @@
   "src/main/agents/deepseek.ts": {
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/detailSends.ts": {
+    "structuredClone(": 4
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
@@ -49,6 +41,10 @@
   },
   "src/main/agents/heldProviderGate.ts": {
     "structuredClone(": 2
+  },
+  "src/main/agents/hermes.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
   },
   "src/main/agents/hostService.ts": {
     "shell()": 3
@@ -73,6 +69,16 @@
     "structuredClone(": 2,
     "cloneHostSnapshot(": 1,
     "clonePlainData(": 1
+  },
+  "src/main/agents/providers/claude/claude.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/providers/codex/codex.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
   },
   "src/main/agents/questionPages.ts": {
     "structuredClone(": 1
@@ -108,7 +114,11 @@
   "src/main/agents/watcher.ts": {
     "structuredClone(": 1,
     "shell()": 1,
-    "watcherRecord()": 1
+    "WatcherRecords.copy()": 1
+  },
+  "src/main/agents/watcherRecords.ts": {
+    "WatcherRecords.copy()": 1,
+    "clonePlainData(": 1
   },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,
@@ -137,7 +147,7 @@
   "src/main/omarchy/setup.ts": {
     "structuredClone(": 3
   },
-  "src/main/tools/browser.ts": {
+  "src/main/tools/browserTasks.ts": {
     "structuredClone(": 3
   },
   "src/main/tools/cloudIphone/service.ts": {

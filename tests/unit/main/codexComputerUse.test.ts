@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { CodexActivityProjection, codexItemSchema, computerUseNeeds } from '../../../src/main/agents/codexActivity'
-import { answerRequest, pendingRequest } from '../../../src/main/agents/codexRequests'
+import { CodexActivityProjection, codexItemSchema, computerUseNeeds } from '../../../src/main/agents/providers/codex/codexActivity'
+import { answerRequest, pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 import type { AgentThread } from '../../../src/shared/agents'
 
 const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 'Fixture', modelId: 'fixture', status: 'running', requests: [], messages: [] })

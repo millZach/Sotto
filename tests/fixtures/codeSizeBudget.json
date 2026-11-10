@@ -1,7 +1,10 @@
 {
   "src/main/agents/clientUpdates.ts": 29,
-  "src/main/agents/control.ts": 330,
+  "src/main/agents/control.ts": 319,
   "src/main/agents/detailRevisions.ts": 19,
+  "src/main/agents/detailSends.ts": 19,
   "src/main/agents/statePublishers.ts": 18,
-  "src/main/agents/threadTitles.ts": 22
+  "src/main/agents/threadTitles.ts": 22,
+  "src/main/agents/watcherRecords.ts": 13,
+  "src/main/agents/workspaceText.ts": 6
 }

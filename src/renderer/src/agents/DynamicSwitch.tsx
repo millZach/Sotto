@@ -71,7 +71,7 @@ export function useNewThreadsDynamicSwitch({ state, provider, modelName }: {
   const providers = [...new Set([...provider ? [provider] : [], ...firstAllowedProviders(state)])]
   return { overseeing, blocked: chosen && !offered,
     suffix: overseeing ? t({ message: 'oversees', comment: 'After a model\'s name on a Dynamic thread\'s chip: Opus 5.5 oversees.' }) : undefined,
-    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} description={t`${modelName} oversees each new thread and chooses a model for each piece. It does no work itself.`} checked={overseeing}
+    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} checked={overseeing}
       onCheckedChange={next => {
         if (next && list?.providers === undefined) { close(); setAsking(true); return }
         void save({ newThreads: next })
@@ -103,13 +103,8 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   // The thread's own provider has its code already, whether or not it is ready just now.
   const providers = [...new Set([...thread.providerId ? [thread.providerId] : [], ...firstAllowedProviders(state)])]
   const makeList = (): Promise<boolean> | undefined => app?.actions.updateSettings({ dynamicThreads: { ...list ?? DEFAULT_DYNAMIC_THREADS, providers } })
-  const began = thread.nativeSessionStarted !== false
-  const description = fixed ? t`It can change once this turn finishes.`
-    : began && !overseeing ? t`${modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself.`
-    : began ? t`${modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on.`
-    : t`${modelName} oversees and chooses a model for each piece. It does no work itself.`
   return { overseeing, suffix: overseeing ? t({ message: 'oversees', comment: 'After a model\'s name on a Dynamic thread\'s chip: Opus 5.5 oversees.' }) : undefined,
-    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} description={description} checked={overseeing} disabled={fixed}
+    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} {...fixed ? { description: t`It can change once this turn finishes.` } : {}} checked={overseeing} disabled={fixed}
       onCheckedChange={next => {
         if (next && list?.providers === undefined) { close(); setAsking(true); return }
         set(next)

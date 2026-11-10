@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
 
 // A Codex fork carries its source's own turn and item IDs, and its history names the source's agents (#1028). What
 // Sotto keys by those IDs is kept per thread, so a fork never takes over its source's agents or turns.

@@ -139,11 +139,11 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
     }
     let control = f.control, loaded: Readonly<WatcherRecord> | undefined
     if (options.savedPromptTurns !== undefined) await control.start()
-    control.mutateWatcher(next => Object.assign(next, record))
+    control.watcherRecords.mutate(next => Object.assign(next, record))
     let attached = await attach(control)
     if (options.savedPromptTurns !== undefined) {
       // Saved once Watcher has settled it, so the restart has nothing to change but the prompt turns it loads.
-      await control.updateWatcher(() => undefined)
+      await control.watcherRecords.update(() => undefined)
       await attached.detach()
       control.dispose()
       const path = join(workspace.root, WATCHER_RECORD_FILE), saved = JSON.parse(await readFile(path, 'utf8')) as { watcher: WatcherRecord }
@@ -153,14 +153,14 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       await writeFile(path, JSON.stringify(saved), 'utf8')
       control = f.create()
       await control.start()
-      loaded = control.watcherRecordView()
+      loaded = control.watcherRecords.view()
       attached = await attach(control, true)
     }
     const { service, observe, publish, rooms } = attached
     // The wake-up pass a publish runs at most every WATCHER_OBSERVE_MS, run now.
     const wakePass = () => (service as unknown as { wakes: WatcherWakeUp }).wakes.observe()
     return { service, control, snapshot, sends, threadVisits, loaded, observe, publish, wakePass, rooms,
-      state: (): Readonly<WatcherRecord> => control.watcherRecordView(),
+      state: (): Readonly<WatcherRecord> => control.watcherRecords.view(),
       close: async () => { const failures: unknown[] = []; for (const cleanup of cleanups.splice(0).reverse()) { try { await cleanup() } catch (error) { failures.push(error) } }
         if (failures.length) throw new AggregateError(failures, 'Scale fixture cleanup failed') } }
   } catch (error) {

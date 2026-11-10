@@ -4,7 +4,7 @@ import { i18n } from '@lingui/core'
 import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ATTACHED_FILE_TOO_LARGE, ATTACHED_IMAGE_TOO_LARGE, ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL, ATTACHMENTS_TOO_LARGE_IN_TOTAL, ATTACHMENTS_TOO_MANY,
-  FILE_UPLOAD_INCOMPLETE, HOST_CANNOT_STAGE_FILES, imagesNotReadRefusal, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentAttachmentStageRequest } from '../../../src/shared/agents'
+  FILE_UPLOAD_INCOMPLETE, HOST_CANNOT_STAGE_FILES, imagesNotReadRefusal, SCREENSHOT_WRONG_TYPE, VIDEO_TOO_LARGE, VIDEOS_TOO_LARGE_IN_TOTAL, type AgentAttachmentHandle, type AgentAttachmentStageRequest } from '../../../src/shared/agents'
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
 import { AttachmentPreviews } from '../../../src/renderer/src/agents/MessageContent'
 import { attachmentKind, fileTypeLabel, splitAttachmentName } from '../../../src/renderer/src/agents/attachmentKinds'
@@ -31,6 +31,7 @@ const MB = 1024 * 1024
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10]
 const png = (name = 'shot.png') => new File([new Uint8Array(PNG_SIGNATURE)], name, { type: 'image/png' })
 const pdf = (name = 'quarterly-report.pdf') => new File(['%PDF-1.7'], name, { type: 'application/pdf' })
+const movie = (name = 'IMG_0412.MOV') => new File(['ftypqt'], name, { type: 'video/quicktime' })
 /** A file that reports `size` bytes, so a test can cross the limits without allocating them. */
 const sized = (file: File, size: number) => Object.defineProperty(file, 'size', { value: size })
 const attached = (id: string, mimeType: string, sizeBytes: number, name = id): AgentAttachmentHandle => ({ id, name, mimeType, sizeBytes, digest: 'a'.repeat(64) })
@@ -99,6 +100,9 @@ describe('attaching any file in the composer (ADR-0131)', () => {
     ['an image over 10 MB', () => [sized(png(), 10 * MB + 1)], [], ATTACHED_IMAGE_TOO_LARGE],
     ['images over 20 MB', () => [sized(png('a.png'), 8 * MB), sized(png('b.png'), 8 * MB)], [attached('kept', 'image/png', 5 * MB)], ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL],
     ['everything over 50 MB', () => [sized(pdf('a.pdf'), 20 * MB), sized(pdf('b.pdf'), 20 * MB)], [attached('kept', 'application/zip', 11 * MB)], ATTACHMENTS_TOO_LARGE_IN_TOTAL],
+    // A video has its own limit and total (ADR-0131, November 9 amendment).
+    ['a video over 500 MB', () => [sized(movie(), 500 * MB + 1)], [], VIDEO_TOO_LARGE],
+    ['videos over 500 MB', () => [sized(movie('b.mov'), 300 * MB)], [attached('kept', 'video/mp4', 201 * MB)], VIDEOS_TOO_LARGE_IN_TOTAL],
   ] as const)('refuses %s before reading any of them', (_, files, initial, sentence) => {
     const read = vi.spyOn(Blob.prototype, 'arrayBuffer')
     render(<Harness initial={[...initial]} />)
@@ -112,6 +116,24 @@ describe('attaching any file in the composer (ADR-0131)', () => {
     render(<Harness initial={[attached('kept', 'application/zip', 25 * MB)]} />)
     pick(sized(png('a.png'), 10 * MB), sized(png('b.png'), 10 * MB), sized(pdf(), 5 * MB))
     await waitFor(() => expect(staged).toHaveLength(3))
+  })
+
+  it('takes videos up to 500 MB apart from the 50 MB, and stages one larger than a file from its path, never its bytes', async () => {
+    const byPath: unknown[] = []
+    const agents = (window as unknown as { sotto: { agents: Record<string, unknown> } }).sotto.agents
+    agents.stageAttachmentFile = vi.fn(async (request: { name: string; mimeType: string; file: File }) => {
+      byPath.push(request); return { ...attached(crypto.randomUUID(), request.mimeType, request.file.size, request.name) }
+    })
+    render(<Harness initial={[attached('kept', 'application/zip', 25 * MB), attached('kept-2', 'application/zip', 25 * MB)]} />)
+    const clip = sized(movie(), 400 * MB)
+    const read = vi.fn(async () => new ArrayBuffer(0))
+    Object.defineProperty(clip, 'arrayBuffer', { value: read })
+    pick(clip, sized(movie('small.mov'), 2 * MB))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^Remove (IMG_0412|small)\.MOV$/iu })).toHaveLength(2))
+    expect(byPath).toEqual([expect.objectContaining({ threadId: 'workshop', name: 'IMG_0412.MOV', mimeType: 'video/quicktime', file: clip })])
+    // The small one goes by bytes, as any file does; the large one's are never read into the window.
+    expect(staged).toEqual([expect.objectContaining({ name: 'small.mov', mimeType: 'video/quicktime' })])
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('names the image a model that reads none is refused, and takes files on that model', async () => {

@@ -5,7 +5,8 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EffortPicker } from '../../../src/renderer/src/agents/EffortPicker'
 import { SplitChipEffort } from '../../../src/renderer/src/agents/SplitChipEffort'
-import { effortChoices, ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
+import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
+import { effortChoices } from '../../../src/renderer/src/agents/permissionPresentation'
 import { ULTRACODE, withUltracode } from '../../../src/shared/ultracode'
 import type { AgentState } from '../../../src/shared/agents'
 import { fixture, mount, setupThreadOptionsTests } from '../../fixtures/renderer/threadOptionsHarness'
@@ -22,7 +23,7 @@ const traceMark = (value: string, options: ReturnType<typeof levels>): string | 
   const { container } = render(<EffortPicker value={value} options={options} disabled={false} onChange={() => {}} />)
   return container.querySelector('.effort-picker-anchor')!.getAttribute('data-effort-trace')
 }
-/** The harness's state with Claude's model offering Ultracode past Max, as the catalog reports a model with Extra high. */
+/** The harness's state with Claude's model offering Ultracode past Max, as the catalog reports a model with XHigh. */
 function claudeState(reasoningEffort: string): AgentState {
   const state = fixture({ reasoningEffort })
   state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])

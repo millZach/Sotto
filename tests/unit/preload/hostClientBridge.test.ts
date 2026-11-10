@@ -1,8 +1,12 @@
 import { threadsStateFixture as sharedThreadsStateFixture } from '../../fixtures/agentState'
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
+import { preloadElectron } from '../../fixtures/preloadElectron'
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
+import { createSottoBridge, createSottoPopupBridge, createSottoWidgetBridge, exposeRendererBridge } from '../../../src/preload'
 import { hostClientBridge } from '../../../src/preload/hostClientBridge'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
+import { DICTATION_TIMING, DICTATION_TIMING_ARGUMENT } from '../../../src/shared/dictationTiming'
 import { agentCommandSchema, EMPTY_AGENT_HOST, defaultAgentConfiguration, type AgentState, type AgentCommand, type AgentThreadDetail } from '../../../src/shared/agents'
 function threadsStateFixture(): AgentState {
   return sharedThreadsStateFixture({ configuration: defaultAgentConfiguration(),
@@ -23,6 +27,7 @@ function setup() {
     onThreadDetail: (listener: (detail: AgentThreadDetail) => void) => { detailListener = listener; return () => { detailListener = undefined } },
     attachmentPreview: vi.fn(async (_request: { threadId: string; messageId: string; attachmentId: string }) => { void _request; return null }),
     workingCopyOptions: vi.fn(async (_projectId: string) => { void _projectId; return { isGit: false } }) },
+    browser: { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
     files: { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), reveal: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
     gitChanges: { review: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), watch: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
     subagents: { page: vi.fn(async (request: { threadId: string }) => ({ ...request })) },
@@ -67,8 +72,10 @@ it('scopes detail push/read and decodes attachment, project, files and request-d
 })
 it('rejects another host before dispatch and preserves legacy host-less bridges', async () => {
   const { bridge, raw, state } = setup(); await bridge.agents.get()
-  expect(() => bridge.agents.command({ type: 'select-thread', threadId: hostEntityKey('22222222-2222-4222-8222-222222222222', 'thread') })).toThrow('another host')
+  await expect(bridge.agents.command({ type: 'select-thread', threadId: hostEntityKey('22222222-2222-4222-8222-222222222222', 'thread') })).rejects.toThrow('another host')
   expect(raw.agents.command).not.toHaveBeenCalled()
+  await expect(bridge.browser.list({ threadId: hostEntityKey('22222222-2222-4222-8222-222222222222', 'thread') })).rejects.toThrow('another host')
+  expect(raw.browser.list).not.toHaveBeenCalled()
   delete state.hostId; delete state.host.hostId
   expect((await hostClientBridge(raw).agents.get()).host.threads[0]!.id).toBe('visual-gate')
 })
@@ -92,7 +99,7 @@ it('keeps routed agent and remote answer references intact, passes a paired host
   expect(await bridge.files.list({ threadId: hostEntityKey(HOST, 'thread') })).toEqual({ ok: true, value: { threadId: hostEntityKey(HOST, 'thread') } })
   expect(raw.files.list).toHaveBeenLastCalledWith({ threadId: 'thread' })
   // Anything else that would act here for another host's thread is refused before dispatch.
-  expect(() => bridge.files.reveal({ threadId: key })).toThrow('another host')
+  await expect(bridge.files.reveal({ threadId: key })).rejects.toThrow('another host')
   expect(raw.files.reveal).not.toHaveBeenCalled()
   // A terminal's calls pass too, for main to run over SSH (ADR-0183); this computer's own thread keeps its own ID.
   ;(raw as unknown as { terminal: { list: unknown } }).terminal = { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) }
@@ -106,11 +113,60 @@ it('keeps routed agent and remote answer references intact, passes a paired host
   // An interactive visual's page is asked of main, which answers for a paired host's thread itself (ADR-0060).
   expect(await bridge.visuals.open({ threadId: key })).toEqual({ threadId: key })
   expect(raw.visuals.open).toHaveBeenLastCalledWith({ threadId: key })
-  expect(() => bridge.gitChanges.watch({ threadId: key })).toThrow('another host')
+  await expect(bridge.gitChanges.watch({ threadId: key })).rejects.toThrow('another host')
   expect(raw.gitChanges.watch).not.toHaveBeenCalled()
   state.connections = [{ hostId: remote, name: 'Forge', kind: 'remote', connected: true }]
   await bridge.agents.get()
   expect(await bridge.files.list({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
-  expect(() => bridge.files.reveal({ threadId: key })).toThrow('host machine')
+  await expect(bridge.files.reveal({ threadId: key })).rejects.toThrow('host machine')
   expect(raw.files.reveal).not.toHaveBeenCalled()
+})
+
+it('rejects invalid main and popup requests without dispatching IPC', async () => {
+  const ipc = preloadElectron().ipcRenderer
+  const bridge = createSottoBridge(ipc, 'win32', false, true)
+  const popup = createSottoPopupBridge(ipc, 'win32')
+  await expect(bridge.files!.list({ threadId: 'thread', path: 'subdir' })).rejects.toThrow()
+  await expect(bridge.agents!.command({ type: 'select-thread' } as never)).rejects.toThrow()
+  await expect(bridge.hosts!.command({ type: 'unknown' } as never)).rejects.toThrow()
+  await expect(bridge.usage!.read({ nativeId: 'private' } as never)).rejects.toThrow()
+  await expect(popup.command(null as never)).rejects.toThrow()
+  await expect(popup.command({ type: 'manual-send' } as never)).rejects.toThrow()
+  await expect(popup.command({ type: 'select-thread', threadId: 'thread' })).rejects.toThrow('AGENT_POPUP_COMMAND_REFUSED')
+  expect(ipc.invoke).not.toHaveBeenCalled()
+})
+
+it('registers all ten host subscriptions immediately and returns synchronous cleanup', () => {
+  const ipc = preloadElectron().ipcRenderer
+  const bridge = createSottoBridge(ipc, 'win32')
+  const subscriptions = [
+    bridge.agents!.onState, bridge.agents!.onThreadDetail!, bridge.terminal!.onEvent,
+    bridge.browser!.onEvent, bridge.browser!.onFrame!, bridge.cloudIphone!.onEvent,
+    bridge.gitChanges!.onChanged, bridge.subagents!.onChanged, bridge.requestDrafts!.onChanged!, bridge.memory!.onChanged,
+  ]
+  ipc.on.mockClear()
+  for (const subscribe of subscriptions) {
+    const stop = subscribe(vi.fn())
+    expect(stop).toBeTypeOf('function')
+    const [channel, listener] = ipc.on.mock.calls.at(-1)!
+    stop()
+    expect(ipc.removeListener).toHaveBeenLastCalledWith(channel, listener)
+  }
+  expect(ipc.on).toHaveBeenCalledTimes(10)
+  ipc.on.mockImplementationOnce(() => { throw new Error('subscription unavailable') })
+  expect(() => bridge.memory!.onChanged(vi.fn())).toThrow('subscription unavailable')
+})
+
+it('keeps dictation timing void and dispatches marks immediately in main and widget', () => {
+  const ipc = preloadElectron().ipcRenderer
+  ipc.invoke.mockResolvedValue(undefined)
+  const exposeInMainWorld = vi.fn()
+  exposeRendererBridge({ exposeInMainWorld }, ipc, ['--sotto-renderer-role=main', DICTATION_TIMING_ARGUMENT])
+  const main = exposeInMainWorld.mock.calls[0]![1] as ReturnType<typeof createSottoBridge>
+  const widget = createSottoWidgetBridge(ipc, 'win32', null, false, true)
+  const mark = { event: 'stop-pressed', atMs: 1 } as const
+  for (const bridge of [main, widget]) {
+    expect(bridge.dictationTiming!.mark(mark)).toBeUndefined()
+    expect(ipc.invoke).toHaveBeenLastCalledWith(DICTATION_TIMING, mark)
+  }
 })

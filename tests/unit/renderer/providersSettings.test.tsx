@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState, type ProviderId } from '../../../src/shared/agents'
 import { HELD_PROVIDER_ENTRIES } from '../../../src/shared/heldProviders'
 import { useAgentConnection, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
+import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
 import { aimProviderSettings, takeAimedProvider } from '../../../src/renderer/src/features/settings/settingsTarget'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
-import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountSettings'
+import { AgentSetupFields } from '../../../src/renderer/src/features/settings/AgentAccountSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { createBridge, createController } from '../../fixtures/renderer/appHarness'
@@ -288,15 +288,53 @@ describe('independent provider settings', () => {
     const grok = state.host.providers!.find(provider => provider.id === 'grok')!
     grok.capabilities = { ...caps, configureThreadModel: false }
     state.host.models = state.host.models.map(model => model.providerId === 'grok' ? { ...model, reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'auto', 'full-access'] } : model)
-    const thread = { ...state.host.threads[0]!, id: 'grok-thread', providerId: 'grok' as const, modelId: 'grok:same-native-model', runtimeMode: 'approval-required' as const }
+    const thread = { ...state.host.threads[0]!, id: 'grok-thread', providerId: 'grok' as const, modelId: 'grok:same-native-model', runtimeMode: 'approval-required' as const, reasoningEffort: 'high' }
     state.host.threads = [thread]
     const command = vi.fn(async () => state)
     render(<ThreadOptions thread={thread} state={state} command={command} />)
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeDisabled()
-    expect(screen.getByLabelText('Thread reasoning')).toBeDisabled()
+    expect(screen.queryByRole('combobox', { name: 'Thread reasoning' })).toBeNull()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
     fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'grok-thread', runtimeMode: 'full-access' }))
+  })
+  it.each([false, true])('says why a started Grok thread keeps its effort, from the keyboard and to a screen reader (quiet %s)', quietComposer => {
+    const state = fixture()
+    const grok = state.host.providers!.find(provider => provider.id === 'grok')!
+    grok.capabilities = { ...caps, configureThreadModel: false }
+    state.host.models = state.host.models.map(model => model.providerId === 'grok' ? { ...model, reasoningEfforts: ['low', 'high'] } : model)
+    const thread = { ...state.host.threads[0]!, id: 'grok-thread', providerId: 'grok' as const, modelId: 'grok:same-native-model', reasoningEffort: 'high' }
+    state.host.threads = [thread]
+    const command = vi.fn(async () => state)
+    render(<ThreadOptions thread={thread} state={state} command={command} {...(quietComposer ? { quiet: { effortScore: 0 } } : {})} />)
+    const reason = 'Grok Build keeps the effort a thread started on. To use another level, start a new thread.'
+    const chip = screen.getByRole('button', { name: 'Thread reasoning, High' })
+    // Reachable, said to be unavailable, and described by its reason; it opens nothing.
+    expect(chip).not.toBeDisabled()
+    expect(chip).toHaveAttribute('aria-disabled', 'true')
+    expect(chip).toHaveAccessibleDescription(reason)
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toHaveAttribute('data-shown')
+    fireEvent.click(chip)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveAttribute('data-shown')
+    fireEvent.keyDown(chip, { key: 'Escape' })
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toHaveAttribute('data-shown')
+    // A press from the keyboard shows it too, and leaving the chip puts it away.
+    fireEvent.click(chip)
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveAttribute('data-shown')
+    fireEvent.blur(chip)
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toHaveAttribute('data-shown')
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('keeps the effort chip a choice where the provider can change a started thread', () => {
+    const state = fixture()
+    state.host.models = state.host.models.map(model => model.providerId === 'grok' ? { ...model, reasoningEfforts: ['low', 'high'] } : model)
+    const thread = { ...state.host.threads[0]!, id: 'grok-thread', providerId: 'grok' as const, modelId: 'grok:same-native-model', reasoningEffort: 'high' }
+    state.host.threads = [thread]
+    render(<ThreadOptions thread={thread} state={state} command={vi.fn(async () => state)} />)
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).not.toBeDisabled()
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
   })
   it.each([undefined, 'grok'] as const)('does not queue a healthy send behind provider connection %s in the renderer', async provider => {
     const state = fixture()
@@ -338,7 +376,7 @@ describe('a provider’s models, in provider settings', () => {
     expect(field).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByRole('dialog', { name: 'Codex models' })
     expect(within(list).getByText('GPT-6.1-Sol')).toBeVisible()
-    expect(within(list).getByText('low · high')).toBeVisible()
+    expect(within(list).getByText('Low · High')).toBeVisible()
     expect(within(list).getByText('GPT-6-Codex-Mini')).toBeVisible()
     // A model the provider lists but cannot run is left out, not labelled.
     expect(within(list).queryByText('GPT-5-Retired')).toBeNull()

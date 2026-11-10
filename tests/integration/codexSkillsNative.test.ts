@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 
 const artifacts = evidenceDirectory('artifacts/skills-native')
 

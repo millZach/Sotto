@@ -8,6 +8,7 @@ import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 
 /** A provider that says what changed, event by event, as the native adapters do. */
 class EventProvider extends FakeProviderHost {
@@ -38,7 +39,7 @@ async function fixture(streamingPublishCost = true) {
     await rm(directory, { recursive: true, force: true })
   })
   const adapter = new EventProvider()
-  const host = new WorkspaceHost(adapter, directory, () => true, undefined, false, false, streamingPublishCost)
+  const host = new WorkspaceHost(adapter, directory, { historyEnabled: () => true, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: streamingPublishCost })
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   await host.connect()

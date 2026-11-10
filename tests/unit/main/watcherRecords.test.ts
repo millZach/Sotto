@@ -35,14 +35,14 @@ describe('watcher records and workspace migration', () => {
     const choice = { provider: 'codex' as const, modelId: plain, speed: 'ultrafast' as const }
     for (const input of [choice, { ...choice, speedSourceModelId: plain }, { ...choice, speedSourceModelId: 'missing' }]) {
       expect(await watcher.open(input)).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
-      expect(f.control.watcherRecord().current).toBeNull()
+      expect(f.control.watcherRecords.copy().current).toBeNull()
     }
     const opened = await watcher.open({ ...choice, speedSourceModelId: fast })
     expect(opened, JSON.stringify(opened)).toMatchObject({ status: 'ok' })
     const threadId = watcher.state().current!.target.threadId
     expect(watcher.state().currentOptions).toMatchObject({ modelId: plain, speed: 'ultrafast' })
     expect(speedRuns(f.control.watcherSnapshot(), plain, 'ultrafast')).toBeNull()
-    expect(f.control.watcherRecord().creation).toBeNull()
+    expect(f.control.watcherRecords.copy().creation).toBeNull()
     // Source metadata cannot turn an explicit reconfiguration into a saved choice.
     expect(await watcher.open({ ...choice, speedSourceModelId: fast })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
     expect(await f.control.commandShell({ type: 'configure-thread', threadId, speed: 'ultrafast' })).toMatchObject({ error: 'This model does not offer ultrafast speed.' })
@@ -136,11 +136,11 @@ describe('prompt turns Watcher keeps', () => {
       control: { historyEnabled: () => false, watcherEnabled: owl } })
     cleanup.push(async () => { await f.dispose(); await workspace.stop(); await workspace.remove() })
     await f.control.start()
-    f.control.mutateWatcher(record => { record.promptTurns = Array.from({ length: 120 }, (_, index) => turn(index)) })
+    f.control.watcherRecords.mutate(record => { record.promptTurns = Array.from({ length: 120 }, (_, index) => turn(index)) })
     // Stable keeps Watcher's saved record whole (ADR-0072).
-    expect(f.control.watcherRecordView().promptTurns).toHaveLength(owl ? WATCHER_PROMPT_TURNS_KEPT : 120)
-    const trimmed = f.control.watcherRecordView()
-    f.control.mutateWatcher(() => undefined)
-    expect(f.control.watcherRecordView()).toBe(trimmed)
+    expect(f.control.watcherRecords.view().promptTurns).toHaveLength(owl ? WATCHER_PROMPT_TURNS_KEPT : 120)
+    const trimmed = f.control.watcherRecords.view()
+    f.control.watcherRecords.mutate(() => undefined)
+    expect(f.control.watcherRecords.view()).toBe(trimmed)
   })
 })

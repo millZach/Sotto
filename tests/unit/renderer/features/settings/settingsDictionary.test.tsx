@@ -228,7 +228,8 @@ describe('Settings draft editing work', () => {
     const count = () => { commits += 1 }
     const view = render(<React.Profiler id="settings-drafts" onRender={count}><SettingsView {...props} /></React.Profiler>)
     await selectCategory(category)
-    await act(async () => undefined)
+    // Settle mount and navigation updates before measuring edits; microphone enumeration now updates its own child.
+    await act(async () => view.rerender(<React.Profiler id="settings-drafts" onRender={count}><SettingsView {...props} /></React.Profiler>))
     const input = screen.getByRole('textbox', { name: label })
     const before = commits
     for (let end = 1; end <= text.length; end += 1) fireEvent.change(input, { target: { value: text.slice(0, end) } })

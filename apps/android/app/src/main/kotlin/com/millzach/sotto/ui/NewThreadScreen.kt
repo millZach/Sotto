@@ -1,5 +1,4 @@
 package com.millzach.sotto.ui
-
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.millzach.sotto.app.AppModel
+import com.millzach.sotto.core.EffortWords
 import com.millzach.sotto.core.FolderListing
 import com.millzach.sotto.core.FolderResult
 import com.millzach.sotto.core.ThreadRef
@@ -153,7 +153,7 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                         ) { modelID = it; resetOptions() }
                         val efforts = chosenModel?.reasoningEfforts
                         if (!efforts.isNullOrEmpty()) {
-                            Picker("Effort", effort.replaceFirstChar { it.uppercase() }, efforts.map { Triple(it, it.replaceFirstChar { c -> c.uppercase() }, true) }) { effort = it }
+                            Picker("Effort", EffortWords.name(effort), efforts.map { Triple(it, EffortWords.name(it), true) }) { effort = it }
                         }
                         if (chosenModel != null) {
                             val permissions = chosenModel.permissions

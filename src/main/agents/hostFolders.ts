@@ -61,12 +61,12 @@ async function listDirectory(path: string, platform: NodeJS.Platform, home: stri
     return { status: code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unreadable', path }
   }
   const candidates = entries.filter(entry => isCandidateName(entry.name, platform))
-  const isDirectory = await Promise.all(candidates.map(async entry => {
+  const isDirectory = await mapWithConcurrency(candidates, GIT_CONCURRENCY, async entry => {
     if (entry.isDirectory()) return true
     if (!entry.isSymbolicLink()) return false
     // A junction or a symlink counts as a folder only when its target still resolves to one; a broken link is skipped.
     try { return (await stat(pathModule.join(path, entry.name))).isDirectory() } catch { return false }
-  }))
+  })
   const names = candidates.filter((_, index) => isDirectory[index]).map(entry => entry.name)
   names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }) || (a < b ? -1 : a > b ? 1 : 0))
   const truncated = names.length > HOST_FOLDERS_MAX

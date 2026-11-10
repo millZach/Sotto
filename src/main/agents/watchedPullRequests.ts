@@ -1,7 +1,7 @@
-import type { GitHubRateLimit } from './github'
-import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import type { GitHubRateLimit } from './git/github'
+import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './git/githubBabysitReads'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 import type { PullRequestObservation } from './watcherEvidence'
 import { PULL_REQUEST_HOST, PULL_REQUEST_PASS_MS, REMARKS_REREAD_MS, askPullRequests, checksAfter, checksDue, isFailedRead, openPullRequestObservation, type ChecksRead } from './backgroundPullRequestReads'
 

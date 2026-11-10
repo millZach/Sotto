@@ -144,7 +144,7 @@ describe('Devin dispatch and decision boundaries', () => {
 
   it('keeps Sotto history in memory when local history is off', async () => {
     const directory = join(f.root, 'sotto-workspace')
-    const workspace = new WorkspaceHost(f.host, directory, () => false)
+    const workspace = new WorkspaceHost(f.host, directory, { historyEnabled: () => false })
     try {
       await workspace.initialize(); workspace.observeThreads([threadId])
       await send(threadId, 'PRIVATE_DEVIN_SYNTHETIC_PROMPT')

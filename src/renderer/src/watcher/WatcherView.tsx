@@ -11,14 +11,14 @@ import { fitSpeed } from '../../../shared/workerRoles'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
-import { claimRoomFocus, handRoomFocus } from '../components/AppShell'
+import { claimRoomFocus } from '../components/pageShortcuts'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
 import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
-import { railWidth, SidebarFoot, SidebarRail } from '../agents/SidebarFrame'
+import { SidebarFoot } from '../agents/SidebarFrame'
 import { useSidebarSize } from '../agents/sidebarSize'
 import { EffortPicker } from '../agents/EffortPicker'
 import { SplitChipEffort } from '../agents/SplitChipEffort'
@@ -35,7 +35,8 @@ import type { NextPrompt } from '../../../shared/nextPrompt'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
-import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
+import { nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
+import { effortChoices } from '../agents/permissionPresentation'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -63,7 +64,7 @@ import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverv
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
-import { moodOf, owlKey, type WatchedOwl } from './owlFamily'
+import { asksOf, failedOf, moodOf, owlKey, toldOf, type WatchedOwl } from './owlFamily'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { TeamsPage } from './TeamsPage'
 import { placeTeammateMessages, useTeamsBridge, useTeamsState } from './teamsState'
@@ -507,6 +508,9 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
   const idOf = useMemo(() => threadAddressIndex(state), [state])
   return useShared(useMemo<readonly WatchedOwl[]>(() => room === null ? [] : watchedRows(room).map(row => ({
     key: owlKey(row.target), title: row.title, threadId: idOf(row.target) ?? null, mood: moodOf(row),
+    // For the living night scene (ADR-0199): its owl winces after a failed turn, shows what it waits on the user for,
+    // and is called to by Watcher's owl when Watcher sends it a message.
+    failed: failedOf(row), asks: asksOf(row), told: toldOf(row), settled: row.settled,
   })), [room, idOf]))
 }
 
@@ -532,7 +536,6 @@ export function WatcherView({ now: fixedNow }: {
   const command = agents.command
   const mac = app?.platform === 'darwin'
   const sidebar = useSidebarSize()
-  const railOn = useOwlFeature('sidebar-rail')
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
   const continued = useContinueEnabled()
@@ -758,7 +761,7 @@ export function WatcherView({ now: fixedNow }: {
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-sidebar-collapsed={sidebar.chosenCollapsed || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -782,11 +785,9 @@ export function WatcherView({ now: fixedNow }: {
         </div>
       </div>
     </section>
-    {/* The footer follows only the user's own Collapse: a narrow window stands the Threads sidebar as the rail and opens it
-        over a thread, and this room has no thread to open it over, so its row keeps the bottom left at every width. */}
-    <div className={`watcher-foot${sidebar.chosenCollapsed ? ` thread-nav${mac ? ' thread-nav--mac' : ''}` : ''}`} style={{ width: sidebar.chosenCollapsed ? railWidth(mac, railOn) : sidebar.width }}>
-      {sidebar.chosenCollapsed ? <SidebarRail platform={app?.platform} onExpand={() => { handRoomFocus('watcher'); sidebar.choose(false) }} /> : <SidebarFoot />}
-    </div>
+    {/* The room has no thread list, so it has no rail either: its footer keeps its row at the bottom left, at the sidebar's
+        saved width, whether or not the Threads sidebar is collapsed. */}
+    <div className="watcher-foot" style={{ width: sidebar.width }}><SidebarFoot /></div>
     <PageWindowControls />
     {/* The room has no thread list, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}

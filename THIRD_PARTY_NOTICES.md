@@ -203,6 +203,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `Spline Sans Mono` (font, latin woff2 subset) | `v13 (Google Fonts static serving)` | OFL-1.1 | The Spline Sans Mono Project Authors |
 | `Figtree` (font, latin + latin-ext woff2 subsets) | `v9 (Google Fonts static serving)` | OFL-1.1 | The Figtree Project Authors |
 | `T3 Code` (provider icon paths adapted in ProviderMark.tsx) | `d1d15c67 (apps/web/src/components/Icons.tsx)` | MIT | T3 Tools Inc. |
+| `Hermes Agent` (Nous girl provider artwork, cropped PNGs) | `v0.23.0` | MIT | Nous Research |
 | `T3 Code` (product events: delivery limits and account reads adapted in src/main/productEvents) | `6f413648 (apps/server/src/telemetry/AnalyticsService.ts, apps/server/src/telemetry/Identify.ts)` | MIT | T3 Tools Inc. |
 | `T3 Code` (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes) | `d1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)` | MIT | T3 Tools Inc. |
 
@@ -2893,6 +2894,34 @@ Used under the Apache License 2.0, reproduced in full in the "Apache License 2.0
 MIT License
 
 Copyright (c) 2026 T3 Tools Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Hermes Agent MIT license
+
+The provider artwork in `src/renderer/src/assets/providers/hermes-{black,white}.png` is cropped and rasterized from `assets/nous-girl-{black,white}.svg` in NousResearch/hermes-agent v0.23.0.
+
+```text
+MIT License
+
+Copyright (c) 2025 Nous Research
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

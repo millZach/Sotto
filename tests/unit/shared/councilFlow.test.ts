@@ -83,12 +83,12 @@ describe('seats Sotto fills', () => {
     expect(seats.chair?.model?.name).toBe('gpt-6-luna')
   })
 
-  it('fills an empty seat with a model no chosen seat holds, and notes a model held twice', () => {
+  it('fills an empty seat with a model no chosen seat holds, without a note for repeated models', () => {
     const sol = { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'xhigh' }
     const seats = councilSeatsInForce([sol, null, sol], null, four)
     expect(seats.panelists.map(seat => seat?.model?.name)).toEqual(['gpt-6.1-sol', 'opus', 'gpt-6.1-sol'])
     expect(seats.panelists[0]?.reasoningEffort).toBe('xhigh')
-    expect(councilSeatNotes(seats)).toContainEqual({ kind: 'same-model', seats: [0, 2] })
+    expect(councilSeatNotes(seats)).toEqual([])
   })
 
   it('keeps a chosen seat whose provider is away and says so, and notes a seat that cannot read this computer\'s files', () => {

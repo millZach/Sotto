@@ -10,6 +10,8 @@ Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prot
 
 **Amended November 2, 2026: callouts (part 6)** (below), by Zach's picks on `docs/prototypes/inline-media-callouts-prototype.html`.
 
+**Amended November 9, 2026: pictures in steps** (below), by Zach's picks on the prototype kept as the tag `prototype/pictures-in-steps`. A tool's pictures, a picture the agent viewed and a turn's written files sit small in the lines of the steps that made them; only what an agent showed through `sotto_media` and an image the user asked for stand as tiles. Decision 4's tiles now hold those two alone.
+
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
 
 ## Context
@@ -114,6 +116,18 @@ Zach marked up an agent's picture on the desktop and found no way to move a mark
 
 **28. Moves are steps of Undo, and a drag touches only what it moves.** Each drag, resize, size change or deleted mark is one step of **Undo**, and a run of arrow-key presses moving one mark, or resizing it, is one step. If the marks change during a drag, by **Undo** or **Delete** say, the change wins and the drag stops, so letting go brings nothing back. On the desktop a drag holds its marks outside React's state, the way a line being drawn already does, and redraws only the marks moving (`markupEditor.perf.test.tsx`). As before, nothing of the marks is kept but the copy, and no outline or handle goes onto it.
 
+## Pictures in steps, November 9, 2026
+
+Zach, on November 9: "Sotto takes up your entire thread with images, so I would like the images to be in the actual thinking steps rather than embedded directly into the thread. If you want to correct an image, you just click on it, and it has the same interaction it has today... And if a model wants to show you a specific image, it can then use an MCP tool to embed that itself." He picked from a prototype kept as the tag `prototype/pictures-in-steps`: variant A, a strip at the end of a step's line that the folded line carries too; three pictures before a count; the capture switch kept; an image the user asked for kept as a tile; desktop and iPhone together, every provider. It stays behind `inline-media`.
+
+**29. A step's pictures sit at the end of its line.** Every picture and video on a step that is not decision 30's sits small at the end of that step's line, before its time: the newest three, 34 by 24 points, with a count such as **+4** for the earlier ones. A video comes before a picture among the three, since the viewer reaches every picture of the line from any of them and a video only from its own mark. A turn's written files arrive newest first (decision 12), so they are turned round to count from the oldest like every other step's. A folded line carries the newest three of all it holds: a turn's **Worked for** line, a group's line, a row with steps under it, a browser line (ADR-0154) and the working line of the turn still running (ADR-0134); open, each step's line carries its own. A turn with pictures in its steps keeps its line in view, never a quiet or a moment turn, since the line is where they show while it is folded. On the iPhone a run's folded line ends with its newest three and each step's line with its own once the run is open. Every provider's pictures come this way, since the clients draw them from the same handles; no adapter changed.
+
+**30. What the agent showed, and an image the user asked for, stand as tiles.** A step `sotto_media`'s show_in_thread made, and a step that makes an image (decision 7), keep decision 4's tiles under the turn's work, with the owl at the easel while an image is made and callouts drawn on the tile. Those are the pictures the user asked to see.
+
+**31. A press does what a tile's did.** A picture in a step opens the image viewer, where Mark up is, stepping through the pictures in the steps of its turn, numbered by their place there; the count opens the first picture it stands for, or plays the next video when it stands for videos alone. A video's mark, a film sign since a video's frames are never read for a line, plays the video at once in decision 14's tile under the line, since the press was the ask; a second press or Escape takes the tile away and gives the mark the focus back. A GIF in a step opens in the viewer like any picture: the desktop's viewer plays it as it shows it whole, and the iPhone's shows it still. Reads keep decision 4: a picture in a step asks for its thumbnail, at tile size and from the same cache, only when it comes within a screen and a half of view, and lets it go further away. `inlineMediaTranscript.perf.test.tsx` holds a thread of 200 turns with a tool's screenshot in each to the tiles' counts.
+
+**32. The capture switch is unchanged.** Decisions 22 to 24 still say whether Sotto keeps a tool's pictures, a viewed picture and a turn's written files; on, they now sit in their steps rather than standing as tiles.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
@@ -132,3 +146,7 @@ Zach marked up an agent's picture on the desktop and found no way to move a mark
 - An agent places callouts only in the call that shows the picture. To move one or add another, it shows the picture again with the callouts it wants, which is a new step; the first step keeps its own.
 - A callout's note is the agent's words, shown as it wrote them and never translated, as its step's title is.
 - A tile with callouts shows its picture whole at its own shape, even a picture smaller than the tile, so the boxes land on it; a tile without them shows the picture as before.
+- With pictures in steps, a viewer opened from a step steps through the pictures in its turn's steps alone; a tile's viewer steps through the tiles alone. Before, both were one list.
+- A step holds at most eight handles, so a line's count says at most +5 for one step; a folded turn's can say more.
+- A line that hides two or more videos plays only the first of them from its count. It takes five videos in one line, which only a turn that wrote five makes.
+- A GIF a turn wrote plays in its tile no longer on the iPhone, since it sits in its step; it opens still in the full-screen viewer there.

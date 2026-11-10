@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ClaudeOriginJournal, type JournaledOrigin } from '../../../src/main/agents/claudeOriginJournal'
+import { ClaudeOriginJournal, type JournaledOrigin } from '../../../src/main/agents/providers/claude/claudeOriginJournal'
 
 type Origin = { readonly uuid: string }
 const parse = (value: unknown): JournaledOrigin<Origin> | undefined => {

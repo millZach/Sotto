@@ -47,7 +47,8 @@ export function openCodeProviderBlock(server: OwnServer): Record<string, unknown
   }
 }
 
-/** Every saved server as OpenCode's `providers` record, by server ID. */
+/** Servers OpenCode can run. A key held only by Hermes is never offered with a placeholder key. */
 export function openCodeProviders(servers: readonly OwnServer[]): Record<string, Record<string, unknown>> {
-  return Object.fromEntries(servers.map(server => [server.id, openCodeProviderBlock(server)]))
+  return Object.fromEntries(servers.filter(server => !server.keyed || server.keyKeeper !== 'hermes')
+    .map(server => [server.id, openCodeProviderBlock(server)]))
 }

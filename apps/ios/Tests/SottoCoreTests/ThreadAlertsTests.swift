@@ -101,6 +101,7 @@ final class ThreadAlertsTests: XCTestCase {
     func testOpenCodeHasItsNameAndAProviderThePhoneDoesNotKnowReadsTheAgent() {
         XCTAssertEqual(AgentNames.name("opencode"), "OpenCode")
         XCTAssertEqual(AgentNames.name("cursor"), "Cursor")
+        XCTAssertEqual(AgentNames.name("deepseek"), "DeepSeek", "DeepSeek Harness reads DeepSeek on the iPhone (ADR-0138)")
         XCTAssertEqual(AgentNames.name("future"), "The agent")
         XCTAssertEqual(AgentNames.name(""), "The agent")
     }

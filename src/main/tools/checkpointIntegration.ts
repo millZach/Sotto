@@ -8,7 +8,7 @@ import type { FilesService } from '../files/service'
 import { CheckpointService } from './checkpoints'
 import { threadsInCheckout } from '../agents/checkoutCandidates'
 
-export function connectCheckpoints(options: { files: FilesService; directory: string; host: WorkspaceHost; control: AgentControl; registry: ThreadRegistry | null; historyEnabled?: () => boolean; report: (message: string) => void }) {
+export function connectCheckpoints(options: { files: FilesService; directory: string; host: Pick<WorkspaceHost, 'workspaceSnapshot' | 'dormantThreadIds' | 'preservesDormantThread' | 'rollbackCapability' | 'isCheckoutMutating' | 'acquireCheckoutRead' | 'acquireCheckoutMutation' | 'rollbackThread' | 'refreshThread' | 'setCheckpointHooks'>; control: Pick<AgentControl, 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'checkpointObserved' | 'restoreCheckpoint' | 'subscribe'>; registry: ThreadRegistry | null; historyEnabled?: () => boolean; report: (message: string) => void }) {
   const { host, control } = options
   const sharedThreads = async (threadId: string, destinationFolder?: string) => {
     const snapshot = host.workspaceSnapshot()

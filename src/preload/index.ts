@@ -18,7 +18,7 @@ import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, 
 import { watcherRoomForwarding } from './watcherRoomForwarding'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
@@ -77,7 +77,7 @@ import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
-import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
+import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_ATTACHMENT_STAGE_FILE, VIDEO_HAS_NO_PATH, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentStageFileRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -361,38 +361,46 @@ function validatedRoutedCommand(command: import('../shared/agents').AgentCommand
 
 function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agents').AgentWireBridge {
   return Object.freeze({
-    get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
-    attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
+    get: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    attachmentPreview: async (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
     // A tile or the viewer reads one picture a thread's record names (ADR-0170).
-    threadMedia: (request: import('../shared/agents').AgentThreadMediaWindowRequest) =>
+    threadMedia: async (request: import('../shared/agents').AgentThreadMediaWindowRequest) =>
       invokeParsed(renderer, AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema.parse(request)),
     // The composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
-    stageAttachment: (request: import('../shared/agents').AgentAttachmentStageRequest) =>
+    stageAttachment: async (request: import('../shared/agents').AgentAttachmentStageRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
-    attachmentContent: (request: import('../shared/agents').AgentAttachmentContentRequest) =>
+    // A video too large to read into the window goes by the path of the file the user dropped or chose (ADR-0131,
+    // November 9 amendment). The window never sees the path; a file with none, such as a pasted one, is refused.
+    stageAttachmentFile: async ({ file, ...request }: Omit<import('../shared/agents').AgentAttachmentStageFileRequest, 'path'> & { readonly file: File }) => {
+      // As Electron documents it: the File the window hands across the bridge, its path read here and never handed back.
+      const path = ((): string => { try { return webUtils.getPathForFile(file) } catch { return '' } })()
+      if (!path) return Promise.reject(new Error(VIDEO_HAS_NO_PATH))
+      return invokeParsed(renderer, AGENT_ATTACHMENT_STAGE_FILE, agentAttachmentHandleSchema, agentAttachmentStageFileRequestSchema.parse({ ...request, path }))
+    },
+    attachmentContent: async (request: import('../shared/agents').AgentAttachmentContentRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
-    chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, projectDirectorySchema),
-    workingCopyOptions: (projectId: string) => invokeParsed(renderer, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema.parse(projectId)),
-    gitRefs: (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
-    gitChangedFiles: (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
-    gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
-    gitPullRequestList: (request: import('../shared/gitPullRequests').GitPullRequestListRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST_LIST, gitPullRequestListResultSchema, gitPullRequestListRequestSchema.parse(request)),
-    hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
-    threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
-    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, startHandoverResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    chooseProjectDirectory: async () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, projectDirectorySchema),
+    workingCopyOptions: async (projectId: string) => invokeParsed(renderer, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema.parse(projectId)),
+    gitRefs: async (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
+    gitChangedFiles: async (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
+    gitPullRequest: async (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
+    gitPullRequestList: async (request: import('../shared/gitPullRequests').GitPullRequestListRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST_LIST, gitPullRequestListResultSchema, gitPullRequestListRequestSchema.parse(request)),
+    hostFolders: async (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
+    threadDetail: async (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    startHandover: async (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, startHandoverResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     // One record of a remote thread whole, for a row whose body its host sent cut (ADR-0025, October 18 amendment).
-    activityBody: (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, activityBodyResultSchema, agentActivityBodyRequestSchema.parse(request)),
+    activityBody: async (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, activityBodyResultSchema, agentActivityBodyRequestSchema.parse(request)),
     // The prompts above a pane's window, for the message scrubber (ADR-0109).
-    threadPrompts: (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, threadPromptsResultSchema, agentThreadPromptsRequestSchema.parse(request)),
+    threadPrompts: async (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, threadPromptsResultSchema, agentThreadPromptsRequestSchema.parse(request)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     // A command's answer is a receipt (issue #323): its catalogs are named by catalog revision, and the page
     // puts them back from what the broadcast sent it, the same way it does for an omitted broadcast catalog.
     // See src/renderer/src/agents/agentStateCatalogs.ts.
-    command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command)),
-    commandWithChangedThreadRecords: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandChangedThreadRecordsReceiptSchema, validatedRoutedCommand(command), { changedThreadRecords: true }),
+    command: async (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command)),
+    commandWithChangedThreadRecords: async (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandChangedThreadRecordsReceiptSchema, validatedRoutedCommand(command), { changedThreadRecords: true }),
     // The broadcast may omit a model catalog this window already has (issue #286), and carries only the
     // thread records that changed since this window's last broadcast (issue #1330), coded as
     // AgentStateBroadcast rather than AgentState. This crosses to the page unreassembled on purpose:
@@ -482,256 +490,256 @@ export function createSottoBridge(
   const bridge: SottoBridge = {
     ...(dictationTiming ? { dictationTiming: createDictationTimingBridge(renderer) } : {}),
     ...(dynamicThreadsEnabled ? { dynamicRecord: Object.freeze<DynamicRecordBridge>({
-      read: () => invokeParsed(renderer, DYNAMIC_RECORD_READ, dynamicRecordReadSchema),
-      clear: () => invokeParsed(renderer, DYNAMIC_RECORD_CLEAR, dynamicRecordReadSchema),
+      read: async () => invokeParsed(renderer, DYNAMIC_RECORD_READ, dynamicRecordReadSchema),
+      clear: async () => invokeParsed(renderer, DYNAMIC_RECORD_CLEAR, dynamicRecordReadSchema),
     }) } : {}),
-    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
+    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: async () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
-      read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
-      refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
-      clear: query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultsSchema, usageClearQuerySchema.parse(query)),
+      read: async query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
+      refresh: async query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
+      clear: async query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultsSchema, usageClearQuerySchema.parse(query)),
     }) } : {}),
     // Every machine's check queue (#1312): only where the machines line is, so stable's window has no such bridge.
     ...(watcherMachinesEnabled ? { checks: Object.freeze<CheckQueuesBridge>({
-      read: () => invokeParsed(renderer, CHECK_QUEUES_READ, checkQueuesViewSchema),
+      read: async () => invokeParsed(renderer, CHECK_QUEUES_READ, checkQueuesViewSchema),
       onChanged: listener => subscribe(renderer, CHECK_QUEUES_CHANGED, checkQueuesViewSchema, listener),
     }) } : {}),
     // Moving threads to another machine (#1178): only where the machines line is, so stable's window has no such bridge.
     // Main registers it only where it built the service; a call without one is refused there.
     ...(watcherMachinesEnabled ? { threadMoves: Object.freeze<ThreadMovesBridge>({
-      prepare: request => invokeParsed(renderer, THREAD_MOVE_PREPARE, threadMovePrepareSchema, threadMovePrepareRequestSchema.parse(request)),
-      start: request => invokeParsed(renderer, THREAD_MOVE_START, threadMoveStartSchema, threadMoveStartRequestSchema.parse(request)),
-      read: () => invokeParsed(renderer, THREAD_MOVES_READ, threadMovesViewSchema),
-      answer: request => invokeParsed(renderer, THREAD_MOVE_ANSWER, threadMoveAnswerSchema, threadMoveAnswerRequestSchema.parse(request)),
+      prepare: async request => invokeParsed(renderer, THREAD_MOVE_PREPARE, threadMovePrepareSchema, threadMovePrepareRequestSchema.parse(request)),
+      start: async request => invokeParsed(renderer, THREAD_MOVE_START, threadMoveStartSchema, threadMoveStartRequestSchema.parse(request)),
+      read: async () => invokeParsed(renderer, THREAD_MOVES_READ, threadMovesViewSchema),
+      answer: async request => invokeParsed(renderer, THREAD_MOVE_ANSWER, threadMoveAnswerSchema, threadMoveAnswerRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, THREAD_MOVES_CHANGED, threadMovesViewSchema, listener),
     }) } : {}),
     // Delegation between threads (ADR-0081): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
-      read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
-      brief: request => invokeParsed(renderer, DELEGATION_BRIEF_READ, delegationBriefSchema, delegationBriefRequestSchema.parse(request)),
+      read: async request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
+      brief: async request => invokeParsed(renderer, DELEGATION_BRIEF_READ, delegationBriefSchema, delegationBriefRequestSchema.parse(request)),
       // A check's reply on a press (#1312): only where checks are offered, with Watcher and Work across machines on.
-      ...(watcherMachinesEnabled ? { checkReply: request => invokeParsed(renderer, DELEGATION_CHECK_REPLY_READ, delegationCheckReplySchema, delegationCheckReplyRequestSchema.parse(request)) } : {}),
+      ...(watcherMachinesEnabled ? { checkReply: async request => invokeParsed(renderer, DELEGATION_CHECK_REPLY_READ, delegationCheckReplySchema, delegationCheckReplyRequestSchema.parse(request)) } : {}),
       // Give it to another model… on a Dynamic thread's worker row (ADR-0191): only while its Owl feature is on.
-      ...(dynamicThreadsEnabled ? { give: request => invokeParsed(renderer, DELEGATION_GIVE, delegationGiveResultSchema, delegationGiveRequestSchema.parse(request)) } : {}),
+      ...(dynamicThreadsEnabled ? { give: async request => invokeParsed(renderer, DELEGATION_GIVE, delegationGiveResultSchema, delegationGiveRequestSchema.parse(request)) } : {}),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
     ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
-      sources: () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
-      signInWithKey: request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
-      startBrowserSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_BROWSER, signInStartSchema, signInMethodRequestSchema.parse(request)),
-      useExternalSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_EXTERNAL, signInResultSchema, signInMethodRequestSchema.parse(request)),
-      wait: request => invokeParsed(renderer, OPENCODE_SIGN_IN_WAIT, signInWaitSchema, signInAttemptRequestSchema.parse(request)),
-      finish: request => invokeParsed(renderer, OPENCODE_SIGN_IN_FINISH, signInWaitSchema, signInFinishRequestSchema.parse(request)),
-      reopen: request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
-      cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
-      signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
+      sources: async () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
+      signInWithKey: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
+      startBrowserSignIn: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_BROWSER, signInStartSchema, signInMethodRequestSchema.parse(request)),
+      useExternalSignIn: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_EXTERNAL, signInResultSchema, signInMethodRequestSchema.parse(request)),
+      wait: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_WAIT, signInWaitSchema, signInAttemptRequestSchema.parse(request)),
+      finish: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_FINISH, signInWaitSchema, signInFinishRequestSchema.parse(request)),
+      reopen: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      cancel: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      signOut: async request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
-      start: () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
-      read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInReadSchema, cursorSignInRequestSchema.parse(request)),
-      reopen: request => invokeParsed(renderer, CURSOR_SIGN_IN_REOPEN, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
-      cancel: request => invokeParsed(renderer, CURSOR_SIGN_IN_CANCEL, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
-      signOut: () => invokeParsed(renderer, CURSOR_SIGN_OUT, cursorSignInDoneSchema),
+      start: async () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
+      read: async request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInReadSchema, cursorSignInRequestSchema.parse(request)),
+      reopen: async request => invokeParsed(renderer, CURSOR_SIGN_IN_REOPEN, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      cancel: async request => invokeParsed(renderer, CURSOR_SIGN_IN_CANCEL, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      signOut: async () => invokeParsed(renderer, CURSOR_SIGN_OUT, cursorSignInDoneSchema),
     }) } : {}),
     // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
     // returned carries one.
     ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
-      list: () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
-      check: request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
-      add: request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
-      checkSaved: request => invokeParsed(renderer, OWN_SERVERS_CHECK_SAVED, checkResultSchema, checkSavedRequestSchema.parse(request)),
-      remove: request => invokeParsed(renderer, OWN_SERVERS_REMOVE, removeResultSchema, removeRequestSchema.parse(request)),
+      list: async () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
+      check: async request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
+      add: async request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
+      checkSaved: async request => invokeParsed(renderer, OWN_SERVERS_CHECK_SAVED, checkResultSchema, checkSavedRequestSchema.parse(request)),
+      remove: async request => invokeParsed(renderer, OWN_SERVERS_REMOVE, removeResultSchema, removeRequestSchema.parse(request)),
     }) } : {}),
     ...(ownServerCleanupEnabled ? { ownServerCleanup: Object.freeze<OwnServerCleanupBridge>({
-      measure: choice => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURE, ownCleanupMeasureResultSchema, ownCleanupChoiceSchema.parse(choice)),
-      measured: () => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURED, ownCleanupMeasuredListSchema),
+      measure: async choice => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURE, ownCleanupMeasureResultSchema, ownCleanupChoiceSchema.parse(choice)),
+      measured: async () => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURED, ownCleanupMeasuredListSchema),
     }) } : {}),
     ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
-      read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
-      command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
+      read: async () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
+      command: async command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
     }) } : {}),
     ...(glassWindow !== null ? { glassWindow: Object.freeze<GlassWindowBridge>({
       material: glassWindow.material,
       seeThrough: glassWindow.seeThrough,
-      setSeeThrough: on => invokeParsed(renderer, GLASS_WINDOW_SET, glassWindowResultSchema, glassWindowRequestSchema.parse(on)),
+      setSeeThrough: async on => invokeParsed(renderer, GLASS_WINDOW_SET, glassWindowResultSchema, glassWindowRequestSchema.parse(on)),
       onChanged: listener => subscribe(renderer, GLASS_WINDOW_CHANGED, glassWindowResultSchema, listener),
     }) } : {}),
     ...(mainCheckoutEnabled ? { mainCheckout: Object.freeze<MainCheckoutBridge>({
-      read: () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
-      changes: projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, mainCheckoutProjectIdSchema.parse(projectId)),
-      command: command => invokeParsed(renderer, MAIN_CHECKOUT_COMMAND, mainCheckoutStateSchema, mainCheckoutCommandSchema.parse(command)),
+      read: async () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
+      changes: async projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, mainCheckoutProjectIdSchema.parse(projectId)),
+      command: async command => invokeParsed(renderer, MAIN_CHECKOUT_COMMAND, mainCheckoutStateSchema, mainCheckoutCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_CHECKOUT_CHANGED, mainCheckoutStateSchema, listener),
     }) } : {}),
     // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
-      test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
+      test: async () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
       onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, notificationOpeningSchema, listener),
     }) } : {}),
     ...(nextPromptEnabled ? { nextPrompt: Object.freeze<NextPromptBridge>({
-      read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
+      read: async () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
       onChanged: listener => subscribe(renderer, NEXT_PROMPT_CHANGED, nextPromptEntrySchema, listener),
-      watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
+      watcherFirst: async modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
       // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
       cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
     }) } : {}),
     // The popup (ADR-0181): only while the Owl list turns it on, so stable's Settings has no row and registers nothing.
     ...(popupEnabled ? { popup: Object.freeze<PopupShortcutBridge>({
-      state: () => invokeParsed(renderer, POPUP_SHORTCUT_STATE_GET, popupShortcutStateSchema),
+      state: async () => invokeParsed(renderer, POPUP_SHORTCUT_STATE_GET, popupShortcutStateSchema),
       onState: listener => subscribe(renderer, POPUP_SHORTCUT_STATE_CHANGED, popupShortcutStateSchema, listener),
-      replace: chord => invokeParsed(renderer, POPUP_SHORTCUT_REPLACE, popupShortcutResultSchema, popupShortcutReplaceSchema.parse(chord)),
+      replace: async chord => invokeParsed(renderer, POPUP_SHORTCUT_REPLACE, popupShortcutResultSchema, popupShortcutReplaceSchema.parse(chord)),
       onOpened: listener => subscribe(renderer, POPUP_OPENED, popupOpenedSchema, listener),
     }) } : {}),
     // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
-      climb: request => invokeParsed(renderer, COUNCIL_CLIMB, climbResultSchema, climbRequestSchema.parse(request)),
-      read: () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
-      estimate: request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),
-      command: command => invokeParsed(renderer, COUNCIL_COMMAND, councilCommandResultSchema, councilCommandSchema.parse(command)),
+      climb: async request => invokeParsed(renderer, COUNCIL_CLIMB, climbResultSchema, climbRequestSchema.parse(request)),
+      read: async () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
+      estimate: async request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),
+      command: async command => invokeParsed(renderer, COUNCIL_COMMAND, councilCommandResultSchema, councilCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, COUNCIL_CHANGED, councilChangedSchema, listener),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
-      read: request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
-      start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
+      read: async request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
+      start: async request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
       onChanged: watcherRoomForwarding(renderer),
-      get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
-      open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
-      prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
-      stopAll: request => invokeParsed(renderer, WATCHER_STOP_ALL, watcherStopAllResultSchema, watcherStopAllRequestSchema.parse(request)),
-      setPermission: request => invokeParsed(renderer, WATCHER_SET_PERMISSION, watcherRoomResultSchema, watcherSetPermissionRequestSchema.parse(request)),
-      watchThread: request => invokeParsed(renderer, WATCHER_WATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
-      unwatchThread: request => invokeParsed(renderer, WATCHER_UNWATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
-      readHandover: () => invokeParsed(renderer, WATCHER_READ_HANDOVER, watcherHandoverReadSchema),
-      continueWithHandover: request => invokeParsed(renderer, WATCHER_CONTINUE_HANDOVER, watcherRoomResultSchema, watcherContinueHandoverRequestSchema.parse(request)),
-      dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
-      startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
-      tryNow: () => invokeParsed(renderer, WATCHER_TRY_NOW, watcherRoomResultSchema),
-      ...(watcherMachinesEnabled ? { readMachines: () => invokeParsed(renderer, WATCHER_READ_MACHINES, watcherMachinesReadSchema) } : {}),
+      get: async () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
+      open: async request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
+      prepareStopAll: async () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
+      stopAll: async request => invokeParsed(renderer, WATCHER_STOP_ALL, watcherStopAllResultSchema, watcherStopAllRequestSchema.parse(request)),
+      setPermission: async request => invokeParsed(renderer, WATCHER_SET_PERMISSION, watcherRoomResultSchema, watcherSetPermissionRequestSchema.parse(request)),
+      watchThread: async request => invokeParsed(renderer, WATCHER_WATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
+      unwatchThread: async request => invokeParsed(renderer, WATCHER_UNWATCH_THREAD, watcherRoomResultSchema, watcherWatchThreadRequestSchema.parse(request)),
+      readHandover: async () => invokeParsed(renderer, WATCHER_READ_HANDOVER, watcherHandoverReadSchema),
+      continueWithHandover: async request => invokeParsed(renderer, WATCHER_CONTINUE_HANDOVER, watcherRoomResultSchema, watcherContinueHandoverRequestSchema.parse(request)),
+      dismissHandover: async () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
+      startNew: async () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
+      tryNow: async () => invokeParsed(renderer, WATCHER_TRY_NOW, watcherRoomResultSchema),
+      ...(watcherMachinesEnabled ? { readMachines: async () => invokeParsed(renderer, WATCHER_READ_MACHINES, watcherMachinesReadSchema) } : {}),
     }) } : {}),
-    hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
-      devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
-      connectTailscale: () => renderer.invoke(HOSTS_TAILSCALE_CONNECT) as Promise<TailscaleConnectOutcome>, openTailscaleDownload: () => renderer.invoke(HOSTS_TAILSCALE_DOWNLOAD) as Promise<void>,
-      providerAction: action => invokeParsed(renderer, HOSTS_PROVIDER_ACTION, hostProviderActionResultSchema, hostProviderActionSchema.parse(action)),
-      updateClients: request => invokeParsed(renderer, HOSTS_UPDATE_CLIENTS, hostProviderActionResultSchema, hostClientUpdateRequestSchema.parse(request)),
-      signIn: request => invokeParsed(renderer, HOSTS_SIGN_IN, providerSignInResultSchema, hostSignInRequestSchema.parse(request)),
+    hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: async () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: async command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
+      devices: async () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: async () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
+      connectTailscale: async () => renderer.invoke(HOSTS_TAILSCALE_CONNECT) as Promise<TailscaleConnectOutcome>, openTailscaleDownload: async () => renderer.invoke(HOSTS_TAILSCALE_DOWNLOAD) as Promise<void>,
+      providerAction: async action => invokeParsed(renderer, HOSTS_PROVIDER_ACTION, hostProviderActionResultSchema, hostProviderActionSchema.parse(action)),
+      updateClients: async request => invokeParsed(renderer, HOSTS_UPDATE_CLIENTS, hostProviderActionResultSchema, hostClientUpdateRequestSchema.parse(request)),
+      signIn: async request => invokeParsed(renderer, HOSTS_SIGN_IN, providerSignInResultSchema, hostSignInRequestSchema.parse(request)),
       // A host's OpenCode signed in to model sources from this computer (#1107): only while OpenCode's Owl feature is on.
-      ...(opencodeHostsEnabled ? { opencodeSignIn: request => {
+      ...(opencodeHostsEnabled ? { opencodeSignIn: async request => {
         const parsed = hostOpenCodeSignInRequestSchema.parse(request)
         const action = request.call.action
         return renderer.invoke(HOSTS_OPENCODE_SIGN_IN, parsed).then(answer => parseHostOpenCodeAnswer(action, answer))
       } } : {}) }),
-    phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
-    teams: Object.freeze<TeamsBridge>({ get: () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, ownDesk: () => renderer.invoke(TEAMS_OWN_DESK) as Promise<TeamDesk>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
-    localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
+    phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: async () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: async command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
+    teams: Object.freeze<TeamsBridge>({ get: async () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: async command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, ownDesk: async () => renderer.invoke(TEAMS_OWN_DESK) as Promise<TeamDesk>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
+    localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: async () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
     themes: createThemesBridge(renderer),
     ...(platform === 'linux' ? { omarchySetup: Object.freeze<OmarchySetupBridge>({
-      get: () => invokeParsed(renderer, OMARCHY_SETUP_GET, omarchySetupStateSchema),
-      command: command => invokeParsed(renderer, OMARCHY_SETUP_COMMAND, omarchySetupStateSchema, omarchySetupCommandSchema.parse(command)),
+      get: async () => invokeParsed(renderer, OMARCHY_SETUP_GET, omarchySetupStateSchema),
+      command: async command => invokeParsed(renderer, OMARCHY_SETUP_COMMAND, omarchySetupStateSchema, omarchySetupCommandSchema.parse(command)),
       onFocus: listener => subscribe(renderer, OMARCHY_SETUP_FOCUS, nullSchema, listener),
       onChanged: listener => subscribe(renderer, OMARCHY_SETUP_CHANGED, omarchySetupStateSchema, listener),
     }) } : {}),
     subagents: Object.freeze<SubagentsBridge>({
-      page: request => invokeParsed(renderer, SUBAGENTS_PAGE, subagentPageSchema, subagentPageRequestSchema.parse(request)),
-      assignments: request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),
+      page: async request => invokeParsed(renderer, SUBAGENTS_PAGE, subagentPageSchema, subagentPageRequestSchema.parse(request)),
+      assignments: async request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, SUBAGENTS_CHANGED, subagentChangeSchema, listener),
     }),
     // An interactive visual's sealed page (ADR-0060): the window names the visual, main reads the page from its store.
     visuals: Object.freeze<VisualPagesBridge>({
-      open: request => invokeParsed(renderer, VISUAL_PAGE_OPEN, visualPageResultSchema, visualPageRequestSchema.parse(request)),
+      open: async request => invokeParsed(renderer, VISUAL_PAGE_OPEN, visualPageResultSchema, visualPageRequestSchema.parse(request)),
     }),
     files: Object.freeze<FilesBridge>({
-      list: request => invokeParsed(renderer, FILES_LIST, fileListingResultSchema, fileListRequestSchema.parse(request)),
-      preview: request => invokeParsed(renderer, FILES_PREVIEW, filePreviewResultSchema, fileRequestSchema.parse(request)),
-      copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filePathResultSchema, fileRequestSchema.parse(request)),
-      reveal: request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
-      revealLink: request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
-      previewLink: request => invokeParsed(renderer, FILES_PREVIEW_LINK, fileLinkPreviewResultSchema, fileLinkRequestSchema.parse(request)),
+      list: async request => invokeParsed(renderer, FILES_LIST, fileListingResultSchema, fileListRequestSchema.parse(request)),
+      preview: async request => invokeParsed(renderer, FILES_PREVIEW, filePreviewResultSchema, fileRequestSchema.parse(request)),
+      copyPath: async request => invokeParsed(renderer, FILES_COPY_PATH, filePathResultSchema, fileRequestSchema.parse(request)),
+      reveal: async request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
+      revealLink: async request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
+      previewLink: async request => invokeParsed(renderer, FILES_PREVIEW_LINK, fileLinkPreviewResultSchema, fileLinkRequestSchema.parse(request)),
     }),
     memory: Object.freeze<MemoryBridge>({
-      get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
-      command: command => invokeParsed(renderer, MEMORY_COMMAND, memorySnapshotSchema, memoryCommandSchema.parse(command)),
+      get: async () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
+      command: async command => invokeParsed(renderer, MEMORY_COMMAND, memorySnapshotSchema, memoryCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MEMORY_CHANGED, memorySnapshotSchema, listener),
     }),
     agents: createAgentBridge(renderer),
     requestDrafts: Object.freeze<RequestDraftBridge>({
       onChanged: listener => subscribe(renderer, REQUEST_DRAFT_CHANGED, requestDraftOwnerSchema, listener),
-      list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftsSchema, requestDraftOwnerSchema.parse(owner)),
-      discard: input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, booleanSchema, requestDraftDiscardSchema.parse(input)),
-      get: target => invokeParsed(renderer, REQUEST_DRAFT_GET, requestDraftResultSchema, requestDraftTargetSchema.parse(target)),
-      status: target => invokeParsed(renderer, REQUEST_DRAFT_STATUS, requestDraftStatusSchema, requestDraftTargetSchema.parse(target)),
-      save: draft => invokeParsed(renderer, REQUEST_DRAFT_SAVE, requestDraftSchema, requestDraftSchema.parse(draft)),
-      check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftCheckResultSchema, requestDraftTargetSchema.parse(target)),
+      list: async owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftsSchema, requestDraftOwnerSchema.parse(owner)),
+      discard: async input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, booleanSchema, requestDraftDiscardSchema.parse(input)),
+      get: async target => invokeParsed(renderer, REQUEST_DRAFT_GET, requestDraftResultSchema, requestDraftTargetSchema.parse(target)),
+      status: async target => invokeParsed(renderer, REQUEST_DRAFT_STATUS, requestDraftStatusSchema, requestDraftTargetSchema.parse(target)),
+      save: async draft => invokeParsed(renderer, REQUEST_DRAFT_SAVE, requestDraftSchema, requestDraftSchema.parse(draft)),
+      check: async target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftCheckResultSchema, requestDraftTargetSchema.parse(target)),
     }),
     platform,
 
-    listRecoveryNotices: () =>
+    listRecoveryNotices: async () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
     onRecoveryNotice,
-    dismissPastePermissionNotice: code => invokeParsed(renderer, PASTE_PERMISSION_NOTICE_DISMISS, commandResultSchema, pastePermissionNoticeCodeSchema.parse(code)),
+    dismissPastePermissionNotice: async code => invokeParsed(renderer, PASTE_PERMISSION_NOTICE_DISMISS, commandResultSchema, pastePermissionNoticeCodeSchema.parse(code)),
 
-    getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
-    updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
-    resetSettings: () => invokeParsed(renderer, SETTINGS_RESET, settingsSchema),
+    getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
+    updateSettings: async (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
+    resetSettings: async () => invokeParsed(renderer, SETTINGS_RESET, settingsSchema),
     onSettingsChanged,
 
-    listHistory: () => invokeParsed(renderer, HISTORY_LIST, historyEntriesSchema),
-    addHistory: (entry) => invokeParsed(renderer, HISTORY_ADD, historyEntriesSchema, entry),
-    searchHistory: (query) => invokeParsed(renderer, HISTORY_SEARCH, historyEntriesSchema, query),
-    deleteHistory: (id) => invokeParsed(renderer, HISTORY_DELETE, booleanSchema, id),
-    clearHistory: () => invokeParsed(renderer, HISTORY_CLEAR, voidSchema),
-    listDictationRecords: () => invokeParsed(renderer, DICTATION_RECORDS_LIST, dictationRecordsSchema),
-    getDictationRecord: (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordResultSchema, id),
+    listHistory: async () => invokeParsed(renderer, HISTORY_LIST, historyEntriesSchema),
+    addHistory: async (entry) => invokeParsed(renderer, HISTORY_ADD, historyEntriesSchema, entry),
+    searchHistory: async (query) => invokeParsed(renderer, HISTORY_SEARCH, historyEntriesSchema, query),
+    deleteHistory: async (id) => invokeParsed(renderer, HISTORY_DELETE, booleanSchema, id),
+    clearHistory: async () => invokeParsed(renderer, HISTORY_CLEAR, voidSchema),
+    listDictationRecords: async () => invokeParsed(renderer, DICTATION_RECORDS_LIST, dictationRecordsSchema),
+    getDictationRecord: async (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordResultSchema, id),
 
-    getHotkey: () => invokeParsed(renderer, HOTKEY_GET, hotkeyChordSchema),
-    replaceHotkey: (accelerator) =>
+    getHotkey: async () => invokeParsed(renderer, HOTKEY_GET, hotkeyChordSchema),
+    replaceHotkey: async (accelerator) =>
       invokeParsed(renderer, HOTKEY_REPLACE, hotkeyResultSchema, accelerator),
-    replaceDictationShortcuts: (change) =>
+    replaceDictationShortcuts: async (change) =>
       invokeParsed(renderer, DICTATION_SHORTCUTS_REPLACE, dictationShortcutsResultSchema, dictationShortcutsChangeSchema.parse(change)),
-    suspendDictationShortcuts: (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, booleanSchema.parse(suspended)),
-    recordDictationKeys: () => invokeParsed(renderer, DICTATION_KEYS_RECORD, keyRecordResultSchema),
-    cancelDictationKeyRecord: () => invokeParsed(renderer, DICTATION_KEYS_RECORD_CANCEL, commandResultSchema),
+    suspendDictationShortcuts: async (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, booleanSchema.parse(suspended)),
+    recordDictationKeys: async () => invokeParsed(renderer, DICTATION_KEYS_RECORD, keyRecordResultSchema),
+    cancelDictationKeyRecord: async () => invokeParsed(renderer, DICTATION_KEYS_RECORD_CANCEL, commandResultSchema),
     onDictationKeysHeld: listener => subscribe(renderer, DICTATION_KEYS_HELD, heldKeysSchema, listener),
     // Linux only: Sotto's Hyprland bindings stand down while Settings records keys.
     ...(platform === 'linux' ? { onDictationKeysTaken: (listener: (role: 'press' | 'hold') => void) => subscribe(renderer, DICTATION_KEYS_TAKEN, dictationKeyRoleSchema, listener) } : {}),
-    getKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_GET, keyListenerPermissionSchema),
-    requestKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_REQUEST, keyListenerPermissionSchema),
+    getKeyListenerPermission: async () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_GET, keyListenerPermissionSchema),
+    requestKeyListenerPermission: async () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_REQUEST, keyListenerPermissionSchema),
     onKeyListenerPermission: listener => subscribe(renderer, KEY_LISTENER_PERMISSION_CHANGED, keyListenerPermissionSchema, listener),
 
-    requestDictation: (command) =>
+    requestDictation: async (command) =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, command),
     onDictationCommand,
 
-    publishWidgetState: (state) =>
+    publishWidgetState: async (state) =>
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
-    deliverOutput: (request) =>
+    deliverOutput: async (request) =>
       invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, request),
-    copyImage: (request) =>
+    copyImage: async (request) =>
       invokeParsed(renderer, OUTPUT_COPY_IMAGE, commandResultSchema, request),
 
-    polishTranscript: (request) =>
+    polishTranscript: async (request) =>
       invokeParsed(renderer, TRANSCRIPT_POLISH, transcriptPolishResultSchema, request),
 
-    transcribe: (request) =>
+    transcribe: async (request) =>
       invokeParsed(renderer, TRANSCRIPTION_TRANSCRIBE, transcriptionResultSchema, request),
-    cancelTranscription: (requestId) =>
+    cancelTranscription: async (requestId) =>
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
-    getSpeechModelStatus: () => invokeParsed(renderer, SPEECH_MODEL_GET_STATUS, speechModelStatusSchema),
-    downloadSpeechModel: () => invokeParsed(renderer, SPEECH_MODEL_DOWNLOAD, commandResultSchema),
-    listSpeechModels: () => invokeParsed(renderer, SPEECH_MODEL_LIST, speechModelListSchema),
-    chooseSpeechModel: (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
+    getSpeechModelStatus: async () => invokeParsed(renderer, SPEECH_MODEL_GET_STATUS, speechModelStatusSchema),
+    downloadSpeechModel: async () => invokeParsed(renderer, SPEECH_MODEL_DOWNLOAD, commandResultSchema),
+    listSpeechModels: async () => invokeParsed(renderer, SPEECH_MODEL_LIST, speechModelListSchema),
+    chooseSpeechModel: async (id) => invokeParsed(renderer, SPEECH_MODEL_CHOOSE, commandResultSchema, id),
     onSpeechModelStatus,
-    checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
-    listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
-    listCloudSpeechModels: () => invokeParsed(renderer, OPENROUTER_LIST_SPEECH_MODELS, cloudSpeechModelListSchema),
+    checkOpenRouterKey: async () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
+    listOpenRouterModels: async () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
+    listCloudSpeechModels: async () => invokeParsed(renderer, OPENROUTER_LIST_SPEECH_MODELS, cloudSpeechModelListSchema),
     ensureMicrophoneAccess: async (onWaiting) => {
       if (onWaiting === undefined) return invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema)
       const requestId = crypto.randomUUID()
@@ -745,30 +753,30 @@ export function createSottoBridge(
       }
     },
 
-    getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
-    checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
-    downloadUpdate: () => invokeParsed(renderer, UPDATE_DOWNLOAD, commandResultSchema),
-    installUpdate: () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
+    getUpdateStatus: async () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
+    checkForUpdates: async () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
+    downloadUpdate: async () => invokeParsed(renderer, UPDATE_DOWNLOAD, commandResultSchema),
+    installUpdate: async () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
     onUpdateStatus,
     onUpdateCheckRequested: listener => subscribe(renderer, UPDATE_CHECK_REQUESTED, nullSchema, () => listener()),
     onSettingsRequested: listener => subscribe(renderer, SETTINGS_OPEN_REQUESTED, nullSchema, () => listener()),
 
-    getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
-    setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),
+    getStartup: async () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
+    setStartup: async (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),
 
-    showApp: () => invokeParsed(renderer, APP_SHOW, voidSchema),
-    openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
-    openQuestionPage: input => invokeParsed(renderer, QUESTION_PAGE_OPEN, questionPageOpenResultSchema, questionPageOpenSchema.parse(input)),
-    openSystemSettings: pane => invokeParsed(renderer, SYSTEM_SETTINGS_OPEN, commandResultSchema, systemSettingsPaneSchema.parse(pane)),
-    hideApp: () => invokeParsed(renderer, APP_HIDE, voidSchema),
-    reloadApp: () => invokeParsed(renderer, APP_RELOAD, voidSchema),
-    minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
-    toggleMaximizeApp: () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
-    getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, booleanSchema),
+    showApp: async () => invokeParsed(renderer, APP_SHOW, voidSchema),
+    openExternalLink: async url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    openQuestionPage: async input => invokeParsed(renderer, QUESTION_PAGE_OPEN, questionPageOpenResultSchema, questionPageOpenSchema.parse(input)),
+    openSystemSettings: async pane => invokeParsed(renderer, SYSTEM_SETTINGS_OPEN, commandResultSchema, systemSettingsPaneSchema.parse(pane)),
+    hideApp: async () => invokeParsed(renderer, APP_HIDE, voidSchema),
+    reloadApp: async () => invokeParsed(renderer, APP_RELOAD, voidSchema),
+    minimizeApp: async () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
+    toggleMaximizeApp: async () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
+    getWindowMaximized: async () => invokeParsed(renderer, APP_MAXIMIZED, booleanSchema),
     onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, booleanSchema, listener),
     onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, nullSchema, () => listener()),
     onWindowVisible,
-    quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
+    quitApp: async () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
   return hostClientBridge(bridge)
 }
@@ -776,7 +784,7 @@ export function createSottoBridge(
 function createInterfaceLanguageBridge(renderer: IpcRendererAdapter, startup: InterfaceLanguageState): InterfaceLanguageBridge {
   return Object.freeze<InterfaceLanguageBridge>({
     startup: Object.freeze({ ...startup }),
-    current: () => invokeParsed(renderer, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema),
+    current: async () => invokeParsed(renderer, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema),
     onChanged: listener => subscribe(renderer, INTERFACE_LANGUAGE_CHANGED, interfaceLanguageStateSchema, listener),
   })
 }
@@ -814,15 +822,15 @@ export function createSottoWidgetBridge(
 
     onWidgetState,
     onWidgetVisibilityChange,
-    requestToggle: () =>
+    requestToggle: async () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'toggle' }),
-    requestStop: () =>
+    requestStop: async () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
-    requestCancel: () =>
+    requestCancel: async () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
-    requestRetry: () =>
+    requestRetry: async () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'retry' }),
-    requestDismiss: () =>
+    requestDismiss: async () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'dismiss' }),
     setPresentation: async (payload: WidgetPresentationPayload) =>
       invokeParsed(
@@ -860,22 +868,22 @@ export function createSottoPopupBridge(
   return Object.freeze<PopupBridge>({
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
-    ...(watcherEnabled ? { watcher: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema) } : {}),
-    getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
+    ...(watcherEnabled ? { watcher: async () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema) } : {}),
+    getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
-    shell: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
-    threadDetail: threadId => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    shell: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    threadDetail: async threadId => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     onThreadDetail: listener => subscribe(renderer, AGENT_THREAD_DETAIL, trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     onThread: listener => subscribe(renderer, POPUP_THREAD, popupThreadSchema, listener),
-    command: command => {
+    command: async command => {
       if (!POPUP_COMMAND_TYPES.has(command.type)) return Promise.reject(new Error('AGENT_POPUP_COMMAND_REFUSED'))
       return invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command))
     },
-    openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
-    stageAttachment: request => invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
-    attachmentContent: request => invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
-    attachmentPreview: request => invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
-    copyImage: request => invokeParsed(renderer, OUTPUT_COPY_IMAGE, commandResultSchema, request),
+    openExternalLink: async url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    stageAttachment: async request => invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
+    attachmentContent: async request => invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
+    attachmentPreview: async request => invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
+    copyImage: async request => invokeParsed(renderer, OUTPUT_COPY_IMAGE, commandResultSchema, request),
     hide: async () => { await renderer.invoke(POPUP_HIDE) },
     fit: async height => { await renderer.invoke(POPUP_FIT, popupFitSchema.parse(height)) },
     open: async request => { await renderer.invoke(POPUP_OPEN, popupOpenSchema.parse(request)) },
@@ -946,11 +954,11 @@ export function exposeE2EBridge(
   const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
   if (!scenario.success) return
   const bridge: SottoE2EBridge = Object.freeze({
-    browserAgent: (request: Parameters<NonNullable<SottoE2EBridge['browserAgent']>>[0]) => invokeParsed(renderer, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentResultSchema, e2eBrowserAgentSchema.parse(request)),
-    hostSetupTool: (request: Parameters<NonNullable<SottoE2EBridge['hostSetupTool']>>[0]) => invokeParsed(renderer, E2E_HOST_SETUP_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eHostSetupToolSchema.parse(request)),
-    visualTool: (request: Parameters<NonNullable<SottoE2EBridge['visualTool']>>[0]) => invokeParsed(renderer, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
-    mediaTool: (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
-    delegationTool: (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
+    browserAgent: async (request: Parameters<NonNullable<SottoE2EBridge['browserAgent']>>[0]) => invokeParsed(renderer, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentResultSchema, e2eBrowserAgentSchema.parse(request)),
+    hostSetupTool: async (request: Parameters<NonNullable<SottoE2EBridge['hostSetupTool']>>[0]) => invokeParsed(renderer, E2E_HOST_SETUP_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eHostSetupToolSchema.parse(request)),
+    visualTool: async (request: Parameters<NonNullable<SottoE2EBridge['visualTool']>>[0]) => invokeParsed(renderer, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
+    mediaTool: async (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
+    delegationTool: async (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
     agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
       const key = parseHostEntityKey(event.threadId)
       if (key === null) return invokeParsed(renderer, AGENT_E2E, voidSchema, event)
@@ -960,8 +968,8 @@ export function exposeE2EBridge(
     },
     scenario: scenario.data,
     ...(environment.SOTTO_E2E_STARTING_SCREEN === '1' ? { startingScreen: true } : {}),
-    snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
-    triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),
+    snapshot: async () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
+    triggerShortcut: async () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),
   })
   context.exposeInMainWorld('sottoE2E', bridge)
 }

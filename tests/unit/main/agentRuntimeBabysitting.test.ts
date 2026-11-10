@@ -12,7 +12,7 @@ import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { AgentControl } from '../../../src/main/agents/control'
 
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 import { scriptedGitHub } from '../../fixtures/babysitGitHub'
 import { testCredentials } from '../../fixtures/testCredentials'
 

@@ -34,4 +34,12 @@ describe('ProviderMark', () => {
     expect(container.querySelector('svg')).toBeNull()
     expect(container.querySelector('.provider-mark--initial')).toHaveTextContent('O')
   })
+  it.each(['hermes', undefined] as const)('draws the Nous girl for Hermes with provider id %s', provider => {
+    const { container } = render(<ProviderMark provider={provider} name="Hermes" size={13} />)
+    const mark = container.querySelector('[data-provider="hermes"]')!
+    expect(mark).toHaveClass('provider-mark--hermes')
+    expect(mark.querySelector('.provider-mark__on-light')).toHaveAttribute('src', expect.stringContaining('hermes-black.png'))
+    expect(mark.querySelector('.provider-mark__on-dark')).toHaveAttribute('src', expect.stringContaining('hermes-white.png'))
+    expect(container.querySelector('.provider-mark--initial')).toBeNull()
+  })
 })

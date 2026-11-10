@@ -4,7 +4,7 @@
 // { type: 'object', properties: {} }` from `build_mcp_tool_approval_elicitation_request`); the real Computer Use request
 // has not been captured on a Mac or the Windows PC, so its server name and `_meta` here are assumptions.
 import { describe, expect, it } from 'vitest'
-import { answerRequest, pendingRequest } from '../../../src/main/agents/codexRequests'
+import { answerRequest, pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 import { BROWSER_MCP_SERVER } from '../../../src/main/agents/browserAgentServer'
 
 const MESSAGE = 'Allow Computer Use to use "Sotto"?'

@@ -1,14 +1,14 @@
 // @vitest-environment node
 // A Claude turn that ends in error: the provider says what happened in plain words, for the thread that failed.
 import { afterEach, describe, expect, it } from 'vitest'
-import { CLAUDE_TURN_FAILED, claudeLimitStop, claudeTurnFailure } from '../../src/main/agents/claudeTurnFailure'
+import { CLAUDE_TURN_FAILED, claudeErrorReplyText, claudeLimitStop, claudeTurnFailure } from '../../src/main/agents/providers/claude/claudeTurnFailure'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 
 const fixtures: Awaited<ReturnType<typeof claudeFixture>>[] = []
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
-async function fixture() {
-  const f = await claudeFixture(undefined, 15_000)
+async function fixture(session: Parameters<typeof claudeFixture>[3] = {}) {
+  const f = await claudeFixture(undefined, 15_000, undefined, session)
   fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Failures', path: f.root })
@@ -80,6 +80,49 @@ describe('the error a failed Claude turn leaves', () => {
     expect(claudeLimitStop(failed({ result: 'usage limit reached' }), undefined, now)).toEqual({})
     expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 3pm (Nowhere/Atlantis)' }), undefined, now)).toEqual({})
     expect(claudeLimitStop({ type: 'result', subtype: 'success', is_error: true, api_error_status: 429 }, undefined, now)).toEqual({})
+  })
+
+  it('reads a reset Claude Code names on another day, as its weekly limit does (November 9, 2026)', () => {
+    const now = Date.parse('2026-11-08T19:09:28.000Z')
+    const weekly = 'You’ve hit your weekly limit · resets Nov 11, 5am (America/Los_Angeles)'
+    // 5am in Los Angeles on November 11 is 13:00 UTC, after the clocks went back.
+    expect(claudeLimitStop(failed({ result: weekly }), undefined, now)).toEqual({ resetsAt: '2026-11-11T13:00:00.000Z' })
+    expect(claudeTurnFailure(failed({ result: weekly }))).toBe(`${USAGE} Send again after it resets at 5am on Nov 11 (America/Los_Angeles).`)
+    // "at" before the time, as newer Claude Code writes it, and a day named in full.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets at 10am (America/Los_Angeles)' }), undefined, now)).toEqual({ resetsAt: '2026-11-09T18:00:00.000Z' })
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets November 11, 5:30am (UTC)' }), undefined, now)).toEqual({ resetsAt: '2026-11-11T05:30:00.000Z' })
+    // A day early in January said at the end of December is next year's.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets Jan 2, 9am (UTC)' }), undefined, Date.parse('2026-12-30T12:00:00.000Z'))).toEqual({ resetsAt: '2027-01-02T09:00:00.000Z' })
+    // Said in words alone, with no classification, a session or weekly limit is still a usage limit; a spending limit is not.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your session limit · resets 5:40pm (America/Los_Angeles)' }), undefined, now)).toEqual({ resetsAt: '2026-11-09T01:40:00.000Z' })
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your monthly spend limit.' }), undefined, now)).toBeUndefined()
+    // A word that is no month says no time.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets Someday 2, 9am (UTC)' }), undefined, now)).toEqual({})
+  })
+
+  it('reads the reset from the turn’s error reply when the result does not say it', () => {
+    const now = Date.parse('2026-11-09T02:22:50.000Z')
+    const frame = { type: 'result', subtype: 'error_during_execution', is_error: true, errors: [] }
+    const reply = claudeErrorReplyText({ type: 'assistant', error: 'rate_limit', message: { role: 'assistant', content: [{ type: 'text', text: 'You’ve hit your weekly limit · resets 10am (America/Los_Angeles)' }] } })
+    expect(reply).toBe('You’ve hit your weekly limit · resets 10am (America/Los_Angeles)')
+    expect(claudeLimitStop(frame, 'rate_limit', now)).toEqual({})
+    expect(claudeLimitStop(frame, 'rate_limit', now, reply)).toEqual({ resetsAt: '2026-11-09T18:00:00.000Z' })
+    expect(claudeTurnFailure(frame, 'rate_limit', reply)).toBe(`${USAGE} Send again after it resets at 10am (America/Los_Angeles).`)
+    // Only read for a usage limit: any other failure keeps its own sentence.
+    expect(claudeLimitStop(frame, 'overloaded', now, reply)).toBeUndefined()
+    // A classification Sotto does not know leaves the reason to the reply's own words.
+    expect(claudeLimitStop(frame, 'unknown', now, reply)).toEqual({ resetsAt: '2026-11-09T18:00:00.000Z' })
+  })
+
+  it('puts the reset its error reply named on the failed turn, when the result names none', async () => {
+    const f = await fixture({ limitStops: true })
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'prompt', threadId: 'thread', text: 'Continue' })
+    await f.action('thread', { type: 'raw', frame: { type: 'assistant', error: 'rate_limit', message: { id: 'limit-reply', role: 'assistant', model: '<synthetic>',
+      content: [{ type: 'text', text: 'You’ve hit your weekly limit · resets Nov 11, 5am (America/Los_Angeles)' }] } } })
+    await f.action('thread', { type: 'raw', frame: { type: 'result', subtype: 'error_during_execution', is_error: true, errors: [] } })
+    const turn = async () => (await f.host.snapshot()).threads.find(thread => thread.id === 'thread')?.lastTurn
+    await expect.poll(async () => (await turn())?.status).toBe('failed')
+    expect((await turn())?.limitStop?.resetsAt).toMatch(/^\d{4}-11-11T13:00:00\.000Z$/u)
   })
 
   it('reads a zone named on its own, such as UTC or GMT, in that zone and not on this computer’s clock', () => {

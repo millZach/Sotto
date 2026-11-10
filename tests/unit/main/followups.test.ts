@@ -71,7 +71,7 @@ it('resumes hidden Watcher news after a fresh user turn without replaying the ol
   const f = await fixture(); const hostId = randomUUID(); const draftId = randomUUID()
   f.host.state.hostId = hostId; f.host.emit()
   const target = { hostId, threadId: 'workshop' }
-  f.control.mutateWatcher(record => { record.current = { target, provider: 'claude', projectId: 'project', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })
+  f.control.watcherRecords.mutate(record => { record.current = { target, provider: 'claude', projectId: 'project', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })
   f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
     guardOperation: () => undefined, preserveUserQueue: () => false, wakeReady: () => true, wakeDueAll: events => events.map(() => true) })
   f.host.result = { accepted: false, uncertain: true }

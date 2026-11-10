@@ -115,6 +115,16 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(ThreadSettings.unconfirmed(speedOnly, threadID: "t"), [.speed], "A null speed still names the speed")
         XCTAssertNil(panel(speedOnly)?.fixed, "A speed with no result holds nothing back")
     }
+    /// Where the agent keeps a started thread's model, its effort stays too, and the sheet says why (#228).
+    func testAStartedThreadWhoseAgentKeepsItsEffortSaysWhy() throws {
+        let grok = #"{"id":"grok-build","name":"Grok 4.7 Build","provider":"Grok Build","providerId":"grok","ready":true,"reasoningEfforts":["low","high"],"runtimeModes":["approval-required","full-access"]}"#
+        let json = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"grok","requests":[],"modelId":"grok-build","status":"idle","reasoningEffort":"high"}],"projects":[],"models":[\#(grok)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true,"configureThreadModel":false}}}"#
+        let value = try XCTUnwrap(panel(JSONDecoder().decode(Shell.self, from: Data(json.utf8))))
+        XCTAssertFalse(value.pressable(.effort))
+        XCTAssertTrue(value.pressable(.permissions))
+        XCTAssertEqual(value.effortFixedReason, "Grok Build keeps the effort a thread started on. To use another level, start a new thread.")
+        XCTAssertNil(try XCTUnwrap(panel(shell())).effortFixedReason, "An agent that changes a started thread's effort says nothing")
+    }
     func testAPhoneThatCantAnswerCanOnlyKeepTheThreadAsking() throws {
         let value = try XCTUnwrap(panel(shell(), mayAnswer: false))
         XCTAssertTrue(value.mayChoose(try XCTUnwrap(value.permissions.first { $0.id == "approval-required" })))
@@ -177,7 +187,7 @@ final class ThreadSettingsTests: XCTestCase {
         _ = pending.answered(.effort, sent: "xhigh", outcome: .unconfirmed(ThreadSettingWords.providerUnconfirmed))
         let value = try XCTUnwrap(panel(start, pending: pending))
         XCTAssertEqual(value.effort, "xhigh")
-        XCTAssertEqual(value.notices.first?.text, "Codex hasn’t confirmed Extra high effort. Until it does, a turn can still run on High effort.")
+        XCTAssertEqual(value.notices.first?.text, "Codex hasn’t confirmed XHigh effort. Until it does, a turn can still run on High effort.")
         XCTAssertEqual(value.notices.first?.retry, false, "Nothing to press: the computer keeps the change")
         pending.observe(drawn, unconfirmed: [.effort])
         XCTAssertEqual(pending.value(.effort), "xhigh", "Still kept while the computer keeps it")
@@ -237,7 +247,9 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(panel(start, pending: pending)?.notices.first?.text, "Codex didn’t switch to Fast. The thread is on GPT-6.1 Sol at Standard speed.")
     }
     func testEffortLevelsReadAsTheDesktopSaysThem() {
-        XCTAssertEqual(EffortWords.name("xhigh"), "Extra high")
+        XCTAssertEqual(EffortWords.name("xhigh"), "XHigh")
+        // One name whatever the spelling, as the desktop names it (#227).
+        for spelling in ["x-high", "Extra_High", "extra high"] { XCTAssertEqual(EffortWords.name(spelling), "XHigh") }
         XCTAssertEqual(EffortWords.name("ultracode"), "Ultracode")
         XCTAssertEqual(EffortWords.name("turbo"), "Turbo", "A level Sotto has no name for is the provider's, capitalised")
         XCTAssertEqual(EffortWords.line("max", index: 3, count: 4), "Everything the model has. Slowest, costliest.", "The top of the list gets the top line")

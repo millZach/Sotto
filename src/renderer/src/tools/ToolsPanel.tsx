@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { threadHost } from './HostPageView'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -349,6 +350,11 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const hostedTerminal = useOwlFeature('paired-host-terminal')
   const threadId = thread?.id
   const localThreadId = thread?.remoteHost ? undefined : thread?.id
+  // Sotto's browser for a paired host's thread runs in that host's Chromium where both machines offer it (ADR-0198).
+  const hostedBrowser = useOwlFeature('paired-host-browser'), quietPane = useOwlFeature('quiet-browser')
+  const pairedHostBrowser = hostedBrowser && quietPane
+  const browserHost = thread?.remoteHost && pairedHostBrowser ? threadHost(state, thread.id) : undefined
+  const browserThreadId = thread?.remoteHost ? browserHost?.browser ? thread.id : undefined : thread?.id
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
   // and refreshes when its own surface comes back.
   const onFiles = chrome.surface === 'files'
@@ -373,8 +379,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     if (open && terminalThread !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, terminalThread)
   }, [open, localThreadId, threadId, hostedTerminal, chrome.surface, terminalBridge, store])
   useEffect(() => {
-    if (open && localThreadId !== undefined && (chrome.surface === 'browser' || chrome.surface === 'iphone')) void store.browser.activate(browserBridge, localThreadId)
-  }, [open, localThreadId, chrome.surface, browserBridge, store])
+    if (open && localThreadId !== undefined && chrome.surface === 'iphone') void store.browser.activate(browserBridge, localThreadId)
+    if (open && browserThreadId !== undefined && chrome.surface === 'browser') void store.browser.activate(browserBridge, browserThreadId)
+  }, [open, localThreadId, browserThreadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the rail's open surface, so keyboard users land where the toggle pointed.
   // An open nobody pressed for (Proactive panels) leaves focus where the user is typing.
@@ -485,12 +492,16 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.
-  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
+  // An older host, or one whose own Owl answers leave its browser out, keeps saying the browser is there and how to bring it here.
+  else if (thread.remoteHost && chrome.surface === 'browser' && pairedHostBrowser && !browserHost?.browser) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
+    <strong>{t`Browser is on the host machine.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to use it here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
+      : t`Update Sotto on the host in Settings > Hosts & phones to use it here.`}</p></div></>
+  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
-  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
+  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} host={browserHost} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
   // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}

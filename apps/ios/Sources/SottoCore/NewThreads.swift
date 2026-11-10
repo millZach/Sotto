@@ -15,8 +15,9 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     public var providerModeList: Int? = nil
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
-    /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
-    /// maker, the company that made it, such as Anthropic (ADR-0128). Other providers' models say nothing.
+    /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), Cursor's model
+    /// maker, the company that made it, such as Anthropic (ADR-0128), or the own server a DeepSeek Harness model runs on
+    /// (ADR-0138). Other providers' models say nothing.
     public let source: String?
     /// The speeds the model offers besides Standard, in the provider's names (ADR-0143), read item by item; or, from an
     /// older computer, `fastMode` alone for Fast.
@@ -31,10 +32,11 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source, and
     /// "Cursor · Anthropic · Claude Sonnet 5.5" with a maker, so a Cursor thread on Claude never reads as Claude Code.
     public var label: String { Self.label(providerID: providerId, source: source, name: name) }
-    /// A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto".
+    /// A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto". A
+    /// DeepSeek Harness model's source is the user's own server, which keeps its name even when it is "DeepSeek" (ADR-0138).
     public static func label(providerID: String?, source: String?, name: String) -> String {
         let agent = AgentNames.name(providerID)
-        let named: String? = source?.isEmpty == false && source != agent ? source : nil
+        let named: String? = source?.isEmpty == false && (source != agent || providerID == "deepseek") ? source : nil
         return [agent, named, name].compactMap { $0 }.joined(separator: " · ")
     }
     public var startingEffort: String {
@@ -214,7 +216,7 @@ public enum NewThreads {
 }
 extension Commands {
     public static func createProject(providerID: String, title: String, path: String) throws -> JSONValue {
-        guard ["codex", "claude", "grok", "devin", "muse", "opencode", "cursor"].contains(providerID),
+        guard ["codex", "claude", "grok", "devin", "muse", "opencode", "cursor", "deepseek"].contains(providerID),
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf16.count <= 512,
               !path.isEmpty, path.utf16.count <= 4096 else { throw ClientError.invalidRequest }
         return try RemoteCommands.checked(.object(["type": .string("create-project"), "provider": .string(providerID),

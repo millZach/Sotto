@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 import { findExecutable } from '../../src/main/agents/subscriptionCodex'
 
 describe("requires SOTTO_NATIVE_CODEX_ACTIVITY=1", () => {

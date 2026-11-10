@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { claudeCatalog, claudeSkillPrompt } from '../../../src/main/agents/claudeSkills'
+import { claudeCatalog, claudeSkillPrompt } from '../../../src/main/agents/providers/claude/claudeSkills'
 import { grokCatalog, grokSkillPrompt } from '../../../src/main/agents/grokSkills'
-import { codexSkillInput } from '../../../src/main/agents/codexSkills'
+import { codexSkillInput } from '../../../src/main/agents/providers/codex/codexSkills'
 import { verifyFileMentions } from '../../../src/main/agents/promptFiles'
 
 const FILES = [{ path: 'docs/plan.md' }]

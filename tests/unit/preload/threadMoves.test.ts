@@ -21,7 +21,7 @@ describe('Moving threads in the preload (#1178, Owl cross-machine-work)', () => 
     await expect(bridge.start({ confirmationId, threadIds: ['a'], allowNarrower: [] })).resolves.toMatchObject({ status: 'ok' })
     expect(ipc.invoke).toHaveBeenLastCalledWith(THREAD_MOVE_START, { confirmationId, threadIds: ['a'], allowNarrower: [] })
     // A request the window should not make never leaves it, and an answer main never sends is refused.
-    expect(() => bridge.prepare({ threadIds: [], hostId })).toThrow()
+    await expect(bridge.prepare({ threadIds: [], hostId })).rejects.toThrow()
     ipc.invoke.mockResolvedValue({ status: 'ok', moves: [{ threadId: 'a', outcome: 'moving', prompt: 'words' }] })
     await expect(bridge.start({ confirmationId, threadIds: ['a'], allowNarrower: [] })).rejects.toThrow()
     // The cards, and the press on one that asks first.
@@ -35,6 +35,6 @@ describe('Moving threads in the preload (#1178, Owl cross-machine-work)', () => 
     ipc.invoke.mockResolvedValue({ status: 'ok' })
     await expect(bridge.answer({ cardId: confirmationId, answer: 'keep' })).resolves.toEqual({ status: 'ok' })
     expect(ipc.invoke).toHaveBeenLastCalledWith(THREAD_MOVE_ANSWER, { cardId: confirmationId, answer: 'keep' })
-    expect(() => bridge.answer({ cardId: 'not-a-card', answer: 'keep' })).toThrow()
+    await expect(bridge.answer({ cardId: 'not-a-card', answer: 'keep' })).rejects.toThrow()
   })
 })

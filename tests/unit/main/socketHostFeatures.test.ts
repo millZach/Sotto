@@ -4,10 +4,44 @@ import { z } from 'zod'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import type { AgentThreadDetail } from '../../../src/shared/agents'
+import type { StoredThreadEvent } from '../../../src/shared/threadEvents'
 import type { HostOperation } from '../../../src/shared/hostProtocol'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { hostReleaseVersion } from '../../../src/main/hosts/hostReleaseVersion'
 import { hostId } from '../../fixtures/socketHostService'
+
+describe('cached socket events', () => {
+  const event = (seq: number, threadId: string): StoredThreadEvent => ({
+    seq, threadId, event: { kind: 'message-text-appended', at: '2026-11-09T00:00:00.000Z', messageId: 'message', appendText: 'Text' },
+  })
+
+  it.each([
+    { threadId: undefined, limit: 2, expected: [4, 5] },
+    { threadId: 'alpha', limit: 2, expected: [5, 7] },
+    { threadId: 'alpha', limit: 0, expected: [] },
+    { threadId: 'alpha', limit: undefined, expected: [5, 7, 9] },
+    { threadId: 'alpha', limit: -1, expected: [5, 7, 9] },
+    { threadId: 'alpha', limit: -5, expected: [5, 7, 9] },
+  ])('limits visible events after the cursor and thread filter ($threadId, $limit)', ({ threadId, limit, expected }) => {
+    const state = emptyDesktopState(hostId)
+    state.host.threads = [{ id: 'watcher', title: 'Watcher', projectId: 'project', modelId: '', status: 'idle', messages: [], requests: [], kind: 'watcher' }]
+    const stored = [event(9, 'alpha'), event(1, 'alpha'), event(4, 'beta'), event(3, 'watcher'), event(5, 'alpha'), event(7, 'alpha')]
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    Object.assign(client, { cached: state, storedEvents: new Map(stored.map(item => [item.seq, item])) })
+    const clone = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      const result = client.events(1, threadId, limit)
+      expect(result.map(item => item.seq)).toEqual(expected)
+      expect(clone).toHaveBeenCalledExactlyOnceWith(expected.map(seq => stored.find(item => item.seq === seq)))
+      const [first] = result
+      if (first) {
+        expect(first).not.toBe(stored.find(item => item.seq === first.seq))
+        first.event.at = 'changed'
+        expect(client.events(1, threadId, limit)[0]?.event.at).toBe('2026-11-09T00:00:00.000Z')
+      }
+    } finally { clone.mockRestore() }
+  })
+})
 
 describe('quiet remote connections', () => {
   it.each([false, true])('keeps successive providers quiet across pre-connect pushes (overlapping: %s)', async overlapping => {

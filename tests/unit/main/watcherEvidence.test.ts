@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest'
 import { type AgentThread } from '../../../src/shared/agents'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
-import { pullRequestObservation, type PullRequestFingerprint } from '../../../src/main/agents/githubBabysitReads'
+import { pullRequestObservation, type PullRequestFingerprint } from '../../../src/main/agents/git/githubBabysitReads'
 import { centerTarget, centerTime } from '../../fixtures/watcher'
 
 const url = 'https://github.com/o/r/pull/1'

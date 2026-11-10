@@ -374,7 +374,7 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {mark}
-      {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
+      {current?.source ? <span className="model-picker__path"><span className="model-picker__source" title={current.source} data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name" title={name}>{name}</span></span> : <span className="model-picker__name" title={name}>{name}</span>}
       {suffix ? <span className="model-picker__suffix">{suffix}</span> : null}
       <ChevronDown size={12} aria-hidden="true" />
     </button>

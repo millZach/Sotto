@@ -16,6 +16,15 @@ const models: AgentModel[] = [
 afterEach(cleanup)
 
 describe('provider model picker', () => {
+  it('keeps full server and model names on hover and recognizes Hermes without a provider id', () => {
+    const model: AgentModel = { id: 'spark/deepseek-v4.1-flash', name: 'deepseek-v4.1-flash', provider: 'Hermes', source: 'Spark Cluster', ready: true }
+    const { container } = render(<ModelPicker models={[model]} modelId={model.id} disabled={false} onChange={vi.fn()} />)
+    expect(container.querySelector('.provider-mark--hermes')).not.toBeNull()
+    expect(container.querySelector('.provider-mark--initial')).toBeNull()
+    expect(container.querySelector('.model-picker__source')).toHaveAttribute('title', 'Spark Cluster')
+    expect(container.querySelector('.model-picker__name')).toHaveAttribute('title', 'deepseek-v4.1-flash')
+  })
+
   it('sorts numeric versions newest first and keeps provider order for the same version', () => {
     expect(newestModelsFirst(models.filter(model => model.provider === 'Codex')).map(model => model.id)).toEqual(['astra', 'terra', 'minor', 'old'])
     expect(models[0]?.id).toBe('old')

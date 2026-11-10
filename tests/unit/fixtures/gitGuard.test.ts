@@ -18,8 +18,8 @@ import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { assertTemporaryFolderOutsideRepositories, gitCallsInLine, gitCallsOf, gitCommandChanges, gitGuard, gitGuardRefusal, repositoryHoldingFolder, temporaryRoots } from '../../fixtures/gitGuard'
 import { ownedGitRepository } from '../../fixtures/gitRepository'
-import { GitActions } from '../../../src/main/agents/gitActions'
-import { GitStatusReader } from '../../../src/main/agents/gitStatus'
+import { GitActions } from '../../../src/main/agents/git/gitActions'
+import { GitStatusReader } from '../../../src/main/agents/git/gitStatus'
 
 const owned: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const owner of owned.splice(0)) await owner.dispose() })

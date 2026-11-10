@@ -122,6 +122,8 @@ describe('remote command allow-list', () => {
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
       // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
       'stage-file-part',
+      // How many parts of its own video upload the host holds, so the client carries on where it stopped (ADR-0131, November 9 amendment): a read of its own upload.
+      'file-upload-progress',
       // A sent file's bytes by its message, for the iPhone's Quick Look: a read, as `preview` is.
       'attachment-file',
       // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.
@@ -198,6 +200,10 @@ describe('remote command allow-list', () => {
       'next-prompts-wanted',
       // A desktop's answer for the host's product events (ADR-0179), which only decides whether the host sends its own.
       'product-events-answer',
+      // Sotto's browser for the host's own threads (ADR-0198), only for a desktop whose hello accepted `browser`. Driving,
+      // sharing and Stop are the user's own acts there; answering a waiting request and the setting need a recorded desktop
+      // whose remote-answer policy lets it answer, checked in the socket server.
+      'browser',
       // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
       // same thread records `shell` carries, with the same trust.
       'settled-threads']

@@ -133,7 +133,7 @@ export class HostDelegationRelay {
   }
 
   async load(): Promise<void> {
-    const file = await this.store.read().catch((): RelayFile => ({ version: 1, delegations: [] }))
+    const file = await this.store.read()
     this.records = file.delegations
     this.openByCaller.clear()
     for (const record of this.records) this.filed(record)

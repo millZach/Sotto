@@ -3,9 +3,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
-import { GitActions } from '../../src/main/agents/gitActions'
-import { GitStatusReader } from '../../src/main/agents/gitStatus'
-import { GitPullRequestLimited } from '../../src/main/agents/gitPullRequests'
+import { GitActions } from '../../src/main/agents/git/gitActions'
+import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
+import { GitPullRequestLimited } from '../../src/main/agents/git/gitPullRequests'
 import { fixture, local } from '../fixtures/workspaceTestFixture'
 
 describe("durable project/thread organization", () => {
