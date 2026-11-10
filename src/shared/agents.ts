@@ -1052,7 +1052,7 @@ export const agentConfigurationSchema = z.object({
    */
   museDisableSandbox: z.boolean().default(false),
   /**
-   * The effort a Claude thread on Ultracode runs at on this machine (ADR-0148), Extra high unless changed in Settings →
+   * The effort a Claude thread on Ultracode runs at on this machine (ADR-0148), XHigh unless changed in Settings →
    * Providers → Claude Code. Read at every launch and every send, so a change reaches a thread with its next message.
    */
   claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),

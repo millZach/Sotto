@@ -1,6 +1,7 @@
 import { ClimbService } from './climbService'
 import type { AgentHostCommand, AgentHostResult } from '../agents/host'
 import { t } from '@lingui/core/macro'
+import { effortWords } from '../../shared/reasoningEfforts'
 import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
@@ -976,7 +977,7 @@ export class CouncilService {
   /** What Send to the thread puts in its message box: the verdict, then Sotto's table of letters and its counts, never the chair's words changed. */
   private draft(record: CouncilRecord, round: CouncilRound, verdict: string): string {
     const counts = this.counts(record, round)
-    const seat = (item: CouncilSeat): string => `${item.modelName}${item.provider ? ` (${PROVIDER_LABELS[item.provider]}${item.effort ? `, ${item.effort}` : ''})` : ''}`
+    const seat = (item: CouncilSeat): string => `${item.modelName}${item.provider ? ` (${PROVIDER_LABELS[item.provider]}${item.effort ? `, ${effortWords(item.effort)}` : ''})` : ''}`
     const panel = record.seats.filter(isPanelist).map(item => `${item.seat} = ${seat(item)}`).join('; ')
     const chair = record.seats.find(item => item.seat === COUNCIL_CHAIR)!
     const lines = [

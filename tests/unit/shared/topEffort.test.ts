@@ -12,7 +12,7 @@ const providers: Record<string, { readonly levels: readonly string[]; readonly t
   codex: { levels: ['minimal', 'low', 'medium', 'high', 'xhigh'], top: ['xhigh'] },
   claude: { levels: claude, top: ['max', ULTRACODE] },
   'claude without Ultracode (Watcher)': { levels: ['low', 'medium', 'high', 'xhigh', 'max'], top: ['max'] },
-  'claude on a model without Extra high': { levels: withUltracode(['low', 'medium', 'high']), top: ['high'] },
+  'claude on a model without XHigh': { levels: withUltracode(['low', 'medium', 'high']), top: ['high'] },
   grok: { levels: ['low', 'medium', 'high'], top: ['high'] },
   // Max past which another provider offers a level is not that provider's top.
   muse: { levels: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], top: ['ultra'] },

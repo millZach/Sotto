@@ -11,7 +11,7 @@ import { fixture, mount, setupThreadOptionsTests } from '../../../fixtures/rende
 
 setupThreadOptionsTests()
 
-/** The harness's state with Claude's model offering Ultracode, as the catalog reports a model with Extra high. */
+/** The harness's state with Claude's model offering Ultracode, as the catalog reports a model with XHigh. */
 function claudeState(thread: Parameters<typeof fixture>[0] = {}): AgentState {
   const state = fixture(thread)
   state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
@@ -38,8 +38,8 @@ describe('Ultracode on the effort card', () => {
     const slider = within(panel).getByRole('slider', { name: 'Thread reasoning effort' })
     expect(slider).toHaveAttribute('aria-valuetext', 'Ultracode')
     expect(panel.querySelector('.effort-card__word')).toHaveTextContent(/^Ultracode$/u)
-    // This computer's setting is Extra high until changed.
-    expect(slider).toHaveAccessibleDescription('Plans the work and runs it as a team of agents at Extra high effort. Uses many more tokens.')
+    // This computer's setting is XHigh until changed.
+    expect(slider).toHaveAccessibleDescription('Plans the work and runs it as a team of agents at XHigh effort. Uses many more tokens.')
     // It is the model's highest level, so it wears the colourway as Max does on a model without it.
     expect(panel).toHaveAttribute('data-top', 'true')
   })

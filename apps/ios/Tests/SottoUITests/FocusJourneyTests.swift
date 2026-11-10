@@ -2338,7 +2338,7 @@ import UIKit
 
         let low = menuItem("Low")
         open(settings, then: "Effort", until: low)
-        XCTAssertFalse(menuItem("Extra high").exists, "Astra offers no Extra high")
+        XCTAssertFalse(menuItem("XHigh").exists, "Astra offers no XHigh")
         capture("thread-settings-effort-menu-dark")
         low.tap()
         XCTAssertEqual(waitForValue(settings, containing: "Low"), .completed)

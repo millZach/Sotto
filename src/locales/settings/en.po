@@ -405,7 +405,7 @@ msgstr "{minutes} min"
 msgid "{modelName}, {level}"
 msgstr "{modelName}, {level}"
 
-#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.
+#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as XHigh, marked as the one Claude Code picks on its own.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{name} (Claude Code’s choice)"
 msgstr "{name} (Claude Code’s choice)"
@@ -6363,10 +6363,10 @@ msgstr "The dictionary could not be saved. Keep it within 4,000 characters."
 msgid "The download dropped partway. {installed} is still installed."
 msgstr "The download dropped partway. {installed} is still installed."
 
-#. Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.
+#. Describes the Ultracode effort setting. Ultracode and XHigh are the names the effort control shows.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
-msgstr "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
+msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is XHigh. A change takes effect on the thread’s next message."
+msgstr "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is XHigh. A change takes effect on the thread’s next message."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The first one connected is used"

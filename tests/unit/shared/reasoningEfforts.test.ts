@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { effortKey, orderReasoningEfforts } from '../../../src/shared/reasoningEfforts'
+import { effortKey, effortLevel, effortWords, orderReasoningEfforts } from '../../../src/shared/reasoningEfforts'
 
 describe('orderReasoningEfforts', () => {
   it("turns Grok's highest-first lists round", () => {
@@ -43,5 +43,13 @@ describe('orderReasoningEfforts', () => {
     const reported = ['xhigh', 'high', 'low']
     orderReasoningEfforts(reported)
     expect(reported).toEqual(['xhigh', 'high', 'low'])
+  })
+})
+
+describe('one name for each level (#227)', () => {
+  it('reads every spelling of a level as that level, and names it in English for what Sotto writes for an agent', () => {
+    for (const id of ['xhigh', 'x-high', 'Extra_High', 'extra high']) { expect(effortLevel(id)).toBe('xhigh'); expect(effortWords(id)).toBe('XHigh') }
+    expect(['none', 'minimal', 'low', 'medium', 'high', 'max', 'ultracode'].map(effortWords)).toEqual(['None', 'Minimal', 'Low', 'Medium', 'High', 'Max', 'Ultracode'])
+    expect(effortWords('ultra')).toBe('Ultra')
   })
 })

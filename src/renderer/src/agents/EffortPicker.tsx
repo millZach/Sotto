@@ -3,6 +3,7 @@ import { Check, ChevronDown, Workflow } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { wordsOf } from './interfaceWords'
+import { effortLabel } from './effortNames'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { useReducedMotion } from '../state/reducedMotion'
 import { isTopEffort } from '../../../shared/topEffort'
@@ -10,17 +11,7 @@ import { ULTRACODE } from '../../../shared/ultracode'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
-/** The levels Sotto knows by name; a provider's other levels show as the provider names them, capitalised. */
-const EFFORT_NAMES: Readonly<Record<string, string>> = wordsOf({
-  minimal: msg({ message: 'Minimal', comment: 'A reasoning effort level.' }),
-  low: msg({ message: 'Low', comment: 'A reasoning effort level.' }),
-  medium: msg({ message: 'Medium', comment: 'A reasoning effort level.' }),
-  high: msg({ message: 'High', comment: 'A reasoning effort level.' }),
-  xhigh: msg({ message: 'Extra high', comment: 'A reasoning effort level.' }),
-  max: msg({ message: 'Max', comment: 'A reasoning effort level, the highest some models offer.' }),
-  ultracode: msg({ message: 'Ultracode', comment: 'The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.' }),
-})
-export const effortLabel = (value: string): string => Object.hasOwn(EFFORT_NAMES, value) ? EFFORT_NAMES[value]! : value.charAt(0).toUpperCase() + value.slice(1)
+export { effortLabel } from './effortNames'
 
 /** What Ultracode costs, said over its stop while the pointer rests there and in the chip's tooltip at that level (ADR-0148). */
 const ultracodeHint = (): string => t({ message: 'Runs a multi-agent workflow; uses many more tokens.', comment: 'Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.' })

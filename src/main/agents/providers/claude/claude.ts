@@ -258,7 +258,7 @@ export interface ClaudeStreamJsonHostOptions {
   connectStarts?: number
   /** Stable event names only; never a model, a level, a mode or anything a thread said. */
   logEvent?: (event: ClaudeAdapterEvent) => void
-  /** The effort Ultracode runs at on this machine (ADR-0148), read at every launch and send; Extra high when absent. */
+  /** The effort Ultracode runs at on this machine (ADR-0148), read at every launch and send; XHigh when absent. */
   ultracodeEffort?: () => UltracodeEffort
 }
 /**
