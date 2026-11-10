@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
 import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
-import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import type { ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
 
 const started = (id: string, type = 'local_agent'): ClaudeFrame => ({ type: 'system', subtype: 'task_started', task_id: id, task_type: type, description: type })
 const progress = (id: string): ClaudeFrame => ({ type: 'system', subtype: 'task_progress', task_id: id, description: 'Updated' })

@@ -22,6 +22,7 @@ import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { testCredentials } from '../fixtures/testCredentials'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -57,7 +58,7 @@ it('keeps enabled Watcher work available on a legacy host while Muse is disabled
   const root = await directory()
   const host = Object.assign(new FakeProviderHost(), { watcherThreadIds: () => ['session-workshop'] })
   const control = await agentControlFixture({ directory: root, host, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, museEnabled: false } })
+    control: { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: false }) } })
   cleanup.push(control.dispose)
   await control.control.start()
   await control.control.command({ type: 'connect', provider: 'codex' })
@@ -74,10 +75,10 @@ it('keeps certified catalog sharing after hiding cached Muse and leaves ordinary
   expect(modelsWithoutMuse(visible)).toBe(visible)
 })
 async function owlProfile(root: string) {
-  const owl = new WorkspaceHost(new FakeProviderHost(snapshot(root)), root, () => true, undefined, true, true)
+  const owl = new WorkspaceHost(new FakeProviderHost(snapshot(root)), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) })
   await owl.initialize(); await owl.connect()
   const control = await agentControlFixture({ directory: root, host: owl, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, museEnabled: true } })
+    control: { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) } })
   await control.control.start()
   await control.dispose(); await control.control.closed(); await owl.close()
   const file = join(root, 'agents.json'), saved = JSON.parse(await readFile(file, 'utf8'))
@@ -121,7 +122,7 @@ it.each(['off', 'expired', 'capped'] as const)('loads dormant Muse ownership bef
   const providers = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() }
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const runtime = await createAgentRuntime({ directory: root, credentials, providers, reasoner: {},
-    watcherEnabled: false, museEnabled: false, resumeAfterRestart: true,
+    watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), resumeAfterRestart: true,
     settings: () => settings, writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined,
     installedProviders: async () => ['codex', 'muse'] })
   cleanup.push(runtime.close)
@@ -146,11 +147,11 @@ it.each([
   const originalWorkspace = JSON.parse(await readFile(join(root, 'workspace.json'), 'utf8'))
   let history = scenario !== 'startup'
   const inner = new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true })
-  const stable = new WorkspaceHost(inner, root, () => history, undefined, true, false, streaming)
+  const stable = new WorkspaceHost(inner, root, { historyEnabled: () => history, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: streaming })
   cleanup.push(() => stable.close())
   await stable.initialize()
   const control = await agentControlFixture({ directory: root, host: stable, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, museEnabled: false, historyEnabled: () => history, installedProviders: async () => ['codex', 'muse'] } })
+    control: { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: false }), historyEnabled: () => history, installedProviders: async () => ['codex', 'muse'] } })
   cleanup.push(control.dispose)
   await control.control.start()
   expect(stable.dormantThreadIds()).toEqual([MUSE])
@@ -185,10 +186,10 @@ it.each([
   expect(JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')).items).toEqual([original.followup])
   expect(JSON.parse(await readFile(join(root, 'workspace.json'), 'utf8')).snapshot.threads.find((thread: { id: string }) => thread.id === MUSE))
     .toEqual(originalWorkspace.snapshot.threads.find((thread: { id: string }) => thread.id === MUSE))
-  const owl = new WorkspaceHost(new FakeProviderHost(), root, () => true, undefined, true, true)
+  const owl = new WorkspaceHost(new FakeProviderHost(), root, { historyEnabled: () => true, watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) })
   cleanup.push(() => owl.close()); await owl.initialize()
   const reopened = await agentControlFixture({ directory: root, host: owl, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, museEnabled: true } })
+    control: { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: true }) } })
   cleanup.push(reopened.dispose); await reopened.control.start()
   expect(owl.workspaceSnapshot().threads.some(thread => thread.id === MUSE)).toBe(true)
   expect(owl.threadMessages(MUSE).map(message => message.text)).toContain('Synthetic saved message ' + MUSE)
@@ -217,7 +218,7 @@ it('a stable desktop hides Muse from a paired Owl host and refuses its provider 
   const command = vi.fn(async () => state), detail = vi.fn(async () => null)
   const connection: DesktopHostConnection = { hostId, name: 'Paired host', kind: 'remote', service: { shell: () => state, command,
     subscribe: () => () => undefined }, detail, preview: () => null }
-  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, museEnabled: false })
+  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, heldProviders: heldProvidersOf({ muse: false }) })
   router.add(connection); router.select(hostId)
   const shell = router.shell()
   expect(shell.host.threads.map(thread => thread.id)).toEqual([hostEntityKey(hostId, CODEX)])

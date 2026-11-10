@@ -28,6 +28,13 @@ describe('standard text-token prices', () => {
     expect(estimateUsage('claude', 'claude-opus-5-5', tokens)!.usd).toBeCloseTo(0.372, 10)
     expect(estimateUsage('claude', 'claude-opus-5-5[1m]', tokens)!.usd).toBeCloseTo(0.372, 10)
   })
+  it('prices Claude Fable 5.2 at its launch rates, below Fable 5.1, under the ID the session reports', () => {
+    const tokens = { input: 100_000, cached: 20_000, cacheWrite: 10_000, cacheWrite5m: 4_000, cacheWrite1h: 6_000, output: 1_000 }
+    // $8 input, $0.20 cache read (0.025x), $10 and $16 cache writes, $40 output, per million tokens.
+    expect(estimateUsage('claude', 'claude-fable-5-2', tokens)!.usd).toBeCloseTo(0.74, 10)
+    expect(estimateUsage('claude', 'claude-fable-5-2[1m]', tokens)!.usd).toBeCloseTo(0.74, 10)
+    expect(estimateUsage('claude', 'claude-fable-5-1', tokens)!.usd).toBeCloseTo(0.925, 10)
+  })
   it('leaves the Grok Build variants unpriced, because x.ai publishes no list price for them', () => {
     expect(estimateUsage('grok', 'grok-4.7-build-fast', { input: 1_000, cached: 0, output: 100 })).toBeUndefined()
     expect(estimateUsage('grok', 'grok-4.7-build', { input: 1_000, cached: 0, output: 100 })).toBeUndefined()

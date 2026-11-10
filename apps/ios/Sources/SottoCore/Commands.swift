@@ -100,14 +100,17 @@ public enum Commands {
         guard UUID(uuidString: itemID) != nil else { throw ClientError.invalidRequest }
         return try RemoteCommands.checked(.object(["type": .string(type), "threadId": .string(threadID), "itemId": .string(itemID)]))
     }
-    /// Photos and files together: eight at most, photos 20 MiB between them and everything 50 MiB (ADR-0131).
+    /// Photos and files together: eight at most, photos 20 MiB between them, videos 500 MiB between them, and the photos and
+    /// every other file 50 MiB (ADR-0131 and its November 9 amendment).
     private static func reply(_ type: String, threadID: String, text: String, draftID: String, images: [StagedImage], files: [StagedFile]) throws -> JSONValue {
         let ids = images.map(\.id) + files.map(\.id)
         let imageBytes = images.reduce(0, { $0 + $1.sizeBytes })
+        let videos = files.filter { Videos.isVideo($0.mimeType) }, others = files.filter { !Videos.isVideo($0.mimeType) }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !ids.isEmpty, text.utf16.count <= 100_000,
               UUID(uuidString: draftID) != nil, ids.count <= PhotoLimits.count, images.allSatisfy(\.valid), files.allSatisfy(\.valid),
               Set(ids).count == ids.count, imageBytes <= PhotoLimits.bytesTogether,
-              files.reduce(imageBytes, { $0 + $1.sizeBytes }) <= FileLimits.bytesTogether else { throw ClientError.invalidRequest }
+              others.reduce(imageBytes, { $0 + $1.sizeBytes }) <= FileLimits.bytesTogether,
+              videos.reduce(0, { $0 + $1.sizeBytes }) <= VideoLimits.bytesTogether else { throw ClientError.invalidRequest }
         var fields: [String: JSONValue] = ["type": .string(type), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
         if !ids.isEmpty { fields["attachments"] = .array(images.map(\.wire) + files.map(\.wire)) }
         return try RemoteCommands.checked(.object(fields))

@@ -1,5 +1,5 @@
 import { checkoutIdentity } from './threadWorktrees'
-import { GitActionRefusal } from './gitActions'
+import { GitActionRefusal } from './git/gitActions'
 
 export type CheckoutPendingWork = 'pending-work' | 'failed-followups' | 'paused-followups' | 'uncertain-send'
 export type CheckoutHolder = { kind: 'git-action' | 'automatic-pull' | 'checkpoint' | 'checkpoint-revert' | 'settle' | 'remove-folder' | 'terminal-start' }

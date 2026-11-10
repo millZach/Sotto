@@ -444,6 +444,12 @@ jobs:
           mkdir -p "$install"
           tar -xzf release/Sotto-host-*-linux-x64.tar.gz -C "$install"
           SOTTO_REAL_SSHD_INSTALL="$install" npx vitest run tests/integration/realSshd.test.ts tests/integration/realSshdTerminal.test.ts --maxWorkers=1
+      # The runner image carries Google Chrome, which a host's own browser drives headless over the DevTools pipe (ADR-0198).
+      - name: Real browser journey
+        env:
+          SOTTO_REAL_BROWSER: '1'
+          SOTTO_REAL_BROWSER_REQUIRED: '1'
+        run: npx vitest run tests/integration/hostBrowser.test.ts --maxWorkers=1
       - name: Third-party notices
         run: npm run notices:verify
       - name: Retain the verified host archive

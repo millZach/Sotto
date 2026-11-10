@@ -36,9 +36,17 @@ export function tailscaleCandidates(platform: NodeJS.Platform = process.platform
   return found
 }
 
+/**
+ * The macOS app bundle's program is the app and the CLI in one, and takes itself for the app unless a shell
+ * started it (it looks for `SHLVL`). Sotto opened from the Dock has none, so every command answered
+ * "The Tailscale GUI failed to start" and Tailscale read as off. `TAILSCALE_BE_CLI` is Tailscale's own switch
+ * for this; the other platforms' CLI ignores it.
+ */
+const CLI_ENV = { TAILSCALE_BE_CLI: '1' }
+
 export const runTailscale: TailscaleRun = (executable, args, options) => new Promise((resolve, reject) => {
   let stopped = false
-  const child = execFile(executable, [...args], { timeout: options.timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', ...(options.signal ? { signal: options.signal } : {}) }, (error, stdout, stderr) => {
+  const child = execFile(executable, [...args], { timeout: options.timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', env: { ...process.env, ...CLI_ENV }, ...(options.signal ? { signal: options.signal } : {}) }, (error, stdout, stderr) => {
     const code = (error as NodeJS.ErrnoException | null)?.code
     if (code === 'ENOENT') { reject(error); return }
     const exit = error === null ? 0 : stopped || typeof (error as { code?: unknown }).code !== 'number' ? null : (error as unknown as { code: number }).code

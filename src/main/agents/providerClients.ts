@@ -13,6 +13,7 @@ import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type Ope
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { compareCursorVersions, cursorEnvironment, cursorInstallRoot, cursorProgramOf, cursorPublishedVersion, findCursorExecutable, parseCursorVersion } from './cursorRpc'
+import { findHermesExecutable } from './hermesRpc'
 import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
@@ -774,6 +775,7 @@ export class ProviderClients {
    */
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
+    if (provider === 'hermes') return { id: provider, installed, behind: false, channel: 'unknown', canInstall: false, checkedAt: new Date(this.now()).toISOString(), state: 'idle' }
     const install = await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
@@ -908,5 +910,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'opencode': return findOpenCodeExecutable()
     case 'cursor': return findCursorExecutable()
     case 'deepseek': return findDeepSeekExecutable()
+    case 'hermes': return findHermesExecutable()
   }
 }

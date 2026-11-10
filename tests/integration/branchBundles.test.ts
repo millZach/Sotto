@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
-import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
 import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
 

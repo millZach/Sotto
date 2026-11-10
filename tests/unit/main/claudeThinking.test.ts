@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
-import { claudeText } from '../../../src/main/agents/claudeSessionLog'
-import { claudeNarration } from '../../../src/main/agents/claudeThinking'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
+import { claudeText } from '../../../src/main/agents/providers/claude/claudeSessionLog'
+import { claudeNarration } from '../../../src/main/agents/providers/claude/claudeThinking'
 import { agentActivitySchema, MAX_ACTIVITY_TEXT, type AgentActivity } from '../../../src/shared/agentActivity'
 
 /**

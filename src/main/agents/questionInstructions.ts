@@ -16,4 +16,4 @@ export function questionInstructions(tool: string, keepsWorking: boolean): strin
  * so the user can read it without leaving the thread. Each provider that takes Sotto's instructions adds it to them, while its
  * Owl answer is on; it replaces nothing the provider says.
  */
-export const MARKDOWN_LINK_INSTRUCTIONS = 'Whenever you write or change a Markdown file, or name one the user may want to read, link it in your reply by its full path, as in [plan.md](/full/path/to/plan.md). Sotto opens that link in a side panel beside the thread, read only.'
+export const MARKDOWN_LINK_INSTRUCTIONS = 'Whenever you write or change a Markdown file, or name one the user may want to read, link it in your reply by its full path inside angle brackets, with forward slashes, as in [plan.md](</full/path/to/plan.md>) or on Windows [plan.md](<D:/My Project/plan.md>). The brackets keep a path with spaces a link. Sotto opens that link in a side panel beside the thread, read only.'

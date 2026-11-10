@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
-import { GitActions } from '../../../src/main/agents/gitActions'
+import { GitActions } from '../../../src/main/agents/git/gitActions'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 import { fixture, send } from '../../fixtures/workspaceTestFixture'
 import { deferred } from '../../fixtures/deferred'

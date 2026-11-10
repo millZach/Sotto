@@ -1,7 +1,7 @@
 /** Child-process workload for codexRolloutRead.perf.test.ts: the rollout reader catching up on real rollouts, read-only. */
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { CodexSessionLogWatcher } from '../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher } from '../../src/main/agents/providers/codex/codexSessionLog'
 
 const [codexHome, listPath] = process.argv.slice(2)
 if (!codexHome || !listPath) throw new Error('Expected a Codex home and a file listing the thread IDs to read')

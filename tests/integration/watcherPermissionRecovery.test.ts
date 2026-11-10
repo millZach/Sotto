@@ -40,7 +40,7 @@ async function fixture() {
       const project = control.watcherSnapshot().projects.find(item => item.providerId === 'grok')!
       const identity = { target: { hostId: control.hostId()!, threadId: randomUUID() }, projectId: project.id, provider: 'grok' as const,
         creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-      await control.updateWatcher(record => {
+      await control.watcherRecords.update(record => {
         record.lastRuntimeMode = 'auto-accept-edits'; record.current = identity
         record.creation = { identity, modelId: models.find(model => model.providerId === 'grok')!.id, phase: 'intent', replaces: null }
       })
@@ -54,7 +54,7 @@ it('refuses an incompatible remembered mode before first creation and lets the u
   expect(await f.service.setPermission({ runtimeMode: 'auto-accept-edits' })).toMatchObject({ status: 'ok' })
   const projects = f.control.watcherSnapshot().projects
   expect(await f.service.open({ provider: 'grok', modelId: f.grok.id })).toMatchObject({ status: 'refused', code: 'PERMISSION_NOT_COMPARABLE', message: expect.stringContaining('Choose a supported permission mode') })
-  expect(f.control.watcherRecord()).toMatchObject({ current: null, creation: null, lastRuntimeMode: 'auto-accept-edits' })
+  expect(f.control.watcherRecords.copy()).toMatchObject({ current: null, creation: null, lastRuntimeMode: 'auto-accept-edits' })
   expect(f.control.watcherSnapshot().projects).toEqual(projects)
   expect(await f.service.setPermission({ runtimeMode: 'approval-required' })).toMatchObject({ status: 'ok' })
   expect(await f.service.open({ provider: 'grok', modelId: f.grok.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'grok' }, currentOptions: { runtimeMode: 'approval-required' } } })
@@ -66,7 +66,7 @@ it('keeps the current Codex Watcher whole after Allow edits then Grok, and repla
   expect(await f.service.setPermission({ runtimeMode: 'auto-accept-edits' })).toMatchObject({ status: 'ok' })
   const current = f.service.state().current!
   expect(await f.service.open({ provider: 'grok', modelId: f.grok.id })).toMatchObject({ status: 'refused', code: 'PERMISSION_NOT_COMPARABLE' })
-  expect(f.control.watcherRecord()).toMatchObject({ current, creation: null, history: [], lastRuntimeMode: 'auto-accept-edits' })
+  expect(f.control.watcherRecords.copy()).toMatchObject({ current, creation: null, history: [], lastRuntimeMode: 'auto-accept-edits' })
   expect(f.control.watcherSnapshot().threads.find(thread => thread.id === current.target.threadId)).toMatchObject({ kind: 'watcher', runtimeMode: 'auto-accept-edits' })
   expect(await f.service.setPermission({ runtimeMode: 'approval-required' })).toMatchObject({ status: 'ok' })
   expect(await f.service.open({ provider: 'grok', modelId: f.grok.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'grok' }, currentOptions: { runtimeMode: 'approval-required' }, history: [current] } })
@@ -77,20 +77,20 @@ it('recovers a persisted missing-thread creation intent by changing its incompat
   const f = await fixture(), identity = await f.savePendingGrok()
   await f.restart()
   expect(f.service.state().recoveryNotice).toContain('Choose a supported permission mode')
-  expect(f.control.watcherRecord()).toMatchObject({ current: identity, creation: { identity }, lastRuntimeMode: 'auto-accept-edits' })
+  expect(f.control.watcherRecords.copy()).toMatchObject({ current: identity, creation: { identity }, lastRuntimeMode: 'auto-accept-edits' })
   expect(f.control.watcherSnapshot().threads.some(thread => thread.id === identity.target.threadId)).toBe(false)
   expect(await f.service.setPermission({ runtimeMode: 'auto-accept-edits' })).toMatchObject({ status: 'refused', code: 'PERMISSION_NOT_COMPARABLE' })
   expect(await f.service.setPermission({ runtimeMode: 'approval-required' })).toMatchObject({ status: 'ok', state: { current: identity, runtimeMode: 'approval-required' } })
   expect(await f.service.open({ provider: 'grok', modelId: f.grok.id })).toMatchObject({ status: 'ok', state: { current: identity, currentOptions: { runtimeMode: 'approval-required' }, recoveryNotice: null } })
-  expect(f.control.watcherRecord().creation).toBeNull()
-  expect(f.control.watcherRecord().history).toEqual([])
+  expect(f.control.watcherRecords.copy().creation).toBeNull()
+  expect(f.control.watcherRecords.copy().history).toEqual([])
 })
 
 it('keeps an uncertain missing-thread creation fenced while the user chooses a new mode', async () => {
   const f = await fixture(), identity = await f.savePendingGrok()
   vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(true)
   expect(await f.service.setPermission({ runtimeMode: 'approval-required' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-  expect(f.control.watcherRecord()).toMatchObject({ current: identity, creation: { identity }, lastRuntimeMode: 'auto-accept-edits' })
+  expect(f.control.watcherRecords.copy()).toMatchObject({ current: identity, creation: { identity }, lastRuntimeMode: 'auto-accept-edits' })
 })
 
 it('changes Watcher\'s permissions, model and effort from its room after a prompt on its own thread is set aside', async () => {

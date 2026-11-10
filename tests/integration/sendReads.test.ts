@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
+import { ClaudeSessionLog } from '../../src/main/agents/providers/claude/claudeSessionLog'
 import { nativeFixture, sendStack, type SendStackProvider } from '../fixtures/sendStack'
 
 const cleanup: (() => Promise<void>)[] = []

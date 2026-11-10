@@ -4,7 +4,7 @@ import { copyFile, mkdir, open, readdir, stat, unlink, type FileHandle } from 'n
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import { runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 import {
   BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_GIT_MS, BRANCH_BUNDLE_MAX_BYTES, BRANCH_TIPS_MAX, branchMoveRefusal, branchMoveWords, branchNameSchema, commitIdSchema,
   incomingRef, outgoingRef, SNAPSHOT_UNTRACKED_LISTED, type BranchMoved, type BranchMoveRefusal, type SnapshotCarried,

@@ -1,5 +1,5 @@
 import { MAX_ACTIVITY_TEXT, type AgentActivity } from '../../shared/agentActivity'
-import { object } from './claudeProtocol'
+import { object } from './providers/claude/claudeProtocol'
 import { acpToolMedia, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
@@ -14,7 +14,7 @@ const DEEPSEEK_THINKING: AcpThinking = {
 }
 
 /**
- * DeepSeek Harness's activity for one update (ADR-0138). Every tool arrives with ACP kind `other` and no
+ * DeepSeek's activity for one update (ADR-0138). Every tool arrives with ACP kind `other` and no
  * locations, so what a row is comes from the tool's own name and arguments: `bash` is a command, the file tools
  * are file changes naming their path (no diff travels on this surface; the thread's own turn snapshot shows what
  * changed), and anything else, MCP tools included, is a tool row. A thought settles when the model moves on. With

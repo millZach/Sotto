@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { HOST_CANNOT_STAGE_FILES } from '../../src/shared/agents'
+import { HOST_CANNOT_STAGE_FILES, HOST_CANNOT_STAGE_VIDEOS } from '../../src/shared/agents'
 import { FILE_UPLOAD_INCOMPLETE } from '../../src/host/fileUploads'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { SAME_VERSION_HELD } from '../fixtures/socketHostFixture'
@@ -78,5 +78,55 @@ describe('attached files on a remote host (ADR-0131)', () => {
     await expect(client.stageAttachment({ name: 'notes.txt', mimeType: 'text/plain', bytes: Buffer.from('Notes') })).rejects.toThrow(HOST_CANNOT_STAGE_FILES)
     await expect(readdir(join(root, 'attachments'))).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(client.stageAttachment({ name: 'pixel.png', mimeType: 'image/png', bytes: PIXEL_PNG })).resolves.toMatchObject({ mimeType: 'image/png' })
+  })
+})
+
+describe('videos on a remote host (ADR-0131, November 9 amendment)', () => {
+  type Part = { uploadId: string; index: number; count: number; name: string; mimeType: string; sizeBytes: number; digest: string; data: string }
+  const call = (service: SocketHostService, operation: { op: 'stage-file-part'; part: Part } | { op: 'file-upload-progress'; uploadId: string }) =>
+    (service as unknown as { call(operation: unknown): Promise<unknown> }).call(operation)
+  const PART = 8 * 1024 * 1024
+  const videoParts = (bytes: Buffer, name = 'screen-recording.mov'): Part[] => {
+    const uploadId = randomUUID(), count = Math.ceil(bytes.length / PART)
+    const whole = { uploadId, count, name, mimeType: 'video/quicktime', sizeBytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') }
+    return Array.from({ length: count }, (_, index) => ({ ...whole, index, data: bytes.subarray(index * PART, (index + 1) * PART).toString('base64') }))
+  }
+  const video = (size: number): Buffer => { const bytes = Buffer.alloc(size); for (let index = 0; index < size; index += 4096) bytes[index] = index % 253; return bytes }
+
+  it('stages a video larger than a file from its path on the desktop, its parts on disk on the host and gone once kept', async () => {
+    const { root, host, client } = await hostWithFiles(true)
+    expect(host.descriptor!.features).toEqual(expect.arrayContaining(['file-staging', 'video-staging']))
+    const bytes = video(30 * 1024 * 1024 + 7)
+    const local = join(root, 'local-video.mov'); await writeFile(local, bytes)
+    const handle = await client.stageAttachmentFile({ name: 'local-video.mov', mimeType: 'video/quicktime', path: local })
+    expect(handle).toMatchObject({ mimeType: 'video/quicktime', sizeBytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') })
+    expect((await readFile(join(root, 'attachments', `${handle.digest}.bin`))).equals(bytes)).toBe(true)
+    await expect(readdir(join(root, 'attachments', 'uploads'))).resolves.toEqual([])
+  }, 60_000)
+
+  it('keeps a video upload when its client leaves and tells the client where to carry on', async () => {
+    const { root, client, url, token, hostId } = await hostWithFiles(true)
+    const bytes = video(2 * PART + 11)
+    const parts = videoParts(bytes)
+    await expect(call(client, { op: 'file-upload-progress', uploadId: parts[0]!.uploadId })).resolves.toBeNull()
+    await expect(call(client, { op: 'stage-file-part', part: parts[0]! })).resolves.toBeNull()
+    await expect(call(client, { op: 'stage-file-part', part: parts[1]! })).resolves.toBeNull()
+    // The phone's connection drops: its only socket closes, and the host keeps what came.
+    await client.close()
+    const back = new SocketHostService({ url, token, expectedHostId: hostId, heldProviders: SAME_VERSION_HELD })
+    closers.push(() => back.close()); await back.connect()
+    await expect(call(back, { op: 'file-upload-progress', uploadId: parts[0]!.uploadId })).resolves.toEqual({ parts: 2 })
+    const handle = await call(back, { op: 'stage-file-part', part: parts[2]! })
+    expect(handle).toMatchObject({ name: 'screen-recording.mov', sizeBytes: bytes.length })
+    expect((await readFile(join(root, 'attachments', `${createHash('sha256').update(bytes).digest('hex')}.bin`))).equals(bytes)).toBe(true)
+    await expect(call(back, { op: 'file-upload-progress', uploadId: parts[0]!.uploadId })).resolves.toBeNull()
+  }, 60_000)
+
+  it('takes no video larger than a file, and no upload progress, from a host whose own answer is off', async () => {
+    const { root, host, client } = await hostWithFiles(false)
+    expect(host.descriptor!.features).not.toContain('video-staging')
+    const local = join(root, 'local-video.mov'); await writeFile(local, video(PART + 1))
+    await expect(client.stageAttachmentFile({ name: 'local-video.mov', mimeType: 'video/quicktime', path: local })).rejects.toThrow(HOST_CANNOT_STAGE_VIDEOS)
+    await expect(call(client, { op: 'file-upload-progress', uploadId: randomUUID() })).rejects.toThrow()
   })
 })

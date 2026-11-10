@@ -39,12 +39,14 @@ function hostState(): AgentState {
 
 describe('a client that does not know OpenCode', () => {
   it('is a client whose hello does not accept provider-opencode', () => {
-    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor' })
-    expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor'])
-    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor'])
+    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor', deepseek: 'provider-deepseek' })
+    expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor', 'deepseek'])
+    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor', 'deepseek'])
     // A phone that knows OpenCode but not Cursor (ADR-0128) is sent OpenCode and nothing of Cursor's.
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor'])
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual([])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor', 'deepseek'])
+    // A phone from before DeepSeek Harness reached phones (ADR-0138, November 8 amendment) is sent nothing of it.
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual(['deepseek'])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek'])]).toEqual([])
   })
 
   it('is sent a shell that names OpenCode nowhere: no row, model, project, thread, draft, client update or setting', () => {

@@ -43,6 +43,13 @@ export const MAX_ACTIVITY_MEDIA = 8
 export const WRITTEN_STEP_PREFIX = 'sotto-written-'
 /** The ID every step an agent showed pictures or videos in through `sotto_media` starts with (ADR-0170, request-only); titled in the agent's words. */
 export const SHOWN_STEP_PREFIX = 'sotto-shown-'
+/**
+ * Whether a step's pictures stand as tiles in the thread (ADR-0170, pictures in steps): the agent showed them through
+ * `sotto_media` or made the image the user asked for. Every other step's pictures sit small in the step's own row.
+ */
+export function picturesStandInThread(record: Pick<AgentActivity, 'id' | 'generates'>): boolean {
+  return record.id.startsWith(SHOWN_STEP_PREFIX) || record.generates === 'image'
+}
 /** The largest video an agent wrote that a tile plays on the desktop (ADR-0170, part 4), read from where it was written. */
 export const AGENT_VIDEO_MAX_BYTES = 200 * 1024 * 1024
 /** The largest the iPhone fetches to play, in parts (`thread-media-part`); a larger one says it plays on the desktop. */
@@ -286,6 +293,35 @@ export function mergeAgentActivities(previous: readonly AgentActivity[] = [], in
   }
   // New records take sequences past every held one, so a list in order stays in order. `sort` is stable, as the full merge relies on.
   return bounded(ordered ? records : records.sort((a, b) => a.sequence - b.sequence), previous, same)
+}
+
+/**
+ * `incoming` without the records a list that has cut its oldest records cut: those its provider lists in `list`, its whole
+ * list in its own order, before the first record `held` holds, unless one is known to have started after that record. A
+ * provider keeps its own newest `MAX_AGENT_ACTIVITIES`, and once its list and `held` differ by one record, as when a
+ * provider takes one back, they cut different old ones. Merged as new, each record `held` had cut took a sequence past
+ * the newest and pushed a newer one out, which the provider's next list brought back the same way, until old steps were
+ * numbered past new ones (#2330). A list has cut records when it is at the limit or its first record is marked cut,
+ * which a list a record was later taken out of still is.
+ *
+ * The provider's first record is nearly always `held`'s oldest, so the usual call reads a record or two of `held`.
+ */
+export function withoutCutActivities(held: readonly AgentActivity[] | undefined, list: readonly AgentActivity[] | undefined, incoming: readonly AgentActivity[]): readonly AgentActivity[] {
+  if (!held?.length || held.length < MAX_AGENT_ACTIVITIES && held[0]!.truncated !== true || !list?.length) return incoming
+  const first = list[0]!.id
+  if (held.some(record => record.id === first)) return incoming
+  const holding = new Set(held.map(record => record.id))
+  const oldest = list.find(record => holding.has(record.id))
+  if (!oldest) return incoming
+  const since = oldest.startedAt === undefined ? Number.NaN : Date.parse(oldest.startedAt)
+  const cut = new Set<string>()
+  for (const record of list) {
+    if (record === oldest) break
+    const started = record.startedAt === undefined ? Number.NaN : Date.parse(record.startedAt)
+    // A record that started after the oldest one held is new, listed first as a provider merging history under it may.
+    if (!(started > since)) cut.add(record.id)
+  }
+  return cut.size === 0 ? incoming : incoming.filter(record => !cut.has(record.id))
 }
 
 /** The merge for a list holding an id more than once: the last record with it, in the place of the first. */

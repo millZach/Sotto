@@ -32,6 +32,8 @@ export const AGENT_E2E = 'sotto:e2e:agents'
 export const AGENT_ATTACHMENT_PREVIEW = 'sotto:agents:attachment-preview'
 /** The window stages an image's bytes once and gets its handle back, or reads a staged image back for a chip (ADR-0031). */
 export const AGENT_ATTACHMENT_STAGE = 'sotto:agents:stage-attachment'
+/** A video too large to hand over as bytes, staged from its path (ADR-0131, November 9 amendment). */
+export const AGENT_ATTACHMENT_STAGE_FILE = 'sotto:agents:stage-attachment-file'
 export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 /** Pushed per thread: the messages of a thread the window is actually looking at. */
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
@@ -83,10 +85,21 @@ export function isImageAttachment(mimeType: string): mimeType is AgentImageMimeT
 export const AGENT_GENERIC_FILE_MIME_TYPE = 'application/octet-stream'
 /** A well-formed MIME type, `type/subtype`, lowercase, at most 127 characters, with no parameters. */
 export const agentMimeTypeSchema = z.string().max(127).regex(/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u)
-/** The MIME type a file is staged under: the browser's own, lowercased and without parameters, or the generic one. */
-export function attachmentMimeType(browserType: string): string {
+/**
+ * The video types a file's extension names, for a video the browser gives no type: Chromium on Linux gives an `.MOV` none,
+ * and Windows none for a format it has no entry for. Without one a video would be held to a file's 25 MiB.
+ */
+const VIDEO_TYPES_BY_EXTENSION: Readonly<Record<string, string>> = { mov: 'video/quicktime', qt: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/x-m4v',
+  webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo', '3gp': 'video/3gpp', mpg: 'video/mpeg', mpeg: 'video/mpeg', wmv: 'video/x-ms-wmv', ogv: 'video/ogg' }
+/**
+ * The MIME type a file is staged under: the browser's own, lowercased and without parameters; when it gives none, a video
+ * type its name's extension names; otherwise the generic one.
+ */
+export function attachmentMimeType(browserType: string, name = ''): string {
   const type = browserType.split(';')[0]!.trim().toLowerCase()
-  return agentMimeTypeSchema.safeParse(type).success ? type : AGENT_GENERIC_FILE_MIME_TYPE
+  if (agentMimeTypeSchema.safeParse(type).success && type !== AGENT_GENERIC_FILE_MIME_TYPE) return type
+  const extension = /\.([^./\\]+)$/u.exec(name)?.[1]?.toLowerCase() ?? ''
+  return VIDEO_TYPES_BY_EXTENSION[extension] ?? AGENT_GENERIC_FILE_MIME_TYPE
 }
 export const AGENT_MAX_ATTACHMENTS = 8
 /** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
@@ -96,11 +109,19 @@ export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 /** The most one attached file may hold (ADR-0131). */
 export const AGENT_MAX_FILE_BYTES = 25 * 1024 * 1024
-/** The most a set's images and files may hold between them (ADR-0131). */
+/** The most a set's images and files that are not videos may hold between them (ADR-0131). */
 export const AGENT_MAX_ATTACHMENTS_TOTAL_BYTES = 50 * 1024 * 1024
+/** The most one attached video may hold: the original file, never a smaller copy (ADR-0131, November 9 amendment). */
+export const AGENT_MAX_VIDEO_BYTES = 500 * 1024 * 1024
+/** The most a set's videos may hold between them, apart from the 50 MiB for everything else. */
+export const AGENT_MAX_VIDEOS_TOTAL_BYTES = 500 * 1024 * 1024
+/** Whether an attached file is a video: any `video/` type. A video is an attached file with a higher limit and its own total. */
+export function isVideoAttachment(mimeType: string): boolean {
+  return mimeType.startsWith('video/')
+}
 /** The most one attachment may hold, by what it is. */
 export function attachmentLimitBytes(mimeType: string): number {
-  return isImageAttachment(mimeType) ? AGENT_MAX_IMAGE_BYTES : AGENT_MAX_FILE_BYTES
+  return isImageAttachment(mimeType) ? AGENT_MAX_IMAGE_BYTES : isVideoAttachment(mimeType) ? AGENT_MAX_VIDEO_BYTES : AGENT_MAX_FILE_BYTES
 }
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
 // The guide gives these limits in MB, so the sentences do too.
@@ -115,6 +136,10 @@ export const ATTACHED_FILE_TOO_LARGE = 'Each file must be 25 MB or smaller. Noth
 export const ATTACHED_IMAGE_TOO_LARGE = 'Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image.'
 export const ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL = 'Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones.'
 export const ATTACHMENTS_TOO_LARGE_IN_TOTAL = 'Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.'
+export const VIDEO_TOO_LARGE = 'Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one.'
+export const VIDEOS_TOO_LARGE_IN_TOTAL = 'Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video.'
+/** A video too large for the window that has no path to read it from, such as a pasted one. */
+export const VIDEO_HAS_NO_PATH = 'This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there.'
 /** An image on a model that reads none, naming the image. Files go to every model. */
 export function imagesNotReadRefusal(name: string): string {
   return `This model does not read images. Choose a model with image support, or remove ${name}.`
@@ -149,6 +174,8 @@ export function nameHostInRefusal(message: string, name: string): string {
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
 /** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0131). */
 export const HOST_CANNOT_STAGE_FILES = 'This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a video over a file's 25 MiB is refused with on a host without `video-staging`. */
+export const HOST_CANNOT_STAGE_VIDEOS = 'This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached.'
 /** What a file is refused with when the host that would keep it is not connected (ADR-0131). */
 export const HOST_DISCONNECTED_BEFORE_FILES = 'This host is disconnected. Connect again before attaching files. Nothing was attached.'
 /** A file part a host refuses as not the one its upload expects: out of order, from an upload it no longer holds, or too large. */
@@ -218,25 +245,33 @@ export const attachmentDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
  */
 export const agentAttachmentHandleSchema = z.object({
   id: z.string().min(1).max(128).regex(/^[a-z0-9_-]+$/iu), name: z.string().trim().min(1).max(255),
-  mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), digest: attachmentDigestSchema,
+  mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_VIDEO_BYTES), digest: attachmentDigestSchema,
   /** The sizes the composer attached and staged it at, when it knew them (issue #321). */
   dimensions: agentAttachmentDimensionsSchema.optional(),
   /** Set when the image is Point at something's picture (ADR-0154): what travels with it until the message is sent. */
   browserFeedback: agentBrowserFeedbackSchema.optional(),
-}).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB.')
+}).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB, a video 500 MiB and any other file 25 MiB.')
 export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
-/** The bytes a set of staged attachments holds between them: what the 50 MiB total is measured on. */
-export function attachmentHandlesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes'>[]): number {
-  return items.reduce((sum, item) => sum + item.sizeBytes, 0)
+/**
+ * The bytes a set's images and files that are not videos hold between them: what the 50 MiB total is measured on.
+ * Videos have their own total (`attachmentVideosBytes`).
+ */
+export function attachmentBytesBesideVideos(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
+  return items.reduce((sum, item) => isVideoAttachment(item.mimeType) ? sum : sum + item.sizeBytes, 0)
+}
+/** The bytes a set's videos hold between them: what the 500 MiB video total is measured on. */
+export function attachmentVideosBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
+  return items.reduce((sum, item) => isVideoAttachment(item.mimeType) ? sum + item.sizeBytes : sum, 0)
 }
 /** The bytes a set's images hold between them: what the 20 MiB image total is measured on. */
 export function attachmentImagesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
-  return attachmentHandlesBytes(items.filter(item => isImageAttachment(item.mimeType)))
+  return attachmentBytesBesideVideos(items.filter(item => isImageAttachment(item.mimeType)))
 }
 export const agentAttachmentHandlesSchema = z.array(agentAttachmentHandleSchema).max(AGENT_MAX_ATTACHMENTS)
   .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
   .refine(items => attachmentImagesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
-  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
+  .refine(items => attachmentBytesBesideVideos(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
+  .refine(items => attachmentVideosBytes(items) <= AGENT_MAX_VIDEOS_TOTAL_BYTES, 'Videos must total no more than 500 MiB.')
 const imageBytes = (limit: number) => z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= limit,
   'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
 const attachmentBytes = z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= AGENT_MAX_FILE_BYTES,
@@ -252,6 +287,22 @@ export const agentAttachmentStageRequestSchema = z.object({
 export type AgentAttachmentStageRequest = z.infer<typeof agentAttachmentStageRequestSchema>
 /** What a host is handed to stage: the image without the thread the window routed it by. */
 export type AgentAttachmentUpload = Omit<AgentAttachmentStageRequest, 'threadId'>
+/**
+ * A video the window stages from where it is on this computer rather than as bytes: one too large to pass through the
+ * window (ADR-0131, November 9 amendment). The preload finds the path of the file the user dropped or chose; main reads
+ * it in a stream and checks its type and size, so a path names nothing it would not take.
+ */
+export const agentAttachmentStageFileRequestSchema = z.object({
+  threadId: id.nullable(), name: z.string().trim().min(1).max(255),
+  mimeType: agentMimeTypeSchema.refine(isVideoAttachment, 'Only a video is staged from its path.'), path: z.string().min(1).max(32_767),
+}).strict()
+export type AgentAttachmentStageFileRequest = z.infer<typeof agentAttachmentStageFileRequestSchema>
+/**
+ * A file staged from where it already is on the computer that keeps it, never read whole: a video (ADR-0131, November 9
+ * amendment). `checkedDigest` is set only for a host's own finished upload, whose size and digest it has just checked
+ * and which is moved into the store rather than copied.
+ */
+export interface AgentAttachmentFileUpload { readonly name: string; readonly mimeType: string; readonly path: string; readonly checkedDigest?: string }
 /** A staged image's bytes, for a composer restoring a chip it holds no copy of. A file draws no chip, so none is read. */
 export const agentAttachmentContentRequestSchema = z.object({ threadId: id.nullable(), digest: attachmentDigestSchema }).strict()
 export type AgentAttachmentContentRequest = z.infer<typeof agentAttachmentContentRequestSchema>
@@ -583,9 +634,15 @@ const agentThreadSummarySchema = z.object({
   runningTurnStartedAt: z.string().optional(),
 }).strict()
 export type AgentThreadSummary = z.infer<typeof agentThreadSummarySchema>
+/**
+ * Of a submodule row's commits not on any remote, the ones its FETCH_HEAD says were fetched by their hash from
+ * `remote`, so they may already be there (#687). They stay in `unpushedCommitCount` and still need the tick.
+ */
+const fetchedByHashSchema = z.object({ remote: z.string(), commitCount: z.number().int().positive() })
 export const worktreeReclaimPreviewSchema = z.object({
   path: z.string(), branch: z.string().optional(), dirty: z.boolean(), ignored: z.array(z.string()),
-  repositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) })),
+  repositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']),
+    fetchedByHash: fetchedByHashSchema.optional() })),
   items: z.array(z.object({ path: z.string(), bytes: z.number().nonnegative(), fileCount: z.number().int().nonnegative() })),
   untracked: z.array(z.string()),
   outsideLink: z.string().optional(),
@@ -1004,7 +1061,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1018,6 +1075,8 @@ export function providerConnectionNotice(state: Pick<AgentState, 'host' | 'confi
 /** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
 export function providerIdOfLabel(label: string): ProviderId | undefined {
   const name = label.trim().toLowerCase()
+  // Older saved catalogs used the client's full name. Keep their provider identity after the display rename.
+  if (name === 'deepseek harness') return 'deepseek'
   return providerIdSchema.options.find(id => id === name || PROVIDER_LABELS[id].toLowerCase() === name)
 }
 export const agentConfigurationSchema = z.object({
@@ -1044,7 +1103,7 @@ export const agentConfigurationSchema = z.object({
    */
   museDisableSandbox: z.boolean().default(false),
   /**
-   * The effort a Claude thread on Ultracode runs at on this machine (ADR-0148), Extra high unless changed in Settings →
+   * The effort a Claude thread on Ultracode runs at on this machine (ADR-0148), XHigh unless changed in Settings →
    * Providers → Claude Code. Read at every launch and every send, so a change reaches a thread with its next message.
    */
   claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),
@@ -1122,7 +1181,11 @@ export const agentStateSchema = z.object({
    */
   checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
-  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
+  /**
+   * `browser`: present while the host offers Sotto's browser for its own threads to this computer (ADR-0198), numbering
+   * the connection it came on, so a page watched over an earlier connection is watched again over this one.
+   */
+  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
@@ -1226,9 +1289,14 @@ export interface AgentThreadsBroadcast {
 export type KeptPart = Exclude<keyof AgentState, 'host'>
 /** A part of the shell's host a broadcast may keep: any field but its threads. */
 export type KeptHostPart = Exclude<keyof AgentHostSnapshot, 'threads'>
-export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
+type CompleteHostBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
   models: AgentModelCatalogBroadcast
   clientHosts?: AgentClientHostBroadcast[]
+  threads: AgentThreadsBroadcast
+}
+/** A broadcast after retained parts are restored, before catalogs and thread records are reassembled. */
+export type CompleteAgentStateBroadcast = Omit<AgentState, 'host'> & { host: CompleteHostBroadcast }
+export type AgentHostSnapshotBroadcast = Partial<Omit<CompleteHostBroadcast, 'threads'>> & {
   threads: AgentThreadsBroadcast
   /** The host's parts this broadcast left out, as the broadcast its threads are measured from had them (`kept`). */
   kept?: KeptHostPart[]
@@ -1239,7 +1307,7 @@ export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'cli
  * because they hold what the broadcast its threads are measured from held (ADR-0028, October 30 kept parts): they are
  * absent here, and the page puts them back before anything reads the state.
  */
-export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
+export type AgentStateBroadcast = Partial<Omit<AgentState, 'host'>> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
 
 const PRIMARY_CATALOG_KEY = '__primary__'
 
@@ -1454,7 +1522,7 @@ const worktreeConfirmations = {
   confirmedIgnored: z.array(z.string()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
   confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).max(WORKTREE_CONFIRMED_ITEMS_MAX).optional(),
   confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(),
-    kind: z.enum(['worktree', 'repository']) }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
+    kind: z.enum(['worktree', 'repository']), fetchedByHash: fetchedByHashSchema.strict().optional() }).strict()).max(WORKTREE_CONFIRMED_REPOSITORIES_MAX).optional(),
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
@@ -1684,6 +1752,11 @@ export interface AgentBridge {
   threadMedia?(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult>
   /** Stages an image once on the host that runs `threadId` (the selected host when null) and answers with its handle (ADR-0031). */
   stageAttachment?(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
+  /**
+   * Stages a video from where it is on this computer, for one too large to read into the window (ADR-0131, November 9
+   * amendment). The preload finds the dropped or chosen file's path; it refuses a file with none, such as a pasted one.
+   */
+  stageAttachmentFile?(request: Omit<AgentAttachmentStageFileRequest, 'path'> & { readonly file: File }): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a chip this window holds no copy of; null once its host no longer keeps it. */
   attachmentContent?(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null>
   command(command: AgentCommand): Promise<AgentState>
@@ -1739,7 +1812,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

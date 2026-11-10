@@ -92,7 +92,7 @@ async function measure(threads: number, owl: boolean) {
     pipeline.adapter.publish(true)
     await sleep(300)
     globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); const copy = native(value, options); made('structuredClone', copy, undefined); return copy }) as typeof structuredClone
-    counter.record = owl ? () => pipeline.control.watcherRecordView() : undefined
+    counter.record = owl ? () => pipeline.control.watcherRecords.view() : undefined
     counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.watcherRecord = 0; counter.kinds.clear(); pipeline.resetCounts()
     counter.objects = 0; counter.objectKinds.clear(); counter.parses = 0; counter.hiddenProjections = 0; counter.measuring = true
     // The thread that delegated is shown without its hidden news, before the stream and while it runs.

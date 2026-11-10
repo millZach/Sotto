@@ -175,6 +175,11 @@ msgstr "{interrupted, plural, other {# interrupted}}"
 msgid "{lines, plural, one {{count} whitespace line hidden} other {{count} whitespace lines hidden}}"
 msgstr "{lines, plural, one {{count} whitespace line hidden} other {{count} whitespace lines hidden}}"
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "{machine} has no browser for this thread."
+msgstr "{machine} has no browser for this thread."
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comments. Send it or delete one first.}}"
 msgstr "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comments. Send it or delete one first.}}"
@@ -182,6 +187,10 @@ msgstr "{MAX_REVIEW_COMMENTS, plural, other {A message carries at most # comment
 #: src/renderer/src/tools/PullRequestDetails.tsx
 msgid "{more, plural, one {# more file} other {# more files}}"
 msgstr "{more, plural, one {# more file} other {# more files}}"
+
+#: src/renderer/src/tools/PullRequestSurface.tsx
+msgid "{more, plural, one {# more pull request} other {# more pull requests}}"
+msgstr "{more, plural, one {# more pull request} other {# more pull requests}}"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{more, plural, other {{name} and # more are still running}}"
@@ -840,6 +849,10 @@ msgstr "Browser for {title}"
 msgid "Browser is not available in this window."
 msgstr "Browser is not available in this window."
 
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "Browser is on the host machine."
+msgstr "Browser is on the host machine."
+
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Browser paused"
@@ -951,6 +964,10 @@ msgstr "Changes were asked for"
 #: src/renderer/src/tools/WaitingChecks.tsx
 msgid "Check"
 msgstr "Check"
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Check again"
+msgstr "Check again"
 
 #: src/renderer/src/tools/WaitingChecks.tsx
 msgid "check on {machine}"
@@ -1881,6 +1898,11 @@ msgstr "Hide whitespace changes"
 msgid "In the pane"
 msgstr "In the pane"
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Install Chromium or Google Chrome on {machine}, then press Check again."
+msgstr "Install Chromium or Google Chrome on {machine}, then press Check again."
+
 #. A subagent's state.
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Interrupted"
@@ -2472,7 +2494,9 @@ msgstr "Nothing to merge yet"
 msgid "on {host}"
 msgstr "on {host}"
 
+#. {machine} is the name of a paired host, as in forge. Says which machine a browser page runs on.
 #. {machine} is the name of a paired host, as in forge. Says which machine a terminal's shell runs on.
+#: src/renderer/src/tools/HostPageView.tsx
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "on {machine}"
 msgstr "on {machine}"
@@ -2739,6 +2763,11 @@ msgstr "Page address"
 msgid "Page to annotate"
 msgstr "Page to annotate"
 
+#. {label} is a browser page's title or host. The page runs on a paired host and is drawn here from its pictures.
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "Page: {label}"
+msgstr "Page: {label}"
+
 #. The tabs of a thread's browser pages.
 #. The tabs of a thread's browser pages.
 #: src/renderer/src/tools/BrowserPane.tsx
@@ -2984,6 +3013,11 @@ msgstr "Ready to merge"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Rebase"
 msgstr "Rebase"
+
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Reconnecting to {machine}. The page stays open there, and the agent keeps browsing."
+msgstr "Reconnecting to {machine}. The page stays open there, and the agent keeps browsing."
 
 #: src/renderer/src/tools/FileTree.tsx
 msgid "Refresh"
@@ -3733,6 +3767,10 @@ msgstr "the failing checks pass"
 msgid "The host"
 msgstr "The host"
 
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "The host didn't answer, so this picture may be old. Nothing was changed. Try again."
+msgstr "The host didn't answer, so this picture may be old. Nothing was changed. Try again."
+
 #: src/renderer/src/tools/terminalStore.ts
 msgid "The image could not be pasted. Check the command before trying again."
 msgstr "The image could not be pasted. Check the command before trying again."
@@ -3973,6 +4011,11 @@ msgstr "This page is private. Share it with the agent in this thread."
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "This page is private. The agent cannot see it"
 msgstr "This page is private. The agent cannot see it"
+
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "This page runs on {machine}"
+msgstr "This page runs on {machine}"
 
 #: src/renderer/src/tools/OpenPullRequests.tsx
 msgid "This project has no GitHub remote, so it has no pull requests to list."
@@ -4268,6 +4311,15 @@ msgstr "Up to date with {base}"
 msgid "Update branch"
 msgstr "Update branch"
 
+#. {hostName} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "Update Sotto on {hostName} in Settings > Hosts & phones to use it here."
+msgstr "Update Sotto on {hostName} in Settings > Hosts & phones to use it here."
+
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "Update Sotto on the host in Settings > Hosts & phones to use it here."
+msgstr "Update Sotto on the host in Settings > Hosts & phones to use it here."
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Update with rebase"
@@ -4429,3 +4481,7 @@ msgstr "Wrap long lines"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "You can merge once {list}."
 msgstr "You can merge once {list}."
+
+#: src/renderer/src/tools/HostPageView.tsx
+msgid "Your click or key didn't reach the page. Nothing was changed there. Try again."
+msgstr "Your click or key didn't reach the page. Nothing was changed there. Try again."

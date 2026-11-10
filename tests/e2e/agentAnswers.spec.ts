@@ -34,6 +34,14 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Workshop', exact: true }).click()
 }
 
+/** What the user sent a thread: its user messages less Sotto's own wake-ups, such as the note a restart sends a thread it stopped. */
+async function sentByUser(page: Page, threadId: string): Promise<string[]> {
+  return page.evaluate(async id => {
+    const detail = await window.sotto!.agents!.threadDetail!(id)
+    return (detail?.messages ?? []).filter(message => message.role === 'user' && message.wakeUp !== true).map(message => message.text)
+  }, threadId)
+}
+
 const workshopQuestion: HostEvent = {
   type: 'question', threadId: 'workshop', requestId: 'layout-question',
   text: 'Which layout should the project use?', status: 'running',
@@ -67,7 +75,8 @@ test('keeps an answer on its own request through thread navigation and restart u
     await launched.page.getByRole('button', { name: 'Send answer', exact: true }).click()
     await expect.poll(async () => thread(await state(launched.page), 'workshop')?.requests.length).toBe(0)
     expect(thread(await state(launched.page), 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
-    expect(await userMessageTexts(launched.page, 'workshop')).toHaveLength(0)
+    // The workshop was mid-turn when Sotto closed, so the restart sends it Sotto's note; the answer is never sent as a message.
+    expect(await sentByUser(launched.page, 'workshop')).toHaveLength(0)
     await expectPromptText(promptField(launched.page), '')
   } finally {
     await closeSotto(launched)

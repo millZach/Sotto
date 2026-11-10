@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
 import { mergeAgentActivities } from '../../../src/shared/agentActivity'
 

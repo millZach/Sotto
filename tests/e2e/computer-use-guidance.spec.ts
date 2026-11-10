@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
-import { computerUseNeeds } from '../../src/main/agents/codexActivity'
+import { computerUseNeeds } from '../../src/main/agents/providers/codex/codexActivity'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
 test('Computer Use connection guidance wraps in the built app and opens from the keyboard', async () => {

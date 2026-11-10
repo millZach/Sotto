@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentBabysittingSchema, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
-import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './githubBabysitReads'
+import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './git/githubBabysitReads'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 
 /**

@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
-import type { InteractiveProcess } from './gitLauncher'
+import type { InteractiveProcess } from './git/gitLauncher'
 
 /**
  * Grok Build's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs

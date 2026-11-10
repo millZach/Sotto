@@ -1,4 +1,5 @@
 import { ThreadMediaTiles } from './ThreadMediaTiles'
+import { PictureScopeContext, StepPicturesThreadContext, usePictureScope, useStepPictures, type StepPicturesThread } from './StepPictures'
 import { isCouncilPromptText } from '../../../shared/council'
 import React, { createContext, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useResponseStreaming } from './responseStreaming'
@@ -8,11 +9,11 @@ import { ArrowDown, ArrowRightLeft, Check, ChevronRight, Copy, GitFork, MessageS
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import type { AgentActivity } from '../../../shared/agentActivity'
+import { picturesStandInThread, type AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn, type ThreadModelMoved } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
-import { sendThreadRevision } from './ThreadComposer'
+import { sendThreadRevision } from './threadSubmission'
 import { useWatchActions } from '../watcher/watcherRoom'
 import { watchAfterSend } from '../watcher/watchOnSend'
 import { followupsFor } from './ThreadFollowups'
@@ -146,8 +147,10 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpen, turn, failed, changes, sayOnce, onDisclosure, onSeek, lifted, who, children }: {
+function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpen, turn, failed, changes, sayOnce, onDisclosure, onSeek, lifted, who, records, children }: {
   readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
+  /** The turn's records: closed, its line shows the newest pictures they made (ADR-0170, pictures in steps). */
+  readonly records: readonly AgentActivity[]
   /** The turn only thought, for a moment, and wrote nothing on the way: its closed line steps back further. */
   readonly moment: boolean
   /** The turn was quick, with one step or none: its closed line shows only under the pointer or the keyboard (ADR-0134). */
@@ -174,6 +177,7 @@ function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpe
   const body = useRef<HTMLDivElement>(null)
   const bodyId = useId()
   const liftedId = useId()
+  const pictures = useStepPictures(records, !open)
   // The fold opens before the reply is looked for, because a closed fold does not draw its replies.
   const seek = (messageId: string): void => {
     flushSync(() => setOpen(true))
@@ -194,6 +198,8 @@ function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpe
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
       {sayOnce && open && changes.length === 1 ? null : <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />}
+      {pictures.strip}
+      {pictures.player}
       <TurnFailureReason turn={turn} />
       <Fold open={open}><div id={bodyId} ref={body} className="thread-work__body">{children}</div></Fold>
     </section>
@@ -240,8 +246,9 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
  * they arrive. Memoized on the message array and placement so composer keystrokes and status ticks do not repaint it.
  *
  * An assistant message with no text yet (a provider call that so far holds only tool use) draws no header.
- * With `streamText` off, the reply being written is held back until something follows it: activity after it,
- * a later message, or the end of the turn. Activity itself always appears as it runs.
+ * With `streamText` off, the reply being written is held back, and not drawn, until something follows it: activity after
+ * it, a later message, or the end of the turn. Meanwhile the working line says a reply is being written. Activity itself
+ * always appears as it runs.
  */
 const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
 
@@ -323,13 +330,8 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  */
 /** The model overseeing the thread drawn, where it is a Dynamic thread (ADR-0191): its replies carry a mark if it changed files itself. */
 const OverseenContext = createContext<string | undefined>(undefined)
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity, named = true, close = false }: {
-  readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
-  /**
-   * Whether its name and time head the reply. A thread's replies are all its provider's, so only the first one drawn says
-   * whose they are; the rest keep the name and time for assistive tech and show them beside Copy on hover or focus.
-   */
-  readonly named?: boolean | undefined
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, threadId, speaker, delegatedBy, forkable, work, workGroups, activity, close = false }: {
+  readonly message: AgentMessage; readonly provider: string; readonly writing: boolean
   /**
    * In Watcher's conversation, a reply written within five minutes of the Watcher reply before it. Where nothing stands
    * between the two, they share the first one's header (watcher.css), and this one's name and time wait beside Copy.
@@ -391,7 +393,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
-    data-not-carried={fork?.after.has(message.id) || undefined} data-named={named ? undefined : 'no'} data-close={close || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
+    data-not-carried={fork?.after.has(message.id) || undefined} data-close={close || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>{t({ message: 'delegated', comment: 'Follows the name of the thread that sent this brief: that thread delegated it.' })}</span></>
       : <span className="thread-message__who">{message.role === 'user' ? t({ message: 'You', comment: 'Who wrote a message: the user.' }) : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : t({ message: 'System', comment: 'Who wrote a message: the system.' })}</span>}
@@ -406,9 +408,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
     {work && activity ? <Fold open={workOpen}><div id={workId} className="thread-message__work-body">
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div></Fold> : null}
-    {writing && !streamText
-      ? <p className="thread-message__writing tt-paragraph" role="status">{t`Writing a reply…`}</p>
-      : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
+    <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {overseen !== undefined && message.role === 'assistant' && !writing ? <OverseerOwnChangeFor message={message} overseer={overseen} /> : null}
@@ -428,12 +428,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply, close }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, close }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
   /** Watcher's replies written within five minutes of the Watcher reply before them (`closeReplies`). */
   readonly close?: ReadonlySet<string> | undefined
-  /** The one reply in the list that is headed by the provider's name and time; undefined heads every reply. */
-  readonly namedReply?: string | undefined
   /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
   readonly running: boolean
   readonly writing: string | undefined
@@ -461,11 +459,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const failureWords = useContext(TurnFailureWordsContext)
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
+  // With replies shown when finished, the reply being written is not drawn at all: the working line already says
+  // "Writing a reply", so nothing says it twice (Zach's pick A, November 9, 2026).
   const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
     ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
-      named={namedReply === undefined || message.role !== 'assistant' || isWakeUpMessage(message) || message.id === namedReply} close={close?.has(message.id)}
+    : drawn(message) && (streamText || message.id !== writing) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId} close={close?.has(message.id)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {message.id === writing && writingBelow ? createPortal(article(message), writingBelow, message.id) : article(message)}
@@ -497,6 +496,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const replyGroups = everything.flatMap(message => placement.after.get(message.id) ?? [])
   // Shared across updates, so the reply that carries a news turn's work keeps its memo while other turns change.
   const groups = useShared(!replyGroups.length && shownOpening ? shownOpening : [...shownOpening ?? [], ...replyGroups])
+  // A viewer opened from any line of the turn steps through the turn's pictures, as its tiles did (ADR-0170, pictures in steps).
+  const turnRecords = useMemo(() => groups.flatMap(group => group.records), [groups])
+  const pictureScope = usePictureScope(turnRecords)
+  const picturesShown = useOwlFeature('inline-media')
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
   const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null
@@ -534,20 +537,22 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
-  const records = groups.flatMap(group => group.records)
+  const records = turnRecords
   const steps = records.filter(isStep)
+  // A turn with pictures in its steps keeps its line in view, since the line is where they show while it is folded.
+  const pictured = picturesShown && records.some(record => record.media?.length && !picturesStandInThread(record))
   // Watcher's conversation keeps its own line and rows.
   const sayOnce = speaker !== 'watcher'
   // A fold that holds one group and no replies has no need of that group's line: it would say what the Worked for line says.
   const bare = sayOnce && !work.length && folded(groups).length === 1
   const startedAt = turn.user?.createdAt
-  const moment = sayOnce && !work.length && !delegations?.length && onlyAMoment(lifecycle, startedAt, moments, records)
+  const moment = sayOnce && !pictured && !work.length && !delegations?.length && onlyAMoment(lifecycle, startedAt, moments, records)
   // A quick turn's line says nothing the reply under it does not, in threads and in Watcher's conversation alike. Delegated
   // work is another thread's, still going, so a turn that delegated keeps its line in view.
-  const quiet = !delegations?.length && quietTurn(lifecycle, startedAt, moments, steps.length)
-  return <>
+  const quiet = !pictured && !delegations?.length && quietTurn(lifecycle, startedAt, moments, steps.length)
+  return <PictureScopeContext.Provider value={pictureScope}>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, startedAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} moment={moment} quiet={quiet} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork records={records} headline={workHeadline(lifecycle, context.running, startedAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} moment={moment} quiet={quiet} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
@@ -564,7 +569,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {workOpen ? null : <StillWorking views={delegations} work={backgroundWork} />}
     {shown(finalAt, Number.POSITIVE_INFINITY)}
     {continued}
-  </>
+  </PictureScopeContext.Provider>
 })
 
 /**
@@ -681,12 +686,17 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const newest = turns.at(-1)
   const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
   const writing = live && !sending && !notWriting && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
+  // With replies shown when finished, the reply being written has no row, so the transcript's place keeper is told which
+  // it is, before its own effect runs, and holds a place read on it until it is whole.
+  const rows = useContext(MessageRowsContext)
+  const heldBack = streamText ? undefined : writing
+  useLayoutEffect(() => {
+    if (rows === null) return
+    rows.heldBack = heldBack
+    return () => { if (rows.heldBack === heldBack) rows.heldBack = undefined }
+  }, [rows, heldBack])
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
-  // Every reply here is the provider's, so its name heads only the first one drawn. Watcher's conversation keeps its own.
-  // The search stops at the first reply, which is near the start of what is drawn.
-  const namedReply = useMemo(() => speaker === 'watcher' ? undefined
-    : messages.find(message => message.role === 'assistant' && drawn(message) && !isVisualMessage(message) && !isWakeUpMessage(message))?.id, [messages, speaker])
   // Watcher's replies close to the one before, which share its header where nothing stands between them. Kept by their IDs, so
   // the memoised turns compare equal until one changes.
   const closeKey = useMemo(() => speaker === 'watcher' ? closeReplies(messages).join('\n') : '', [messages, speaker])
@@ -699,7 +709,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} namedReply={namedReply} close={close} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
@@ -908,6 +918,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const followed = useRef(followSignal)
   const seen = useRef<string | undefined>(undefined)
   const firstRendered = useRef<{ readonly threadId: string; readonly messageId: string } | null>(null)
+  /**
+   * Show earlier messages asked the store for older history: the oldest message the thread held then, and how many presses
+   * are still waiting for an answer. What arrives before it is shown above the reader (Zach, November 9, 2026; #214;
+   * ADR-0016), and `keepAtLeast` is how many messages the window then shows, so going back to the end keeps them all.
+   */
+  const earlier = useRef<{ readonly threadId: string; readonly oldestId: string; readonly waiting: number } | null>(null)
+  const keepAtLeast = useRef(0)
   const [limit, setLimit] = useState(TRANSCRIPT_PAGE)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
@@ -960,6 +977,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const sendingSince = pending.find(item => item.item.mode !== 'queue' && (item.status === 'queued' || item.status === 'submitting'))?.item.startedAt
   // A direct send belongs to the turn starting now.
   const sending = pending.filter(item => item.item.mode !== 'queue')
+  // The store's answer to Show earlier messages has arrived above the oldest message the thread held: the window takes it in.
+  const askedEarlier = earlier.current
+  if (askedEarlier?.threadId === thread.id) {
+    const arrived = thread.messages.findIndex(message => message.id === askedEarlier.oldestId)
+    if (arrived > 0) {
+      // The reader's place, kept since the press, holds them on the message they were reading as these rows arrive above.
+      firstRendered.current = { threadId: thread.id, messageId: thread.messages[0]!.id }
+      keepAtLeast.current = thread.messages.length
+      earlier.current = askedEarlier.waiting > 1 ? { threadId: thread.id, oldestId: thread.messages[0]!.id, waiting: askedEarlier.waiting - 1 } : null
+    }
+  }
   const sameThread = firstRendered.current?.threadId === thread.id
   const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
   // While reading earlier history, retain the first rendered message. A sliding
@@ -1011,12 +1039,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
   // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
   const startsOn = useThreadStarts()
-  const startKey = startsOn && !watcher && thread.startedFrom ? JSON.stringify(thread.startedFrom) : undefined
-  const startSource = startKey === undefined ? undefined : state.host.threads.find(item => item.id === thread.startedFrom!.threadId)
+  const startedFrom = useShared(startsOn && !watcher ? thread.startedFrom : undefined)
+  const startSource = startedFrom === undefined ? undefined : state.host.threads.find(item => item.id === startedFrom.threadId)
   const sourceTitle = startSource?.title, sourceProvider = startSource?.providerId
-  const startView = useMemo(() => startKey === undefined ? null : threadStartView({ id: thread.id, startedFrom: JSON.parse(startKey) as NonNullable<typeof thread.startedFrom>, providerId: thread.providerId },
+  const startView = useMemo(() => startedFrom === undefined ? null : threadStartView({ id: thread.id, startedFrom, providerId: thread.providerId },
     sourceTitle === undefined ? undefined : { title: sourceTitle, providerId: sourceProvider }, command, window.sotto?.agents?.startHandover),
-  [startKey, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
+  [startedFrom, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
   const startHandoverWaiting = startView?.start.route === 'handover' && startView.start.handover !== undefined && startView.start.handover.sent === undefined
   // A fork's note goes under the last reply it copied, where its own conversation begins, or at the head while that
   // reply is not among the messages shown.
@@ -1083,6 +1111,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
   }, [messages, thread.id])
+  // What arrived for Show earlier messages stays in the window if the reader later goes back to the end.
+  useLayoutEffect(() => {
+    if (keepAtLeast.current === 0) return
+    const shown = keepAtLeast.current
+    keepAtLeast.current = 0
+    setLimit(current => Math.max(current, shown))
+  })
 
   const toEnd = useCallback((): void => {
     const element = scroller.current
@@ -1100,6 +1135,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A different thread opens at its newest message with a fresh page.
   useLayoutEffect(() => {
     anchor.current = null
+    earlier.current = null
     seen.current = undefined
     landing.current = null
     setLimit(TRANSCRIPT_PAGE)
@@ -1282,6 +1318,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // tells a group only when its own turn's lines change. It is brought up to date before the window paints.
   const quietBrowser = useOwlFeature('quiet-browser')
   const browserStore = useMemo(() => quietBrowser ? new BrowserLinesStore() : null, [quietBrowser, thread.id])
+  // The thread a step's pictures are read from, and who wrote its turns, for the viewer's callouts.
+  const pictureThread = useMemo<StepPicturesThread>(() => ({ threadId: thread.id, who: watcher ? 'Watcher' : row.provider }), [thread.id, watcher, row.provider])
   useLayoutEffect(() => { browserStore?.update(thread.activities, liveTurn, thread.messages) }, [browserStore, thread.activities, liveTurn, thread.messages])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
@@ -1326,13 +1364,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
-  /** Widens the history window from the store. What arrives goes above the reader, so the scroll anchor is
-   * kept and the retained first row is let go: the rows that arrive are the ones the press asked to see. */
+  /**
+   * Asks the store for older history. The rows on screen and the first one kept stay, and the reader's place (the message
+   * they are on, and where) holds them while it loads and as what arrives is shown above them (#214).
+   */
   const loadEarlier = (): void => {
     const element = scroller.current
-    if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
     following.current = false
-    firstRendered.current = null
+    if (element !== null) reading.current = readingPlace(element, rows, thread.id)
+    const oldest = thread.messages[0]
+    // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
+    const asked = earlier.current?.threadId === thread.id ? earlier.current : null
+    earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
     void command({ type: 'load-earlier-messages', threadId: thread.id })
   }
 
@@ -1350,7 +1393,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-transcript__viewport" data-room-backdrop="" onWheel={watcher ? onMarginWheel : undefined}><div className="thread-workspace__transcript" data-room-backdrop="" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}><SentSkillsContext.Provider value={sentSkills}><ThreadFolderContext.Provider value={folder}>
+      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}><SentSkillsContext.Provider value={sentSkills}><ThreadFolderContext.Provider value={folder}><StepPicturesThreadContext.Provider value={pictureThread}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
@@ -1380,7 +1423,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         <div ref={setWritingPlace} className="thread-transcript__writing" />
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
-      </ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
+      </StepPicturesThreadContext.Provider></ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}

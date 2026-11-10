@@ -15,6 +15,7 @@ import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 import { createServer } from 'node:http'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 import { fakeSystemd } from '../fixtures/fakeSystemd'
+import { stopFakeSshHosts } from '../fixtures/fakeSshHostCleanup'
 
 // The native helper still runs on every connection. Compilation has no per-connection state.
 vi.mock('node:child_process', async importOriginal => {
@@ -27,7 +28,7 @@ afterAll(disposeAskpassCompiler)
 const directories: string[] = [], launchers: SshHostLauncher[] = [], hosts: number[] = []
 afterEach(async () => {
   for (const launcher of launchers.splice(0)) await launcher.disconnect()
-  for (const pid of hosts.splice(0)) { try { process.kill(pid, 'SIGTERM') } catch { /* already exited */ } }
+  await stopFakeSshHosts(hosts.splice(0), directories.map(path => join(path, 'data', 'sotto')))
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true })
 })
 const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }

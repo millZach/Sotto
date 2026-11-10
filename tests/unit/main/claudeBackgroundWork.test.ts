@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeMonitoring } from '../../../src/main/agents/claudeMonitoring'
+import { ClaudeMonitoring } from '../../../src/main/agents/providers/claude/claudeMonitoring'
 import { agentBackgroundWorkSchema, MAX_AGENT_MONITORS, MAX_BACKGROUND_WORK } from '../../../src/shared/agentMonitoring'
-import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import type { ClaudeFrame } from '../../../src/main/agents/providers/claude/claudeProtocol'
 
 /** Shaped like the CLI's own `task_started` emitter; the description is the only text it carries here. */
 const start = (patch: ClaudeFrame = {}): ClaudeFrame => ({ type: 'system', subtype: 'task_started', task_id: 'native-agent-id', task_type: 'local_agent',

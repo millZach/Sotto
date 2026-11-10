@@ -90,13 +90,14 @@ struct SentFilePills: View {
 // MARK: The reply box's files
 
 /// The files waiting in a reply box, a thread's or Watcher's, under its photos, inside the words' column, as on the desktop.
+/// A video chosen from the library or Files waits in the photo strip instead (ADR-0131, November 9 amendment).
 struct DraftFilePills: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
     var body: some View {
         let locked = model.preparingSends.contains(box.id)
         FlowLayout(spacing: Space.s2) {
-            ForEach(model.files(box)) { file in
+            ForEach(model.files(box).filter { $0.video == nil }) { file in
                 FilePill(name: file.name, sizeBytes: file.sizeBytes, progress: file.progress, reading: file.reading,
                          remove: { model.removeFile(file.id, from: box) }, locked: locked)
             }
@@ -172,7 +173,8 @@ struct FilePill: View {
     }
 }
 
-private struct ProgressRing: View {
+/// How much of a file or video has gone or come, as a ring that fills clockwise from the top.
+struct ProgressRing: View {
     let progress: Double
     var body: some View {
         ZStack {
@@ -189,10 +191,34 @@ private struct ProgressRing: View {
 // MARK: Choosing files
 
 /// Files chosen in the Files app, opened where they are rather than copied into Sotto (ADR-0131): each is read under its
-/// own security-scoped access, which is given back as soon as its bytes are in memory.
+/// own security-scoped access, which is given back as soon as its bytes are in memory. A movie goes as a video, copied
+/// into its protected temporary copy (November 9 amendment).
 enum PickedFile {
     static func source(_ url: URL) -> FileSource {
         FileSource(name: url.lastPathComponent, sizeBytes: size(url)) { try await Task.detached { try PickedFile.read(url) }.value }
+    }
+    /// Whether a file chosen in Files is a video, by the type its name says.
+    static func isVideo(_ url: URL) -> Bool { UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true }
+    static func videoSource(_ url: URL) -> VideoSource {
+        VideoSource(name: url.lastPathComponent, sizeBytes: size(url)) { _ in try await Task.detached { try PickedFile.copyVideo(url) }.value }
+    }
+    /// A video's temporary copy, made through a file coordinator, which first downloads one that is only in iCloud. A folder,
+    /// or a video larger than any reply can carry, is not copied. The original stays where it is.
+    static func copyVideo(_ url: URL) throws -> VideoCopy {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        var failure: NSError?
+        var result: Result<VideoCopy, Error> = .failure(CocoaError(.fileReadUnknown))
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &failure) { readable in
+            result = Result {
+                let values = try readable.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+                if values.isDirectory == true { throw CocoaError(.fileReadUnknown) }
+                if (values.fileSize ?? 0) > VideoLimits.bytesEach { throw ClientError.rejected(VideoWords.tooLarge) }
+                return VideoCopy(url: try ReplyVideoCopies().take(readable, move: false), name: url.lastPathComponent)
+            }
+        }
+        if let failure { throw failure }
+        return try result.get()
     }
     /// The size the Files app gives, read before anything else so a file past the limits is never read at all.
     static func size(_ url: URL) -> Int? {

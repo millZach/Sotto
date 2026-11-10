@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isOwnHead, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
-import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isOwnHead, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/git/github'
+import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 
 describe('the GitHub repository a remote names', () => {
   it('reads HTTPS, scp-like and ssh URLs on GitHub hosts, and nothing else', () => {
@@ -99,6 +99,15 @@ describe('the hosts gh asks as GitHub', () => {
     const remotes = await readGitHubRemotes(run, 'C:/work/app', f.hosts)
     expect(remotes.get('mirror')).toEqual({ repository: null, ghResolved: null })
     expect(baseRepository(remotes)).toEqual({ host: 'git.company.com', owner: 'team', name: 'app' })
+  })
+  it('reads Git config exit code 1 as no remotes', async () => {
+    const run: RunGitCommand = async () => { throw Object.assign(new Error('No matching keys'), { code: 1 }) }
+    expect(await readGitHubRemotes(run, 'C:/work/app', setup().hosts)).toEqual(new Map())
+  })
+  it.each([128, 'ENOENT', 'ETIMEDOUT', '1', undefined])('passes Git config failure %s through unchanged', async code => {
+    const failure = Object.assign(new Error('Git could not read config'), { code })
+    const run: RunGitCommand = async () => { throw failure }
+    await expect(readGitHubRemotes(run, 'C:/work/app', setup().hosts)).rejects.toBe(failure)
   })
 })
 

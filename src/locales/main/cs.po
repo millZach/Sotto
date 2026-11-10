@@ -101,8 +101,16 @@ msgstr ""
 msgid "{host} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again."
 msgstr ""
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} didn't answer the browser. Nothing was changed. Try again."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "{host} is already installing {to}, which cannot be stopped partway. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} is disconnected. Nothing was changed. Connect again to use its browser."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -216,10 +224,6 @@ msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
 msgid "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
-msgstr ""
-
-#: src/main/teams/teams.ts
-msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
 msgstr ""
 
 #: src/main/teams/teams.ts
@@ -377,6 +381,10 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "A new-window request was blocked. Use a link destination action or open this page externally."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -808,6 +816,10 @@ msgstr ""
 msgid "File checkpoint capture was unavailable."
 msgstr ""
 
+#: src/main/agents/ipc.ts
+msgid "Files cannot be attached in this window. Nothing was attached."
+msgstr ""
+
 #: src/main/files/ipc.ts
 msgid "Files cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr ""
@@ -1013,6 +1025,10 @@ msgstr ""
 msgid "Once you know the new key is the host's own, remove the old one from your known hosts on this computer:"
 msgstr ""
 
+#: src/main/tools/ipc.ts
+msgid "Only a page on a paired host takes this. Nothing was changed."
+msgstr ""
+
 #: src/main/terminals/clipboard.ts
 msgid "Only a PNG image up to 10 MiB can be pasted into a terminal."
 msgstr ""
@@ -1136,6 +1152,10 @@ msgstr ""
 msgid "Point at something is not available in this version of Sotto."
 msgstr ""
 
+#: src/main/tools/ipc.ts
+msgid "Point at something isn't available for a page on the host machine yet. Nothing was changed."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "Point at something needs the theme's accent colour from the window."
 msgstr ""
@@ -1207,6 +1227,10 @@ msgstr ""
 
 #: src/main/hosts/inactiveLocalHost.ts
 msgid "Saved thread ownership could not be read. Your saved answers have not changed."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
 msgstr ""
 
 #: src/main/agents/ipc.ts
@@ -1311,8 +1335,20 @@ msgstr ""
 msgid "Sotto could not check the reloaded keys. Try again in your desktop session."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "Sotto could not confirm the link. Your teammate may have a partial link. Check both Teams tabs before trying again."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not confirm the renewal with {name}'s computer. Check the link before trying again."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not download {to} on {name}."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not finish that change. It may have partly taken effect. Check Teams before trying again."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -1393,6 +1429,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not save the shortcut. Your previous keys are back in Hyprland."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Sotto could not save the Teams changes. They are still active here, but may be lost when Sotto closes. Try again."
 msgstr ""
 
 #: src/main/agents/visualSandbox.ts
@@ -1526,6 +1566,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Sotto wears the theme it had before."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Sotto's browser isn't available on {host}. Nothing was changed. Update Sotto on {host}, then try again."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -2531,6 +2575,10 @@ msgstr ""
 msgid "The SSH settings for {host} are saved, but how Sotto connects did not change. Check that {host} is reachable with them, then choose again in Edit connection."
 msgstr ""
 
+#: src/main/index.ts
+msgid "The system browser didn't open. Nothing was changed. Try again."
+msgstr ""
+
 #: src/main/tools/terminal.ts
 msgid "The terminal could not start or save its session. Check that the shell is available and app storage is writable."
 msgstr ""
@@ -3003,6 +3051,10 @@ msgstr ""
 msgid "This page closed."
 msgstr ""
 
+#: src/main/tools/ipc.ts
+msgid "This page is on the host machine, so it is drawn from its pictures. Nothing was changed."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "This page is unavailable. Check the address or start its local server, then reload."
 msgstr ""
@@ -3129,6 +3181,10 @@ msgstr ""
 
 #: src/main/tools/checkpoints.ts
 msgid "This turn changed Git history or staging. Review and restore it with Git."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
 msgstr ""
 
 #: src/main/agents/delegationIpc.ts
@@ -3327,10 +3383,6 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Your keys run what they did before."
-msgstr ""
-
-#: src/main/teams/teams.ts
-msgid "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
 msgstr ""
 
 #: src/main/teams/teams.ts

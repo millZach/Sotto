@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
 import { asActivityPublication, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
   type ThreadChangeSet } from './threadChanges'
@@ -125,7 +125,7 @@ interface WrappedChanges {
 }
 
 /** Sotto-owned thread IDs around a provider adapter; provider session IDs never cross this boundary. */
-export class SottoThreadHost implements AgentHost {
+export class SottoThreadHost implements ProviderHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
     this.launchProfiles = profiles
@@ -163,7 +163,7 @@ export class SottoThreadHost implements AgentHost {
   readonly subscribeActivityChanges?: (listener: ActivityChangesListener, options?: ActivitySubscriptionOptions) => ActivityChangesSubscription
   private readonly changeForms = new Map<boolean, WrappedChanges>()
 
-  constructor(private readonly provider: string, private readonly inner: AgentHost,
+  constructor(private readonly provider: string, private readonly inner: ProviderHost,
     private readonly registry: ThreadRegistry) {
     if (inner.subscribeActivityChanges) this.subscribeActivityChanges = (listener, options) => this.watchChanges(listener, options)
     const events = inner.subscribeEvents?.bind(inner)

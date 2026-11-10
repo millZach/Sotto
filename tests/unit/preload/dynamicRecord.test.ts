@@ -44,6 +44,6 @@ describe('its record\'s bridge', () => {
     ipc.invoke.mockResolvedValue({ status: 'refused', message: 'Nothing was started.' })
     expect(await give(request)).toEqual({ status: 'refused', message: 'Nothing was started.' })
     expect(ipc.invoke).toHaveBeenLastCalledWith(DELEGATION_GIVE, request)
-    expect(() => give({ ...request, delegation: 'not-an-id' })).toThrow()
+    await expect(give({ ...request, delegation: 'not-an-id' })).rejects.toThrow()
   })
 })

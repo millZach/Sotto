@@ -6,7 +6,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AppShell, appRooms, roomFor, useRoomSwitch, type AppRoom } from '../../../src/renderer/src/components/AppShell'
+import { AppShell, appRooms, roomFor, useRoomSwitch } from '../../../src/renderer/src/components/AppShell'
+import type { AppRoom } from '../../../src/renderer/src/components/pageShortcuts'
 
 // Memory is off for the beta the same way; its page link comes and goes with it.
 const memory = vi.hoisted(() => ({ enabled: false }))

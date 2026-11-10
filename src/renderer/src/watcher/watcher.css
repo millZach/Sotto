@@ -74,10 +74,6 @@
 .threads-view.watcher-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 /* Match the sidebar's 1px right border when positioning the shared update control. */
 .watcher-foot { --thread-nav-inset: 10px; grid-row: 2; padding-right: 1px; }
-/* A collapsed sidebar keeps the shared rail beside the room, leaving both panes clear of its vertical foot. */
-.threads-view.watcher-room[data-sidebar-collapsed] { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-.watcher-room[data-sidebar-collapsed] > .watcher-foot { grid-column: 1; grid-row: 1; padding-right: 0; }
-.watcher-room[data-sidebar-collapsed] > .thread-workspace { grid-column: 2; }
 /* The status words, which the needs-ink leans a fifth of the way toward the text colour: the warning and success hues
    are tuned against the canvas and can fall under 4.5:1 on a raised surface, and the lean raises contrast in either mode. */
 .watcher-room {
@@ -121,8 +117,6 @@
    after it, so they paint over it. */
 .watcher-room { --owl-sky-inset: 0px; }
 .watcher-room.threads-view--mac { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); }
-/* The collapsed rail already reserves the traffic lights' width. */
-.watcher-room.threads-view--mac[data-sidebar-collapsed] { --owl-sky-inset: 0px; }
 .watcher-room.threads-view--mac .watcher-room__sky { background: var(--tt-owl-room-night); }
 .watcher-room__sky { position: absolute; top: 0; left: 0; width: calc(520px + var(--owl-sky-inset)); max-width: 100%; height: 104px; pointer-events: none;
   background: radial-gradient(130px 70px at calc(26px + var(--owl-sky-inset)) 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);

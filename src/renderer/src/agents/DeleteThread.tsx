@@ -117,7 +117,7 @@ export function DeleteThreadDialog({ threadId, title, provider, command, onClose
     if (!preview || preview.kept !== null) return false
     setDeleteError(null)
     const confirmations = worktree ? { confirmedIgnored: worktree.ignored, confirmedItems: worktree.items.map(({ path, fileCount }) => ({ path, fileCount })),
-      confirmedRepositories: worktree.repositories.map(({ path, changeCount, unpushedCommitCount, kind }) => ({ path, changeCount, kind, ...(unpushedCommitCount !== undefined ? { unpushedCommitCount } : {}) })) } : {}
+      confirmedRepositories: worktree.repositories.map(({ path, changeCount, unpushedCommitCount, kind, fetchedByHash }) => ({ path, changeCount, kind, ...(unpushedCommitCount !== undefined ? { unpushedCommitCount } : {}), ...(fetchedByHash ? { fetchedByHash } : {}) })) } : {}
     const result = await command({ type: 'delete-thread', threadId, ...confirmations }).catch(() => null)
     if (result && !result.error) { focusAfterDelete(); return true }
     setDeleteError(result?.error ?? DELETE_UNCONFIRMED)

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { toldAtStart } from '../../src/main/agents/babysitNews'
-import { GitHubRateLimited } from '../../src/main/agents/github'
+import { GitHubRateLimited } from '../../src/main/agents/git/github'
 import type { AgentThread } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -51,7 +51,7 @@ async function fixture(on = true, babysittingRetired = false, pullRequestState?:
   }
   const thread = (threadId: string) => f.control.watcherSnapshot().threads.find(item => item.id === threadId)!
   const settled = (threadId: string) => Boolean(thread(threadId).workspaceSettledAt)
-  const watching = (threadId: string) => (f.control.watcherRecord().watches ?? []).some(watch => watch.target.threadId === threadId)
+  const watching = (threadId: string) => (f.control.watcherRecords.copy().watches ?? []).some(watch => watch.target.threadId === threadId)
   /** Watcher is told the thread's news in a turn of its own: that turn starts, and then ends. */
   const watcherHears = async () => {
     await vi.waitFor(() => expect(native(watcherId).status).toBe('running'), { timeout: 15_000 })
@@ -110,7 +110,7 @@ it('refuses a settle the user has not agreed to while the setting is off, and ta
   expect(await f.settle(requestId, target, { userAgreed: true })).toMatchObject({ status: 'ok' })
   expect(f.settled(target.threadId)).toBe(true)
   // The agreement is this computer's alone: the operation it recorded is the call without it.
-  const operation = f.control.watcherRecord().operations.findLast(item => item.action === 'settle')!
+  const operation = f.control.watcherRecords.copy().operations.findLast(item => item.action === 'settle')!
   expect(JSON.stringify(operation)).not.toContain('userAgreed')
 })
 
@@ -299,7 +299,7 @@ it('stops watching a thread the user settles, and restoring it does not watch it
   expect((await f.control.commandShell({ type: 'settle-thread', threadId: target.threadId })).error).toBeNull()
   await vi.waitFor(() => expect(f.watching(target.threadId)).toBe(false), { timeout: 15_000 })
   // Not the user's Stop watching: Watcher may watch it again when the user asks, without the user handing it back.
-  expect(f.control.watcherRecord().userUnwatches ?? []).toEqual([])
+  expect(f.control.watcherRecords.copy().userUnwatches ?? []).toEqual([])
   expect((await f.control.commandShell({ type: 'restore-thread', threadId: target.threadId })).error).toBeNull()
   await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.watching(target.threadId)).toBe(false)
@@ -314,4 +314,29 @@ it('keeps the watch the user gives a thread that is already settled', async () =
   expect(await f.service.watchThread({ target: { hostId: f.control.hostId()!, threadId } })).toMatchObject({ status: 'ok' })
   await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
   expect(f.watching(threadId)).toBe(true)
+})
+
+// #2323: a Claude thread held for good by a roster row whose ending Sotto missed. Claude Code's live report of its own
+// background work and monitors is what holds a Claude thread, and the refusal names each by its label; a Codex roster
+// still holds a Codex thread.
+it.each([
+  ['a Claude thread with an unknown roster row and no live work', { providerId: 'claude', subagentSummary: { total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 } }, undefined],
+  ['a Codex thread with an unknown roster row', { subagentSummary: { total: 3, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 1 } },
+    'This thread still has background work: 1 agent still working or not known to have ended. Stop it explicitly before settling.'],
+  ['a Claude thread with live background work and a monitor', { providerId: 'claude', subagentSummary: { total: 1, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 1 },
+    backgroundWork: [{ id: 'synthetic-task', type: 'subagent', label: 'Synthetic audit', startedAt: new Date().toISOString() }], monitoring: [{ id: 'synthetic-monitor', label: 'Synthetic watch' }] },
+    'This thread still has background work: 1 background task (“Synthetic audit”), 1 monitor (“Synthetic watch”). Stop it explicitly before settling.'],
+] as const)('settles or names what holds %s', async (_, fields, refusal) => {
+  const f = await fixture(), target = await f.watched(), requestId = await f.request()
+  await f.endTurn(target.threadId)
+  // The fixture's thread runs on the fake Codex; Claude is connected too so the thread read as Claude's is connected.
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const snapshot = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const read = snapshot()
+    return { ...read, threads: read.threads.map(thread => thread.id === target.threadId ? { ...thread, ...fields } as AgentThread : thread) }
+  })
+  const result = await f.settle(requestId, target)
+  if (refusal) expect(result).toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING', message: refusal })
+  else expect(result).toMatchObject({ status: 'ok' })
 })

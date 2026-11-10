@@ -239,12 +239,14 @@ export function keptDays(series: readonly Pick<ChartSeries, 'values' | 'figures'
     return !figure.known || figure.partial || figure.value > 0
   })
 }
-export function chartStretches(busy: readonly boolean[], run: number): ChartLayout {
+export function chartStretches(busy: readonly boolean[], run: number, lead = 0): ChartLayout {
   const stretches: ChartStretch[] = []
   for (let at = 0; at < busy.length;) {
+    // The empty days before the first day with work fold at `lead` however busy the rest is, but never the whole range.
+    const fold = at === 0 && lead > 0 ? (run > 0 ? Math.min(run, lead) : lead) : run
     let end = at
-    while (run > 0 && end < busy.length && !busy[end]) end += 1
-    if (run > 0 && end - at >= run) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
+    while (fold > 0 && end < busy.length && !busy[end]) end += 1
+    if (fold > 0 && end - at >= fold && (at > 0 || run > 0 || end < busy.length)) { stretches.push({ kind: 'quiet', from: at, to: end - 1 }); at = end; continue }
     stretches.push({ kind: 'day', at }); at += 1
   }
   const room = stretches.reduce((sum, stretch) => sum + (stretch.kind === 'day' ? 1 : QUIET_ROOM), 0)
@@ -265,6 +267,15 @@ export function chartStretches(busy: readonly boolean[], run: number): ChartLayo
  */
 export function foldRun(count: number, fewBusyDays: boolean): number {
   return count > 7 && fewBusyDays ? QUIET_RUN : 0
+}
+
+/**
+ * How long the empty start of a range must be to fold, whatever its busy days: five, as for a sparse range, so a range
+ * that starts before the first prompt gives its width to the days with work (Zach's pick B of `layout` item 2, ADR-0083,
+ * November 7, 2026). A week or less never folds.
+ */
+export function foldLead(count: number): number {
+  return count > 7 ? QUIET_RUN : 0
 }
 
 /**

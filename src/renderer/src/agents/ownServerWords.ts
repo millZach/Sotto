@@ -33,13 +33,13 @@ const millis = (ms: number): string => i18n.number(ms)
 export const modelCount = (count: number): string => plural(count, { one: '# model', other: '# models' })
 
 /** What the user is told after Add: where the models are now. */
-export const addedWords = (name: string): string => t`Added ${name}. Its models are in the model menu under ${name}, with OpenCode.`
+export const addedWords = (name: string): string => t`Added ${name}. Its models are in the model menu under ${name}, with providers that can use them.`
 export const removedWords = (name: string): string =>
   t`Removed ${name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on.`
 export const notAnswered = (): string => t`Sotto could not reach its own side of this. Nothing was saved. Try again.`
 export const notAnsweredSaved = (): string => t`Sotto could not reach its own side of this. Nothing was changed. Try again.`
 export const removeFailed = (name: string): string => t`Sotto could not remove ${name}. Nothing was changed. Try again.`
-export const keyNote = (): string => t`OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy.`
+export const keyNote = (): string => t`OpenCode and Hermes keep keys in their own Sotto folders. Adding with Hermes alone needs no OpenCode.`
 export const privacyWords = (): string => t`Threads on this server send your code and messages to it, so whoever runs it can read them.`
 export const contextUnknown = (): string => t`The server does not say how much context this model has. Type it from the model’s page.`
 export function contextRange(): string {
@@ -74,10 +74,10 @@ export function checkedAgainWords(kind: OwnServerKind, answeredMs: number, gone:
   return lines.join(' ')
 }
 
-/** Check again on a server added with a key, which only OpenCode has. */
+/** Check again leaves the saved key with its provider. */
 export const keyKeptWords = (name: string, answeredMs: number): string => {
   const ms = millis(answeredMs)
-  return t`${name} answered in ${ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again.`
+  return t`${name} answered in ${ms} ms and asks for its key. The key stays with its provider, so Sotto could not read its models again.`
 }
 
 /** What the window was doing when main refused, since one reason reads differently for an add and a remove. */
@@ -98,12 +98,12 @@ export function refusalWords(reason: OwnServerRefusal | string, doing: OwnServer
     case 'not-openai': return t`Something answered at ${host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again.`
     case 'opencode-not-running': return doing === 'remove'
       ? t`Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`
-      : t`Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again.`
+      : t`No provider can add this server right now, so nothing was saved. Connect OpenCode or Hermes under Providers, then add the server again.`
     case 'sign-in-failed': return doing === 'remove'
       ? t`OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`
-      : t`OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`
-    case 'added-partly': return t`OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`
-    case 'removed-partly': return t`OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`
+      : t`Sotto could not keep the key for ${name}, so nothing was saved. Try adding the server again.`
+    case 'added-partly': return t`Sotto could not finish adding ${name} or take it off its list. Remove it, then add it again.`
+    case 'removed-partly': return t`Sotto could not finish removing ${name}. It is still listed. Remove it again.`
     case 'not-found': return t`That server is no longer saved. Nothing was changed.`
     case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`
     case 'already-added': return t`${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`

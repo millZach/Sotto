@@ -143,7 +143,6 @@ describe('Watcher working on news before its first reply', () => {
     const reply = document.querySelector('[data-message-id="answer-2"]')!.textContent
     view.rerender(list(messages, [...activities, ...news], true, false))
     expect(screen.getByRole('button', { name: /^Worked for 27s · 2 steps/u })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
     expect(document.querySelector('[data-message-id="answer-2"]')!.textContent).toBe(reply)
     // The same elements stay, so the window's scroll anchoring holds the reader's place.
     const during = drawnMessages()
@@ -173,7 +172,8 @@ describe('Watcher working on news before its first reply', () => {
     render(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, yours)}
       context={{ ...finished, liveTurn: 'you-2', running: true }} streamText={false} speaker="watcher" />)
     expect(screen.queryByRole('button', { name: /^Worked for 27s/u })).not.toBeInTheDocument()
-    expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+    // Being written, the reply is held back and left to the working line.
+    expect(document.querySelector('[data-message-id="answer-2"]')).toBeNull()
   })
 
   /** Whether a reply is drawn whole and finished: its words, not being written. */
@@ -181,7 +181,6 @@ describe('Watcher working on news before its first reply', () => {
     const reply = document.querySelector(`[data-message-id="${id}"]`)!
     expect(reply, id).toHaveTextContent(words)
     expect(reply.querySelector('[data-streaming]'), `${id} is not being written`).toBeNull()
-    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   }
   const lifecycle = (turnId: string, sequence: number, status: AgentActivity['status'], from: string, to?: string): AgentActivity =>
     ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status, title: 'Turn', startedAt: clock(from), ...to ? { completedAt: clock(to) } : {} })
@@ -220,7 +219,7 @@ describe('Watcher working on news before its first reply', () => {
         render(<MessageList messages={[...plain, report]} provider="Claude Code" running placement={placeActivities([...plain, report], [...plain, report], records)}
           context={{ ...finished, liveTurn: 'you-1', running: true }} streamText={streamText} speaker="watcher" />)
         if (streamText) expect(document.querySelector('[data-message-id="report"] [data-streaming]')).not.toBeNull()
-        else expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+        else expect(document.querySelector('[data-message-id="report"]')).toBeNull()
       })
 
       it('leaves your finished turn folded when its reply is stamped after the turn’s observed end', () => {
@@ -241,7 +240,7 @@ describe('Watcher working on news before its first reply', () => {
           context={{ ...finished, liveTurn: 'you-1', running: true }} streamText={streamText} speaker="watcher" />)
         expect(screen.getByText('It is waiting on a permission to run the suite.')).toBeInTheDocument()
         if (streamText) expect(document.querySelector('[data-message-id="report"] [data-streaming]')).not.toBeNull()
-        else expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+        else expect(document.querySelector('[data-message-id="report"]')).toBeNull()
       })
 
       it('leaves the last answer finished when the window starts inside a Codex turn whose replies name no turn', () => {
@@ -298,7 +297,7 @@ describe('Watcher working on news before its first reply', () => {
 
   it('changes nothing in another thread, whose running turn is always its newest', () => {
     render(list(messages, [...activities, ...news], true, false, false))
-    expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+    expect(document.querySelector('[data-message-id="answer-2"]')).toBeNull()
   })
 })
 

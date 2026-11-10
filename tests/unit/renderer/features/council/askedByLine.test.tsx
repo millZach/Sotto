@@ -12,11 +12,11 @@ afterEach(cleanup)
 describe('AskedByLine', () => {
   it('names the provider and quotes the user\'s words', () => {
     render(<AskedByLine askedBy={{ provider: 'claude', words: 'Synthetic: have the council review this' }} />)
-    expect(screen.getByText('Asked by Claude Code in this thread, because you said “Synthetic: have the council review this”')).toBeTruthy()
+    expect(screen.getByText('Asked by Claude Code: “Synthetic: have the council review this”')).toBeTruthy()
   })
   it('says the user asked when their words are not kept, and nothing for a Council the user started', () => {
     const { container, rerender } = render(<AskedByLine askedBy={{ provider: 'codex', words: null }} />)
-    expect(screen.getByText('Asked by Codex in this thread, at your request.')).toBeTruthy()
+    expect(screen.getByText('Asked by Codex')).toBeTruthy()
     rerender(<AskedByLine askedBy={undefined} />)
     expect(container.textContent).toBe('')
   })

@@ -14,6 +14,9 @@ import { startHeadlessHost } from '../../../src/host'
 import { threadTitleRequest } from '../../../src/main/llm/threadTitle'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { deferred } from '../../fixtures/deferred'
+import { DesktopDelegationRelay } from '../../../src/main/agents/delegationRelayDesktop'
+import { DelegationService } from '../../../src/main/agents/delegation'
+import { WatcherService } from '../../../src/main/agents/watcher'
 
 const roots: string[] = []
 async function directory(): Promise<string> {
@@ -41,6 +44,21 @@ afterEach(async () => {
 })
 
 describe('host runtime shutdown', () => {
+  it.each(['relay', 'watcher', 'delegation'] as const)('closes resources when %s recovery fails and preserves the read error', async stage => {
+    const failure = new Error(`${stage} record could not be read`)
+    if (stage === 'relay') vi.spyOn(DesktopDelegationRelay.prototype, 'load').mockRejectedValueOnce(failure)
+    else if (stage === 'watcher') vi.spyOn(WatcherService.prototype, 'recover').mockRejectedValueOnce(failure)
+    else vi.spyOn(DelegationService.prototype, 'recover').mockRejectedValueOnce(failure)
+    const closing = vi.fn(async () => { throw new Error('cleanup also failed') })
+    const reasoner = { ...e2eAgentReasoner, close: closing }
+    const providerClosed = vi.fn(async () => undefined)
+    const provider = Object.assign(new E2EAgentHost(), { closed: providerClosed })
+    await expect(runtime({ watcherEnabled: true, delegationEnabled: true, crossMachineEnabled: true,
+      reasoner, providers: { codex: provider, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })).rejects.toBe(failure)
+    expect(closing).toHaveBeenCalledOnce()
+    expect(providerClosed).toHaveBeenCalled()
+  })
+
   it('stops a side call still writing a title, so no client outlives the host (ADR-0026)', async () => {
     const host = await runtime()
     let signal: AbortSignal | undefined

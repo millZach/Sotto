@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro'
 import { access, mkdir, realpath, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { BranchBundles } from '../agents/branchBundles'
-import type { RunGitCommand } from '../agents/gitStatus'
+import type { RunGitCommand } from '../agents/git/gitStatus'
 
 /**
  * A Council's snapshot (ADR-0177 decision 2): the origin thread's folder as it was at Ask the Council, its commit and

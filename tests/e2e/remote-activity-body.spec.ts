@@ -68,7 +68,7 @@ test('opens a remote row on the part its host sent and reads the rest from the h
     const block = log.getByLabel('output code block')
     await expect(block).toContainText('ok 000 remote thread opens on its prefix')
     await expect(block).toContainText('ok 399 remote thread opens on its prefix')
-    await expect(log.getByRole('button', { name: 'Copy output code', exact: true })).toBeVisible()
+    await expect(log.getByRole('button', { name: 'Copy the output', exact: true })).toBeVisible()
     await expect(log.getByText(/earlier lines are on/u)).toHaveCount(0)
     expect(await block.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(2)
     await page.screenshot({ animations: 'disabled', path: test.info().outputPath('remote-body-loaded.png') })

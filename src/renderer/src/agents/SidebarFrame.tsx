@@ -223,10 +223,10 @@ export function railWidth(mac: boolean, railOn: boolean): number {
 }
 
 /**
- * The collapsed frame, shared with Watcher so its foot keeps the same position and vertical layout. Under the sidebar
- * open over the thread (`over`) it keeps its place, out of reach, and leaves the toast and the foot to the open sidebar.
+ * The collapsed frame. Under the sidebar open over the thread (`over`) it keeps its place, out of reach, and leaves the
+ * toast and the foot to the open sidebar.
  */
-export function SidebarRail({ platform, onExpand, toggle, children, toast, foot, chord, narrow = false, over = false }: {
+function SidebarRail({ platform, onExpand, toggle, children, toast, foot, chord, narrow = false, over = false }: {
   readonly platform: SottoPlatform | undefined
   readonly onExpand: () => void
   readonly toggle?: React.RefObject<HTMLButtonElement | null>

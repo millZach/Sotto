@@ -303,6 +303,8 @@ What does not change:
 
 An adapter must know which threads changed. Every path that changes a thread's state marks the thread. Until an adapter marks its own, a shim at its boundary works the changes out by comparing each thread's record with the one it published last. That costs one check per thread, as option 1 would, and only that adapter's threads pay it.
 
+By November 9, 2026, every adapter supplies its marked thread and rest readers. The temporary comparison shim is removed. First publications and recovery after a gap still use whole snapshots.
+
 **What it means for #1457.** Zach asked for #925 first, and option 2 is close to what #1457 needs:
 - **The workspace already holds the change.** Each publish tells it exactly which threads changed, so its saves and event batch look only at those.
 - **A store worker gets the changes as they are.** #1457 moves the thread store's writes off main, and the workspace can post it the upserts, removals and events unchanged. Moving the store off main then costs in proportion to the change.
@@ -456,3 +458,24 @@ the client offers manual compaction is learnt then; until it is, the pane offers
 thread nobody had opened.
 
 Measured in `docs/perf/2026-11-01-claude-start-on-demand.md` and guarded by `tests/integration/claudeStartOnDemand.test.ts`.
+
+## Amendment: the workspace leaves out a record its own list has cut (November 8, 2026, #2330)
+
+A provider and the workspace each keep a thread's newest 2,000 records, and the workspace merges the provider's list onto
+its own. A record the workspace does not hold is new to it and takes a sequence past every record held. Once the two
+lists differ by one record, as when Claude takes back a thinking row it read as narration, which the workspace's merge
+keeps, the workspace cuts an old record the provider still lists first. The next merge took that record for new and
+numbered it past the newest, which cut a newer one the provider still held, and the next merge did the same with more,
+until a thread on forge held 1,119 steps from hours earlier numbered past its real newest. The cap then cuts the real
+newest steps first, and the iPhone opened that thread on one message (#2328).
+
+Once its list has cut records, the workspace now leaves out of a merge every record the provider lists before the first
+record it holds: those are older than every record it keeps, so it has already cut them. A list has cut records when it
+is at the limit or its first record is marked cut, as it stays when a record is later taken out of it. One the provider
+lists first that is known to have started after that held record is new, as when a provider merges history under a
+record it streamed, and merges as before. A list that has cut nothing merges as before. A thread whose order was
+scrambled before this keeps that order: this change repairs none.
+
+## Amendment: what Show earlier messages brings from the store shows above the reader (November 9, 2026, #214)
+
+Once a pane shows every message it holds, **Show earlier messages** asks the store for the window before them. That press let go of the first row the pane kept, so when the older messages arrived the pane fell back to its newest 80: none of what arrived showed, and rows the reader had were taken away. Zach chose, from the prototype kept at the tag `prototype/show-earlier-messages`, that the press shows what arrived ("B. Show what arrived"), over keeping the rows as they were with the arrivals hidden above and counted on the button. The pane now keeps its rows while the store answers, shows every message that arrives above the oldest one it held, and holds the reader on the message they were reading.

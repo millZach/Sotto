@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * An unchanged native observation must not copy and parse retained Watcher history once per watch/participant.
- * Counts real AgentControl.watcherRecord calls, including read-only callers, rather than substituting a cheap mutator.
+ * Counts real WatcherRecords.copy calls, including read-only callers, rather than substituting a cheap mutator.
  * One copy covers the final operation mutation. Pruning private runtime guards only reads operation identities.
  */
 import { expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ import { watcherObservePerformance } from '../fixtures/watcherObservePerformance
 it.each([1, 6])('copies at most one Watcher record for unchanged observations with %i watches and retained takeovers', async watches => {
   const f = await watcherObservePerformance({ watches, olderMessages: 20, retainedTakeovers: 200,
     includeTakeoverMetadata: true, operationOutcome: 'unknown' })
-  const copies = vi.spyOn(f.control, 'watcherRecord'), mutations = vi.spyOn(f.control, 'mutateWatcher')
+  const copies = vi.spyOn(f.control.watcherRecords, 'copy'), mutations = vi.spyOn(f.control.watcherRecords, 'mutate')
   // This fixture has no queued sends. Keep unrelated asynchronous queue persistence/publication outside the loop.
   const cancelQueue = vi.spyOn(f.control, 'cancelWatcherQueue').mockResolvedValue(undefined)
   const observeWork = () => {
@@ -29,7 +29,7 @@ it.each([1, 6])('copies at most one Watcher record for unchanged observations wi
 
     // A newer Watcher send must advance live participant heads without rewriting older taken-over participants.
     const historical = structuredClone(f.state().requests[1]!.participants)
-    f.control.mutateWatcher(record => {
+    f.control.watcherRecords.mutate(record => {
       for (const [index, thread] of f.snapshot.threads.entries()) {
         const head = `next-machine-${index}`, operation = record.operations[index]!
         record.operations.push({ ...operation, id: randomUUID(), retryKey: randomUUID(), draftId: randomUUID(), messageId: head,

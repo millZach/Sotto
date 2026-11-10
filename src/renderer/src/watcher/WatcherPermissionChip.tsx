@@ -5,7 +5,8 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, type ChoiceOption } from '../agents/ChoiceChip'
+import { codexModeLine, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission } from '../agents/permissionPresentation'
 import { useWatcherRoom } from './watcherRoom'
 
 /**

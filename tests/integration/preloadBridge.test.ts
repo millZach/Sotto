@@ -68,7 +68,7 @@ describe('typed preload bridge', () => {
       }
       expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
       for (const url of ['javascript:alert(1)', 'file:///C:/Windows/system32/cmd.exe', 'data:text/html,test', 'ms-settings:privacy', '//example.com', 'https://user:secret@example.com', 'https://example.com\n', 'https:\\example.com', 'mailto:', 'https://']) {
-        expect(() => bridge.openExternalLink!(url)).toThrow()
+        await expect(bridge.openExternalLink!(url)).rejects.toThrow()
         await expect(harness.ipc.invoke(EXTERNAL_LINK_OPEN, url)).rejects.toThrow('Invalid IPC payload')
       }
       expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
@@ -105,7 +105,7 @@ describe('typed preload bridge', () => {
         'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
       ])
       for (const pane of ['camera', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera', '', 'Microphone']) {
-        expect(() => bridge.openSystemSettings!(pane as never)).toThrow()
+        await expect(bridge.openSystemSettings!(pane as never)).rejects.toThrow()
         await expect(harness.ipc.invoke(SYSTEM_SETTINGS_OPEN, pane)).rejects.toThrow('Invalid IPC payload')
       }
       await expect(darwinOpener!('camera' as never)).rejects.toThrow()
@@ -227,7 +227,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitPullRequestList', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadMedia', 'threadPrompts', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitPullRequestList', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'stageAttachmentFile', 'startHandover', 'threadDetail', 'threadMedia', 'threadPrompts', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -646,7 +646,7 @@ describe('typed preload bridge', () => {
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
     await expect(bridge.dismissPastePermissionNotice('ACCESSIBILITY_PERMISSION_REQUIRED')).resolves.toEqual({ ok: true })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(PASTE_PERMISSION_NOTICE_DISMISS, 'ACCESSIBILITY_PERMISSION_REQUIRED')
-    expect(() => bridge.dismissPastePermissionNotice('HISTORY_RECOVERED' as never)).toThrow()
+    await expect(bridge.dismissPastePermissionNotice('HISTORY_RECOVERED' as never)).rejects.toThrow()
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledOnce()
   })
 

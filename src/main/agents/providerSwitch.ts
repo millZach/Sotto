@@ -18,7 +18,7 @@ import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, reportsUsageLimits, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ShortTextTarget, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type ProviderHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ShortTextTarget, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -80,7 +80,7 @@ function slotThreads(records: readonly AgentThread[] = []): ThreadMap {
 }
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
-export class ConfiguredProviderHost implements AgentHost {
+export class ConfiguredProviderHost implements ProviderHost {
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useLaunchProfiles?.(profiles)
   }
@@ -125,7 +125,7 @@ export class ConfiguredProviderHost implements AgentHost {
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   constructor(private readonly options: {
-    hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
+    hosts: Record<ProviderId, ProviderHost>; provider: () => ProviderId
     directory?: string
     enabledProviders?: () => readonly ProviderId[]
     threadProvider?: (threadId: string) => string | undefined

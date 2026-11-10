@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * DeepSeek Harness's own CLI (ADR-0138). Never in CI: it needs `dsh` installed and one of the user's own model
+ * DeepSeek's own CLI (ADR-0138). Never in CI: it needs `dsh` installed and one of the user's own model
  * servers answering. Run with
  *
  *   SOTTO_DEEPSEEK_LIVE=1 SOTTO_DEEPSEEK_SERVER=<http://host:port/v1> SOTTO_DEEPSEEK_MODEL=<model id on it> \
@@ -30,7 +30,7 @@ const servers = (): OwnServer[] => [{
   models: [{ id: MODEL, name: MODEL, context: CONTEXT, thinking: true, images: false }],
 }]
 
-it.skipIf(!live)('runs, asks and resumes on DeepSeek Harness’s own CLI, on the user’s own model server', { timeout: 600_000 }, async () => {
+it.skipIf(!live)('runs, asks and resumes on DeepSeek’s own CLI, on the user’s own model server', { timeout: 600_000 }, async () => {
   if (!ADDRESS || !MODEL) throw new Error('Set SOTTO_DEEPSEEK_SERVER and SOTTO_DEEPSEEK_MODEL.')
   const root = await mkdtemp(join(tmpdir(), 'sotto-deepseek-live-'))
   const project = join(root, 'project')
@@ -39,7 +39,7 @@ it.skipIf(!live)('runs, asks and resumes on DeepSeek Harness’s own CLI, on the
   try {
     execFileSync('git', ['init', '-q', project]); await writeFile(join(project, 'README.md'), 'Live probe\n')
     const connected = await host.connect()
-    expect(connected.models).toEqual([expect.objectContaining({ id: `own-live/${MODEL}`, provider: 'DeepSeek Harness', source: 'Live server', ready: true })])
+    expect(connected.models).toEqual([expect.objectContaining({ id: `own-live/${MODEL}`, provider: 'DeepSeek', source: 'Live server', ready: true })])
     // The overlay Sotto generated is in its own folder, and names the server the test was given.
     const patch = await readFile(join(root, 'sotto', 'deepseek', 'sotto-acp.patch.yml'), 'utf8')
     expect(patch).toContain(ADDRESS)

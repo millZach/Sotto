@@ -96,7 +96,7 @@ export class DesktopDelegationRelay {
     this.store = new AtomicJsonStore(join(directory, 'delegation-relay-callers.json'), input => fileSchema.parse(input), (): RelayFile => ({ version: 1, callers: [], asks: [] }))
   }
   async load(): Promise<void> {
-    const file = await this.store.read().catch((): RelayFile => ({ version: 1, callers: [], asks: [] }))
+    const file = await this.store.read()
     for (const caller of file.callers) this.callers.set(caller.id, caller)
     this.asks = file.asks
   }

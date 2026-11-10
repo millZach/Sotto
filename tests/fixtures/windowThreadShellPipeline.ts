@@ -11,6 +11,7 @@ import { FakeProviderHost } from './fakeProviderHost'
 import { syntheticModelCatalog } from './modelCatalog'
 import { testCredentials } from './testCredentials'
 import { join } from 'node:path'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 export const STREAMING_ROUNDS = 3
 export const STREAMING_CHUNKS = 180
@@ -65,9 +66,13 @@ export async function stack(root: string, withActivity: boolean, streamCount: nu
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude', 'codex'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapters.claude, registry), codex: new SottoThreadHost('codex', adapters.codex, registry),
-      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
-  const workspace = new WorkspaceHost(native, root, () => true, undefined,
-    watcherEnabled, /* museEnabled */ false, /* streamingPublishCostEnabled */ true)
+      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), hermes: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+  const workspace = new WorkspaceHost(native, root, {
+    historyEnabled: () => true,
+    watcherEnabled: watcherEnabled,
+    heldProviders: heldProvidersOf({ muse: false }),
+    streamingPublishCostEnabled: true,
+  })
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled, streamingPublishCost: true })

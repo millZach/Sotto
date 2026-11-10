@@ -4,6 +4,8 @@ import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
@@ -11,7 +13,7 @@ import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostR
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
-import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, agentThreadMediaPartSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { AGENT_MAX_VIDEO_BYTES, FILE_UPLOAD_MISMATCH, HOST_CANNOT_STAGE_FILES, HOST_CANNOT_STAGE_VIDEOS, isImageAttachment, VIDEO_TOO_LARGE, type AgentAttachmentFileUpload, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, agentThreadMediaPartSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -30,6 +32,8 @@ import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostF
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
+import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
+import type { BrowserEvent } from '../../shared/browser'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -120,6 +124,11 @@ export interface SocketHostServiceOptions {
    */
   crossMachineEnabled?: boolean
   /**
+   * Sotto's browser for a host's own threads (ADR-0198), as this computer's `paired-host-browser` and `quiet-browser` Owl
+   * answers say at start: only then does its hello accept `browser`, so the host sends it pages, tasks and pictures.
+   */
+  pairedHostBrowser?: boolean
+  /**
    * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
    */
@@ -136,8 +145,6 @@ export interface SocketHostServiceOptions {
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
-  /** Muse's answer alone, from before the held set; `heldProviders` wins. */
-  museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
   /**
@@ -249,6 +256,8 @@ export class SocketHostService implements HostService {
   private readonly heldTells: { readonly askId: string; readonly ask: WatcherTellPush }[] = []
   /** Who hears the host say a delegation it holds for one of this desktop's callers moved (#1316 part 2). */
   private readonly remoteNewsListeners = new Set<(caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void>()
+  private readonly browserListeners = new Set<(change: BrowserEvent) => void>()
+  private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -407,7 +416,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -535,6 +544,9 @@ export class SocketHostService implements HostService {
             else for (const listener of [...this.tellListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
           }
         }
+        // Pushed only to a desktop whose hello accepted `browser` (ADR-0198); a picture only while this desktop watches its page.
+        else if (message.event === 'browser') { if (this.supportsBrowser) for (const listener of [...this.browserListeners]) { try { listener(message.change) } catch { /* A listener's failure is its own. */ } } }
+        else if (message.event === 'browser-frame') { if (this.supportsBrowser) for (const listener of [...this.frameListeners]) { try { listener(message.frame) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'delegation-remote-news') {
           // Only to a desktop whose hello accepted `delegation-remote` (#1316 part 2).
           if (this.supportsDelegationRemote) for (const listener of [...this.remoteNewsListeners]) {
@@ -848,7 +860,10 @@ export class SocketHostService implements HostService {
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
-  events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
+  events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
+    const events = [...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)
+    return structuredClone(limit !== undefined && limit >= 0 ? events.slice(0, limit) : events)
+  }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   async readShell(): Promise<AgentState> { const generation = this.generation, epoch = this.snapshotEpoch; const state = this.read(protocolAgentStateSchema, await this.call({ op: 'shell' })); this.sameGeneration(generation); if (epoch === this.snapshotEpoch) this.publish(state, true); return this.shell() }
@@ -1398,6 +1413,35 @@ export class SocketHostService implements HostService {
     })
     this.previewTail = result.catch(() => undefined); return result
   }
+  /**
+   * Sends a video from its path on this computer to a host that lists `video-staging`, in 8 MiB parts read one at a time,
+   * so the video is never held whole (ADR-0131, November 9 amendment). It is hashed in a first pass, since every part
+   * names the whole file. Queued behind previews like any large request; the last part's answer is the handle.
+   */
+  stageAttachmentFile(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle> {
+    if (!this.features.includes('video-staging')) return Promise.reject(new Error(HOST_CANNOT_STAGE_VIDEOS))
+    const result = this.previewTail.then(async () => {
+      const handle = await open(file.path, 'r')
+      try {
+        const info = await handle.stat()
+        if (!info.isFile() || info.size < 1 || info.size > AGENT_MAX_VIDEO_BYTES) throw new Error(VIDEO_TOO_LARGE)
+        const hash = createHash('sha256')
+        for await (const chunk of createReadStream(file.path)) hash.update(chunk as Buffer)
+        const digest = hash.digest('hex'), sizeBytes = info.size
+        const count = Math.max(1, Math.ceil(sizeBytes / HOST_FILE_PART_BYTES))
+        const uploadId = randomUUID()
+        let answer: unknown = null
+        for (let index = 0; index < count; index += 1) {
+          const part = Buffer.alloc(Math.min(HOST_FILE_PART_BYTES, sizeBytes - index * HOST_FILE_PART_BYTES))
+          const { bytesRead } = await handle.read(part, 0, part.length, index * HOST_FILE_PART_BYTES)
+          if (bytesRead !== part.length) throw new Error(FILE_UPLOAD_MISMATCH)
+          answer = await this.call({ op: 'stage-file-part', part: { uploadId, index, count, name: file.name, mimeType: file.mimeType, sizeBytes, digest, data: part.toString('base64') } })
+        }
+        return this.read(agentAttachmentHandleSchema, answer)
+      } finally { await handle.close() }
+    })
+    this.previewTail = result.catch(() => undefined); return result
+  }
   /** A staged image's bytes, queued behind previews: the host answers one of these large frames at a time. */
   attachmentContent(digest: string): Promise<AgentAttachmentContent | null> {
     if (!this.features.includes('attachment-staging')) return Promise.resolve(null)
@@ -1609,6 +1653,24 @@ export class SocketHostService implements HostService {
   subscribeCheckQueue(listener: () => void): () => void {
     this.checkListeners.add(listener)
     return () => { this.checkListeners.delete(listener) }
+  }
+  /** Whether this desktop drives the host's browser: its own Owl answers say so, and the host offers it (ADR-0198). */
+  get supportsBrowser(): boolean { return this.options.pairedHostBrowser === true && this.features.includes('browser') }
+  /** One of the host's browser requests, by the host's own IDs, answered as this computer's browser answers it. */
+  async browser<M extends HostBrowserMethod>(request: Extract<HostBrowserRequest, { method: M }>): Promise<HostBrowserResult<M>> {
+    if (this.options.pairedHostBrowser !== true) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    this.offers('browser')
+    return this.read(hostBrowserResultSchemas[request.method] as unknown as z.ZodType<HostBrowserResult<M>>, await this.call({ op: 'browser', request }))
+  }
+  /** Hears the host's browser pages, tasks and grants change. Returns the way to stop. */
+  subscribeBrowser(listener: (change: BrowserEvent) => void): () => void {
+    this.browserListeners.add(listener)
+    return () => { this.browserListeners.delete(listener) }
+  }
+  /** Hears pictures of the host's pages this desktop watches. Never logged or kept. Returns the way to stop. */
+  subscribeBrowserFrames(listener: (frame: HostBrowserFrame) => void): () => void {
+    this.frameListeners.add(listener)
+    return () => { this.frameListeners.delete(listener) }
   }
   private productEventAnswerTelling = false
   private productEventAnswerAgain = false

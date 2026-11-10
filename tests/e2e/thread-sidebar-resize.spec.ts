@@ -78,19 +78,26 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await expect(separator(page)).toHaveAttribute('aria-valuemin', '260')
     await expect(separator(page)).toHaveAttribute('aria-valuemax', '480')
     const preview = row(page, 'Grok voice previews')
-    // Row actions temporarily occupy the narrow metadata line on hover or keyboard focus.
+    const previewButton = preview.getByRole('button', { name: 'Grok voice previews', exact: true })
+    // A plain Done row at rest steps back to one line, its name and a muted time, with no ring, mark or word (ADR-0135,
+    // November 5, 2026). The keys and the pointer stay off it here.
     await promptField(page).focus()
     await promptField(page).hover()
-    await expect(preview.locator('.thread-nav__provider')).toBeVisible()
-    // The provider is its mark; its name is the hover text.
-    await expect(preview.locator('.thread-nav__provider svg.provider-mark[data-provider="claude"]')).toBeVisible()
-    await expect(preview.locator('.thread-nav__provider')).toHaveAttribute('title', /^Claude/)
-    await expect(preview.locator('.thread-nav__status')).toBeVisible()
-    await expect(preview.locator('.thread-nav__status')).toContainText('Done')
-    await expect(preview.locator('.thread-nav__model')).toBeHidden()
-    // This fixture has no worktree metadata. A wide row must not invent a branch.
+    await expect(preview).toHaveAttribute('data-steps-back', 'true')
+    await expect(preview.locator('.thread-nav__time')).toBeVisible()
+    await expect(preview.locator('.thread-nav__provider')).toBeHidden()
+    // Its word leaves the screen and stays at the head of what a screen reader hears.
+    await expect(previewButton).toHaveAccessibleDescription(/^Claude, Done/)
+    // The branch line leaves with the word. This fixture has no worktree metadata, so the row must not invent a branch.
+    await expect(preview.locator('.thread-nav__branch')).toBeHidden()
     await expect(preview.locator('.thread-nav__branch svg.lucide-git-branch')).toHaveCount(0)
     await expect(preview.locator('.thread-nav__branch-name')).toHaveText('Project folder')
+    // Pointed at, the provider's mark stands where the ring would be, its name the hover text, and the row's shortcuts take the time's place.
+    await previewButton.hover()
+    await expect(preview.locator('.thread-nav__provider svg.provider-mark[data-provider="claude"]')).toBeVisible()
+    await expect(preview.locator('.thread-nav__provider')).toHaveAttribute('title', /^Claude/)
+    await expect(preview.locator('.thread-nav__time')).toBeHidden()
+    await promptField(page).hover()
     const prompt = promptField(page)
     await fillPrompt(prompt, 'Keep this original draft through every sidebar change.')
     const settings = sidebar(page).getByRole('link', { name: 'Settings', exact: true })
@@ -99,8 +106,9 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
 
     await dragWidth(page, 480)
     await expectWidth(page, 480)
-    await expect(preview.locator('.thread-nav__model')).toBeVisible()
-    await expect(preview.locator('.thread-nav__model')).toContainText('Sonnet 4.5')
+    // A wide sidebar does not bring a resting row's second line back.
+    await expect(preview.locator('.thread-nav__time')).toBeVisible()
+    await expect(preview.locator('.thread-nav__branch')).toBeHidden()
     await separator(page).focus()
     await page.keyboard.press('Home')
     await expectWidth(page, 260)

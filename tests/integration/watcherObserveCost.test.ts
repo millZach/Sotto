@@ -38,8 +38,8 @@ it('copies nothing per thread while observing an update', async () => {
     project: { hostId: control.hostId()!, projectId: project.id }, modelId: model.id, title: 'Synthetic worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic first prompt' })
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   expect(await call('watch_thread', { target: started.target })).toMatchObject({ status: 'ok' })
-  expect(control.watcherRecordView().operations.length).toBeGreaterThan(0)
-  expect(control.watcherRecordView().watches?.length).toBeGreaterThan(0)
+  expect(control.watcherRecords.view().operations.length).toBeGreaterThan(0)
+  expect(control.watcherRecords.view().watches?.length).toBeGreaterThan(0)
 
   const base = control.watcherSnapshot()
   const template = base.threads.find(thread => thread.id === started.target.threadId)!
@@ -49,7 +49,7 @@ it('copies nothing per thread while observing an update', async () => {
     ...base.threads,
   ] })
   const copies = (count: number) => {
-    const record = vi.spyOn(control, 'watcherRecord'), shell = vi.spyOn(control, 'shell')
+    const record = vi.spyOn(control.watcherRecords, 'copy'), shell = vi.spyOn(control, 'shell')
     service.observe(withThreads(count), new Set())
     const counted = { record: record.mock.calls.length, shell: shell.mock.calls.length }
     record.mockRestore(); shell.mockRestore()

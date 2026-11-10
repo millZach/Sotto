@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
+import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
 
 /**
  * Claude's live stream frames carry no timestamp of their own, so without an observed start a running

@@ -235,3 +235,32 @@ it.each(['previous', 'empty query', 'close'] as const)('handles %s while repaint
     expect(terminal.getSelectionPosition()?.start.y).toBe(3)
   } finally { search.dispose(); terminal.dispose(); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals() }
 })
+
+it('keeps the current match when the addon counts again after a repaint moved its line (#1125)', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }))
+  const terminal = new Terminal({ allowProposedApi: true, cols: 40, rows: 8 })
+  const element = document.body.appendChild(document.createElement('div'))
+  const search = terminalSearch(terminal, element, () => '#123456')
+  const write = (text: string) => new Promise<void>(resolve => terminal.write(text, resolve))
+  try {
+    terminal.open(element)
+    await write('ready\r\nalpha needle one\r\nbeta needle two\r\ngamma needle three')
+    search.mount(); search.open()
+    const field = element.querySelector('input')!, count = element.querySelector('output')!
+    const enter = (backwards = false) => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: backwards, bubbles: true }))
+    field.value = 'needle'; field.dispatchEvent(new Event('input')); enter()
+    expect(count.textContent).toBe('2 of 3')
+    vi.useFakeTimers()
+    // A reopened drawer resizes the grid, and ConPTY repaints the screen one row lower than xterm reflowed it. The
+    // selection stays on its row, now over "alpha needle one".
+    const repaint = write('\x1b[Hready\x1b[K\r\nready\x1b[K\r\nalpha needle one\x1b[K\r\nbeta needle two\x1b[K\r\ngamma needle three\x1b[K')
+    await vi.advanceTimersByTimeAsync(0); await repaint
+    // The addon counts again 200 ms after output stops, from wherever the selection sits.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(count.textContent).toBe('2 of 3')
+    expect(terminal.getSelectionPosition()?.start.y).toBe(3)
+    enter(); expect(count.textContent).toBe('3 of 3')
+    expect(terminal.getSelectionPosition()?.start.y).toBe(4)
+    enter(true); expect(count.textContent).toBe('2 of 3')
+  } finally { search.dispose(); terminal.dispose(); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals() }
+})

@@ -5,7 +5,7 @@ import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, messageNamesModel, 
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 const FIVE = ['low', 'medium', 'high', 'xhigh', 'max']
-const LABEL: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex', grok: 'Grok Build', muse: 'Muse', devin: 'Devin', opencode: 'OpenCode', cursor: 'OpenCode', deepseek: 'DeepSeek Harness' }
+const LABEL: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex', grok: 'Grok Build', muse: 'Muse', devin: 'Devin', opencode: 'OpenCode', cursor: 'OpenCode', deepseek: 'DeepSeek', hermes: 'Hermes' }
 function model(provider: ProviderId, native: string, name: string, efforts: readonly string[], options: Partial<AgentModel> = {}): AgentModel {
   return { id: publicProviderEntityId(provider, 'model', native), provider: LABEL[provider], providerId: provider, name, ready: true,
     reasoningEfforts: [...efforts], ...(efforts.length ? { defaultReasoningEffort: efforts.includes('medium') ? 'medium' : efforts[0]! } : {}),
@@ -84,7 +84,7 @@ describe('worker roles', () => {
       'computer-use': ['gpt-6-astra', 'medium', 'full-access'],
     })
     expect(table(CLAUDE)['computer-use']).toEqual(['opus', 'high', 'full-access'])
-    // Grok Build offers no Extra high and no Allow edits: the nearest it offers, never wider.
+    // Grok Build offers no XHigh and no Allow edits: the nearest it offers, never wider.
     expect(table(GROK)).toMatchObject({ orchestrating: ['grok-4.7-build', 'high', undefined], building: ['grok-4.7-build', 'high', 'approval-required'],
       research: ['grok-4.6-build', 'medium', 'approval-required'] })
     // Watcher runs on Muse (ADR-0079), so Orchestrating takes Muse's own first model, as a role with no Muse default does.

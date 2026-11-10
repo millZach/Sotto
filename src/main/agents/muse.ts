@@ -13,7 +13,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
 import { museVersionForExecutable } from './museClientInstall'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
+import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
 import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museChildAdmission, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
@@ -336,7 +336,7 @@ export interface MuseMspOptions {
 const MUSE_LIMIT_KINDS: ReadonlySet<string> = new Set(['usageLimit', 'usageLimitExceeded', 'usageLimitReached', 'quotaExceeded'])
 
 /** Muse owns its sign-in, tools and durable sessions. Only alias and origin metadata belongs to Sotto. */
-export class MuseMspHost implements AgentHost {
+export class MuseMspHost implements ProviderHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   /** The last profile main gave each Watcher thread: evidence for stopping it when main no longer resolves one, never a grant. */
   private readonly knownLaunchProfiles = new Map<string, WatcherLaunchProfile>()

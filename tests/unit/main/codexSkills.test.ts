@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { agentCommandSchema, agentThreadDraftSchema } from '../../../src/shared/agents'
 import { hasSkillInvocation } from '../../../src/shared/agentSkills'
-import { codexSkillInput, parseCodexSkillCatalog } from '../../../src/main/agents/codexSkills'
+import { codexSkillInput, parseCodexSkillCatalog } from '../../../src/main/agents/providers/codex/codexSkills'
 
 import { skill } from '../../fixtures/codexSkillFixture'
 

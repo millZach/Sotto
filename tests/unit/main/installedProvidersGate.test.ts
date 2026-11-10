@@ -11,14 +11,15 @@ vi.mock('../../../src/main/agents/opencodeServer', () => ({ findOpenCodeExecutab
 // No Cursor either.
 vi.mock('../../../src/main/agents/cursorRpc', () => ({ findCursorExecutable: probes.cursor }))
 import { detectInstalledProviders } from '../../../src/main/agents/installedProviders'
+import { heldProvidersOf } from '../../../src/shared/heldProviders'
 beforeEach(() => { for (const probe of Object.values(probes)) probe.mockReset().mockResolvedValue('/synthetic/client'); probes.opencode.mockResolvedValue(undefined); probes.cursor.mockResolvedValue(undefined) })
 it.each([undefined, false])('does not even probe Muse installation when the startup gate is %s', async museEnabled => {
-  expect(await detectInstalledProviders(museEnabled === undefined ? {} : { museEnabled })).toEqual(['codex', 'claude', 'grok', 'devin'])
+  expect(await detectInstalledProviders(museEnabled === undefined ? {} : { heldProviders: heldProvidersOf({ muse: museEnabled }) })).toEqual(['codex', 'claude', 'grok', 'devin'])
   expect(probes.muse).not.toHaveBeenCalled()
 })
 it('includes an installed Muse only in Owl while preserving ordinary native detection', async () => {
   probes.codex.mockResolvedValue(undefined); probes.devin.mockResolvedValue(undefined)
-  expect(await detectInstalledProviders({ museEnabled: true })).toEqual(['claude', 'grok', 'muse'])
+  expect(await detectInstalledProviders({ heldProviders: heldProvidersOf({ muse: true }) })).toEqual(['claude', 'grok', 'muse'])
   expect(probes.muse).toHaveBeenCalledOnce()
 })
 it('skips every held provider through the one gate, with a test-only held Grok', async () => {

@@ -21,7 +21,7 @@ const skipped = ['src/main/e2e/']
 const patterns: Record<string, RegExp> = {
   'structuredClone(': /\bstructuredClone\(/g,
   'shell()': /\.shell\(\)/g,
-  'watcherRecord()': /\bwatcherRecord\(\)/g,
+  'WatcherRecords.copy()': /\b(?:watcherRecords|this)\.copy\(\)/g,
   'cloneHostSnapshot(': /\bcloneHostSnapshot\(/g,
   'clonePlainData(': /\bclonePlainData\(/g,
   'cloneActivitySnapshot(': /\bcloneActivitySnapshot\(/g,

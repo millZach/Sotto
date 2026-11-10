@@ -10,6 +10,7 @@ import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { builtStoreWorker } from '../fixtures/storeWorker'
 import { added, aliased, appended, answer, cleanUp, cleanup, compareShown, EventProvider, fixture, runEquivalence, shown, storedMessages, WORKSHOP } from '../fixtures/storeWriterEquivalence'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 /**
  * The workspace over the store worker as the build compiles it (#1457, step 2 of docs/plans/store-worker.md): the same
@@ -30,7 +31,13 @@ describe('the workspace over the store worker', () => {
     const project = join(directory, 'project')
     await mkdir(project)
     adapter.state.projects[0]!.path = project
-    const host = new WorkspaceHost(adapter, directory, () => true, undefined, false, false, true, undefined, { path: worker.path, ...(timing ? { timing } : {}) })
+    const host = new WorkspaceHost(adapter, directory, {
+      historyEnabled: () => true,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: true,
+      storeWorker: { path: worker.path, ...(timing ? { timing } : {}) },
+    })
     cleanup.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
     await host.initialize()
     await host.connect()

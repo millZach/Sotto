@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { claudePending } from '../../../src/main/agents/claudeRequests'
+import { claudePending } from '../../../src/main/agents/providers/claude/claudeRequests'
 import { grokPending } from '../../../src/main/agents/grokRequests'
-import { pendingRequest } from '../../../src/main/agents/codexRequests'
+import { pendingRequest } from '../../../src/main/agents/providers/codex/codexRequests'
 import { BROWSER_MCP_SERVER } from '../../../src/main/agents/browserAgentServer'
 import { browserToolDefinitions } from '../../../src/main/tools/browserAgentTools'
 

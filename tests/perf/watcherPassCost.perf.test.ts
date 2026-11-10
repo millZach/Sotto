@@ -42,7 +42,7 @@ function counted(f: Fixture, run: () => void) {
   const ofRecord = (value: unknown) => value === record || typeof value === 'object' && value !== null
     && ('requests' in value && (value as { requests: unknown }).requests === record.requests
       || 'operations' in value && (value as { operations: unknown }).operations === record.operations)
-  const copies = vi.spyOn(f.control, 'watcherRecord'), mutations = vi.spyOn(f.control, 'mutateWatcher')
+  const copies = vi.spyOn(f.control.watcherRecords, 'copy'), mutations = vi.spyOn(f.control.watcherRecords, 'mutate')
   const stringify = vi.spyOn(JSON, 'stringify'), structured = vi.spyOn(globalThis, 'structuredClone')
   counter.clones = []; counter.deepEquals = 0; counter.on = true
   f.threadVisits.count = 0; f.threadVisits.on = true
@@ -147,7 +147,7 @@ describe('Watcher pass changes', () => {
   it('changes, copies and compares nothing for a failed send that is already recorded', async () => {
     const f = await scaled(SMALL)
     const failed = f.state().operations[0]!
-    f.control.mutateWatcher(next => { const operation = next.operations[0]!; operation.deliveryState = 'failed'; operation.refusalCode = 'PROVIDER_UNAVAILABLE' })
+    f.control.watcherRecords.mutate(next => { const operation = next.operations[0]!; operation.deliveryState = 'failed'; operation.refusalCode = 'PROVIDER_UNAVAILABLE' })
     f.sends.deliveries.splice(f.sends.deliveries.findIndex(item => item.draftId === failed.draftId), 1)
     f.sends.followups.push({ id: '00000000-0000-4000-8000-0000000f0000', threadId: failed.target.threadId, draftId: failed.draftId!, text: 'Synthetic fixture text',
       attachments: [], createdAt: centerTime, updatedAt: centerTime, status: 'failed' })

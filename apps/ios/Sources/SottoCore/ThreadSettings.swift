@@ -169,15 +169,21 @@ public enum ThreadSettings {
     }
 }
 
-/// Effort levels in words, as the desktop says them (`EffortPicker.tsx`).
+/// Effort levels in words, as the desktop says them (`effortNames.ts`, #227).
 public enum EffortWords {
+    /// A level found by its spelling-free key, as the desktop's `effortKey` does, so `x-high` and `Extra_High` read as `xhigh`.
+    static func key(_ id: String) -> String {
+        let key = id.lowercased().filter { $0 != "-" && $0 != "_" && $0 != " " }
+        return key == "extrahigh" ? "xhigh" : key
+    }
     public static func name(_ id: String) -> String {
-        switch id {
+        switch key(id) {
         case "minimal": return String(localized: "Minimal", bundle: .module, comment: "A reasoning effort level.")
         case "low": return String(localized: "Low", bundle: .module, comment: "A reasoning effort level.")
         case "medium": return String(localized: "Medium", bundle: .module, comment: "A reasoning effort level.")
         case "high": return String(localized: "High", bundle: .module, comment: "A reasoning effort level.")
-        case "xhigh": return String(localized: "Extra high", bundle: .module, comment: "A reasoning effort level.")
+        // Its name, as Zach picked it for every surface (#227), kept as it is in every language.
+        case "xhigh": return "XHigh"
         case "max": return String(localized: "Max", bundle: .module, comment: "A reasoning effort level, the highest some models offer.")
         // Claude Code's own name, kept as it is (ADR-0148).
         case "ultracode": return "Ultracode"
@@ -200,7 +206,7 @@ public enum EffortWords {
         case "low": return String(localized: "Fast. For small, clear tasks.", bundle: .module, comment: "What the Low effort level does.")
         case "medium": return String(localized: "The usual balance of speed and care.", bundle: .module, comment: "What the Medium effort level does.")
         case "high": return String(localized: "Takes longer and catches more.", bundle: .module, comment: "What the High effort level does.")
-        case "xhigh": return String(localized: "Much longer. For stubborn problems.", bundle: .module, comment: "What the Extra high effort level does.")
+        case "xhigh": return String(localized: "Much longer. For stubborn problems.", bundle: .module, comment: "What the XHigh effort level does.")
         case "max": return String(localized: "Near the model’s limit. Slow and costly.", bundle: .module, comment: "What the Max effort level does.")
         default: return index == 0 ? String(localized: "Fast. For small, clear tasks.", bundle: .module, comment: "What the Low effort level does.")
             : String(localized: "More time for difficult problems.", bundle: .module, comment: "What an effort level Sotto has no line for does.")
@@ -234,6 +240,11 @@ public enum ThreadSettingWords {
         case "full-access": return String(localized: "Codex runs any command and edits any file without asking, anywhere on \(computer) and online.", bundle: .module, comment: "What a Codex thread does under Full access. %@ is the computer's name.")
         default: return nil
         }
+    }
+    /// Why a started thread's effort can't change, where its agent keeps the level the thread began on (#228), as the
+    /// desktop's fixed effort chip says it (`fixedEffortReason` in `FixedEffortChip.tsx`).
+    public static func effortFixed(provider: String) -> String {
+        String(localized: "\(provider) keeps the effort a thread started on. To use another level, start a new thread.", bundle: .module, comment: "Why a started thread's effort can't be changed. %@ is the agent's name, such as Grok Build.")
     }
     /// The line above the box while a permission change waits: what is still in force, in the agent's name. Under
     /// Codex's Allow actions a reviewer model answers in the user's place, so that caption says so.
@@ -536,6 +547,9 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
             permissionPending: pendingPermission, caption: caption, notices: notices, drawn: drawn, unpressed: unpressed)
     }
 
+    /// Why the effort stays as it is, where the agent keeps a started thread's model and effort (Grok, #228); nil where
+    /// the effort can change or the model offers no levels. The sheet's Effort row shows it, a lock in place of its menu.
+    public var effortFixedReason: String? { modelFixed && !efforts.isEmpty ? ThreadSettingWords.effortFixed(provider: provider) : nil }
     /// Whether a chip of this kind can be pressed now.
     public func pressable(_ kind: ThreadSettingKind) -> Bool {
         guard fixed == nil else { return false }

@@ -255,8 +255,8 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-/** The footer stays inside the window, every composer stays above it or beside the collapsed rail,
-    and the window controls never cover a pane header's controls. */
+/** The footer stays inside the window, every composer stays above it, and the window controls never cover a pane
+    header's controls. */
 async function roomEdges(page: Page, width: number, height: number): Promise<void> {
   const way = await box(page.locator('.watcher-foot .thread-nav__foot'))
   expect(way.x + way.width, `the way off the page at ${width}x${height}`).toBeLessThanOrEqual(width)
@@ -265,11 +265,9 @@ async function roomEdges(page: Page, width: number, height: number): Promise<voi
     expect(overlaps(way, await box(pane)), `footer clear of a pane at ${width}x${height}`).toBe(false)
   }
   const controls = await box(page.locator('.threads-view__winctl'))
-  const collapsed = await page.locator('.watcher-room').getAttribute('data-sidebar-collapsed') !== null
   for (const composer of await page.locator('.thread-workspace__compose .thread-prompt').all()) {
     const card = await box(composer)
-    if (collapsed) expect(card.x, `a composer beside the rail at ${width}x${height}`).toBeGreaterThanOrEqual(way.x + way.width)
-    else expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(way.y)
+    expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(way.y)
   }
   for (const control of await page.locator('.thread-workspace__head :is(button, [role="meter"])').all()) {
     if (!await control.isVisible()) continue
@@ -412,8 +410,9 @@ async function createWorker(page: Page, folder: string, title: string): Promise<
     if (opened.error || !opened.activeProjectId) throw new Error('Could not create the test worker project.')
     const room = await window.sotto!.watcher!.get()
     if (room.status !== 'ok' || !room.state.currentOptions) throw new Error('Watcher is unavailable.')
+    // Named as the New thread dialog names one: a thread on its stand-in title that was never sent to is not listed (ADR-0155).
     const created = await agents.command({ type: 'create-thread', projectId: opened.activeProjectId, modelId: room.state.currentOptions.modelId,
-      title, workingCopy: 'shared', runtimeMode: 'approval-required' })
+      title, titleSource: 'user', workingCopy: 'shared', runtimeMode: 'approval-required' })
     if (created.error || !created.activeThreadId) throw new Error('Could not create the test worker.')
     return created.activeThreadId
   }, { path: folder, title })
@@ -883,46 +882,27 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('the collapsed footer keeps the Threads rail positions and can expand back to the room switch', async () => {
+  test('a collapsed Threads sidebar leaves Watcher its footer row and no rail', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async launched => {
       const { page } = launched
       await openThreads(page)
       await seedRoom(page, { current: true })
-      const footBoxes = () => page.locator('.thread-nav__foot :is([role="tab"], a, button)').evaluateAll(nodes => nodes.flatMap(node => {
-        const box = node.getBoundingClientRect()
-        return box.width && box.height ? [{ name: node.getAttribute('aria-label') ?? node.textContent, x: box.x, y: box.y, width: box.width, height: box.height }] : []
-      }))
-      for (const [width, height] of [[820, 560], [1280, 800], [1600, 1000]] as const) {
+      await resizeContentWindow(launched, 1600, 1000)
+      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+      await page.keyboard.press('ControlOrMeta+2')
+      await expect(watcherPane(page)).toBeVisible()
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeContentWindow(launched, width, height)
-        // Under a 1000 pixel window the rail already stands (ADR-0110, November 5, 2026).
-        const narrow = width < 1000
-        if (!narrow) await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-        const threadsFoot = await footBoxes()
-        expect(threadsFoot.length).toBeGreaterThanOrEqual(3)
-        await page.keyboard.press('ControlOrMeta+2')
-        await expect(watcherPane(page)).toBeVisible()
-        // Watcher's room follows only the user's own Collapse, so in a narrow window its row stays at the bottom left
-        // while Threads stands as the rail.
-        if (narrow) {
-          await expect(page.locator('.watcher-foot .thread-nav__rail')).toHaveCount(0)
-          await expect(page.locator('.watcher-foot .thread-nav__foot')).toBeVisible()
-          await roomEdges(page, width, height)
-          await page.keyboard.press('ControlOrMeta+1')
-          continue
-        }
-        await expect(page.locator('.watcher-foot .thread-nav__rail')).toBeVisible()
-        expect(await footBoxes()).toEqual(threadsFoot)
+        // The room has no thread list, so a rail there would stand empty (Drake, November 8, 2026).
+        await expect(page.locator('.thread-nav__rail')).toHaveCount(0)
+        await expect(page.locator('.watcher-foot .thread-nav__foot')).toBeVisible()
         await roomEdges(page, width, height)
-        await allThreads(page).click()
-        await page.getByRole('button', { name: 'Open Footer links beside Watcher', exact: true }).click()
-        await expect(beside(page)).toBeVisible()
-        expect(await footBoxes()).toEqual(threadsFoot)
-        await roomEdges(page, width, height)
-        await page.locator('.watcher-foot').getByRole('button', { name: 'Expand sidebar', exact: true }).click()
-        await expect(switchTab(page, 'Watcher')).toBeVisible()
-        await expect(switchTab(page, 'Watcher')).toBeFocused()
-        await switchTab(page, 'Threads').click()
       }
+      await allThreads(page).click()
+      await page.getByRole('button', { name: 'Open Footer links beside Watcher', exact: true }).click()
+      await expect(beside(page)).toBeVisible()
+      await expect(page.locator('.thread-nav__rail')).toHaveCount(0)
+      await roomEdges(page, 820, 560)
     }))
   })
 
@@ -1350,6 +1330,8 @@ test.describe("Watcher's room on the built app", () => {
       })
       const fromEnd = () => log.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)
       const newsTurn = (id: string) => pane.locator(`.thread-activity[data-turn-id="${id}"]`)
+      // A running turn's steps fold under the working line until it is opened (ADR-0134), so the line is what it draws.
+      const working = pane.getByTestId('thread-activity-live')
       const reply = (id: string) => pane.locator(`[data-message-id="${id}"]`)
       // The control that takes the reader to the newest message, named for what it brings.
       const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages|Jump to \d+ new messages?)$/u })
@@ -1369,15 +1351,15 @@ test.describe("Watcher's room on the built app", () => {
         expect(await fromEnd(), `${answer} is away from the end`).toBeGreaterThan(400)
         const steps = [
           ['news starts', { messages, activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
-            () => expect(newsTurn(news)).toHaveCount(1)],
+            () => expect(working).toBeVisible()],
           ['its reply arrives', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
             () => expect(reply(newsReply.id)).toBeVisible()],
           ['it ends', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking'])], status: 'idle' },
             () => expect(reply(newsReply.id).getByRole('button', { name: /^After news/u })).toBeVisible()],
           ['silent news starts', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 42, ['list_threads'], 'running')], status: 'running' },
-            () => expect(newsTurn(silent)).toHaveCount(1)],
+            () => expect(working).toBeVisible()],
           ['it ends with no reply', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 43, ['list_threads'])], status: 'idle' },
-            () => expect(newsTurn(silent)).toHaveCount(0)],
+            async () => { await expect(working).toHaveCount(0); await expect(newsTurn(silent)).toHaveCount(0) }],
         ] as const
         for (const [what, next, drawn] of steps) {
           await history(next)
@@ -2754,7 +2736,7 @@ test.describe("Watcher's room on the built app", () => {
     }, ['codex', 'claude'])
   })
 
-  test('New Watcher: first in the composer, unavailable while Watcher works, and a press brings the new Watcher with the handover', async () => {
+  test('New Watcher: beside Send in the composer, unavailable while Watcher works, and a press brings the new Watcher with the handover', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       const captureNew = (name: string): Promise<void> => captureInto(newWatcherEvidence, launched, name)
@@ -2771,17 +2753,19 @@ test.describe("Watcher's room on the built app", () => {
       await expect(button).not.toHaveAttribute('aria-disabled', 'true')
       // Watcher always runs on this computer, so its composer does not say so.
       await expect(pane.locator('.thread-host-chip')).toHaveCount(0)
-      // The keyboard reaches it after the message and the paperclip, which is off for a model that takes no images, and
-      // before the model.
+      // The quiet pill keeps it beside Send, so the keyboard reaches it as the eye does: after the message, the paperclip,
+      // which is off for a model that takes no images, Watcher's permissions and the model.
       // Named for what it takes: any file where Owl's any-file attachments are on, otherwise screenshots.
       const paperclip = pane.getByRole('button', { name: /^Attach (files|screenshots)$/u })
       expect(await paperclip.evaluate((clip, chip) => Boolean(clip.compareDocumentPosition(chip!) & Node.DOCUMENT_POSITION_FOLLOWING), await button.elementHandle())).toBe(true)
       await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
       await page.keyboard.press('Tab')
       if (await paperclip.isEnabled()) await page.keyboard.press('Tab')
-      await expect(button).toBeFocused()
+      await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toBeFocused()
       await page.keyboard.press('Tab')
       await expect(pane.getByRole('combobox', { name: 'Thread model' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(button).toBeFocused()
       // The captures show the chip at rest, with the composer focused as the room opens.
       await pane.getByRole('textbox', { name: 'Watcher message' }).focus()
       for (const appearance of ['dark', 'light'] as const) {
@@ -2879,23 +2863,23 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
-  test('stable shows nothing of Watcher, even with a projection seeded', async () => {
+  // Watcher was sent to stable on October 23, 2026 (8c0999071, ADR-0072), so stable shows the room Owl does.
+  test('stable shows Watcher, sent to stable, and keeps Watcher’s thread out of Threads', async () => {
     await onReleaseTrack('stable', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
       await seedRoom(page, { current: true })
-      await expect(page.getByRole('tablist', { name: 'Page' }).getByRole('tab')).toHaveCount(2)
-      await expect(switchTab(page, 'Watcher')).toHaveCount(0)
-      await expect(page.getByRole('img', { name: 'Watched by Watcher' })).toHaveCount(0)
-      await expect(page.getByText(/Watched by Watcher/)).toHaveCount(0)
-      await expect(page.getByRole('button', { name: /^Watch |^Stop watching/ })).toHaveCount(0)
-      await expect(page.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveCount(0)
-      await expect(page.locator('.watcher-foot .thread-nav__seg')).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'New Watcher' })).toHaveCount(0)
-      // Stable lists the thread the projection names as Watcher, since stable has no Watcher to give it to.
+      await expect(page.getByRole('tablist', { name: 'Page' }).getByRole('tab')).toHaveCount(3)
+      await expect(switchTab(page, 'Watcher')).toHaveCount(1)
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
+      await expect(threads.getByRole('button', { name: 'Footer links', exact: true }).getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
+      // The thread the projection names as Watcher is Watcher's, so Threads does not list it.
       await threads.getByRole('button', { name: /^Settled/ }).click()
-      await expect(threads.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(1)
+      await expect(threads.getByRole('button', { name: 'Benchmark rerun', exact: true })).toBeVisible()
+      await expect(threads.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(0)
+      await threads.getByRole('button', { name: /^Settled/ }).click()
+      await openRoom(page)
+      await expect(watcherPane(page).getByRole('textbox', { name: 'Watcher message' })).toBeVisible()
     }))
   })
 })

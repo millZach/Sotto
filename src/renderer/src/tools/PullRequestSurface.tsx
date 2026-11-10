@@ -4,7 +4,7 @@ import {
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
-import { msg } from '@lingui/core/macro'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
 import { branchPullRequestUrl, isPullRequestLimited, pullRequestAddress, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
@@ -197,16 +197,23 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
     {/* A read that failed under a checklist already shown: the checklist is the last one GitHub gave, and says so. */}
     {failure && detail ? <p className="pr-surface__notice tt-paragraph" data-tone="error" role="alert">{t({ message: `${failure} What shows below is from the last read.`, comment: '{failure} says why the latest read of the pull request failed, in a sentence.' })}</p> : null}
   </>
-  const linked = <LinkedFold thread={thread} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
-  const openList = <OpenPullRequests threadId={thread.id} shownUrl={detail?.url ?? null} open={openListOpen} onToggle={() => setOpenListOpen(value => !value)} onShow={show} />
+  const linkedRows = useLinkedRows(thread)
+  // The closed fold previews the linked pull requests other than the one this surface shows as its heading (Zach's
+  // choice of November 7, 2026); with only that one linked, the head says its count alone.
+  const shownUrl = detail?.url.toLowerCase()
+  const otherLinks = useMemo(() => linkedRows.filter(row => row.url.toLowerCase() !== shownUrl), [linkedRows, shownUrl])
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh pull request`} title={t`Refresh pull request`} data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
 
   // What the closed folds can show under their heads where the panel has room, most needed first: the checks that still
-  // stand, the description's whole first paragraph, the most changed files, and more of them.
-  const peeks = useMemo(() => detail ? peeksOf(detail) : NO_PEEKS, [detail])
+  // stand, the description's whole first paragraph, the most changed files, the thread's linked pull requests, which it
+  // holds itself (ADR-0061), and more of the files. Open pull requests is read only on a press, so it has none.
+  const peeks = useMemo(() => detail ? peeksOf(detail, otherLinks.length > 0) : NO_PEEKS, [detail, otherLinks.length])
   const anyOpen = descriptionOpen || checksOpen || filesOpen || linksOpen || openListOpen
-  const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, detail)
+  const fitFor = useMemo(() => ({ detail, otherLinks }), [detail, otherLinks])
+  const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, fitFor)
   const peeking = (peek: Peek): boolean => { const at = peeks.indexOf(peek); return at > -1 && at < peeksShown }
+  const linked = <LinkedFold thread={thread} rows={linkedRows} peekRows={peeking('links') ? otherLinks : undefined} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
+  const openList = <OpenPullRequests threadId={thread.id} shownUrl={detail?.url ?? null} open={openListOpen} onToggle={() => setOpenListOpen(value => !value)} onShow={show} />
   useWholeRowFoot(body, detail !== null)
 
   if (!detail) {
@@ -461,15 +468,17 @@ function NoPullRequest({ thread, busy, command, onCreate, onLink }: {
   </div>
 }
 
-type Peek = 'checks' | 'description' | 'files' | 'more-files'
+type Peek = 'checks' | 'description' | 'files' | 'links' | 'more-files'
 const NO_PEEKS: readonly Peek[] = []
-/** The peeks this pull request has something for, most needed first. */
-function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
+/** The peeks this pull request, and the thread's links (`linked`), have something for, most needed first. */
+function peeksOf(detail: GitPullRequestDetail, linked: boolean): readonly Peek[] {
   const peeks: Peek[] = []
   if (checksInOrder(detail.checks).standing.length) peeks.push('checks')
   // Only where the paragraph says more than the sentence the head already shows.
   if (descriptionPreview(detail.body, true) !== descriptionPreview(detail.body)) peeks.push('description')
   if (detail.files?.length) peeks.push('files')
+  // The thread's linked pull requests (Zach's pick B of `layout` item 3, ADR-0027, November 7, 2026).
+  if (linked) peeks.push('links')
   // Last, where there is room to spare once every other peek shows: more of the files, the record of what it changes.
   if ((detail.files?.length ?? 0) > PEEK_ROWS) peeks.push('more-files')
   return peeks
@@ -605,22 +614,44 @@ function Fold({ label, count, aside, preview, whole, peek, open, onToggle, child
  * Linked pull requests: the thread's links, and its branch's pull request when that is not linked, each opening in the
  * surface, and each the thread babysits marked Babysitting (ADR-0061, variant C).
  */
-function LinkedFold({ thread, open, onToggle, onShow, onLink }: {
-  readonly thread: AgentThread; readonly open: boolean; readonly onToggle: () => void
-  readonly onShow: (url: string) => void; readonly onLink: (() => void) | null
-}): ReactNode {
+type LinkedRow = Pick<GitPullRequestDetail, 'number' | 'url' | 'title' | 'state' | 'draft'> & { readonly source: string }
+/** The thread's linked pull requests, newest first, with its branch's own first when that is not linked. */
+function useLinkedRows(thread: AgentThread): readonly LinkedRow[] {
   const { t } = useLingui()
   const links = [...(thread.pullRequests ?? [])].reverse()
   const branch = thread.worktree?.git?.pullRequest
   const branchLinked = branch ? links.some(link => link.url.toLowerCase() === branch.url.toLowerCase()) : false
-  const rows = [
+  const rows: LinkedRow[] = [
     ...(branch && !branchLinked ? [{ number: branch.number, url: branch.url, title: branch.title, state: branch.state, draft: branch.draft, source: t({ message: 'This branch', comment: 'Where a pull request in the list came from: the thread\'s own branch.' }) }] : []),
     ...links.map(link => ({ number: link.number, url: link.url, title: link.title, state: link.state, draft: link.draft, source: LINK_SOURCE[link.source] })),
   ]
+  // The same array while what the rows say is unchanged, so an update to the thread does not try the peeks again.
+  const rowsKey = rows.map(row => [row.url, row.number, row.title, row.state, row.draft, row.source].join('\n')).join('\n\n')
+  return useMemo(() => rows, [rowsKey])
+}
+
+/**
+ * The first few linked pull requests under the head of their closed fold where the panel has room, for the eye only:
+ * each one's number, title and state, and a quiet last line for how many more there are.
+ */
+function LinkedPeek({ rows }: { readonly rows: readonly LinkedRow[] }): ReactNode {
+  const more = rows.length - PEEK_ROWS
+  return <span className="pr-surface__peek" data-of="links" aria-hidden="true">{rows.slice(0, PEEK_ROWS).map(row => <span key={row.url} className="pr-surface__peek-row">
+    <span className="pr-surface__peek-name"><span className="pr-surface__peek-number">#{row.number}</span><bdi>{row.title}</bdi></span>
+    <span className="pr-surface__peek-word" data-state={stateKey(row)}>{stateLabel(row)}</span>
+  </span>)}{more > 0 ? <span className="pr-surface__peek-row" data-more="">{plural(more, { one: '# more pull request', other: '# more pull requests' })}</span> : null}</span>
+}
+
+/** `peekRows`: what the closed head previews where the panel has room, the linked pull requests other than the one shown. */
+function LinkedFold({ thread, rows, peekRows, open, onToggle, onShow, onLink }: {
+  readonly thread: AgentThread; readonly rows: readonly LinkedRow[]; readonly peekRows?: readonly LinkedRow[] | undefined; readonly open: boolean; readonly onToggle: () => void
+  readonly onShow: (url: string) => void; readonly onLink: (() => void) | null
+}): ReactNode {
+  const { t } = useLingui()
   const linkedLabel = t`Linked pull requests`
   const babysittingWord = t({ message: 'Babysitting', comment: 'Marks a pull request this thread is babysitting.' })
   const babysitShown = !useRestartStopped()
-  return <Fold label={linkedLabel} count={rows.length} open={open} onToggle={onToggle}>
+  return <Fold label={linkedLabel} count={rows.length} peek={peekRows?.length ? <LinkedPeek rows={peekRows} /> : undefined} open={open} onToggle={onToggle}>
     {rows.length ? <ul className="pr-surface__links" aria-label={linkedLabel}>{rows.map(row => {
       const Icon = stateIcon(row)
       const babysat = babysitShown && babysittingOf(thread, row.url) !== undefined

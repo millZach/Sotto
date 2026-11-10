@@ -2,13 +2,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
 import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
 import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
-import { launchProcess, runToExit } from './gitLauncher'
-import { QUIET_GIT_ENV } from './gitStatus'
+import { launchProcess, runToExit } from './git/gitLauncher'
+import { QUIET_GIT_ENV } from './git/gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
 /** A move's incoming ref (ADR-0082 decision 2), `refs/sotto/incoming/<move>/<branch>`, with the moved branch's name. */
@@ -337,7 +338,7 @@ export interface WorktreeReclaimFacts {
   /** Ignored paths other than installed dependencies: build output, captures, anything a rule may not discard unasked. */
   readonly ignored: readonly string[]
   readonly items: readonly { path: string; bytes: number; fileCount: number }[]
-  readonly repositories: readonly { path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }[]
+  readonly repositories: readonly NestedRepositoryRow[]
   readonly untracked: readonly string[]
   /** A link inside the folder that leads out of it. Removing the folder could follow it, so nothing is removed while one is there. */
   readonly outsideLink: string | undefined
@@ -346,7 +347,7 @@ export interface WorktreeReclaimOptions {
   /** The exact ignored paths displayed in the user's confirmation. */
   readonly confirmedIgnored?: readonly string[]
   readonly confirmedItems?: readonly { path: string; fileCount: number }[]
-  readonly confirmedRepositories?: readonly { path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }[]
+  readonly confirmedRepositories?: readonly NestedRepositoryRow[]
   /** The user's answer to the uncommitted-changes confirmation. */
   readonly withUncommittedChanges?: boolean
   /** A rule acting on its own: a folder with anything but dependencies and regenerable build output in its ignored files is left alone. */
@@ -459,6 +460,81 @@ function entryKind(info: Dirent | Stats | undefined): 'file' | 'directory' | 'li
 /** The walk saw an entry become something else while it was reading the folder. */
 function changedDuringWalk(): Error {
   return new Error('The files changed while Sotto was checking them. Nothing was removed. Choose Remove worktree again to review them.')
+}
+
+/** A FETCH_HEAD line for a commit fetched by its hash, `<commit>\t[not-for-merge]\t'<commit>' of <source>`. */
+const FETCHED_BY_HASH = /^([0-9a-f]{40}(?:[0-9a-f]{24})?)\t(?:not-for-merge)?\t'([0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?)' of (.*)$/u
+/** Past this many commits fetched by hash, FETCH_HEAD is left out, so the command that counts stays short and the row gets no note. */
+const FETCHED_BY_HASH_MAX = 64
+
+/** A URL without its user and password, as Git's `transport_anonymize_url` writes it. */
+function anonymizedUrl(url: string): string {
+  const at = url.indexOf('@'), colon = url.indexOf(':'), slash = url.indexOf('/'), scheme = url.indexOf('://')
+  // A local path keeps its `@`: one with no colon, with a slash before its first colon, or with a drive letter.
+  if (at < 0 || colon < 0 || (slash >= 0 && slash < colon) || /^[A-Za-z]:/u.test(url)) return url
+  const rest = url.slice(at + 1)
+  // `user@host:path`, where the part after the `@` still has its colon.
+  if (scheme < 0) return rest.includes(':') ? rest : url
+  // `scheme://user@host/path`, and not an `@` in the path.
+  const path = url.indexOf('/', scheme + 3)
+  return !/^[A-Za-z0-9+.-]*$/u.test(url.slice(0, scheme)) || (path >= 0 && path < at) ? url : url.slice(0, scheme + 3) + rest
+}
+
+/**
+ * A remote's URL as Git writes it for the source of a fetch in FETCH_HEAD: without a user or password, without
+ * trailing slashes or a `.git` ending, and with a line break as `\n`. Any way this differs from Git's own only leaves
+ * a row without its note.
+ */
+export function fetchHeadSource(url: string): string {
+  const anonymized = anonymizedUrl(url)
+  let end = anonymized.length
+  while (end > 0 && anonymized[end - 1] === '/') end--
+  // Git's test is on the index of the last character kept, so `a.git` keeps its ending.
+  if (end > 5 && anonymized.slice(end - 4, end) === '.git') end -= 4
+  return anonymized.slice(0, end).replaceAll('\n', '\\n')
+}
+
+/** Of a submodule row's commits not on any remote, the ones FETCH_HEAD says were fetched by hash from `remote` (#687). */
+type FetchedByHash = { readonly remote: string; readonly commitCount: number }
+/** A nested repository's or worktree's row in the removal question. */
+type NestedRepositoryRow = { path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository'; fetchedByHash?: FetchedByHash | undefined }
+
+/**
+ * Of a submodule's `unpushed` commits, the ones FETCH_HEAD records as fetched by their hash from one of its remotes,
+ * with their history, and that remote's name (#687). `git submodule update` fetches a recorded commit that no remote
+ * branch has that way, and leaves no remote-tracking ref for it. The record is no proof that the remote has the
+ * commit: Git writes it for a commit it already had, and a remote can drop a commit no branch holds. So the commits
+ * stay counted, and the row only says they may already be there. `run` is Git in the submodule, `read` a file's
+ * text, empty when it cannot be read, and `elsewhere` whether a remote's URL may lead to another copy, given the
+ * submodule's Git directory. Commits fetched from anywhere else get no note, nor do commits from two remotes at once.
+ */
+async function fetchedByHash(run: (args: string[]) => Promise<string>, read: (path: string) => Promise<string>, unpushed: number,
+  elsewhere: (url: string, gitDirectory: string) => Promise<boolean>): Promise<FetchedByHash | undefined> {
+  const fetchHead = (await run(['rev-parse', '--path-format=absolute', '--git-path', 'FETCH_HEAD'])).trim()
+  const fetched = (await read(fetchHead)).split('\n').flatMap(line => {
+    const match = FETCHED_BY_HASH.exec(line)
+    return match && match[1] === match[2]!.toLowerCase() ? [{ commit: match[1]!, source: match[3]! }] : []
+  })
+  if (!fetched.length || fetched.length > FETCHED_BY_HASH_MAX) return undefined
+  // `remote -v` gives each remote's fetch URL as Git fetches from it, with any `insteadOf` applied.
+  const remotes = (await run(['remote', '-v'])).split(/\r?\n/u).flatMap(line => {
+    const match = /^([^\t]*)\t(.*) \(fetch\)(?: \[[^\]]*\])?$/u.exec(line)
+    return match ? [{ name: match[1]!, url: match[2]!, source: fetchHeadSource(match[2]!) }] : []
+  })
+  let from: { source: string; remote: string } | undefined
+  for (const source of new Set(fetched.map(line => line.source))) {
+    for (const remote of remotes) {
+      if (remote.source !== source || !await elsewhere(remote.url, dirname(fetchHead))) continue
+      if (from) return undefined
+      from = { source, remote: remote.name }
+      break
+    }
+  }
+  if (!from) return undefined
+  const source = from.source
+  const commits = [...new Set(fetched.filter(line => line.source === source).map(line => line.commit))]
+  const commitCount = unpushed - Number((await run(['rev-list', '--count', '--ignore-missing', '--all', '--not', '--remotes', ...commits])).trim())
+  return commitCount > 0 ? { remote: from.remote, commitCount } : undefined
 }
 
 /**
@@ -1093,7 +1169,7 @@ export class ThreadWorktrees {
     }
 
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
-    const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
+    const repositories: NestedRepositoryRow[] = []
     const inspectedSubmoduleDirectories = new Set<string>()
     /** Each plain nested repository's row and Git directory, whose submodules' history is counted once the walk is done. */
     const nestedRepositories: Array<{ row: { unpushedCommitCount?: number | undefined }; gitDirectory: string }> = []
@@ -1131,6 +1207,25 @@ export class ThreadWorktrees {
     const git = async (cwd: string, args: string[]): Promise<string> => {
       if (pathKey(await waited(realpath(cwd))) !== pathKey(join(canonicalRoot, relative(root, cwd)))) throw changedDuringWalk()
       return waited(this.git(cwd, args))
+    }
+    /** A file's text, empty when it cannot be read: FETCH_HEAD is read only for a row's note, never for its count. */
+    const readText = (file: string): Promise<string> => waited(readFile(file, 'utf8')).catch(() => '')
+    /**
+     * Whether a remote's URL may lead to another copy of a submodule's commits: a network URL, or a path or `file://`
+     * URL that resolves outside the folder being removed and outside the submodule's own Git directory, so never the
+     * submodule itself. A path that does not resolve leads nowhere.
+     */
+    const remoteElsewhere = async (url: string, base: string, gitDirectory: string): Promise<boolean> => {
+      const file = /^file:\/\//iu.test(url), colon = url.indexOf(':'), slash = url.search(/[\\/]/u)
+      // Git reads a URL with no colon, a slash before its first colon or a drive letter as a path (`url_is_local_not_ssh`).
+      if (!file && colon >= 0 && (slash < 0 || slash > colon) && !/^[A-Za-z]:/u.test(url)) return true
+      let place: string
+      try { place = await waited(realpath(file ? fileURLToPath(url) : resolve(base, url))) } catch { return false }
+      const own = await waited(realpath(gitDirectory)).catch(() => gitDirectory)
+      return ![canonicalRoot, own].some(folder => {
+        const delta = relative(pathKey(folder), pathKey(place))
+        return !delta || (!isAbsolute(delta) && delta !== '..' && !delta.startsWith(`..${sep}`))
+      })
     }
     /** A folder's .git, and whether its HEAD and objects make it a candidate bare repository. */
     const repositoryMarkers = async (full: string, children: Listing) => {
@@ -1178,6 +1273,8 @@ export class ThreadWorktrees {
             // Its history is at risk even when its checkout matches the parent's recorded commit.
             const kind = !submodule && gitMarker?.isFile() ? 'worktree' : 'repository'
             const history = kind === 'repository' ? { unpushedCommitCount: Number((await git(full, ['rev-list', '--count', '--all', '--not', '--remotes'])).trim()) } : {}
+            const fetched = submodule && history.unpushedCommitCount
+              ? await fetchedByHash(args => git(full, args), readText, history.unpushedCommitCount, (url, gitDirectory) => remoteElsewhere(url, full, gitDirectory)) : undefined
             if (submodule) {
               const directory = gitMarker!.isFile() ? resolve(full, (await waited(readFile(join(full, '.git'), 'utf8'))).trim().replace(/^gitdir: /u, '')) : join(full, '.git')
               inspectedSubmoduleDirectories.add(pathKey(await waited(realpath(directory))))
@@ -1197,7 +1294,7 @@ export class ThreadWorktrees {
               let changeCount = 0
               for (let i = 0; i < records.length; i++) { changeCount++; if (/^[RC]|^.[RC]/u.test(records[i]!)) i++ }
               const repositoryPath = local + '/'
-              const repository: (typeof repositories)[number] = { path: repositoryPath, changeCount, ...history, kind }
+              const repository: (typeof repositories)[number] = { path: repositoryPath, changeCount, ...history, kind, ...fetched ? { fetchedByHash: fetched } : {} }
               repositories.push(repository)
               if (!submodule && (bare || gitMarker?.isDirectory())) nestedRepositories.push({ row: repository, gitDirectory: bare ? full : join(full, '.git') })
               if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
@@ -1292,8 +1389,10 @@ export class ThreadWorktrees {
           if (!inspectedSubmoduleDirectories.has(pathKey(real))) {
             // Recursive deinit keeps core.worktree pointing at a deleted checkout. History reads
             // need no checkout, so override that path with the existing metadata directory.
-            const unpushedCommitCount = Number((await this.git(directory, ['--git-dir', directory, '--work-tree', directory, 'rev-list', '--count', '--all', '--not', '--remotes'])).trim())
+            const run = (args: string[]) => this.git(directory, ['--git-dir', directory, '--work-tree', directory, ...args])
+            const unpushedCommitCount = Number((await run(['rev-list', '--count', '--all', '--not', '--remotes'])).trim())
             if (unpushedCommitCount) {
+              const fetched = await fetchedByHash(run, readText, unpushedCommitCount, (url, gitDirectory) => remoteElsewhere(url, directory, gitDirectory))
               // Read the checkout path from the parent's .gitmodules when it is still recorded;
               // orphaned or recursive metadata retains its own visible path.
               if (!modulePaths) {
@@ -1314,7 +1413,7 @@ export class ThreadWorktrees {
               const repositoryPath = repositories.some(item => item.path === local) ? metadataPath : local
               const existingRow = items.find(item => item.path === repositoryPath)
               const row = existingRow ?? { path: repositoryPath, bytes: 0, fileCount: 0 }
-              repositories.push({ path: repositoryPath, changeCount: 0, unpushedCommitCount, kind: 'repository' })
+              repositories.push({ path: repositoryPath, changeCount: 0, unpushedCommitCount, kind: 'repository', ...fetched ? { fetchedByHash: fetched } : {} })
               addIgnored(repositoryPath)
               if (!existingRow) items.push(row)
               // Git ran in this metadata since it was found to be a folder; a link there now is not walked.
@@ -1400,7 +1499,11 @@ export class ThreadWorktrees {
     if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored)).length) throw new Error(RULE_KEEPS_IGNORED)
     if (!options.automatic && facts.ignored.length && !options.confirmedIgnored) throw new Error('This folder holds ignored files. Nothing was removed. Choose Remove worktree to review them.')
     if (!options.automatic && ((facts.ignored.length && !options.confirmedIgnored) || (options.confirmedIgnored && JSON.stringify([...options.confirmedIgnored].sort()) !== JSON.stringify(facts.ignored)))) throw new Error('The ignored items changed. Nothing was removed. Close this question and choose Remove worktree again to review them.')
-    if (facts.repositories.length && JSON.stringify(options.confirmedRepositories) !== JSON.stringify(facts.repositories)) throw new Error('The nested work changed. Nothing was removed. Choose Remove worktree again to review it.')
+    // A row confirmed without the note on commits fetched from a remote read "not on any remote" for them, as a client
+    // from before the note shows it, so the note is not held against it. A row confirmed with the note must still have it.
+    const confirmable = facts.repositories.map((row, index) => row.fetchedByHash && !options.confirmedRepositories?.[index]?.fetchedByHash
+      ? { path: row.path, changeCount: row.changeCount, unpushedCommitCount: row.unpushedCommitCount, kind: row.kind } : row)
+    if (facts.repositories.length && JSON.stringify(options.confirmedRepositories) !== JSON.stringify(confirmable)) throw new Error('The nested work changed. Nothing was removed. Choose Remove worktree again to review it.')
     // A rule never answers the confirmation on the user's behalf.
     if (facts.dirty && (options.automatic || !options.withUncommittedChanges)) throw new Error(RECLAIM_WORKTREE_NEEDS_CONFIRMATION)
     // A linked worktree's .git is a file; a directory there is a repository of its own and is never removed.

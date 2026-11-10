@@ -33,7 +33,7 @@ describe('workspace preload contract', () => {
       expect(result.host.projects[0]?.workspaceSettledAt).toBe('2026-09-12T12:00:00.000Z')
       expect(result.host.threads[0]).toMatchObject({ nativeSessionStarted: false, workspaceSettledAt: null })
     }
-    expect(() => bridge.command({ type: 'settle-thread', threadId: 'thread', delete: true } as unknown as AgentCommand)).toThrow()
+    await expect(bridge.command({ type: 'settle-thread', threadId: 'thread', delete: true } as unknown as AgentCommand)).rejects.toThrow()
     const listener = vi.fn(); const unsubscribe = bridge.onState(listener)
     const handler = ipc.on.mock.calls.find(([channel]) => channel === AGENT_STATE)![1] as (event: unknown, ...args: unknown[]) => void
     handler({}, state)

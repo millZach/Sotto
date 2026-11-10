@@ -205,6 +205,9 @@
 .thread-message { position: relative; margin: 0 0 28px; }
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
+/* A message's time takes the quiet weight, a step heavier by day (ADR-0024 November 7 amendment). Watcher's conversation
+   keeps its own, since its times already read in the secondary ink (ADR-0126 decision 5). */
+.thread-pane:not(.watcher-pane) .thread-message header > time { font-weight: var(--tt-weight-quiet); }
 .thread-message time { font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 /* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
 .thread-message__work {
@@ -230,13 +233,6 @@
 .thread-message[data-role='user'] .thread-message__copy { bottom: 6px; left: 9px; }
 .thread-message[data-role='user']:has(> .thread-message__copy) { margin-bottom: 28px; padding-bottom: 36px; }
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
-/* A thread's replies are all its provider's, so the name and time head only the first one. On the rest they wait beside
-   Copy, in the room it already keeps, and show with it on hover or focus. Assistive tech still reads them first. While
-   Copy says what it did, they make way for its words. */
-.thread-message[data-named='no'] > header { position: absolute; bottom: 0; left: 34px; height: 28px; margin: 0; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
-.thread-message[data-named='no']:has(> .thread-message__copy):is(:hover, :focus-within) > header { opacity: 1; }
-.thread-message[data-named='no']:has(> .thread-message__copy:is([data-copied], [aria-expanded='true'])) > header { opacity: 0; }
-.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .thread-message__text { max-width: 42em; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
 /* The user's message is as wide as what they wrote, against the column's right edge, every corner the same. */
 .thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }
@@ -248,9 +244,11 @@
    thread's rows paint inside their own box, so this one's paint reaches the gap and the control's focus ring. A wake-up
    or a brief keeps its control inside the corner. Watcher's conversation takes the same form in its own inks. The rows that tuck up
    under a message (the work line, its steps, a delivery line) start below the gap here, so the control never lies on them.
-   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not. */
+   The control is its icon on a 24px row, the smallest a press may be, since every turn keeps the gap whether it shows or not.
+   The hover reach is drawn after the control and over the same strip, so the control sits above it; under it, a press
+   landed on the bubble and copied nothing. */
 .thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 26px; padding-bottom: 12px; overflow-clip-margin: 36px; }
-.thread-pane .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
+.thread-pane .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { z-index: 1; top: calc(100% + 1px); bottom: auto; left: 9px; height: 24px; min-height: 24px; }
 .thread-pane .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 26px; }
 /* A message the user sent opens a turn, so the space before it is the widest in the conversation: a reader sees where one
    exchange ends and the next begins, while the message, its Worked for line and its reply stay close. The reply's copy room
@@ -591,8 +589,8 @@
 
 /* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */
 @media (prefers-reduced-motion: reduce) {
-  .thread-message__copy, .thread-message[data-named='no'] > header { transition: none; }
+  .thread-message__copy { transition: none; }
   .thread-message__copy[data-copied] svg { animation: none; }
 }
-:root[data-reduced-motion='on'] .thread-message__copy, :root[data-reduced-motion='on'] .thread-message[data-named='no'] > header { transition: none; }
+:root[data-reduced-motion='on'] .thread-message__copy { transition: none; }
 :root[data-reduced-motion='on'] .thread-message__copy[data-copied] svg { animation: none; }

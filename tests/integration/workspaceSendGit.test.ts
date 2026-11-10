@@ -10,7 +10,7 @@ import { deferred } from '../fixtures/deferred'
 import { realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 import { idle, repositoryWithOrigin, sendAndCount, startedThread, type SendGitFixture } from '../fixtures/sendGit'
 

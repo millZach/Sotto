@@ -14,7 +14,7 @@ export function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
   const parsed = schema.safeParse(payload)
   return parsed.success ? parsed.data : fail('invalid-request', INVALID_REQUEST)
 }
-export async function workspace(files: FilesService, threadId: string, expected?: string): Promise<FileWorkspace> {
+export async function workspace(files: Pick<FilesService, 'resolveWorkspace'>, threadId: string, expected?: string): Promise<FileWorkspace> {
   const result = await files.resolveWorkspace(threadId, expected)
   if (result.ok) return result.value
   const code = result.error.code

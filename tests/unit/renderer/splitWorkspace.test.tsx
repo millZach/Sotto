@@ -8,9 +8,8 @@ import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView, type ThreadToolsProps, type ThreadsViewProps } from '../../../src/renderer/src/agents/ThreadsView'
-import {
-  LAYOUT_STORAGE_KEY, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE, threadPromptId,
-} from '../../../src/renderer/src/agents/splitLayout'
+import { LAYOUT_STORAGE_KEY, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE } from '../../../src/renderer/src/agents/splitLayout'
+import { threadPromptId } from '../../../src/renderer/src/agents/paneDom'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
 import { useRegionCycle } from '../../../src/renderer/src/components/regionCycle'
@@ -96,6 +95,9 @@ describe('split thread workspace', () => {
     // Only the focused thread is current in the sidebar; the other open pane is marked as on screen.
     expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })).toHaveAttribute('aria-current', 'page')
     expect(within(sidebar()).getByRole('button', { name: 'Grok voice previews' }).closest('li')).toHaveAttribute('data-open')
+    // It says so where its time was, with the two-pane mark, and describes itself that way (Zach's pick B, November 7).
+    expect(within(sidebar()).getByRole('button', { name: 'Grok voice previews' })).toHaveAccessibleDescription(/Open in another pane/u)
+    expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })).not.toHaveAccessibleDescription(/Open in another pane/u)
   })
 
   it('keeps each pane\'s draft, send and pending message with its own thread, across projects', async () => {

@@ -15,6 +15,7 @@ import { EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot, type 
 import { isUsageProviderId, type UsageTokenObservation } from '../../src/shared/usageDashboard'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { testCredentials } from '../fixtures/testCredentials'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.restoreAllMocks() })
@@ -56,7 +57,7 @@ async function fixture() {
   const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
   const start = async (museEnabled: boolean, usageEnabled = true) => {
     const provider = mixedProvider(root)
-    const runtime = await createAgentRuntime({ directory: root, credentials, host: provider.host, reasoner: {}, museEnabled, usageEnabled,
+    const runtime = await createAgentRuntime({ directory: root, credentials, host: provider.host, reasoner: {}, heldProviders: heldProvidersOf({ muse: museEnabled }), usageEnabled,
       settings: () => settings, writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined })
     cleanup.push(() => runtime.close())
     await runtime.agentControl.command({ type: 'connect', provider: 'codex' })
@@ -146,7 +147,7 @@ describe('Muse and OpenCode in Usage', () => {
     const opencodeQuota = vi.fn(async () => unavailableProviderQuota('codex', 'unsupported'))
     opencode.readProviderQuota = opencodeQuota
     const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: {
-      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode, cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() } })
+      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode, cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), hermes: new FakeProviderHost() } })
     cleanup.push(async () => host.disconnect())
     const records: UsageTokenObservation[] = []
     const off = host.subscribeUsage!(record => records.push(record))

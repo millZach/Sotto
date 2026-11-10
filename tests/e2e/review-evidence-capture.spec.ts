@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { EVIDENCE_THREADS, PERMISSION_REQUEST, placeCommandsIn, STREAM_MESSAGE_ID, STREAM_MOMENTS, STREAM_REPLY, STREAM_SHOWN, STREAM_THREAD_ID, evidenceThread, minutesAgo, streamActivities } from '../fixtures/reviewEvidence/content'
-import { buildEvidenceRepository, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
+import { buildEvidenceRepository, EVIDENCE_EARLIER_PULL, EVIDENCE_EARLIER_URL, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
 import { DEFAULT_THEME_ID } from '../../src/shared/themes/library'
 import { pageBoundProblems, setAppearance } from './support/designCapture'
 import { paintedContrastSweep } from './support/paintedContrastSweep'
@@ -568,11 +568,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('reading-copy', copyShows, '', { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    // A reply after the first is headed by nothing; its name and time show beside its copy control.
-    const reply = transcript(page).locator('.thread-message[data-role="assistant"][data-named="no"]').filter({ hasText: 'threadTitles' }).first()
+    // A reply after the first is headed by its name and time, as the first is (Zach's pick B, November 7, 2026).
+    const reply = transcript(page).locator('.thread-message[data-role="assistant"]').filter({ hasText: 'threadTitles' }).first()
     await reply.locator('.thread-message__copy').focus()
     await reply.evaluate(element => element.scrollIntoView({ block: 'center' }))
-    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, with its name and time beside it.')
+    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, which is headed by its name and time.')
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
@@ -891,7 +891,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('doc-edit-clay', 'The same document edit in the transcript on the Clay theme.')
     await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
   } },
-  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover'], run: async capture => {
+  { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready', 'pr-fold-hover', 'pr-linked'], run: async capture => {
     const { page } = capture
     await openPullRequestThread(page)
     await pullRequestMoment(capture, 'checks-running')
@@ -900,8 +900,24 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const files = page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('button', { name: /^Changed files/u })
     await capture.shoot('pr-fold-hover', 'The pointer on a file under the closed Changed files head: the whole head lights, its files with it, as the one press that opens them.', '',
       { before: async () => { await files.hover({ position: { x: 160, y: 70 } }) } })
-    for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { modes: ['dark'], size })
+    for (const size of SMALLER_SIZES) await capture.shoot('pr-ready', PR_NOTES.ready, 'The pull request lives in the scripted gh. At this size the pane header has no room left for the badge, so it does not show.', { size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
+    // A second pull request linked to the thread, an earlier merged one of the same work: closed, Linked pull requests
+    // previews it and leaves out the one the surface shows. It is unlinked again so the later states read as before.
+    const earlier = EVIDENCE_EARLIER_URL
+    const linkEarlier = (link: boolean): Promise<void> => page.evaluate(async ({ url, link }) => {
+      const agents = window.sotto!.agents!
+      const thread = (await agents.get()).host.threads.find(item => item.title === 'Thread store on a worker')!
+      const result = await agents.command(link ? { type: 'git-link-pull-request', threadId: thread.id, reference: url } : { type: 'git-unlink-pull-request', threadId: thread.id, url })
+      if (result.error) throw new Error(result.error)
+    }, { url: earlier, link })
+    await linkEarlier(true)
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    await expect(panel.getByRole('button', { name: /^Linked pull requests 2/u })).toBeVisible({ timeout: 30_000 })
+    await expect(panel.locator('.pr-surface__peek[data-of="links"]')).toContainText(`#${EVIDENCE_EARLIER_PULL}`, { timeout: 30_000 })
+    await capture.shoot('pr-linked', 'Ready, with an earlier merged pull request also linked to the thread: closed, Linked pull requests previews it and leaves out the one shown.', 'Both pull requests live in the scripted gh.')
+    await linkEarlier(false)
+    await expect(panel.getByRole('button', { name: /^Linked pull requests 1/u })).toBeVisible({ timeout: 30_000 })
     await closeTools(page)
   } },
   // How the answer holds: the blocked and the ready surface at every size, in a third theme, and the states that take Merge's place.
@@ -1053,7 +1069,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
     await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.')
-    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
+    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
   { name: 'pages', covers: ['dictate', 'settings', 'usage-no-records', 'help'], run: async capture => {
@@ -1501,6 +1517,45 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await openThread(page, 'Repository review')
     }
   } },
+  // Asked for by name only: a long name on a working row takes one line, cut at a word's end, at the sidebar's narrowest
+  // and widest, beside the window at its widest and over the thread at the minimum (Zach, November 7, 2026).
+  { name: 'sidebar-name-one-line', covers: [], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Repository review')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    const working = evidenceThread('plan')
+    const long = 'Disk cleanup: find intermediate image/video files on forge and list what is safe to delete'
+    const rename = (title: string): Promise<void> => page.evaluate(async ([id, title]) => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: id!, title: title! }) }, [working.id, title])
+    await rename(long)
+    const row = sidebar.locator('.thread-nav__row').filter({ has: page.getByRole('button', { name: long, exact: true }) })
+    await expect(row).toContainText('Working')
+    const over = async (): Promise<void> => {
+      if (await page.locator('aside.thread-nav[data-over]').count()) return
+      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    }
+    try {
+      for (const [edge, key] of [['narrowest', 'Home'], ['widest', 'End']] as const) {
+        await resizeContentWindowFor(capture.launched, 1600, 1000)
+        await page.getByRole('separator', { name: 'Resize sidebar' }).focus()
+        await page.keyboard.press(key)
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+        await capture.shoot(`sidebar-name-one-line-${edge}`, `A long name on a working row at the sidebar's ${edge}: one line, cut at a word's end, over Working and its time.`)
+      }
+      // Over the thread at the minimum window the sidebar takes one width whatever was chosen, so one shot covers it, with
+      // the working row brought into view rather than the open thread's.
+      const overWithRow = async (): Promise<void> => {
+        await over()
+        await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      }
+      await capture.shoot('sidebar-name-one-line-over', 'The same row in the sidebar over the thread at the minimum window.', '', { size: [820, 560], before: overWithRow, keepSidebarScroll: true })
+      await page.keyboard.press('Escape')
+    } finally {
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+      await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick().catch(() => undefined)
+      await rename(working.title)
+    }
+  } },
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default. Usage
   // at the smaller sizes is captureConnectedUsage's.
   { name: 'shell-check', covers: [], run: async capture => {
@@ -1525,7 +1580,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'model-menu', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows']
+const BY_NAME_ONLY = ['shell-check', 'model-menu', 'header-press', 'shell-surface', 'pr-every', 'sidebar-stuck-head', 'sidebar-rest', 'sidebar-rows', 'sidebar-name-one-line']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {
@@ -1661,7 +1716,7 @@ async function captureConnectedUsage(out: string): Promise<void> {
       manifest.set(file, { file, state, shows: what, differs, bounds: [] })
       try { await harness.capture(out, file, width, height, mode) } catch (error) { failures.push(`${state} ${file}: ${error instanceof Error ? error.message : String(error)}`) }
     }
-    for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, ['dark']], [820, 560, ['dark']]] as const) {
+    for (const [width, height, modes] of [[1600, 1000, MODES], [1280, 800, MODES], [820, 560, MODES]] as const) {
       for (const mode of modes) await shoot(`${width === 1600 ? 'usage' : 'usage-sizes'}-${mode}-${width}.png`, width, height, mode)
     }
     // The other views a press on the index opens, at the largest size.

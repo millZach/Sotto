@@ -7,8 +7,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentHost, ShortTextPrompt, ShortTextPurpose, ThreadLaunchProfiles, WatcherLaunchProfile } from '../../../src/main/agents/host'
-import { CodexAppServerHost } from '../../../src/main/agents/codex'
-import { ClaudeStreamJsonHost } from '../../../src/main/agents/claude'
+import { CodexAppServerHost } from '../../../src/main/agents/providers/codex/codex'
+import { ClaudeStreamJsonHost } from '../../../src/main/agents/providers/claude/claude'
 import { GrokAcpHost } from '../../../src/main/agents/grok'
 import { CursorAcpHost } from '../../../src/main/agents/cursor'
 import { WatcherProfileRefusal } from '../../../src/main/agents/watcherProfile'

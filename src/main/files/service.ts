@@ -4,7 +4,7 @@ import { open, opendir, realpath, stat, type FileHandle } from 'node:fs/promises
 import { homedir } from 'node:os'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema, isMarkdownFileName, withoutLinkLocation,
+import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema, isMarkdownFileName, withDriveFirst, withoutLinkLocation,
   type FileLink, type FileLinkPreview, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
@@ -52,11 +52,12 @@ interface Target { absolutePath: string; stats: BigIntStats }
 
 /**
  * Where a link's path leads. An absolute or `~/` path may name anything on this machine; a relative one is read from the
- * thread's folder, and its caller holds it inside. The path as written wins, then the path without a trailing location.
+ * thread's folder, and its caller holds it inside. The path as written wins, then with the drive first for a Windows path
+ * written `/D:/...`, then each of those without a trailing location.
  */
 async function locateLink(root: string, path: string): Promise<LocatedLink | null> {
-  const relativeToThread = !/^~(?:[\\/]|$)/u.test(path) && !isAbsolute(path)
   const located = async (candidate: string): Promise<LocatedLink | null> => {
+    const relativeToThread = !/^~(?:[\\/]|$)/u.test(candidate) && !isAbsolute(candidate)
     const absolute = relativeToThread ? resolve(root, candidate) : /^~/u.test(candidate) ? resolve(homedir(), candidate.slice(2)) : candidate
     try {
       const absolutePath = await realpath(absolute)
@@ -64,7 +65,11 @@ async function locateLink(root: string, path: string): Promise<LocatedLink | nul
     } catch { return null }
   }
   const bare = withoutLinkLocation(path)
-  return await located(path) ?? (bare && bare !== path ? located(bare) : null)
+  for (const candidate of new Set([path, withDriveFirst(path), bare, withDriveFirst(bare)])) {
+    const found = candidate ? await located(candidate) : null
+    if (found) return found
+  }
+  return null
 }
 
 export class FilesService {

@@ -130,7 +130,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
       {servers === null ? <p className="own-servers__empty tt-paragraph" role="status">{t`Reading your servers…`}</p>
         : readFailed ? <div className="own-servers__failed"><p className="provider-detail__error tt-paragraph" role="alert">{t`Sotto could not read your saved servers. Nothing was changed. Try again.`}</p>
           <Button variant="secondary" aria-label={t`Read your saved servers again`} onClick={() => { setServers(null); setReads(count => count + 1) }}>{t`Try again`}</Button></div>
-        : servers.length === 0 ? <p className="own-servers__empty tt-paragraph">{t`None yet. Add a model server you run to use its models in OpenCode threads.`}</p>
+        : servers.length === 0 ? <p className="own-servers__empty tt-paragraph">{t`None yet. Add a model server to use its models in threads.`}</p>
         : <ul className="own-servers__rows" ref={listRef} aria-label={t`Saved model servers`}>{servers.map((server, index) => {
           const check = checks[server.id]
           const name = server.name
@@ -141,7 +141,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
               <Button variant="secondary" aria-label={t`Check ${name} again`} disabled={busy !== null} onClick={() => void checkAgain(server)}>{working === 'check' ? t`Checking…` : t`Check again`}</Button>
               <Button variant="ghost" aria-label={t`Remove ${name}`} disabled={busy !== null} onClick={() => void remove(server, index)}>{working === 'remove' ? t`Removing…` : t`Remove`}</Button>
             </div>
-            <p className="own-server__meta">{[t`Runs with OpenCode`, modelCount(server.models.length), server.keyed ? t`Key kept by OpenCode` : ''].filter(Boolean).join(' · ')}</p>
+            <p className="own-server__meta">{[modelCount(server.models.length), server.keyed ? t`Added with a key` : ''].filter(Boolean).join(' · ')}</p>
             {check ? <p className="own-server__check tt-paragraph" data-tone={check.tone} role={check.tone === 'bad' ? 'alert' : 'status'}>{check.tone === 'ok' ? <i aria-hidden="true" /> : null}{check.words}</p> : null}
           </li>
         })}</ul>}
@@ -160,7 +160,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
 /** What Check again found on a saved server, in words. Its saved models are not changed until it is added again. */
 function checkedWords(server: OwnServer, result: CheckResult): { readonly tone: 'ok' | 'bad'; readonly words: string } {
   if (result.status !== 'ok') return { tone: 'bad', words: refusalWords(result.reason, 'check-saved', hostOf(server.address), server.name, result.message) }
-  // A server added with a key asks for it again, and only OpenCode has it: the models shown are the saved ones, unread.
+  // A server added with a key asks for it again: the key stays with its provider and these are the saved models, unread.
   if (result.keyKept) return { tone: 'ok', words: keyKeptWords(server.name, result.answeredMs) }
   const found = new Set(result.models.map(model => model.id)), saved = new Set(server.models.map(model => model.id))
   const extra = result.models.filter(model => !saved.has(model.id)).map(model => model.name)
@@ -185,8 +185,8 @@ type Checked = { readonly phase: 'running' } | { readonly phase: 'done'; readonl
 
 /**
  * Add a server: Address, Name and an optional Key, then Check this server, which asks main to check it. A server that
- * answers shows what answered and each model with its context and Thinking; Add server saves it. In phase 1 OpenCode is
- * the only provider that runs servers, so there is no Run it with step. A refusal is said in the dialog and every field
+ * answers shows what answered and each model with its context and Thinking; Add server saves it. Providers that can
+ * run the server offer its models. A refusal is said in the dialog and every field
  * keeps what was typed. Focus stays inside, and Escape closes and hands focus back. With `confirm`, used from the model
  * menu, the dialog says where the models are and waits for Done instead of closing on Add.
  */
@@ -301,7 +301,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
   if (done) {
     const doneName = done.name
     return shell(<p className="own-dialog__done tt-paragraph" role="status">{addedWords(doneName)}</p>,
-      <Button ref={doneRef} variant="primary" onClick={onClose}>{t`Done`}</Button>, t`Added ${doneName}`, t`It runs with OpenCode.`)
+      <Button ref={doneRef} variant="primary" onClick={onClose}>{t`Done`}</Button>, t`Added ${doneName}`, t`Use its models with a connected provider.`)
   }
 
   const result = checked?.phase === 'done' ? checked.result : null
@@ -312,7 +312,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
           aria-invalid={(addressShown && addressWords !== null) || refusal?.field === 'address' || undefined}
           aria-describedby={describedBy(addressNoteId, addressShown && addressWords !== null && refusal?.field !== 'address' && addressErrorId, refusal?.field === 'address' && refusalId)}
           onChange={event => { setAddress(event.target.value); forget() }} onBlur={() => setAddressShown(true)} onKeyDown={enter} />
-        <small className="tt-paragraph" id={addressNoteId}>{t`Where the server listens, on this computer, your network or your tailnet.`}</small>
+        <small className="tt-paragraph" id={addressNoteId}>{t`The server’s address, on this computer, your network, your tailnet or the internet.`}</small>
         {addressShown && addressWords !== null && refusal?.field !== 'address' ? <small className="own-field__error tt-paragraph" id={addressErrorId}>{addressWords}</small> : null}
       </div>
       <div className="own-field"><label htmlFor={nameId}>{t`Name`}</label>
@@ -343,7 +343,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
     {/* While adding, the button keeps focus and says so; it is only marked unavailable, so focus does not fall to the page. */}
     <Button ref={addRef} variant="primary" disabled={!canAdd && !adding} aria-disabled={adding || undefined} aria-describedby={privacyId}
       onClick={() => void add()}>{adding ? t`Adding…` : t`Add server`}</Button>
-  </>, t`Add your own model server`, t`SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models.`)
+  </>, t`Add your own model server`, t`SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads.`)
 }
 
 /** One model the check found: its name, Thinking, its context to confirm or type, and whether it takes images. */

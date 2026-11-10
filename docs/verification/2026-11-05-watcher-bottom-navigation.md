@@ -1,5 +1,7 @@
 # Watcher navigation at the bottom left
 
+November 8, 2026: the collapsed rail described here is gone. Watcher's footer keeps its row whether or not the Threads sidebar is collapsed (ADR-0152).
+
 Watcher now renders `SidebarFoot`, the component used by Threads. Its width follows the saved Threads sidebar width, including the one-pixel inset occupied by the sidebar border. The room switch, page links and update control keep their order, size, spacing, tooltips, shortcuts and keyboard handling. The expanded footer occupies its own row below both panes, including when Memory makes the update control wrap. Collapsed, Watcher reuses `SidebarRail` as well: the 80px macOS or 52px Windows/Linux rail sits beside both panes, its vertical footer matches Threads, and Expand sidebar restores the saved width and focuses Watcher. The macOS rail itself reserves the traffic lights, so the room does not reserve that space twice.
 
 All threads and its count stay in the header because they open the room's list. Stop all and the Watcher/Teams tabs also stay there. The header is 44px high at every checked width. Stop all keeps its words above 650px; All threads keeps its words from 600px. Below 600px, the Watcher tab carries the name when Teams is on; without Teams the heading stays visible. The heading cannot shrink to an ellipsis and All threads cannot wrap.

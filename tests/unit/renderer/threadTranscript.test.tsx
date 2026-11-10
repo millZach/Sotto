@@ -63,7 +63,7 @@ describe('message copy control', () => {
     }
   })
 
-  it('heads only the first reply with the provider and time, and keeps the rest for assistive tech', () => {
+  it('heads every reply with the provider and time, as every sent message is headed You', () => {
     const turns: AgentMessage[] = [
       { id: 'u1', role: 'user', text: 'One?', createdAt: at },
       { id: 'r1', role: 'assistant', text: 'First.', createdAt: at },
@@ -72,9 +72,10 @@ describe('message copy control', () => {
     ]
     render(<MessageList messages={turns} provider="Codex" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
     const articles = [...document.querySelectorAll<HTMLElement>('.thread-message')]
-    expect(articles.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'yes', 'no'])
-    // The quiet reply still says who wrote it and when, in its header, ahead of its words.
-    expect(articles[3]!.querySelector('header')).toHaveTextContent(`Codex${clockLabel(Date.parse(at))}`)
+    // Zach's pick B of the November 6 follow-ups: a later reply is headed as the first is, in view, ahead of its words.
+    expect(articles.map(article => article.querySelector('header')?.textContent)).toEqual(
+      [`You${clockLabel(Date.parse(at))}`, `Codex${clockLabel(Date.parse(at))}`, `You${clockLabel(Date.parse(at))}`, `Codex${clockLabel(Date.parse(at))}`])
+    expect(articles.some(article => article.dataset.named !== undefined)).toBe(false)
   })
 
   it('copies the source Markdown on press and confirms for a moment', async () => {

@@ -6,6 +6,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { isIP } from 'node:net'
+import { unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
@@ -16,11 +17,11 @@ import { usableModels, usableVariant } from './usableModels'
 import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
-import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
+import { pullRequestReadFailureOf } from '../main/agents/git/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
-import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
+import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, isLargeVideoPart, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { HOST_CANNOT_STAGE_VIDEOS, hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -56,6 +57,9 @@ import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 import type { HostBranchMoves } from './branchMoves'
 import type { HostThreadMoves } from '../main/agents/threadMovesHost'
+import type { HostBrowserTools } from './browser/hostBrowserTools'
+import { HOST_BROWSER_FRAME_MAX, type HostBrowserFrame } from '../shared/hostBrowser'
+import type { BrowserEvent } from '../shared/browser'
 
 /** Watcher's box on a phone (October 31, 2026): each of its operations and the change it asks of the phone service. */
 const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new', 'watcher-phone-stop-turn': 'stop-turn',
@@ -128,7 +132,11 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+/**
+ * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
+ * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
+ */
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -231,6 +239,11 @@ export interface SocketServerOptions {
    * A headless host's own OpenCode sign-ins to model sources (#1107), run here for the desktop that asks. Present only where
    * the host's OpenCode runs; without it the listener neither lists `opencode-sign-in` nor answers its request.
    */
+  /**
+   * Sotto's browser for the host's own threads (ADR-0198), present only while the host's Owl answers turn it on: listed as
+   * `browser` to desktops, which list, open, drive, share and watch its pages.
+   */
+  browser?: Pick<HostBrowserTools, 'service' | 'subscribe'>
   opencodeSignIn?: Pick<OpenCodeSignIn, 'sources' | 'signInWithKey' | 'startBrowserSignIn' | 'useExternalSignIn' | 'wait' | 'finish' | 'pageAddress' | 'cancel' | 'signOut' | 'mayUse'>
   /**
    * The headless host updates its clients for a paired client that asks (`queue-client-updates`, #480). Absent on the
@@ -336,6 +349,14 @@ export async function startSocketServer(options: SocketServerOptions) {
   const sottoVersion = options.sottoVersion ?? packageVersion
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
+  // Listener capabilities are fixed at startup; per-client grants are checked below and again at dispatch.
+  const desktopListener = options.admin !== false || options.tailnet !== undefined
+  const desktopRecords = options.watcherDesktops !== undefined && desktopListener
+  const watcherReads = service.supportsWatcherReads === true && options.watcherDesktops !== undefined
+  const watcherChecks = service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined
+  const threadMoves = options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined
+  const delegation = service.supportsHostDelegation === true && desktopRecords
+  const usageReads = service.supportsUsage === true && service.usageRead !== undefined
   const features = HOST_FEATURES.filter(feature => (feature !== 'thread-snooze' || service.supportsThreadSnooze === true)
     && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
@@ -345,22 +366,23 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     // Files for Watcher ride on its photos, where the host keeps files at all (ADR-0131, October 28 amendment).
     && (feature !== 'watcher-phone-files' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined && service.supportsFileStaging === true)
-    && (feature !== 'every-agent-picture' || service.supportsEveryAgentPicture === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'every-agent-picture' || service.supportsEveryAgentPicture === true && service.desktopDefaults !== undefined && desktopRecords)
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
+    && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-reads' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-outcomes' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-work-settled' || watcherReads)
+    && (feature !== 'watcher-outcomes' || watcherReads)
     // A new Watcher takes over the requests an older one of the same desktop made here (#1735).
-    && (feature !== 'watcher-new-owner' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-muse' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
-    && (feature !== 'watcher-cursor' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-new-owner' || watcherReads)
+    && (feature !== 'watcher-muse' || watcherReads)
+    && (feature !== 'watcher-cursor' || watcherReads)
     // A host keeps its own check queue (#1312) only where its Owl answer turns on Work across machines.
-    && (feature !== 'watcher-check-queue' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-check-queue' || watcherChecks)
     // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.
-    && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-check-stop' || watcherChecks)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
     && (feature !== 'product-events' || options.onProductEventAnswer !== undefined)
@@ -370,35 +392,35 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Offered with client updates: the coordinator's check keeps what an update already run said (ADR-0077).
     && (feature !== 'client-update-outcomes' || options.clientUpdates === true)
     && (feature !== 'client-update-not-listed' || options.clientUpdates === true)
-    && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
+    && (feature !== 'usage-dashboard' || (usageReads && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
-    && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
-    && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
+    && (feature !== 'usage-history' || (usageReads))
+    && (feature !== 'usage-muse-opencode' || (usageReads))
     && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // A confirmation receipt is bound to the pull request as the host read it for the client, so only a host that reads them gives one (#1691).
     && (feature !== 'pull-request-confirmation' || service.gitPullRequest !== undefined)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
-    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
-    && (feature !== 'worker-swarms' || service.supportsWorkerSwarms === true && service.supportsHostFacts === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && desktopListener)
+    && (feature !== 'worker-swarms' || service.supportsWorkerSwarms === true && service.supportsHostFacts === true && desktopRecords)
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
-    && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && desktopListener)
     // Setting up a copy for a worker placed here (#1690) is offered exactly where project origins are.
-    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && desktopListener)
     // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
     // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
-    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && desktopRecords)
     // A host that keeps a check queue sends it to a recorded desktop's window (#1312), only where its Owl answer turns on
     // Work across machines; the desktop's own phone listener never lists it.
-    && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
-    && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
-    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && desktopListener)
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
@@ -414,31 +436,34 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Moves (#1178) on the same terms as branch moves, whose incoming ref each one starts from.
-    && (feature !== 'thread-move' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    && (feature !== 'thread-move' || threadMoves)
     // Calling a move off (#1178 part 4, Keep it here) on the same terms as thread-move.
-    && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    && (feature !== 'thread-move-keep' || threadMoves)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-tell' && feature !== 'watcher-ready' || options.tellWatcher !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
-    && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && delegation)
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
-    && (feature !== 'delegation-remote' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-remote' || options.delegationRemote !== undefined && delegation)
     // Starts from a delegating thread's branch, and checks, either way between machines (#1316 part 2), with remote delegation.
-    && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && delegation)
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-file-links' || service.supportsThreadFileLinks === true && service.threadFileLink !== undefined)
-    && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'thread-delete' || service.supportsThreadDelete === true && desktopListener)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
+    // Videos up to 500 MiB, their parts on disk and kept for the client to carry on, go with file staging (ADR-0131, November 9 amendment).
+    && (feature !== 'video-staging' || service.supportsFileStaging === true && service.stageAttachmentFile !== undefined && service.videoUploadFolder !== undefined)
     // A sent file's bytes for the iPhone's Quick Look go with file staging (ADR-0131, October 25 amendment).
     && (feature !== 'attachment-files' || service.supportsFileStaging === true && service.attachmentFile !== undefined))
   /**
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
    * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
-  const uploads = new FileUploads<string>()
+  // Each listener keeps its own clients' uploads in the store's one folder; what a stopped host left there goes when the store loads.
+  const uploads = new FileUploads<string>({ videoFolder: service.supportsFileStaging === true && service.stageAttachmentFile ? service.videoUploadFolder : undefined })
   /** The paired clients with a sent file's part being read for them, so a client has one such read at a time however many sockets it opens. */
   const fileReads = new Set<string>()
   const connected = (clientId: string): boolean => {
@@ -1074,6 +1099,82 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.nextPrompts?.wanted && !peer.frames.isClosed && !hiddenThread(peer, entry.threadId)) push(peer, { v: 1, event: 'next-prompt', entry })
   })
+  /** The thread a browser change is about, so a desktop that is not sent the thread is not told of its browser either. */
+  const browserThread = (change: BrowserEvent): string | undefined => change.type === 'page' ? change.page.workspace.threadId : change.type === 'task' ? change.task.threadId
+    : 'threadId' in change ? change.threadId : undefined
+  const unsubscribeBrowser = options.browser?.subscribe(change => {
+    if (closing) return
+    const threadId = browserThread(change)
+    // A page that closed takes every desktop's watch of it with it, so nothing keeps the closed page.
+    if (change.type === 'closed') for (const peer of peers) { peer.browserWatches?.get(change.pageId)?.stop?.(); peer.browserWatches?.delete(change.pageId) }
+    for (const peer of peers) if (peer.ready && peer.browserWatches && !peer.frames.isClosed && (threadId === undefined || !hiddenThread(peer, threadId))) push(peer, { v: 1, event: 'browser', change })
+  })
+  /**
+   * A picture of a page this desktop watches. Pictures are dropped rather than queued while its socket is behind, so the
+   * pane shows the newest once it catches up, and one too large for a frame is dropped too. None is logged or kept.
+   */
+  const pushFrame = (peer: Peer, frame: HostBrowserFrame): void => {
+    if (peer.frames.isClosed || peer.frames.backlogged || !peer.browserWatches || frame.data.length > HOST_BROWSER_FRAME_MAX || !authenticated(peer)) return
+    push(peer, { v: 1, event: 'browser-frame', frame })
+  }
+  /** Stops the stream a desktop holds for a page and marks a newer request for it. Returns that request's ticket. */
+  const endWatch = (watches: NonNullable<Peer['browserWatches']>, pageId: string): number => {
+    const current = watches.get(pageId)
+    current?.stop?.()
+    const ticket = (current?.ticket ?? 0) + 1
+    watches.set(pageId, { ticket })
+    return ticket
+  }
+  /** Ends every picture stream a desktop holds: its socket closed, or its hello no longer accepts `browser`. */
+  const endWatches = (peer: Peer): void => {
+    for (const watch of peer.browserWatches?.values() ?? []) watch.stop?.()
+    peer.browserWatches = undefined
+  }
+  /** Whether a desktop may answer a host's waiting browser request: one the launch script recorded, allowed to answer (ADR-0198). */
+  const mayAnswerBrowser = (peer: Peer): boolean => (options.watcherDesktops?.has(peer.client.clientId) ?? false) && (options.mayAnswer?.(peer.client) ?? false)
+  const browserRequest = async (peer: Peer, request: Extract<HostRequest, { op: 'browser' }>['request']): Promise<unknown> => {
+    const browser = options.browser?.service
+    const watches = peer.browserWatches
+    if (!browser || !watches || !offers(peer, 'browser')) throw new Refusal('invalid_request')
+    if ('threadId' in request.payload && hiddenThread(peer, request.payload.threadId)) throw new Refusal('forbidden')
+    switch (request.method) {
+      case 'answerAction':
+        if (!mayAnswerBrowser(peer)) throw new Refusal('forbidden')
+        return browser.answerAction(request.payload)
+      case 'watch': {
+        const { pageId } = request.payload
+        const ticket = endWatch(watches, pageId)
+        const watching = await browser.watch(request.payload, frame => pushFrame(peer, frame))
+        if (!watching.ok) return watching
+        // A later watch or unwatch, a hello without `browser` or a closed socket while this one started leaves it nothing to do.
+        if (peer.frames.isClosed || peer.browserWatches !== watches || watches.get(pageId)?.ticket !== ticket) { watching.value(); return { ok: true, value: undefined } }
+        watches.set(pageId, { ticket, stop: watching.value })
+        return { ok: true, value: undefined }
+      }
+      case 'unwatch':
+        endWatch(watches, request.payload.pageId)
+        return { ok: true, value: undefined }
+      case 'setting':
+        // Turning asking off stands in for the user's answers, so only a desktop that may answer changes it (Zach, November 9).
+        if (!mayAnswerBrowser(peer)) throw new Refusal('forbidden')
+        try { await browser.setWithoutAsking(request.payload.withoutAsking) }
+        catch { return { ok: false, error: { code: 'unavailable', message: 'The host could not keep this setting. It holds it until the host restarts. Try again.' } } }
+        return { ok: true, value: undefined }
+      case 'list': return browser.list(request.payload)
+      case 'create': return browser.create(request.payload)
+      case 'navigate': return browser.navigate(request.payload)
+      case 'back': return browser.back(request.payload)
+      case 'forward': return browser.forward(request.payload)
+      case 'reload': return browser.reload(request.payload)
+      case 'close': return browser.close(request.payload)
+      case 'tasks': return browser.tasks(request.payload)
+      case 'share': return browser.share(request.payload)
+      case 'controlTask': return browser.controlTask(request.payload)
+      case 'stopGrant': return browser.stopGrant(request.payload)
+      case 'input': return browser.input(request.payload)
+      case 'available': return browser.available(request.payload)
+    }
+  }
   const unsubscribeChecks = service.subscribeCheckQueue?.(() => {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.checkQueueViews) pushChecks(peer)
@@ -1450,6 +1551,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (answeredBefore && !peer.productEvents) options.onProductEventAnswer?.()
         // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
         peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
+        // A desktop that shows this host's browser pages (ADR-0198). A hello again that still accepts it keeps the pages it
+        // watches; one that no longer does ends them and is sent no more.
+        if ((request.accepts?.includes('browser') ?? false) && offers(peer, 'browser')) peer.browserWatches ??= new Map()
+        else endWatches(peer)
         // A desktop that takes this host's threads' messages for its Watcher.
         if ((request.accepts?.includes('watcher-tell') ?? false) && offers(peer, 'watcher-tell') && options.tellWatcher) {
           const tellPeer = peer
@@ -1807,22 +1912,34 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'stage-file-part': {
         if (!offers(peer, 'file-staging') || !service.stageAttachment) throw new Refusal('invalid_request')
-        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one 25 MiB
-        // upload held per paired client across all its sockets.
+        // A video larger than a file may be only to a client that accepted `video-staging`.
+        if (isLargeVideoPart(request.part) && !offers(peer, 'video-staging')) throw new Refusal('invalid_request', HOST_CANNOT_STAGE_VIDEOS)
+        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one upload
+        // held per paired client across all its sockets.
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try {
           let file
-          try { file = uploads.receive(peer.client.clientId, request.part) }
-          catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw error }
+          try { file = await uploads.receivePart(peer.client.clientId, request.part) }
+          catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw new Refusal('unavailable') }
           if (!file) return null
-          try { return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes }) }
+          try {
+            if ('bytes' in file) return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes })
+            if (!service.stageAttachmentFile) throw new Refusal('unavailable')
+            return await service.stageAttachmentFile({ name: file.name, mimeType: file.mimeType, path: file.path, checkedDigest: file.digest })
+          }
           catch (error) {
             // A file refused for what it is says so; anything else is the host's failure to keep it.
             if (error instanceof RefusedImage) throw new Refusal('invalid_request', error.message)
+            if (error instanceof Refusal) throw error
             throw new Refusal('unavailable')
-          }
+          } finally { if ('path' in file) await unlink(file.path).catch(() => undefined) }
         } finally { peer.preview = false }
+      }
+      case 'file-upload-progress': {
+        if (!offers(peer, 'video-staging')) throw new Refusal('invalid_request')
+        const parts = uploads.progress(peer.client.clientId, request.uploadId)
+        return parts === null ? null : { parts }
       }
       case 'attachment-content': {
         // Up to about 14 MB of base64: one at a time per peer, on the same guard as a preview.
@@ -1855,6 +1972,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.threadMediaPart(request.request) } finally { peer.preview = false }
+      case 'browser': return browserRequest(peer, request.request)
       // A part of a sent file, on the socket's one-at-a-time guard as a preview is, and one at a time for the paired client
       // across all its sockets (ADR-0131, October 25 amendment).
       case 'attachment-file': {
@@ -2067,7 +2185,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -2102,7 +2220,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

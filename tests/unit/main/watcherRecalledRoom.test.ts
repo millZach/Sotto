@@ -52,9 +52,8 @@ function roomWith(recalledCount: number, overlap = false) {
       { id: `archived-${index}`, role: 'user' as const, text: 'Synthetic instruction', createdAt: at },
       { id: `archived-reply-${index}`, role: 'assistant' as const, text: 'Synthetic reply', createdAt: at }]).flat(),
     { id: 'live-message', role: 'user' as const, text: 'Synthetic instruction', createdAt: at }, { id: 'live-reply', role: 'assistant' as const, text: 'Synthetic reply', createdAt: at }] }]
-  const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherRecalledWork: () => recalled,
-    watcherSnapshot: () => host, hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined,
-    archivedWatcherWork: () => undefined } as unknown as AgentControl
+  const control = { watcherRecords: { copy: () => structuredClone(record), view: () => record, recalledWork: () => recalled, archive: undefined },
+    watcherSnapshot: () => host, hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
   const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
   return { service, recalledCount, messages: host.threads[0]!.messages,
     /** Counts reads of what was read back from here on. */

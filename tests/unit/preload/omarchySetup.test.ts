@@ -19,7 +19,7 @@ it('exposes setup only to Linux main and validates both sides of the bridge', as
   const command = { type: 'setup' as const, pieces: ['keys' as const], keys: 'give' as const }
   await bridge.command(command)
   expect(ipc.invoke).toHaveBeenLastCalledWith(OMARCHY_SETUP_COMMAND, command)
-  expect(() => bridge.command({ ...command, approved: true } as never)).toThrow()
+  await expect(bridge.command({ ...command, approved: true } as never)).rejects.toThrow()
   ipc.invoke.mockResolvedValue({ arbitrary: true })
   await expect(bridge.get()).rejects.toThrow()
 })

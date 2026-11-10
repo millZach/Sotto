@@ -6,7 +6,7 @@
 /* A finished turn folds its work to one line above the final reply, with a rule between the two. */
 .thread-work { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
 /* The fold's line and what the turn changed share a row; everything else takes a row of its own. */
-.thread-work > :not(.thread-work__summary, .thread-changes) { flex: 0 0 100%; min-width: 0; }
+.thread-work > :not(.thread-work__summary, .thread-changes, .step-pictures) { flex: 0 0 100%; min-width: 0; }
 .thread-work__headline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-message + .thread-work { margin-top: -8px; }
 .thread-work__summary {
@@ -25,7 +25,7 @@
 .thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > :is(.thread-work__summary, .thread-changes) { margin-bottom: 0; }
 .thread-pane:not(.watcher-pane) .thread-work:not([data-expanded]) > .thread-changes > .thread-changes__summary { margin-bottom: 0; }
 .thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { font-size: var(--tt-type-small); }
-.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { color: var(--tt-text-2); }
+.thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary, .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary { color: var(--tt-text-2); font-weight: var(--tt-weight-quiet); }
 .thread-pane:not(.watcher-pane) .thread-work > .thread-work__summary:is(:hover, :active), .thread-pane:not(.watcher-pane) .thread-work > .thread-changes > .thread-changes__summary:is(:hover, :active) { color: var(--tt-text); }
 /* What a disclosure opens. It holds its children's margins in, so they do not jump when the slide ends. */
 .thread-fold { display: flow-root; flex: 0 0 100%; min-width: 0; }
@@ -92,9 +92,6 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__label { padding-block: 3px; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
 .thread-activity__toggle:has(> .thread-activity__label[data-purpose]) > .thread-activity__meta { min-height: 25px; }
-/* An open row's command under what it was for, in the code face a size smaller. It keeps the second ink, as finished steps
-   do, so code reads as clearly as the words about it. */
-.thread-activity__command { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 /* A folded command with no description, too long for its room, gives way where it says least, so its verb and the files it
    acts on stay in view: npm test -- …threadStoreWorker.test.ts …workspaceStoreWorker.test.ts. First the folders of every file it names,
    from their start, each down to a sliver for the ellipsis; then what follows the last file; then the files after the
@@ -141,15 +138,34 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details { display: grid; gap: 8px; margin: 2px 0 12px 30px; min-width: 0; }
 .thread-activity__details .rich-message { font-size: var(--tt-type-body); line-height: 1.6; }
 .thread-activity__details .rich-code { margin: 0; }
-/* What came back is a well with no outline, as every container is (ADR-0110), so it reads as the step's evidence rather than
-   another box. Output still arriving from a host holds twelve lines in view and scrolls for the rest. */
-.thread-activity__details .rich-code[data-language='output'] { border-color: transparent; }
-.thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); }
+/* Code in an opened step wraps under a hanging indent, so nothing runs off the right and nothing scrolls sideways (Zach's
+   pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). */
+.thread-activity__details .rich-code__scroll { max-height: 320px; overflow: auto; font-size: var(--tt-type-small); white-space: pre-wrap; overflow-wrap: anywhere; text-indent: 2ch hanging each-line; }
+/* What came back is one well with no outline, as every container is (ADR-0110), so it reads as the step's evidence rather than
+   another box: a described command heads it in the same fill, over a hairline, and the output has no box of its own inside
+   it. Output still arriving from a host holds twelve lines in view and scrolls for the rest. */
+.thread-activity__well { position: relative; justify-self: stretch; min-width: 0; border-radius: var(--tt-radius-inset); background: var(--tt-code-bg); }
+.thread-activity__well:has(.rich-code__scroll:focus-visible) { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.thread-activity__well .rich-code:has(> .rich-code__body > .rich-code__scroll:focus-visible) { outline: none; }
+/* The well's top line: the command, then its own Copy beside it, the corner Copy's size and ink, and clear of the corner. */
+.thread-activity__well-head { display: flex; align-items: flex-start; gap: 4px; padding: 3px 48px 0 14px; }
+.thread-activity__well-command {
+  flex: 0 1 auto; min-width: 0; margin: 0; padding: 6px 0; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-indent: 4ch hanging each-line;
+}
+.thread-activity__well-command code { font: inherit; }
+.thread-activity__well-head > .thread-activity__copy-command { position: static; flex: none; translate: none; }
+.thread-activity__well-head .thread-activity__copy { width: 32px; height: 32px; border-radius: var(--tt-radius-sm); }
+.thread-activity__well-head .thread-activity__copy svg { width: 15px; height: 15px; }
+.thread-activity__well-head + .rich-message { margin-top: 3px; border-top: 1px solid var(--tt-hairline); }
+/* With nothing printed, Copy in the well's corner copies the command. */
+.thread-activity__well > .thread-activity__copy-command { top: 5px; right: 8px; left: auto; translate: none; }
+.thread-activity__details .rich-code[data-language='output'] { border: 0; border-radius: 0; background: transparent; }
+.thread-activity__details .thread-activity__well .rich-code[data-language='output'] .rich-code__scroll { font-size: var(--tt-type-caption); text-indent: 4ch hanging each-line; }
 .thread-activity__details .rich-code[data-language='output'] .rich-code__scroll { max-height: calc(12lh + 18px); }
-/* The row above says what ran, so what came back needs no bar naming it "output": the output starts at the well's top, with
-   Copy in its corner on the well's own fill, and the lines keep clear of it. Assistive tech still hears "output code
+/* The row above says what the step was for and the well's head what ran, so what came back needs no bar naming it "output":
+   Copy sits in the well's corner on its own fill, and the lines keep clear of it. Assistive tech still hears "output code
    block" and "Copy output code". Output still on its way keeps its bar, which says so. */
-.thread-activity__details .rich-code[data-language='output']:not([data-cut]) { position: relative; }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) > .rich-code__bar {
   position: absolute; z-index: 1; top: 3px; right: 3px; gap: 6px; min-height: 0; padding: 0; border-radius: var(--tt-radius-sm); background: var(--rich-block);
 }
@@ -158,15 +174,11 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__status:not(:empty) { padding-left: 8px; }
 .thread-activity__details .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 9px 44px 12px 14px; max-height: calc(12lh + 21px); }
-/* What a finished command printed shows whole, or, when it is long, its first twelve lines with the last fading and a press
-   under the well that says how many more there are. The well never scrolls up and down inside the transcript's own scroll. */
+.thread-activity__details .thread-activity__well-head + .rich-message .rich-code[data-language='output']:not([data-cut]) .rich-code__scroll { padding: 8px 44px 10px 14px; }
+/* What a finished command printed shows whole, or, when it is long, its first twelve lines and a press under the well that
+   says how many more there are. The well never scrolls up and down inside the transcript's own scroll. */
 .thread-activity__output { display: grid; justify-items: start; gap: 2px; min-width: 0; }
-.thread-activity__output > .rich-message { justify-self: stretch; min-width: 0; }
 .thread-activity__details .thread-activity__output .rich-code[data-language='output'] .rich-code__scroll { max-height: none; }
-.thread-activity__details .thread-activity__output[data-held] .rich-code[data-language='output'] .rich-code__scroll {
-  max-height: calc(12lh + 9px); overflow-y: hidden; padding-bottom: 0;
-  mask-image: linear-gradient(to bottom, currentColor calc(100% - 1lh), transparent);
-}
 /* The press's words line up with the lines above them. */
 .thread-activity__output-more { margin-left: 8px; }
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
@@ -176,7 +188,7 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
    its own under what came back. The row's button cannot hold another, so the slot at the end of the command keeps the room
    and names the anchor, and Copy, the row's next sibling, is placed on it. Each row scopes the name, so a row nested in
    another finds its own. Focus goes from the row to Copy, then into what came back. */
-.thread-activity__row { position: relative; anchor-scope: --step-command; }
+.thread-activity__row { position: relative; anchor-scope: --step-command, --step-pictures; }
 .thread-activity__copy-slot { display: inline-block; width: 30px; height: 1lh; vertical-align: top; anchor-name: --step-command; }
 .thread-activity__copy-command {
   position: absolute; position-anchor: --step-command; top: anchor(center); left: calc(anchor(left) + 6px); translate: 0 -50%;
@@ -253,6 +265,11 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
   .thread-activity-live__step { display: none; }
 }
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
+/* The opened steps' first line, the running form of the Worked for line, inside the steps' rule and level with their marks. */
+.thread-activity-live__head {
+  margin: 0 0 0 1px; padding: 4px 6px 6px 16px; border-left: 1px solid var(--tt-hairline);
+  color: var(--tt-text-2); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; line-height: 1.5; overflow-wrap: anywhere;
+}
 /* When the provider sent a plan, its items stand above the working line while the turn runs (Zach's pick, C of the
    working-view prototype, ADR-0134's November 5 amendment "the plan stays in view"): the opened plan's own checklist, a
    size smaller, one line an item, with its tick, its accent dot and its ring. At the minimum window it is the same list;

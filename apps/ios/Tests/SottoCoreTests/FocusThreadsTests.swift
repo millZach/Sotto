@@ -204,6 +204,11 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertEqual(answered.rowID(for: ThreadRef(hostID: "h", threadID: "grandchild")), "h/top")
         XCTAssertEqual(answered.rowID(for: ThreadRef(hostID: "h", threadID: "top")), "h/top")
     }
+    func testADelegatedThreadOffersNoWatchAndItsParentDoes() throws {
+        // Watcher talks only to the thread that delegated it, so that thread is the one to watch (#1217, pick B).
+        XCTAssertTrue(ThreadGroups.offersWatch(try thread("top")))
+        XCTAssertFalse(ThreadGroups.offersWatch(try thread("child", #", "delegatedBy":"top""#)))
+    }
     func testASettledThreadWithADelegatedThreadWaitingOnYouStaysInNeedsYou() throws {
         let top = try thread("top", #", "workspaceSettledAt":"2026-10-21""#)
         let child = try thread("child", #", "delegatedBy":"top", "workspaceSettledAt":"2026-10-21""#, requests: ask("permission"))

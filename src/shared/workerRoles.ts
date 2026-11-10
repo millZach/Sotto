@@ -111,7 +111,7 @@ const WONDER = muse('Muse Wonder', ['muse-wonder', 'muse-wonder-1*'])
 /**
  * The roles, each with its defaults in order (decided October 14, 2026, from the prototype at
  * `prototype/watcher-worker-roles`). With Claude Code, Codex, Muse and Grok Build connected: Orchestrating on Opus,
- * Building and UI on Opus at Extra high, Code review on Muse Wonder Full at Extra high, Research on Haiku, Computer use on
+ * Building and UI on Opus at XHigh, Code review on Muse Wonder Full at XHigh, Research on Haiku, Computer use on
  * GPT-6 Astra with Full access, which the new-thread default still caps. With one provider, its own models.
  */
 export const WORKER_ROLES: readonly WorkerRole[] = [
@@ -152,7 +152,7 @@ export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
  * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
  * one offers only OpenCode Zen's free models, which no role names as a default.
  */
-const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor', 'deepseek'])
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor', 'deepseek', 'hermes'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))

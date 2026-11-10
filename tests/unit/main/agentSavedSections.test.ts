@@ -22,10 +22,9 @@ type Inside = {
   answeredRequests: { threadId: string; provider: string; requestId: string; questionsDigest: string }[]
   savedOverLiveState(): Record<string, unknown>
   store: { write(value: unknown, compact?: string): Promise<void> }
-  watcherStore: { writeSerialized(serialized: string): Promise<void> }
   persist(closing?: boolean): Promise<void>
   savedWhole(saved: unknown): unknown
-  mutateWatcher(update: (record: WatcherRecord) => void): void
+  watcherRecords: { watcher: WatcherRecord; mutate(update: (record: WatcherRecord) => void): void; store: { writeSerialized(serialized: string): Promise<void> } }
 }
 
 const roots: string[] = []
@@ -71,7 +70,7 @@ afterEach(async () => {
 describe('agents.json sections', () => {
   it('serializes to exactly what JSON.stringify of the saved state gives, and writes those bytes', async () => {
     const { inside, file, watcherFile, stringified, watcherStringified } = await fixture()
-    inside.mutateWatcher(record => Object.assign(record, bigWatcherRecord()))
+    inside.watcherRecords.mutate(record => Object.assign(record, bigWatcherRecord()))
     inside.deliveredPromptDigests = [{ threadId: 'a', draftId: randomUUID(), digest: 'd1' }]
     inside.answeredRequests = [{ threadId: 'a', provider: 'codex', requestId: 'r1', questionsDigest: 'q1' }]
     inside.state.deliveredDrafts = [{ threadId: 'a', draftId: randomUUID() }]
@@ -97,9 +96,9 @@ describe('agents.json sections', () => {
     const changes: [string, () => void, (saved: Record<string, unknown>) => unknown][] = [
       ['configuration', () => { inside.state.configuration.defaultModelId = 'edited-in-place' }, saved => (saved.configuration as { defaultModelId: string }).defaultModelId],
       ['activeThreadId', () => { inside.state.activeThreadId = 'workshop' }, saved => saved.activeThreadId],
-      ['watcher', () => inside.mutateWatcher(record => { record.wakeEventIds = ['wake-1'] }), saved => (saved.watcher as WatcherRecord).wakeEventIds],
-      ['watcher, past eight reservations', () => inside.mutateWatcher(record => Object.assign(record, bigWatcherRecord())), saved => (saved.watcher as WatcherRecord).reservations.length],
-      ['watcher, again', () => inside.mutateWatcher(record => { record.wakeEventIds = ['wake-2'] }), saved => (saved.watcher as WatcherRecord).wakeEventIds],
+      ['watcher', () => inside.watcherRecords.mutate(record => { record.wakeEventIds = ['wake-1'] }), saved => (saved.watcher as WatcherRecord).wakeEventIds],
+      ['watcher, past eight reservations', () => inside.watcherRecords.mutate(record => Object.assign(record, bigWatcherRecord())), saved => (saved.watcher as WatcherRecord).reservations.length],
+      ['watcher, again', () => inside.watcherRecords.mutate(record => { record.wakeEventIds = ['wake-2'] }), saved => (saved.watcher as WatcherRecord).wakeEventIds],
       ['deliveredPromptDigests', () => { inside.deliveredPromptDigests = [...inside.deliveredPromptDigests, { threadId: 'a', draftId: randomUUID(), digest: 'd' }] }, saved => (saved.deliveredPromptDigests as unknown[]).length],
       ['answeredRequests', () => { inside.answeredRequests = [...inside.answeredRequests, { threadId: 'a', provider: 'codex', requestId: 'r', questionsDigest: 'q' }] }, saved => (saved.answeredRequests as unknown[]).length],
       ['deliveredDrafts', () => { inside.state.deliveredDrafts = [...inside.state.deliveredDrafts ?? [], { threadId: 'a', draftId: randomUUID() }] }, saved => (saved.deliveredDrafts as unknown[]).length],
@@ -120,13 +119,13 @@ describe('agents.json sections', () => {
 
   it('serializes no replaced section again on a save with nothing new, and writes nothing', async () => {
     const { inside, file } = await fixture()
-    inside.mutateWatcher(record => Object.assign(record, bigWatcherRecord()))
+    inside.watcherRecords.mutate(record => Object.assign(record, bigWatcherRecord()))
     inside.deliveredPromptDigests = [{ threadId: 'a', draftId: randomUUID(), digest: 'd1' }]
     inside.answeredRequests = [{ threadId: 'a', provider: 'codex', requestId: 'r1', questionsDigest: 'q1' }]
     await inside.persist()
     const written = await file()
     const replaced = new Set<unknown>([inside.watcher, inside.deliveredPromptDigests, inside.answeredRequests, inside.state.deliveredDrafts, inside.state.obsoleteDrafts])
-    const write = vi.spyOn(inside.store, 'write'), watcherWrite = vi.spyOn(inside.watcherStore, 'writeSerialized')
+    const write = vi.spyOn(inside.store, 'write'), watcherWrite = vi.spyOn(inside.watcherRecords.store, 'writeSerialized')
     const stringify = vi.spyOn(JSON, 'stringify')
     await inside.persist()
     const serializedValues = stringify.mock.calls.map(([value]) => value)
@@ -182,7 +181,7 @@ describe('agents.json sections', () => {
     expect(() => { inside.answeredRequests.push({ threadId: 'a', provider: 'codex', requestId: 'r', questionsDigest: 'q' }) }).toThrow(TypeError)
     expect(() => { inside.state.deliveredDrafts!.push({ threadId: 'a', draftId: randomUUID() }) }).toThrow(TypeError)
     // The coordinator's own way to change the record still works.
-    inside.mutateWatcher(record => { record.wakeEventIds = ['changed'] })
+    inside.watcherRecords.mutate(record => { record.wakeEventIds = ['changed'] })
     expect(inside.watcher.wakeEventIds).toEqual(['changed'])
   })
 })
@@ -190,16 +189,16 @@ describe('agents.json sections', () => {
 describe('Watcher\u2019s own file', () => {
   it('writes only agents.json for a save that leaves Watcher\u2019s record as it was, and Watcher\u2019s file when it changed', async () => {
     const { inside, file, watcherFile } = await fixture()
-    inside.mutateWatcher(record => Object.assign(record, bigWatcherRecord()))
+    inside.watcherRecords.mutate(record => Object.assign(record, bigWatcherRecord()))
     await inside.persist()
-    const write = vi.spyOn(inside.store, 'write'), watcherWrite = vi.spyOn(inside.watcherStore, 'writeSerialized')
+    const write = vi.spyOn(inside.store, 'write'), watcherWrite = vi.spyOn(inside.watcherRecords.store, 'writeSerialized')
     // A pause in typing, a thread selected: agents.json alone, without the record that was most of it.
     inside.state.activeThreadId = 'workshop'
     await inside.persist()
     expect(write).toHaveBeenCalledTimes(1)
     expect(watcherWrite).not.toHaveBeenCalled()
     expect(Buffer.byteLength(await file())).toBeLessThan(Buffer.byteLength(await watcherFile()) / 4)
-    inside.mutateWatcher(record => { record.wakeEventIds = ['wake-1'] })
+    inside.watcherRecords.mutate(record => { record.wakeEventIds = ['wake-1'] })
     await inside.persist()
     expect(watcherWrite).toHaveBeenCalledTimes(1)
     expect(write).toHaveBeenCalledTimes(1)
@@ -209,16 +208,16 @@ describe('Watcher\u2019s own file', () => {
     const { inside, file, watcherFile, stringified, watcherStringified } = await fixture()
     await inside.persist()
     const order: string[] = []
-    const write = inside.store.write.bind(inside.store), watcherWrite = inside.watcherStore.writeSerialized.bind(inside.watcherStore)
+    const write = inside.store.write.bind(inside.store), watcherWrite = inside.watcherRecords.store.writeSerialized.bind(inside.watcherRecords.store)
     let failWatcher = true
     vi.spyOn(inside.store, 'write').mockImplementation(async (...args) => { order.push('agents.json'); return write(...args) })
-    vi.spyOn(inside.watcherStore, 'writeSerialized').mockImplementation(async serialized => {
+    vi.spyOn(inside.watcherRecords.store, 'writeSerialized').mockImplementation(async serialized => {
       order.push(WATCHER_RECORD_FILE)
       if (failWatcher) { failWatcher = false; throw new Error('Synthetic disk failure') }
       return watcherWrite(serialized)
     })
     const agentsBefore = await file(), watcherBefore = await watcherFile()
-    inside.mutateWatcher(record => { record.wakeEventIds = ['wake-1'] })
+    inside.watcherRecords.mutate(record => { record.wakeEventIds = ['wake-1'] })
     inside.state.activeThreadId = 'workshop'
     await expect(inside.persist()).rejects.toThrow('Synthetic disk failure')
     expect(order).toEqual([WATCHER_RECORD_FILE])
@@ -260,17 +259,17 @@ describe('Watcher\u2019s own file', () => {
   it('writes Watcher\u2019s file again after a failed write that a record serializing to the same text took over (review)', async () => {
     const { inside, watcherFile, watcherStringified } = await fixture()
     await inside.persist()
-    const write = inside.watcherStore.writeSerialized.bind(inside.watcherStore), landed = deferred<void>()
+    const write = inside.watcherRecords.store.writeSerialized.bind(inside.watcherRecords.store), landed = deferred<void>()
     let writes = 0
-    vi.spyOn(inside.watcherStore, 'writeSerialized').mockImplementation(async serialized => {
+    vi.spyOn(inside.watcherRecords.store, 'writeSerialized').mockImplementation(async serialized => {
       writes++
       if (writes === 1) { await landed.promise; throw new Error('Synthetic disk failure') }
       return write(serialized)
     })
-    inside.mutateWatcher(record => { record.wakeEventIds = ['wake-1'] })
+    inside.watcherRecords.mutate(record => { record.wakeEventIds = ['wake-1'] })
     const first = inside.persist()
     // Another record whose saved text is the same, as when only reservations past the eight saved changed.
-    inside.watcher = Object.freeze({ ...inside.watcher })
+    inside.watcherRecords.watcher = Object.freeze({ ...inside.watcher })
     const second = inside.persist()
     landed.resolve()
     await expect(first).rejects.toThrow('Synthetic disk failure')
@@ -282,7 +281,7 @@ describe('Watcher\u2019s own file', () => {
 
   it('reads the record a store saved before Watcher had a file of its own kept in agents.json, and moves it across', async () => {
     const first = await fixture()
-    first.inside.mutateWatcher(record => Object.assign(record, bigWatcherRecord()))
+    first.inside.watcherRecords.mutate(record => Object.assign(record, bigWatcherRecord()))
     await first.inside.persist()
     const record = JSON.parse(await first.watcherFile()) as { watcher: WatcherRecord }
     first.control.dispose(); await first.control.closed()
@@ -299,7 +298,7 @@ describe('Watcher\u2019s own file', () => {
 
   it('reads Watcher\u2019s own file over a record agents.json still holds, as after a crash while the record moved across', async () => {
     const first = await fixture()
-    first.inside.mutateWatcher(record => { record.wakeEventIds = ['newer'] })
+    first.inside.watcherRecords.mutate(record => { record.wakeEventIds = ['newer'] })
     await first.inside.persist()
     first.control.dispose(); await first.control.closed()
     const older = watcherRecordFixture()

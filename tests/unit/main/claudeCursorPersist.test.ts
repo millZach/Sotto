@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeStreamJsonHost } from '../../../src/main/agents/claude'
+import { ClaudeStreamJsonHost } from '../../../src/main/agents/providers/claude/claude'
 import type { ThreadHistorySource } from '../../../src/main/agents/host'
 
 /**

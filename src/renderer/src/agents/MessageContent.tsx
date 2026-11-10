@@ -14,7 +14,7 @@ import { isFenceClosed } from '../../../shared/diagramSource'
 import { useCopyImage, useTransientFlag, writeClipboard } from './richActions'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
-import { isMarkdownPath } from '../../../shared/files'
+import { isMarkdownPath, withDriveFirst } from '../../../shared/files'
 import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
@@ -28,6 +28,7 @@ import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
 import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
 import { flipsBelow } from './ReplyQuoteButton'
 import { rehypeSkillTokens, SkillToken } from './sentSkills'
+import { remarkFileLinks } from './fileLinkSource'
 import './rich-messages.css'
 import './runCommand.css'
 
@@ -89,11 +90,11 @@ export function localFilePath(raw: string | undefined): string | null {
       const url = new URL(value)
       if (url.host && url.host !== 'localhost') return null
       value = url.pathname
-      // file:///C:/Users becomes /C:/Users; Windows wants the drive first.
-      if (/^\/[a-z]:\//iu.test(value)) value = value.slice(1)
     } catch { return null }
   }
   try { value = decodeURIComponent(value) } catch { /* Kept as written: a literal % in a file name. */ }
+  // file:///C:/Users and Codex's </D:/Projects/notes.md> both lead with a slash; Windows wants the drive first.
+  value = withDriveFirst(value)
   // A network share or device path (\\host, //host, \\?\) would reach the network.
   if (/^[\\/]{2}/u.test(value)) return null
   // Any other scheme (http:, javascript:, vscode:) is not a file here; a Windows drive letter is, and so is a file named
@@ -259,8 +260,10 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
   </span>
 }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false }: {
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false, lines }: {
   code: string; language: string | undefined
+  /** Draws only the code's first lines, as a step's long output does until a press shows the rest; Copy still takes it whole. */
+  readonly lines?: number | undefined
   readonly cut?: CodeBlockCut | undefined
   /** The reply is still writing this block: its fence has not closed, so its last line carries the reply's caret. */
   readonly writing?: boolean | undefined
@@ -285,7 +288,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     const pre = scroll.current
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
-  const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
+  const drawnCode = useMemo(() => lines === undefined ? code : code.split('\n').slice(0, lines).join('\n'), [code, lines])
+  const highlighted = useMemo(() => highlight(drawnCode, language, highlighter), [drawnCode, language, highlighter])
   // Lines that run past the block's edge fade there, so a reader sees there is more; the attribute is written on the
   // element, so scrolling sideways draws nothing again in React.
   useLayoutEffect(() => {
@@ -315,9 +319,13 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
         {BLOCK_RUN[runState].icon}<span>{i18n._(BLOCK_RUN[runState].text)}</span>
       </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
-        aria-label={cut
-          ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
-          : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
+        aria-label={language === 'output'
+          // What an opened step printed, in its well beside the command's own Copy, so the name says which it copies.
+          ? cut ? t({ message: 'Copy the output, once the rest arrives', comment: 'Copies what an opened step printed, once all of it has arrived.' })
+            : t({ message: 'Copy the output', comment: 'The accessible name of the button that copies what an opened step printed.' })
+          : cut
+            ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
+            : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
         title={cut ? t`Copy works once the rest arrives` : t`Copy code`} onClick={copy}>
         {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
@@ -470,7 +478,7 @@ const components: Components = {
   h1: heading(3, 1), h2: heading(4, 2), h3: heading(5, 3), h4: heading(6, 4), h5: heading(6, 5), h6: heading(6, 6),
   span: ({ node, ...props }) => typeof node?.properties.dataSkillToken === 'string' ? <SkillToken token={node.properties.dataSkillToken}>{props.children}</SkillToken> : <span {...props} />,
 }
-const remarkPlugins = [remarkGfm]
+const remarkPlugins = [remarkGfm, remarkFileLinks]
 const skillPlugins = [rehypeSkillTokens]
 
 const BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})/u

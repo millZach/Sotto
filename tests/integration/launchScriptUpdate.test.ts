@@ -9,6 +9,7 @@ import { createServer } from 'node:http'
 import { describe, afterEach, expect, it, vi } from 'vitest'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
+import { stopFakeSshHosts } from '../fixtures/fakeSshHostCleanup'
 
 /**
  * The launch script's host update (ADR-0040), run as the desktop runs it, against a flat install of the fake host and a
@@ -20,7 +21,7 @@ vi.setConfig({ testTimeout: 3 * (HOST_STOP_DRAIN_MS + 30_000) + 30_000 })
 const directories: string[] = [], children: ChildProcess[] = [], hosts: number[] = [], pages: { close(): Promise<void> }[] = []
 afterEach(async () => {
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill()
-  for (const pid of hosts.splice(0)) { try { process.kill(pid, 'SIGTERM') } catch { /* already exited */ } }
+  await stopFakeSshHosts(hosts.splice(0), directories.map(directory => join(directory, 'data')))
   for (const page of pages.splice(0)) await page.close()
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true })
 })

@@ -160,8 +160,8 @@ export class SettingsRepository {
     })
   }
 
-  private async readSettings(): Promise<AppSettings> {
-    return this.project(this.parse(await this.store.read()))
+  private readSettings(): Promise<AppSettings> {
+    return this.store.read()
   }
 
   private parse(input: unknown): AppSettings { return parseSettings(input, this.defaults, this.omarchyTheme !== undefined) }

@@ -12,7 +12,7 @@
  */
 import { deferred } from '../fixtures/deferred'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
+import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { idle, repositoryWithOrigin, sendAndCount, startedThread, type SendGitFixture } from '../fixtures/sendGit'
 

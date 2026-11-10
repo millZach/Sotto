@@ -4,8 +4,8 @@ import { z } from 'zod'
 import { LOCKFILE_NAMES, MAIN_CHECKOUT_FILES_MAX, MAIN_CHECKOUT_INTERVAL_MS, type MainCheckoutBlock, type MainCheckoutChanges, type MainCheckoutState,
   type ProjectMainCheckout } from '../../shared/mainCheckout'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { GitFastForwardResult } from './gitActions'
-import { QUIET_GIT_ENV, runGitStatusCommand, type RunGitCommand } from './gitStatus'
+import type { GitFastForwardResult } from './git/gitActions'
+import { QUIET_GIT_ENV, runGitStatusCommand, type RunGitCommand } from './git/gitStatus'
 
 /** The part of WorkspaceHost Keep main up to date needs. */
 export interface MainCheckoutHost {

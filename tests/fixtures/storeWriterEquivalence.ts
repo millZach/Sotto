@@ -18,6 +18,7 @@ import type { AnswerGivenEvent, ThreadEvent } from '../../src/shared/threadEvent
 import type { VisualInput } from '../../src/shared/visuals'
 import { DeferredStoreWriter } from './deferredStoreWriter'
 import { FakeProviderHost } from './fakeProviderHost'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 /** A provider that says what changed, event by event, as the native adapters do. */
 export class EventProvider extends FakeProviderHost {
@@ -75,9 +76,20 @@ export async function fixture(options: { deferred?: boolean; worker?: string; st
   adapter.state.projects[0]!.path = project
   let writer: DeferredStoreWriter | undefined
   const host = options.deferred === false
-    ? new WorkspaceHost(adapter, directory, options.history ?? (() => true), undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true, undefined, options.worker ?? null)
-    : new WorkspaceHost(adapter, directory, options.history ?? (() => true), undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true,
-      store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer })
+    ? new WorkspaceHost(adapter, directory, {
+      historyEnabled: options.history ?? (() => true),
+      watcherEnabled: options.watcher ?? false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: options.streamingPublishCost ?? true,
+      storeWorker: options.worker ?? null,
+    })
+    : new WorkspaceHost(adapter, directory, {
+      historyEnabled: options.history ?? (() => true),
+      watcherEnabled: options.watcher ?? false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: options.streamingPublishCost ?? true,
+      storeWriter: store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer },
+    })
   cleanup.push(async () => { host.disconnect(); if (writer) { writer.holding = false; writer.release() } await host.close().catch(() => undefined) })
   await host.initialize()
   await host.connect()

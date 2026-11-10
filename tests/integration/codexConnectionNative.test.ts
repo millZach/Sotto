@@ -3,7 +3,7 @@ import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
 
 describe("requires SOTTO_CODEX_CONNECTION_LIVE=1", () => {
   it.skipIf(process.env.SOTTO_CODEX_CONNECTION_LIVE !== '1')('connects and opens saved Codex threads without sending a turn', async () => {

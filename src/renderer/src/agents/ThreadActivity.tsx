@@ -8,11 +8,11 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentThread } from '../../../shared/agents'
-import { MessageContent } from './MessageContent'
+import { CodeBlock, MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
+  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, workSummary, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
   activityLeadKind, commandCut, quickStep, spokenActivity, stepDescription, summaryBody, type ActivityLabel, type ActivityLeadKind, type CommandPart, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
@@ -30,6 +30,7 @@ import {
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
+import { MOST_STEP_PICTURES, PictureScopeContext, StepPicturesSlot, usePictureScope, useStepPictures, withNested } from './StepPictures'
 import { Fold } from './Fold'
 import { folderKey } from './projectFolders'
 import './activity.css'
@@ -332,14 +333,18 @@ const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly r
   </ol>
 })
 
-/** The open row says a one-line command whole, and this copies it from the end of the command's line, since a row's words cannot be selected. */
+/**
+ * Copies an opened step's command from the end of the command's line: in the row for a command with no description, whose words
+ * cannot be selected, and beside the command that heads the well (Zach kept it on November 7, 2026, ADR-0134).
+ */
 function CopyCommand({ command }: { readonly command: string }): ReactNode {
   const { t } = useLingui()
   const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
   const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
-  const name = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
+  const name = t({ message: 'Copy the command', comment: 'The accessible name of the button that copies the command an opened step ran.' })
+  const tip = t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })
   return <span className="thread-activity__copy-command">
-    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={name} onClick={copy}>
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} aria-label={name} title={tip} onClick={copy}>
       {outcome === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
     </button>
     <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
@@ -350,16 +355,33 @@ function CopyCommand({ command }: { readonly command: string }): ReactNode {
 const OUTPUT_LINES = 12
 
 /**
- * What a command printed, in its well. A long one holds its first twelve lines and says how many more there are, on a press
+ * An opened command's well: the command heads what came back, in the same fill with no box inside it, and long lines wrap
+ * under a hanging indent (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The command keeps its
+ * own Copy beside it, and what came back has Copy in the well's corner; with nothing printed, the corner's Copy copies the
+ * command.
+ */
+function StepWell({ command, children }: { readonly command?: string | undefined; readonly children?: ReactNode }): ReactNode {
+  return <div className="thread-activity__well">
+    {command ? <div className="thread-activity__well-head" dir="ltr">
+      <p className="thread-activity__well-command"><code>{command}</code></p>
+      {children ? <CopyCommand command={command} /> : null}
+    </div> : null}
+    {children ?? (command ? <CopyCommand command={command} /> : null)}
+  </div>
+}
+
+/**
+ * What a command printed, in its well. A long one shows its first twelve lines and says how many more there are, on a press
  * that shows the rest in place; a press is the way to read it all, and Copy in the well's corner takes it whole either way.
  * The well does not scroll inside the transcript's own scroll. A count of one or two more lines is not worth the press, so
  * such an output shows whole.
  */
-function CommandOutput({ output }: { readonly output: string }): ReactNode {
+function CommandOutput({ output, command }: { readonly output: string; readonly command?: string | undefined }): ReactNode {
   useInterfaceLanguageState()
   const [whole, setWhole] = useState(false)
   const well = useRef<HTMLDivElement>(null)
-  const lines = output.replace(/\n$/u, '').split('\n').length
+  const code = output.replace(/\n$/u, '')
+  const lines = code.split('\n').length
   const more = whole || lines <= OUTPUT_LINES + 2 ? 0 : lines - OUTPUT_LINES
   const show = (): void => {
     setWhole(true)
@@ -367,7 +389,7 @@ function CommandOutput({ output }: { readonly output: string }): ReactNode {
     well.current?.querySelector<HTMLElement>('pre')?.focus({ preventScroll: true })
   }
   return <div ref={well} className="thread-activity__output" data-held={more > 0 || undefined}>
-    <MessageContent text={fenced(output, 'output')} />
+    <StepWell command={command}><div className="rich-message"><CodeBlock code={code} language="output" lines={more > 0 ? OUTPUT_LINES : undefined} /></div></StepWell>
     {more > 0 ? <button type="button" className="thread-activity__more thread-activity__output-more tt-focusable" onClick={show}>
       {plural(more, { one: `Show ${{ lines: shownCount(more) }} more line`, other: `Show ${{ lines: shownCount(more) }} more lines` })}
     </button> : null}
@@ -408,6 +430,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   // with what came back, then where it ran when that was somewhere else: each said once. A command whose input is not the provider's
   // description keeps those words here, first.
   const described = record.command !== undefined && stepDescription(record) !== ''
+  // A described one-line command heads the well of what came back, since its row says only what it was for.
+  const head = described && !script ? record.command : undefined
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command && !described ? said : null}
@@ -433,8 +457,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
     </ol> : null}
     {cut?.output !== undefined
       // Held output opens at its end, before and after the rest arrives.
-      ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
-      : record.output ? <CommandOutput output={record.output} /> : null}
+      ? <StepWell command={head}><CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut /></StepWell>
+      : record.output ? <CommandOutput output={record.output} command={head} /> : head ? <StepWell command={head} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
     {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
@@ -520,23 +544,24 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const spoken = planInView ? label.subject : [kind, purpose, spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = purpose || label.subject
-  // Open, a one-line command is said whole in the row, and the way to copy it sits at the end of the command's own line rather
-  // than on a line of its own: the slot holds its place there, and the button, which cannot sit inside the row's own button,
-  // is drawn over it.
-  const copied = open && record.kind === 'command' && record.command && !script ? record.command : ''
+  // Open, a one-line command with no description is said whole in the row, and the way to copy it sits at the end of the
+  // command's own line rather than on a line of its own: the slot holds its place there, and the button, which cannot sit
+  // inside the row's own button, is drawn over it. A described one heads the well under the row instead (`StepWell`).
+  const copied = open && record.kind === 'command' && record.command && !script && !purpose ? record.command : ''
   const copySlot = copied ? <span className="thread-activity__copy-slot" aria-hidden="true" /> : null
+  // The row's pictures sit at its end, before its time (ADR-0170, pictures in steps); folded, it shows the newest of all it holds.
+  const pictureRecords = useMemo(() => open ? [record] : withNested(record, children), [open, record, children])
+  const pictures = useStepPictures(pictureRecords)
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label" data-purpose={purpose ? '' : undefined}>
-      {purpose ? <>
-        <span className="thread-activity__subject">{purpose}</span>
-        {open && !script ? <span className="thread-activity__command" dir="ltr">{shown.subject}{copySlot}</span> : null}
-      </> : !open && record.kind === 'command' && shown.mono && !shown.preview
+      {purpose ? <span className="thread-activity__subject">{purpose}</span> : !open && record.kind === 'command' && shown.mono && !shown.preview
         ? <RowCommand command={shown.subject} className="thread-activity__subject thread-activity__subject--mono" />
         : <><ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />{copySlot}</>}
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
+      <StepPicturesSlot count={Math.min(pictures.count, MOST_STEP_PICTURES)} more={pictures.count > MOST_STEP_PICTURES} />
       {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
       <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
       {quiet || brief ? null : timed && timing ? <span title={timing}>{status}</span> : status}
@@ -557,6 +582,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
     {copied ? <CopyCommand command={copied} /> : null}
+    {pictures.strip}{pictures.player}
     <Fold open={open}><div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
       {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>
@@ -584,6 +610,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const lineCounts = recordsLineCounts(group.records)
   const canFold = !live && !bare && group.records.length > 0
   const name = [headline, summary, lineCounts ? spokenLineCounts(lineCounts) : ''].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
+  // Folded, its line shows the newest of its pictures; open, each row shows its own.
+  const pictures = useStepPictures(group.records, canFold && !expanded)
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined} data-bare={bare || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
@@ -595,7 +623,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
       {summary ? <span className="thread-activity__counts">{summary}</span> : null}
       {/* Once open, each row says its own. */}
       <LineCountMarks counts={expanded ? null : lineCounts} spoken={false} />
-    </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
+    </button> : null}
+    {canFold ? <>{pictures.strip}{pictures.player}</> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
     <TurnFailureReason turn={group.turn} />
@@ -624,15 +653,18 @@ function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure,
     [quiet, shared, records, group.turnId])
   const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
   const earlier = live && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
+  // A row's viewer steps through the pictures of its turn when the turn says which, or else of this group.
+  const outer = useContext(PictureScopeContext)
+  const scope = usePictureScope(records)
   const row = (item: ActivityItem): ReactNode => item.run
     ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
     : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />
   if (!shown.length) return null
-  return <ul id={id} className="thread-activity__rows">
+  return <PictureScopeContext.Provider value={outer ?? scope}><ul id={id} className="thread-activity__rows">
     {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
       onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
     {(earlier ? shown.slice(-LIVE_ROWS) : shown).map(row)}
-  </ul>
+  </ul></PictureScopeContext.Provider>
 }
 
 /** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
@@ -681,6 +713,30 @@ function OwnServerLine({ actions, server, mark, startedAt, steps }: {
     {note ? <p className="thread-activity-live__note tt-paragraph">{note}</p> : null}
     {steps?.opened}
   </div>
+}
+
+/**
+ * The first line of a running turn's opened steps, the running form of its Worked for line: "Working for 2m 14s · 4 steps ·
+ * Ran 3 commands" (Zach's pick B of the November 6 follow-ups, ADR-0134's November 7 amendment). The working line itself
+ * stays the words alone (ADR-0134, October 26 amendment); the time is one press away. It counts up once a second while the
+ * steps are open, and only while the provider is connected.
+ */
+function WorkingFor({ startedAt, connected, steps }: {
+  readonly startedAt: string | undefined; readonly connected: boolean; readonly steps: readonly AgentActivity[]
+}): ReactNode {
+  const { t } = useLingui()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!connected || startedAt === undefined) return
+    const timer = window.setInterval(() => tick(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [connected, startedAt])
+  const did = useMemo(() => workSummary(steps), [steps])
+  const took = startedAt === undefined ? '' : elapsedText(startedAt)
+  const headline = !connected ? t`Last seen working`
+    : took ? t({ message: `Working for ${took}`, comment: '{took} is how long the running turn has worked so far, such as 2m 14s.' })
+      : t({ message: 'Working', comment: 'A turn that is running.' })
+  return <p className="thread-activity-live__head">{headline} · {stepsLabel(steps.length)}{did ? ` · ${did}` : null}</p>
 }
 
 /** A running turn's folded steps, as the line that holds them offers them. */
@@ -759,10 +815,14 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // "the plan stays in view"). Its record is still one of the steps under the line, a row that does not open the list again;
   // once the steps are open the checklist reads each item whole, as the opened plan did.
   const plan = useMemo(() => newestPlan(steps), [steps])
+  // Folded, the line shows the newest pictures of the turn's steps (ADR-0170, pictures in steps); open, each row shows its own.
+  const pictureScope = usePictureScope(steps)
+  const pictures = useStepPictures(steps, !open)
   const checklist = plan ? <PlanSteps record={plan} live /> : null
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
+      <WorkingFor startedAt={turn?.startedAt ?? sendingSince} connected={connected} steps={steps} />
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div></Fold>,
     onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
@@ -810,7 +870,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
+    <PictureScopeContext.Provider value={pictureScope}>
+      {pictures.strip}{pictures.player}
+      <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
+    </PictureScopeContext.Provider>
   </div>
 }
 
@@ -845,6 +908,9 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
   const Icon = run.kind === 'cloud' ? Smartphone : Globe
   const lastFailed = going ? run.steps.at(-1)!.failed : run.steps.some(step => stepUnfinished(step, true))
   const said = plainWords(headline)
+  // Folded, the line shows the newest pictures of its run; open, each step shows its own.
+  const records = useMemo(() => run.steps.map(step => step.record), [run.steps])
+  const pictures = useStepPictures(records, !open)
   return <Tag className="thread-browser" data-kind={run.kind} data-going={going || undefined} data-open={open || undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-browser__line tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
@@ -853,8 +919,10 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
       <Icon className="thread-browser__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
       {going ? <i className="thread-browser__dot" data-connected={connected || undefined} aria-hidden="true" /> : null}
       <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
+      {open ? null : <StepPicturesSlot count={Math.min(pictures.count, MOST_STEP_PICTURES)} more={pictures.count > MOST_STEP_PICTURES} />}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
+    {pictures.strip}{pictures.player}
     <Fold open={open}><ol id={listId} className="thread-browser__steps" aria-label={said}>
       {run.steps.map(step => {
         const unfinished = stepUnfinished(step, !going)
@@ -862,10 +930,18 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
         return <li key={step.record.id} data-failed={unfinished || undefined}>
           <StepIcon className="thread-browser__step-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
           <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
+          {open ? <BrowserStepPictures record={step.record} /> : null}
         </li>
       })}
     </ol></Fold>
   </Tag>
+}
+
+/** One browser step's pictures at the end of its line, once its run is open. */
+function BrowserStepPictures({ record }: { readonly record: AgentActivity }): ReactNode {
+  const records = useMemo(() => [record], [record])
+  const { strip, player } = useStepPictures(records)
+  return <>{strip}{player}</>
 }
 
 /**

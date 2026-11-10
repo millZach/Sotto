@@ -896,7 +896,7 @@ extension AppModel {
     /// What the thread list reads from Watcher for these groups' Needs you, Working now and Recent rows.
     func listWatch(_ groups: FocusThreads) -> ListWatch {
         let rows = groups.questions + groups.working + groups.recent + groups.snoozed
-        return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { canChangeWatch($0.ref) }.map(\.id)))
+        return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { offersWatch($0) }.map(\.id)))
     }
     /// What these groups' Working now and Recent rows offer for the shelf, by row ID. A Needs you row offers neither, as
     /// its card never did: settling leaves its question waiting, and the row where it stands.

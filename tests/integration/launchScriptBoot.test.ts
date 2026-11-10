@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HOST_STOP_DRAIN_MS, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { bootStatusSchema } from '../../src/shared/bootStart'
 import { fakeSystemd, type FakeSystemd, type FakeSystemdState } from '../fixtures/fakeSystemd'
+import { stopFakeSshHost } from '../fixtures/fakeSshHostCleanup'
 
 // Start at boot (ADR-0054) over fake systemctl and loginctl executables on the path. Real systemd is never touched. macOS
 // hosts cannot start at boot, so the launch script never asks systemd there and these cases have nothing to run.
@@ -19,15 +20,7 @@ let systemd: FakeSystemd | undefined
 const ownedFixtureHosts: Array<{ dataDirectory: string; pid: number; instance: string }> = []
 afterEach(async () => {
   // Recovery errors omit the new PID from their result. Stop only an identity still served by this owned fixture.
-  for (const owned of ownedFixtureHosts.splice(0).reverse()) {
-    try {
-      const current = JSON.parse(await readFile(join(owned.dataDirectory, 'host-listener.json'), 'utf8')) as { fixture?: string; pid: number; instance: string; port: number }
-      if (current.fixture !== 'sotto-fake-ssh-host' || current.pid !== owned.pid || current.instance !== owned.instance) continue
-      const response = await fetch(`http://127.0.0.1:${current.port}/health`, { signal: AbortSignal.timeout(10_000) })
-      const health = await response.json() as { fixture?: string; pid?: number; instance?: string }
-      if (health.fixture === current.fixture && health.pid === owned.pid && health.instance === owned.instance) process.kill(owned.pid, 'SIGTERM')
-    } catch { /* a stopped or replaced host is not ours to signal by PID alone */ }
-  }
+  for (const owned of ownedFixtureHosts.splice(0).reverse()) await stopFakeSshHost(owned.dataDirectory, start => start.pid === owned.pid && start.instance === owned.instance)
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill()
   systemd = undefined
   await new Promise(resolve => setTimeout(resolve, 100))

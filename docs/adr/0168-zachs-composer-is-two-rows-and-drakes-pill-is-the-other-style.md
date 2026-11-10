@@ -8,6 +8,8 @@ Amends ADR-0161: the quiet composer is now one of two styles of the same parts, 
 
 Amended October 31, 2026, by [ADR-0172](0172-zachs-composer-is-the-only-composer-and-its-effort-word-offers-a-level.md): at Drake's request, Drake's composer and the Appearance choice are gone, and Zach's composer is drawn wherever a composer is, answers, continuations and Watcher's handover included. Decisions 2 to 6 stand.
 
+Amended November 7, 2026, at Drake's request: footer labels shorten with an ellipsis as space runs short, in permission, effort, server, then model order. Their full text stays on hover. Decision 4 no longer hides the permission name at a fixed pane width.
+
 ## Context
 
 Drake redesigned the thread composer as one quiet pill over six rounds of prototypes (ADR-0161). On October 30, 2026, Zach said he did not like it for himself: too much shares its one row (attach, the shield, the prompt, the split chip, Stop and the disc), and he did not like its look. Drake made that composer, so Zach asked for it to stay as an option.
@@ -24,7 +26,7 @@ Four directions went to Zach beside Drake's pill: A after T3 Code, B after Codex
 
 **3. The bolt is drawn wherever the model offers a speed.** After the effort word comes the split chip's bolt: an outline at Standard, one bolt at Fast, two at Ultra fast. A model with one speed draws none. The menus, keys, suggestion and saves are the split chip's (ADR-0161 decision 2).
 
-**4. Permissions are always shown, before the model.** They show as the shield and the mode's name, in the mode's colour (muted for Ask first, the accent for Automatic and Allow edits, gold for Full access). In a pane 560 pixels wide or less, only the shield shows; the name stays in its tooltip and for assistive technology. They come first in the DOM, so Tab takes them in the order they are drawn. The prototype hid them at "your default", as T3 Code does; Sotto has no user-wide default permission mode to compare with, so they are always shown.
+**4. Permissions are always shown, before the model.** They show as the shield and the mode's name, in the mode's colour (muted for Ask first, the accent for Automatic and Allow edits, gold for Full access). The permission name shortens with an ellipsis when space runs short, before effort, server and model names; every name stays in full on hover and for assistive technology. They come first in the DOM, so Tab takes them in the order they are drawn. The prototype hid them at "your default", as T3 Code does; Sotto has no user-wide default permission mode to compare with, so they are always shown.
 
 **5. One disc, and Stop drawn once.** The disc is Send, Queue while a turn runs and something is typed, and Steer while Steer's modifier is held, as in the pill. While a turn runs with nothing typed, the disc is Stop, with the same name, keys and tooltip as Stop. Once something is typed it becomes Queue, and a small Stop stands beside it. The prototype's "Working 48s" line above the card was not built: the transcript's live turn already says that the thread is working.
 

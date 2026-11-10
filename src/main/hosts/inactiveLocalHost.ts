@@ -7,7 +7,7 @@ import { migrateWatcherRecord } from '../agents/watcherRecords'
 import { savedWatcherFile } from '../agents/watcherRecordFile'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
 import { HELD_PROVIDER_ENTRIES, type HeldProviders } from '../../shared/heldProviders'
-import type { createAgentRuntime } from '../agents/runtime'
+import type { DesktopLocalRuntime } from './localRuntime'
 import { loadHostIdentity } from '../agents/hostIdentity'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import type { WorktreeCleanup } from '../agents/worktreeCleanup'
@@ -28,7 +28,7 @@ export function emptyDesktopState(hostId?: string): AgentState {
  */
 /** `parked` names the providers whose saved threads stay dormant: every provider an Owl feature holds, on either track. */
 export async function inactiveLocalHost(directory: string,
-  parked: HeldProviders = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))): Promise<Awaited<ReturnType<typeof createAgentRuntime>>> {
+  parked: HeldProviders = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))): Promise<DesktopLocalRuntime> {
   const state = emptyDesktopState(await loadHostIdentity(directory))
   // Ownership remains readable while providers are off. No saved data is migrated or written here.
   const retained = new Set<string>()
@@ -64,18 +64,22 @@ export async function inactiveLocalHost(directory: string,
   const idle = () => undefined
   const unsubscribe = () => idle
   const shell = () => structuredClone(state)
-  const control = {
-    get: shell, shell, hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
-    threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(), gitPullRequestList: async () => unavailable(),
+  const control: DesktopLocalRuntime['agentControl'] = {
+    get: shell, shell, commandShell: async () => unavailable(), hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
+    threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), stageAttachmentFile: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(), gitPullRequestList: async () => unavailable(),
     // Main listens for deleted threads at start (ADR-0140); with no local threads here, none is ever deleted.
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, onThreadsDeleted: unsubscribe, dispose: idle, closed: async () => undefined,
     // A new Sotto version has every machine check its clients afresh (ADR-0077); this computer runs none of them.
     checkClientsAfresh: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, watcherObservationsEnabled: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
+    useCouncil: unsubscribe, commandFromCouncil: unavailable, refreshCouncilObservation: idle,
+    threadMedia: unavailable, threadMediaVideo: unavailable, filesBinding: unavailable, projects: unavailable,
+    watcherSnapshot: () => state.host, delegationMessage: unavailable, checkpointObserved: unavailable, restoreCheckpoint: unavailable,
+    questionPage: unavailable, questionPageOpened: unavailable, watcherRecords: { view: unavailable },
     requestDraftView: () => ({ host: state.host, provider: state.configuration.provider }),
   }
-  const host = {
+  const host: DesktopLocalRuntime['agentHost'] = {
     watcherThreadIds,
     dormantThreadIds: (): readonly string[] => { watcherThreadIds(); return [...dormant] },
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
@@ -83,26 +87,29 @@ export async function inactiveLocalHost(directory: string,
     useBrowserTools: idle, useThreadTools: idle,
     // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
     setMutationGuard: idle, gitActionFinished: async () => undefined,
+    admitsVisuals: unavailable, addVisual: unavailable, admitsShownMedia: unavailable, showMedia: unavailable,
+    admitsTellWatcher: unavailable, threadMessage: unavailable, threadMessages: unavailable, visual: unavailable,
+    acquireTerminalStart: unavailable, setWorktreeInUse: idle, workingCopyOptions: unavailable, writeShortTextOn: unavailable,
+    subagentPage: unavailable, subagentAssignments: unavailable, admitsBabysitting: unavailable,
+    threadPullRequests: unavailable, linkThreadPullRequest: unavailable, preservesDormantThread: unavailable,
+    setDelegatedBy: unavailable, recordSottoMessage: unavailable,
+    rollbackCapability: unavailable, isCheckoutMutating: unavailable, acquireCheckoutRead: unavailable,
+    acquireCheckoutMutation: unavailable, rollbackThread: unavailable, refreshThread: unavailable,
     dispose: idle, disconnect: idle, close: async () => undefined,
   }
-  const refuseMissing = <T extends object>(value: T): T => new Proxy(value, {
-    get: (target, property, receiver): unknown => Reflect.has(target, property) ? Reflect.get(target, property, receiver) : unavailable,
-  })
-  // Existing local-only integration points accept concrete classes; their supported inactive methods
-  // are enumerated above. All remaining methods synchronously refuse without touching local data.
   return {
-    agentControl: refuseMissing(control), agentHost: refuseMissing(host), threadRegistry: null,
+    agentControl: control, agentHost: host, threadRegistry: null,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
     hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined,
       // No local thread here has Files, Changes or Agents to read.
       threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), threadFileLink: async () => unavailable(), gitChanges: async () => unavailable(),
-      gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
+      hostFolders: async () => unavailable(), gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),
     // No worktrees are owned here, so the cleanup has nothing to sweep and every call does nothing.
     worktreeCleanup: { start: idle, settingsChanged: idle, dispose: idle, request: async () => undefined, close: async () => undefined } satisfies Pick<WorktreeCleanup, 'start' | 'settingsChanged' | 'dispose' | 'request' | 'close'>,
     close: async () => undefined,
-  } as unknown as Awaited<ReturnType<typeof createAgentRuntime>>
+  }
 }
 
 /** Refuse an explicit privacy change before saving settings if its local cleanup cannot run. */

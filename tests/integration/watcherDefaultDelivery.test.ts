@@ -70,7 +70,7 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     expect(await f.send('Synthetic default steer')).toMatchObject({ status: 'ok', delivery: 'steer' })
     expect(f.commands('steer', 'Synthetic default steer')).toBe(1)
     expect(f.commands('send', 'Synthetic default steer')).toBe(0)
-    expect(f.control.watcherRecord().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
+    expect(f.control.watcherRecords.copy().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
   })
 
   // Each case sends one steer: the fake provider never shows a steer, so a second send would wait on the first one's receipt.
@@ -92,7 +92,7 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     expect(steered).toMatchObject({ status: 'ok', delivery: 'steer' })
     expect(steered).not.toHaveProperty('note')
     expect(f.commands('steer', 'Synthetic unconfirmed steer')).toBe(1)
-    expect(f.control.watcherRecord().operations.find(item => item.action === 'send' && item.delivery === 'steer')).not.toHaveProperty('expectedTurnId')
+    expect(f.control.watcherRecords.copy().operations.find(item => item.action === 'send' && item.delivery === 'steer')).not.toHaveProperty('expectedTurnId')
   })
 
   it('steers a confirmed running turn on a named steer that names no turn, into the turn it reads as running', async () => {
@@ -100,7 +100,7 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     const turnId = await f.turn('running')
     expect(await f.send('Synthetic named confirmed steer', { delivery: 'steer' })).toMatchObject({ status: 'ok', delivery: 'steer' })
     expect(f.commands('steer', 'Synthetic named confirmed steer')).toBe(1)
-    expect(f.control.watcherRecord().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
+    expect(f.control.watcherRecords.copy().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
   })
 
   it('sends a named steer now to a thread whose turn is over, and says so', async () => {
@@ -126,10 +126,10 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     await f.turn('running')
     f.native().thread.requests = [{ id: 'synthetic-question', kind: 'question', text: 'Synthetic question', options: [] }]
     await f.refresh()
-    const operations = f.control.watcherRecord().operations.length
+    const operations = f.control.watcherRecords.copy().operations.length
     expect(await f.send('Synthetic blocked')).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
     expect(await f.send('Synthetic blocked', { delivery: 'steer' })).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
-    expect(f.control.watcherRecord().operations).toHaveLength(operations)
+    expect(f.control.watcherRecords.copy().operations).toHaveLength(operations)
     expect(f.commands('steer', 'Synthetic blocked') + f.commands('send', 'Synthetic blocked')).toBe(0)
     expect(f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
   })

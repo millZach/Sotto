@@ -50,7 +50,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     const at = '2026-10-14T00:00:00.000Z', requestId = randomUUID()
     // An unavailable retained master gives the real room participants, display proofs and receipts,
     // but cannot start an automatic model turn. Observation and held news remain real.
-    await control.updateWatcher(record => {
+    await control.watcherRecords.update(record => {
       record.current = { target: { hostId: control.hostId()!, threadId: 'generated-master' },
         projectId: workspace.workspaceSnapshot().projects[0]!.id, provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
       record.requests.push({ id: requestId, watcher: { hostId: control.hostId()!, threadId: 'generated-master' }, rootUserMessageId: 'generated-prompt',
@@ -82,8 +82,8 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
       return Reflect.apply(clone, globalThis, [value, options]) as Value
     }
     restoreClone = () => { globalThis.structuredClone = clone }
-    const originalRecord = control.watcherRecord.bind(control)
-    control.watcherRecord = () => { const cpu = process.cpuUsage(); const result = originalRecord(); counts.localRecordCopies++; counts.localRecordCpuUs += copyCpu(cpu); return result }
+    const originalRecord = control.watcherRecords.copy.bind(control.watcherRecords)
+    control.watcherRecords.copy = () => { const cpu = process.cpuUsage(); const result = originalRecord(); counts.localRecordCopies++; counts.localRecordCpuUs += copyCpu(cpu); return result }
     const originalState = watcher.state.bind(watcher), originalShell = control.shell.bind(control)
     let projecting = false
     let latestProjected: WatcherRoomState | undefined
@@ -118,7 +118,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     for (let round = 0; round < STREAMING_ROUNDS; round++) {
       await pause(400)
       const reply = `reply-${round}`
-      await control.updateWatcher(record => { for (const operation of record.operations) operation.messageId = `prompt-${round}` })
+      await control.watcherRecords.update(record => { for (const operation of record.operations) operation.messageId = `prompt-${round}` })
       for (const thread of streaming) {
         adapter.log.add(thread.id, { id: `prompt-${round}`, role: 'user', text: 'Generated prompt', createdAt: at })
         adapter.log.add(thread.id, { id: reply, role: 'assistant', text: 'First', createdAt: at }); thread.status = 'running'

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { clientAgentState, delegatingKey, hostEntityKey, mapHostReferences, projectClientAgentState, type DelegatingKeys } from '../../../src/shared/clientIdentity'
+import { clientAgentState, delegatingKey, delegatingThreadOfLink, hostEntityKey, mapHostReferences, projectClientAgentState, type DelegatingKeys } from '../../../src/shared/clientIdentity'
 import type { AgentState } from '../../../src/shared/agents'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { syntheticModelCatalog } from '../../fixtures/modelCatalog'
@@ -73,6 +73,17 @@ it('keys a caller as this computer\'s thread only when the host names this compu
   expect(delegatingKey(FORGE, 'relay:client-2:parent', { desktopHostId: DESKTOP, clientId: 'client-1' })).toBe(hostEntityKey(FORGE, 'relay:client-2:parent'))
   // A host this computer has no client ID for names none of its threads.
   expect(delegatingKey(FORGE, 'relay:client-1:parent', { desktopHostId: DESKTOP })).toBe(hostEntityKey(FORGE, 'relay:client-1:parent'))
+})
+
+it('names the thread a link names by its machine, and this computer\'s only for the client ID its host knows it by (#1217)', () => {
+  const FORGE = '44444444-4444-4444-8444-444444444444', DESKTOP = '55555555-5555-4555-8555-555555555555', desktop = { desktopHostId: DESKTOP, clientId: 'client-1' }
+  expect(delegatingThreadOfLink(FORGE, 'parent', desktop)).toEqual({ hostId: FORGE, id: 'parent' })
+  expect(delegatingThreadOfLink(FORGE, hostEntityKey(DESKTOP, 'parent'), {})).toEqual({ hostId: DESKTOP, id: 'parent' })
+  expect(delegatingThreadOfLink(FORGE, `relay:client-2:${hostEntityKey(DESKTOP, 'parent')}`, desktop)).toEqual({ hostId: DESKTOP, id: 'parent' })
+  expect(delegatingThreadOfLink(FORGE, 'relay:client-1:parent', desktop)).toEqual({ hostId: DESKTOP, id: 'parent' })
+  // Another desktop's thread of the same ID is not this computer's: the link names no machine here.
+  expect(delegatingThreadOfLink(FORGE, 'relay:client-2:parent', desktop)).toEqual({ id: 'parent' })
+  expect(delegatingThreadOfLink(FORGE, 'relay:client-1:parent', {})).toEqual({ id: 'parent' })
 })
 
 it('keys every delegation link by its own host in Stable, saved Owl links included, as before #1316', () => {

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
-import type { CodexAdapterEvent } from '../../src/main/agents/codex'
+import type { CodexAdapterEvent } from '../../src/main/agents/providers/codex/codex'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })

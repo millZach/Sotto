@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldRun, keptDays, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
+  MODELS_DRAWN, PROVIDER_SLOT, QUIET_ROOM, QUIET_RUN, SERIES_SLOTS, assignSlots, axisMarks, chartScale, chartStretches, foldLead, foldRun, keptDays, chooseSeries, measureFigure, remainder, seriesValues, splitPlan, sumFigures, totalPlan, wholeFigure,
   type ChartFigure, type SeriesCandidate,
 } from '../../../src/renderer/src/features/usage/usageChartSeries'
 import { activityRow, field, tokens } from '../../fixtures/renderer/usageReads'
@@ -166,6 +166,20 @@ describe('Usage chart series', () => {
     // Thirty days with the work in the last fifteen and more than a few busy days: every day keeps its share.
     const busy = Array.from({ length: 30 }, (_, at) => at >= 15 && ![18, 22, 23].includes(at))
     expect(chartStretches(busy, foldRun(30, false)).room).toBe(30)
+  })
+
+  it('folds the empty days before the first prompt into one quiet stretch, however busy the rest is', () => {
+    expect(foldLead(7)).toBe(0)
+    expect(foldLead(30)).toBe(QUIET_RUN)
+    // Sixteen empty days, then twelve busy days with two empty ones among them: only the start folds.
+    const busy = Array.from({ length: 30 }, (_, at) => at >= 16 && ![19, 24].includes(at))
+    const layout = chartStretches(busy, foldRun(30, false), foldLead(30))
+    expect(layout.stretches.filter(stretch => stretch.kind === 'quiet')).toEqual([{ kind: 'quiet', from: 0, to: 15 }])
+    expect(layout.room).toBe(14 + QUIET_ROOM)
+    expect(axisMarks(30, layout)).toContain(16)
+    // An empty start shorter than five days stays day by day, and so does a range with no work at all.
+    expect(chartStretches(Array.from({ length: 30 }, (_, at) => at >= 4), 0, foldLead(30)).room).toBe(30)
+    expect(chartStretches(Array.from({ length: 30 }, () => false), 0, foldLead(30)).room).toBe(30)
   })
 
   it('scales the chart to a round top with two or three gridlines at a round step', () => {

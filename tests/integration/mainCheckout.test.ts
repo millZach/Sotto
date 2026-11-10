@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { GitActions } from '../../src/main/agents/gitActions'
-import { GitStatusReader } from '../../src/main/agents/gitStatus'
+import { GitActions } from '../../src/main/agents/git/gitActions'
+import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
 import { MainCheckoutKeeper, type MainCheckoutHost } from '../../src/main/agents/mainCheckout'
 import { ownedGitRepository, runFixtureGit } from '../fixtures/gitRepository'
 

@@ -40,7 +40,7 @@ import { useSettleGaps, type HeldGap } from './settleGap'
 import { SettleToast } from './SettleToast'
 import { useWordCut } from './wordCut'
 import './workingThreadsLine.css'
-import { snoozeThreads, SnoozeUntil, useSnoozeMenu, useThreadSnoozes, wakeWords } from './threadSnooze'
+import { snoozeThread, SnoozeUntil, useSnoozeMenu, useThreadSnoozes, wakeWords } from './threadSnooze'
 
 export { useAddProject } from './addProject'
 
@@ -212,14 +212,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   const wakes = snoozedUntil === undefined ? '' : wakeWords(snoozedUntil)
   const snooze = canSnooze ? (): void => setSnoozeMenu('beside') : undefined
-  const setSnooze = (until: number | null): void => {
-    if (row.thread.snoozedUntil === undefined) snoozeThreads([id], until)
-    else {
-      // A user's choice replaces any legacy entry still waiting to migrate.
-      snoozeThreads([id], null)
-      void command({ type: 'snooze-thread', threadId: id, until: until === null ? null : new Date(until).toISOString() })
-    }
-  }
+  const setSnooze = (until: number | null): void => snoozeThread(row.thread, until, command)
   const wake = canSnooze && snoozedUntil !== undefined ? (): void => setSnooze(null) : undefined
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
@@ -234,16 +227,17 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // pick C, ADR-0135, November 5, 2026); its word stays in its description. A row out of reach, watched or snoozed still
   // has something to say on its second line, so it keeps two.
   const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined
-  // A one-line name that does not fit is cut at a word's end; the whole name stays its tooltip and its spoken name.
+  const inQueue = queued && row.state === 'needs'
+  // Every row's name is one line (Zach, November 7, 2026): one that does not fit is cut at a word's end, and the whole name
+  // stays its tooltip and its spoken name. The look names what sets the name's weight, so a change of weight measures again.
   const titleBox = useRef<HTMLSpanElement>(null)
-  const shownTitle = useWordCut(titleBox, title, stepsBack && !renaming ? (current ? 'current' : 'resting') : null)
+  const shownTitle = useWordCut(titleBox, title, renaming ? null : [resting ? 'resting' : 'live', current && 'current', inQueue && 'queued'].filter(Boolean).join(' '))
   if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>{swarm}</>
-  const inQueue = queued && row.state === 'needs'
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
     data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
@@ -256,7 +250,12 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       <StatusRing row={row} finished={finished} background={background} queued={inQueue} />
       {/* A double-click on the name renames, as F2 and the menu's Rename do. */}
       <span ref={titleBox} className="thread-nav__title" onDoubleClick={canRename ? () => setRenaming(true) : undefined}>{shownTitle}</span>
-      {snoozedUntil !== undefined
+      {/* A thread on screen in another pane says so where its time was, with the two-pane mark; the focused one keeps the
+          filled row (Zach's pick B of `layout` item 1, ADR-0182, November 7, 2026). */}
+      {open && !current
+        ? <span id={timeId} className="thread-nav__time thread-nav__beside" title={t`Open in another pane`}><Columns2 size={13} aria-hidden="true" />
+          <span className="tt-visually-hidden">{t`Open in another pane`}</span></span>
+        : snoozedUntil !== undefined
         ? <time id={timeId} className="thread-nav__time" dateTime={new Date(snoozedUntil).toISOString()} title={new Date(snoozedUntil).toLocaleString()}>
           {t({ message: `Until ${wakes}`, comment: '{wakes} is when a snoozed thread wakes, such as "Mon 9:00 am".' })}</time>
         : <RowTime row={row} live={liveClock} id={timeId} />}

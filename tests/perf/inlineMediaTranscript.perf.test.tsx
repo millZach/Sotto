@@ -1,6 +1,8 @@
 /**
  * What an agent's pictures cost a long thread (ADR-0170): the Threads page opened on a thread of 400 messages whose 200
- * turns each took a screenshot, against the same thread with no pictures. Synthetic, so it runs in CI on every pull
+ * turns each showed a screenshot through `sotto_media`, as tiles, against the same thread with no pictures, and against the
+ * same thread whose screenshots a tool took and its steps hold (pictures in steps, November 9, 2026), as small pictures at
+ * the end of each turn's Worked for line. Synthetic, so it runs in CI on every pull
  * request, where it holds the counts that do not wobble:
  *
  *   - a streamed chunk commits as often with pictures as without, and reads no picture;
@@ -50,6 +52,8 @@ const NEAR = 6
 const SCROLL_STEPS = 30
 const NOW = Date.parse('2026-10-31T12:00:00Z')
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
+/** What each turn holds: nothing, a shown picture, one with callouts, a shown video, or a tool's picture its step keeps. */
+type TurnMedia = boolean | 'videos' | 'callouts' | 'steps'
 
 /** The observer jsdom lacks. The test says which tiles are near; each change reaches the tile's own listener. */
 class DrivenObserver {
@@ -77,7 +81,7 @@ const CALLOUTS = [
   { n: 3, x: 0.49, y: 0.815, w: 0.51, h: 0.088, note: 'At 390 wide the Pay button runs off the screen.' },
 ]
 
-function thread(media: boolean | 'videos' | 'callouts', making = 0): AgentThread {
+function thread(media: TurnMedia, making = 0): AgentThread {
   const pictures = media !== false
   const messages: AgentMessage[] = []
   const activities: AgentActivity[] = []
@@ -85,8 +89,9 @@ function thread(media: boolean | 'videos' | 'callouts', making = 0): AgentThread
     const at = (offset: number) => new Date(NOW - (TURNS - index) * 120_000 + offset).toISOString()
     messages.push({ id: `u${index}`, role: 'user', text: `Check page ${index} and show me.`, createdAt: at(0) })
     messages.push({ id: `a${index}`, role: 'assistant', text: `Page ${index} looks right. The header holds and the footer is where it should be.`, createdAt: at(60_000) })
-    // The callouts' records are their own, so their tiles are read as the first pictures' were, not taken from the cache.
-    activities.push({ id: `${media === 'callouts' ? 'marked-' : ''}tool-${index}`, turnId: `u${index}`, sequence: index, afterMessageId: `u${index}`, kind: 'tool', status: 'completed',
+    // The callouts' records are their own, so their tiles are read as the first pictures' were, not taken from the cache. A
+    // picture stands as a tile only on a step the agent showed it in; a tool's own step keeps it in its line.
+    activities.push({ id: `${media === 'steps' || media === false ? '' : 'sotto-shown-'}${media === 'callouts' ? 'marked-' : ''}tool-${index}`, turnId: `u${index}`, sequence: index, afterMessageId: `u${index}`, kind: 'tool', status: 'completed',
       title: 'sotto_browser / screenshot', output: 'Took a screenshot.', startedAt: at(1_000), completedAt: at(2_000),
       ...media === 'videos' ? { media: [{ id: 'm0', digest: index.toString(16).padStart(64, '0'), kind: 'video' as const, mimeType: 'video/webm' as const,
         sizeBytes: 14_000_000, name: 'recording.webm', source: 'file' as const }] }
@@ -111,7 +116,7 @@ describe('inline media cost', () => {
 
   it('holds a streamed chunk, mount and scroll to their counts with 200 pictures', async () => {
     let commits = 0, committed = 0
-    const measure = async (pictures: boolean | 'videos' | 'callouts') => {
+    const measure = async (pictures: TurnMedia) => {
       const open = thread(pictures)
       let state = stateAround(host(open), open.id)
       const store = new ThreadDraftStore(vi.fn(async () => state))
@@ -129,8 +134,9 @@ describe('inline media cost', () => {
       }
 
       const rendered = render(view())
-      const tiles = (): HTMLButtonElement[] => [...rendered.container.querySelectorAll<HTMLButtonElement>('.thread-media .rich-attachment__frame')]
-      const holding = (): number => rendered.container.querySelectorAll('.thread-media img[src], .thread-media video[src]').length
+      const inSteps = pictures === 'steps'
+      const tiles = (): HTMLButtonElement[] => [...rendered.container.querySelectorAll<HTMLButtonElement>(inSteps ? '.step-pictures__thumb' : '.thread-media .rich-attachment__frame')]
+      const holding = (): number => rendered.container.querySelectorAll(inSteps ? '.step-pictures__thumb img[src]' : '.thread-media img[src], .thread-media video[src]').length
       const flush = async (): Promise<void> => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
 
       // Opening: the newest tiles are near, as a pane opened at its end shows them.
@@ -173,7 +179,7 @@ describe('inline media cost', () => {
       const scrollVideoLoads = threadVideoLoads() - loadsBeforeScroll
       const result = { tiles: all.length, mountMs: round(median(mounts), 2), chunkMs: round(median(samples), 2), chunkReactMs: round(chunkReact, 3),
         chunkCommits, chunkReads, mountReads, scrollSteps: steps.length, scrollStepMs: round(median(steps), 2), scrollReads, mostHeld,
-        mountVideoLoads, chunkVideoLoads, scrollVideoLoads }
+        mountVideoLoads, chunkVideoLoads, scrollVideoLoads, standing: rendered.container.querySelectorAll('.thread-media').length }
       rendered.unmount()
       return result
     }
@@ -181,9 +187,10 @@ describe('inline media cost', () => {
     const without = await measure(false)
     const withPictures = await measure(true)
     const withCallouts = await measure('callouts')
+    const inSteps = await measure('steps')
     const played = vi.spyOn(HTMLMediaElement.prototype, 'play')
     const withVideos = await measure('videos')
-    console.info(`inline media: ${JSON.stringify({ without, withPictures, withCallouts, withVideos })}`)
+    console.info(`inline media: ${JSON.stringify({ without, withPictures, withCallouts, withVideos, inSteps })}`)
     // A video never plays until it is pressed, holds its source only near the screen, and is read by its player, not as a picture.
     expect(played).not.toHaveBeenCalled()
     played.mockRestore()
@@ -217,7 +224,19 @@ describe('inline media cost', () => {
     expect(withCallouts.mountReads).toBe(NEAR)
     expect(withCallouts.scrollReads).toBe(withCallouts.scrollSteps)
     expect(withCallouts.mostHeld).toBeLessThanOrEqual(NEAR)
+    // A tool's pictures in its steps keep the same rules at the end of each line: none stands as a tile, a chunk commits as
+    // often and reads none, opening and scrolling read only the near ones, and the page holds no more than those.
+    expect(inSteps.tiles).toBeGreaterThan(NEAR)
+    expect(inSteps.standing).toBe(0)
+    expect(inSteps.chunkCommits).toBe(without.chunkCommits)
+    expect(inSteps.chunkReads).toBe(0)
+    expect(inSteps.mountReads).toBe(NEAR)
+    expect(inSteps.scrollReads).toBe(inSteps.scrollSteps)
+    expect(inSteps.mostHeld).toBeLessThanOrEqual(NEAR)
     if (process.env.SOTTO_PERF_ASSERT === '1') {
+      expect(inSteps.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
+      expect(inSteps.mountMs).toBeLessThan(without.mountMs * 1.5)
+      expect(inSteps.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
       expect(withPictures.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
       expect(withPictures.mountMs).toBeLessThan(without.mountMs * 1.5)
       expect(withPictures.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)

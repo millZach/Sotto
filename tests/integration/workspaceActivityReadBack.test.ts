@@ -16,6 +16,7 @@ import { CertifyingProviderHost } from '../fixtures/certifyingProviderHost'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { readsArrived, readsInFlight, storedIn } from '../fixtures/storeWriterEquivalence'
 import { builtStoreWorker } from '../fixtures/storeWorker'
+import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 /**
  * Opening a stored thread over the store worker as the build compiles it (#1457, step 3 of docs/plans/store-worker.md):
@@ -63,13 +64,18 @@ describe('a stored thread read back on the store worker', () => {
         activities: [record(`more-${index}`, 0)] })
     }
     provider.state.threads[0]!.activities = structuredClone(saved)
-    const first = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, null)
+    const first = new WorkspaceHost(provider, directory, { historyEnabled: history, watcherEnabled: false, heldProviders: heldProvidersOf({ muse: false }), streamingPublishCostEnabled: false, storeWorker: null })
     await first.initialize()
     await first.connect()
     first.disconnect(); await first.privacyChanged(); first.dispose()
     for (const thread of provider.state.threads) delete thread.activities
-    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined,
-      options.onMain ? null : options.timing ? { path: worker.path, timing: options.timing } : worker.path)
+    const host = new WorkspaceHost(provider, directory, {
+      historyEnabled: history,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: false,
+      storeWorker: options.onMain ? null : options.timing ? { path: worker.path, timing: options.timing } : worker.path,
+    })
     cleanup.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
     const told: { ids: readonly string[]; activities: string[] | undefined }[] = []
     provider.observeThreads = ids => {
@@ -315,7 +321,7 @@ describe('a stored thread read back on the store worker', () => {
       const f = await stored(saved, () => true, { provider, onMain })
       f.host.observeThreads([DOCS])
       const reads = onMain ? undefined : holdReads(f.store)
-      provider.state.threads[0]!.activities = [record('r0', 0), ...saved.slice(0, -1)]
+      provider.state.threads[0]!.activities = [...saved.slice(1), record(`r${MAX_AGENT_ACTIVITIES + 1}`, MAX_AGENT_ACTIVITIES)]
       provider.emitActivity()
       await f.host.refreshThread(THREAD)
       if (reads) {
@@ -329,9 +335,8 @@ describe('a stored thread read back on the store worker', () => {
     }
     const onMain = await run(true), onWorker = await run(false)
     expect(onWorker).toEqual(onMain)
-    // The read merged again: the oldest record the publication's merge let go came back, as it did on main.
-    expect(onMain).toHaveLength(MAX_AGENT_ACTIVITIES)
-    expect(onMain.at(-1)).toEqual(['r1', MAX_AGENT_ACTIVITIES + 1])
+    // The publication's merge took the new record and let the oldest go, and the read merged the same list again to the same.
+    expect(onMain).toEqual([...saved.slice(1).map(item => [item.id, item.sequence]), [`r${MAX_AGENT_ACTIVITIES + 1}`, MAX_AGENT_ACTIVITIES]])
   })
 
   // The switch cuts the list short after its first piece; the read lost with the worker is finished on main from this run's

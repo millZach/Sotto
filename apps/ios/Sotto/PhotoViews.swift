@@ -268,17 +268,22 @@ private extension Array {
 
 // MARK: The reply box's photos
 
-/// The photos waiting in a reply box, at their own shape, each with its own Remove button.
+/// The photos waiting in a reply box, at their own shape, then its videos as square tiles (ADR-0131, November 9 amendment),
+/// each with its own Remove button.
 struct DraftPhotoStrip: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
     var body: some View {
-        let photos = model.photos(box)
+        let photos = model.photos(box), videos = model.videos(box), locked = model.preparingSends.contains(box.id)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    DraftPhotoView(photo: photo, number: index + 1, count: photos.count,
-                                   locked: model.preparingSends.contains(box.id)) { model.removePhoto(photo.id, from: box) }
+                    DraftPhotoView(photo: photo, number: index + 1, count: photos.count, locked: locked) { model.removePhoto(photo.id, from: box) }
+                }
+                ForEach(videos) { file in
+                    if let video = file.video {
+                        DraftVideoTile(file: file, video: video, locked: locked) { model.removeFile(file.id, from: box) }
+                    }
                 }
             }.padding(.top, 2)
         }.frame(height: 92)
@@ -292,10 +297,12 @@ struct DraftAttachments: View {
     let box: PhotoBox
     var body: some View {
         let photos = model.photos(box), files = model.files(box), notice = model.photoNotices[box.id]
+        let videos = files.contains { $0.video != nil }, others = files.contains { $0.video == nil }
         if !photos.isEmpty || !files.isEmpty || notice != nil {
             VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty { DraftPhotoStrip(box: box) }
-                if !files.isEmpty { DraftFilePills(box: box) }
+                if !photos.isEmpty || videos { DraftPhotoStrip(box: box) }
+                if let line = model.videoLine(box) { DraftVideoLine(line: line) }
+                if others { DraftFilePills(box: box) }
                 if let notice {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
                         .paragraphDirection()
@@ -348,11 +355,177 @@ private struct DraftPhotoView: View {
     }
 }
 
+/// A video waiting in a reply box (ADR-0131, November 9 amendment, A · Tile): a square the photos' height with its first
+/// frame, its length on a badge at the bottom, and its own Remove button. While it arrives, uploads or waits to carry on,
+/// a ring over the frame shows how much has come or gone.
+private struct DraftVideoTile: View {
+    let file: DraftFile
+    let video: DraftVideo
+    let locked: Bool
+    let remove: () -> Void
+    @State private var removed = 0
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let poster = video.poster {
+                    Image(decorative: poster, scale: 1).resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        Rectangle().fill(Palette.raised)
+                        if !file.reading { Image(systemName: "film").font(.title2).foregroundStyle(Palette.muted) }
+                    }
+                }
+            }
+            .frame(width: 88, height: 88)
+            .overlay { progress }
+            .overlay(alignment: .bottomLeading) { if let duration = video.duration { VideoBadge(text: Videos.length(duration)) } }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement()
+            .accessibilityLabel(label)
+            .accessibilityValue(state)
+            Button {
+                removed += 1
+                remove()
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
+                    .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
+                    .frame(width: 44, height: 44, alignment: .topTrailing).padding(4).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).sensoryFeedback(.impact(flexibility: .soft), trigger: removed).offset(x: 4, y: -4).disabled(locked)
+            .accessibilityLabel("Remove \(file.name)")
+        }
+    }
+    /// How much has come from iCloud, or gone to the computer, from 0 to 1; nil while that isn't known yet.
+    private var share: Double? {
+        switch video.phase {
+        case .getting: return file.reading ? video.arriving : nil
+        case .uploading, .paused: return Double(video.bytesSent) / Double(max(1, file.sizeBytes))
+        case .ready: return nil
+        }
+    }
+    @ViewBuilder private var progress: some View {
+        if video.phase != .ready {
+            ZStack {
+                Rectangle().fill(Palette.canvas.opacity(0.55))
+                if let share {
+                    ZStack {
+                        ProgressRing(progress: share)
+                        Text(verbatim: Videos.percent(share)).font(.sotto(.caption, .bold)).foregroundStyle(Palette.ink).monospacedDigit()
+                    }
+                    .frame(width: 46, height: 46)
+                } else if file.reading {
+                    ProgressView()
+                }
+            }
+        }
+    }
+    private var label: String {
+        guard !file.reading else { return file.name }
+        let size = Files.size(file.sizeBytes)
+        if let duration = video.duration {
+            return String(localized: "Video \(file.name), \(Videos.length(duration)), \(size)",
+                          comment: "A video waiting in the reply box: its name, its length, such as 0:48, and its size, such as 84 MB")
+        }
+        return String(localized: "Video \(file.name), \(size)", comment: "A video: its name, then its length, such as 0:48, or its size, such as 84 MB")
+    }
+    private var state: String {
+        switch video.phase {
+        case .getting:
+            return String(localized: "file.getting-ready", defaultValue: "Getting it ready",
+                          comment: "Accessibility value: a file in the reply box is being read, as a photo is prepared. Said of a file, not a photo.")
+        case .uploading, .paused: return Videos.percent(share ?? 0)
+        case .ready:
+            return String(localized: "video.ready", defaultValue: "Ready",
+                          comment: "Accessibility value: a video in the reply box is on its computer and ready to send. Said of a video, not a photo.")
+        }
+    }
+}
+
+/// A video's length, or its size, on its tile's bottom edge, after a play symbol that says the tile is a video.
+private struct VideoBadge: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "play.fill").font(.system(size: 8, weight: .bold))
+            Text(verbatim: text).monospacedDigit()
+        }
+        .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.canvas)
+        .padding(.horizontal, 5).padding(.vertical, 1)
+        .background(Palette.ink.opacity(0.85), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(5)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A user message's videos, each a tile standing above its words (ADR-0131, November 9 amendment): its first frame while
+/// this iPhone still has it, a film symbol on a plain tile otherwise, and its length, or its size, on a badge. A press says
+/// where the video is; it doesn't play here. A thread's and Watcher's conversation draw them the same way.
+struct SentVideoTiles: View {
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    let ref: ThreadRef
+    let videos: [Attachment]
+    var body: some View {
+        ForEach(videos) { video in
+            let frame = unwatchedModel?.videoFrames.frame(forAttachment: video.id)
+            let badge = frame?.duration.map(Videos.length) ?? video.sizeBytes.flatMap { $0 > 0 ? Files.size($0) : nil }
+            Button { tell(where: video) } label: {
+                Group {
+                    if let poster = frame?.poster {
+                        Image(decorative: poster, scale: 1).resizable().scaledToFill()
+                    } else {
+                        ZStack {
+                            Rectangle().fill(Palette.raised)
+                            Image(systemName: "film").font(.title2).foregroundStyle(Palette.muted)
+                        }
+                    }
+                }
+                .frame(width: 150, height: 150)
+                .overlay(alignment: .bottomLeading) { if let badge { VideoBadge(text: badge) } }
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+            // Named for what a press does; its length, or its size, is its value.
+            .accessibilityLabel(String(localized: "Show where \(video.name) is kept",
+                                       comment: "The name of a sent video's tile in a thread: pressing it says where the video is kept. %@ is the video's file name, such as IMG_0412.MOV"))
+            .accessibilityValue(badge ?? "")
+        }
+    }
+    /// Where the video is: on its computer, in the thread's working folder, where the agent reads it.
+    private func tell(where video: Attachment) {
+        guard let model = unwatchedModel else { return }
+        let computer = model.name(ref.hostID), folder = Interface.isolated(".sotto/attachments")
+        model.feedback = String(localized: "This video is on \(computer), in the thread’s working folder under \(folder).",
+                                comment: "Said when a sent video is pressed. The first %@ is the computer's name; the second is a folder's path, .sotto/attachments, left as it is")
+    }
+}
+
+/// The one line beneath the strip for its videos: the one uploading, paused or arriving from iCloud, else the last one up.
+/// It is calm, in the muted colour, because nothing was lost even when an upload waits for its computer.
+private struct DraftVideoLine: View {
+    let line: VideoLine
+    var body: some View {
+        HStack(spacing: 0) {
+            if let name = line.name {
+                Text(verbatim: name).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: " · ").fixedSize()
+            }
+            Text(verbatim: line.rest).lineLimit(1).fixedSize()
+        }
+        .font(.sotto(.caption)).foregroundStyle(Palette.muted).monospacedDigit()
+        .padding(.horizontal, ComposerMetrics.wordsInset - ComposerMetrics.attachmentsInset)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(line.text)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
 // MARK: Choosing photos
 
-/// The reply box's + button, the first in its row: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
-/// choices stay in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
-/// Whatever goes into the box, from here, a paste or the share sheet, answers with the same tap.
+/// The reply box's + button, the first in its row: Photos and videos, Camera and Files (ADR-0131 and its November 9
+/// amendment). When the box can't take photos, or files, those choices stay in the menu, unavailable, with the reason beneath
+/// them; a video is a file, so the library offers videos alone where only files can go, and photos alone where only photos
+/// can. A thread's box and Watcher's work the same way. Whatever goes into the box, from here, a paste or the share sheet,
+/// answers with the same tap.
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
@@ -362,10 +535,15 @@ struct AttachPhotosButton: View {
     @State private var picked: [PhotosPickerItem] = []
     var body: some View {
         let reason = self.reason, fileReason = self.fileReason
+        // Videos go only where files can (a computer with `attach-any-file`); elsewhere the library offers photos, as before.
+        let takesVideos = fileReason == nil
         Menu {
             Section {
-                Button { choosing = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
-                    .disabled(reason != nil)
+                Button { choosing = true } label: {
+                    if takesVideos { Label("Photos and videos", systemImage: "photo.on.rectangle") }
+                    else { Label("Photo library", systemImage: "photo.on.rectangle") }
+                }
+                    .disabled(reason != nil && fileReason != nil)
                 Button { openCamera() } label: { Label("Camera", systemImage: "camera") }
                     .disabled(reason != nil || !CameraPicker.available)
                 if let reason { Text(reason) }
@@ -381,19 +559,26 @@ struct AttachPhotosButton: View {
                 .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
                 .composerDisc(Palette.fillSoft)
         }
-        .accessibilityLabel(String(localized: "Attach photos or files"))
-        .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
+        .accessibilityLabel(takesVideos ? String(localized: "Attach photos, videos or files") : String(localized: "Attach photos or files"))
+        .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? (takesVideos
+            ? String(localized: "Choose photos and videos from the library, take a photo with the camera, or choose files.")
+            : String(localized: "Choose photos from the library, take one with the camera, or choose files.")))
         .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
+        // The original files, so a video comes as it was recorded, never transcoded.
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
-                      selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
+                      selectionBehavior: .ordered, matching: libraryFilter, preferredItemEncoding: .current)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
-            let start = model.photos(box).count
-            model.attachPhotos(box, from: items.enumerated().map { offset, item in
+            let photoItems = items.filter { !PickedVideo.isVideo($0) }, videoItems = items.filter { PickedVideo.isVideo($0) }
+            let start = model.photos(box).count, videoStart = model.videos(box).count
+            model.attach(box, photos: photoItems.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
                     return data
                 }
+            }, files: [], videos: videoItems.enumerated().map { offset, item in
+                let number = videoStart + offset + 1
+                return PickedVideo.source(item, name: String(localized: "Video \(number)", comment: "Stands in for a video's name until it arrives from the photo library"))
             })
             picked = []
         }
@@ -412,6 +597,14 @@ struct AttachPhotosButton: View {
         .sensoryFeedback(.selection, trigger: model.attachHaptics[box.id] ?? 0)
     }
     private var watcher: Bool { if case .watcher = box { return true }; return false }
+    /// What the library shows: photos where the box takes photos, videos where it takes files, or both.
+    private var libraryFilter: PHPickerFilter {
+        switch (reason == nil, fileReason == nil) {
+        case (true, false): return .images
+        case (false, true): return .videos
+        default: return .any(of: [.images, .videos])
+        }
+    }
     /// Photos and files count toward the same eight.
     private var room: Int { PhotoLimits.count - model.photos(box).count - model.files(box).count }
     private var reason: String? {
@@ -431,11 +624,13 @@ struct AttachPhotosButton: View {
         }
         return room > 0 ? nil : FileWords.full
     }
+    /// A photo chosen in Files goes as a photo and a movie as a video (ADR-0131, November 9 amendment); the rest as files.
     private func pickedFiles(_ urls: [URL]) {
         let photos = urls.filter { PhotoLimits.mimeTypes.contains(Files.mimeType(forName: $0.lastPathComponent)) }
+        let videos = urls.filter { !photos.contains($0) && PickedFile.isVideo($0) }
         model.attach(box, photos: photos.map { url in
             PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
-        }, files: urls.filter { !photos.contains($0) }.map(PickedFile.source))
+        }, files: urls.filter { !photos.contains($0) && !videos.contains($0) }.map(PickedFile.source), videos: videos.map(PickedFile.videoSource))
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
@@ -443,6 +638,88 @@ struct AttachPhotosButton: View {
         case .denied, .restricted:
             model.photoNotices[box.id] = String(localized: "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera.")
         default: shooting = true
+        }
+    }
+}
+
+/// A video chosen in the photo library (ADR-0131, November 9 amendment): the original file, moved as it arrives into its
+/// protected temporary copy. How much has come from iCloud is reported in whole percents, and the load stops when the video
+/// leaves the box first.
+enum PickedVideo {
+    /// Whether a chosen item is a video. A Live Photo, which carries a movie with its picture, is a photo.
+    static func isVideo(_ item: PhotosPickerItem) -> Bool {
+        let types = item.supportedContentTypes
+        return types.contains { $0.conforms(to: .movie) } && !types.contains { $0.conforms(to: .image) }
+    }
+    static func source(_ item: PhotosPickerItem, name: String) -> VideoSource {
+        VideoSource(name: name, sizeBytes: nil) { arriving in try await load(item, arriving: arriving) }
+    }
+    private static func load(_ item: PhotosPickerItem, arriving: @escaping @Sendable (Double) -> Void) async throws -> VideoCopy {
+        let loading = Loading()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let progress = item.loadTransferable(type: ReceivedVideo.self) { result in
+                    loading.stop()
+                    switch result {
+                    case .success(let video?): continuation.resume(returning: video.copy)
+                    case .success(nil): continuation.resume(throwing: CocoaError(.fileReadUnknown))
+                    case .failure(let error): continuation.resume(throwing: error)
+                    }
+                }
+                loading.watch(progress, arriving)
+            }
+        } onCancel: {
+            loading.cancel()
+        }
+    }
+    /// One load's progress: watched while it lasts, and cancelled if the video leaves the box first.
+    private final class Loading: @unchecked Sendable {
+        private let lock = NSLock()
+        private var progress: Progress?
+        private var observation: NSKeyValueObservation?
+        private var stopped = false
+        private var cancelled = false
+        private var shown = -1
+        func watch(_ progress: Progress, _ arriving: @escaping @Sendable (Double) -> Void) {
+            lock.lock(); defer { lock.unlock() }
+            self.progress = progress
+            if cancelled { progress.cancel() }
+            guard !stopped, !cancelled else { return }
+            observation = progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+                self?.report(progress.fractionCompleted, to: arriving)
+            }
+        }
+        /// Each whole percent once, so the reply box redraws a hundred times at most.
+        private func report(_ fraction: Double, to arriving: @Sendable (Double) -> Void) {
+            let percent = Int(fraction * 100)
+            lock.lock()
+            let changed = percent != shown
+            shown = percent
+            lock.unlock()
+            if changed { arriving(fraction) }
+        }
+        func stop() {
+            lock.lock(); defer { lock.unlock() }
+            stopped = true
+            observation?.invalidate(); observation = nil
+        }
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            let progress = self.progress
+            lock.unlock()
+            progress?.cancel()
+        }
+    }
+    /// The video as the library hands it over, already moved into its temporary copy. The library's own file is gone once
+    /// this returns, so the copy is made here.
+    private struct ReceivedVideo: Transferable {
+        let copy: VideoCopy
+        static var transferRepresentation: some TransferRepresentation {
+            FileRepresentation(importedContentType: .movie) { received in
+                ReceivedVideo(copy: VideoCopy(url: try ReplyVideoCopies().take(received.file, move: !received.isOriginalFile),
+                                              name: received.file.lastPathComponent))
+            }
         }
     }
 }
@@ -473,24 +750,28 @@ struct CameraPicker: UIViewControllerRepresentable {
 
 // MARK: An agent's pictures
 
-/// The pictures a run of steps made or looked at (ADR-0170), as tiles two across under the run, whether it is open or
-/// folded: a press opens them full screen. Each tile reads its picture from the computer when it first shows, and the
-/// thumbnail is made here, as a sent photo's is.
+/// The pictures of a run of steps that stand in the thread (ADR-0170), as tiles two across under the run, whether it is
+/// open or folded: what the agent showed through `sotto_media` and an image the user asked it to make. A press opens them
+/// full screen. Every other picture sits small in its step's line (`StepPictureStrip`). Each tile reads its picture from
+/// the computer when it first shows, and the thumbnail is made here, as a sent photo's is.
 struct AgentPictures: View {
     let ref: ThreadRef
     let steps: [Activity]
     /// Who wrote the steps, the thread's provider: the viewer names a picture's callouts as theirs.
     var by: String? = nil
     let open: (OpenPhotos) -> Void
+    private var tiled: [Activity] { StepPictures.inThread(steps) }
     private var items: [OpenPhotos.Item] {
-        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
-            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step),
-                            callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
-        } }
+        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { AgentPictures.viewed(ref: ref, step: step, picture: $0, by: by) } }
+    }
+    /// One of a step's pictures as the viewer shows it: read by its handle, named by its step, with its callouts and size.
+    static func viewed(ref: ThreadRef, step: Activity, picture: Activity.Media, by: String?) -> OpenPhotos.Item {
+        OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: title(of: step),
+                        callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
     }
     /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
     private var gifs: Set<String> {
-        Set(steps.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
+        Set(tiled.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
     }
     /// A step's name: the computer's words, or this iPhone's for the step Sotto makes for a turn's written files.
     static func title(of step: Activity) -> String {
@@ -505,7 +786,7 @@ struct AgentPictures: View {
     }
     /// The videos the steps' turns wrote, each played in its own tile.
     private var videos: [WrittenVideo] {
-        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
+        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
     }
     var body: some View {
         let _ = BenchProbe.body("AgentPictures")
@@ -513,7 +794,7 @@ struct AgentPictures: View {
         let gifs = self.gifs
         let videos = self.videos
         // A step still making an image shows the owl at the easel in its picture's place.
-        let making = steps.filter(\.makingImage)
+        let making = tiled.filter(\.makingImage)
         if !items.isEmpty || !videos.isEmpty || !making.isEmpty {
             TwoAcross(tiles: items.count + videos.count + making.count) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
@@ -530,6 +811,116 @@ struct AgentPictures: View {
             }
             .padding(.vertical, Space.s2)
         }
+    }
+}
+
+/// An agent's pictures in its steps (ADR-0170, pictures in steps; Zach's pick A): the newest three of a line's pictures,
+/// small, at the line's end, with a count for the rest. A picture opens the viewer, where Mark up is, stepping through the
+/// pictures of the run around the line; a video's mark plays it in a tile under the line (`playing`).
+struct StepPictureStrip: View {
+    let ref: ThreadRef
+    /// The pictures and videos the line stands for, in the order their steps came.
+    let items: [StepPictures.Item]
+    /// The run around the line: the viewer steps through its pictures.
+    let run: [Activity]
+    var by: String? = nil
+    @Binding var playing: String?
+    let open: (OpenPhotos) -> Void
+    var body: some View {
+        let line = StepPictures.line(items)
+        // The count opens the first picture it stands for, or plays its first video when it stands for videos alone.
+        let first = line.hidden.first { $0.media.kind == "image" } ?? line.hidden.first
+        let opensPicture = first?.media.kind == "image"
+        HStack(spacing: 4) {
+            if let first {
+                Button { if opensPicture { show(first) } else { play(first) } } label: {
+                    Text(verbatim: "+" + line.hidden.count.formatted()).font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 5).frame(minWidth: 26, minHeight: 23)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Palette.hairline, lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(opensPicture
+                    ? Text("Open all pictures", comment: "The count before a step's newest pictures, which opens the viewer at the first of the rest.")
+                    : Text("Play the next video", comment: "The count before a step's newest pictures when it stands for videos alone; a tap plays the first under the line."))
+            }
+            ForEach(line.shown) { item in
+                if item.media.kind == "video" {
+                    Button { play(item) } label: {
+                        Image(systemName: "film").iconFont(11, weight: .semibold, relativeTo: .footnote).foregroundStyle(playing == item.id ? Palette.ink : Palette.muted)
+                            .frame(width: 34, height: 23).background(Palette.raised, in: RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(playing == item.id ? Palette.accent : Palette.hairline, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(playing == item.id
+                        ? Text("Close video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video playing under it; %@ names the step. A tap takes the video away.")
+                        : Text("Play video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video it wrote; %@ names the step. It plays under the line."))
+                    .accessibilityAddTraits(playing == item.id ? .isSelected : [])
+                } else {
+                    Button { show(item) } label: { StepPictureThumb(key: key(item)) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Open picture from \(AgentPictures.title(of: item.step))", comment: "A small picture at the end of a step's line; %@ names the step that made it."))
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+    private func key(_ item: StepPictures.Item) -> PhotoPreviews.Key {
+        PhotoPreviews.Key(ref: ref, messageID: item.step.id, attachmentID: item.media.id, activityID: item.step.id)
+    }
+    /// Plays a video under the line, or takes it away when it is the one playing.
+    private func play(_ item: StepPictures.Item) { playing = playing == item.id ? nil : item.id }
+    /// Opens the viewer at `item`, among the run's pictures, or the line's own when the run does not hold it.
+    private func show(_ item: StepPictures.Item?) {
+        guard let item else { return }
+        let around = StepPictures.inSteps(run)
+        let pictures = (around.contains { $0.id == item.id } ? around : items).filter { $0.media.kind == "image" }
+        guard let index = pictures.firstIndex(where: { $0.id == item.id }) else { return }
+        let viewed = pictures.map { AgentPictures.viewed(ref: ref, step: $0.step, picture: $0.media, by: by) }
+        open(OpenPhotos(ref: ref, id: "step-pictures-" + (run.first?.id ?? item.step.id), items: viewed, index: index))
+    }
+}
+
+/// The video a line's strip set playing, in a picture's tile under the line.
+struct StepPictureVideo: View {
+    let ref: ThreadRef
+    let items: [StepPictures.Item]
+    let playing: String?
+    var body: some View {
+        let videos = items.filter { $0.media.kind == "video" }
+        if let playing, let index = videos.firstIndex(where: { $0.id == playing }) {
+            // A tap on its mark was the ask, so it plays at once; another video's tile starts afresh.
+            AgentVideoTile(ref: ref, step: videos[index].step, video: videos[index].media, number: index + 1, count: videos.count, playsAtOnce: true)
+                .id(playing)
+                .frame(maxWidth: 260)
+                .padding(.vertical, Space.s1)
+        }
+    }
+}
+
+/// One of a line's pictures, small: its thumbnail is read when it shows and let go when it leaves, as a tile's is.
+private struct StepPictureThumb: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var previews: PhotoPreviews
+    let key: PhotoPreviews.Key
+    @State private var image: CGImage?
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .frame(width: 34, height: 23)
+            .overlay { if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() } }
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Palette.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+            .onAppear { previews.appeared(key) }
+            .onDisappear { previews.disappeared(key); image = nil }
+            .task(id: key) {
+                if image == nil { image = previews.cached(key) }
+                guard image == nil else { return }
+                let read = await previews.thumbnail(key, model: model)
+                guard !Task.isCancelled else { return }
+                image = read
+            }
     }
 }
 
@@ -654,13 +1045,15 @@ private struct GIFFrames: @unchecked Sendable {
 /// A video an agent wrote (ADR-0170, part 4), in a tile the size of a picture's. It is fetched from its computer only when
 /// it is tapped, plays only then, and pauses the moment it scrolls away. One larger than this iPhone fetches says it
 /// plays on the desktop.
-private struct AgentVideoTile: View {
+struct AgentVideoTile: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let step: Activity
     let video: Activity.Media
     let number: Int
     let count: Int
+    /// Opened by a tap on its mark in a step's line, it fetches and plays when it first shows.
+    var playsAtOnce = false
     @State private var player: AVPlayer?
     @State private var progress: Double?
     @State private var problem: Problem?
@@ -687,7 +1080,7 @@ private struct AgentVideoTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .onAppear { shown = true }
+            .onAppear { shown = true; if playsAtOnce, player == nil, progress == nil, problem == nil { start() } }
             // Scrolled away, it pauses at once; its fetch, if any, stops asking for parts.
             .onDisappear { shown = false; player?.pause() }
     }
