@@ -72,7 +72,9 @@ struct NewThreadSheet: View {
         }
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .foregroundStyle(Palette.ink)
-        .background { NewThreadBackground() }
+        // In Sotto's own sheet, held sideways on the Duo, the ground runs on up behind the grabber, where the sheet's own
+        // darker ground showed in a cap that ended in a seam across the sheet (the Duo design climb's round 6).
+        .background { NewThreadBackground().padding(.top, sheetClose == nil ? 0 : -DuoSheetLayer.grabber) }
         .environment(\.sottoOnSheet, true)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)

@@ -1668,7 +1668,9 @@ struct DuoSheetLayer: View {
     /// How tall a question sheet asks to be (`RequestSheetFit`); nil for a sheet that takes the page's height.
     @State private var fit: CGFloat?
     @State private var drag: CGFloat = 0
-    private let grabber: CGFloat = 16
+    /// The height of the grabber's strip over the sheet's content. A sheet that draws its own ground carries it up behind
+    /// the grabber by this much (`NewThreadSheet`).
+    static let grabber: CGFloat = 16
     var body: some View {
         ZStack {
             if let shown = host.shown {
@@ -1685,7 +1687,7 @@ struct DuoSheetLayer: View {
                     let bottom = min(page.maxY, proxy.size.height) - Space.s2
                     let top = page.minY + Space.s2
                     let room = max(bottom - top, 160)
-                    let height = fit.map { min($0 + grabber, room) } ?? room
+                    let height = fit.map { min($0 + Self.grabber, room) } ?? room
                     sheet(shown)
                         .frame(width: max(page.width - Space.s2 * 2, 0), height: height)
                         .position(x: page.midX, y: bottom - height / 2 + max(drag, 0))
@@ -1701,7 +1703,7 @@ struct DuoSheetLayer: View {
         let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
         return VStack(spacing: 0) {
             Capsule().fill(Palette.muted.opacity(0.5)).frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity, minHeight: grabber)
+                .frame(maxWidth: .infinity, minHeight: Self.grabber)
                 .contentShape(Rectangle())
                 .gesture(DragGesture()
                     .onChanged { drag = $0.translation.height }
@@ -1710,6 +1712,8 @@ struct DuoSheetLayer: View {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
                     })
                 .accessibilityHidden(true)
+                // Over a ground the content carries up behind it.
+                .zIndex(1)
             shown.content
                 .environment(\.sheetClose, shown.close)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
