@@ -41,8 +41,13 @@ struct PullRequestSheet: View {
     @State private var viewport: CGFloat = 0
     /// Folded, whether the page has scrolled from its top, which brings in the fade under the chips' line.
     @State private var scrolled = false
-    /// Folded, how far under the chips' line a jump lands a part's top, so its heading and count clear the clock.
-    private static let foldedLanding: CGFloat = Space.s6 + Space.s1
+    /// Folded, how far under the chips' line a jump lands a part's top, so its heading and count clear the clock. The
+    /// chips' line stands `foldedTrim` higher than it did, so the landing reaches that much further to stay as clear.
+    private static let foldedLanding: CGFloat = Space.s6 + Space.s1 + foldedTrim
+    /// Folded, how much closer the state and actions row and the jump chips' row stand above, between and below: 8, 4
+    /// and 4 points, so the title starts 16 points higher, where the two rows took the top fifth of the screen. The
+    /// chips keep their full 44 points (Zach's round 8 pick A, November 10, 2026).
+    private static let foldedTrim: CGFloat = Space.s2 + Space.s1 + Space.s1
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -106,7 +111,7 @@ struct PullRequestSheet: View {
                 .accessibilityIdentifier("pull-request-done")
         }
         .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s4)
+        .padding(.top, isFolded ? Space.s2 : Space.s4)
     }
 
     private func jumpBar(_ detail: PullRequestDetail, proxy: ScrollViewProxy) -> some View {
@@ -130,7 +135,7 @@ struct PullRequestSheet: View {
                 }
             }
             .padding(.horizontal, Space.gutter)
-            .padding(.vertical, Space.s2)
+            .padding(.vertical, isFolded ? Space.s1 : Space.s2)
         }
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
     }
