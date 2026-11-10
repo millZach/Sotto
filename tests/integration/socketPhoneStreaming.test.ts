@@ -16,7 +16,7 @@ const cleanups: (() => unknown)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
 /** What the iPhone's hello accepts (`WatcherWire.hello` in apps/ios). */
-const PHONE_ACCEPTS = ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'watcher-phone', 'watcher-phone-stop-all']
+const PHONE_ACCEPTS = ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'watcher-phone', 'watcher-phone-stop-all']
 const THREADS = ['workshop', 'docs']
 const STREAM_MS = 1_200
 

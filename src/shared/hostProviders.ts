@@ -13,7 +13,8 @@ import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestS
  * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
  * brief. OpenCode joined in #1107 and Cursor with ADR-0128; a host sends either one's provider row, models and threads only
  * to a client whose hello accepts its feature, `provider-opencode` or `provider-cursor` (`PROVIDER_HOST_FEATURES` in
- * `hostProtocol.ts`).
+ * `hostProtocol.ts`). DeepSeek is not one: its models come from this computer's own servers, which a host does
+ * not keep yet (ADR-0138), so a host holds it.
  */
 export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'] as const satisfies readonly ProviderId[]
 export type HostProviderId = typeof HOST_PROVIDERS[number]
@@ -21,9 +22,9 @@ export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
 /**
  * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
  * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
- * threads, so a desktop or phone that does not know the provider never reads it there. Every provider is a host provider
- * since #1107, so this holds only what the Owl answers hold; a provider added to Sotto before hosts take it is held here
- * until it joins `HOST_PROVIDERS`, and is then sent only to peers that list its host feature.
+ * threads, so a desktop or phone that does not know the provider never reads it there. DeepSeek is the one
+ * provider hosts do not take yet (ADR-0138); a provider added to Sotto before hosts take it is held here until it joins
+ * `HOST_PROVIDERS`, and is then sent only to peers that list its host feature.
  */
 export function heldOnHost(held: HeldProviders): HeldProviders {
   const hosted: readonly ProviderId[] = HOST_PROVIDERS
