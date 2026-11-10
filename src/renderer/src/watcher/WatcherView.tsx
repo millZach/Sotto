@@ -510,7 +510,7 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
     key: owlKey(row.target), title: row.title, threadId: idOf(row.target) ?? null, mood: moodOf(row),
     // For the living night scene (ADR-0199): its owl winces after a failed turn, shows what it waits on the user for,
     // and is called to by Watcher's owl when Watcher sends it a message.
-    failed: failedOf(row), asks: asksOf(row), told: toldOf(row),
+    failed: failedOf(row), asks: asksOf(row), told: toldOf(row), settled: row.settled,
   })), [room, idOf]))
 }
 
