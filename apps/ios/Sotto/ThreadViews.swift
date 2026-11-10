@@ -439,6 +439,8 @@ struct ThreadMenu: View {
     @State private var showingCard = false
     /// Whether the rail stands on the left, as Settings can put it sideways, so the card opens toward the page.
     @State private var railOnLeft = false
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         let chips = GitChips(model.thread(ref)?.worktree)
         Group {
@@ -457,8 +459,10 @@ struct ThreadMenu: View {
                     // read as a smudge, and the thread's reply box steps away while it is open, as it does beside a sheet
                     // (Zach's pick A, November 9, 2026, round 4). Its fill is the overlay surface, a step past a card's,
                     // so its edge reads against the words it covers rather than the page running into it (his round 6
-                    // pick A, November 10, 2026).
+                    // pick A, November 10, 2026). A 1-point hairline and a soft shadow give it an edge against the
+                    // running text it cuts, with the page under it still undimmed (his round 8 pick A, November 10, 2026).
                     railCard(chips).presentationCompactAdaptation(.popover)
+                        .background { PopoverEdge(ink: theme.rgb(.ink), dark: scheme == .dark).accessibilityHidden(true) }
                         .presentationBackground(Palette.overlay)
                         .overThread()
                 }
@@ -624,6 +628,70 @@ struct ThreadMenu: View {
 
     private func caption(_ pullRequest: GitChips.PullRequest) -> String {
         String(localized: "#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
+    }
+}
+
+/// The ••• card's edge: a 1-point hairline round the card and a soft shadow under it. iOS draws a popover's frame itself,
+/// so this reaches the views it drew from inside the card: the shadow goes on the popover as a whole, so it follows the
+/// arrow too, and the hairline on the rounded view that clips the card, so it follows the card's corners. Where no such
+/// view is found the hairline goes on the card's own view at a sheet card's corner.
+private struct PopoverEdge: UIViewRepresentable {
+    /// The theme's text colour, which the hairline is a wash of.
+    let ink: ThemeRGB
+    let dark: Bool
+    func makeUIView(context: Context) -> EdgeView { EdgeView(frame: .zero) }
+    func updateUIView(_ view: EdgeView, context: Context) {
+        view.hairline = ink.uiColor(dark ? 0.17 : 0.14).cgColor
+        view.shadow = (opacity: dark ? 0.55 : 0.16, radius: dark ? 16 : 15)
+        view.apply()
+    }
+    final class EdgeView: UIView {
+        var hairline: CGColor?
+        var shadow: (opacity: Float, radius: CGFloat) = (0, 0)
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+        }
+        required init?(coder: NSCoder) { fatalError("PopoverEdge is made in code") }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            apply()
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            apply()
+        }
+        func apply() {
+            guard window != nil, let presented = presentedController, let content = presented.view,
+                  let container = presented.presentationController?.containerView,
+                  let popover = container.subviews.first(where: { isDescendant(of: $0) }) else { return }
+            popover.clipsToBounds = false
+            popover.layer.shadowColor = UIColor.black.cgColor
+            popover.layer.shadowOpacity = shadow.opacity
+            popover.layer.shadowRadius = shadow.radius
+            popover.layer.shadowOffset = CGSize(width: 0, height: 10)
+            var rounded: UIView?
+            var view: UIView? = content
+            while let step = view, step !== container {
+                if step.layer.cornerRadius > 0 { rounded = step; break }
+                view = step.superview
+            }
+            let edge = rounded ?? content
+            if rounded == nil {
+                edge.layer.cornerRadius = Radius.lg
+                edge.layer.cornerCurve = .continuous
+            }
+            edge.layer.borderWidth = 1
+            edge.layer.borderColor = hairline
+        }
+        /// The controller iOS presented as the popover: the topmost parent of the controller this view is in.
+        private var presentedController: UIViewController? {
+            var responder: UIResponder? = self
+            while let next = responder, !(next is UIViewController) { responder = next.next }
+            var controller = responder as? UIViewController
+            while let parent = controller?.parent { controller = parent }
+            return controller
+        }
     }
 }
 
