@@ -98,3 +98,21 @@
   :root:not([data-reduced-motion='on']) :is(.thread-chip-menu__list, .model-picker__dialog) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
 }
 @keyframes thread-chip-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* A started thread's effort its provider keeps (FixedEffortChip, #228): a dashed edge and a lock, opening nothing, with
+   its reason in a tip above it while the pointer rests there or the keyboard is on it. */
+.effort-fixed { position: relative; }
+.effort-fixed .effort-fixed__chip, .effort-fixed .effort-fixed__chip:hover:not(:disabled) { border: 1px dashed var(--tt-field-border); background-image: none; color: var(--tt-text-muted); cursor: default; }
+.split-chip-effort__trigger.effort-fixed__chip { padding-inline-start: 7px; }
+.effort-fixed__tip {
+  position: absolute; bottom: calc(100% + 8px); inset-inline-start: 0; z-index: 6; width: max-content; max-width: min(280px, calc(100vw - 32px));
+  padding: 8px 10px; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated);
+  box-shadow: 0 8px 24px var(--tt-shadow-color); color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 1.4; white-space: normal;
+  visibility: hidden; opacity: 0; pointer-events: none;
+}
+/* In the quiet pill the effort sits at the end, so its tip opens toward the start. */
+.split-chip-effort.effort-fixed .effort-fixed__tip { inset-inline: auto 0; }
+.effort-fixed__tip[data-shown] { visibility: visible; opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .effort-fixed__tip { transform: translateY(3px); transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms; }
+  :root:not([data-reduced-motion='on']) .effort-fixed__tip[data-shown] { transform: none; transition-delay: 0s; }
+}

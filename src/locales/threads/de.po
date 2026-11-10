@@ -559,6 +559,11 @@ msgstr ""
 msgid "{label} source"
 msgstr ""
 
+#. A reasoning effort chip that cannot be changed: the setting's name, then the level it stays on, such as High.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{label}, {word}"
+msgstr ""
+
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
@@ -984,6 +989,11 @@ msgstr ""
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "{provider} keeps its own default until it confirms."
+msgstr ""
+
+#. Why a started thread's reasoning effort chip opens nothing. {provider} is a provider's name, such as Grok Build.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{provider} keeps the effort a thread started on. To use another level, start a new thread."
 msgstr ""
 
 #. {provider} is a provider, such as Claude Code; {from} and {to} are model names, such as Opus 5.5.
@@ -6487,6 +6497,7 @@ msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/FixedEffortChip.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -8648,6 +8659,7 @@ msgstr ""
 msgid "the provider"
 msgstr ""
 
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.

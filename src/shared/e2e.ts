@@ -64,6 +64,8 @@ export const e2eScenarioSchema = z.enum([
   'composer-speed',
   /** Climb's scripted provider reports exact turn identities through setup, judging and builder replies. */
   'council-climb',
+  /** The test model is Grok's, and Grok keeps a started thread's model and effort, so its effort chip is fixed (#228). */
+  'grok-fixed-effort',
 ])
 
 export const e2eSnapshotSchema = z.object({

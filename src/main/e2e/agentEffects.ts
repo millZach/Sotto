@@ -47,6 +47,11 @@ export class E2EAgentHost implements AgentHost {
         ...(scenario === 'composer-speed' ? { speeds: [{ id: 'fast', name: 'Fast', description: 'Faster output at a higher price.' }] } : {}) }))
       for (const thread of this.state.threads) thread.providerId = 'claude'
     }
+    if (scenario === 'grok-fixed-effort') {
+      this.state.capabilities.configureThreadModel = false
+      this.state.models = this.state.models.map(model => ({ ...model, providerId: 'grok', provider: 'Grok Build', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'], defaultReasoningEffort: 'high' }))
+      for (const thread of this.state.threads) Object.assign(thread, { providerId: 'grok', reasoningEffort: 'high', nativeSessionStarted: true })
+    }
     if (scenario === 'ultracode') this.state.models = this.state.models.map(model => ({ ...model, providerId: 'claude', reasoningEfforts: withUltracode(model.reasoningEfforts ?? []) }))
     if (scenario === 'design-threads' || scenario === 'design-threads-empty' || scenario === 'phase3-workspace') {
       const fixture = designThreadsFixture()
