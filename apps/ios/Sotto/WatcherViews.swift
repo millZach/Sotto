@@ -746,10 +746,14 @@ private struct WatcherConversationPane: View {
         box.followRequests += 1
         let request = box.followRequests
         let still = reduceMotion
+        // On the Duo folded, a card waiting on the user and the working line under it end above the box whenever they fit
+        // whole, even with less than `slack` of the newest words left showing above them (`WatcherReaderPlace.followAim`).
+        let folded: Bool = { if case .folded = duo { return true } else { return false } }()
         // Decided from where everything sits when it scrolls, so each look aims afresh. Before the box has been measured,
         // the page's end goes to the box.
         func aim() -> (target: String, anchor: UnitPoint) {
-            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top, dockTop: box.dockTop) else {
+            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top,
+                                                           dockTop: box.dockTop, wordsShown: folded ? 0 : WatcherReaderPlace.slack) else {
                 return (Self.end, .bottom)
             }
             return (found.mark == .newest ? Self.newestEnd : Self.end, UnitPoint(x: 0.5, y: found.y))
