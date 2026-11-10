@@ -45,6 +45,16 @@ after packages are present, not `pm repair` itself.
   readiness and rescan invocation, both helper failures, and the missing-package
   error with a shell-quoted repair command. No repair runs automatically and
   private diagnostics are not exposed.
+- `npm run i18n:extract`: completed; all changed Settings catalogs are included.
+- `fnm exec --using=v24.22.1 npx vitest run tests/unit/shared/interfaceCatalogs.test.ts`:
+  4 passed.
+
+The API-provider wording was checked against `ownServerAddress`, the keyed add
+in `OwnModelServers`, `hermesServers` and `hermesConfig`. Public HTTPS addresses
+are accepted, the key goes to Hermes, and its config keeps the address with
+`api_mode: chat_completions` and `key_env`. The existing Hermes unit test covers
+a keyed public HTTPS address. No API service was contacted; this is a wording
+change to an existing capability.
 
 ## Still owed
 

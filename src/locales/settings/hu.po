@@ -2799,7 +2799,7 @@ msgid "From your SSH configuration"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Full access on this Mac. Uses your own model servers, keyed ones included. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgid "Full access on this Mac. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
