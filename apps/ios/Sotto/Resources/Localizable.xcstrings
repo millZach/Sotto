@@ -136183,198 +136183,6 @@
         }
       }
     },
-    "Upright, they stand down the right edge." : {
-      "comment" : "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "في الوضع الرأسي، تقف على طول الحافة اليمنى."
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "খাড়া অবস্থায় এগুলো ডান প্রান্ত বরাবর থাকে।"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Na výšku stojí podél pravého okraje."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lodret står de langs højre kant."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hochkant stehen sie am rechten Rand."
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Σε κατακόρυφη θέση, βρίσκονται στη δεξιά άκρη."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Upright, they stand down the right edge."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En vertical, quedan en el borde derecho."
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En vertical, quedan en el borde derecho."
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En vertical, quedan en el borde derecho."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pystyasennossa ne ovat oikeassa reunassa."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "À la verticale, ils se placent le long du bord droit."
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "सीधा पकड़ने पर ये दाएँ किनारे पर रहते हैं।"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Állítva a jobb szélen állnak."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In verticale, stanno lungo il bordo destro."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "縦向きでは右端に並びます。"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "उभे धरल्यावर ते उजव्या कडेला असतात."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stående står de langs høyre kant."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechtop staan ze langs de rechterrand."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "W pionie stoją wzdłuż prawej krawędzi."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Na vertical, ficam na borda direita."
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Na vertical, ficam junto ao rebordo direito."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "În poziție verticală, stau de-a lungul marginii din dreapta."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Upprätt står de längs högerkanten."
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "நேராகப் பிடிக்கும்போது அவை வலது ஓரத்தில் இருக்கும்."
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "నిలువుగా పట్టుకున్నప్పుడు అవి కుడి అంచు వెంట ఉంటాయి."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dik tutulduğunda sağ kenar boyunca durur."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Вертикально вони стоять уздовж правого краю."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "سیدھا پکڑنے پر یہ دائیں کنارے پر رہتے ہیں۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "竖握时，它们位于右侧边缘。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "直向握持時，它們位於右側邊緣。"
-          }
-        }
-      }
-    },
     "Use the computer’s choice" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -145444,6 +145252,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要在哪裡執行？"
+          }
+        }
+      }
+    },
+    "Which edge the tabs stand on. Upright, they always stand on the right." : {
+      "comment" : "Under the iPhone Duo's sideways tabs setting: it chooses which edge the tabs stand on when the Duo is unfolded and held sideways; held upright, they always stand down the right edge.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحافة التي تقف عليها علامات التبويب. في الوضع الرأسي، تقف دائمًا على اليمين."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ট্যাবগুলো কোন প্রান্তে থাকবে। খাড়া অবস্থায় এগুলো সবসময় ডানদিকে থাকে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na kterém okraji stojí karty. Na výšku stojí vždy vpravo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hvilken kant fanerne står ved. Lodret står de altid til højre."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An welchem Rand die Tabs stehen. Hochkant stehen sie immer rechts."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σε ποια άκρη βρίσκονται οι καρτέλες. Σε κατακόρυφη θέση, βρίσκονται πάντα δεξιά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which edge the tabs stand on. Upright, they always stand on the right."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En qué borde van las pestañas. En vertical, siempre van a la derecha."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En qué borde van las pestañas. En vertical, siempre van a la derecha."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En qué borde van las pestañas. En vertical, siempre van a la derecha."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kummassa reunassa välilehdet ovat. Pystyasennossa ne ovat aina oikealla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le bord où se placent les onglets. À la verticale, ils sont toujours à droite."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "टैब किस किनारे पर रहें। सीधा पकड़ने पर ये हमेशा दाईं ओर रहते हैं।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melyik szélen állnak a lapok. Állítva mindig a jobb szélen állnak."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il bordo su cui stanno le schede. In verticale, stanno sempre a destra."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブを並べる端です。縦向きでは常に右端に並びます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "टॅब कोणत्या कडेला असतील. उभे धरल्यावर ते नेहमी उजवीकडे असतात."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hvilken kant fanene står ved. Stående står de alltid til høyre."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan welke rand de tabbladen staan. Rechtop staan ze altijd rechts."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przy której krawędzi stoją karty. W pionie zawsze stoją po prawej."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Em qual borda as abas ficam. Na vertical, ficam sempre à direita."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Em que rebordo ficam os separadores. Na vertical, ficam sempre à direita."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marginea pe care stau filele. În poziție verticală, stau mereu în dreapta."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vilken kant flikarna står vid. Upprätt står de alltid till höger."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "தாவல்கள் எந்த ஓரத்தில் இருக்கும். நேராகப் பிடிக்கும்போது அவை எப்போதும் வலதுபுறம் இருக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ట్యాబ్‌లు ఏ అంచున ఉండాలి. నిలువుగా పట్టుకున్నప్పుడు అవి ఎల్లప్పుడూ కుడివైపు ఉంటాయి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sekmelerin hangi kenarda duracağı. Dik tutulduğunda her zaman sağda durur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Біля якого краю стоять вкладки. Вертикально вони завжди стоять праворуч."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ٹیبز کس کنارے پر رہیں۔ سیدھا پکڑنے پر یہ ہمیشہ دائیں طرف رہتے ہیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签所在的边缘。竖握时，它们总在右侧。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標籤所在的邊緣。直向握持時，它們總在右側。"
           }
         }
       }

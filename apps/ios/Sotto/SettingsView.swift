@@ -344,12 +344,14 @@ private struct DensityPanel: View {
     }
 }
 
-/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026).
+/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026). Its line says what it
+/// chooses before what upright does, where "Upright, they stand down the right edge." alone under a heading about
+/// sideways read as a contradiction (the Duo design climb's round 6).
 private struct DuoTabsPanel: View {
     @AppStorage(PhonePreferenceKey.duoTabsSide) private var side = DuoTabsSide.right.rawValue
     var body: some View {
         let current = DuoTabsSide(rawValue: side) ?? .right
-        LookPanel(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil, hint: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen.")) {
+        LookPanel(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil, hint: String(localized: "Which edge the tabs stand on. Upright, they always stand on the right.", comment: "Under the iPhone Duo's sideways tabs setting: it chooses which edge the tabs stand on when the Duo is unfolded and held sideways; held upright, they always stand down the right edge.")) {
             Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
                       choices: DuoTabsSide.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
