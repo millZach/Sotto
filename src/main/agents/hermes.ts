@@ -441,7 +441,7 @@ export class HermesAcpHost implements ProviderHost {
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
       const models = hermesCatalog(this.servers)
-      if (!models.length) throw new ProviderUnavailable('signed-out', 'Hermes runs your own model servers, and none it can run is saved yet. Add one under Your own model servers, then connect again. Your threads are kept.', version)
+      if (!models.length) throw new ProviderUnavailable('signed-out', 'Hermes has no models it can run yet. Add a model server, or an API provider’s OpenAI-compatible address and key, under Your own model servers. Then connect again. Your threads are kept.', version)
       this.executable = executable
       await this.writePatch()
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
