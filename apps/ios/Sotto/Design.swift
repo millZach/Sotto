@@ -1012,15 +1012,23 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.duoLayout) private var duo
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
             content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)), in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
-                .background { shape.fill(theme.tinted(.canvas, with: .ink, scheme == .dark ? 0.08 : 0.055)) }
+                .background { shape.fill(theme.tinted(.canvas, with: .ink, inkOver)) }
                 .softShadow(shape, color: Color.black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 9, y: 4)
         }
+    }
+    /// How much of the ink is over the room. On the Duo in dark it is a step more, so the box stands off a table or card
+    /// running under it, where it had almost the table's fill; the conversation still runs under it, with no fade or
+    /// hairline (Zach's round 7 pick B, November 10, 2026).
+    private var inkOver: Double {
+        guard scheme == .dark else { return 0.055 }
+        return duo != .none ? 0.13 : 0.08
     }
 }
 
