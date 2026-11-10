@@ -495,7 +495,9 @@ struct ThreadMenu: View {
                 fact("laptopcomputer") { Text(verbatim: place) }
                 if let branch = chips.branch { fact("arrow.triangle.branch") { Text(verbatim: Self.breaksAtSlashes(branch)) } }
                 if let changes = chips.changes {
-                    fact("plus.forwardslash.minus") {
+                    // Its plus and minus are small and thin beside the other marks, so it is drawn a step larger and
+                    // heavier to read as strongly as they do (the Duo design climb's round 6).
+                    fact("plus.forwardslash.minus", size: 14, weight: .bold) {
                         HStack(spacing: Space.s1) {
                             Text(verbatim: "+\(changes.insertions)").foregroundStyle(Palette.accentText)
                             Text(verbatim: "−\(changes.deletions)").foregroundStyle(Palette.dangerText)
@@ -530,9 +532,10 @@ struct ThreadMenu: View {
         branch.replacingOccurrences(of: "/", with: "/\u{200B}").replacingOccurrences(of: "-", with: "-\u{2060}")
     }
 
-    private func fact<Content: View>(_ icon: String, @ViewBuilder words: () -> Content) -> some View {
+    private func fact<Content: View>(_ icon: String, size: CGFloat = 12, weight: Font.Weight = .medium,
+                                     @ViewBuilder words: () -> Content) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-            Image(systemName: icon).iconFont(12, weight: .medium).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
+            Image(systemName: icon).iconFont(size, weight: weight).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
             words().font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
