@@ -251,8 +251,11 @@ struct ThreadStatePill: View {
             if vertical {
                 VStack(spacing: 2) {
                     light
-                    // One word stays on one line, shrinking rather than breaking, in every language.
-                    Text(railWord).lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                    // Every state word stays on one line, Needs you too, a little tighter and shrinking rather than
+                    // breaking, with room either side inside the tile (the Duo design climb's round 6). Only Can't reach
+                    // it, a phrase, may take two lines.
+                    Text(railWord).tracking(-0.2).lineLimit(reachable ? 1 : 2).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                        .padding(.horizontal, Space.s1)
                     // The rail shows how long it has been at it folded too, as it does unfolded (Zach's pick A,
                     // November 9, 2026), in minutes, "12m", where "12m 14s" filled the tile to its edges (Zach's pick B,
                     // round 4). VoiceOver reads the state alone, as before.
