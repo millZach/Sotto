@@ -831,7 +831,7 @@ private struct Conversation: View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
-                        opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
+                        opensFiles: model.opensSentFiles(ref.hostID), showsVideos: model.stagesVideos(ref.hostID)) { viewing = $0 }.equatable()
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
@@ -1265,11 +1265,15 @@ private struct MessageView: View, Equatable {
     let ref: ThreadRef
     /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
     let opensFiles: Bool
+    /// Whether its computer takes videos (`video-staging`, with `attach-any-file`), so sent videos are tiles; elsewhere a
+    /// sent video is the file it was before.
+    var showsVideos = false
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
+            && a.showsVideos == b.showsVideos
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")
@@ -1292,8 +1296,8 @@ private struct MessageView: View, Equatable {
     private var userMessage: some View {
         let attachments = message.attachments ?? []
         let photos = attachments.filter(\.hasPreview)
-        let videos = attachments.filter { !$0.hasPreview && Videos.isVideo($0) }
-        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) && !Videos.isVideo($0) } : []
+        let videos = showsVideos ? attachments.filter { !$0.hasPreview && Videos.isVideo($0) } : []
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) && !(showsVideos && Videos.isVideo($0)) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
             if !videos.isEmpty { SentVideoTiles(ref: ref, videos: videos) }

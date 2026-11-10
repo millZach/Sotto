@@ -1,5 +1,5 @@
 import { createHash, randomUUID, type Hash } from 'node:crypto'
-import { mkdir, open, readdir, unlink, type FileHandle } from 'node:fs/promises'
+import { mkdir, open, unlink, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH, isVideoAttachment } from '../shared/agents'
 import { HOST_FILE_PART_BYTES, type HostFilePart } from '../shared/hostProtocol'
@@ -13,8 +13,6 @@ export const FILE_UPLOAD_IDLE_MS = 2 * 60_000
  * where it stopped when it is back (`video-staging`, ADR-0131, November 9 amendment).
  */
 export const VIDEO_UPLOAD_IDLE_MS = 10 * 60_000
-/** A video's parts on their way to the store, in this folder of the store's own (`<store>/uploads`). */
-const PART_FILE = /^[0-9a-f-]{36}\.part$/u
 
 /** A part refused for what it is, whose sentence the client is shown. */
 export class FileUploadRefusal extends Error {}
@@ -86,13 +84,6 @@ export class FileUploads<Client> {
     if (!this.uploads.get(client)?.disk) this.drop(client)
   }
 
-  /** Removes the part files a host that stopped left behind. Run once, at start. */
-  async sweep(): Promise<void> {
-    if (!this.videoFolder) return
-    const names = await readdir(this.videoFolder).catch(() => [] as string[])
-    await Promise.all(names.filter(name => PART_FILE.test(name)).map(name => unlink(join(this.videoFolder!, name)).catch(() => undefined)))
-  }
-
   private async receiveToDisk(client: Client, part: HostFilePart, folder: string): Promise<ReceivedVideo | null> {
     const now = this.now()
     let upload = this.uploads.get(client)
@@ -115,8 +106,14 @@ export class FileUploads<Client> {
     if (data.byteLength > HOST_FILE_PART_BYTES || upload.received + data.byteLength > upload.part.sizeBytes) {
       this.drop(client); throw new FileUploadRefusal(FILE_UPLOAD_INCOMPLETE)
     }
-    try { await disk.file.write(data, 0, data.byteLength, upload.received) }
-    catch (error) { this.drop(client); throw error }
+    try {
+      // A write may take fewer bytes than it was given; the part counts only once every byte is in the file.
+      for (let written = 0; written < data.byteLength;) {
+        const { bytesWritten } = await disk.file.write(data, written, data.byteLength - written, upload.received + written)
+        if (bytesWritten < 1) throw new Error('The part could not be written.')
+        written += bytesWritten
+      }
+    } catch (error) { this.drop(client); throw error }
     disk.hash.update(data); upload.received += data.byteLength; upload.next += 1; upload.lastPartAt = now
     upload.cancel()
     if (upload.next < upload.part.count) {

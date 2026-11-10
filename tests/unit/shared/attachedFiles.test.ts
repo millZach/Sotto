@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_VIDEO_BYTES, agentAttachmentHandleSchema, agentAttachmentHandlesSchema,
-  agentAttachmentStageFileRequestSchema, agentAttachmentStageRequestSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentVideosBytes, isVideoAttachment, attachmentMimeType, imagesNotReadRefusal, isImageAttachment, type AgentAttachmentHandle } from '../../../src/shared/agents'
+  agentAttachmentStageFileRequestSchema, agentAttachmentStageRequestSchema, attachmentBytesBesideVideos, attachmentImagesBytes, attachmentVideosBytes, isVideoAttachment, attachmentMimeType, imagesNotReadRefusal, isImageAttachment, type AgentAttachmentHandle } from '../../../src/shared/agents'
 import { HOST_FEATURES, HOST_VIDEO_PARTS_MAX, hostFilePartSchema, hostFileUploadProgressSchema, hostRequestSchema, isLargeVideoPart } from '../../../src/shared/hostProtocol'
 import { isOwlFeatureEnabled, OWL_FEATURES, owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 
@@ -79,7 +79,7 @@ describe('videos in the shared schemas (ADR-0131, November 9 amendment)', () => 
     const set = [handle('video/quicktime', 300 * MB), handle('video/mp4', 200 * MB), handle('application/zip', 25 * MB), handle('application/zip', 25 * MB)]
     expect(agentAttachmentHandlesSchema.safeParse(set).success).toBe(true)
     expect(attachmentVideosBytes(set)).toBe(500 * MB)
-    expect(attachmentHandlesBytes(set)).toBe(50 * MB)
+    expect(attachmentBytesBesideVideos(set)).toBe(50 * MB)
     expect(agentAttachmentHandlesSchema.safeParse([...set, handle('video/mp4', 1)]).success).toBe(false)
     expect(agentAttachmentHandlesSchema.safeParse([...set, handle('text/plain', 1)]).success).toBe(false)
     // Eight attachments in all, videos among them.

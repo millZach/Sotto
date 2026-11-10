@@ -523,7 +523,7 @@ private struct WatcherConversationPane: View {
                                         Group {
                                             switch item {
                                             case .message(let message):
-                                                WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                                WatcherMessage(message: message, ref: ref, showsVideos: ref.map { model.stagesVideos($0.hostID) } ?? false) { viewing = $0 }.equatable()
                                                     .background { if item.id == lastMessage { reader { follow.lastWords = $0.maxY } } }
                                             case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                             case .ownChange(let change): WatcherOwnChangeLine(change: change)
@@ -842,15 +842,17 @@ private struct WatcherMessage: View, Equatable {
     let message: Message
     /// Watcher's thread, whose photos these are; nil while the page names no Watcher.
     let ref: ThreadRef?
+    /// Whether Watcher's computer takes videos (`video-staging`), so sent videos are tiles; elsewhere each is named as a file.
+    var showsVideos = false
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     /// Opening a photo is the same action for every message.
-    static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref }
+    static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref && a.showsVideos == b.showsVideos }
     var body: some View {
         if message.role == "user" {
             // The user's photos stand on their own above their words, as in a thread and in Messages, and so do their videos.
             let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
-            let videos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter { !$0.hasPreview && Videos.isVideo($0) }
+            let videos: [Attachment] = ref == nil || !showsVideos ? [] : (message.attachments ?? []).filter { !$0.hasPreview && Videos.isVideo($0) }
             let drawn = photos + videos
             VStack(alignment: .trailing, spacing: Space.s1) {
                 if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }

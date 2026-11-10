@@ -302,7 +302,12 @@ async function hashFile(path: string): Promise<string> {
 async function streamInto(source: { readonly path: string; readonly sizeBytes: number }, target: string, digest: string): Promise<void> {
   const hash = createHash('sha256'); let size = 0
   const tap = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); size += chunk.byteLength; done(null, chunk) } })
-  await pipeline(createReadStream(source.path), tap, createWriteStream(target, { flags: 'wx', mode: 0o644 }))
+  try { await pipeline(createReadStream(source.path), tap, createWriteStream(target, { flags: 'wx', mode: 0o644 })) }
+  catch (error) {
+    // What this copy began is removed, so sending again starts afresh; a file already there was never this copy's.
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') await unlink(target).catch(() => undefined)
+    throw error
+  }
   if (size !== source.sizeBytes || hash.digest('hex') !== digest) {
     await unlink(target).catch(() => undefined)
     throw new Error('content changed')

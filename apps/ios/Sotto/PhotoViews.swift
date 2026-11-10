@@ -484,12 +484,11 @@ struct SentVideoTiles: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(label(video, badge: badge))
+            // Named for what a press does; its length, or its size, is its value.
+            .accessibilityLabel(String(localized: "Show where \(video.name) is kept",
+                                       comment: "The name of a sent video's tile in a thread: pressing it says where the video is kept. %@ is the video's file name, such as IMG_0412.MOV"))
+            .accessibilityValue(badge ?? "")
         }
-    }
-    private func label(_ video: Attachment, badge: String?) -> String {
-        guard let badge else { return video.name }
-        return String(localized: "Video \(video.name), \(badge)", comment: "A video: its name, then its length, such as 0:48, or its size, such as 84 MB")
     }
     /// Where the video is: on its computer, in the thread's working folder, where the agent reads it.
     private func tell(where video: Attachment) {

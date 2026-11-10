@@ -462,8 +462,8 @@ export async function startSocketServer(options: SocketServerOptions) {
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
    * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
+  // Each listener keeps its own clients' uploads in the store's one folder; what a stopped host left there goes when the store loads.
   const uploads = new FileUploads<string>({ videoFolder: service.supportsFileStaging === true && service.stageAttachmentFile ? service.videoUploadFolder : undefined })
-  void uploads.sweep()
   /** The paired clients with a sent file's part being read for them, so a client has one such read at a time however many sockets it opens. */
   const fileReads = new Set<string>()
   const connected = (clientId: string): boolean => {

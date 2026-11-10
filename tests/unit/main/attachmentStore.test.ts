@@ -368,6 +368,33 @@ describe('a video staged from where it is (ADR-0131, November 9 amendment)', () 
     expect((await readFile(join(folder(root), `${digest}.bin`))).equals(clip)).toBe(true)
   })
 
+  it('keeps a small video staged by its bytes on disk with history off, and takes a memory-only copy to disk', async () => {
+    const root = await directory()
+    const store = new AttachmentStore(root, { acceptsFiles: true, historyEnabled: () => false }); await store.load()
+    await store.stage({ name: 'small.mov', mimeType: 'video/quicktime', bytes: clip })
+    expect(store.inMemory(digest)).toBe(false)
+    expect(store.contentPath(digest)).toBe(join(folder(root), `${digest}.bin`))
+    // The same bytes first kept in memory as another kind of file reach disk when a video's copy of them is staged.
+    const other = await directory()
+    const memory = new AttachmentStore(other, { acceptsFiles: true, historyEnabled: () => false }); await memory.load()
+    await memory.stage({ name: 'clip.bin', mimeType: 'application/octet-stream', bytes: clip })
+    expect(memory.inMemory(digest)).toBe(true)
+    const source = join(other, 'clip.mov'); await writeFile(source, clip)
+    await memory.stageFile({ name: 'clip.mov', mimeType: 'video/quicktime', path: source })
+    expect(memory.inMemory(digest)).toBe(false)
+    expect((await readFile(join(folder(other), `${digest}.bin`))).equals(clip)).toBe(true)
+  })
+
+  it('removes the video parts a host that stopped left behind when it loads, and nothing else', async () => {
+    const root = await directory()
+    const store = new AttachmentStore(root, { acceptsFiles: true })
+    await mkdir(store.uploadFolder, { recursive: true })
+    await writeFile(join(store.uploadFolder, `${crypto.randomUUID()}.part`), clip)
+    await writeFile(join(store.uploadFolder, 'notes.txt'), 'not a part')
+    await store.load()
+    expect(await readdir(store.uploadFolder)).toEqual(['notes.txt'])
+  })
+
   it('refuses an image, a video past 500 MiB, and anything at all from a store that keeps no files', async () => {
     const root = await directory()
     const source = join(root, 'clip.mov'); await writeFile(source, clip)

@@ -256,7 +256,7 @@ export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
  * The bytes a set's images and files that are not videos hold between them: what the 50 MiB total is measured on.
  * Videos have their own total (`attachmentVideosBytes`).
  */
-export function attachmentHandlesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
+export function attachmentBytesBesideVideos(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
   return items.reduce((sum, item) => isVideoAttachment(item.mimeType) ? sum : sum + item.sizeBytes, 0)
 }
 /** The bytes a set's videos hold between them: what the 500 MiB video total is measured on. */
@@ -265,12 +265,12 @@ export function attachmentVideosBytes(items: readonly Pick<AgentAttachmentHandle
 }
 /** The bytes a set's images hold between them: what the 20 MiB image total is measured on. */
 export function attachmentImagesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
-  return attachmentHandlesBytes(items.filter(item => isImageAttachment(item.mimeType)))
+  return attachmentBytesBesideVideos(items.filter(item => isImageAttachment(item.mimeType)))
 }
 export const agentAttachmentHandlesSchema = z.array(agentAttachmentHandleSchema).max(AGENT_MAX_ATTACHMENTS)
   .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
   .refine(items => attachmentImagesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
-  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
+  .refine(items => attachmentBytesBesideVideos(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
   .refine(items => attachmentVideosBytes(items) <= AGENT_MAX_VIDEOS_TOTAL_BYTES, 'Videos must total no more than 500 MiB.')
 const imageBytes = (limit: number) => z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= limit,
   'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')

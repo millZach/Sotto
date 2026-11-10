@@ -147,6 +147,9 @@ export class AttachmentStore {
         this.held.set(match[1]!, { digest: match[1]!, mimeType, sizeBytes: size, stagedAt: entry?.stagedAt ?? now, unownedSince: now, lastStagedAt: entry?.stagedAt ?? now })
       }
       if (saved.entries.length !== this.held.size || saved.entries.some(entry => !this.held.has(entry.digest))) await this.writeIndex()
+      // The parts of videos a host was receiving when it stopped (`video-staging`): no upload outlives the process.
+      const parts = await readdir(this.uploadFolder).catch(() => [] as string[])
+      await Promise.all(parts.filter(name => name.endsWith('.part')).map(name => unlink(join(this.uploadFolder, name)).catch(() => undefined)))
     })
   }
   private writeIndex(): Promise<void> {
@@ -162,10 +165,12 @@ export class AttachmentStore {
    * setting, for bytes that were already on disk elsewhere (`inlineStager`) and so are not new.
    */
   stage(input: { readonly name: string; readonly mimeType: string; readonly bytes: Uint8Array; readonly dimensions?: AgentAttachmentDimensions | undefined },
-    { onDisk = false, digest: known }: { readonly onDisk?: boolean
+    { onDisk: asked = false, digest: known }: { readonly onDisk?: boolean
       /** The bytes' SHA-256, from a caller in main that has just hashed them (the thread media store), so they are not hashed twice. */
       readonly digest?: string } = {}): Promise<AgentAttachmentHandle> {
     const image = isImageAttachment(input.mimeType)
+    // A video is kept on disk whatever the history setting, as the user chose for videos (ADR-0131, November 9 amendment).
+    const onDisk = asked || isVideoAttachment(input.mimeType)
     if (!image && (!this.acceptsFiles || !agentMimeTypeSchema.safeParse(input.mimeType).success)) return Promise.reject(new RefusedImage(SCREENSHOT_WRONG_TYPE))
     if (input.bytes.byteLength < 1 || input.bytes.byteLength > attachmentLimitBytes(input.mimeType)) {
       return Promise.reject(new RefusedImage(image ? SCREENSHOT_TOO_LARGE : ATTACHED_FILE_TOO_LARGE))
@@ -242,9 +247,19 @@ export class AttachmentStore {
     return this.enqueue(async () => {
       const now = this.now()
       const existing = this.held.get(handle.digest)
-      if (existing) {
+      if (existing && !existing.memory) {
         existing.unownedSince = existing.unownedSince === null ? null : now; existing.lastStagedAt = now
         await unlink(source).catch(() => undefined)
+        return handle
+      }
+      // Content kept only in memory, staged while history was off, now reaches disk with this copy, as a video must.
+      if (existing) {
+        await this.renameInto(source, this.file(existing))
+        const kept: Held = { ...existing, unownedSince: existing.unownedSince === null ? null : now, lastStagedAt: now }
+        delete kept.memory
+        this.held.set(handle.digest, kept)
+        try { await this.writeIndex() }
+        catch (error) { this.held.set(handle.digest, existing); await unlink(this.file(existing)).catch(() => undefined); throw error }
         return handle
       }
       const held: Held = { digest: handle.digest, mimeType: handle.mimeType, sizeBytes, stagedAt: now, unownedSince: now, lastStagedAt: now }

@@ -3,7 +3,7 @@ import { Download, Paperclip, X } from 'lucide-react'
 import { plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_IMAGE_BYTES, AGENT_MAX_VIDEO_BYTES, AGENT_MAX_VIDEOS_TOTAL_BYTES,
-  agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentMimeType, attachmentVideosBytes, isImageAttachment, isVideoAttachment,
+  agentAttachmentHandlesSchema, attachmentBytesBesideVideos, attachmentImagesBytes, attachmentMimeType, attachmentVideosBytes, isImageAttachment, isVideoAttachment,
   SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type AgentAttachmentDimensions, type AgentAttachmentHandle, type AgentImageSize } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOwlFeature } from '../state/owlFeature'
@@ -125,7 +125,7 @@ function refusalBeforeReading(incoming: readonly Incoming[], current: readonly A
   if (images.some(item => item.file.size > AGENT_MAX_IMAGE_BYTES)) return words.imageTooLarge()
   if (attachmentImagesBytes(current) + images.reduce((sum, item) => sum + item.file.size, 0) > AGENT_MAX_ATTACHMENT_BYTES) return words.imagesTooLargeInTotal()
   if (attachmentVideosBytes(current) + incoming.reduce((sum, item) => item.video ? sum + item.file.size : sum, 0) > AGENT_MAX_VIDEOS_TOTAL_BYTES) return words.videosTooLargeInTotal()
-  if (attachmentHandlesBytes(current) + incoming.reduce((sum, item) => item.video ? sum : sum + item.file.size, 0) > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return words.attachmentsTooLargeInTotal()
+  if (attachmentBytesBesideVideos(current) + incoming.reduce((sum, item) => item.video ? sum : sum + item.file.size, 0) > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return words.attachmentsTooLargeInTotal()
   return null
 }
 
@@ -233,7 +233,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     if (files.length + current.current.length > most) return refuse(plural(most, { one: 'Attach up to # screenshot at a time.', other: 'Attach up to # screenshots at a time.' }))
     // Every refusal that the file sizes alone can decide comes before any file is read and staged.
     try { files.forEach(checkImage) } catch (cause) { return refuse(cause instanceof Error ? cause.message : t`Could not read these screenshots.`) }
-    const total = attachmentHandlesBytes(current.current) + files.reduce((sum, file) => sum + file.size, 0)
+    const total = attachmentBytesBesideVideos(current.current) + files.reduce((sum, file) => sum + file.size, 0)
     if (total > AGENT_MAX_ATTACHMENT_BYTES) return refuse(SCREENSHOTS_TOO_LARGE_IN_TOTAL)
     return stageAll(files, file => stageFile(target, file), addFailed, () => SCREENSHOTS_TOO_LARGE_IN_TOTAL)
   }

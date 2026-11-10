@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -210,14 +210,5 @@ describe('a video sent to a host in parts (ADR-0131, November 9 amendment)', () 
     await expect(readdir(videoFolder)).rejects.toMatchObject({ code: 'ENOENT' })
     uploads.leave('phone')
     expect(uploads.holds('phone')).toBe(false)
-  })
-
-  it('removes the part files a host that stopped left behind', async () => {
-    const videoFolder = await folder()
-    const uploads = new FileUploads<string>({ videoFolder })
-    await uploads.receivePart('phone', partsOf(video(2 * 1024), { name: 'clip.mov', mimeType: 'video/mp4', partBytes: 1024 })[0]!)
-    await writeFile(join(videoFolder, 'keep.txt'), 'not a part')
-    await new FileUploads<string>({ videoFolder }).sweep()
-    expect(await readdir(videoFolder)).toEqual(['keep.txt'])
   })
 })

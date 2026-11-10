@@ -3,7 +3,7 @@ import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { BrowserBridge, BrowserCapture, BrowserPage } from '../../../shared/browser'
-import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes } from '../../../shared/agents'
+import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, agentAttachmentHandlesSchema, attachmentBytesBesideVideos, attachmentImagesBytes } from '../../../shared/agents'
 import { dataUrlBlob, prepareScreenshot, wasResized, type PreparedScreenshot } from '../agents/screenshotResize'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
 import { STAGING_FAILED, stageImage } from '../agents/stagedImages'
@@ -36,7 +36,7 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   const before = store.draft(threadId)
   // Images are held to their own total; attached files count only toward the whole (ADR-0131).
   if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentImagesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES
-    || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return i18n._(DOES_NOT_FIT)
+    || attachmentBytesBesideVideos(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return i18n._(DOES_NOT_FIT)
   let image
   try { image = await stageImage(threadId, { name: pointed?.label ?? 'Browser feedback.png', mimeType: 'image/png', ...prepared }) }
   catch (error) { return error instanceof Error ? error.message : STAGING_FAILED }

@@ -1559,6 +1559,8 @@ struct RailAsk: Equatable {
     private var videosArriving = 0
     private var videoLoads: [UUID: VideoLoad] = [:]
     private let videoCopies = ReplyVideoCopies()
+    /// The copies a box has held this run, so one whose video left the box goes at once, even while another is still arriving.
+    private var heldVideoCopies: Set<URL> = []
     /// Waits out how long a video may take to arrive, from iCloud for one not on this iPhone: ten minutes.
     private let videoArrivalLimit: @Sendable () async throws -> Void
     private let readVideoFrame: @Sendable (URL) async -> VideoFrame
@@ -4114,6 +4116,7 @@ struct RailAsk: Equatable {
                 $0.name = arrived.name; $0.mimeType = Videos.mimeType(forName: arrived.name); $0.sizeBytes = size
                 $0.video?.url = url; $0.video?.arriving = nil
             }
+            heldVideoCopies.insert(url)
             // The box holds the copy now: it goes when the video leaves the box or its reply is taken.
             copy = nil
             let digest = try await Task.detached { try Videos.digest(of: url) }.value
@@ -4270,11 +4273,15 @@ struct RailAsk: Equatable {
     /// Removes every video's temporary copy that no box, reply on its way or reply that didn't go still holds. While a copy
     /// is still arriving it waits, so a copy is never removed before its box holds it.
     private func sweepVideoCopies() {
-        guard videosArriving == 0 else { return }
         let held = [draftFiles, submittedFiles, failedFiles, watcherSendingFiles].flatMap { $0.values.flatMap { $0 } }
-        let ids = Set(held.map(\.id))
+        let ids = Set(held.map(\.id)), kept = Set(held.compactMap { $0.video?.url })
         videoBoxes = videoBoxes.filter { ids.contains($0.key) }
-        videoCopies.removeAll(keeping: held.compactMap { $0.video?.url })
+        // A copy a box held and no longer holds goes now. Everything else waits while a copy is still arriving, since
+        // that one has no box yet to hold it.
+        for url in heldVideoCopies.subtracting(kept) { videoCopies.remove(url) }
+        heldVideoCopies.formIntersection(kept)
+        guard videosArriving == 0 else { return }
+        videoCopies.removeAll(keeping: Array(kept))
     }
     /// A sent file's bytes from the computer that keeps it, for Quick Look (`attachment-file`): part by part, each waiting
     /// its turn behind other large requests to that computer, and none asked for once nothing `wanted` it. The parts must
