@@ -3489,7 +3489,7 @@ struct RequestSheet: View {
             }
             .padding(.horizontal, Space.gutter)
             .padding(.top, Space.s5)
-            .padding(.bottom, Space.s5)
+            .padding(.bottom, choicesMeetFooter ? Space.s2 : Space.s5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
         }
@@ -4010,9 +4010,19 @@ struct RequestSheet: View {
         sendAnswer(current)
     }
 
+    /// Whether Not now and Send answer stand in the footer under the question, rather than in what scrolls.
+    private var hasFooter: Bool {
+        guard let current else { return false }
+        return current.kind != "permission" && current.supported && model.mayAnswer(at: place)
+    }
+    /// Folded or sideways, the last choice stands as far above the footer's rule as the choices stand from each other,
+    /// where the page's own 20 points left a band over the footer in a sheet that opens exactly tall enough for its
+    /// choices and its buttons (the Duo design climb's round 8).
+    private var choicesMeetFooter: Bool { duo != .none && duo != .upright && hasFooter }
+
     /// Not now and Send answer stay in reach under a question, whatever its length.
     @ViewBuilder private var footer: some View {
-        if let current, current.kind != "permission", current.supported, model.mayAnswer(at: place) {
+        if let current, hasFooter {
             VStack(spacing: Space.s2) {
                 sendingLine(current)
                 skipLine(current)
