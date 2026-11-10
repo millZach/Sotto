@@ -131,8 +131,8 @@ struct PullRequestSheet: View {
         jumping = true
         // Folded, a part's heading would land level with the clock and its count run under it, so the jump lands it a
         // step lower: what stands beside the clock keeps clear of the strip (Zach's round 5 pick A, November 9, 2026).
-        // scrollTo lines up the anchor's point on the part with the same point on the scroll view, so a part's top
-        // lands `lift` below the top when the anchor sits that fraction of the way down.
+        // scrollTo lines up the anchor's point on the target with the same point on the scroll view; the target is a
+        // mark with no height at the part's top, so that top lands `lift` of the scroll view's height below its top.
         let lift: CGFloat = isFolded && viewport > 0 ? (Space.s6 + Space.s1) / viewport : 0
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0, y: lift)) }
         Task { try? await Task.sleep(nanoseconds: 450_000_000); jumping = false }
@@ -362,19 +362,23 @@ private struct PullRequestBody: View {
     }
 
     private func part<Content: View>(_ which: PullRequestPart, aside: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: Space.s2)
-                if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+        VStack(alignment: .leading, spacing: 0) {
+            // A jump lands on this mark at the part's top. It has no height, so the jump's anchor places the part's top
+            // exactly, whatever the part's own height.
+            Color.clear.frame(height: 0).accessibilityHidden(true).id(which)
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Space.s2)
+                    if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+                }
+                .padding(.horizontal, Space.s1)
+                content()
             }
-            .padding(.horizontal, Space.s1)
-            content()
+            // A jump to this part leaves its heading room under the chips' line, on the Duo.
+            .padding(.top, duo == .none ? 0 : Space.s3)
         }
-        // A jump to this part leaves its heading room under the chips' line, on the Duo.
-        .padding(.top, duo == .none ? 0 : Space.s3)
-        .id(which)
         .background(alignment: .top) {
             GeometryReader { proxy in
                 Color.clear.preference(key: PartTops.self, value: [which: proxy.frame(in: .named(Self.space)).minY])
