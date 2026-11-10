@@ -107,4 +107,4 @@ function sandAmbience(g: SceneLayout): Ambience {
   }
 }
 
-export const DESERT: ScenePlace = { draw: drawDesert, stars: 1.35, ambience: sandAmbience }
+export const DESERT: ScenePlace = { draw: drawDesert, stars: 1.35, ambience: sandAmbience, layers: null }
