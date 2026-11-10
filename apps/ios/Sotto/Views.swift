@@ -1656,6 +1656,7 @@ struct DuoSheetLayer: View {
     @ObservedObject var host: DuoSheetHost
     let page: CGRect
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
     /// How tall a question sheet asks to be (`RequestSheetFit`); nil for a sheet that takes the page's height.
     @State private var fit: CGFloat?
     @State private var drag: CGFloat = 0
@@ -1664,8 +1665,10 @@ struct DuoSheetLayer: View {
         ZStack {
             if let shown = host.shown {
                 // Darker than iOS's own dimming, so the page below the sheet's foot and the lights behind it don't read
-                // through (Zach's pick B, November 9, 2026, round 5).
-                Rectangle().fill(Color.black.opacity(0.62)).ignoresSafeArea()
+                // through (Zach's pick B, November 9, 2026, round 5). At 62% black the thread's words still read below
+                // the sheet, so it is the theme's darkest role at 86%: its canvas in dark, its ink in light, which
+                // leaves the page's words at about 1.4:1, shapes rather than text (the Duo design climb's round 6).
+                Rectangle().fill(ThemeRole(scheme == .dark ? .canvas : .ink, amount: 0.86)).ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { shown.close() }
                     .accessibilityHidden(true)
