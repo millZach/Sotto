@@ -20,6 +20,12 @@ describe('attached files in the shared schemas (ADR-0131)', () => {
     expect(attachmentMimeType('')).toBe(AGENT_GENERIC_FILE_MIME_TYPE)
     expect(attachmentMimeType('not a type')).toBe(AGENT_GENERIC_FILE_MIME_TYPE)
     expect(attachmentMimeType(`application/${'x'.repeat(130)}`)).toBe(AGENT_GENERIC_FILE_MIME_TYPE)
+    // A video the browser gives no type takes one from its extension, so it is held to a video's limit (Chromium on Linux, November 9 amendment).
+    expect(attachmentMimeType('', 'IMG_0412.MOV')).toBe('video/quicktime')
+    expect(attachmentMimeType('application/octet-stream', 'clip.mkv')).toBe('video/x-matroska')
+    expect(attachmentMimeType('', 'notes')).toBe(AGENT_GENERIC_FILE_MIME_TYPE)
+    expect(attachmentMimeType('', 'archive.zip')).toBe(AGENT_GENERIC_FILE_MIME_TYPE)
+    expect(attachmentMimeType('video/mp4', 'clip.mov')).toBe('video/mp4')
   })
 
   it('takes any well-formed type on a handle and a stage request, with limits by kind', () => {

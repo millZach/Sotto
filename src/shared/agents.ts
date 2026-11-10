@@ -85,10 +85,21 @@ export function isImageAttachment(mimeType: string): mimeType is AgentImageMimeT
 export const AGENT_GENERIC_FILE_MIME_TYPE = 'application/octet-stream'
 /** A well-formed MIME type, `type/subtype`, lowercase, at most 127 characters, with no parameters. */
 export const agentMimeTypeSchema = z.string().max(127).regex(/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u)
-/** The MIME type a file is staged under: the browser's own, lowercased and without parameters, or the generic one. */
-export function attachmentMimeType(browserType: string): string {
+/**
+ * The video types a file's extension names, for a video the browser gives no type: Chromium on Linux gives an `.MOV` none,
+ * and Windows none for a format it has no entry for. Without one a video would be held to a file's 25 MiB.
+ */
+const VIDEO_TYPES_BY_EXTENSION: Readonly<Record<string, string>> = { mov: 'video/quicktime', qt: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/x-m4v',
+  webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo', '3gp': 'video/3gpp', mpg: 'video/mpeg', mpeg: 'video/mpeg', wmv: 'video/x-ms-wmv', ogv: 'video/ogg' }
+/**
+ * The MIME type a file is staged under: the browser's own, lowercased and without parameters; when it gives none, a video
+ * type its name's extension names; otherwise the generic one.
+ */
+export function attachmentMimeType(browserType: string, name = ''): string {
   const type = browserType.split(';')[0]!.trim().toLowerCase()
-  return agentMimeTypeSchema.safeParse(type).success ? type : AGENT_GENERIC_FILE_MIME_TYPE
+  if (agentMimeTypeSchema.safeParse(type).success && type !== AGENT_GENERIC_FILE_MIME_TYPE) return type
+  const extension = /\.([^./\\]+)$/u.exec(name)?.[1]?.toLowerCase() ?? ''
+  return VIDEO_TYPES_BY_EXTENSION[extension] ?? AGENT_GENERIC_FILE_MIME_TYPE
 }
 export const AGENT_MAX_ATTACHMENTS = 8
 /** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */

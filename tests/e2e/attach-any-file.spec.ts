@@ -1,3 +1,5 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -64,4 +66,43 @@ test('on Owl, files join the composer as pills, send, and land in the working fo
       expect(sent?.attachments?.map(attachment => [attachment.name, attachment.sizeBytes])).toEqual([['quarterly-report.pdf', PDF.length], ['server.log', LOG.length]])
     } finally { await closeSotto(launched) }
   })
+})
+
+test('on Owl, a video larger than a file is staged from where it is and sends (ADR-0131, November 9 amendment)', async () => {
+  test.setTimeout(120_000)
+  const folder = await mkdtemp(join(tmpdir(), 'sotto-video-e2e-'))
+  const video = join(folder, 'IMG_0412.MOV')
+  const size = 30 * 1024 * 1024 + 3
+  const bytes = Buffer.alloc(size); for (let index = 0; index < size; index += 4096) bytes[index] = index % 251
+  await writeFile(video, bytes)
+  try {
+    await onReleaseTrack('owl', async () => {
+      const launched = await launchSotto()
+      const { page } = launched
+      try {
+        await page.evaluate(async () => {
+          await window.sotto!.updateSettings({ onboardingComplete: true })
+          await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
+          await window.sotto!.agents!.command({ type: 'connect' })
+        })
+        await page.reload(); await openThreads(page)
+        await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+        // A path, as a chosen or dropped file has: the preload reads it, the window never reads the bytes.
+        await page.getByLabel('Files to attach').setInputFiles(video)
+        const pills = page.getByRole('list', { name: 'Attached files' })
+        await expect(pills.getByRole('button', { name: 'Remove IMG_0412.MOV' })).toBeVisible({ timeout: 30_000 })
+        await expect(pills).toContainText('30 MB')
+        await page.screenshot({ path: join(evidence, 'video-pill.png'), animations: 'disabled' })
+        await fillPrompt(promptField(page), 'Here is what it does on my phone.')
+        await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+        const transcript = page.getByLabel('Thread transcript', { exact: true })
+        await expect(transcript.getByText('IMG_0412.MOV')).toBeVisible()
+        await page.screenshot({ path: join(evidence, 'video-sent.png'), animations: 'disabled' })
+        const state = await agentState(page)
+        const details = await Promise.all(state.host.threads.map(thread => agentThreadDetail(page, thread.id)))
+        const sent = details.flatMap(detail => detail?.messages ?? []).find(message => message.text === 'Here is what it does on my phone.')
+        expect(sent?.attachments?.map(attachment => [attachment.name, attachment.mimeType, attachment.sizeBytes])).toEqual([['IMG_0412.MOV', 'video/quicktime', size]])
+      } finally { await closeSotto(launched) }
+    })
+  } finally { await rm(folder, { recursive: true, force: true }) }
 })

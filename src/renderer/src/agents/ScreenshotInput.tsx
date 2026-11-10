@@ -242,7 +242,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     if (!supported) return refuse(words.noAttachmentsOnAnswer())
     setError(null)
     const incoming = files.map((file): Incoming => {
-      const mimeType = attachmentMimeType(file.type)
+      const mimeType = attachmentMimeType(file.type, file.name)
       const image = isImageAttachment(mimeType)
       return { file, mimeType, image, video: isVideoAttachment(mimeType), name: file.name || (image ? 'Screenshot.png' : 'File') }
     })
