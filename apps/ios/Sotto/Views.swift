@@ -1086,7 +1086,11 @@ struct ThreadListRow: View, Equatable {
         // Folded, a row's time ends its second line too, as the sidebar's does, so the name has its line to itself (Zach's
         // round 6 pick A, November 10, 2026).
         let timeEndsLine = side || (folded && !large)
-        let started = row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
+        // A thread waiting on the user gives the time it last changed, when it asked, as its Needs you card does; one at
+        // work gives how long its turn has run. A waiting row once said "22m" beside its card's "3m" (the Duo design
+        // climb's round 6).
+        let started = kind == .needs ? row.thread.summary?.lastMessageAt
+            : row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
         // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
         let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {
