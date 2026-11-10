@@ -8,7 +8,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
 import { readVideo } from './shownMedia'
-import { immutableActivities, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableUpdates, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -18,7 +18,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, STEER_NOT_TAKEN, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentFileUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentFileUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -47,6 +47,7 @@ import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } 
 import { ClientUpdates } from './clientUpdates'
 import { ThreadTitles } from './threadTitles'
 import { DetailRevisions } from './detailRevisions'
+import { DetailSends } from './detailSends'
 // Tests still import this from here; the follow-up that moves them removes this line.
 export { TITLE_WRITE_CLOSING_WAIT_MS } from './threadTitles'
 import { ProviderClients } from './providerClients'
@@ -61,7 +62,6 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
 import { AGENT_STATE_BROADCAST_INTERVAL_MS, realPublishScheduler, type PublishScheduler } from './statePublishers'
 // Tests still import these from here; the follow-up that moves them removes this line.
 export { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes, type CoalescedAgentStatePublisher, type CoalescedThreadDetailPublisher, type PublishScheduler } from './statePublishers'
@@ -1046,14 +1046,8 @@ export class AgentControl {
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
-  /** Each detail listener, and whether it is sent appends (`AgentActivityAppend`) or every changed record whole. */
-  private readonly detailListeners = new Map<(update: AgentThreadDetailUpdate) => void, { readonly appends: boolean }>()
-  private readonly publishedDetail = new Map<string, number>()
-  /**
-   * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
-   * the targets themselves: a thread that leaves the viewed set frees its snapshot on the next broadcast.
-   */
-  private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
+  /** The details main sends each listener, and what each holds. */
+  private readonly sends: DetailSends
   /** Clearing commands and the automatic rule, one at a time (ADR-0140). */
   private clearing: Promise<unknown> = Promise.resolve()
   private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
@@ -1181,6 +1175,11 @@ export class AgentControl {
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), persist: () => this.persist(), dependencies,
     })
     this.revisions = new DetailRevisions({ dependencies, shownLength: thread => this.detailShownLength(thread) })
+    this.sends = new DetailSends({
+      state: () => this.state, threadById: threadId => this.threadById(threadId), paneActivities: thread => this.paneActivities(thread),
+      presentedMessages: thread => this.presentedMessages(thread), revision: (thread, pane) => this.detailRevision(thread, pane),
+      certifiedActivitySignature: () => this.revisions.certifiedActivitySignature, decorate: host => this.attachmentPreviews.decorate(host), dependencies,
+    })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -2110,45 +2109,8 @@ export class AgentControl {
     if (marked !== held.record) held.record = Object.freeze(marked)
     return held.record
   }
-  /**
-   * One thread's history — its messages and the activity beside them — for a window looking at it.
-   * Handing out a whole detail also resets what the deltas that follow are measured from: a window that
-   * asked for this one holds exactly this revision, so the next delta is the one that follows it.
-   *
-   * Every other listener still holds the revision last broadcast. When the thread has moved on since, a
-   * change still waiting in the coalescing window is sent to them first, measured from what they hold,
-   * so the reset never leaves them a delta they cannot apply and a read by one client never sets off a
-   * whole read by another.
-   */
-  threadDetail(threadId: string): AgentThreadDetail | null {
-    const thread = this.state.host.threads.find(item => item.id === threadId)
-    if (!thread) return null
-    const pane = this.paneActivities(thread)
-    const revision = this.detailRevision(thread, pane)
-    if (this.detailListeners.size && this.detailSnapshots.has(threadId) && this.publishedDetail.get(threadId) !== revision) {
-      const update = this.detailUpdate(thread, revision, pane)
-      if (update) this.emitDetail(threadId, update)
-    }
-    return this.wholeDetail(thread, revision, pane)
-  }
-  /** The whole of a thread's history at a revision, which becomes the base the next delta is measured from. */
-  private wholeDetail(thread: AgentThread, revision: number, pane = this.paneActivities(thread)): AgentThreadDetail {
-    const threadId = thread.id
-    const presented = this.presentedMessages(thread)
-    const messages = structuredClone([...presented])
-    // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
-    // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
-    const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
-    // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
-    // about the thread, and diffing decorated against live would report every image message as changed.
-    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
-      ...(activities === undefined ? {} : { activities: this.dependencies.streamingPublishCost === true
-        ? immutableActivities(pane!) : activities }) })
-    this.publishedDetail.set(threadId, revision)
-    this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
-    return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }),
-      ...(thread.earlierAvailable ? { earlierAvailable: true } : {}) }
-  }
+  /** One thread's history for a window looking at it, which resets what the deltas after it are measured from (`DetailSends`). */
+  threadDetail(threadId: string): AgentThreadDetail | null { return this.sends.threadDetail(threadId) }
   /**
    * The activity a detail carries beside the thread's messages. The host keeps back the work of turns above
    * the loaded window, which waits there with their messages; everything else in main reads every record.
@@ -2281,25 +2243,9 @@ export class AgentControl {
     }
     return thread.hiddenWakeUpMessageIds?.length ? hiddenWakeUpShownLength : undefined
   }
-  /**
-   * Hears every viewed thread's detail as it changes. `appends`: the listener applies `AgentActivityAppend`, so a record
-   * whose output or text only grew is sent as the text it grew by. Only the main window's own stream asks for it; every
-   * other listener, a socket server's among them, is sent every changed record whole.
-   */
+  /** Hears every viewed thread's detail as it changes (`DetailSends`). */
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void, options: { readonly appends?: boolean } = {}): () => void {
-    this.detailListeners.set(listener, { appends: options.appends === true })
-    return () => this.detailListeners.delete(listener)
-  }
-  /** Hands each detail listener `update`, every append in it as the record whole to one that is not sent appends. */
-  private emitDetail(threadId: string, update: AgentThreadDetailUpdate): void {
-    let whole: AgentThreadDetailUpdate | null | undefined
-    for (const [listener, { appends }] of this.detailListeners) {
-      if (appends || !isAgentThreadDetailDelta(update)) { listener(update); continue }
-      if (whole === undefined) whole = withAppendsWhole(update, this.detailSnapshots.get(threadId)?.activities ?? [])
-      // The snapshot the delta was applied to holds every record it appends to. Were one missing, the listener would miss
-      // this update, its next delta would not follow, and it would read the thread whole, as after any update it missed.
-      if (whole !== null) listener(whole)
-    }
+    return this.sends.subscribeThreadDetail(listener, options)
   }
   /** The branches a thread's folder offers, read on request rather than pushed with every state. */
   gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
@@ -2679,8 +2625,7 @@ export class AgentControl {
     this.privacyCleanupPending = true
     // Attachment previews are decoration, not history, so a thread's revision does not move when they go.
     // Forget what every window holds: the next broadcast sends whole details, without the markers.
-    this.publishedDetail.clear()
-    this.detailSnapshots.clear()
+    this.sends.privacyChanged()
     this.hiddenShown.clear()
     this.revisions.privacyChanged()
     // A failed store must not prevent the remaining stores from honoring the
@@ -2802,26 +2747,9 @@ export class AgentControl {
     // The first publish of a burst is never held back; anything during the window rides the trailing run.
     // So is a thread a window is looking at starting a message or an activity record: the first words of a
     // reply must not wait behind the echo of the prompt that asked for it.
-    if (this.broadcastOpen && !this.watchedThreadOpened()) { this.broadcastPending = true; return }
+    if (this.broadcastOpen && !this.sends.watchedThreadOpened()) { this.broadcastPending = true; return }
     if (this.broadcastOpen) { this.broadcastCancel?.(); this.broadcastCancel = null; this.broadcastOpen = false }
     this.broadcast()
-  }
-  /**
-   * Whether a thread whose detail a window holds has had an opening change: a newer message or activity
-   * record at its end than the one the window was sent. Only the ends are compared, so a chunk added to a
-   * message already sent is not one, and the check costs nothing like the diff the broadcast makes. The
-   * workspace ahead of this sends at most two publishes a window, so this cuts a window short no more often.
-   */
-  private watchedThreadOpened(): boolean {
-    if (!this.detailListeners.size) return false
-    for (const [threadId, held] of this.detailSnapshots) {
-      const thread = this.threadById(threadId)
-      if (!thread) continue
-      if (thread.messages.at(-1)?.id !== held.messages.at(-1)?.id) return true
-      const activities = this.paneActivities(thread)
-      if (activities !== undefined && activities.at(-1)?.id !== held.activities?.at(-1)?.id) return true
-    }
-    return false
   }
   private broadcast(): void {
     if (this.disposed) return
@@ -2852,55 +2780,22 @@ export class AgentControl {
   private broadcastDetail(): void {
     // Which threads' hidden-news projections may be kept follows what is shown, even when no window listens for detail.
     const shownHidden = this.indexed().hidden.size > 0
-    if (!this.detailListeners.size && !this.watcherRecords.display && this.dependencies.streamingPublishCost !== true) {
+    if (!this.sends.listening && !this.watcherRecords.display && this.dependencies.streamingPublishCost !== true) {
       if (shownHidden || this.hiddenShown.size) this.retainHiddenShown(this.detailTargets())
       return
     }
     const targets = this.detailTargets()
     if (shownHidden || this.hiddenShown.size) this.retainHiddenShown(targets)
     if (this.watcherRecords.display?.retain(this.state.host.hostId, targets)) this.presentedCache = new WeakMap()
-    if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
-    for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
-    for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
+    if (!this.sends.listening && this.dependencies.streamingPublishCost !== true) return
+    this.sends.keepOnly(targets)
     this.revisions.keepOnly(targets)
-    if (!this.detailListeners.size) return
-    for (const threadId of targets) {
-      const thread = this.threadById(threadId)!
-      // The pane's activity is read once and handed on: the host decides it a turn at a time, against every thread.
-      const pane = this.paneActivities(thread)
-      const revision = this.detailRevision(thread, pane)
-      if (this.publishedDetail.get(threadId) === revision) continue
-      const update = this.detailUpdate(thread, revision, pane)
-      if (update) this.emitDetail(threadId, update)
-    }
+    if (!this.sends.listening) return
+    this.sends.send(targets)
   }
-  /** The delta from what this thread's window already holds, or the whole detail when no delta can say it. */
-  private detailUpdate(thread: AgentThread, revision: number, pane = this.paneActivities(thread)): AgentThreadDetailUpdate | null {
-    const held = this.detailSnapshots.get(thread.id)
-    if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: pane }, revision,
-        this.dependencies.streamingPublishCost === true ? this.revisions.certifiedActivitySignature : undefined)
-      const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
-      if (delta !== null && advanced !== null) {
-        // The pane's own records, when they are certified and in the order the delta reached: frozen, never edited, and the
-        // records the next publish hands over, so its diff meets them by identity rather than by signature (#1248).
-        if (this.dependencies.streamingPublishCost === true && advanced.activities && advanced.activities !== pane) advanced.activities = pane !== undefined
-          && isImmutableActivities(pane) && pane.length === advanced.activities.length
-          && pane.every((record, index) => record === advanced.activities![index] || record.id === advanced.activities![index]!.id)
-          ? pane as AgentActivity[] : immutableActivities(advanced.activities)
-        this.detailSnapshots.set(thread.id, advanced)
-        this.publishedDetail.set(thread.id, revision)
-        return this.decorateDetailDelta(thread, delta)
-      }
-    }
-    return this.wholeDetail(thread, revision, pane)
-  }
-  /** A delta's whole messages carry the same preview markers a full detail's would; its appends carry text alone. */
-  private decorateDetailDelta(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
-    const messageDeltas = delta.messageDeltas.map(item => 'appendText' in item ? item : { message: structuredClone(item.message) })
-    const messages = messageDeltas.flatMap(item => 'appendText' in item ? [] : [item.message])
-    if (messages.length > 0) this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
-    return { ...delta, messageDeltas }
+  /** Tests read a delta through this; it goes when they move to the module. */
+  detailUpdate(thread: AgentThread, revision: number, pane = this.paneActivities(thread)): AgentThreadDetailUpdate | null {
+    return this.sends.detailUpdate(thread, revision, pane)
   }
   private say(text: string): void {
     this.state.notice = text
@@ -5687,7 +5582,7 @@ export class AgentControl {
     // The provider's echo of this message can land while it is still being sent, and a window that already
     // holds it undecorated would never be sent it again: the thread goes out whole on the next publish.
     if (this.state.host.threads.find(thread => thread.id === threadId)?.messages.some(message => message.id === messageId)) {
-      this.publishedDetail.delete(threadId); this.detailSnapshots.delete(threadId); this.publish()
+      this.sends.forget(threadId); this.publish()
     }
   }
   private hasSetAsideUpdateHold(threadId: string): boolean {
@@ -6412,8 +6307,7 @@ export class AgentControl {
     this.clientUpdates.letGoOfLine()
     this.disconnect()
     this.listeners.clear()
-    this.detailListeners.clear()
-    this.detailSnapshots.clear()
+    this.sends.close()
     this.hiddenShown.clear(); this.hiddenShownTargets = new Set()
     if (this.watcherRecords.display?.retain(undefined, [])) this.presentedCache = new WeakMap()
     this.revisions.close()

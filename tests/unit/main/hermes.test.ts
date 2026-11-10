@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { HermesKeys, HermesRuntime, hermesConfig, hermesEnvFile, hermesKeyVariable, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
+import { HermesKeys, HermesRuntime, forgetHermesKey, hermesConfig, hermesEnvFile, hermesKeyVariable, hermesProjectHome, hermesServers } from '../../../src/main/agents/hermesRuntime'
 import { hermesCatalog, hermesModelValue, hermesSettingsOf } from '../../../src/main/agents/hermesModels'
 import { hermesAnswer, hermesPending } from '../../../src/main/agents/hermesRequests'
 import { hermesActivities } from '../../../src/main/agents/hermesActivity'
@@ -77,6 +77,26 @@ describe('Hermes', () => {
         expect(env.includes(removed), home).toBe(false)
         expect(env).toContain(kept)
       }
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('clears a failed key write’s temporary file even with Hermes stopped', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-hermes-temp-key-'))
+    try {
+      const path = join(root, 'own-server-keys.json')
+      await writeFile(`${path}.next`, JSON.stringify({ 'own-paid': 'made-up-temporary-key' }), { mode: 0o600 })
+      await forgetHermesKey(root, 'own-paid')
+      await expect(stat(`${path}.next`)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it.each(['own-server-keys.json', 'profiles', '.env'])('refuses key cleanup when %s cannot be read as expected', async name => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-hermes-key-cleanup-'))
+    try {
+      const path = join(root, name)
+      if (name === 'profiles') await writeFile(path, 'not a directory')
+      else await mkdir(path)
+      await expect(forgetHermesKey(root, 'own-paid')).rejects.toThrow()
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 

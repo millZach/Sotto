@@ -101,3 +101,33 @@ Only a folder with that adjacent Python is removed from the toolchain PATH.
 An official launcher in a shared folder such as `~/.local/bin` keeps that folder
 and its other tools available. [The verification note](../verification/2026-11-10-hermes-official-install.md)
 records the native check and the in-app check still owed.
+
+
+## Amended November 10, 2026: Hermes can keep the key alone
+
+A keyed server can be added while Sotto's OpenCode is connected or Hermes's
+adapter runs. This replaces the November 9 requirement that OpenCode take the
+key first. When OpenCode is connected it still takes the key first, and Hermes
+gets its copy when available. Otherwise Hermes takes the key alone. The adapter
+need not be connected yet: saving a first server lets Hermes connect to it.
+
+The server record has an optional `keyKeeper`, `opencode` or `hermes`, naming the
+provider that first took the key, never the key itself. An older keyed record
+without that field means OpenCode. A Hermes-only keyed server is left out of
+OpenCode's generated model sources, including when OpenCode connects later.
+There is no automatic key transfer; remove and add it again with OpenCode
+connected to use it there. This amends decisions 2 and 3.
+
+Remove asks OpenCode to sign out only for a key it took, and clears Hermes's key
+file and every profile copy even while its adapter is off. Only then does the
+server leave the record. A failed add clears a possibly saved key before rolling
+back its record too; if cleanup or the record write fails, the server stays
+listed for Remove to finish. An unreadable key store or profile is a failed
+cleanup, not proof that no key remains. Failed temporary key writes are cleared
+too. This replaces the old rollback that could forget a server after an
+unconfirmed OpenCode sign-out.
+
+Check again still sends no saved key. If the server asks for one, the row says
+it answered but its models could not be read again. The dialog and rows make no
+promise that OpenCode can run every server. No host, setting, dependency or
+permission rule changes.

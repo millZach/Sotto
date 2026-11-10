@@ -676,7 +676,7 @@ msgid "{museReviews, plural, one {Muse review} other {# Muse reviews}}"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
-msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+msgid "{name} answered in {ms} ms and asks for its key. The key stays with its provider, so Sotto could not read its models again."
 msgstr ""
 
 #. {name} is the name of a saved host.
@@ -1722,7 +1722,11 @@ msgid "Added {doneName}"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
-msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
+msgid "Added {name}. Its models are in the model menu under {name}, with providers that can use them."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Added with a key"
 msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts
@@ -4595,10 +4599,6 @@ msgstr ""
 msgid "It replied"
 msgstr ""
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "It runs with OpenCode."
-msgstr ""
-
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "It shows here when it is done"
 msgstr ""
@@ -4860,10 +4860,6 @@ msgstr ""
 #. A secret the model server checks before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key"
-msgstr ""
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Key kept by OpenCode"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -5494,6 +5490,10 @@ msgstr ""
 msgid "No projects on this host yet."
 msgstr ""
 
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "No provider can add this server right now, so nothing was saved. Connect OpenCode or Hermes under Providers, then add the server again."
+msgstr ""
+
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "No recent worktrees."
 msgstr ""
@@ -5540,7 +5540,7 @@ msgid "None of {provider}’s skills here can be chosen from a message."
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "None yet. Add a model server you run to use its models in OpenCode threads."
+msgid "None yet. Add a model server to use its models in threads."
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -6057,28 +6057,16 @@ msgid "Open Watcher’s room"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode and Hermes keep keys in their own Sotto folders. Adding with Hermes alone needs no OpenCode."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
-msgstr ""
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
-msgstr ""
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
-msgstr ""
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
 msgstr ""
 
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "OpenCode model sources on {host}"
-msgstr ""
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
 msgstr ""
 
 #. {ten} is the number 10. {host} is the server’s address and port, such as spark-head:8888; keep it as it is.
@@ -7141,10 +7129,6 @@ msgstr ""
 msgid "Runs on this computer"
 msgstr ""
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Runs with OpenCode"
-msgstr ""
-
 #. Where a continued thread works: the folder this thread works in.
 #. Where a continued thread works: the folder this thread works in.
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -7398,7 +7382,7 @@ msgid "Setup did not finish."
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
+msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -7844,7 +7828,19 @@ msgid "Sotto could not discard this saved answer. It is still kept."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish removing {name}. It is still listed. Remove it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish that, so nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not keep the key for {name}, so nothing was saved. Try adding the server again."
 msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
@@ -8713,6 +8709,10 @@ msgstr ""
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr ""
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The server’s address, on this computer, your network, your tailnet or the internet."
+msgstr ""
+
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr ""
@@ -9531,6 +9531,10 @@ msgstr ""
 msgid "Use {toolName}"
 msgstr ""
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Use its models with a connected provider."
+msgstr ""
+
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Use Left and Right arrow keys to resize. Hold Shift for larger steps. Home chooses the narrowest width; End chooses the widest."
 msgstr ""
@@ -9889,10 +9893,6 @@ msgstr ""
 msgid "Where the new thread works"
 msgstr ""
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Where the server listens, on this computer, your network or your tailnet."
-msgstr ""
-
 #. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Why:"
@@ -10169,10 +10169,6 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Your own server…"
-msgstr ""
-
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
 msgstr ""
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
