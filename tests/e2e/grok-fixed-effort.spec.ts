@@ -59,6 +59,13 @@ test('a started Grok thread says why its effort stays, from the pointer, the key
     await expect(page.getByRole('listbox')).toHaveCount(0)
     await page.mouse.move(0, 0)
     await expect(tip).toBeHidden()
+    // Brought up by the pointer while the keyboard is in the message box, the tip still goes with Escape.
+    await promptField(page).focus()
+    await chip.hover()
+    await expect(tip).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(tip).toBeHidden()
+    await page.mouse.move(0, 0)
 
     // The keyboard: Tab reaches the chip and shows why; Escape puts the tip away and leaves focus on the chip.
     // From the message box, as a person writing would; the model chip is fixed too, so Tab passes over it.
@@ -82,6 +89,15 @@ test('a started Grok thread says why its effort stays, from the pointer, the key
         await page.screenshot({ path: `${ARTIFACTS}/tip-${appearance}-${width}.png` })
       }
     }
+    // Reduced motion: the tip shows in place, with nothing sliding in.
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark', reducedMotion: 'on' }))
+    await resizeWindow(launched, 1280, 800)
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    await expect(tip).toBeVisible()
+    // Sotto's reduced motion cuts every transition to 1 ms (global.css), and the tip's slide is not drawn at all.
+    expect(await tip.evaluate(node => [getComputedStyle(node).transform, parseFloat(getComputedStyle(node).transitionDuration) <= 0.001])).toEqual(['none', true])
+    await page.screenshot({ path: `${ARTIFACTS}/tip-dark-1280-reduced-motion.png` })
+
     // Nothing was saved: the thread is where it started.
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id.endsWith('workshop'))?.reasoningEffort)).toBe('high')
     expect(errors).toEqual([])

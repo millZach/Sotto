@@ -408,6 +408,8 @@ private struct FoldRow<Mark: View>: View {
 struct SettingRow: View {
     let name: Text
     let value: String
+    /// The mark at the end: a menu's chevron, or a lock where the setting stays as it is (`FixedSettingRow`).
+    var glyph = "chevron.up.chevron.down"
     @Environment(\.isEnabled) private var enabled
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
@@ -425,7 +427,7 @@ struct SettingRow: View {
                 Spacer(minLength: Space.s2)
                 Text(verbatim: value).foregroundStyle(Palette.muted).lineLimit(1)
             }
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.muted)
+            Image(systemName: glyph).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
         .font(.sotto(.body))
@@ -440,45 +442,17 @@ struct SettingRow: View {
 }
 
 /// A row in the settings sheet for a setting the agent keeps as the thread started (#228, Zach's pick B on November 9,
-/// 2026): its name, what it stays on and a lock in place of the chevron, opening nothing. A tap shows why under it, and
-/// VoiceOver hears why as its hint.
+/// 2026): its name, what it stays on and a lock in place of the chevron, opening nothing. A tap shows why under it.
+/// VoiceOver reads it as one element, with the reason after the value, so it is heard whether or not hints are on.
 struct FixedSettingRow: View {
     let name: Text
     let value: String
     let reason: String
     @State private var why = false
-    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { why.toggle() } label: {
-                HStack(spacing: Space.s2) {
-                    if typeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: 2) {
-                            name.foregroundStyle(Palette.ink)
-                            Text(verbatim: value).foregroundStyle(Palette.muted)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: Space.s2)
-                    } else {
-                        name.foregroundStyle(Palette.ink)
-                        Spacer(minLength: Space.s2)
-                        Text(verbatim: value).foregroundStyle(Palette.muted).lineLimit(1)
-                    }
-                    Image(systemName: "lock").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.muted)
-                        .accessibilityHidden(true)
-                }
-                .font(.sotto(.body))
-                .padding(.horizontal, Space.s3 + 16 + Space.s2)
-                .padding(.vertical, typeSize.isAccessibilitySize ? Space.s2 : 0)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(name)
-            .accessibilityValue(value)
-            .accessibilityHint(reason)
-            .accessibilityIdentifier("setting-fixed")
+            Button { why.toggle() } label: { SettingRow(name: name, value: value, glyph: "lock") }
+                .buttonStyle(.plain)
             if why {
                 Text(verbatim: reason)
                     .font(.sotto(.caption))
@@ -486,9 +460,13 @@ struct FixedSettingRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Space.s3 + 16 + Space.s2)
                     .padding(.bottom, Space.s2)
-                    .accessibilityHidden(true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue(Text(verbatim: "\(value). \(reason)"))
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityIdentifier("setting-fixed")
     }
 }
 

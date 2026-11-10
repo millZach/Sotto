@@ -34,6 +34,13 @@ export function FixedEffortChip({ level, provider, quiet, trace }: {
   const rest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(rest.current), [])
   const shown = !away && (rested || focused)
+  // A tip the pointer brought up goes with Escape wherever the focus is, as the model chip's card does.
+  useEffect(() => {
+    if (!shown || focused) return
+    const dismiss = (event: KeyboardEvent): void => { if (event.key === 'Escape') setAway(true) }
+    document.addEventListener('keydown', dismiss)
+    return () => document.removeEventListener('keydown', dismiss)
+  }, [shown, focused])
   const word = level ? effortLabel(level) : t`Provider default`
   const label = OPTION_CHIP_NAMES.effort
   return <span className={quiet ? 'split-chip-effort effort-fixed' : 'thread-chip-menu effort-fixed'} data-effort-trace={trace}>
