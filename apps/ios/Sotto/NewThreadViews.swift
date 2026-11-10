@@ -213,7 +213,7 @@ struct NewThreadSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 StepTitle(title: String(localized: "Where should it run?"), subtitle: String(localized: "Threads run on a computer with Sotto open."))
-                VStack(spacing: Space.s2) {
+                PickList {
                     ForEach(model.computers, id: \.hostID) { computer in
                         Button { chooseComputer(computer.hostID) } label: {
                             PickRow(title: computer.name, detail: computerDetail(computer.hostID),
@@ -255,7 +255,7 @@ struct NewThreadSheet: View {
                     .padding(.bottom, Space.s5)
                 StepTitle(title: String(localized: "Which project?"), subtitle: String(localized: "The thread works in this folder."))
                 connectionNotice
-                VStack(spacing: Space.s2) {
+                PickList {
                     ForEach(model.projects(hostID)) { project in
                         Button { projectID = project.id; folder = nil; chooseOptions() } label: {
                             PickRow(title: project.title, detail: projectDetail(project)) {
@@ -575,6 +575,23 @@ private struct PickRow<Leading: View>: View {
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .contentShape(shape)
         .opacity(enabled ? 1 : 0.62)
+    }
+}
+
+/// A step's choices: one column, or on the Duo held sideways two to a row, so the sheet's wide rows no longer leave
+/// their chevrons far from their names and its lower part empty (Zach's round 6 pick B, November 10, 2026). At the
+/// accessibility text sizes half the sheet can't hold a name, so they keep one column.
+private struct PickList<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        if duo.sideways && !typeSize.isAccessibilitySize {
+            let column = GridItem(.flexible(), spacing: Space.s3, alignment: .top)
+            LazyVGrid(columns: [column, column], spacing: Space.s2) { content() }
+        } else {
+            VStack(spacing: Space.s2) { content() }
+        }
     }
 }
 
