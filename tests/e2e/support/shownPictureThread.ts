@@ -28,9 +28,9 @@ export interface ShownPictureThread {
  * git-ignored `test-results/` and ends with "Here is the checkout page.", which shows nothing of its own with **Show every
  * picture and video an agent makes** off, as it is here unless `everyPicture` says otherwise. The journey shows it through
  * `sotto_media`'s show_in_thread, as an agent does when the user asks to see it. The profile, the fixture and the
- * environment are put back afterwards.
+ * environment are put back afterwards. `pictures` makes the turn write that many screenshots rather than one.
  */
-export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>, options: { readonly everyPicture?: boolean } = {}): Promise<void> {
+export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>, options: { readonly everyPicture?: boolean; readonly pictures?: number } = {}): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'native-fixture')
   const project = join(root, 'project')
@@ -69,6 +69,8 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
     const native = (await nativeThread())!
     await mkdir(join(project, 'test-results'), { recursive: true })
     await copyFile(SHOWN_PICTURE, join(project, 'test-results', 'checkout.png'))
+    // A turn that wrote several pictures, for the count at the end of a line (ADR-0170, pictures in steps).
+    for (let index = 2; index <= (options.pictures ?? 1); index += 1) await copyFile(SHOWN_PICTURE, join(project, 'test-results', `checkout-${index}.png`))
     const id = randomUUID()
     await writeFile(join(root, 'codex', 'control.json'), JSON.stringify({ id, threadId: native, type: 'complete', text: 'Here is the checkout page.' }))
     await expect.poll(async () => (await readFile(join(root, 'codex', 'actions.jsonl'), 'utf8').catch(() => '')).includes(id), { timeout: 30_000 }).toBe(true)

@@ -473,24 +473,28 @@ struct CameraPicker: UIViewControllerRepresentable {
 
 // MARK: An agent's pictures
 
-/// The pictures a run of steps made or looked at (ADR-0170), as tiles two across under the run, whether it is open or
-/// folded: a press opens them full screen. Each tile reads its picture from the computer when it first shows, and the
-/// thumbnail is made here, as a sent photo's is.
+/// The pictures of a run of steps that stand in the thread (ADR-0170), as tiles two across under the run, whether it is
+/// open or folded: what the agent showed through `sotto_media` and an image the user asked it to make. A press opens them
+/// full screen. Every other picture sits small in its step's line (`StepPictureStrip`). Each tile reads its picture from
+/// the computer when it first shows, and the thumbnail is made here, as a sent photo's is.
 struct AgentPictures: View {
     let ref: ThreadRef
     let steps: [Activity]
     /// Who wrote the steps, the thread's provider: the viewer names a picture's callouts as theirs.
     var by: String? = nil
     let open: (OpenPhotos) -> Void
+    private var tiled: [Activity] { StepPictures.inThread(steps) }
     private var items: [OpenPhotos.Item] {
-        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
-            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step),
-                            callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
-        } }
+        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { AgentPictures.viewed(ref: ref, step: step, picture: $0, by: by) } }
+    }
+    /// One of a step's pictures as the viewer shows it: read by its handle, named by its step, with its callouts and size.
+    static func viewed(ref: ThreadRef, step: Activity, picture: Activity.Media, by: String?) -> OpenPhotos.Item {
+        OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: title(of: step),
+                        callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
     }
     /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
     private var gifs: Set<String> {
-        Set(steps.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
+        Set(tiled.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
     }
     /// A step's name: the computer's words, or this iPhone's for the step Sotto makes for a turn's written files.
     static func title(of step: Activity) -> String {
@@ -505,7 +509,7 @@ struct AgentPictures: View {
     }
     /// The videos the steps' turns wrote, each played in its own tile.
     private var videos: [WrittenVideo] {
-        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
+        tiled.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
     }
     var body: some View {
         let _ = BenchProbe.body("AgentPictures")
@@ -513,7 +517,7 @@ struct AgentPictures: View {
         let gifs = self.gifs
         let videos = self.videos
         // A step still making an image shows the owl at the easel in its picture's place.
-        let making = steps.filter(\.makingImage)
+        let making = tiled.filter(\.makingImage)
         if !items.isEmpty || !videos.isEmpty || !making.isEmpty {
             TwoAcross(tiles: items.count + videos.count + making.count) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
@@ -530,6 +534,116 @@ struct AgentPictures: View {
             }
             .padding(.vertical, Space.s2)
         }
+    }
+}
+
+/// An agent's pictures in its steps (ADR-0170, pictures in steps; Zach's pick A): the newest three of a line's pictures,
+/// small, at the line's end, with a count for the rest. A picture opens the viewer, where Mark up is, stepping through the
+/// pictures of the run around the line; a video's mark plays it in a tile under the line (`playing`).
+struct StepPictureStrip: View {
+    let ref: ThreadRef
+    /// The pictures and videos the line stands for, in the order their steps came.
+    let items: [StepPictures.Item]
+    /// The run around the line: the viewer steps through its pictures.
+    let run: [Activity]
+    var by: String? = nil
+    @Binding var playing: String?
+    let open: (OpenPhotos) -> Void
+    var body: some View {
+        let line = StepPictures.line(items)
+        // The count opens the first picture it stands for, or plays its first video when it stands for videos alone.
+        let first = line.hidden.first { $0.media.kind == "image" } ?? line.hidden.first
+        let opensPicture = first?.media.kind == "image"
+        HStack(spacing: 4) {
+            if let first {
+                Button { if opensPicture { show(first) } else { play(first) } } label: {
+                    Text(verbatim: "+" + line.hidden.count.formatted()).font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 5).frame(minWidth: 26, minHeight: 23)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Palette.hairline, lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(opensPicture
+                    ? Text("Open all pictures", comment: "The count before a step's newest pictures, which opens the viewer at the first of the rest.")
+                    : Text("Play the next video", comment: "The count before a step's newest pictures when it stands for videos alone; a tap plays the first under the line."))
+            }
+            ForEach(line.shown) { item in
+                if item.media.kind == "video" {
+                    Button { play(item) } label: {
+                        Image(systemName: "film").iconFont(11, weight: .semibold, relativeTo: .footnote).foregroundStyle(playing == item.id ? Palette.ink : Palette.muted)
+                            .frame(width: 34, height: 23).background(Palette.raised, in: RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(playing == item.id ? Palette.accent : Palette.hairline, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(playing == item.id
+                        ? Text("Close video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video playing under it; %@ names the step. A tap takes the video away.")
+                        : Text("Play video from \(AgentPictures.title(of: item.step))", comment: "A small mark at the end of a step's line for a video it wrote; %@ names the step. It plays under the line."))
+                    .accessibilityAddTraits(playing == item.id ? .isSelected : [])
+                } else {
+                    Button { show(item) } label: { StepPictureThumb(key: key(item)) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Open picture from \(AgentPictures.title(of: item.step))", comment: "A small picture at the end of a step's line; %@ names the step that made it."))
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+    private func key(_ item: StepPictures.Item) -> PhotoPreviews.Key {
+        PhotoPreviews.Key(ref: ref, messageID: item.step.id, attachmentID: item.media.id, activityID: item.step.id)
+    }
+    /// Plays a video under the line, or takes it away when it is the one playing.
+    private func play(_ item: StepPictures.Item) { playing = playing == item.id ? nil : item.id }
+    /// Opens the viewer at `item`, among the run's pictures, or the line's own when the run does not hold it.
+    private func show(_ item: StepPictures.Item?) {
+        guard let item else { return }
+        let around = StepPictures.inSteps(run)
+        let pictures = (around.contains { $0.id == item.id } ? around : items).filter { $0.media.kind == "image" }
+        guard let index = pictures.firstIndex(where: { $0.id == item.id }) else { return }
+        let viewed = pictures.map { AgentPictures.viewed(ref: ref, step: $0.step, picture: $0.media, by: by) }
+        open(OpenPhotos(ref: ref, id: "step-pictures-" + (run.first?.id ?? item.step.id), items: viewed, index: index))
+    }
+}
+
+/// The video a line's strip set playing, in a picture's tile under the line.
+struct StepPictureVideo: View {
+    let ref: ThreadRef
+    let items: [StepPictures.Item]
+    let playing: String?
+    var body: some View {
+        let videos = items.filter { $0.media.kind == "video" }
+        if let playing, let index = videos.firstIndex(where: { $0.id == playing }) {
+            // A tap on its mark was the ask, so it plays at once; another video's tile starts afresh.
+            AgentVideoTile(ref: ref, step: videos[index].step, video: videos[index].media, number: index + 1, count: videos.count, playsAtOnce: true)
+                .id(playing)
+                .frame(maxWidth: 260)
+                .padding(.vertical, Space.s1)
+        }
+    }
+}
+
+/// One of a line's pictures, small: its thumbnail is read when it shows and let go when it leaves, as a tile's is.
+private struct StepPictureThumb: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var previews: PhotoPreviews
+    let key: PhotoPreviews.Key
+    @State private var image: CGImage?
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .frame(width: 34, height: 23)
+            .overlay { if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() } }
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Palette.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+            .onAppear { previews.appeared(key) }
+            .onDisappear { previews.disappeared(key); image = nil }
+            .task(id: key) {
+                if image == nil { image = previews.cached(key) }
+                guard image == nil else { return }
+                let read = await previews.thumbnail(key, model: model)
+                guard !Task.isCancelled else { return }
+                image = read
+            }
     }
 }
 
@@ -654,13 +768,15 @@ private struct GIFFrames: @unchecked Sendable {
 /// A video an agent wrote (ADR-0170, part 4), in a tile the size of a picture's. It is fetched from its computer only when
 /// it is tapped, plays only then, and pauses the moment it scrolls away. One larger than this iPhone fetches says it
 /// plays on the desktop.
-private struct AgentVideoTile: View {
+struct AgentVideoTile: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let step: Activity
     let video: Activity.Media
     let number: Int
     let count: Int
+    /// Opened by a tap on its mark in a step's line, it fetches and plays when it first shows.
+    var playsAtOnce = false
     @State private var player: AVPlayer?
     @State private var progress: Double?
     @State private var problem: Problem?
@@ -687,7 +803,7 @@ private struct AgentVideoTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .onAppear { shown = true }
+            .onAppear { shown = true; if playsAtOnce, player == nil, progress == nil, problem == nil { start() } }
             // Scrolled away, it pauses at once; its fetch, if any, stops asking for parts.
             .onDisappear { shown = false; player?.pause() }
     }

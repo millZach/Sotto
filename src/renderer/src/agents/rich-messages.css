@@ -364,6 +364,40 @@
 .thread-media__callouts { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .thread-media__callout-count { position: absolute; top: 6px; right: 6px; min-width: 20px; padding: 1px 7px; border-radius: var(--tt-radius-full); background: var(--tt-accent); color: var(--tt-on-accent); font-size: var(--tt-type-caption); font-weight: 700; text-align: center; pointer-events: none; }
 .thread-media__callout-count--start { right: auto; left: 6px; }
+/* An agent's pictures in its steps (ADR-0170, pictures in steps; Zach's pick A): the newest three at a line's end, small, with a
+   count for the rest. A row keeps room for them beside its time (`.step-pictures__slot`) and the strip is drawn over that room,
+   since its buttons cannot sit inside the row's own button. */
+.step-pictures { display: inline-flex; flex: none; align-items: center; gap: 4px; vertical-align: middle; }
+.step-pictures__thumb {
+  display: grid; flex: none; place-items: center; box-sizing: border-box; width: 34px; height: 24px; min-height: 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-text-muted); cursor: zoom-in;
+  transition: border-color 120ms ease;
+}
+.step-pictures__thumb:hover { border-color: var(--tt-hairline); }
+.step-pictures__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.step-pictures__thumb--video { cursor: default; }
+.step-pictures__thumb--video[aria-pressed='true'] { border-color: var(--tt-accent); color: var(--tt-text); }
+.step-pictures__more {
+  flex: none; box-sizing: border-box; min-width: 26px; height: 24px; min-height: 0; padding: 0 5px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.step-pictures__more:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text-2); }
+.step-pictures__slot {
+  display: inline-block; flex: none; height: 24px; anchor-name: --step-pictures;
+  width: calc(var(--step-pictures) * 34px + (var(--step-pictures) - 1) * 4px + var(--step-pictures-more) * 30px);
+}
+.thread-activity__row > .step-pictures { position: absolute; position-anchor: --step-pictures; top: anchor(center); left: anchor(left); translate: 0 -50%; }
+.thread-browser__steps > li > .step-pictures { margin-left: auto; }
+/* A folded browser line keeps room for its run's strip the way a row does, wherever the line stands. */
+.thread-browser { position: relative; anchor-scope: --step-pictures; }
+.thread-browser > .step-pictures { position: absolute; position-anchor: --step-pictures; top: anchor(center); left: anchor(left); translate: 0 -50%; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .step-pictures__slot { margin-left: auto; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .step-pictures__slot + .thread-activity__chevron { margin-left: 0; }
+.step-pictures__player { margin: 4px 0 8px 30px; }
+.thread-work > .step-pictures { margin: 0 0 8px; }
+.thread-activity > .step-pictures { margin-left: 4px; }
+
 /* The owl at the easel (ADR-0170): two layers of text the same size, the painting over the easel and the owl. */
 .owl-easel { position: absolute; inset: 0; overflow: hidden; }
 .owl-easel pre { position: absolute; inset: 0; margin: 0; font-family: var(--tt-font-mono); white-space: pre; overflow: hidden; }
