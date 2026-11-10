@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
-import { FILE_UPLOAD_IDLE_MS, FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH, FileUploadRefusal, FileUploads } from '../../../src/host/fileUploads'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { FILE_UPLOAD_IDLE_MS, FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH, FileUploadRefusal, FileUploads, VIDEO_UPLOAD_IDLE_MS, type ReceivedVideo } from '../../../src/host/fileUploads'
 import { HOST_FILE_PART_BYTES, HOST_FILE_PARTS_MAX, hostFilePartSchema, hostRequestSchema, type HostFilePart } from '../../../src/shared/hostProtocol'
 
 /** A file's bytes cut into the parts a desktop sends, each naming the whole file. */
@@ -134,5 +137,87 @@ describe('a file sent to a host in parts (ADR-0131)', () => {
     expect(hostFilePartSchema.safeParse({ ...part, mimeType: 'Not a type' }).success).toBe(false)
     expect(hostFilePartSchema.safeParse({ ...part, data: 'A'.repeat(Math.ceil(HOST_FILE_PART_BYTES / 3) * 4 + 4) }).success).toBe(false)
     expect(hostRequestSchema.safeParse({ v: 1, id: 'one', session: 'session', op: 'stage-file-part', part }).success).toBe(true)
+  })
+})
+
+describe('a video sent to a host in parts (ADR-0131, November 9 amendment)', () => {
+  const roots: string[] = []
+  afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+  async function folder(): Promise<string> { const root = await mkdtemp(join(tmpdir(), 'sotto-video-uploads-')); roots.push(root); return join(root, 'uploads') }
+  const refusedAsync = async (run: () => Promise<unknown>): Promise<string> => {
+    try { await run() } catch (error) { if (error instanceof FileUploadRefusal) return error.message; throw error }
+    throw new Error('The part was not refused.')
+  }
+  const video = (size: number) => Buffer.alloc(size, 9)
+
+  it('writes a video\'s parts to a file, not memory, and hands back the checked file', async () => {
+    const videoFolder = await folder()
+    const uploads = new FileUploads<string>({ videoFolder })
+    const bytes = video(3 * 1024 + 5)
+    const parts = partsOf(bytes, { name: 'clip.mov', mimeType: 'video/quicktime', partBytes: 1024 })
+    for (const part of parts.slice(0, -1)) await expect(uploads.receivePart('phone', part)).resolves.toBeNull()
+    expect(await readdir(videoFolder)).toHaveLength(1)
+    const file = await uploads.receivePart('phone', parts.at(-1)!) as ReceivedVideo
+    expect(file).toMatchObject({ name: 'clip.mov', mimeType: 'video/quicktime', sizeBytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') })
+    expect(file.path.startsWith(videoFolder)).toBe(true)
+    expect('bytes' in file).toBe(false)
+  })
+
+  it('keeps a video when its client leaves, says how many parts it holds, and carries on from there', async () => {
+    const clock = scripted()
+    const uploads = new FileUploads<string>({ videoFolder: await folder(), now: clock.now, schedule: clock.schedule })
+    const bytes = video(3 * 1024)
+    const parts = partsOf(bytes, { name: 'clip.mov', mimeType: 'video/mp4', partBytes: 1024 })
+    await uploads.receivePart('phone', parts[0]!); await uploads.receivePart('phone', parts[1]!)
+    uploads.leave('phone')
+    clock.advance(VIDEO_UPLOAD_IDLE_MS - 1)
+    expect(uploads.progress('phone', parts[0]!.uploadId)).toBe(2)
+    expect(uploads.progress('phone', randomUUID())).toBeNull()
+    expect(uploads.progress('desktop', parts[0]!.uploadId)).toBeNull()
+    await expect(uploads.receivePart('phone', parts[2]!)).resolves.toMatchObject({ sizeBytes: bytes.length })
+    expect(uploads.progress('phone', parts[0]!.uploadId)).toBeNull()
+  })
+
+  it('lets a video go ten minutes after its last part, its file with it', async () => {
+    const clock = scripted()
+    const videoFolder = await folder()
+    const uploads = new FileUploads<string>({ videoFolder, now: clock.now, schedule: clock.schedule })
+    const parts = partsOf(video(2 * 1024), { name: 'clip.mov', mimeType: 'video/mp4', partBytes: 1024 })
+    await uploads.receivePart('phone', parts[0]!)
+    clock.advance(FILE_UPLOAD_IDLE_MS)
+    expect(uploads.progress('phone', parts[0]!.uploadId)).toBe(1)
+    clock.advance(VIDEO_UPLOAD_IDLE_MS - FILE_UPLOAD_IDLE_MS)
+    expect(uploads.holds('phone')).toBe(false)
+    expect(uploads.progress('phone', parts[0]!.uploadId)).toBeNull()
+    expect(await refusedAsync(() => uploads.receivePart('phone', parts[1]!))).toBe(FILE_UPLOAD_INCOMPLETE)
+    await expect.poll(() => readdir(videoFolder)).toEqual([])
+  })
+
+  it('refuses a video whose parts are not the file its first part named, and removes what it wrote', async () => {
+    const videoFolder = await folder()
+    const uploads = new FileUploads<string>({ videoFolder })
+    const parts = partsOf(video(2 * 1024), { name: 'clip.mov', mimeType: 'video/mp4', partBytes: 1024 })
+    await uploads.receivePart('phone', parts[0]!)
+    expect(await refusedAsync(() => uploads.receivePart('phone', { ...parts[1]!, data: Buffer.alloc(1024, 1).toString('base64') }))).toBe(FILE_UPLOAD_MISMATCH)
+    expect(await readdir(videoFolder)).toEqual([])
+  })
+
+  it('keeps a file\'s parts in memory as before, and lets a file go when its client leaves', async () => {
+    const videoFolder = await folder()
+    const uploads = new FileUploads<string>({ videoFolder })
+    const parts = partsOf(Buffer.alloc(2 * 1024, 3), { partBytes: 1024 })
+    await uploads.receivePart('phone', parts[0]!)
+    await expect(readdir(videoFolder)).rejects.toMatchObject({ code: 'ENOENT' })
+    uploads.leave('phone')
+    expect(uploads.holds('phone')).toBe(false)
+  })
+
+  it('removes the part files a host that stopped left behind', async () => {
+    const videoFolder = await folder()
+    const uploads = new FileUploads<string>({ videoFolder })
+    await uploads.receivePart('phone', partsOf(video(2 * 1024), { name: 'clip.mov', mimeType: 'video/mp4', partBytes: 1024 })[0]!)
+    await writeFile(join(videoFolder, 'keep.txt'), 'not a part')
+    await new FileUploads<string>({ videoFolder }).sweep()
+    expect(await readdir(videoFolder)).toEqual(['keep.txt'])
   })
 })

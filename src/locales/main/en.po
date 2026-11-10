@@ -817,6 +817,10 @@ msgstr "Enter one SSH answer without a line break."
 msgid "File checkpoint capture was unavailable."
 msgstr "File checkpoint capture was unavailable."
 
+#: src/main/agents/ipc.ts
+msgid "Files cannot be attached in this window. Nothing was attached."
+msgstr "Files cannot be attached in this window. Nothing was attached."
+
 #: src/main/files/ipc.ts
 msgid "Files cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr "Files cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."

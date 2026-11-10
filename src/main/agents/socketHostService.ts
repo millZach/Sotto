@@ -4,6 +4,8 @@ import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
@@ -11,7 +13,7 @@ import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostR
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
-import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, agentThreadMediaPartSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { AGENT_MAX_VIDEO_BYTES, FILE_UPLOAD_MISMATCH, HOST_CANNOT_STAGE_FILES, HOST_CANNOT_STAGE_VIDEOS, isImageAttachment, VIDEO_TOO_LARGE, type AgentAttachmentFileUpload, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, agentThreadMediaPartSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -1408,6 +1410,35 @@ export class SocketHostService implements HostService {
         answer = await this.call({ op: 'stage-file-part', part: { uploadId, index, count, name: file.name, mimeType: file.mimeType, sizeBytes: bytes.byteLength, digest, data } })
       }
       return this.read(agentAttachmentHandleSchema, answer)
+    })
+    this.previewTail = result.catch(() => undefined); return result
+  }
+  /**
+   * Sends a video from its path on this computer to a host that lists `video-staging`, in 8 MiB parts read one at a time,
+   * so the video is never held whole (ADR-0131, November 9 amendment). It is hashed in a first pass, since every part
+   * names the whole file. Queued behind previews like any large request; the last part's answer is the handle.
+   */
+  stageAttachmentFile(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle> {
+    if (!this.features.includes('video-staging')) return Promise.reject(new Error(HOST_CANNOT_STAGE_VIDEOS))
+    const result = this.previewTail.then(async () => {
+      const handle = await open(file.path, 'r')
+      try {
+        const info = await handle.stat()
+        if (!info.isFile() || info.size < 1 || info.size > AGENT_MAX_VIDEO_BYTES) throw new Error(VIDEO_TOO_LARGE)
+        const hash = createHash('sha256')
+        for await (const chunk of createReadStream(file.path)) hash.update(chunk as Buffer)
+        const digest = hash.digest('hex'), sizeBytes = info.size
+        const count = Math.max(1, Math.ceil(sizeBytes / HOST_FILE_PART_BYTES))
+        const uploadId = randomUUID()
+        let answer: unknown = null
+        for (let index = 0; index < count; index += 1) {
+          const part = Buffer.alloc(Math.min(HOST_FILE_PART_BYTES, sizeBytes - index * HOST_FILE_PART_BYTES))
+          const { bytesRead } = await handle.read(part, 0, part.length, index * HOST_FILE_PART_BYTES)
+          if (bytesRead !== part.length) throw new Error(FILE_UPLOAD_MISMATCH)
+          answer = await this.call({ op: 'stage-file-part', part: { uploadId, index, count, name: file.name, mimeType: file.mimeType, sizeBytes, digest, data: part.toString('base64') } })
+        }
+        return this.read(agentAttachmentHandleSchema, answer)
+      } finally { await handle.close() }
     })
     this.previewTail = result.catch(() => undefined); return result
   }

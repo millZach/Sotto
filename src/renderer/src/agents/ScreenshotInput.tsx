@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Download, Paperclip, X } from 'lucide-react'
 import { plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_IMAGE_BYTES,
-  agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentMimeType, isImageAttachment,
+import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_IMAGE_BYTES, AGENT_MAX_VIDEO_BYTES, AGENT_MAX_VIDEOS_TOTAL_BYTES,
+  agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentMimeType, attachmentVideosBytes, isImageAttachment, isVideoAttachment,
   SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type AgentAttachmentDimensions, type AgentAttachmentHandle, type AgentImageSize } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOwlFeature } from '../state/owlFeature'
@@ -109,7 +109,7 @@ function FilePill({ attachment, disabled, onRemove }: { readonly attachment: Age
 }
 
 /** A file on its way in, with the type it is staged under and the name it is shown by. */
-interface Incoming { readonly file: File; readonly mimeType: string; readonly name: string; readonly image: boolean }
+interface Incoming { readonly file: File; readonly mimeType: string; readonly name: string; readonly image: boolean; readonly video: boolean }
 
 /**
  * Every refusal the files' types and sizes decide once any file can be attached (ADR-0131), in the plan's order, or null
@@ -119,10 +119,13 @@ function refusalBeforeReading(incoming: readonly Incoming[], current: readonly A
   if (incoming.length + current.length > AGENT_MAX_ATTACHMENTS) return words.attachmentsTooMany()
   const images = incoming.filter(item => item.image)
   if (images.length && !imagesSupported) return words.imagesNotRead(images[0]!.name)
-  if (incoming.some(item => !item.image && item.file.size > AGENT_MAX_FILE_BYTES)) return words.fileTooLarge()
+  // A video has a limit and a total of its own, apart from the 50 MB for everything else (ADR-0131, November 9 amendment).
+  if (incoming.some(item => item.video && item.file.size > AGENT_MAX_VIDEO_BYTES)) return words.videoTooLarge()
+  if (incoming.some(item => !item.image && !item.video && item.file.size > AGENT_MAX_FILE_BYTES)) return words.fileTooLarge()
   if (images.some(item => item.file.size > AGENT_MAX_IMAGE_BYTES)) return words.imageTooLarge()
   if (attachmentImagesBytes(current) + images.reduce((sum, item) => sum + item.file.size, 0) > AGENT_MAX_ATTACHMENT_BYTES) return words.imagesTooLargeInTotal()
-  if (attachmentHandlesBytes(current) + incoming.reduce((sum, item) => sum + item.file.size, 0) > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return words.attachmentsTooLargeInTotal()
+  if (attachmentVideosBytes(current) + incoming.reduce((sum, item) => item.video ? sum + item.file.size : sum, 0) > AGENT_MAX_VIDEOS_TOTAL_BYTES) return words.videosTooLargeInTotal()
+  if (attachmentHandlesBytes(current) + incoming.reduce((sum, item) => item.video ? sum : sum + item.file.size, 0) > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return words.attachmentsTooLargeInTotal()
   return null
 }
 
@@ -241,7 +244,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     const incoming = files.map((file): Incoming => {
       const mimeType = attachmentMimeType(file.type)
       const image = isImageAttachment(mimeType)
-      return { file, mimeType, image, name: file.name || (image ? 'Screenshot.png' : 'File') }
+      return { file, mimeType, image, video: isVideoAttachment(mimeType), name: file.name || (image ? 'Screenshot.png' : 'File') }
     })
     // Every refusal that the files' types and sizes alone can decide comes before any file is read and staged.
     const refusal = refusalBeforeReading(incoming, current.current, imagesSupported ?? supported)
@@ -249,7 +252,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     const unread = { failed: words.fileStagingFailed(), unread: words.fileReadFailed() }
     return stageAll(incoming, item => item.image ? stageFile(target, item.file)
       : stageAttachedFile(target, { name: item.name, mimeType: item.mimeType, blob: item.file }, unread), addAnyFailed,
-    staged => attachmentImagesBytes(staged) > AGENT_MAX_ATTACHMENT_BYTES ? words.imagesTooLargeInTotal() : words.attachmentsTooLargeInTotal())
+    staged => attachmentImagesBytes(staged) > AGENT_MAX_ATTACHMENT_BYTES ? words.imagesTooLargeInTotal()
+      : attachmentVideosBytes(staged) > AGENT_MAX_VIDEOS_TOTAL_BYTES ? words.videosTooLargeInTotal() : words.attachmentsTooLargeInTotal())
   }
   const add = anyFile ? addAnyFiles : addScreenshots
   /** What a box that is archived, or still reading what was last added, says to a picture marked up meanwhile. */

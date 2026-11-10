@@ -18,7 +18,7 @@ import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, 
 import { watcherRoomForwarding } from './watcherRoomForwarding'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
@@ -77,7 +77,7 @@ import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
-import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
+import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_ATTACHMENT_STAGE_FILE, VIDEO_HAS_NO_PATH, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentStageFileRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -370,6 +370,15 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     // The composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
     stageAttachment: async (request: import('../shared/agents').AgentAttachmentStageRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
+    // A video too large to read into the window goes by the path of the file the user dropped or chose (ADR-0131,
+    // November 9 amendment). The window never sees the path; a file with none, such as a pasted one, is refused.
+    stageAttachmentFile: async ({ file, ...request }: Omit<import('../shared/agents').AgentAttachmentStageFileRequest, 'path'> & { readonly file: File }) => {
+      // As Electron documents it: the File the window hands across the bridge, its path read here and never handed back.
+      let path = ''
+      try { path = webUtils.getPathForFile(file) } catch { path = '' }
+      if (!path) return Promise.reject(new Error(VIDEO_HAS_NO_PATH))
+      return invokeParsed(renderer, AGENT_ATTACHMENT_STAGE_FILE, agentAttachmentHandleSchema, agentAttachmentStageFileRequestSchema.parse({ ...request, path }))
+    },
     attachmentContent: async (request: import('../shared/agents').AgentAttachmentContentRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
     chooseProjectDirectory: async () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, projectDirectorySchema),

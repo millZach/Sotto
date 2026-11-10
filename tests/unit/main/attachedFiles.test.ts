@@ -268,3 +268,27 @@ describe('a message\'s record of Point at something\'s picture (ADR-0154)', () =
     expect(attachmentReferences([promptImageOf(PIXEL_PNG)])[0]).not.toHaveProperty('pointed')
   })
 })
+
+describe('a video copied into the working folder (ADR-0131, November 9 amendment)', () => {
+  it('streams a video from where the store keeps it, never reading it whole, and names it in the note', async () => {
+    const { work, outside } = await folders()
+    const clip = Buffer.alloc(256 * 1024, 4)
+    const kept = join(outside, 'kept.bin'); await writeFile(kept, clip)
+    const video = { ...promptImageOf(clip, 'video', 'IMG_0412.MOV', 'video/quicktime'), read: async () => { throw new Error('read whole') }, path: () => kept }
+    const delivered = await deliverAttachments(work, [video])
+    expect((await readFile(saved(work, clip, 'IMG_0412.MOV'))).equals(clip)).toBe(true)
+    expect(delivered.note).toContain(`${attachedFileRelativePath(video.digest, 'IMG_0412.MOV')} (IMG_0412.MOV, MOV, 256 KB)`)
+    expect(delivered.nativePdfs).toEqual([])
+    // Sent again, the same content is the same file.
+    await expect(deliverAttachments(work, [video])).resolves.toMatchObject({ note: delivered.note })
+  })
+
+  it('refuses a video whose kept file is not the content its handle names, and leaves nothing behind', async () => {
+    const { work, outside } = await folders()
+    const clip = Buffer.alloc(4096, 4)
+    const kept = join(outside, 'kept.bin'); await writeFile(kept, Buffer.alloc(4096, 5))
+    const video = { ...promptImageOf(clip, 'video', 'clip.mp4', 'video/mp4'), path: () => kept }
+    await expect(deliverAttachments(work, [video])).rejects.toThrow(ATTACHED_FILES_NOT_SAVED)
+    await expect(stat(saved(work, clip, 'clip.mp4'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})

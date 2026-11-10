@@ -24,7 +24,14 @@ import type { MergedSettleExpectation } from './worktreeCleanup'
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
  * store when the adapter builds the provider's own form of it. Nothing before the adapter holds the bytes.
  */
-export interface PromptImage extends AgentAttachmentHandle { read(): Promise<Uint8Array> }
+export interface PromptImage extends AgentAttachmentHandle {
+  read(): Promise<Uint8Array>
+  /**
+   * The file its content is kept in, for a video copied into the working folder by streaming rather than read whole
+   * (ADR-0131, November 9 amendment); null or absent when there is none, and the reader falls back to `read`.
+   */
+  path?(): string | null
+}
 
 /** Internal capability supplied by main's durable identity, never part of a command or runtime mode. */
 export interface WatcherLaunchProfile {

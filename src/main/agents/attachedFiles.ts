@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
-import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { lstat, mkdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment, type AgentBrowserFeedback } from '../../shared/agents'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment, isVideoAttachment, type AgentBrowserFeedback } from '../../shared/agents'
 import { attachmentExtension, fileTypeLabel, formatAttachmentSize } from '../../shared/attachmentLabels'
 import type { PromptImage } from './host'
 import { isPdfBytes, nativePdfSelection } from './pdfPages'
@@ -238,6 +241,14 @@ export async function saveAttachedFiles(workingDirectory: string | undefined, fi
     await prepareFolder(workingDirectory)
     const saved:(AttachedFileEntry & { readonly bytes: Uint8Array })[] = []
     for (const file of files) {
+      // A video is copied by streaming from where the store keeps it, never read whole, and has no bytes to hand back:
+      // it is never a PDF that goes natively.
+      const kept = isVideoAttachment(file.mimeType) ? file.path?.() : null
+      if (kept) {
+        await saveOne(workingDirectory, file.digest, file.name, { path: kept, sizeBytes: file.sizeBytes })
+        saved.push({ relativePath: attachedFileRelativePath(file.digest, file.name), name: file.name, mimeType: file.mimeType, sizeBytes: file.sizeBytes, bytes: new Uint8Array(0) })
+        continue
+      }
       const bytes = await file.read()
       if (bytes.byteLength !== file.sizeBytes || createHash('sha256').update(bytes).digest('hex') !== file.digest) throw new Error('content changed')
       await saveOne(workingDirectory, file.digest, file.name, bytes)
@@ -276,7 +287,31 @@ async function prepareFolder(workingDirectory: string): Promise<void> {
   }
 }
 
-async function saveOne(workingDirectory: string, digest: string, name: string, bytes: Uint8Array): Promise<void> {
+/** What is saved: bytes in hand, or a file streamed from where the store keeps it, which must hash to the digest. */
+type SavedContent = Uint8Array | { readonly path: string; readonly sizeBytes: number }
+/** The SHA-256 of a file, read in a stream. */
+async function hashFile(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest('hex')
+}
+/**
+ * Streams a kept file to `target` (created with `wx`, mode 0o644), hashing what it reads. A copy that is not the
+ * content its digest names is removed and refused, as reading it whole would be.
+ */
+async function streamInto(source: { readonly path: string; readonly sizeBytes: number }, target: string, digest: string): Promise<void> {
+  const hash = createHash('sha256'); let size = 0
+  const tap = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); size += chunk.byteLength; done(null, chunk) } })
+  await pipeline(createReadStream(source.path), tap, createWriteStream(target, { flags: 'wx', mode: 0o644 }))
+  if (size !== source.sizeBytes || hash.digest('hex') !== digest) {
+    await unlink(target).catch(() => undefined)
+    throw new Error('content changed')
+  }
+}
+
+async function saveOne(workingDirectory: string, digest: string, name: string, content: SavedContent): Promise<void> {
+  const streamed = !(content instanceof Uint8Array)
+  const sizeBytes = streamed ? content.sizeBytes : content.byteLength
   const sotto = join(workingDirectory, FOLDERS[0]); const attachments = join(sotto, FOLDERS[1]); const folder = join(attachments, digest.slice(0, 12))
   await ensureFolder(sotto); await ensureFolder(attachments); await ensureFolder(folder)
   // Checked once more where it resolves to, in case a folder above was swapped for a link between the checks.
@@ -286,11 +321,11 @@ async function saveOne(workingDirectory: string, digest: string, name: string, b
     const info = await lstat(target).catch(missing)
     if (!info) return false
     // The same content is the same file sent again; anything else there is not overwritten.
-    if (info.isSymbolicLink() || !info.isFile() || info.size !== bytes.byteLength
-      || createHash('sha256').update(await readFile(target)).digest('hex') !== digest) throw new AttachedFilesRefusal(ATTACHED_FILE_CLASH)
+    if (info.isSymbolicLink() || !info.isFile() || info.size !== sizeBytes
+      || (streamed ? await hashFile(target) : createHash('sha256').update(await readFile(target)).digest('hex')) !== digest) throw new AttachedFilesRefusal(ATTACHED_FILE_CLASH)
     return true
   }
   if (await kept()) return
-  try { await writeFile(target, bytes, { flag: 'wx', mode: 0o644 }) }
+  try { if (streamed) await streamInto(content, target, digest); else await writeFile(target, content, { flag: 'wx', mode: 0o644 }) }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !await kept()) throw error }
 }

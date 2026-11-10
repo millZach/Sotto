@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, agentAttachmentHandleSchema, agentAttachmentHandlesSchema,
-  agentAttachmentStageRequestSchema, attachmentImagesBytes, attachmentMimeType, imagesNotReadRefusal, isImageAttachment, type AgentAttachmentHandle } from '../../../src/shared/agents'
-import { HOST_FEATURES } from '../../../src/shared/hostProtocol'
+import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_VIDEO_BYTES, agentAttachmentHandleSchema, agentAttachmentHandlesSchema,
+  agentAttachmentStageFileRequestSchema, agentAttachmentStageRequestSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentVideosBytes, isVideoAttachment, attachmentMimeType, imagesNotReadRefusal, isImageAttachment, type AgentAttachmentHandle } from '../../../src/shared/agents'
+import { HOST_FEATURES, HOST_VIDEO_PARTS_MAX, hostFilePartSchema, hostFileUploadProgressSchema, hostRequestSchema, isLargeVideoPart } from '../../../src/shared/hostProtocol'
 import { isOwlFeatureEnabled, OWL_FEATURES, owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 
 const MB = 1024 * 1024
@@ -56,5 +56,51 @@ describe('attached files in the shared schemas (ADR-0131)', () => {
     expect(isOwlFeatureEnabled('attach-any-file', 'owl')).toBe(true)
     expect(owlFeaturesForTrack('stable')['attach-any-file']).toBe(false)
     expect(HOST_FEATURES).toContain('file-staging')
+  })
+})
+
+describe('videos in the shared schemas (ADR-0131, November 9 amendment)', () => {
+  it('tells a video by its type, and gives it 500 MiB where a file has 25 MiB', () => {
+    for (const type of ['video/quicktime', 'video/mp4', 'video/webm', 'video/x-m4v']) expect(isVideoAttachment(type)).toBe(true)
+    for (const type of ['image/png', 'application/mp4', 'audio/mp4', 'text/plain']) expect(isVideoAttachment(type)).toBe(false)
+    expect(AGENT_MAX_VIDEO_BYTES).toBe(500 * MB)
+    expect(agentAttachmentHandleSchema.safeParse(handle('video/quicktime', 500 * MB)).success).toBe(true)
+    expect(agentAttachmentHandleSchema.safeParse(handle('video/quicktime', 500 * MB + 1)).success).toBe(false)
+    expect(agentAttachmentHandleSchema.safeParse(handle('application/zip', 26 * MB)).success).toBe(false)
+  })
+
+  it('counts videos against their own 500 MiB, apart from the 50 MiB for everything else', () => {
+    const set = [handle('video/quicktime', 300 * MB), handle('video/mp4', 200 * MB), handle('application/zip', 25 * MB), handle('application/zip', 25 * MB)]
+    expect(agentAttachmentHandlesSchema.safeParse(set).success).toBe(true)
+    expect(attachmentVideosBytes(set)).toBe(500 * MB)
+    expect(attachmentHandlesBytes(set)).toBe(50 * MB)
+    expect(agentAttachmentHandlesSchema.safeParse([...set, handle('video/mp4', 1)]).success).toBe(false)
+    expect(agentAttachmentHandlesSchema.safeParse([...set, handle('text/plain', 1)]).success).toBe(false)
+    // Eight attachments in all, videos among them.
+    expect(agentAttachmentHandlesSchema.safeParse(Array.from({ length: 9 }, () => handle('video/mp4', 1))).success).toBe(false)
+  })
+
+  it('stages a video by path only, never anything else, and never by bytes past a file\'s limit', () => {
+    const request = (mimeType: string) => ({ threadId: null, name: 'clip.mov', mimeType, path: '/Users/me/clip.mov' })
+    expect(agentAttachmentStageFileRequestSchema.safeParse(request('video/quicktime')).success).toBe(true)
+    expect(agentAttachmentStageFileRequestSchema.safeParse(request('application/zip')).success).toBe(false)
+    expect(agentAttachmentStageRequestSchema.safeParse({ threadId: null, name: 'clip.mov', mimeType: 'video/quicktime', bytes: new Uint8Array(AGENT_MAX_FILE_BYTES + 1) }).success).toBe(false)
+  })
+
+  it('lets a part name a video of up to 63 parts, and anything else no more than a file\'s four', () => {
+    const part = (mimeType: string, sizeBytes: number, count: number, index = 0) => ({ uploadId: crypto.randomUUID(), index, count, name: 'clip.mov', mimeType, sizeBytes, digest: 'a'.repeat(64), data: 'AAAA' })
+    expect(HOST_VIDEO_PARTS_MAX).toBe(63)
+    expect(hostFilePartSchema.safeParse(part('video/quicktime', 500 * MB, 63, 62)).success).toBe(true)
+    expect(hostFilePartSchema.safeParse(part('video/quicktime', 500 * MB + 1, 63)).success).toBe(false)
+    expect(hostFilePartSchema.safeParse(part('application/zip', 30 * MB, 4)).success).toBe(false)
+    expect(hostFilePartSchema.safeParse(part('application/zip', 25 * MB, 5)).success).toBe(false)
+    expect(hostFilePartSchema.safeParse(part('application/zip', 25 * MB, 4)).success).toBe(true)
+    expect(isLargeVideoPart(part('video/mp4', 25 * MB, 4))).toBe(false)
+    expect(isLargeVideoPart(part('video/mp4', 25 * MB + 1, 4))).toBe(true)
+    expect(hostRequestSchema.safeParse({ v: 1, id: 'one', session: 'session', op: 'file-upload-progress', uploadId: crypto.randomUUID() }).success).toBe(true)
+    expect(hostFileUploadProgressSchema.safeParse({ parts: 3 }).success).toBe(true)
+    expect(hostFileUploadProgressSchema.safeParse(null).success).toBe(true)
+    expect(hostFileUploadProgressSchema.safeParse({ parts: 0 }).success).toBe(false)
+    expect(HOST_FEATURES).toContain('video-staging')
   })
 })

@@ -3802,6 +3802,10 @@ msgstr "Each file must be 25 MB or smaller. Nothing was attached. Choose a small
 msgid "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
 msgstr "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one."
+msgstr "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one."
+
 #. Choose which files to commit.
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Edit"
@@ -8835,6 +8839,10 @@ msgid "This host cannot keep files yet. Update Sotto there, then attach them aga
 msgstr "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
 
 #: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached."
+msgstr "This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
 msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
 msgstr "This host is disconnected. Connect again before attaching files. Nothing was attached."
 
@@ -9005,6 +9013,10 @@ msgstr "This turn"
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr "This turn runs on {now}. The next turn starts on {next}."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there."
+msgstr "This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there."
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
@@ -9549,6 +9561,10 @@ msgstr "Video {number}"
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Video {number} of {count}, from {0}"
 msgstr "Video {number} of {count}, from {0}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
+msgstr "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "View PR"

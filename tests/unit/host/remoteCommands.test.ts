@@ -122,6 +122,8 @@ describe('remote command allow-list', () => {
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
       // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
       'stage-file-part',
+      // How many parts of its own video upload the host holds, so the client carries on where it stopped (ADR-0131, November 9 amendment): a read of its own upload.
+      'file-upload-progress',
       // A sent file's bytes by its message, for the iPhone's Quick Look: a read, as `preview` is.
       'attachment-file',
       // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.

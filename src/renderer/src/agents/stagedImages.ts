@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentAttachmentDimensions, AgentAttachmentHandle, AgentWireBridge } from '../../../shared/agents'
+import { AGENT_MAX_FILE_BYTES, isVideoAttachment } from '../../../shared/agents'
 
 /** The long edge of a chip's thumbnail, in pixels: twice the chip's own size, so it stays sharp at 200%. */
 export const THUMBNAIL_EDGE = 256
@@ -14,7 +15,7 @@ const THUMBNAIL_CACHE_CHARACTERS = 8 * 1024 * 1024
 const thumbnails = new Map<string, { readonly source: Promise<string | null>; size: number }>()
 
 /** Only the staging calls are used, which cross the bridge as they are. The popup has them on its own bridge. */
-function agents(): Pick<AgentWireBridge, 'stageAttachment' | 'attachmentContent'> | undefined { return window.sotto?.agents ?? window.sottoPopup }
+function agents(): Pick<AgentWireBridge, 'stageAttachment' | 'stageAttachmentFile' | 'attachmentContent'> | undefined { return window.sotto?.agents ?? window.sottoPopup }
 
 /** Drops the least recently used thumbnails until the cache is within both bounds. The newest is always kept. */
 function evict(): void {
@@ -130,8 +131,14 @@ export async function stageAttachedFile(threadId: string | null, file: { readonl
   words: { readonly failed: string; readonly unread: string }): Promise<AgentAttachmentHandle> {
   const bridge = agents()
   if (!bridge?.stageAttachment) throw new Error(words.failed)
-  const bytes = new Uint8Array(await file.blob.arrayBuffer().catch((error: unknown) => { throw new Error(words.unread, { cause: error }) }))
-  try { return await bridge.stageAttachment({ threadId, name: file.name, mimeType: file.mimeType, bytes }) }
+  // A video larger than a file may be is never read into the window: main reads it from where it is (ADR-0131, November 9 amendment).
+  const byPath = isVideoAttachment(file.mimeType) && file.blob.size > AGENT_MAX_FILE_BYTES
+  if (byPath && (!bridge.stageAttachmentFile || !(file.blob instanceof File))) throw new Error(words.failed)
+  const bytes = byPath ? null : new Uint8Array(await file.blob.arrayBuffer().catch((error: unknown) => { throw new Error(words.unread, { cause: error }) }))
+  try {
+    return bytes ? await bridge.stageAttachment({ threadId, name: file.name, mimeType: file.mimeType, bytes })
+      : await bridge.stageAttachmentFile!({ threadId, name: file.name, mimeType: file.mimeType, file: file.blob as File })
+  }
   catch (error) {
     const said = stagingError(error)
     throw new Error(said === STAGING_FAILED ? words.failed : said, { cause: error })
