@@ -1777,11 +1777,11 @@ private struct PillBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
     @Environment(\.duoLayout) private var duo
-    @Environment(\.colorScheme) private var scheme
-    /// On the Duo in light, a primary button that can't be pressed yet, such as Send answer before a choice, is the soft
-    /// grey of Not now with muted words: pale teal behind a white label at 42% could hardly be read (Zach's pick,
-    /// November 9, 2026, round 4).
-    private var greyedPrimary: Bool { kind == .primary && !enabled && duo != .none && scheme == .light }
+    /// On the Duo, a primary button that can't be pressed yet, such as Send answer before a choice, is the soft grey of
+    /// Not now with muted words, and turns the accent once it can be pressed. In light, pale teal behind a white label at
+    /// 42% could hardly be read (Zach's pick, November 9, 2026, round 4); in dark, the dimmed teal was still the most
+    /// coloured thing in view and looked pressable (Zach's round 7 pick A, November 10, 2026).
+    private var greyedPrimary: Bool { kind == .primary && !enabled && duo != .none }
     private var drawn: PillKind { greyedPrimary ? .soft : kind }
     var body: some View {
         label
