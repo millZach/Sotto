@@ -1020,7 +1020,10 @@ extension View {
     @ViewBuilder func onEndUnderBox(_ moved: @escaping (_ underBox: CGFloat, _ pageHeight: CGFloat) -> Void) -> some View {
         if #available(iOS 18.0, *) {
             onScrollGeometryChange(for: ScrolledEnd.self) { geometry in
-                let shownBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+                // The offset is the scroll view's top edge, and `containerSize` is what lies between its insets. On the
+                // large iPhone a page resting against the box read 276 points under it when the container was taken
+                // for the whole scroll view: 116 of bar inset above and 160 of box inset below.
+                let shownBottom = geometry.contentOffset.y + geometry.contentInsets.top + geometry.containerSize.height
                 return ScrolledEnd(underBox: geometry.contentSize.height - shownBottom, pageHeight: geometry.contentSize.height)
             } action: { _, end in
                 moved(end.underBox, end.pageHeight)
