@@ -173,6 +173,11 @@ private struct AgentsSheet: View {
                 if let title = source?.owner.title {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         .padding(.trailing, foldedStrip)
+                        // Held sideways, the thread's name stands as far above the first section's heading as a
+                        // section's last words stand above the next heading: a row's own 12 under its words and the
+                        // sections' 12 between them. Closer, the heading's light reached the name, and the grey name
+                        // read as one more heading (the Duo design climb's round 8).
+                        .padding(.bottom, duo.sideways ? Space.s3 : 0)
                 }
                 // Folded, the first section's heading and its rows start below the clock, where a row's button had run
                 // into it once rows went wide. Only the thread's name stands beside the clock, and the first heading
