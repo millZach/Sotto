@@ -102,7 +102,7 @@ private struct AgentsPresenter: ViewModifier {
     @State private var reopen = false
     func body(content: Content) -> some View {
         content
-            .duoSheet(isPresented: $open, onDismiss: {
+            .duoSheet(isPresented: $open, toFoot: true, onDismiss: {
                 guard let next = pending else { closed(); return }
                 pending = nil
                 reopen = true

@@ -1504,6 +1504,8 @@ extension EnvironmentValues {
         let id: UUID
         /// The question sheet's warm wash at its top.
         let wash: Bool
+        /// A sheet that takes the page's height runs on to the screen's foot (`DuoSheetLayer`).
+        var toFoot = false
         let content: AnyView
         let close: () -> Void
     }
@@ -1514,10 +1516,11 @@ extension EnvironmentValues {
 
 extension View {
     /// A sheet that is iOS's own everywhere but the Duo held sideways, where Sotto draws it over the page (`DuoSheetHost`).
-    /// A view inside it closes it with `dismiss`, which its sheets route through `sheetClose`.
-    func duoSheet<Sheet: View>(isPresented: Binding<Bool>, wash: Bool = false, onDismiss: (() -> Void)? = nil,
+    /// A view inside it closes it with `dismiss`, which its sheets route through `sheetClose`. `toFoot`: held sideways,
+    /// a sheet that takes the page's height runs on to the screen's foot.
+    func duoSheet<Sheet: View>(isPresented: Binding<Bool>, wash: Bool = false, toFoot: Bool = false, onDismiss: (() -> Void)? = nil,
                                @ViewBuilder content: @escaping () -> Sheet) -> some View {
-        modifier(DuoSheetPresenter(isPresented: isPresented, wash: wash, onDismiss: onDismiss, sheet: content))
+        modifier(DuoSheetPresenter(isPresented: isPresented, wash: wash, toFoot: toFoot, onDismiss: onDismiss, sheet: content))
     }
     func duoSheet<Item: Identifiable, Sheet: View>(item: Binding<Item?>, wash: Bool = false, onDismiss: (() -> Void)? = nil,
                                                    @ViewBuilder content: @escaping (Item) -> Sheet) -> some View {
@@ -1528,6 +1531,7 @@ extension View {
 private struct DuoSheetPresenter<Sheet: View>: ViewModifier {
     @Binding var isPresented: Bool
     let wash: Bool
+    let toFoot: Bool
     let onDismiss: (() -> Void)?
     let sheet: () -> Sheet
     @Environment(\.duoLayout) private var duo
@@ -1542,7 +1546,7 @@ private struct DuoSheetPresenter<Sheet: View>: ViewModifier {
                         let id = UUID()
                         showing = id
                         let binding = $isPresented
-                        host.show(.init(id: id, wash: wash, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
+                        host.show(.init(id: id, wash: wash, toFoot: toFoot, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
                     } else if !shown, let id = showing {
                         showing = nil
                         host.gone(id)
@@ -1678,8 +1682,8 @@ struct DuoPageFrame: PreferenceKey {
 }
 
 /// The Duo's own sheet over the page: a scrim over the whole screen, and the sheet inside the page's frame with a margin,
-/// as tall as a question asks to be or the page's full height. A drag down on its grabber or a tap on the scrim closes
-/// it, and VoiceOver treats it as a dialog that its escape gesture closes.
+/// as tall as a question asks to be, or from the page's top to the screen's foot. A drag down on its grabber or a tap on
+/// the scrim closes it, and VoiceOver treats it as a dialog that its escape gesture closes.
 struct DuoSheetLayer: View {
     @ObservedObject var host: DuoSheetHost
     let page: CGRect
@@ -1688,11 +1692,19 @@ struct DuoSheetLayer: View {
     /// How tall a question sheet asks to be (`RequestSheetFit`); nil for a sheet that takes the page's height.
     @State private var fit: CGFloat?
     @State private var drag: CGFloat = 0
+    /// Where the layer's foot and the screen's foot stand on the screen: the layer stands in the safe area, so a sheet
+    /// that runs to the screen's foot reaches the difference further down.
+    @State private var layerFoot: CGFloat = 0
+    @State private var screenFoot: CGFloat = 0
     /// The height of the grabber's strip over the sheet's content. A sheet that draws its own ground carries it up behind
     /// the grabber by this much (`NewThreadSheet`).
     static let grabber: CGFloat = 16
     /// The scrim in light: neutral, not the theme's, so the page under it greys rather than browns.
     static let lightScrim = Color(red: 10 / 255, green: 10 / 255, blue: 12 / 255).opacity(0.55)
+    /// The lower corners of a sheet that runs to the screen's foot, which follow the screen's own rounded corners.
+    static let footCorner: CGFloat = 44
+    /// How far a sheet that runs to the screen's foot holds its content up from it, clear of the home indicator.
+    static let footInset: CGFloat = Space.s4
     var body: some View {
         ZStack {
             if let shown = host.shown {
@@ -1709,11 +1721,16 @@ struct DuoSheetLayer: View {
                     .accessibilityHidden(true)
                     .transition(.opacity)
                 GeometryReader { proxy in
-                    let bottom = min(page.maxY, proxy.size.height) - Space.s2
+                    // The Agents and pull request sheets, which take the page's height, run on to the screen's foot,
+                    // where they stopped short and the page's dimmed words showed in the strip below them; a question
+                    // keeps fitting its choices and New thread its step (Zach's round 8 pick A, November 10, 2026).
+                    let toFoot = shown.toFoot && fit == nil
+                    let fitted = min(page.maxY, proxy.size.height) - Space.s2
+                    let bottom = toFoot ? proxy.size.height + max(0, screenFoot - layerFoot) : fitted
                     let top = page.minY + Space.s2
-                    let room = max(bottom - top, 160)
-                    let height = fit.map { min($0 + Self.grabber, room) } ?? room
-                    sheet(shown)
+                    let room = max(fitted - top, 160)
+                    let height = fit.map { min($0 + Self.grabber, room) } ?? max(bottom - top, 160)
+                    sheet(shown, toFoot: toFoot)
                         .frame(width: max(page.width - Space.s2 * 2, 0), height: height)
                         .position(x: page.midX, y: bottom - height / 2 + max(drag, 0))
                 }
@@ -1721,11 +1738,21 @@ struct DuoSheetLayer: View {
                 .id(shown.id)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { layerFoot = $0 }
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { screenFoot = $0 }
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.9), value: host.shown?.id)
         .onChange(of: host.shown?.id) { _, _ in fit = nil; drag = 0 }
     }
-    private func sheet(_ shown: DuoSheetHost.Shown) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+    private func sheet(_ shown: DuoSheetHost.Shown, toFoot: Bool) -> some View {
+        let foot = toFoot ? Self.footCorner : Radius.xl
+        let shape = UnevenRoundedRectangle(topLeadingRadius: Radius.xl, bottomLeadingRadius: foot, bottomTrailingRadius: foot,
+                                           topTrailingRadius: Radius.xl, style: .continuous)
         return VStack(spacing: 0) {
             Capsule().fill(Palette.muted.opacity(0.5)).frame(width: 36, height: 5)
                 .frame(maxWidth: .infinity, minHeight: Self.grabber)
@@ -1742,6 +1769,9 @@ struct DuoSheetLayer: View {
             shown.content
                 .environment(\.sheetClose, shown.close)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // At the screen's foot the content stops a set way up from it, whatever iOS would give it there.
+                .safeAreaPadding(.bottom, toFoot ? Self.footInset : 0)
+                .ignoresSafeArea(.container, edges: toFoot ? .bottom : [])
         }
         .onPreferenceChange(RequestSheetFit.self) { fit = $0 }
         .background { SheetBackdrop(wash: shown.wash) }

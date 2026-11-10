@@ -482,7 +482,7 @@ struct ThreadMenu: View {
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
-        .duoSheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest, toFoot: true) {
             if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
                 PullRequestSheet(ref: ref, url: url, number: number).overThread()
             }
@@ -1293,7 +1293,7 @@ private struct ThreadHero: View, Equatable {
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(edgeReader(\.minY, topMoved))
-        .duoSheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest, toFoot: true) {
             if let pullRequest, let number = chips.pullRequest?.number {
                 PullRequestSheet(ref: ref, url: pullRequest.url, number: number).overThread()
             }
