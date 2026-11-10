@@ -1,0 +1,14 @@
+15:19:57 upgrade from Sotto: extensions permessage-deflate
+15:23:32 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:33:30 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:34:10 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:36:58 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:38:08 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:39:14 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:41:38 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:42:12 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:42:31 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:48:33 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:49:36 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:55:12 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
+15:58:42 upgrade from Sotto CFNetwork Darwin: extensions permessage-deflate
