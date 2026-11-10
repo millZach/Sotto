@@ -1030,6 +1030,13 @@ private struct Conversation: View {
                 .onChange(of: proxy.frame(in: .global).maxY) { _, value in
                     endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
                 }
+                // The reading column grew or shrank, as it does held sideways when the sidebar comes or goes, and every
+                // line wrapped anew. A reader at the end stays there, with the last turn and its working line above the
+                // reply box, rather than trusting the scroll view to keep a page whose height changed under it at its end
+                // (the Duo design climb's round 6).
+                .onChange(of: proxy.size.width) { _, _ in
+                    if follow.atBottom { toBottom(scroll) }
+                }
         }
     }
 
