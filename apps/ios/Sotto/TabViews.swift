@@ -641,6 +641,23 @@ private struct ComputerMenu: View {
 /// How long ago, or how long a turn has run, in the fewest letters ("2m", "12m"), on the Duo's overview cards. One short
 /// form on every card, with no "ago" and no ticking seconds; seconds tick only on the open thread's rail (Zach's pick B,
 /// November 9, 2026, round 4). It refreshes every half minute.
+/// A card's thread name at the lead step. Held sideways on the Duo it fills its first line before it wraps, as the
+/// sidebar's names do (`FilledLines`), where `Text` wrapped it balanced, "Refine the iPhone" over "thread view" (the Duo
+/// design climb's round 6).
+private struct CardTitle: View {
+    let title: String
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.sottoTheme) private var theme
+    var body: some View {
+        if duo.sideways {
+            FilledLines(text: title, weight: .semibold, color: theme.color(.ink), lines: 0, scale: .lead)
+        } else {
+            Text(verbatim: title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct ShortAge: View {
     let iso: String?
     var body: some View {
@@ -763,8 +780,7 @@ private struct RequestCard: View {
                 }
             }
             .frame(minHeight: 18)
-            Text(verbatim: row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
+            CardTitle(title: row.thread.title)
                 .padding(.top, Space.s2)
             PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
                       text: duo != .none && !delegated ? Words.placeWithoutProvider(row) : place)
@@ -1034,8 +1050,7 @@ private struct WorkingCard: View {
                     }
                 }
                 .frame(minHeight: 18)
-                Text(verbatim: row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                CardTitle(title: row.thread.title)
                     .padding(.top, Space.s2)
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
                           text: duo != .none ? Words.placeWithoutProvider(row) : place)
@@ -1114,6 +1129,8 @@ private struct ThreadRow: View {
     var watched = false
     @EnvironmentObject var model: AppModel
     @Environment(\.sottoDensity) private var density
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.sottoTheme) private var theme
     private var state: ThreadState { ThreadState(row.thread) }
     /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
     private var failed: Bool { row.failed }
@@ -1146,8 +1163,14 @@ private struct ThreadRow: View {
                 // The name has the first line to itself and the second ends with the time, as the sidebar's rows do, so
                 // neither the name nor the computer is cut beside it (Zach's pick B, November 9, 2026).
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    if duo.sideways {
+                        // Held sideways the name fills its first line before it wraps, as the sidebar's do (the Duo
+                        // design climb's round 6).
+                        FilledLines(text: row.thread.title, weight: unread ? .bold : .semibold, color: theme.color(.ink), lines: 2)
+                    } else {
+                        Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                                   tone: failed ? Palette.dangerText : Palette.muted)

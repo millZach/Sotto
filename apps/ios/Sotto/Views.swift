@@ -1572,14 +1572,16 @@ private struct DuoItemSheetPresenter<Item: Identifiable, Sheet: View>: ViewModif
     }
 }
 
-/// Words over up to `lines` lines at the body step, in Figtree as `Font.sotto(.body, weight)` draws them, that fill each
-/// line before they wrap and end in an ellipsis past the last. SwiftUI's `Text` moves a word down so a last line is
-/// never a single word, which left a two-line name's first line short.
+/// Words over up to `lines` lines (0 for no limit) at the body step, or `scale`'s, in Figtree as `Font.sotto(scale,
+/// weight)` draws them, that fill each line before they wrap and end in an ellipsis past the last. SwiftUI's `Text`
+/// moves a word down so a last line is never a single word, which left a two-line name's first line short. `scale` is a
+/// step drawn relative to body, body or lead.
 struct FilledLines: UIViewRepresentable {
     let text: String
     let weight: Font.Weight
     let color: Color
     var lines = 2
+    var scale = TextScale.body
     @Environment(\.dynamicTypeSize) private var typeSize
 
     func makeUIView(context: Context) -> UILabel {
@@ -1606,7 +1608,7 @@ struct FilledLines: UIViewRepresentable {
 
     private func style(_ label: UILabel) {
         let traits = UITraitCollection(preferredContentSizeCategory: Self.category(typeSize))
-        let font = UIFont.figtree(TextScale.body.size, .body, weight, traits: traits)
+        let font = UIFont.figtree(scale.size, .body, weight, traits: traits)
         if label.font != font { label.font = font }
         if label.text != text { label.text = text }
         if label.numberOfLines != lines { label.numberOfLines = lines }
