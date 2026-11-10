@@ -18,7 +18,7 @@ export const OWN_SERVERS_MAX = 32
 export const OWN_SERVERS_FILE = 'own-model-servers.json'
 
 /**
- * What the record needs of Sotto's OpenCode, the one provider that runs the user's servers in this phase. The key passes
+ * What the record needs of Sotto's OpenCode. The key passes
  * through `signInWithKey` once, to OpenCode's own `connect/key`, and is never kept here.
  */
 export interface OwnServersOpenCode {
@@ -43,8 +43,8 @@ export interface OwnServersDeepSeek {
 }
 
 /**
- * Sotto's Hermes as the record reaches it: a keyed server's key is handed to it beside OpenCode's copy, so Hermes can run
- * that server too, and taken back on Remove. Its saves are nudged through `deepSeek.changed` like DeepSeek's.
+ * Sotto's Hermes as the record reaches it: it can keep a key on its own or beside OpenCode's copy, and forgets it on
+ * Remove. Its saves are nudged through `deepSeek.changed` like DeepSeek's.
  */
 export interface OwnServersHermes {
   keepKey(sourceId: string, key: string): Promise<void>
@@ -58,8 +58,10 @@ export interface OwnServersOptions {
   readonly openCode: () => OwnServersOpenCode | undefined
   /** Sotto's DeepSeek (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
   readonly deepSeek?: () => OwnServersDeepSeek | undefined
-  /** Sotto's Hermes, or, while its adapter does not run, its folder alone, so Remove still deletes the key it kept. */
+  /** Sotto's Hermes, only while its adapter runs and can keep a key. It need not be connected yet. */
   readonly hermes?: () => OwnServersHermes | undefined
+  /** Deletes Hermes's saved key and profile copies while its adapter does not run. */
+  readonly forgetHermesKey?: (sourceId: string) => Promise<void>
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
@@ -127,7 +129,7 @@ export class OwnServers {
   }
 
   /**
-   * Check again: the saved server as it is saved. Sotto keeps no key, so a server added with one that asks for it has
+   * Check again: the saved server as it is saved. Keys stay with providers, so a server that asks for its key has
    * answered, and says so with `keyKept`: its models could not be read again, so they are the saved ones. The time is
    * how long it took to ask, since a check that is asked for a key sends nothing more.
    */
@@ -153,8 +155,8 @@ export class OwnServers {
   }
 
   /**
-   * Adds a server: the record first, then OpenCode is told, and with a key the new source is signed in on a process
-   * started after the record had it. When OpenCode does not take the key, the record is taken out again.
+   * Adds a server: the record first, then its provider takes the key. OpenCode signs in on a process started after the
+   * record had it; Hermes can keep the key alone. A refused add clears the key before taking the record out again.
    */
   add(request: unknown): Promise<AddResult> {
     const parsed = addRequestSchema.parse(request)
@@ -169,10 +171,12 @@ export class OwnServers {
     if (!place.ok) return refusal(place.reason, ownServerRefusalWords(place.reason, place.host))
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
-    const openCode = this.options.openCode()
+    const candidate = this.options.openCode()
+    const openCode = candidate?.running() ? candidate : undefined
+    const hermes = this.options.hermes?.()
     // A keyless server needs no key kept anywhere, so DeepSeek's adapter can take it on its own (ADR-0138).
     const keyless = !(request.key?.trim())
-    if (!openCode?.running() && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    if (!openCode && !hermes && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
     const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
     if (saved) return refusal('already-added', ownServerRefusalWords('already-added', place.host))
     const key = request.key?.trim() || undefined
@@ -184,36 +188,37 @@ export class OwnServers {
     // A model listed twice is declared once, as OpenCode keys them by ID.
     const models = [...new Map(request.models.map(model => [model.id, model])).values()]
     // Checked whole before it is written, so the record never holds what it could not read back.
-    const server: OwnServer = ownServerSchema.parse({ id, name: request.name, address: place.address, keyed: key !== undefined, models })
+    const server: OwnServer = ownServerSchema.parse({ id, name: request.name, address: place.address, keyed: key !== undefined, models,
+      ...(key !== undefined ? { keyKeeper: openCode ? 'opencode' : 'hermes' } : {}) })
     await this.save([...servers, server])
     openCode?.outdated()
     if (key !== undefined) {
-      // A keyed add passed the gate above only with OpenCode running: it is the one that keeps the key.
-      const keeper = openCode!
-      const signedIn = await keeper.signInWithKey(id, key).catch(() => false)
+      const signedIn = openCode
+        ? await openCode.signInWithKey(id, key).catch(() => false)
+        : await hermes!.keepKey(id, key).then(() => true, () => false)
       if (!signedIn) {
         this.log('own-server-sign-in-failed')
-        // OpenCode may have kept the key all the same, such as when its answer was lost; it is asked to forget it while
-        // the record still declares the source, so no key is left behind for a source nothing lists.
-        if (!await keeper.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
-        // Nothing is kept: the record goes, and the processes started with it are outdated again. A record that cannot be
-        // written now still lists the server, without its key, and the answer says so rather than that nothing changed.
+        // The keeper may have saved the key before failing. Keep the server listed until that copy is gone.
+        const forgotten = openCode ? await openCode.signOut(id).catch(() => false) : await this.forgetHermes(server)
+        if (!forgotten) {
+          this.log('own-server-sign-out-failed')
+          return refusal('added-partly', OWN_SERVER_WORDS.addPartly(server.name))
+        }
         try { await this.save((await this.servers()).filter(item => item.id !== id)) } catch { return refusal('added-partly', OWN_SERVER_WORDS.addPartly(server.name)) }
-        keeper.outdated()
-        void keeper.catalogAgain().catch(() => false)
+        openCode?.outdated()
+        void openCode?.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
       }
       // Hermes's copy is a second keeper's, not the add's: without it the server runs in OpenCode alone.
-      await this.options.hermes?.()?.keepKey(id, key).catch(() => { this.log('own-server-sign-in-failed') })
+      if (openCode) await hermes?.keepKey(id, key).catch(() => { this.log('own-server-sign-in-failed') })
     } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
   }
 
   /**
-   * Removes a server: OpenCode forgets its key first, so no key is left behind for a source nothing lists, then the record
-   * goes and OpenCode is told. When the record could not be written after the key went, the answer says so; removing it
-   * again then signs out a source with no key left, which OpenCode takes as done.
+   * Removes a server: each keeper forgets its key before the record goes, so no key is left for a source nothing lists.
+   * OpenCode is needed only for a key it took. A failed cleanup keeps the server listed for another Remove.
    */
   remove(request: unknown): Promise<RemoveResult> {
     const { id } = removeRequestSchema.parse(request)
@@ -230,14 +235,16 @@ export class OwnServers {
     const openCode = this.options.openCode()
     const running = openCode?.running() === true
     if (server.keyed) {
-      if (!running) return refusal('opencode-not-running', OWN_SERVER_WORDS.removeNeedsOpenCode(server.name))
-      if (!await openCode!.signOut(id).catch(() => false)) {
-        this.log('own-server-sign-out-failed')
-        return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
+      if (server.keyKeeper !== 'hermes') {
+        if (!running) return refusal('opencode-not-running', OWN_SERVER_WORDS.removeNeedsOpenCode(server.name))
+        if (!await openCode!.signOut(id).catch(() => false)) {
+          this.log('own-server-sign-out-failed')
+          return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
+        }
       }
       // Hermes's copy goes only once OpenCode's has, so a refused sign-out leaves the server whole on both. One Hermes
       // cannot delete stays listed with the server, and a second Remove finishes both, as after a record that cannot be written.
-      if (!await (this.options.hermes?.()?.forgetKey(id) ?? Promise.resolve()).then(() => true, () => false)) {
+      if (!await this.forgetHermes(server)) {
         this.log('own-server-sign-out-failed')
         return refusal('removed-partly', OWN_SERVER_WORDS.removePartly(server.name))
       }
@@ -250,6 +257,13 @@ export class OwnServers {
       if (!await openCode!.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     }
     return { status: 'ok' }
+  }
+
+  private async forgetHermes(server: OwnServer): Promise<boolean> {
+    const hermes = this.options.hermes?.()
+    const forget = hermes ? (id: string) => hermes.forgetKey(id) : this.options.forgetHermesKey
+    if (!forget) return server.keyKeeper !== 'hermes'
+    return forget(server.id).then(() => true, () => false)
   }
 }
 

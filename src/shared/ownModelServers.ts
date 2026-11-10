@@ -5,7 +5,7 @@ import type { OwnServerTurn, OwnServerTurnFailure } from './agentActivity'
  * Your own model servers (ADR-0124): model servers the user runs, such as SGLang, vLLM, Ollama, LM Studio or llama.cpp,
  * on this computer, their network or their tailnet, which a provider drives as a model source. OpenCode is the first
  * provider to run them. Main keeps the record and checks a server only when the user presses Check or Add; a key goes
- * from the dialog to main once and from main to Sotto's OpenCode once, and nothing here carries one back.
+ * from the dialog to main once and on to Sotto's OpenCode or Hermes, and nothing here carries one back.
  */
 
 /** Passed to the main window's preload only while the `own-model-servers` Owl feature is on; without it there is no bridge. */
@@ -43,9 +43,11 @@ export const ownServerModelSchema = z.object({
 }).strict()
 export type OwnServerModel = z.infer<typeof ownServerModelSchema>
 
-/** A saved server. It holds no key: `keyed` only says one was given to OpenCode when it was added. */
+/** A saved server. It holds no key, only which provider took it first. */
 export const ownServerSchema = z.object({
   id: serverId, name, address, keyed: z.boolean(), models: z.array(ownServerModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
+  /** Absent on old records, whose keys were always given to OpenCode. Hermes may also hold a copy of OpenCode's key. */
+  keyKeeper: z.enum(['opencode', 'hermes']).optional(),
 }).strict()
 export type OwnServer = z.infer<typeof ownServerSchema>
 export const ownServerListSchema = z.array(ownServerSchema).max(32)
@@ -71,9 +73,9 @@ export const ownServerRefusalSchema = z.enum([
   'already-added',
   /** Something in Sotto went wrong before the request was done, such as the record not being written. */
   'failed',
-  /** Remove signed OpenCode out of the server's key but could not take the server off the list; a second Remove finishes it. */
+  /** Remove could not clear every key or take the server off the list; a second Remove finishes it. */
   'removed-partly',
-  /** Add could not sign the key in and then could not take the server back off the list: it is saved, without its key. */
+  /** Add could not keep the key and then could not clear every copy or take the server back off the list. */
   'added-partly',
 ])
 export type OwnServerRefusal = z.infer<typeof ownServerRefusalSchema>
@@ -89,7 +91,7 @@ export const checkResultSchema = z.discriminatedUnion('status', [
     /** How long the server took to list its models, or with `keyKept` to ask for its key, in milliseconds. */
     answeredMs: z.number().int().min(0).max(600_000),
     /**
-     * Check again on a server added with a key: it answered and asked for the key, which OpenCode keeps and Sotto does not,
+     * Check again on a server added with a key: it answered and asked for the key, which its provider keeps,
      * so its models could not be read again and `models` are the saved ones. Absent on every other check.
      */
     keyKept: z.literal(true).optional(),
@@ -129,15 +131,15 @@ export const OWN_SERVER_WORDS = {
   keyRefused: (host: string) => `${host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again.`,
   noModels: (host: string) => `${host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again.`,
   notOpenAI: (host: string) => `Something answered at ${host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again.`,
-  openCodeNotRunning: 'Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again.',
-  signInFailed: (name: string) => `OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`,
+  openCodeNotRunning: 'No provider can add this server right now, so nothing was saved. Connect OpenCode or Hermes under Providers, then add the server again.',
+  signInFailed: (name: string) => `Sotto could not keep the key for ${name}, so nothing was saved. Try adding the server again.`,
   notFound: 'That server is no longer saved. Nothing was changed.',
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
   alreadyAdded: (host: string) => `${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`,
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
-  addPartly: (name: string) => `OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`,
-  removePartly: (name: string) => `OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`,
+  addPartly: (name: string) => `Sotto could not finish adding ${name} or take it off its list. Remove it, then add it again.`,
+  removePartly: (name: string) => `Sotto could not finish removing ${name}. It is still listed. Remove it again.`,
   failed: 'Sotto could not finish that, so nothing was changed. Try again.',
   contextUnknown: 'The server does not say how much context this model has. Type it from the model’s page.',
   privacy: 'Threads on this server send your code and messages to it, so whoever runs it can read them.',
