@@ -1,0 +1,51 @@
+/* PROTOTYPE, throwaway. Controls 2 (the owner's approved tidy), laid over Sotto's own room under
+   [data-proto-controls="2"]; controls 1 is the room as dumped. Theme roles only. */
+.proto-receipt2, .proto-pill, .proto-status2, .proto-stop-count, .proto-strip-gap { display: none; }
+
+/* Headers read "Watcher · 1:55 pm"; the news turn's work sits behind the › details. */
+[data-proto-controls="2"] .watcher-pane .thread-message > header time::before { content: '·'; margin: 0 6px 0 -2px; color: var(--tt-text-2); }
+[data-proto-controls="2"] .watcher-pane .thread-message__work .proto-work-text { display: none; }
+[data-proto-controls="2"] .watcher-pane .thread-message__work[data-proto-open] .proto-work-text { display: inline; }
+[data-proto-controls="2"] .watcher-pane .thread-message__work { padding-inline: 4px; }
+
+/* Two Watcher messages within 5 minutes share one header. */
+[data-proto-controls="2"] .watcher-pane .thread-message[data-proto-grouped] > header { display: none; }
+[data-proto-controls="2"] .watcher-pane .thread-message:has(+ .thread-message[data-proto-grouped]),
+[data-proto-controls="2"] .watcher-pane .watcher-asks:has(+ .thread-message[data-proto-grouped]) { margin-bottom: 14px; }
+
+/* The answered card's line, in one row. */
+[data-proto-controls="2"] .watcher-pane .watcher-ask-receipt { display: none; }
+[data-proto-controls="2"] .watcher-pane .proto-receipt2 { display: flex; align-items: baseline; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; white-space: nowrap; }
+.proto-receipt2__tick { color: var(--tt-success, var(--tt-accent)); }
+.proto-receipt2__words { color: var(--tt-text); }
+.proto-receipt2__sep { color: var(--tt-text-muted); }
+[data-proto-controls="2"] .proto-receipt2__open { margin-left: 0; padding: 0 2px; border: 0; background: transparent; color: var(--tt-link); font: inherit; }
+
+/* The New messages pill stands fixed just above the composer, with a count; the list ends at the composer's top edge. */
+[data-proto-controls="2"] .watcher-pane .thread-workspace__transcript { clip-path: inset(0 0 var(--proto-cut, 0px) 0); }
+[data-proto-controls="2"] .watcher-pane .thread-transcript__jump { display: none; }
+[data-proto-controls="2"] .watcher-pane .proto-pill { position: absolute; z-index: 2; left: 50%; bottom: var(--proto-pill-bottom, 120px); display: inline-flex; align-items: center; gap: 6px;
+  min-height: 28px; padding: 0 12px; border: 1px solid var(--threads-field-border, var(--tt-hairline)); border-radius: var(--tt-radius-pill, 999px); background: var(--threads-field, var(--tt-card));
+  color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transform: translateX(-50%); }
+.proto-pill__arrow { color: var(--tt-text-2); }
+
+/* The status line in one line, left-aligned with the column: waiting first, then failures, then the machines, dimmed. */
+[data-proto-controls="2"] .watcher-pane > .watcher-glance > :not(.proto-status2) { display: none; }
+[data-proto-controls="2"] .watcher-pane > .watcher-machines { display: none; }
+[data-proto-controls="2"] .watcher-pane > .watcher-glance { padding: 4px 0 9px; }
+[data-proto-controls="2"] .proto-status2 { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; }
+.proto-status2__part { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.proto-status2 .watcher-row__ring { align-self: center; width: 8px; height: 8px; }
+.proto-status2__name { padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; }
+.proto-status2__sep { color: var(--tt-text-muted); }
+.proto-status2__machines { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+@container thread-pane (width < 700px) { .proto-status2__why { display: none; } }
+
+/* Stop all: set apart from Move threads, saying how many it stops, disabled when nothing runs. */
+[data-proto-controls="2"] .proto-strip-gap { display: inline-block; width: 1px; height: 18px; margin: 0 6px 0 4px; background: var(--tt-hairline); align-self: center; }
+[data-proto-controls="2"] .watcher-stop-all__text { display: none !important; }
+[data-proto-controls="2"] .proto-stop-count { display: inline; }
+[data-proto-controls="2"] .watcher-stop-all__button[data-proto-disabled] { opacity: 1; color: var(--tt-text-hint); border-color: var(--tt-hairline); cursor: default; }
+
+/* The fixture's window had one machine; the owner's second, forge, is set in by frame.js with the same parts. */
+.watcher-machines__machine[data-host="forge"] { margin-left: 14px; }
