@@ -1019,6 +1019,17 @@ struct OneTapQuestion<More: View>: View {
                         Spacer(minLength: Space.s2)
                         sendButton
                     }
+                    // Folded or sideways, the way in is words without a fill, so it is measured on its words: lined up
+                    // with the card's words, with only a step between them and Send answer. Held sideways, "Review 2
+                    // requests" and Send answer fit a Needs you card this way where the pill's clear inset had pushed the
+                    // link onto a row of its own (the Duo design climb's round 8).
+                    if duo != .upright {
+                        HStack(spacing: 0) {
+                            more.fixedSize().padding(.horizontal, -Space.s3)
+                            Spacer(minLength: Space.s2)
+                            sendButton
+                        }
+                    }
                     // Folded or sideways, Send answer stands right under the way in: that pill's own height leaves
                     // about 12 points under its words, the card's usual gap, where 8 more read loose (the Duo design
                     // climb's round 6).
