@@ -182,12 +182,7 @@ private struct TextSizePanel: View {
                 }
             }
             .padding(4)
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter)
-                    Rectangle().fill(Palette.hairline).frame(height: 2).padding(.horizontal, 30)
-                }
-            }
+            .background { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter) }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Text size")
         } under: {
@@ -196,7 +191,7 @@ private struct TextSizePanel: View {
     }
 }
 
-/// One of the five text sizes, as a letter drawn at a size that grows with the step.
+/// One of the five text sizes, as a letter drawn at a size that grows with the step, on the track that joins them.
 private struct TextSizeStep: View {
     let size: PhoneTextSize
     let selected: Bool
@@ -206,11 +201,12 @@ private struct TextSizeStep: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let points = CGFloat(16 + size.offset * 3)
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { pick() }
         } label: {
             Text("A", comment: "A sample letter drawn at each text size.")
-                .font(.custom("Figtree-Bold", fixedSize: CGFloat(16 + size.offset * 3)))
+                .font(.custom("Figtree-Bold", fixedSize: points))
                 .foregroundStyle(selected ? Palette.accentText : Palette.muted)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background {
@@ -229,6 +225,17 @@ private struct TextSizeStep: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         // The Larger step keeps the earlier Larger text switch's identifier.
         .accessibilityIdentifier(size == .larger ? "setting-larger-text" : "setting-text-\(size.rawValue)")
+        // The track runs from the first letter to the last and breaks around each one, where one line under them all ran
+        // through the letters and left them looking struck through (the Duo design climb's round 6). It stays still while
+        // the step is pressed.
+        .background {
+            HStack(spacing: 0) {
+                Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.first ? 0 : 1)
+                Color.clear.frame(width: points + Space.s3, height: 2)
+                Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.last ? 0 : 1)
+            }
+            .accessibilityHidden(true)
+        }
     }
 }
 
