@@ -33,6 +33,10 @@ import UIKit
         }
         // The journeys read English labels, so Sotto runs in English whatever the simulator's language (ADR-0123).
         app.launchArguments = arguments + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // No copy of the app's log lines on its stderr. XCTest answers each look from inside the app and logs every
+        // attribute it reads there; with Xcode's copy to stderr on, each line was a write the app's main thread waited on,
+        // and on CI's loaded runners one look took 10 to 30 seconds and failed a different journey each run (#2067).
+        app.launchEnvironment["OS_ACTIVITY_DT_MODE"] = "NO"
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
         if opensOnThreads { XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20)) }
