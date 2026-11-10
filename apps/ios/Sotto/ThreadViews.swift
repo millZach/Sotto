@@ -1954,7 +1954,9 @@ private struct WrappedCode: View {
 }
 
 /// Code on the code surface, its language above it and Copy beside that; long lines scroll sideways. On the Duo they wrap
-/// in every posture instead, each break marked ↪ (`WrappedCode`).
+/// in every posture instead, each break marked ↪ (`WrappedCode`). Folded or sideways, a block of one or two lines has no
+/// header: Copy stands at the code's right end on its first line and the language goes, where the header had stood as
+/// tall as the code (Zach's round 6 pick A, November 10, 2026).
 private struct CodeBlockView: View {
     let language: String?
     let code: String
@@ -1963,40 +1965,58 @@ private struct CodeBlockView: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.s2) {
-                Text(language ?? String(localized: "code", comment: "Label over a code block whose language is not named")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
-                Spacer(minLength: Space.s2)
-                Button { copy() } label: {
-                    (copied ? Text("Copied", comment: "A code block's copy control, just after a press") : Text("Copy", comment: "A code block's copy control"))
-                        .font(.sotto(.caption, .semibold))
-                        .foregroundStyle(Palette.accentText)
-                        .padding(.horizontal, Space.s3)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+            if short {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                    WrappedCode(code: code).padding(.vertical, Space.s3)
+                    copyButton
                 }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel(copied ? String(localized: "Copied", comment: "A code block's copy control, just after a press") : String(localized: "Copy this code"))
-            }
-            .padding(.leading, Space.s3)
-            .padding(.trailing, Space.s1)
-            Rectangle().fill(Palette.hairline).frame(height: 1)
-            if duo != .none {
-                WrappedCode(code: code).padding(Space.s3)
+                .padding(.leading, Space.s3)
+                .padding(.trailing, Space.s1)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(code)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(Palette.codeInk)
-                        .lineSpacing(3)
-                        .fixedSize()
-                        .padding(Space.s3)
-                        .textSelection(.enabled)
+                HStack(spacing: Space.s2) {
+                    Text(language ?? String(localized: "code", comment: "Label over a code block whose language is not named")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                    Spacer(minLength: Space.s2)
+                    copyButton
+                }
+                .padding(.leading, Space.s3)
+                .padding(.trailing, Space.s1)
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                if duo != .none {
+                    WrappedCode(code: code).padding(Space.s3)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        Text(code)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(Palette.codeInk)
+                            .lineSpacing(3)
+                            .fixedSize()
+                            .padding(Space.s3)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }
         .background(Palette.code, in: shape)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+    /// Folded or sideways on the Duo, a block of one or two lines as written, however they wrap.
+    private var short: Bool {
+        guard duo != .none, duo != .upright else { return false }
+        let lines = code.trimmingCharacters(in: .newlines).components(separatedBy: "\n")
+        return lines.count <= 2
+    }
+    private var copyButton: some View {
+        Button { copy() } label: {
+            (copied ? Text("Copied", comment: "A code block's copy control, just after a press") : Text("Copy", comment: "A code block's copy control"))
+                .font(.sotto(.caption, .semibold))
+                .foregroundStyle(Palette.accentText)
+                .padding(.horizontal, Space.s3)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(copied ? String(localized: "Copied", comment: "A code block's copy control, just after a press") : String(localized: "Copy this code"))
     }
     private func copy() {
         UIPasteboard.general.string = code
