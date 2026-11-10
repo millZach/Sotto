@@ -1,6 +1,6 @@
-# The living night scene: line art and depth
+# The living night scene: line art, depth and the owls
 
-November 10, 2026. [ADR-0199](../adr/0199-watchers-night-scene-comes-to-life.md), decisions 1 to 5. Owl only, behind `living-night-scene`. Prototype: tag `prototype/watcher-scene-life`.
+November 10, 2026. [ADR-0199](../adr/0199-watchers-night-scene-comes-to-life.md), decisions 1 to 8. Owl only, behind `living-night-scene`. Prototype: tag `prototype/watcher-scene-life`. The drawing was checked first; the owls, at the end of this note, after.
 
 ## What was run
 
@@ -25,13 +25,24 @@ The four failures in 3 and 5 fail with the same words on `main`'s own source at 
 
 The three specs opened the room through the Page switch's Watcher tab, which the Threads rail has not had under a 1000 pixel window since November 5 (ADR-0110). They now press the room's keys there, as `watcher.spec.ts` does.
 
+## The owls
+
+The same specs, by name, after the owls were built, on a fresh build:
+
+7. `watcher-night-scene.spec.ts`: the same seven tests as 1 and 2 passed, among them the one that holds a resting scene to painting only what changes.
+8. `watcher-column.spec.ts`: every word keeps 4.5:1 over the scene in every theme and place and over a ripple, six tests, passed. **An owl crossing the column** failed as it stood: it waited for Watcher's owl to fly at random, which the living scene no longer does. It now has Watcher send the first watched thread a message fifteen seconds after the room opens; the owl flies across the column to call to that thread's owl, shows behind the words at 4.5:1 or better, never over them, and leaves nothing behind. It passed.
+9. `watcher-scene-steady.spec.ts`: passed.
+
 ## What it looks like
 
 - [room-dark-1600.png](../../artifacts/living-night-scene/room-dark-1600.png): Watcher's room at 1600 by 1000, dark. The trunks have edges of `|`, the bare tree's branches are `/`, `\` and `|`, the ridges in the margins are lines of `_` and `-`, the river is a run of `/` in the accent, and the moon stands in its halo. Under the conversation the hills are rows of dots.
 - [room-light-1280.png](../../artifacts/living-night-scene/room-light-1280.png): the same room at 1280 by 800, light.
+- [owls-dark-1600.png](../../artifacts/living-night-scene/owls-dark-1600.png): the owls on a running clock, on the bare tree's branch: one looking up, one waving a wing under its `!` in its glow, and a working one turned round.
 
 ## Not checked here
 
+- The owls' lives by eye over time. The captures are single frames; the poses, the `z`s, the sparks and the call's note were watched moving in the prototype, and here are checked by `watcherOwlLife.test.ts` and by the crossing in 8.
+- The pointer: Watcher's owl's eyes following it, and a thread owl hopping when pointed at. No spec moves the pointer over the margin and looks.
 - macOS and Linux.
 - How a dragged window edge feels in the running app. Laying the scene out was timed with the painter alone in headless Chromium, twelve layouts at shrinking sizes: about 22 ms as line art against 8 ms by density at 1600 by 954, 29 ms against 9 ms at 1920 by 1034, and 15 ms against 5 ms at 1280 by 754. It runs on a change of size, place or feature, never for a frame.
 - A change of place between the night wood and one with no layers, in the running app. The painter's unit tests cover it; no spec switches place with the feature on and looks at the halo.

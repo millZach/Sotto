@@ -4,7 +4,7 @@
 
 Accepted November 10, 2026. Zach asked how Watcher's night scene could "really stand out and [be] fun to watch", and picked E, **The wood mirrors the room**, of the prototype kept at the tag `prototype/watcher-scene-life`. He then asked whether the scene could look better while staying ASCII, and picked **Line art + depth** of the four ways of drawing the same prototype offers. It is an Owl feature (`living-night-scene`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)), his call the same day. Builds on [ADR-0126](0126-watchers-conversation-runs-over-a-still-night-scene.md) and [ADR-0149](0149-watchers-night-scene-is-set-in-a-place-the-user-picks.md) and amends both where it says so. **Number provisional until merge** (docs/agents/domain.md).
 
-It is built in parts behind the one switch. The drawing, decisions 1 to 5, is built. The owls, decisions 6 to 8, and the wood's life, decisions 9 to 11, are decided here and not built yet.
+It is built in parts behind the one switch. The drawing, decisions 1 to 5, and the owls, decisions 6 to 8, are built. The wood's life, decisions 9 to 11, is decided here and not built yet.
 
 ## Context
 
@@ -30,9 +30,9 @@ The prototype put Sotto's own Watcher room, dumped from the built app, under the
 
 **6. Each thread owl acts out its thread.** Asleep under rising `z`s while its thread rests. While it works, it looks down at its work, turns round, stretches and hops, and watches Watcher's owl fly over. While it waits on the user it waves a wing under a `?` for a question or a `!` for a permission. An owl whose thread's last turn failed winces, feathers ruffled; today it only looks asleep. When a turn finishes it gets a burst of sparks and is happy for a moment before it sleeps. These are poses of the same three-row sprite and a few glyphs round it.
 
-**7. Watcher's owl flies for a reason.** When Watcher starts a thread or sends it a message, its owl flies to the tree that thread's owl sits in and calls to it, a note crossing between them, and the thread owl answers. This amends ADR-0126: it no longer flies at random. It still flies as that record's decision 7 has it.
+**7. Watcher's owl flies for a reason.** When Watcher sends a watched thread a message, its owl flies to the tree that thread's owl sits in, unless it is there already, and calls to it, a note crossing between them; the thread owl looks up, is happy, and answers. A thread Watcher has only just started is not called to: its owl is on its way out of the moon. A burst of messages is a few calls, not a queue: at most four wait their turn. This amends ADR-0126: it no longer flies at random. It still flies as that record's decision 7 has it, and with motion reduced it keeps that decision's calm steps from perch to perch, at random, since nothing else of the living scene moves then.
 
-**8. The owls notice the pointer.** Watcher's owl's eyes follow the pointer while it moves in a margin, and a thread owl hops when pointed at. A press on a thread owl still opens its thread.
+**8. The owls notice the pointer.** Watcher's owl's eyes follow the pointer while it moves in a margin, and let go a moment after it stops; a thread owl hops when pointed at. A press on a thread owl still opens its thread, and a press in the open margin still sends out its ripple.
 
 **9. The wood follows how busy the room is.** The busier the watched threads, the more often a gust crosses: grass leans, the crowns sway, leaves fly, and the river runs faster. The quieter, the more fireflies and the thicker the mist between the hills. This amends ADR-0149, decision 4: the night wood has things that move.
 
@@ -53,4 +53,7 @@ The prototype put Sotto's own Watcher room, dumped from the built app, under the
 - Laying the scene out draws each of a place's layers in turn, nine for the night wood, on a field fifteen times the pixels of the density fields, and reads back only the part of the pane that layer draws in. It runs when the window's size, the place or the feature changes, never for a frame. Measured with the painter alone in headless Chromium on the Windows laptop, a layout at 1600 by 954 took about 22 ms as line art against 8 ms by density, and 29 ms against 9 ms at 1920 by 1034, so the scene follows a dragged window edge more slowly than it did.
 - Watcher's owl is drawn twice a painted frame while line art shows, once on each field, and only the box round it is cleared and read.
 - A star is not placed where line art drew a glyph that density would have left empty, so the night wood's sky has a few stars fewer near its lines.
+- The room's watched rows now tell the scene three more things each: whether the last turn failed, what the thread waits on the user for, and how many messages Watcher has sent it. They are read off the row the room already holds, and the scene remembers one small record a watched thread, dropped when the thread is no longer watched.
+- A resting scene with sleepers or a waiting owl is painted again when a `z` rises or a `?` bobs, a few times a second at most, and not between.
+- `watcher-column.spec.ts` waited for a random flight to check an owl crossing the column. On Owl it now has Watcher send a thread a message.
 - Stable shows and starts none of it. Turning the feature off draws every cell as it was.

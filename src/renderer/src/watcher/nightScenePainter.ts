@@ -4,7 +4,7 @@ import {
   RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star,
 } from './nightScene'
-import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
+import { glowStep, owlGlyphs, pileLabel, spriteCells, type OwlLivesView, type ThreadOwlPose } from './owlFamily'
 import { ambienceStep, ambienceTime, type Ambience, type AmbientGlyph } from './scenePlace'
 import { SCENE_PLACES } from './scenePlaces'
 import { MASK, poly } from './sceneDraw'
@@ -162,6 +162,20 @@ export interface SceneFrame {
   readonly whirl: number
   /** The "+N" pile, in the last spot, while there is one. */
   readonly pile: { readonly spot: Spot; readonly count: number } | null
+  /** What the living night scene adds (ADR-0199), or nothing where it is off or the margins have no trees. */
+  readonly life?: SceneLife | null
+}
+
+/**
+ * What the living night scene adds to a frame (ADR-0199): how the thread owls are posed, and a few glyphs round them.
+ * The glyphs go through the painter's guard as a place's moving glyphs do: one to a cell, at the cell's share and under
+ * the column's ceiling, never under still words, a star or an owl.
+ */
+export interface SceneLife {
+  readonly lives: OwlLivesView
+  /** Changes whenever the glyphs would, so the frame is painted again only then. */
+  readonly step: string | number
+  readonly cells: (emit: AmbientGlyph) => void
 }
 
 /** A perched thread owl's cells, for its button in the room. */
@@ -486,13 +500,14 @@ export class NightScenePainter {
   private summary(frame: SceneFrame, owlLines: readonly (readonly string[])[]): string {
     const { t, still } = frame, { cw, ch } = this.grid
     // Only the trees have stars, so only they change with the twinkle's step.
-    const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still)]
+    const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still), frame.life?.step ?? 0]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
     if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10),
       Math.round(w.bank * 40), Math.round(w.squash * 50), Math.round(w.legs * 8), frame.watcherGlows === true ? glowStep(t, still) : -1)
     frame.owls.forEach((pose, k) => {
-      parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]![0]!, pose.owl.mood,
+      // Every row, since a living owl may change its body or its feet and keep its face.
+      parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]!.join(''), pose.owl.mood,
         pose.owl.mood === 'waiting' ? glowStep(t, still) : 0)
     })
     if (frame.pile !== null) parts.push('p', frame.pile.count)
@@ -505,8 +520,8 @@ export class NightScenePainter {
     const back = context(this.back), front = context(this.front)
     if (layout === null || ink === null || back === null || front === null) return false
     const { t, still, ripples } = frame
-    const rail = layout.mode === 'rail'
-    const owlLines = frame.owls.map(pose => owlGlyphs(pose, t, { rail, still }))
+    const rail = layout.mode === 'rail', lives = frame.life?.lives ?? null
+    const owlLines = frame.owls.map(pose => owlGlyphs(pose, t, { rail, still, lives }))
     const summary = this.summary(frame, owlLines)
     if (summary === this.painted) return false
     this.painted = summary
@@ -576,7 +591,7 @@ export class NightScenePainter {
 
     // What moves in the place: a few glyphs, held to each cell's share and the column's ceiling, never under still words,
     // a star, an owl or a ripple, and over the landscape's glyphs only where the place asks.
-    if (this.ambience !== null) {
+    if (this.ambience !== null || frame.life != null) {
       const stamp = ++this.frameCount
       const emit: AmbientGlyph = (x, y, glyph, accent, strength, over) => {
         const c = Math.floor(x / cw), r = Math.floor(y / ch)
@@ -589,7 +604,9 @@ export class NightScenePainter {
         if (over) back.clearRect(c * cw, r * ch, cw, ch)
         back.fillStyle = inkAt(accent ? ink.accent : ink.ink, Math.min(cap, strength * q)); back.fillText(glyph, (c + 0.5) * cw, (r + 0.5) * ch)
       }
-      this.ambience.cells(ambienceTime(this.ambience, t, still), emit)
+      // What the living night scene adds comes first, so a `?` over an owl is never lost to a snowflake.
+      frame.life?.cells(emit)
+      this.ambience?.cells(ambienceTime(this.ambience, t, still), emit)
     }
 
     // The moon's whirlpool: three arms turning inward, in the accent, over a moon that gives way under them.
@@ -676,7 +693,8 @@ export class NightScenePainter {
     }
     if (frame.watcher === null || frame.watcher.pose.spread <= 0.05) this.owlTrail.fill(0)
     for (const { pose, lines, cells } of sprites) {
-      const waiting = pose.owl.mood === 'waiting', base = pose.owl.mood === 'asleep' ? 0.5 : 0.85
+      // An owl whose turn just finished is as bright as a working one while it is happy, then as faint as a sleeper.
+      const waiting = pose.owl.mood === 'waiting', base = pose.owl.mood === 'asleep' && lives?.actOf(pose.owl.key, t)?.kind !== 'happy' ? 0.5 : 0.85
       const strength = waiting ? (0.8 + 0.2 * glowStep(t, still)) * pose.alpha : 0
       for (let k = 0; k < lines.length; k++) for (let j = 0; j < lines[k]!.length; j++) {
         const g = lines[k]![j]!

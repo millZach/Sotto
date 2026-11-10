@@ -21,7 +21,16 @@ export interface WatchedOwl {
   /** The thread in this window, to open on a press; null when this window does not list it. */
   readonly threadId: string | null
   readonly mood: OwlMood
+  /** Whether its thread's last turn failed. In the living night scene its owl winces (ADR-0199); otherwise it only sleeps. */
+  readonly failed?: boolean
+  /** What its thread waits on the user for. The living night scene shows a `?` or a `!` over its owl. */
+  readonly asks?: OwlAsk | null
+  /** How many messages Watcher has sent its thread. In the living night scene a rise sends Watcher's owl to it. */
+  readonly told?: number
 }
+
+/** What a waiting thread waits on the user for. */
+export type OwlAsk = 'question' | 'permission'
 
 type WatchedRow = WatcherRoomState['watchedThreads'][number]
 
@@ -32,6 +41,23 @@ type WatchedRow = WatcherRoomState['watchedThreads'][number]
 export function moodOf(row: Pick<WatchedRow, 'status' | 'settled' | 'paused' | 'waitsOn'>): OwlMood {
   if (row.waitsOn.length > 0) return 'waiting'
   return row.status === 'running' && !row.settled && row.paused !== true ? 'awake' : 'asleep'
+}
+
+/** Whether a watched row's last turn failed. */
+export function failedOf(row: Pick<WatchedRow, 'status'>): boolean {
+  return row.status === 'error'
+}
+
+/** What a watched row waits on the user for: its first request's kind, or null when it waits on nothing. */
+export function asksOf(row: Pick<WatchedRow, 'waitsOn'>): OwlAsk | null {
+  return row.waitsOn[0]?.kind ?? null
+}
+
+/** How many messages Watcher has sent a watched row's thread, over every request it took part in. */
+export function toldOf(row: Pick<WatchedRow, 'participation'>): number {
+  let told = 0
+  for (const part of row.participation) told += part.promptCount
+  return told
 }
 
 /** A watched row's key: its thread's address on its host. */
@@ -57,6 +83,8 @@ export interface FamilyOwl {
   title: string
   threadId: string | null
   mood: OwlMood
+  failed: boolean
+  asks: OwlAsk | null
   /** Its spot's index, -1 in the "+N" pile, null before it has one. */
   spot: number | null
   animation: OwlAnimation | null
@@ -172,7 +200,7 @@ export class OwlFamily {
     for (const owl of this.owls) {
       const next = incoming.get(owl.key)
       if (next !== undefined) {
-        owl.title = next.title; owl.threadId = next.threadId; owl.mood = next.mood
+        owl.title = next.title; owl.threadId = next.threadId; owl.mood = next.mood; owl.failed = next.failed === true; owl.asks = next.asks ?? null
         // Watched again on its way out: it turns back to the spot it still holds, or reappears there.
         if (leaving(owl)) {
           const at = this.poseOf(owl, t)
@@ -192,7 +220,7 @@ export class OwlFamily {
     const arrivals: FamilyOwl[] = []
     for (const owl of watched) {
       if (known.has(owl.key)) continue
-      const added: FamilyOwl = { key: owl.key, title: owl.title, threadId: owl.threadId, mood: owl.mood, spot: null, animation: null, order: this.joined++ }
+      const added: FamilyOwl = { key: owl.key, title: owl.title, threadId: owl.threadId, mood: owl.mood, failed: owl.failed === true, asks: owl.asks ?? null, spot: null, animation: null, order: this.joined++ }
       this.owls.push(added)
       arrivals.push(added)
     }
@@ -340,13 +368,88 @@ export function perchedGlyphs(eyes: string): string[] {
   return [PERCHED_OWL[0].replace(/o/g, eyes), PERCHED_OWL[1], PERCHED_OWL[2]]
 }
 
-/** The glyphs for a thread owl at `t`, rows top to bottom. */
-export function owlGlyphs(pose: Pick<ThreadOwlPose, 'flying' | 'owl'>, t: number, options: { readonly rail: boolean; readonly still: boolean }): string[] {
+/**
+ * The glyphs for a thread owl at `t`, rows top to bottom. With `lives`, the living night scene's (ADR-0199), a sitting
+ * owl acts out its thread; on the rail, in flight or holding still it is drawn as it always was.
+ */
+export function owlGlyphs(pose: Pick<ThreadOwlPose, 'flying' | 'owl'>, t: number, options: { readonly rail: boolean; readonly still: boolean; readonly lives?: OwlLivesView | null }): string[] {
   const { owl } = pose
   const eyes = owlEyes(owl, t, !options.still && !pose.flying)
   if (options.rail) return [RAIL_OWL.replace(/o/g, eyes)]
   if (pose.flying) { const beat = FLYING_OWL[Math.floor(t * 8 + owl.order) % 3]!; return [beat[0].replace(/o/g, eyes), beat[1]] }
-  return perchedGlyphs(eyes)
+  return (options.lives != null && !options.still ? livingGlyphs(owl, t, options.lives) : null) ?? perchedGlyphs(eyes)
+}
+
+// ---------- A thread owl acting out its thread (ADR-0199) ----------
+
+/** Something a thread owl does for a moment: a hop, a happy moment, waking, or looking up at a call. */
+export type OwlActKind = 'hop' | 'happy' | 'wake' | 'lookup'
+export interface OwlAct { readonly kind: OwlActKind; readonly t0: number; readonly dur: number }
+
+/** What the living night scene knows of the thread owls between frames (`owlLife.ts`). */
+export interface OwlLivesView {
+  /** Whether Watcher's owl is in the air: a working owl watches it go over. */
+  readonly watcherFlying: boolean
+  /** What an owl is doing at `t`, or null when it does nothing special. */
+  actOf(key: string, t: number): OwlAct | null
+}
+
+const BODY = PERCHED_OWL[1], BODY_TURNED = '(__(\\', BODY_RUFFLED = '/)~~)'
+const FEET = PERCHED_OWL[2], FEET_UP = " ' ' ", FEET_SCRATCH = ' ".  '
+/** Five glyphs wide, as the sitting owl always is. `eyes` is one glyph for both, or two. */
+const five = (eyes: string, body: string = BODY, feet: string = FEET): string[] => [`{${eyes[0]},${eyes[1] ?? eyes[0]}}`, body, feet]
+/** Seven wide, a wing either side of the face. Its middle five fall where the five-wide owl's do. */
+const seven = (left: string, eyes: string, right: string): string[] => [`${left}{${eyes},${eyes}}${right}`, ` ${BODY} `, ` ${FEET} `]
+
+/** How long a working owl holds one fidget, and how many it draws from. */
+const FIDGET_EVERY = 2.8, FIDGETS = 12
+
+/**
+ * What a working owl is up to at `t`: every few seconds, at its own moment, it draws again from twelve, and five of
+ * them are something to see. The same owl at the same time always draws the same.
+ */
+export function fidgetOf(order: number, t: number): { readonly roll: number; readonly into: number } {
+  const at = t + order * 1.7, slot = Math.floor(at / FIDGET_EVERY)
+  let h = Math.imul((order + 1) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(slot + 0x632be5ab, 0xc2b2ae35)
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d)
+  return { roll: ((h ^ (h >>> 13)) >>> 0) % FIDGETS, into: at - slot * FIDGET_EVERY }
+}
+
+/** Whether a working owl is mid-hop at `t`, one of its fidgets: the scene draws it a row higher. */
+export function fidgetHop(order: number, t: number): boolean {
+  const fidget = fidgetOf(order, t)
+  return fidget.roll === 6 && fidget.into < 0.28
+}
+
+/**
+ * A sitting owl acting out its thread, rows top to bottom, or null where it is drawn as it always was: asleep, or awake
+ * with nothing to do just now. After a failed turn it winces, feathers ruffled. Waiting on the user it waves one wing,
+ * then the other. For a moment it is happy, wakes with a stretch, hops or looks up. Working, it watches Watcher's owl
+ * fly over, and between times looks down at its work, turns round, stretches, looks up or hops.
+ */
+export function livingGlyphs(owl: Pick<FamilyOwl, 'key' | 'mood' | 'order' | 'failed'>, t: number, lives: OwlLivesView): string[] | null {
+  const act = lives.actOf(owl.key, t), step = Math.floor(t * 4) % 2 === 1
+  if (owl.failed) return five('><', BODY_RUFFLED)
+  if (owl.mood === 'waiting') {
+    const beat = Math.floor(t * 3) % 4
+    return beat === 0 ? seven('\\', 'O', ' ') : beat === 2 ? seven(' ', 'O', '/') : seven(' ', 'O', ' ')
+  }
+  if (act?.kind === 'happy') return five('^', BODY, step ? FEET_UP : FEET)
+  if (act?.kind === 'wake') {
+    const k = (t - act.t0) / act.dur
+    return k < 0.3 ? five('-o') : k < 0.75 ? seven('\\', 'o', '/') : five('o')
+  }
+  if (act?.kind === 'hop') return five(owl.mood === 'asleep' ? '-' : 'o', BODY, FEET_UP)
+  if (act?.kind === 'lookup') return five('\u00b0')
+  if (owl.mood !== 'awake') return null
+  if (lives.watcherFlying) return five('\u00b0')
+  const { roll, into } = fidgetOf(owl.order, t)
+  if (roll <= 2 && into < 1.8) return five('.', BODY, step ? FEET_SCRATCH : FEET)
+  if (roll === 3) return five('o', BODY_TURNED)
+  if (roll === 4 && into < 0.8) return seven('\\', 'o', '/')
+  if (roll === 5 && into < 1.2) return five('\u00b0')
+  if (roll === 6 && into < 0.28) return five('o', BODY, FEET_UP)
+  return null
 }
 
 /** The cells a sprite covers, its feet at `x`, `y`: its first column and row, and its size in cells. */

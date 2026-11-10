@@ -44,7 +44,7 @@ export class SceneThumbnail {
     this.owls = THUMBNAIL_OWLS.flatMap((mood, order) => {
       const spot = spots[order]
       if (spot === undefined) return []
-      const owl: FamilyOwl = { key: `thumbnail-${order}`, title: '', threadId: null, mood, spot: order, animation: null, order }
+      const owl: FamilyOwl = { key: `thumbnail-${order}`, title: '', threadId: null, mood, failed: false, asks: null, spot: order, animation: null, order }
       return [{ owl, x: spot.x, y: spot.y, flying: false, alpha: 1 }]
     })
   }
