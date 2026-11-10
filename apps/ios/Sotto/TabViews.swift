@@ -801,7 +801,9 @@ private struct RequestCard: View {
             if asking.thread.requests.count > 1 {
                 (asking.thread.requests.count == 2 ? Text("1 more request in this thread")
                     : Text("\(asking.thread.requests.count - 1) more requests in this thread"))
-                    .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    // On the Duo folded or sideways it takes the card's other secondary lines' step, the place line's
+                    // and the notes' (the Duo design climb's round 6).
+                    .font(.sotto(duo != .none && duo != .upright ? .small : .caption)).foregroundStyle(Palette.muted)
                     .padding(.top, Space.s2)
             }
         }
@@ -949,7 +951,10 @@ struct OneTapQuestion<More: View>: View {
                         Spacer(minLength: Space.s2)
                         sendButton
                     }
-                    VStack(alignment: .leading, spacing: Space.s2) {
+                    // Folded or sideways, Send answer stands right under the way in: that pill's own height leaves
+                    // about 12 points under its words, the card's usual gap, where 8 more read loose (the Duo design
+                    // climb's round 6).
+                    VStack(alignment: .leading, spacing: duo == .upright ? Space.s2 : 0) {
                         more.padding(.leading, -Space.s3)
                         HStack { Spacer(minLength: 0); sendButton }
                     }
