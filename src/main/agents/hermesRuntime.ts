@@ -1,9 +1,10 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { OwnServer } from '../../shared/ownModelServers'
+import { hasErrorCode } from '../storage/atomicJsonStore'
 import { endWithSotto } from './opencodeServer'
 import { hermesEnvironment, withHermesPath } from './hermesRpc'
 
@@ -11,17 +12,19 @@ const HERMES_STOPPED = 'Hermes was disconnected before its gateway started. Your
 
 /**
  * The keys of the user's own keyed servers, as Sotto's Hermes keeps them (ADR-0124): one file under Sotto's Hermes
- * folder, readable by the user alone. A key arrives from the Add dialog once, beside OpenCode's copy, and leaves on Remove.
+ * folder, readable by the user alone. A key arrives from the Add dialog once, on its own or beside OpenCode's copy, and leaves on Remove.
  */
 export class HermesKeys {
   constructor(private readonly path: string) {}
   async read(): Promise<Record<string, string>> {
-    const text = await readFile(this.path, 'utf8').catch(() => '{}')
+    const text = await readFile(this.path, 'utf8').catch((error: unknown) => { if (hasErrorCode(error, 'ENOENT')) return '{}'; throw error })
     const parsed: unknown = JSON.parse(text)
     return parsed && typeof parsed === 'object' ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
   }
   async keep(id: string, key: string): Promise<void> { await this.write({ ...await this.read(), [id]: key }) }
   async forget(id: string): Promise<void> {
+    // A failed write may have left a key in the temporary file too.
+    await rm(`${this.path}.next`, { force: true })
     const keys = await this.read()
     if (!(id in keys)) return
     delete keys[id]
@@ -30,8 +33,13 @@ export class HermesKeys {
   private async write(keys: Record<string, string>): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true })
     const next = `${this.path}.next`
-    await writeFile(next, JSON.stringify(keys), { mode: 0o600 })
-    await rename(next, this.path)
+    try {
+      await writeFile(next, JSON.stringify(keys), { mode: 0o600 })
+      await rename(next, this.path)
+    } catch (error) {
+      await rm(next, { force: true })
+      throw error
+    }
   }
 }
 
@@ -86,10 +94,11 @@ export async function forgetHermesKey(root: string, id: string): Promise<void> {
   await new HermesKeys(join(root, 'own-server-keys.json')).forget(id)
   const line = `${hermesKeyVariable(id)}=`
   const profiles = join(root, 'profiles')
-  const homes = [root, ...(await readdir(profiles, { withFileTypes: true }).catch(() => [])).filter(entry => entry.isDirectory()).map(entry => join(profiles, entry.name))]
+  const homes = [root, ...(await readdir(profiles, { withFileTypes: true }).catch((error: unknown) => { if (hasErrorCode(error, 'ENOENT')) return []; throw error }))
+    .filter(entry => entry.isDirectory()).map(entry => join(profiles, entry.name))]
   for (const home of homes) {
     const path = join(home, '.env')
-    const text = await readFile(path, 'utf8').catch(() => undefined)
+    const text = await readFile(path, 'utf8').catch((error: unknown) => { if (hasErrorCode(error, 'ENOENT')) return undefined; throw error })
     const kept = text?.split('\n').filter(entry => !entry.startsWith(line)).join('\n')
     if (kept !== undefined && kept !== text) await writeFile(path, kept, { mode: 0o600 })
   }

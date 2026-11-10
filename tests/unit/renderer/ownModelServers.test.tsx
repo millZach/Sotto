@@ -105,16 +105,17 @@ describe('the group', () => {
 
   it('says there are none yet, and reads nothing from any server until a press', async () => {
     const bridge = await group()
-    expect(screen.getByText('None yet. Add a model server you run to use its models in OpenCode threads.')).toBeVisible()
+    expect(screen.getByText('None yet. Add a model server to use its models in threads.')).toBeVisible()
     expect(bridge.check).not.toHaveBeenCalled()
     expect(bridge.checkSaved).not.toHaveBeenCalled()
   })
 
-  it('lists a saved server with its address, what runs it, its models and its key, and no status until it is checked', async () => {
-    await group(fake({ list: vi.fn(async () => [SPARK]) }))
+  it.each(['opencode', 'hermes'] as const)('lists a saved server whose key went to %s without claiming which providers can run it', async keyKeeper => {
+    await group(fake({ list: vi.fn(async () => [{ ...SPARK, keyKeeper }]) }))
     const row = screen.getByText('spark-head').closest('li')!
     expect(within(row).getByText('http://spark-head:8888/v1')).toBeVisible()
-    expect(within(row).getByText('Runs with OpenCode · 1 model · Key kept by OpenCode')).toBeVisible()
+    expect(within(row).getByText('1 model · Added with a key')).toBeVisible()
+    expect(row).not.toHaveTextContent(/OpenCode|Hermes/u)
     expect(within(row).queryByRole('status')).toBeNull()
   })
 
@@ -125,7 +126,7 @@ describe('the group', () => {
     const row = screen.getByText('spark-head').closest('li')!
     expect(await within(row).findByRole('status')).toHaveTextContent('SGLang answered in 84 ms. It also lists Qwen3 VL, which is not added. To use it, remove the server and add it again.')
     expect(bridge.checkSaved).toHaveBeenCalledWith({ id: 'own-spark1' })
-    expect(within(row).getByText('Runs with OpenCode · 1 model · Key kept by OpenCode')).toBeVisible()
+    expect(within(row).getByText('1 model · Added with a key')).toBeVisible()
   })
 
   it('gives focus back to Check again once its check is done', async () => {
@@ -146,14 +147,14 @@ describe('the group', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('says plainly when a server added with a key asks for it on Check again, and names no models', async () => {
+  it.each(['opencode', 'hermes'] as const)('says plainly when a server whose key went to %s asks for it on Check again', async keyKeeper => {
     const keyKept: CheckResult = { status: 'ok', address: SPARK.address, kind: 'sglang', answeredMs: 40, keyKept: true,
       models: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', context: 1_048_576, thinking: true, images: false }] }
-    await group(fake({ list: vi.fn(async () => [SPARK]), checkSaved: vi.fn(async () => keyKept) }))
+    await group(fake({ list: vi.fn(async () => [{ ...SPARK, keyKeeper }]), checkSaved: vi.fn(async () => keyKept) }))
     fireEvent.click(screen.getByRole('button', { name: 'Check spark-head again' }))
     const row = screen.getByText('spark-head').closest('li')!
     expect(await within(row).findByRole('status')).toHaveTextContent(
-      /^spark-head answered in 40 ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again\.$/u)
+      /^spark-head answered in 40 ms and asks for its key\. The key stays with its provider, so Sotto could not read its models again\.$/u)
     expect(within(row).getByRole('status')).not.toHaveTextContent(/model(s)? (found|listed)|also lists|no longer lists|with \d/u)
   })
 
@@ -182,7 +183,7 @@ describe('the group', () => {
     await user.type(field('Address'), 'spark-head:8888')
     expect(field('Name')).toHaveValue('spark-head')
     await user.type(field(/^Key/u), KEY)
-    expect(within(dialog()).getByText('OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy.')).toBeVisible()
+    expect(within(dialog()).getByText('OpenCode and Hermes keep keys in their own Sotto folders. Adding with Hermes alone needs no OpenCode.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Check this server' }))
     expect(bridge.check).toHaveBeenCalledWith({ address: 'http://spark-head:8888/v1', key: KEY })
     expect(await within(dialog()).findByText('SGLang answered in 84 ms with 2 models.')).toBeVisible()
@@ -216,8 +217,8 @@ describe('the group', () => {
       { id: 'qwen3-vl', name: 'Qwen3 VL', context: 32_768, thinking: false, images: true },
     ] })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(screen.getByText('Added Sparks. Its models are in the model menu under Sparks, with OpenCode.')).toBeVisible()
-    expect(screen.getByText('Sparks').closest('li')).toHaveTextContent('Runs with OpenCode · 2 models · Key kept by OpenCode')
+    expect(screen.getByText('Added Sparks. Its models are in the model menu under Sparks, with providers that can use them.')).toBeVisible()
+    expect(screen.getByText('Sparks').closest('li')).toHaveTextContent('2 models · Added with a key')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add a server' })).toHaveFocus())
   })
 
@@ -299,7 +300,7 @@ describe('the group', () => {
     expect(bridge.add).toHaveBeenCalledTimes(1)
     answer({ status: 'ok', server: { ...SPARK, id: 'own-new1', address: answered.address, keyed: false } })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(screen.getByText('Added spark-head. Its models are in the model menu under spark-head, with OpenCode.')).toBeVisible()
+    expect(screen.getByText('Added spark-head. Its models are in the model menu under spark-head, with providers that can use them.')).toBeVisible()
   })
 
   it('opens again for Cancel once a pending add is refused', async () => {
@@ -409,7 +410,7 @@ describe('Your own server… in the model menu', () => {
     await user.click(screen.getByRole('button', { name: 'Check this server' }))
     await user.click(await screen.findByRole('button', { name: 'Add server' }))
     const done = await screen.findByRole('dialog', { name: 'Added spark-head' })
-    expect(within(done).getByText('Added spark-head. Its models are in the model menu under spark-head, with OpenCode.')).toBeVisible()
+    expect(within(done).getByText('Added spark-head. Its models are in the model menu under spark-head, with providers that can use them.')).toBeVisible()
     await waitFor(() => expect(within(done).getByRole('button', { name: 'Done' })).toHaveFocus())
     await user.click(within(done).getByRole('button', { name: 'Done' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveFocus())
