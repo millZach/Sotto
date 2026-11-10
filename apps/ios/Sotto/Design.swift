@@ -1755,10 +1755,12 @@ struct SectionHeading: View {
 /// A group's quiet heading, as on Settings.
 struct SectionLabel: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// The room above it, which a page's first label can take in.
+    var top: CGFloat = Space.s7
+    init(_ text: String, top: CGFloat = Space.s7) { self.text = text; self.top = top }
     var body: some View {
         Text(text).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-            .padding(.horizontal, Space.s1).padding(.top, Space.s7).padding(.bottom, Space.s2)
+            .padding(.horizontal, Space.s1).padding(.top, top).padding(.bottom, Space.s2)
             .accessibilityAddTraits(.isHeader)
     }
 }

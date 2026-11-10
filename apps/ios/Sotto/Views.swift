@@ -747,6 +747,7 @@ enum DuoLayout: Equatable {
     /// Unfolded and held upright: the rail stands in a column down the right edge, `uprightRail` wide.
     case upright
     var sideways: Bool { if case .sideways = self { return true } else { return false } }
+    var isFolded: Bool { if case .folded = self { return true } else { return false } }
     /// How wide the upright rail's column is: room for the tabs' pill and the round buttons, with a margin each side.
     static let uprightRail: CGFloat = 80
     /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the

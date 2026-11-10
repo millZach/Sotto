@@ -11,7 +11,11 @@ struct SettingsView: View {
         SheetPage {
             PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
                 .padding(.top, Space.s1)
-            SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
+            // Folded, Look is tighter: less room under the introduction, and less round each control and the Text size
+            // sample, with every target still 44 points, so Message density and Tabs show on the first screen (Zach's
+            // round 8 pick A, November 10, 2026). See `LookPanel`, `Segmented`, `TextSizePanel` and `TextSample`.
+            SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."),
+                         top: duo.isFolded ? Space.s3 : Space.s7)
             // Look is one group of rows on one card, as Notifications is, with the theme tiles on a card of their own
             // under it (#1864).
             VStack(spacing: Space.s3) {
@@ -173,6 +177,7 @@ private struct ThemeRoom: View {
 private struct TextSizePanel: View {
     @AppStorage(PhonePreferenceKey.textSize) private var textSize = ""
     @AppStorage(PhonePreferenceKey.legacyLargerText) private var legacyLarger = false
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let current = PhoneTextSize.resolve(textSize, legacyLarger: legacyLarger)
         LookPanel(title: String(localized: "Text size"), value: current.title) {
@@ -181,7 +186,7 @@ private struct TextSizePanel: View {
                     TextSizeStep(size: size, selected: size == current) { textSize = size.rawValue }
                 }
             }
-            .padding(4)
+            .padding(duo.isFolded ? 1 : 4)
             .background { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter) }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Text size")
@@ -199,6 +204,7 @@ private struct TextSizeStep: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         let points = CGFloat(16 + size.offset * 3)
@@ -208,7 +214,7 @@ private struct TextSizeStep: View {
             Text("A", comment: "A sample letter drawn at each text size.")
                 .font(.custom("Figtree-Bold", fixedSize: points))
                 .foregroundStyle(selected ? Palette.accentText : Palette.muted)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, minHeight: duo.isFolded ? 44 : 52)
                 .background {
                     if selected {
                         shape.fill(scheme == .dark ? Palette.overlay : Palette.surface)
@@ -253,7 +259,8 @@ private struct TextSample: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         Group {
             if duo == .none { words } else {
-                words.padding(Space.s3).background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                words.padding(.horizontal, Space.s3).padding(.vertical, duo.isFolded ? Space.s2 : Space.s3)
+                    .background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .accessibilityHidden(true)
@@ -284,7 +291,7 @@ private struct LookPanel<Control: View, Under: View>: View {
         return duo == .upright ? 280 : nil
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
+        VStack(alignment: .leading, spacing: duo.isFolded ? Space.s2 : Space.s3) {
             if let controlWidth {
                 HStack(spacing: Space.s5) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -301,7 +308,7 @@ private struct LookPanel<Control: View, Under: View>: View {
             }
             under
         }
-        .lookRow()
+        .lookRow(tight: duo.isFolded)
     }
 }
 
@@ -740,7 +747,7 @@ private struct Segmented<Value: Hashable>: View {
                 .accessibilityIdentifier(identifier(choice))
             }
         }
-        .padding(3)
+        .padding(duo.isFolded ? 1 : 3)
         .background(Palette.fillSoft, in: Capsule())
         .accessibilityElement(children: .contain)
         .accessibilityLabel(name)
@@ -804,9 +811,9 @@ private struct NoteLine: View {
 }
 
 extension View {
-    /// One row of Look's group: the padding a card gave it, without the card.
-    fileprivate func lookRow() -> some View {
-        padding(.vertical, Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+    /// One row of Look's group: the padding a card gave it, without the card. `tight` on the folded Duo.
+    fileprivate func lookRow(tight: Bool) -> some View {
+        padding(.vertical, tight ? Space.s2 : Space.s4).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
