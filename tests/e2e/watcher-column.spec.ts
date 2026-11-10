@@ -68,7 +68,11 @@ async function seedRoom(page: Page): Promise<void> {
 }
 
 async function openRoom(page: Page): Promise<void> {
-  await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+  // Under a 1000 pixel window Threads stands as the rail, whose foot has no room switch (ADR-0110, November 5, 2026), so
+  // the room's keys open it there.
+  const tab = page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true })
+  if (await tab.isVisible()) await tab.click()
+  else await page.keyboard.press('ControlOrMeta+2')
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
   await expect(page.locator('#watcher-pane [data-message-id="column-23"]')).toBeVisible()
 }
