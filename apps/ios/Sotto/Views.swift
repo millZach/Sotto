@@ -336,7 +336,12 @@ struct MainTabs: View {
                 if (duo.sideways || duo == .upright) && !nestedBack { sidebarButton(upright: duo == .upright) }
                 if !tight { newThread }
                 Spacer(minLength: tight ? 0 : Space.s3)
-                if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
+                if beside, let ref = model.selected {
+                    ThreadRailPill(ref: ref)
+                    // Held sideways the thread's pill stands as far under the sidebar's button as over the tabs, where
+                    // it sat 4 points over them (the Duo design climb's round 6).
+                    if tight { Spacer(minLength: 0) }
+                }
                 // Held sideways, the tabs step away while the keyboard is up, where they showed through its corner, and
                 // come back when it goes (Zach's pick A, November 9, 2026, round 5). The thread's pill above them stays.
                 let underKeyboard = keyboard && duo.sideways
