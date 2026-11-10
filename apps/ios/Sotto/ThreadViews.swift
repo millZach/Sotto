@@ -252,11 +252,13 @@ struct ThreadStatePill: View {
             // Folded and sideways, the light and the word alone, the word at the sidebar row's second-line size where it
             // had been the smallest words on the page. The tile keeps its width, so Needs you takes two lines, centred,
             // and a single word shrinks rather than breaking. How long it has been at it goes to VoiceOver only (Zach's
-            // round 7 pick B, November 10, 2026).
+            // round 7 pick B, November 10, 2026). A point under that size and tracked a little tighter, Working keeps
+            // about 7 points each side of it in the tile, where it had nearly touched both (his round 8 pick A, November
+            // 10, 2026).
             TimelineView(.periodic(from: Date(), by: 15)) { context in
                 VStack(spacing: 2) {
                     light
-                    Text(railWord).font(.sotto(.small, .semibold))
+                    Text(railWord).font(.sotto(.small, .semibold, times: 12.5 / TextScale.small.size)).tracking(-0.3)
                         .lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
                 }
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
