@@ -1691,14 +1691,19 @@ struct DuoSheetLayer: View {
     /// The height of the grabber's strip over the sheet's content. A sheet that draws its own ground carries it up behind
     /// the grabber by this much (`NewThreadSheet`).
     static let grabber: CGFloat = 16
+    /// The scrim in light: neutral, not the theme's, so the page under it greys rather than browns.
+    static let lightScrim = Color(red: 10 / 255, green: 10 / 255, blue: 12 / 255).opacity(0.55)
     var body: some View {
         ZStack {
             if let shown = host.shown {
                 // Darker than iOS's own dimming, so the page below the sheet's foot and the lights behind it don't read
                 // through (Zach's pick B, November 9, 2026, round 5). At 62% black the thread's words still read below
-                // the sheet, so it is the theme's darkest role at 86%: its canvas in dark, its ink in light, which
-                // leaves the page's words at about 1.4:1, shapes rather than text (the Duo design climb's round 6).
-                Rectangle().fill(ThemeRole(scheme == .dark ? .canvas : .ink, amount: 0.86)).ignoresSafeArea()
+                // the sheet, so in dark it is the theme's canvas at 86%, which leaves the page's words at about 1.4:1,
+                // shapes rather than text (the Duo design climb's round 6). In light the theme's warm ink at 86% turned
+                // the page a muddy brown, so it is a neutral near-black at 55%: the page goes grey (Zach's round 7 pick
+                // A, November 10, 2026).
+                Rectangle().fill(scheme == .dark ? AnyShapeStyle(ThemeRole(.canvas, amount: 0.86)) : AnyShapeStyle(Self.lightScrim))
+                    .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { shown.close() }
                     .accessibilityHidden(true)
