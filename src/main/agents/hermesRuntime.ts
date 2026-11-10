@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -128,9 +129,13 @@ export class HermesRuntime {
     this.writes = run.catch(() => undefined)
     return run
   }
-  private python(executable: string, script: string, args: string[] = []): Promise<void> {
+  private python(executable: string, script: string): Promise<void> {
+    const python = join(dirname(executable), 'python')
+    const venv = existsSync(python)
+    // timeit's standard-library CLI runs the statement once and propagates failure. The published launcher
+    // selects its own Python and dependencies; no shell text or bootstrap code needs to be interpreted here.
     return new Promise((resolve, reject) => {
-      execFile(join(dirname(executable), 'python'), ['-c', script, ...args], { cwd: this.root, env: withHermesPath(this.env(), executable),
+      execFile(venv ? python : executable, venv ? ['-c', script] : ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script], { cwd: this.root, env: withHermesPath(this.env(), executable),
         timeout: 65_000, maxBuffer: 4096 }, error => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve())
     })
   }
@@ -175,7 +180,7 @@ export class HermesRuntime {
     const home = hermesProjectHome(this.root, projectPath)
     await this.writeConfig(home, servers, projectPath)
     await this.start(executable, stops)
-    await this.python(executable, 'from pathlib import Path\nfrom gateway.control_socket import rescan_gateway_profiles\nfrom hermes_constants import get_hermes_home\nr=rescan_gateway_profiles(get_hermes_home(), timeout=30)\nassert isinstance(r,dict)', [])
+    await this.python(executable, 'from pathlib import Path\nfrom gateway.control_socket import rescan_gateway_profiles\nfrom hermes_constants import get_hermes_home\nr=rescan_gateway_profiles(get_hermes_home(), timeout=30)\nassert isinstance(r,dict)')
     return home
   }
   stop(): void {

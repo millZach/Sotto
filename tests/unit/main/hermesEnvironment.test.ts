@@ -21,9 +21,11 @@ afterEach(async () => {
   root = undefined
 })
 
-it.each(['bare', 'full'])('keeps discovered tools and removes only the private venv from every Hermes process with a %s PATH', async mode => {
+it.each([
+  ['venv', 'bare'], ['venv', 'full'], ['official', 'bare'], ['official', 'full'],
+])('keeps discovered tools and removes only a private venv from every %s Hermes process with a %s PATH', async (layout, mode) => {
   root = await mkdtemp(join(tmpdir(), 'sotto-hermes-env-'))
-  const bin = join(root, 'hermes-venv', 'bin')
+  const bin = layout === 'venv' ? join(root, 'hermes-venv', 'bin') : join(root, '.local', 'bin')
   const userBin = join(root, 'user-bin')
   const nodeBin = join(root, 'node-bin')
   const brewBin = join(root, 'homebrew-bin')
@@ -32,7 +34,8 @@ it.each(['bare', 'full'])('keeps discovered tools and removes only the private v
   await mkdir(userBin)
   await mkdir(nodeBin)
   const executable = join(bin, 'hermes')
-  await writeFile(executable, '#!/private/hermes/python\n', { mode: 0o755 })
+  await writeFile(executable, layout === 'venv' ? '#!/private/hermes/python\n' : '#!/bin/sh\nexec /hermes/launcher "$@"\n', { mode: 0o755 })
+  if (layout === 'venv') await writeFile(join(bin, 'python'), '', { mode: 0o755 })
   await writeFile(join(nodeBin, 'node'), '#!/user/node\n', { mode: 0o755 })
   const environment = { HOME: root, PATH: mode === 'bare' ? userBin : [userBin, nodeBin].join(delimiter) }
   // Found on the login shell's PATH, as any other provider's CLI is; its private venv is still kept off every child's PATH.
@@ -57,7 +60,7 @@ it.each(['bare', 'full'])('keeps discovered tools and removes only the private v
   }) as typeof execFile)
   const runtime = new HermesRuntime(root, () => {}, environment)
   const env = runtime.env()
-  const launchEnv = { ...env, PATH: sharedPath.filter(folder => folder !== bin).join(delimiter) }
+  const launchEnv = { ...env, PATH: sharedPath.filter(folder => layout !== 'venv' || folder !== bin).join(delimiter) }
   expect(await readHermesVersion(executable, env)).toBe('0.23.0')
   const rpc = new HermesRpc(executable, ['acp'], root, env, 1000, () => {}, () => {})
   await runtime.project(executable, root, [])
@@ -68,15 +71,44 @@ it.each(['bare', 'full'])('keeps discovered tools and removes only the private v
   expect(runFile).toHaveBeenCalledTimes(3)
   expect(runFile).toHaveBeenNthCalledWith(1, executable, ['--version'], expect.objectContaining({ env: launchEnv }), expect.any(Function))
   for (const call of runFile.mock.calls.slice(1)) {
-    expect(call[0]).toBe(join(bin, 'python'))
+    expect(call[0]).toBe(layout === 'venv' ? join(bin, 'python') : executable)
+    expect(call[1]?.slice(0, -1)).toEqual(layout === 'venv' ? ['-c'] : ['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
     expect(call[2]).toEqual(expect.objectContaining({ env: launchEnv }))
   }
+  expect(runFile.mock.calls[1]![1]?.at(-1)).toContain('discover_gateway_endpoint')
+  expect(runFile.mock.calls[2]![1]?.at(-1)).toContain('rescan_gateway_profiles')
   expect(env.PATH).toBe(environment.PATH)
   expect(withCliPath(environment, executable).PATH?.split(delimiter)).toEqual(sharedPath)
   rpc.close()
   runtime.stop()
   for (const child of children) child.emit('close', 0)
   await Promise.all([rpc.closed, runtime.closed()])
+})
+
+it('explains a missing dependency environment without repairing or exposing Hermes diagnostics', async () => {
+  const executable = "/tools/Hermes user's/bin/hermes", home = "/data/Sotto user's/hermes"
+  const runFile = vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+    const callback = args.at(-1) as (error: Error, stdout: string, stderr: string) => void
+    callback(new Error('exit 1'), '', 'private diagnostic\nhermes: no dependency environment is committed for this install; run `hermes pm repair`')
+    return new EventEmitter() as ChildProcess
+  }) as typeof execFile)
+  const message = await readHermesVersion(executable, { HERMES_HOME: home }).then(() => '', (error: Error) => error.message)
+  expect(message).toContain("Hermes has no Python packages set up for Sotto's folder. Your threads are kept.")
+  expect(message).toContain('downloads Python packages')
+  expect(message).toContain(process.platform === 'win32'
+    ? "$env:HERMES_HOME = '/data/Sotto user''s/hermes'; & '/tools/Hermes user''s/bin/hermes' pm repair"
+    : "HERMES_HOME='/data/Sotto user'\\''s/hermes' '/tools/Hermes user'\\''s/bin/hermes' pm repair")
+  expect(message).not.toMatch(/private diagnostic|Reinstall/u)
+  expect(runFile).toHaveBeenCalledTimes(1)
+})
+
+it.each([new Error('exit 1'), null])('gives a plain version-check error for other failures (%s)', async error => {
+  vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+    const callback = args.at(-1) as (error: Error | null, stdout: string, stderr: string) => void
+    callback(error, 'not a version', 'private diagnostic')
+    return new EventEmitter() as ChildProcess
+  }) as typeof execFile)
+  await expect(readHermesVersion('/tools/hermes', {})).rejects.toThrow('Sotto could not read the installed Hermes version. Run Hermes in a terminal to check it, then connect again. Your threads are kept.')
 })
 
 it('follows a hermes link on PATH to the real script, so its private Python is found beside it', async () => {
@@ -129,5 +161,20 @@ describe('the gateway', () => {
     await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(1))
     expect(runFile).toHaveBeenNthCalledWith(1, executable, ['gateway', 'stop', '-y'], expect.objectContaining({ cwd: root }), expect.any(Function))
     runtime.stop()
+  })
+
+  it.each(['discover_gateway_endpoint', 'rescan_gateway_profiles'])('reports a failed official-launcher %s helper', async helper => {
+    const { executable, children, runFile, runtime } = await setup()
+    runFile.mockImplementation(((...args: unknown[]) => {
+      const script = (args[1] as string[]).at(-1)!
+      const callback = args.at(-1) as (error: Error | null, stdout: string, stderr: string) => void
+      callback(script.includes(helper) ? new Error('exit 1') : null, '', 'private diagnostic')
+      return new EventEmitter() as ChildProcess
+    }) as typeof execFile)
+    await expect(runtime.project(executable, root!, [])).rejects.toThrow('Hermes gateway did not become ready. Reconnect Hermes to retry.')
+    expect(runFile.mock.calls.every(call => call[0] === executable)).toBe(true)
+    runtime.stop()
+    for (const child of children) child.emit('close', 0)
+    await runtime.closed()
   })
 })

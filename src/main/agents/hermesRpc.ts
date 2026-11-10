@@ -2,7 +2,8 @@ import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { z } from 'zod'
 import { realpath } from 'node:fs/promises'
-import { delimiter, dirname } from 'node:path'
+import { existsSync } from 'node:fs'
+import { delimiter, dirname, join } from 'node:path'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /** The oldest Hermes this adapter was tested with; a newer one runs and is shown as past the verified version. */
@@ -59,6 +60,8 @@ export async function findHermesExecutable(environment: NodeJS.ProcessEnv = proc
 /** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */
 export function withHermesPath(environment: NodeJS.ProcessEnv, executable: string): NodeJS.ProcessEnv {
   const env = withCliPath(environment, executable)
+  // The official launcher lives among the user's other tools, not in a private venv.
+  if (!existsSync(join(dirname(executable), 'python'))) return env
   const key = Object.keys(env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
   const privateBin = dirname(executable)
   return { ...env, [key]: (env[key] ?? '').split(delimiter).filter(folder => folder !== privateBin).join(delimiter) }
@@ -67,13 +70,22 @@ export function withHermesPath(environment: NodeJS.ProcessEnv, executable: strin
 const OUTPUT_LIMIT = 64 * 1024
 /** Read the CLI version before starting a gateway. */
 export async function readHermesVersion(executable: string, env: NodeJS.ProcessEnv, prefixArgs: readonly string[] = []): Promise<string> {
-  const stdout = await new Promise<string>(resolve => {
+  const stdout = await new Promise<string>((resolve, reject) => {
     execFile(executable, [...prefixArgs, '--version'], { env: withHermesPath(env, executable), windowsHide: true, shell: false, timeout: 30_000,
       killSignal: 'SIGKILL', maxBuffer: OUTPUT_LIMIT, encoding: 'utf8' },
-    (error, out) => resolve(error ? '' : typeof out === 'string' ? out : ''))
+    (error, out, err) => {
+      if (error && String(err).includes('no dependency environment is committed for this install')) {
+        const quote = (value: string): string => process.platform === 'win32' ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`
+        const home = quote(env.HERMES_HOME!)
+        const command = process.platform === 'win32'
+          ? `$env:HERMES_HOME = ${home}; & ${quote(executable)} pm repair`
+          : `HERMES_HOME=${home} ${quote(executable)} pm repair`
+        reject(new Error(`Hermes has no Python packages set up for Sotto's folder. Your threads are kept. This command downloads Python packages; run it in ${process.platform === 'win32' ? 'PowerShell' : 'a terminal'}, then connect again: ${command}`))
+      } else resolve(error ? '' : typeof out === 'string' ? out : '')
+    })
   })
   const version = stdout.match(/(?:^|\s)v?(\d+\.\d+\.\d+)(?:\s|$)/u)?.[1] ?? ''
-  if (!parseHermesVersion(version)) throw new Error('Sotto could not read the installed Hermes version. Reinstall it, then connect again.')
+  if (!parseHermesVersion(version)) throw new Error('Sotto could not read the installed Hermes version. Run Hermes in a terminal to check it, then connect again. Your threads are kept.')
   return version
 }
 
