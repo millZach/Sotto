@@ -4784,10 +4784,10 @@ extension AppModel {
     private static func fixtureSubagents(_ threadID: String) -> [String: Any] {
         let summary: [String: Any] = ["total": 2, "working": 1, "completed": 1, "failed": 0, "interrupted": 0, "unknown": 0]
         let suite: [String: Any] = ["id": "suite", "sequence": 2, "revision": 1, "assignmentId": "suite-1", "assignmentCount": 1,
-            "title": "Run the drawer tests twenty times", "description": "Run the drawer tests twenty times", "model": "gpt-6.1-sol",
+            "title": "Run the drawer tests twenty times", "description": "Run the drawer tests twenty times", "model": "fixture-model",
             "status": "running", "startedAt": fixtureStamp(1), "lastObservedAt": fixtureStamp(0)]
         let waits: [String: Any] = ["id": "waits", "sequence": 1, "revision": 1, "assignmentId": "waits-1", "assignmentCount": 1,
-            "title": "Find fixed waits in the drawer tests", "description": "Find fixed waits in the drawer tests", "model": "gpt-6.1-sol",
+            "title": "Find fixed waits in the drawer tests", "description": "Find fixed waits in the drawer tests", "model": "fixture-model",
             "status": "completed", "startedAt": fixtureStamp(14), "completedAt": fixtureStamp(13), "lastObservedAt": fixtureStamp(13), "durationMs": 48_000]
         return ["threadId": threadID, "revision": 2, "summary": summary, "rows": [suite, waits]]
     }

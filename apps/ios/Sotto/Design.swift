@@ -938,7 +938,8 @@ extension View {
                     }
                 }
                 .padding(.top, -reach)
-                .ignoresSafeArea(edges: .bottom)
+                // Into the side safe areas too, so a dock that runs into the folded Duo's strip has its ground there.
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }

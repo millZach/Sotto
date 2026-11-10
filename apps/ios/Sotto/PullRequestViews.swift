@@ -256,6 +256,7 @@ private struct PartTops: PreferenceKey {
 /// The pull request as one page: its header, where it stands, then each part.
 private struct PullRequestBody: View {
     @Environment(\.duoLayout) private var duo
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
     @Environment(\.sottoTheme) private var theme
     static let space = "pull-request-sheet"
     let ref: ThreadRef
@@ -289,6 +290,8 @@ private struct PullRequestBody: View {
                 .font(.sotto(.title, .bold)).headingTracking(-0.4)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                // Folded, the title stands beside the clock, so it keeps clear of the strip; what follows runs wide.
+                .padding(.trailing, foldedStrip)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("pull-request-title")
             if !detail.headBranch.isEmpty {

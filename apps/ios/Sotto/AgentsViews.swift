@@ -174,6 +174,8 @@ private struct AgentsSheet: View {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         .padding(.trailing, foldedStrip)
                 }
+                // Folded, the first row starts below the clock, where its button had run into it once rows went wide.
+                if foldedStrip > 0 { Color.clear.frame(height: Space.s5) }
                 if duo == .none {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                         Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
