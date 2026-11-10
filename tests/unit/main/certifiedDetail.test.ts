@@ -16,7 +16,7 @@ const record = (id: string, output = 'first'): AgentActivity => ({ id, turnId: '
 const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 'Synthetic', modelId: 'fake', status: 'running', messages: [], requests: [], activities: immutableActivities([record('one'), record('two')]) })
 function fixture(enabled: boolean, directory = '', watcherEnabled = true) {
   const control = createAgentControl({ directory, host: new E2EAgentHost(), credentials: { has: () => false, available: () => false } as never, streamingPublishCost: enabled, watcherEnabled })
-  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; revisions: { certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number> } }
+  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; sends: { detailSnapshots: Map<string, AgentThreadDetail> }; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; revisions: { certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number> } }
   return { control, detail, publish(value: AgentThread) { const revision = detail.detailRevision(value); return { revision, update: detail.detailUpdate(value, revision) } } }
 }
 
@@ -27,10 +27,10 @@ describe('certified activity detail under the streaming cost gate', () => {
       f.detail.state.host.threads = [value]
       await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
       const cached = f.control.threadDetail(value.id)!
-      expect(f.detail.detailSnapshots.size).toBe(1)
+      expect(f.detail.sends.detailSnapshots.size).toBe(1)
       expect(isImmutableActivities(f.detail.revisions.certifiedDetailRevisions.get(value.id)?.activities)).toBe(true)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
-      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.sends.detailSnapshots.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       expect(f.detail.revisions.detailRevisions.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailCounters.get(value.id)).toBe(cached.revision)
@@ -41,7 +41,7 @@ describe('certified activity detail under the streaming cost gate', () => {
       expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       expect(f.detail.revisions.detailRevisions.size).toBe(1)
       await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
-      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.sends.detailSnapshots.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       expect(f.detail.revisions.detailRevisions.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailCounters.get(value.id)).toBe(mutable.revision)
@@ -75,7 +75,7 @@ describe('certified activity detail under the streaming cost gate', () => {
       updateProof(); f.detail.broadcastDetail()
       expect(held.revision).toBeGreaterThan(previous)
       expect(held.messages[0]!.text).toBe(expected)
-      expect(f.detail.detailSnapshots.get(value.id)!.messages[0]!.text).toBe(expected)
+      expect(f.detail.sends.detailSnapshots.get(value.id)!.messages[0]!.text).toBe(expected)
     }
     try {
       request.displayPrompt = { ...proof, wireDigest: '0'.repeat(64) }; publish(wire)
@@ -104,7 +104,7 @@ describe('certified activity detail under the streaming cost gate', () => {
         cached = f.publish(value).revision
       }
       f.detail.viewedThreadIds = []; f.detail.broadcastDetail()
-      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.sends.detailSnapshots.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       expect(f.detail.revisions.detailRevisions.size).toBe(0)
       value.activities = immutableActivities([{ ...value.activities![0]!, output: 'Changed while closed' }])
@@ -123,7 +123,7 @@ describe('certified activity detail under the streaming cost gate', () => {
       value.activities = immutableActivities([{ ...value.activities![0]!, output: 'longer output' }])
       const cached = f.publish(value).revision
       await f.control.privacyChanged()
-      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.sends.detailSnapshots.size).toBe(0)
       expect(f.detail.revisions.certifiedDetailRevisions.size).toBe(0)
       value.activities = immutableActivities([record('new', 'Fresh output after cleanup')])
       const next = f.publish(value)
@@ -160,12 +160,12 @@ describe('certified activity detail under the streaming cost gate', () => {
       const whole = f.publish(value).update
       if ('messageDeltas' in whole) throw new Error('Expected whole detail')
       whole.activities![0]!.output = 'caller edits'
-      expect(f.detail.detailSnapshots.get(value.id)?.activities?.[0]?.output).toBe('first')
+      expect(f.detail.sends.detailSnapshots.get(value.id)?.activities?.[0]?.output).toBe('first')
       value.activities = immutableActivities([{ ...value.activities![0]!, output: 'longer' }, value.activities![1]!])
       const delta = f.publish(value).update
       if (!('activityDeltas' in delta) || !('record' in delta.activityDeltas[0]!)) throw new Error('Expected record delta')
       delta.activityDeltas[0].record.output = 'caller edits again'
-      expect(f.detail.detailSnapshots.get(value.id)?.activities?.[0]?.output).toBe('longer')
+      expect(f.detail.sends.detailSnapshots.get(value.id)?.activities?.[0]?.output).toBe('longer')
     } finally { f.control.dispose() }
   })
 
