@@ -108,7 +108,7 @@ import UIKit
     func testThreadsPage() {
         for light in [false, true] {
             launch([], light: light)
-            _ = byID("thread-search").waitForExistence(timeout: 20)
+            _ = byID("computer-filter").waitForExistence(timeout: 20)
             shot("threads", light: light)
             if !light {
                 scrollPage(by: -320)
@@ -193,7 +193,7 @@ import UIKit
     func testQuestion() {
         for light in [false, true] {
             launch(["--ui-question-while-reading"], light: light)
-            if unfolded { _ = byID("thread-search").waitForExistence(timeout: 20); shot("needs-you", light: light) }
+            if unfolded { _ = byID("computer-filter").waitForExistence(timeout: 20); shot("needs-you", light: light) }
             clip("question-open", light: light) { open("iphone"); _ = app.buttons["request-send-answer"].waitForExistence(timeout: 8) }
             shot("question", light: light)
             if !light, tapIfThere(app.buttons["Not now"]) { shot("question-waiting") }
@@ -251,7 +251,7 @@ import UIKit
     func testOtherPages() {
         for light in [false, true] {
             launch([], light: light)
-            _ = byID("thread-search").waitForExistence(timeout: 20)
+            _ = byID("computer-filter").waitForExistence(timeout: 20)
             if tapIfThere(app.buttons["tab-computers"]) { shot("computers", light: light) }
             if tapIfThere(app.buttons["tab-settings"]) {
                 shot("settings", light: light)
@@ -265,7 +265,7 @@ import UIKit
     /// Movement between pages: a thread opened from Threads and back, and a tab change.
     func testMovement() {
         launch([])
-        _ = byID("thread-search").waitForExistence(timeout: 20)
+        _ = byID("computer-filter").waitForExistence(timeout: 20)
         clip("open-thread") { open("iphone") }
         clip("back-to-threads") {
             if app.buttons["duo-rail-back"].exists { app.buttons["duo-rail-back"].tap() } else { app.buttons["tab-threads"].tap() }

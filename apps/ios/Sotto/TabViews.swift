@@ -85,6 +85,8 @@ struct ThreadsView: View, Equatable {
     /// so it never shows an old row.
     @State private var held: HeldList?
     @FocusState private var searching: Bool
+    /// Whether the cover screen's search field is open; its magnifier on the heading's row opens it.
+    @State private var searchOpen = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -113,13 +115,22 @@ struct ThreadsView: View, Equatable {
                         searchPill.frame(maxWidth: 420)
                     }
                     .padding(.top, Space.s3)
+                } else if coverScreen {
+                    coverHeading
                 } else {
                     heading
                 }
                 // The computer menu shares the search row, and the sections count their own threads (#1849). At the
-                // accessibility text sizes the row can't hold both, so search goes under the menu.
+                // accessibility text sizes the row can't hold both, so search goes under the menu. On the cover screen
+                // both stand on the heading's row, and the field shows under it only once the magnifier opens it.
                 if inColumns {
                     EmptyView()
+                } else if coverScreen {
+                    if searchOpen || !query.isEmpty {
+                        searchPill
+                            .padding(.top, Space.s3)
+                            .onAppear { DispatchQueue.main.async { searching = true } }
+                    }
                 } else if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: Space.s3) { ComputerMenu(); searchPill }
                         .padding(.top, Space.s3)
@@ -153,6 +164,8 @@ struct ThreadsView: View, Equatable {
         .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
+        // The cover screen's field closes again when it lets go of the keyboard with nothing typed.
+        .onChange(of: searching) { _, now in if !now && query.isEmpty { searchOpen = false } }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { held = nil; openForShare(model.shareOpened) }
         .onDisappear { hold() }
@@ -203,6 +216,26 @@ struct ThreadsView: View, Equatable {
         }
         // On the unfolded Duo the heading lines up with the rail's first button beside it.
         .padding(.top, unfolded ? Space.s3 : Space.s1)
+    }
+
+    /// The folded Duo's heading: the computer menu, compact, and a magnifier that opens search stand on the title's row,
+    /// left of the clock's strip, so the list starts a row higher (Zach's round 6 pick A, November 10, 2026).
+    private var coverHeading: some View {
+        PageHeading(String(localized: "Threads")) {
+            ComputerMenu().frame(maxWidth: 160)
+            Button { searchOpen = true; searching = true } label: {
+                Image(systemName: "magnifyingglass").iconFont(17, weight: .semibold)
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 44, height: 44)
+                    .background(Palette.fillSoft, in: Circle())
+                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Search threads")
+            .accessibilityIdentifier("thread-search-open")
+        }
+        .padding(.top, Space.s1)
     }
 
     private var searchPill: some View {
