@@ -118,7 +118,7 @@ final class ThreadSettingsTests: XCTestCase {
     /// Where the agent keeps a started thread's model, its effort stays too, and the sheet says why (#228).
     func testAStartedThreadWhoseAgentKeepsItsEffortSaysWhy() throws {
         let grok = #"{"id":"grok-build","name":"Grok 4.7 Build","provider":"Grok Build","providerId":"grok","ready":true,"reasoningEfforts":["low","high"],"runtimeModes":["approval-required","full-access"]}"#
-        let json = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"grok","requests":[],"modelId":"grok-build","status":"idle","reasoningEffort":"high"}],"projects":[],"models":[\#(grok)],"capabilities":{"submit":true,"threads":true,"configureThread":true,"configureThreadModel":false}}}"#
+        let json = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"grok","requests":[],"modelId":"grok-build","status":"idle","reasoningEffort":"high"}],"projects":[],"models":[\#(grok)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true,"configureThreadModel":false}}}"#
         let value = try XCTUnwrap(panel(JSONDecoder().decode(Shell.self, from: Data(json.utf8))))
         XCTAssertFalse(value.pressable(.effort))
         XCTAssertTrue(value.pressable(.permissions))
