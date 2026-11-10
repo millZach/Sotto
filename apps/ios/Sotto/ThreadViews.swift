@@ -1892,6 +1892,8 @@ private struct MarkdownListView: View {
 /// here, at a space where one falls in the last half of the line.
 private struct WrappedCode: View {
     let code: String
+    /// The code block's ink; a running step's command takes the conversation's.
+    var ink = Palette.codeInk
     @State private var width: CGFloat = 0
     @State private var advance: CGFloat = 0
     @Environment(\.sottoTheme) private var theme
@@ -1911,7 +1913,7 @@ private struct WrappedCode: View {
             }
         }
         .font(.system(.footnote, design: .monospaced))
-        .foregroundStyle(Palette.codeInk)
+        .foregroundStyle(ink)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
         .background(alignment: .topLeading) {
@@ -2592,12 +2594,12 @@ private struct StepLine: View {
             if let subject {
                 Group {
                     if strong {
-                        Text(subject).font(.system(.footnote, design: .monospaced)).foregroundStyle(Palette.ink)
+                        // A command that runs past the edge wraps as a code block's line does, under a ↪.
+                        WrappedCode(code: subject, ink: Palette.ink)
                     } else {
-                        subjectText(subject)
+                        subjectText(subject).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, markRoom + 7)
             }
         }
