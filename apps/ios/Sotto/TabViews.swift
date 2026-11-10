@@ -819,6 +819,21 @@ private struct RequestCard: View {
         return isPermission ? String(localized: "Review permission") : String(localized: "Review question")
     }
 
+    /// Whether the card's way into the thread says how many requests wait there ("Review 2 requests"). Held sideways the
+    /// card's own line "1 more request in this thread" then goes, where the two and the note between them said much the
+    /// same (Zach's round 7 pick A, November 10, 2026).
+    private var reviewLinkCounts: Bool {
+        switch phase {
+        case .sending, .answered: return false
+        case .unconfirmed: return true
+        case .idle:
+            if !request.supported || !model.mayAnswer(asking.ref.hostID) { return true }
+            if isPermission { return moreWords == reviewWords }
+            if request.oneTapOptions != nil { return request.questions?.first?.allowFreeText != true }
+            return true
+        }
+    }
+
     private var summary: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -851,7 +866,7 @@ private struct RequestCard: View {
                     .padding(.top, Space.s2)
             }
             if isPermission { CompactPermissionDetails(context: request.context) }
-            if asking.thread.requests.count > 1 {
+            if asking.thread.requests.count > 1 && !(duo.sideways && reviewLinkCounts) {
                 (asking.thread.requests.count == 2 ? Text("1 more request in this thread")
                     : Text("\(asking.thread.requests.count - 1) more requests in this thread"))
                     // On the Duo folded or sideways it takes the card's other secondary lines' step, the place line's
