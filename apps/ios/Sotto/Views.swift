@@ -1373,6 +1373,17 @@ enum Words {
         guard seconds >= 60 else { return Elapsed.words(seconds) }
         return shortAgo.string(from: seconds) ?? Elapsed.words(seconds)
     }
+    private static let spokenRun: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
+    /// How long something has run as VoiceOver says it, in the interface language's own words: "12 minutes".
+    static func runSpoken(_ seconds: TimeInterval) -> String {
+        spokenRun.string(from: max(0, seconds)) ?? Elapsed.words(seconds)
+    }
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")

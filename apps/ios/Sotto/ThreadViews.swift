@@ -243,22 +243,44 @@ struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
-    /// Stacked in one tile of the Duo's rail: the light, the word and, unfolded, how long it has been at it.
+    /// Stacked in one tile of the Duo's rail: the light and the word.
     var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.duoLayout) private var duo
     var body: some View {
+        if vertical, duo != .upright {
+            // Folded and sideways, the light and the word alone, the word at the sidebar row's second-line size where it
+            // had been the smallest words on the page. The tile keeps its width, so Needs you takes two lines, centred,
+            // and a single word shrinks rather than breaking. How long it has been at it goes to VoiceOver only (Zach's
+            // round 7 pick B, November 10, 2026).
+            TimelineView(.periodic(from: Date(), by: 15)) { context in
+                VStack(spacing: 2) {
+                    light
+                    Text(railWord).font(.sotto(.small, .semibold))
+                        .lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                }
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                .foregroundStyle(foreground)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(railLabel(at: context.date))
+                .accessibilityIdentifier("thread-state")
+            }
+        } else {
+            pill
+        }
+    }
+    private var pill: some View {
         Group {
             if vertical {
                 VStack(spacing: 2) {
                     light
-                    // Every state word stays on one line, Needs you too, a little tighter and shrinking rather than
-                    // breaking, with room either side inside the tile (the Duo design climb's round 6). Only Can't reach
-                    // it, a phrase, may take two lines.
+                    // Upright, every state word stays on one line, Needs you too, a little tighter and shrinking rather
+                    // than breaking, with room either side inside the tile (the Duo design climb's round 6). Only Can't
+                    // reach it, a phrase, may take two lines.
                     Text(railWord).tracking(-0.2).lineLimit(reachable ? 1 : 2).multilineTextAlignment(.center).minimumScaleFactor(0.6)
                         .padding(.horizontal, Space.s1)
-                    // The rail shows how long it has been at it folded too, as it does unfolded (Zach's pick A,
-                    // November 9, 2026), in minutes, "12m", where "12m 14s" filled the tile to its edges (Zach's pick B,
-                    // round 4). VoiceOver reads the state alone, as before.
+                    // How long it has been at it, in minutes, "12m", where "12m 14s" filled the tile to its edges (Zach's
+                    // pick B, round 4). VoiceOver reads the state alone, as before.
                     if reachable, state.workInProgress, let since {
                         TimelineView(.periodic(from: Date(), by: 15)) { context in
                             Text(Words.runShort(context.date.timeIntervalSince(since))).lineLimit(1).minimumScaleFactor(0.6)
@@ -284,8 +306,14 @@ struct ThreadStatePill: View {
         }
         .font(.sotto(.caption, .semibold).monospacedDigit())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(reachable ? state.words : String(localized: "Can’t reach this computer"))
+        .accessibilityLabel(spokenState)
         .accessibilityIdentifier("thread-state")
+    }
+    private var spokenState: String { reachable ? state.words : String(localized: "Can’t reach this computer") }
+    /// The rail's tile no longer shows how long the thread has been at it, so VoiceOver says it after the state.
+    private func railLabel(at now: Date) -> String {
+        guard reachable, state.workInProgress, let since else { return spokenState }
+        return "\(spokenState), \(Words.runSpoken(now.timeIntervalSince(since)))"
     }
     @ViewBuilder private var light: some View {
         if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
