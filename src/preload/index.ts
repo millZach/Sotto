@@ -374,8 +374,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     // November 9 amendment). The window never sees the path; a file with none, such as a pasted one, is refused.
     stageAttachmentFile: async ({ file, ...request }: Omit<import('../shared/agents').AgentAttachmentStageFileRequest, 'path'> & { readonly file: File }) => {
       // As Electron documents it: the File the window hands across the bridge, its path read here and never handed back.
-      let path = ''
-      try { path = webUtils.getPathForFile(file) } catch { path = '' }
+      const path = ((): string => { try { return webUtils.getPathForFile(file) } catch { return '' } })()
       if (!path) return Promise.reject(new Error(VIDEO_HAS_NO_PATH))
       return invokeParsed(renderer, AGENT_ATTACHMENT_STAGE_FILE, agentAttachmentHandleSchema, agentAttachmentStageFileRequestSchema.parse({ ...request, path }))
     },

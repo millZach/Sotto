@@ -1,9 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+import { copyHashing } from './hashedCopy'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_VIDEO_BYTES, agentAttachmentHandleSchema, agentMimeTypeSchema, attachmentDigestSchema, attachmentLimitBytes, bytesHaveRasterSignature,
@@ -234,7 +232,7 @@ export class AttachmentStore {
     let source = input.path, digest = move?.digest, sizeBytes = info.size
     if (!move) {
       source = join(this.folder, `${randomUUID()}.tmp-${process.pid}`)
-      try { ({ digest, sizeBytes } = await copyHashing(input.path, source)) }
+      try { ({ digest, sizeBytes } = await copyHashing(input.path, source, 0o600)) }
       catch (error) { await unlink(source).catch(() => undefined); throw error }
       if (sizeBytes < 1 || sizeBytes > attachmentLimitBytes(input.mimeType)) { await unlink(source).catch(() => undefined); throw new RefusedImage(video ? VIDEO_TOO_LARGE : ATTACHED_FILE_TOO_LARGE) }
     }
@@ -446,10 +444,3 @@ export class AttachmentStore {
   idle(): Promise<void> { return this.enqueue(async () => undefined) }
 }
 
-/** Copies a file to `target` (created, never overwritten, mode 0o600), hashing what it reads: the digest and size of exactly what was written. */
-async function copyHashing(source: string, target: string): Promise<{ digest: string; sizeBytes: number }> {
-  const hash = createHash('sha256'); let sizeBytes = 0
-  const tap = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); sizeBytes += chunk.byteLength; done(null, chunk) } })
-  await pipeline(createReadStream(source), tap, createWriteStream(target, { flags: 'wx', mode: 0o600 }))
-  return { digest: hash.digest('hex'), sizeBytes }
-}

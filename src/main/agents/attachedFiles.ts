@@ -1,9 +1,7 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
 import { lstat, mkdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+import { copyHashing, hashFile } from './hashedCopy'
 import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment, isVideoAttachment, type AgentBrowserFeedback } from '../../shared/agents'
 import { attachmentExtension, fileTypeLabel, formatAttachmentSize } from '../../shared/attachmentLabels'
 import type { PromptImage } from './host'
@@ -289,26 +287,13 @@ async function prepareFolder(workingDirectory: string): Promise<void> {
 
 /** What is saved: bytes in hand, or a file streamed from where the store keeps it, which must hash to the digest. */
 type SavedContent = Uint8Array | { readonly path: string; readonly sizeBytes: number }
-/** The SHA-256 of a file, read in a stream. */
-async function hashFile(path: string): Promise<string> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
-  return hash.digest('hex')
-}
 /**
- * Streams a kept file to `target` (created with `wx`, mode 0o644), hashing what it reads. A copy that is not the
+ * Copies a kept file to `target` (created with `wx`, mode 0o644), hashing what it reads. A copy that is not the
  * content its digest names is removed and refused, as reading it whole would be.
  */
 async function streamInto(source: { readonly path: string; readonly sizeBytes: number }, target: string, digest: string): Promise<void> {
-  const hash = createHash('sha256'); let size = 0
-  const tap = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); size += chunk.byteLength; done(null, chunk) } })
-  try { await pipeline(createReadStream(source.path), tap, createWriteStream(target, { flags: 'wx', mode: 0o644 })) }
-  catch (error) {
-    // What this copy began is removed, so sending again starts afresh; a file already there was never this copy's.
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') await unlink(target).catch(() => undefined)
-    throw error
-  }
-  if (size !== source.sizeBytes || hash.digest('hex') !== digest) {
+  const copied = await copyHashing(source.path, target, 0o644)
+  if (copied.sizeBytes !== source.sizeBytes || copied.digest !== digest) {
     await unlink(target).catch(() => undefined)
     throw new Error('content changed')
   }
