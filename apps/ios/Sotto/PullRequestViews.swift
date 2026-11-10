@@ -33,6 +33,8 @@ struct PullRequestSheet: View {
     @State private var toast: String?
     /// Set while a press of the jump chips scrolls, so the chips don't follow the parts it passes on the way.
     @State private var jumping = false
+    /// The pull request's scroll view's height, for landing a folded jump below the clock.
+    @State private var viewport: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -127,7 +129,12 @@ struct PullRequestSheet: View {
     private func jump(to target: PullRequestPart, proxy: ScrollViewProxy) {
         part = target
         jumping = true
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .top) }
+        // Folded, a part's heading would land level with the clock and its count run under it, so the jump lands it a
+        // step lower: what stands beside the clock keeps clear of the strip (Zach's round 5 pick A, November 9, 2026).
+        // scrollTo lines up the anchor's point on the part with the same point on the scroll view, so a part's top
+        // lands `lift` below the top when the anchor sits that fraction of the way down.
+        let lift: CGFloat = isFolded && viewport > 0 ? (Space.s6 + Space.s1) / viewport : 0
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0, y: lift)) }
         Task { try? await Task.sleep(nanoseconds: 450_000_000); jumping = false }
     }
 
@@ -154,6 +161,13 @@ struct PullRequestSheet: View {
                     .padding(.bottom, Space.s8)
             }
             .coordinateSpace(.named(PullRequestBody.space))
+            .background {
+                GeometryReader { box in
+                    Color.clear
+                        .onAppear { viewport = box.size.height }
+                        .onChange(of: box.size.height) { _, height in viewport = height }
+                }
+            }
             .onPreferenceChange(PartTops.self) { value in follow(value) }
             .refreshable { await load() }
         }
@@ -360,15 +374,7 @@ private struct PullRequestBody: View {
         }
         // A jump to this part leaves its heading room under the chips' line, on the Duo.
         .padding(.top, duo == .none ? 0 : Space.s3)
-        // A jump lands on this mark. Folded, it stands above the part, so the part's heading lands below the clock
-        // rather than its count running under it: what stands beside the clock keeps clear of the strip (Zach's
-        // round 5 pick A, November 9, 2026).
-        .overlay(alignment: .top) {
-            Color.clear.frame(height: 1)
-                .alignmentGuide(.top) { _ in foldedStrip > 0 ? Space.s6 : 0 }
-                .accessibilityHidden(true)
-                .id(which)
-        }
+        .id(which)
         .background(alignment: .top) {
             GeometryReader { proxy in
                 Color.clear.preference(key: PartTops.self, value: [which: proxy.frame(in: .named(Self.space)).minY])
