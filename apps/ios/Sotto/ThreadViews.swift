@@ -4021,6 +4021,8 @@ struct RequestSheet: View {
     /// where the page's own 20 points left a band over the footer in a sheet that opens exactly tall enough for its
     /// choices and its buttons (the Duo design climb's round 8).
     private var choicesMeetFooter: Bool { duo != .none && duo != .upright && hasFooter }
+    /// Whether Not now is the outline pill: on the Duo in light, and folded or sideways in dark as well.
+    private var notNowRing: Bool { duo != .none && (scheme == .light || duo != .upright) }
 
     /// Not now and Send answer stay in reach under a question, whatever its length.
     @ViewBuilder private var footer: some View {
@@ -4030,9 +4032,11 @@ struct RequestSheet: View {
                 skipLine(current)
                 HStack(spacing: Space.s2) {
                     // On the Duo in light, Not now is a ring on the sheet's own fill, so it can't read as the greyed Send
-                    // answer beside it (Zach's round 6 pick A, November 10, 2026).
+                    // answer beside it (Zach's round 6 pick A, November 10, 2026). Folded and sideways it is the ring in
+                    // dark too, where the two had been the same grey pill and Not now's brighter label read as the
+                    // primary (his round 8 pick A, November 10, 2026).
                     Button("Not now") { dismiss() }
-                        .buttonStyle(PillButtonStyle(kind: duo != .none && scheme == .light ? .outline : .soft, wide: true))
+                        .buttonStyle(PillButtonStyle(kind: notNowRing ? .outline : .soft, wide: true))
                     // Every question skipped sends a skip, so the button says so (ADR-0135).
                     Group {
                         if let questions = current.questions, !questions.isEmpty, questions.allSatisfy(isSkipped) {
