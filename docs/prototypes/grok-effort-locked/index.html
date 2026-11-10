@@ -39,6 +39,7 @@
   .card button.act { margin-top: 10px; border:1px solid var(--line); background:transparent; color:var(--text); border-radius:8px; padding:6px 10px; font:inherit; font-size: 13px; cursor:pointer; }
   .tip { position:absolute; bottom: 36px; left: 90px; max-width: 260px; padding: 6px 9px; border:1px solid var(--line); border-radius: 8px; background: var(--elev); font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.3); z-index: 5; }
   @media (max-width: 520px) { .card, .tip { left: 8px; right: 8px; width: auto; max-width: none; } }
+  @media (max-width: 760px) { body { padding-bottom: 240px; } }
   .under { margin: 6px 2px 0; color: var(--muted); font-size: 12.5px; min-height: 18px; }
   .phone { width: 300px; max-width: 100%; margin: 0 auto; border: 1px solid var(--line); border-radius: 30px; padding: 14px 12px 18px; background: var(--pane); }
   .phone .bar { font-size: 12px; color: var(--muted); text-align:center; margin-bottom: 10px; }
@@ -48,6 +49,7 @@
   .phone .sheet .row { display:flex; justify-content:space-between; padding: 6px 0; border-top: 1px solid var(--line); }
   .phone .sheet .row:first-child { border-top: 0; }
   .phone .sheet .row.off { color: var(--faint); }
+  .phone .sheet .row svg, .phone .chip svg { width: 11px; height: 11px; vertical-align: -1px; }
   .state { margin-top: 12px; font-size: 12.5px; }
   .state dl { display:grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
   .state dt { color: var(--muted); }
@@ -85,7 +87,7 @@
         <div class="box"><div class="ph">Reply to Grok…</div><div class="chips" id="phoneChips"></div></div>
         <div id="phoneSheet"></div>
       </div>
-      <p class="muted" style="font-size:12.5px;margin-top:10px">The iPhone holds the chip the same way today. Tap it to see each variant there.</p>
+      <p class="note" id="phoneExplain" style="font-size:12.5px"></p>
     </section>
   </div>
 </main>
@@ -94,6 +96,8 @@
   <button data-variant="a">A. Card explains</button>
   <button data-variant="b">B. Fixed chip with tip</button>
   <button data-variant="c">C. Line under the chips</button>
+  <span class="sep"></span>
+  <button data-phone="1">iPhone 1</button><button data-phone="2">iPhone 2</button><button data-phone="3">iPhone 3</button>
   <span class="sep"></span>
   <button data-theme="dark">Dark</button><button data-theme="light">Light</button>
 </div>
@@ -107,9 +111,15 @@ const EXPLAIN = {
 }
 const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
 const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
-let variant = new URLSearchParams(location.search).get('variant') || 'a'
+let variant = new URLSearchParams(location.search).get('variant') || 'b'
 if (!EXPLAIN[variant]) variant = 'a'
-let open = false, tip = false, line = false, phoneOpen = false
+let open = false, tip = false, line = false, phoneOpen = false, whyOpen = false
+let phone = new URLSearchParams(location.search).get('phone') || '1'
+const PHONE = {
+  '1': 'iPhone 1 (built): the pill is unchanged. In the sheet it opens, the Effort row has a lock where its chevron was and opens no menu; a tap shows the reason under it.',
+  '2': 'iPhone 2: as 1, and the pill also shows a small lock before the effort word, so the hold shows before the sheet opens.',
+  '3': 'iPhone 3: as 1, but the reason always shows under the Effort row, with no tap needed.',
+}
 function render() {
   const hadFocus = document.activeElement?.id === 'effort'
   document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
@@ -130,15 +140,20 @@ function render() {
     if (variant === 'b') { e.onmouseenter = e.onfocus = () => { tip = true; reason() }; e.onmouseleave = e.onblur = ev => { if (ev.type === 'mouseleave' && document.activeElement === e) return; tip = false; reason() } }
     if (variant === 'c') { e.onmouseenter = e.onfocus = () => { line = true; reason() }; e.onmouseleave = e.onblur = ev => { if (ev.type === 'mouseleave' && document.activeElement === e) return; line = false; reason() } }
   }
-  // iPhone
-  const pEffort = variant === 'b' ? `<button class="chip fact" id="pe">${LOCK} High</button>` : `<button class="chip" id="pe" ${variant === 'today' ? 'disabled' : ''}>High ${CHEV}</button>`
-  document.getElementById('phoneChips').innerHTML = '<button class="chip">Grok 4.7 Build</button>' + pEffort
-  const pe = document.getElementById('pe')
-  if (variant !== 'today') pe.onclick = () => { phoneOpen = !phoneOpen; render() }
-  document.getElementById('phoneSheet').innerHTML = !phoneOpen || variant === 'today' ? ''
-    : variant === 'a' ? `<div class="sheet"><b>Reasoning effort</b><p class="muted" style="margin:4px 0 8px">${WHY}</p>${['Low', 'Medium', 'High', 'XHigh'].map(l => `<div class="row off"><span>${l}</span><span>${l === 'High' ? '✓' : ''}</span></div>`).join('')}</div>`
-    : `<div class="sheet">${WHY}</div>`
-  history.replaceState(null, '', `?variant=${variant}`)
+  // iPhone: the real shape, one pill (model · effort) that opens the thread settings sheet.
+  document.querySelectorAll('[data-phone]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.phone === phone)))
+  document.getElementById('phoneExplain').textContent = PHONE[phone]
+  document.getElementById('phoneChips').innerHTML = `<button class="chip" id="pe">Grok 4.7 Build · <span style="color:var(--muted)">${phone === '2' ? LOCK + ' ' : ''}High</span></button>`
+  document.getElementById('pe').onclick = () => { phoneOpen = !phoneOpen; whyOpen = false; render() }
+  const showWhy = phone === '3' || whyOpen
+  document.getElementById('phoneSheet').innerHTML = !phoneOpen ? '<p class="muted" style="font-size:12px;text-align:center;margin:8px 0 0">Tap the pill to open the thread settings sheet.</p>'
+    : `<div class="sheet"><b>Thread settings</b><p class="muted" style="margin:4px 0 8px">Grok Build changes only a started thread’s permissions.</p>
+       <div class="row off"><span>Grok 4.7 Build</span><span>✓</span></div>
+       <div class="row" id="effortRow" style="cursor:pointer"><span>Effort</span><span style="color:var(--muted)">High ${LOCK}</span></div>
+       ${showWhy ? `<p class="muted" style="margin:0 0 6px;font-size:12px">${WHY.replace('Grok', 'Grok Build')}</p>` : ''}
+       <div class="row"><span>Permissions</span><span style="color:var(--muted)">Ask for approval ⌄</span></div></div>`
+  const er = document.getElementById('effortRow'); if (er && phone !== '3') er.onclick = () => { whyOpen = !whyOpen; render() }
+  history.replaceState(null, '', `?variant=${variant}&phone=${phone}`)
   if (hadFocus) document.getElementById('effort')?.focus()
 }
 function reason() {
@@ -154,6 +169,7 @@ function reason() {
 }
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && open) { open = false; render(); document.getElementById('effort')?.focus() } })
 document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => { variant = b.dataset.variant; open = tip = line = phoneOpen = false; render() })
+document.querySelectorAll('[data-phone]').forEach(b => b.onclick = () => { phone = b.dataset.phone; phoneOpen = true; whyOpen = false; render() })
 document.querySelectorAll('button[data-theme]').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; render() })
 render()
 </script>
