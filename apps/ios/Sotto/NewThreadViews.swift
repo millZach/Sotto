@@ -33,6 +33,11 @@ struct NewThreadSheet: View {
     /// A permission default that would let the thread act without asking, held back because this computer doesn't
     /// let this iPhone answer. Cleared once the user picks a permission themselves.
     @State private var heldBack = false
+    /// Held sideways, how tall the sheet stands, the room its step has, and how tall the step's content stands in its
+    /// scroll view, so Sotto's own sheet fits its step (`sidewaysFit`).
+    @State private var sheetHeight: CGFloat = 0
+    @State private var pageRoom: CGFloat = 0
+    @State private var stepHeight: CGFloat?
     private var models: [ThreadModel] { model.creationModels(hostID) }
     private var chosenModel: ThreadModel? { models.first { $0.id == modelID } }
     private var busy: Bool { model.creatingHostID != nil }
@@ -68,8 +73,11 @@ struct NewThreadSheet: View {
             ZStack { page }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { pageRoom = $0 }
             footer
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { sheetHeight = $0 }
+        .preference(key: RequestSheetFit.self, value: sidewaysFit)
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .foregroundStyle(Palette.ink)
         // In Sotto's own sheet, held sideways on the Duo, the ground runs on up behind the grabber, where the sheet's own
@@ -81,6 +89,19 @@ struct NewThreadSheet: View {
         .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }
+
+    /// Held sideways, Sotto's own sheet is as tall as its step, as the question sheet fits its choices, where a full-height
+    /// sheet left its lower half blank. It never stands shorter than `sidewaysFloor`, so the step bar and the sheet's top
+    /// keep still between the steps that hold less than that. Choosing a folder takes the full height (Zach's round 7
+    /// pick A, November 10, 2026).
+    private var sidewaysFit: CGFloat? {
+        guard sheetClose != nil, step != .folders, let stepHeight, sheetHeight > 0 else { return nil }
+        let rest = sheetHeight - pageRoom
+        return max(rest + stepHeight, Self.sidewaysFloor - DuoSheetLayer.grabber)
+    }
+    /// The least the sideways sheet stands, its grabber included: room for the step bar, a step's heading and two rows of
+    /// choices, two to a row.
+    static let sidewaysFloor: CGFloat = 400
 
     // MARK: Header, steps and footer
 
@@ -234,6 +255,7 @@ struct NewThreadSheet: View {
                 }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
@@ -283,6 +305,7 @@ struct NewThreadSheet: View {
                 }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
@@ -329,6 +352,7 @@ struct NewThreadSheet: View {
                 ForEach(model.pendingCreations.filter { $0.hostID == hostID }) { CreationPendingRow(operation: $0).padding(.top, Space.s3) }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
