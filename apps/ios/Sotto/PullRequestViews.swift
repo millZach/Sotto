@@ -392,13 +392,18 @@ private struct PullRequestBody: View {
             // exactly, whatever the part's own height.
             Color.clear.frame(height: 0).accessibilityHidden(true).id(which)
             VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: Space.s2)
-                    if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+                // On the Duo, Summary drops its grey heading and starts at its own words, where the chip, the heading and
+                // "What this does" stacked three headings over two lines of text. The other parts keep theirs (Zach's
+                // round 7 pick A, November 10, 2026).
+                if which != .summary || duo == .none {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: Space.s2)
+                        if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+                    }
+                    .padding(.horizontal, Space.s1)
                 }
-                .padding(.horizontal, Space.s1)
                 content()
             }
             // A jump to this part leaves its heading room under the chips' line, on the Duo.
