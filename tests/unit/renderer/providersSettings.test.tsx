@@ -612,6 +612,40 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     expect(await screen.findByRole('alert')).toHaveTextContent('Your browser did not open. Go to docs.x.ai/build/overview to install Grok Build.')
   })
 
+  it('keeps the client’s sentence in the opened row when a retry fails for the same reason', async () => {
+    const said = 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.'
+    const state = withProblem('codex', 'signed-out', said)
+    const command = vi.fn(async () => ({ ...state, error: said }))
+    vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
+    render(<ProvidersSettings />)
+    const row = openRow('Codex')
+    fireEvent.click(within(row).getByRole('button', { name: 'Retry Codex' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'codex', notice: false }))
+    await waitFor(() => expect(within(row).getByRole('button', { name: 'Retry Codex' })).toBeEnabled())
+    // The same sentence came back from the press: it is said once, in the opened row, and not as an alert under the header.
+    expect(within(row).getAllByText(said)).toHaveLength(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Codex' }))
+    expect(screen.queryByText(said)).toBeNull()
+  })
+
+  it('offers Sign in before an update on a row that is not signed in, and the update once it is', () => {
+    vi.stubGlobal('sotto', { providerSignIn: { signIn: vi.fn() } })
+    const state = withProblem('claude', 'signed-out', 'Sign in to Claude Code.')
+    state.clientUpdates = [{ id: 'claude', installed: '2.1.4', published: '2.1.7', behind: true, channel: 'npm',
+      command: 'npm install -g @anthropic-ai/claude-code@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
+    provide(state)
+    const view = render(<ProvidersSettings />)
+    expect(screen.getByRole('button', { name: 'Sign in to Claude Code' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update Claude Code to 2.1.7' })).toBeNull()
+    view.unmount()
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'claude' ? { id: provider.id, name: provider.name, version: provider.version, connection: 'connected' as const, capabilities: provider.capabilities } : provider)
+    provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.queryByRole('button', { name: 'Sign in to Claude Code' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Update Claude Code to 2.1.7' })).toBeInTheDocument()
+  })
+
   it.each([['too-old', 'Too old to use'], ['cannot-start', 'Can’t be started']] as const)('says %s in the same words for every provider', (problem, word) => {
     provide(withProblem('claude', problem, 'Claude Code said something of its own.'))
     render(<ProvidersSettings />)

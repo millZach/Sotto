@@ -99,7 +99,7 @@ export class ProviderSignIns {
   constructor(private readonly options: ProviderSignInOptions) {}
   private get here(): boolean { return this.options.place === 'computer' }
   /** "on this host", or "on this computer" for the desktop's own sign-ins. */
-  private get on(): string { return this.here ? 'on this computer' : 'on this host' }
+  private get placePhrase(): string { return this.here ? 'on this computer' : 'on this host' }
 
   /**
    * Starts a provider's sign-in for this client and answers once its client has printed the page (and, for a device
@@ -122,7 +122,7 @@ export class ProviderSignIns {
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)
-      throw new ProviderSignInRefusal(`${name} is not installed ${this.on}, so it cannot sign in. Nothing was changed.`)
+      throw new ProviderSignInRefusal(`${name} is not installed ${this.placePhrase}, so it cannot sign in. Nothing was changed.`)
     }
     const printed = new Promise<void>(resolve => { entry.ready = resolve })
     let child: ChildProcess
@@ -130,7 +130,7 @@ export class ProviderSignIns {
       child = spawn(command.executable, [...command.args], { cwd: homedir(), env: command.env, shell: false, windowsHide: true,
         stdio: [shape === 'paste-code' ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
     } catch {
-      this.end(id, 'failed', `${name} could not be started ${this.on}. Nothing was changed.`)
+      this.end(id, 'failed', `${name} could not be started ${this.placePhrase}. Nothing was changed.`)
       return this.copy(entry)
     }
     entry.child = child
@@ -142,7 +142,7 @@ export class ProviderSignIns {
     child.stdout?.on('data', read)
     child.stderr?.on('data', read)
     child.stdin?.on('error', () => undefined)
-    child.on('error', () => { if (entry.child === child) this.end(id, 'failed', `${name} could not be started ${this.on}. Nothing was changed.`) })
+    child.on('error', () => { if (entry.child === child) this.end(id, 'failed', `${name} could not be started ${this.placePhrase}. Nothing was changed.`) })
     child.on('close', exitCode => { if (entry.child === child) void this.exited(entry, exitCode) })
     entry.timers.push(setTimeout(() => { if (entry.view.stage === 'starting') this.end(id, 'failed', `${name} did not show a sign-in page. Nothing was changed.`) }, this.options.startTimeoutMs ?? START_TIMEOUT_MS))
     entry.timers.push(setTimeout(() => { if (!ended(entry.view)) this.end(id, 'ended', 'The sign-in ran out of time.') }, this.options.lifetimeMs ?? PROVIDER_SIGN_IN_LIFETIME_MS))

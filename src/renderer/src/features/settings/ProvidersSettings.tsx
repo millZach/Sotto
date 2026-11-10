@@ -118,7 +118,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
-  const [loginCopied, showLoginCopied] = useTransientFlag<'copied'>()
+  const [loginCopied, showLoginCopied] = useTransientFlag<'muse' | 'devin'>()
   /** The provider whose Sign in dialog is open (ADR-0200): Codex, Claude Code or Grok Build, on this computer. */
   const [signInFor, setSignInFor] = useState<LocalSignInProvider | null>(null)
   /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
@@ -195,18 +195,12 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
       if (!result?.ok) setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED }))
     } catch { setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED })) }
   }
-  const copyMuseLogin = async (): Promise<void> => {
+  // Muse and Devin sign in from their own command, which their opened rows show with Copy.
+  const copyLogin = async (provider: 'muse' | 'devin', loginCommand: string): Promise<void> => {
     setCopyingLogin(true)
-    setErrors(previous => ({ ...previous, muse: undefined }))
-    try { await writeClipboard('muse login'); showLoginCopied('copied') }
-    catch { setErrors(previous => ({ ...previous, muse: msg`The command could not be copied. Select muse login and copy it yourself.` })) }
-    finally { setCopyingLogin(false) }
-  }
-  const copyDevinLogin = async (): Promise<void> => {
-    setCopyingLogin(true)
-    setErrors(previous => ({ ...previous, devin: undefined }))
-    try { await writeClipboard('devin auth login'); showLoginCopied('copied') }
-    catch { setErrors(previous => ({ ...previous, devin: msg`The command could not be copied. Select devin auth login and copy it yourself.` })) }
+    setErrors(previous => ({ ...previous, [provider]: undefined }))
+    try { await writeClipboard(loginCommand); showLoginCopied(provider) }
+    catch { setErrors(previous => ({ ...previous, [provider]: msg`The command could not be copied. Select ${loginCommand} and copy it yourself.` })) }
     finally { setCopyingLogin(false) }
   }
   // A provider this computer does not have, or has too old, opens its maker's install page, as first-run setup did.
@@ -335,9 +329,9 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
           <div>
             <h4>{t`Local connection`}</h4>
             <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'hermes' ? t`Full access on this Mac. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
-            {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyDevinLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Devin login command copied.` : ''}</span></div>}
-            {named && status.error && !errors[provider] ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
-            {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyMuseLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Muse login command copied.` : ''}</span></div>}
+            {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyLogin('devin', 'devin auth login')}>{loginCopied === 'devin' ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'devin' ? t`Devin login command copied.` : ''}</span></div>}
+            {named && status.error ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
+            {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyLogin('muse', 'muse login')}>{loginCopied === 'muse' ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'muse' ? t`Muse login command copied.` : ''}</span></div>}
           </div>
           <div className="provider-client__actions">{connectButtons}</div>
         </div>}
@@ -438,7 +432,10 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const version = update?.published ?? ''
     // Cursor's row keeps its own design (ADR-0128): its sentence under the header, and its guide in the opened row.
     const plain = named !== undefined && provider !== 'cursor'
-    const error = cursorExplains(provider, status) ? undefined : errors[provider] ?? (plain ? undefined : status.error)
+    // A press that fails for the same reason answers with the client's sentence again; that is still the opened row's to say.
+    const pressed = errors[provider]
+    const clientsOwn = plain && typeof pressed === 'string' && Boolean(status.error) && pressed.includes(status.error!)
+    const error = cursorExplains(provider, status) ? undefined : (clientsOwn ? undefined : pressed) ?? (plain ? undefined : status.error)
     const id = `${rowId}-${provider}`
     // Sign in runs the client's own sign-in in a dialog (ADR-0200); Cursor signs in from its opened row (ADR-0128).
     const signInHere = problem === 'signed-out' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
@@ -465,12 +462,13 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
             </span>
           </span>
         </button>
-        {checkClientUpdates && update?.published && (update.canInstall || providerUpdating)
+        {/* A row that is not signed in offers Sign in before anything else: nothing else on it works until then. */}
+        {signInHere ? <Button variant="secondary" className="provider-row__act" aria-label={t({ message: `Sign in to ${label}`, comment: '{label} is a provider\'s name.' })}
+            onClick={() => { setErrors(previous => ({ ...previous, [provider]: undefined })); if (signsInHere(provider)) setSignInFor(provider) }}>{t`Sign in`}</Button>
+          : checkClientUpdates && update?.published && (update.canInstall || providerUpdating)
           ? <button type="button" className="provider-row__update tt-focusable" aria-label={providerUpdating ? t`Updating ${label} to ${version}` : t`Update ${label} to ${version}`}
             disabled={providerUpdating || Boolean(connecting) || updating || checkingUpdates} onClick={() => void runUpdate(provider)}>
             <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? t`Waiting to update` : t`Updating…` : t`Update to ${version}`}</button>
-          : signInHere ? <Button variant="secondary" className="provider-row__act" aria-label={t({ message: `Sign in to ${label}`, comment: '{label} is a provider\'s name.' })}
-            onClick={() => { setErrors(previous => ({ ...previous, [provider]: undefined })); if (signsInHere(provider)) setSignInFor(provider) }}>{t`Sign in`}</Button>
           : installGuide ? <Button variant="ghost" className="provider-row__act" aria-label={t({ message: `Open the ${label} install guide`, comment: '{label} is a provider\'s name.' })}
             onClick={() => void openInstallGuide(provider)}><ExternalLink size={14} aria-hidden="true" />{t`Install guide`}</Button>
           : <span className="provider-row__update-slot" />}

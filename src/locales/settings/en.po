@@ -6363,18 +6363,14 @@ msgid "The command could not be copied. It is selected above: copy it with your 
 msgstr "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "The command could not be copied. Select devin auth login and copy it yourself."
-msgstr "The command could not be copied. Select devin auth login and copy it yourself."
+msgid "The command could not be copied. Select {loginCommand} and copy it yourself."
+msgstr "The command could not be copied. Select {loginCommand} and copy it yourself."
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "The command could not be copied. Select it and copy it yourself."
 msgstr "The command could not be copied. Select it and copy it yourself."
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "The command could not be copied. Select muse login and copy it yourself."
-msgstr "The command could not be copied. Select muse login and copy it yourself."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "The composer’s own key. Shift+Enter adds a line."

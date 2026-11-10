@@ -2,7 +2,7 @@ import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
-import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { AgentState, AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
 import type { ProjectSetupRequest } from '../../shared/workerMachine'
@@ -290,6 +290,12 @@ export interface AgentRuntimeOptions {
  * host. A host has no Settings to choose Clear settled threads after in, so the 30-day default read from its own file
  * would delete threads no one asked it to, whatever the desktop chose. A desktop's Delete thread… still reaches it.
  */
+/** After a sign-in's connect: nothing when the provider is connected, else its own error, the command's, or that it did not confirm. */
+function whyNotConnected(state: AgentState, provider: ProviderId): string | undefined {
+  const status = state.host.providers?.find(item => item.id === provider)
+  return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+}
+
 export function clearsOnItsOwn(options: Pick<AgentRuntimeOptions, 'clearThreadsEnabled' | 'runsAs'>): boolean {
   return options.clearThreadsEnabled === true && options.runsAs !== 'headless-host'
 }
@@ -930,11 +936,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
   const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
     configDirectory: cursorHost.folder, program: () => cursorHost.clientProgram(), openExternal: async url => { await options.openExternal(url) },
-    connect: async () => {
-      const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
-      const status = state.host.providers?.find(item => item.id === 'cursor')
-      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
-    },
+    connect: async () => whyNotConnected(await agentControl.command({ type: 'connect', provider: 'cursor' }), 'cursor'),
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   // Signing Codex, Claude Code or Grok Build in from its row on this computer (ADR-0200); a headless host's are signed
@@ -942,11 +944,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
     openExternal: async url => { await options.openExternal(url) },
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
-    connect: async provider => {
-      const state = await agentControl.command({ type: 'connect', provider })
-      const status = state.host.providers?.find(item => item.id === provider)
-      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
-    },
+    // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
+    connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
   }) : undefined
   idleCompaction.start()
   return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }

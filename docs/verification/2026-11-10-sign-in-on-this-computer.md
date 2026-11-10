@@ -26,7 +26,14 @@ Nothing was wider than the window at 820x560.
 - `artifacts/sign-in-on-this-computer/providers-820x560.png`: the page at the minimum window.
 - `artifacts/sign-in-on-this-computer/sign-in-dialog.png`: the dialog on Claude Code, waiting.
 
+## Claude Code's own browser
+
+Claude Code opens its sign-in page by itself as its sign-in starts. Run by hand on forge with stand-ins for `xdg-open` and the browsers first on `PATH`, in an empty home folder, `claude auth login --claudeai` (2.1.322) called `xdg-open` with its page. With `BROWSER` set to `/bin/true`, or to a name that is no program, it called nothing and still printed "If the browser didn't open, visit:" with the page. So this computer's sign-in sets `BROWSER` to a program that does nothing for Claude Code on Linux and macOS, and the page opens only from **Open sign-in page**.
+
 ## Not checked here
+
+- Whether Claude Code on Windows opens its page by itself, and whether `BROWSER` stops it there. Sotto leaves its environment alone on Windows.
+- Whether the `BROWSER` setting holds on macOS; it is set there on the strength of the Linux run.
 
 - A sign-in carried through to Connected against a real account. The fake clients in `tests/integration/localProviderSignIn.test.ts` carry Codex, Claude Code and Grok Build through.
 - Codex's row when it is signed out in a home folder of its own. In the empty home Codex reported no problem Sotto has a word for, so it read Needs attention and offered no Sign in.

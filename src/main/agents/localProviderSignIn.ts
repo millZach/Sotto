@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs'
 import { t } from '@lingui/core/macro'
-import { ProviderSignInRefusal, ProviderSignIns, type SignInCommand } from '../../host/providerSignIn'
+import { defaultSignInCommand, ProviderSignInRefusal, ProviderSignIns, type SignInCommand } from '../../host/providerSignIn'
 import { isProviderSignInPage, type HostSignIn, type ProviderSignInView } from '../../shared/hostProviders'
 import type { LocalSignInProvider, LocalSignInRequest } from '../../shared/localProviderSignIn'
 
@@ -18,6 +19,17 @@ export interface LocalProviderSignInOptions {
 }
 
 /**
+ * Claude Code opens its sign-in page in a browser by itself as its sign-in starts (ADR-0037), which on this computer
+ * would be before the user presses Open sign-in page. It runs `BROWSER` instead where that is set, so on Linux and
+ * macOS its sign-in is given a program that does nothing, and the page opens only from main, checked, on the press.
+ * Measured on Linux with Claude Code 2.1.322; Windows is left as it is until it is measured there.
+ */
+export function withoutOwnBrowser(provider: LocalSignInProvider, command: SignInCommand | undefined, platform: NodeJS.Platform = process.platform): SignInCommand | undefined {
+  if (!command || provider !== 'claude' || platform === 'win32') return command
+  return { ...command, env: { ...command.env, BROWSER: existsSync('/usr/bin/true') ? '/usr/bin/true' : '/bin/true' } }
+}
+
+/**
  * Signing Codex, Claude Code or Grok Build in on this computer from its row in Settings › Providers (ADR-0200). It is
  * the sign-in a paired host runs for its tiles (ADR-0037), on this computer's own client: the client is started over
  * pipes, what it printed is held here in memory, and the window is told where the sign-in stands and the code to show,
@@ -29,7 +41,7 @@ export class LocalProviderSignIn {
   constructor(private readonly options: LocalProviderSignInOptions) {
     this.signIns = new ProviderSignIns({
       place: 'computer',
-      ...(options.command ? { command: async provider => options.command!(provider as LocalSignInProvider) } : {}),
+      command: async provider => withoutOwnBrowser(provider as LocalSignInProvider, await (options.command ? options.command(provider as LocalSignInProvider) : defaultSignInCommand(provider))),
       connect: async provider => options.connect(provider as LocalSignInProvider),
       ...(options.lifetimeMs !== undefined ? { lifetimeMs: options.lifetimeMs } : {}),
       ...(options.startTimeoutMs !== undefined ? { startTimeoutMs: options.startTimeoutMs } : {}),

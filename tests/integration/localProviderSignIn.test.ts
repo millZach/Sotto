@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LocalProviderSignIn } from '../../src/main/agents/localProviderSignIn'
+import { LocalProviderSignIn, withoutOwnBrowser } from '../../src/main/agents/localProviderSignIn'
 import type { LocalSignInProvider } from '../../src/shared/localProviderSignIn'
 import { fakeSignInCommand } from '../fixtures/signInProviders'
 
@@ -79,6 +79,17 @@ describe('signing a provider in on this computer', () => {
     elsewhere.signIn.close()
     const missing = make({ installed: false })
     await expect(missing.signIn.request({ type: 'start', provider: 'claude' })).rejects.toThrow('Claude Code is not installed on this computer, so it cannot sign in. Nothing was changed.')
+  })
+
+  it('gives Claude Code a browser that does nothing on Linux and macOS, so its page opens only on the press', () => {
+    const command = { executable: '/usr/bin/claude', args: ['auth', 'login', '--claudeai'], env: { PATH: '/usr/bin', NO_COLOR: '1' } }
+    expect(withoutOwnBrowser('claude', command, 'linux')?.env).toEqual({ PATH: '/usr/bin', NO_COLOR: '1', BROWSER: expect.stringMatching(/^\/(?:usr\/)?bin\/true$/u) })
+    expect(withoutOwnBrowser('claude', command, 'darwin')?.env.BROWSER).toBeDefined()
+    // Codex's and Grok Build's device-code sign-ins open nothing by themselves; Windows is not measured, so it is left alone.
+    expect(withoutOwnBrowser('codex', command, 'linux')).toBe(command)
+    expect(withoutOwnBrowser('grok', command, 'linux')).toBe(command)
+    expect(withoutOwnBrowser('claude', command, 'win32')).toBe(command)
+    expect(withoutOwnBrowser('claude', undefined, 'linux')).toBeUndefined()
   })
 
   it('says the page could not open when the browser did not take it, and keeps the sign-in waiting', async () => {
