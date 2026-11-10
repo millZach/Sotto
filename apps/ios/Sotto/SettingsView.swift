@@ -65,7 +65,12 @@ private struct ThemePanel: View {
     let announce: (String) -> Void
     @AppStorage(PhonePreferenceKey.theme) private var themeID = ThemePalettes.defaultID
     @Environment(\.colorScheme) private var scheme
-    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: Space.s3, alignment: .top), count: 3) }
+    @Environment(\.duoLayout) private var duo
+    /// Three across, and four on the Duo held sideways, so its seven themes stand in two rows rather than leaving the last
+    /// alone on a third (Zach's round 6 pick A, November 10, 2026).
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Space.s3, alignment: .top), count: duo.sideways ? 4 : 3)
+    }
     var body: some View {
         let current = ThemePalettes.named(themeID)
         let dark = scheme == .dark
