@@ -433,17 +433,36 @@ struct ThreadsView: View, Equatable {
                 ForEach(working) { row in WorkingCard(row: row) }
             }
         }
+        // Held sideways, Settled is the Recent card's last row, inside the card, where it stood alone under the card with the
+        // lower right of the page empty, and its threads open under it in the card (Zach's round 7 pick A, November 10,
+        // 2026). Folded, upright and while searching it keeps its own place.
+        let settledInRecent = duo.sideways && !recent.isEmpty && !groups.searching && shows(shelf, settled: settled, groups)
         let recentColumn = VStack(alignment: .leading, spacing: 0) {
             if !recent.isEmpty {
                 SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
-                ThreadRowList(rows: recent, unread: unread, watched: watched)
+                if settledInRecent {
+                    let rows = shelfRows(settled, shelf, groups)
+                    VStack(spacing: 0) {
+                        ThreadRowList(rows: recent, unread: unread, watched: watched, carded: false)
+                        Rectangle().fill(Palette.hairline).frame(height: 1)
+                        settledToggle(settled.count + shelf.heldBack, inCard: true)
+                        if settledExpanded && !rows.isEmpty {
+                            Rectangle().fill(Palette.hairline).frame(height: 1)
+                            ThreadRowList(rows: rows, unread: unread, watched: watched, carded: false)
+                        }
+                    }
+                    .sottoCard(.plain)
+                    if settledExpanded { olderControls(groups) }
+                } else {
+                    ThreadRowList(rows: recent, unread: unread, watched: watched)
+                }
             }
             SnoozedSection(groups: groups) { row in
                 ThreadListRow(row: row, kind: .snoozed, watched: watched.contains(row.id), chosen: false,
                               canWatch: false, shelf: nil, identifier: "snoozed-thread-", open: { open(row.ref) },
                               setWatched: { _ in }, shelve: { _ in })
             }
-            if shows(shelf, settled: settled, groups) {
+            if shows(shelf, settled: settled, groups) && !settledInRecent {
                 if groups.searching {
                     SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count + shelf.older.count)
                 } else {
@@ -484,7 +503,8 @@ struct ThreadsView: View, Equatable {
         }
     }
 
-    private func settledToggle(_ count: Int) -> some View {
+    /// Settled, folded or open. `inCard`, it is the last row of the Recent card, with a row's margins.
+    private func settledToggle(_ count: Int, inCard: Bool = false) -> some View {
         let threads = count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
         return Button { settledExpanded.toggle() } label: {
             HStack(spacing: Space.s2) {
@@ -496,12 +516,12 @@ struct ThreadsView: View, Equatable {
                 Text("\(count)").fontWeight(.regular)
             }
             .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-            .padding(.horizontal, Space.s1)
-            .frame(minHeight: 52)
+            .padding(.horizontal, inCard ? Space.s4 : Space.s1)
+            .frame(minHeight: inCard ? 48 : 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .padding(.top, Space.s6)
+        .padding(.top, inCard ? 0 : Space.s6)
         .accessibilityIdentifier("settled-threads")
         .accessibilityLabel(settledExpanded ? String(localized: "Hide settled threads") : String(localized: "Show settled threads"))
         .accessibilityValue(settledExpanded ? String(localized: "\(threads), expanded", comment: "%@ is how many settled threads there are, such as 3 threads.")
@@ -1143,9 +1163,11 @@ private struct ThreadRowList: View {
     let rows: [HostedThread]
     let unread: Set<String>
     var watched: Set<String> = []
+    /// On a card of their own; false for rows inside a card that holds more, such as Recent's with Settled under it.
+    var carded = true
     var body: some View {
         let _ = BenchProbe.body("ThreadRowList")
-        VStack(spacing: 0) {
+        let list = VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20)
@@ -1153,7 +1175,7 @@ private struct ThreadRowList: View {
                 ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
             }
         }
-        .sottoCard(.plain)
+        if carded { list.sottoCard(.plain) } else { list }
     }
 }
 
