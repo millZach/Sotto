@@ -764,6 +764,21 @@ enum DuoLayout: Equatable {
         }
     }
 }
+extension DuoLayout {
+    /// Folded, how far the clock's strip reaches into a sheet from the sheet's right edge: the strip's width less the
+    /// sheet's own margin from the screen's edge, taken from its left margin, `sheetLeft`, since iOS stands a sheet in
+    /// the middle. A folded sheet's short header ends this far in, on the strip's left edge, so its title row, step bar
+    /// and dividers end on one edge beside the clock (Zach's round 8 pick A, November 10, 2026). Nothing elsewhere.
+    func stripReach(sheetLeft: CGFloat) -> CGFloat {
+        if case .folded(let strip) = self { return max(0, strip - max(0, sheetLeft)) } else { return 0 }
+    }
+}
+extension View {
+    /// Keeps `left` at where this view's left edge stands on the screen: a sheet's margin, for `DuoLayout.stripReach`.
+    func sheetLeft(_ left: Binding<CGFloat>) -> some View {
+        onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minX }) { left.wrappedValue = $0 }
+    }
+}
 private struct DuoLayoutKey: EnvironmentKey { static let defaultValue = DuoLayout.none }
 extension EnvironmentValues {
     var duoLayout: DuoLayout {

@@ -141,6 +141,13 @@ private struct AgentsSheet: View {
     /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
     /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
     private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    /// Folded, where the sheet's left edge stands on the screen, and so how far in from its right edge the strip
+    /// reaches: the title row and the thread's name end there (`DuoLayout.stripReach`).
+    @State private var sheetLeft: CGFloat = 0
+    private var stripReach: CGFloat { duo.stripReach(sheetLeft: sheetLeft) }
+    /// Folded, how far the title row and the thread's name stand lower, so the two centre in the clock's band rather
+    /// than pinning to the sheet's top; the first section stands where it did (Zach's round 8 pick A, November 10, 2026).
+    private static let foldedBandDrop: CGFloat = 10
     let ref: ThreadRef
     let open: (ThreadRef) -> Void
     @State private var delegations: [DelegatedThreadRecord]?
@@ -169,10 +176,11 @@ private struct AgentsSheet: View {
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("agents-done")
                 }
-                .padding(.trailing, foldedStrip)
+                .padding(.trailing, max(0, stripReach - Space.gutter))
+                .padding(.top, foldedStrip > 0 ? Self.foldedBandDrop : 0)
                 if let title = source?.owner.title {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        .padding(.trailing, foldedStrip)
+                        .padding(.trailing, max(0, stripReach - Space.gutter))
                         // Held sideways, the thread's name stands as far above the first section's heading as a
                         // section's last words stand above the next heading: a row's own 12 under its words and the
                         // sections' 12 between them. Closer, the heading's light reached the name, and the grey name
@@ -182,7 +190,7 @@ private struct AgentsSheet: View {
                 // Folded, the first section's heading and its rows start below the clock, where a row's button had run
                 // into it once rows went wide. Only the thread's name stands beside the clock, and the first heading
                 // keeps the same gap above its rows as the others (Zach's round 7 pick A, November 10, 2026).
-                if foldedStrip > 0 { Color.clear.frame(height: Space.s5) }
+                if foldedStrip > 0 { Color.clear.frame(height: Space.s5 - Self.foldedBandDrop) }
                 if duo == .none {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                         Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
@@ -240,6 +248,7 @@ private struct AgentsSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+        .sheetLeft($sheetLeft)
         .refreshable { await refresh() }
         .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         // Ends when nothing is running or the sheet goes.

@@ -17,6 +17,10 @@ struct PullRequestSheet: View {
     /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
     /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
     private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    /// Folded, where the sheet's left edge stands on the screen, and so how far in from its right edge the strip
+    /// reaches: the state and actions row and the chips' divider end there (`DuoLayout.stripReach`).
+    @State private var sheetLeft: CGFloat = 0
+    private var stripReach: CGFloat { duo.stripReach(sheetLeft: sheetLeft) }
     let ref: ThreadRef
     let url: String
     let number: Int
@@ -43,11 +47,12 @@ struct PullRequestSheet: View {
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                header.padding(.trailing, foldedStrip)
-                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy).padding(.trailing, foldedStrip) }
+                header.padding(.trailing, max(0, stripReach - Space.s4))
+                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy).padding(.trailing, stripReach) }
                 content
             }
             .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+            .sheetLeft($sheetLeft)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: Space.s2) {
