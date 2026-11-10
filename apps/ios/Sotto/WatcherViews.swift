@@ -848,15 +848,18 @@ private struct WatcherMessage: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref }
     var body: some View {
         if message.role == "user" {
-            // The user's photos stand on their own above their words, as in a thread and in Messages.
+            // The user's photos stand on their own above their words, as in a thread and in Messages, and so do their videos.
             let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
+            let videos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter { !$0.hasPreview && Videos.isVideo($0) }
+            let drawn = photos + videos
             VStack(alignment: .trailing, spacing: Space.s1) {
                 if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }
-                if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
+                if let ref, !videos.isEmpty { SentVideoTiles(ref: ref, videos: videos) }
+                if !message.text.isEmpty || drawn.count != (message.attachments ?? []).count {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
                         // A photo Sotto keeps no copy of is named, and so is a file, as in a thread (ADR-0131).
-                        ForEach((message.attachments ?? []).filter { photo in !photos.contains { $0.id == photo.id } }) { attachment in
+                        ForEach((message.attachments ?? []).filter { attachment in !drawn.contains { $0.id == attachment.id } }) { attachment in
                             Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo").font(.sotto(.small))
                         }
                     }

@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import SwiftUI
 import UniformTypeIdentifiers
 import SottoCore
@@ -297,6 +298,8 @@ extension AppModel {
             watcherSending[hostID] = nil
             watcherSendingPhotos[hostID] = nil
             watcherSendingFiles[hostID] = nil
+            // Taken, its videos' temporary copies go; back in the box, they stay.
+            if !files.isEmpty { sweepVideoCopies() }
             preparingSends.remove(box.id)
             watcherDrafts[hostID]?.end(draftID)
             // The page read after a lost acknowledgement came while the words were still on their way, and may say
@@ -376,8 +379,8 @@ extension AppModel {
         let key = watcherDraftKey(hostID)
         let returned = restage ? photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo } : photos
         if !returned.isEmpty { draftPhotos[key] = (draftPhotos[key] ?? []) + returned }
-        let returnedFiles = restage ? files.map { var file = $0; file.staged = nil; file.stagedAt = nil; return file } : files
-        if !returnedFiles.isEmpty { draftFiles[key] = (draftFiles[key] ?? []) + returnedFiles }
+        let returnedFiles = restage ? files.map { $0.unstaged() } : files
+        if !returnedFiles.isEmpty { draftFiles[key] = (draftFiles[key] ?? []) + returnedFiles; carryOnVideos(hostID) }
         let box = drafts[key] ?? ""
         if box.isEmpty || box == text { drafts[key] = text; return true }
         var kept = watcherSetAside[hostID] ?? []
@@ -1165,11 +1168,14 @@ struct FileSource: Sendable {
 }
 
 /// A file in a thread's reply box. It is read into memory on this iPhone, then staged on the thread's computer in parts,
-/// and stays in memory until its reply is sent or the file is removed. Nothing is written to disk.
+/// and stays in memory until its reply is sent or the file is removed. Nothing is written to disk. A video chosen from the
+/// photo library or Files is the exception (ADR-0131, November 9 amendment): it is kept as a protected temporary copy and
+/// staged from it, one part at a time, and carries its `video`.
 struct DraftFile: Identifiable {
     let id = UUID()
-    let name: String
-    let mimeType: String
+    /// A video's own name and type once it has arrived; a placeholder until then.
+    var name: String
+    var mimeType: String
     /// The size the Files app gave until it is read, then its own.
     var sizeBytes: Int
     var bytes: Data?
@@ -1179,10 +1185,63 @@ struct DraftFile: Identifiable {
     var stagedGeneration: UUID?
     /// The share of it its computer has, from 0 to 1, while it is being sent there.
     var progress: Double?
-    var reading: Bool { bytes == nil }
+    /// What a video adds: its temporary copy, its frame and length, and how far its upload has gone.
+    var video: DraftVideo?
+    /// Still being read, or for a video, still arriving or being hashed. A reply waits for neither.
+    var reading: Bool { video.map { $0.url == nil || digest == nil } ?? (bytes == nil) }
+    /// A video staged on a computer that lists `video-staging` is kept on its disk, so a connection that ended doesn't
+    /// lose it; only the 45-minute rule stages it again (November 9 amendment). Every other file follows ADR-0031.
     func needsStaging(generation: UUID?) -> Bool {
-        staged == nil || stagedGeneration != generation || stagedAt.map { Photos.needsRestaging(stagedAt: $0) } != false
+        let connectionEnded = stagedGeneration != generation && video?.stagedAsVideo != true
+        return staged == nil || connectionEnded || stagedAt.map { Photos.needsRestaging(stagedAt: $0) } != false
     }
+    /// The file as it goes back in the box from a reply that didn't go: staged again before it is next sent, a video from
+    /// its first part.
+    func unstaged() -> DraftFile {
+        var file = self
+        file.staged = nil; file.stagedAt = nil
+        if file.video != nil { file.video?.restart(); file.video?.phase = .paused }
+        return file
+    }
+}
+
+/// A video in a reply box (ADR-0131, November 9 amendment): the original file, kept as a protected temporary copy until its
+/// reply is sent and taken or it leaves the box, and staged from that copy one 8 MiB part at a time. Its frame and length
+/// are read from the copy, and its frame is kept in memory for the sent tile.
+struct DraftVideo {
+    enum Phase: Equatable { case getting, uploading, paused, ready }
+    var phase = Phase.getting
+    /// The temporary copy, once it has arrived.
+    var url: URL?
+    /// How much has come from iCloud, from 0 to 1, while the photo library hands it over.
+    var arriving: Double?
+    var duration: Double?
+    var poster: CGImage?
+    /// The upload under way: its ID, the parts its computer holds, and how many bytes those are.
+    var uploadID: UUID?
+    var partsDone = 0
+    var bytesSent = 0
+    /// Where this stretch of the upload began, for about how long the rest takes.
+    var stretchBytes = 0
+    var stretchStart: Date?
+    /// Staged on a computer that lists `video-staging`, which keeps it on disk.
+    var stagedAsVideo = false
+    /// The next upload starts from the first part, under a new ID.
+    mutating func restart() { uploadID = nil; partsDone = 0; bytesSent = 0; stretchStart = nil; stagedAsVideo = false }
+}
+
+/// A video's temporary copy, and the name it came with.
+struct VideoCopy: Sendable {
+    let url: URL
+    let name: String
+}
+
+/// Where a video comes from (ADR-0131, November 9 amendment): a name for it until it arrives, the size Files gives when it
+/// gives one, and how to make its temporary copy, which reports how much has come from iCloud as it goes.
+struct VideoSource: Sendable {
+    let name: String
+    let sizeBytes: Int?
+    let copy: @Sendable (_ arriving: @escaping @Sendable (Double) -> Void) async throws -> VideoCopy
 }
 
 /// What a thread's page showed when a reply was sent to it: its user messages, its last message, and how many replies from
@@ -1243,6 +1302,35 @@ enum SentFileOutcome: Equatable {
         continuation?.resume(with: result); continuation = nil
         tasks.forEach { $0.cancel() }; tasks = []
     }
+}
+
+/// A video's temporary copy on its way: whichever of its arrival, its time limit or its removal comes first decides. Says
+/// whether it was the first, so a copy that arrives after that can be removed.
+@MainActor private final class VideoLoad {
+    var continuation: CheckedContinuation<VideoCopy, Error>?
+    var tasks: [Task<Void, Never>] = []
+    @discardableResult func finish(_ result: Result<VideoCopy, Error>) -> Bool {
+        guard let continuation else { return false }
+        continuation.resume(with: result); self.continuation = nil
+        tasks.forEach { $0.cancel() }; tasks = []
+        return true
+    }
+}
+
+/// Each video's frame and length by its digest, and the digest each staged video's handle names, so a sent video's tile
+/// shows its frame while the app runs (ADR-0131, November 9 amendment). Nothing here is written to disk.
+@MainActor final class VideoFrames {
+    private final class Kept { let frame: VideoFrame; init(_ frame: VideoFrame) { self.frame = frame } }
+    private let frames: NSCache<NSString, Kept> = {
+        let cache = NSCache<NSString, Kept>(); cache.countLimit = 40; cache.totalCostLimit = 48 * 1024 * 1024; return cache
+    }()
+    private var digests: [String: String] = [:]
+    func keep(_ frame: VideoFrame, digest: String) {
+        frames.setObject(Kept(frame), forKey: digest as NSString, cost: frame.poster.map { $0.bytesPerRow * $0.height } ?? 0)
+    }
+    func staged(_ handleID: String, digest: String) { digests[handleID] = digest }
+    /// A sent video's frame and length, by the attachment its message carries, while this iPhone still has them.
+    func frame(forAttachment id: String) -> VideoFrame? { digests[id].flatMap { frames.object(forKey: $0 as NSString)?.frame } }
 }
 
 /// Whether iOS lets Sotto show alerts.
@@ -1463,6 +1551,21 @@ struct RailAsk: Equatable {
     private var fileStagingTasks: [UUID: Task<Bool, Never>] = [:]
     /// Files are read one at a time, so several large files are never read at once.
     private var fileWork: Task<Void, Never>?
+    /// Videos are made ready one at a time: each arrives, is checked and hashed, and has its frame read before the next.
+    private var videoWork: Task<Void, Never>?
+    /// The box each video is in, to carry its upload on when its computer is back.
+    private var videoBoxes: [UUID: PhotoBox] = [:]
+    /// Videos whose temporary copy is on its way, which the sweep of copies waits for.
+    private var videosArriving = 0
+    private var videoLoads: [UUID: VideoLoad] = [:]
+    private let videoCopies = ReplyVideoCopies()
+    /// Waits out how long a video may take to arrive, from iCloud for one not on this iPhone: ten minutes.
+    private let videoArrivalLimit: @Sendable () async throws -> Void
+    private let readVideoFrame: @Sendable (URL) async -> VideoFrame
+    /// Each video's frame and length, for the tiles of the videos this iPhone sent.
+    let videoFrames = VideoFrames()
+    /// The last upload queued for each computer, which keeps one upload for this client.
+    private var uploads: [String: Task<Void, Never>] = [:]
     /// The last large request queued for each computer, which refuses a second while one is on its way.
     private var largeRequests: [String: Task<Void, Never>] = [:]
     /// Photos are prepared one at a time, so several large photos are never decoded at once.
@@ -2748,6 +2851,28 @@ struct RailAsk: Equatable {
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
     func files(_ ref: ThreadRef) -> [DraftFile] { files(.thread(ref)) }
     func files(_ box: PhotoBox) -> [DraftFile] { draftFiles[box.id] ?? [] }
+    /// The videos among a box's files, which wait in its photo strip as tiles (ADR-0131, November 9 amendment).
+    func videos(_ box: PhotoBox) -> [DraftFile] { files(box).filter { $0.video != nil } }
+    /// Whether this computer takes videos of up to 500 MB, keeps their parts on disk and lets an upload carry on.
+    func stagesVideos(_ hostID: String) -> Bool { live[hostID]?.features.contains(VideoLimits.stagingFeature) == true }
+    /// The one line beneath a box's photo strip for its videos: the one going, stopped or arriving from iCloud, else the
+    /// last one up and ready.
+    func videoLine(_ box: PhotoBox) -> VideoLine? {
+        let videos = self.videos(box)
+        let busy = videos.first { $0.video?.phase == .uploading } ?? videos.first { $0.video?.phase == .paused }
+            ?? videos.first { file in file.video?.phase == .getting && file.video?.arriving.map { $0 > 0 && $0 < 1 } == true }
+        guard let file = busy ?? videos.last(where: { $0.staged != nil }), let video = file.video else { return nil }
+        let state: VideoState
+        switch video.phase {
+        case .getting: state = .arriving(video.arriving ?? 0)
+        case .uploading:
+            let left = video.stretchStart.flatMap { Videos.secondsLeft(sent: video.bytesSent, of: file.sizeBytes, from: video.stretchBytes, since: $0) }
+            state = .uploading(sent: video.bytesSent, secondsLeft: left)
+        case .paused: state = .paused(sent: video.bytesSent)
+        case .ready: state = .ready
+        }
+        return VideoWords.line(name: file.name, sizeBytes: file.sizeBytes, duration: video.duration, state: state, computer: name(box.hostID))
+    }
     func fileSupport(_ ref: ThreadRef) -> FileSupport { fileSupport(.thread(ref)) }
     /// Whether a reply box can take files: its computer keeps them only where its own `attach-any-file` answer is on, and
     /// Watcher's box only where that computer also takes them for Watcher (ADR-0131, October 28 amendment).
@@ -2856,13 +2981,19 @@ struct RailAsk: Equatable {
          retrySleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
          preparePhoto: @escaping @Sendable (Data, String) async throws -> PreparedPhoto = { try await PhotoPipeline.prepare($0, name: $1) },
          receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
-         photoLoadLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 120_000_000_000) }) {
+         photoLoadLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 120_000_000_000) },
+         videoArrivalLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: UInt64(VideoLimits.arrivalLimit * 1_000_000_000)) },
+         readVideoFrame: @escaping @Sendable (URL) async -> VideoFrame = { await PhotoPipeline.videoFrame($0) }) {
         self.keychain = keychain
         self.retrySleep = retrySleep
         self.retryJitter = retryJitter
         self.preparePhoto = preparePhoto
         self.receiptSleep = receiptSleep
         self.photoLoadLimit = photoLoadLimit
+        self.videoArrivalLimit = videoArrivalLimit
+        self.readVideoFrame = readVideoFrame
+        // A video's temporary copy that a crash or a force quit left is removed at launch.
+        videoCopies.removeAll()
         #if DEBUG && os(iOS)
         if ProcessInfo.processInfo.arguments.contains("--ui-fixture") {
             loadUIFixture()
@@ -2992,6 +3123,7 @@ struct RailAsk: Equatable {
         await photoWork?.value
         for task in Array(stagingTasks.values) { _ = await task.value }
         await fileWork?.value
+        await videoWork?.value
         for task in Array(fileStagingTasks.values) { _ = await task.value }
     }
     /// Connects every computer that hasn't given up. One that gave up waits for its Try again or Reconnect.
@@ -3071,6 +3203,8 @@ struct RailAsk: Equatable {
             return
         }
         retries.removeValue(forKey: hostID)?.cancel()
+        // A video's upload that stopped carries on, from the parts this computer holds, without waiting for Send.
+        carryOnVideos(hostID)
         // A refused or slow thread read does not mean the computer's connection was lost.
         do { try await observeAndRead(hostID) }
         catch { if generations[hostID] == current { detailProblem = String(localized: "This thread could not be loaded. Nothing was lost. Try again.") } }
@@ -3275,6 +3409,8 @@ struct RailAsk: Equatable {
         submittedFiles = submittedFiles.filter { !gone.contains($0.key) }
         gone.forEach { dispatchingOperations[$0] = nil; receiptFollowers[$0] = nil }
         largeRequests[hostID] = nil
+        uploads[hostID] = nil
+        sweepVideoCopies()
         let words = outcome.words(name: saved.name, clientID: saved.pairing.clientId)
         if case .confirmed = outcome { confirm(words) } else { feedback = words }
         // With nothing left paired the app goes back to the pairing steps, which show this instead.
@@ -3622,11 +3758,14 @@ struct RailAsk: Equatable {
         }
     }
     /// Why a prepared photo of this many bytes can't join the box's other photos and files, or nil when it fits.
-    /// `besides` is the photo itself, when it is already in the box.
+    /// `besides` is the photo itself, when it is already in the box. A computer that lists `video-staging` counts the box's
+    /// videos on their own, apart from the 50 MB.
     private func sizeRefusal(_ byteCount: Int, in box: PhotoBox, besides id: UUID? = nil) -> String? {
         let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
         guard Photos.fits(byteCount, with: others) else { return box.photosTooLargeWords }
-        guard others.reduce(byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
+        let staging = stagesVideos(box.hostID)
+        let fileBytes = files(box).filter { !(staging && Videos.isVideo($0.mimeType)) }.map(\.sizeBytes).reduce(0, +)
+        guard others.reduce(byteCount, +) + fileBytes <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
         return nil
     }
     func removePhoto(_ id: UUID, from box: PhotoBox) {
@@ -3753,8 +3892,9 @@ struct RailAsk: Equatable {
     /// staged on the box's computer in the order chosen, one at a time.
     func attachFiles(_ box: PhotoBox, from sources: [FileSource]) {
         guard !sources.isEmpty, fileSupport(box) == .available, !preparingSends.contains(box.id) else { return }
-        let others = photos(box).map { $0.prepared?.byteCount ?? 0 } + files(box).map(\.sizeBytes)
-        if let refusal = Files.refusal(adding: sources.map { $0.sizeBytes ?? 0 }, to: others) { photoNotices[box.id] = refusal; return }
+        if let refusal = fileRefusal(adding: sources.map { (name: $0.name, bytes: $0.sizeBytes ?? 0) }, to: attachmentSizes(in: box), in: box) {
+            photoNotices[box.id] = refusal; return
+        }
         let added = sources.map { (file: DraftFile(name: $0.name, mimeType: Files.mimeType(forName: $0.name), sizeBytes: $0.sizeBytes ?? 0), source: $0) }
         draftFiles[box.id, default: []] += added.map { $0.file }
         photoNotices[box.id] = nil
@@ -3769,26 +3909,47 @@ struct RailAsk: Equatable {
         guard !preparingSends.contains(box.id) else { return }
         dropFile(id, in: box, reason: nil)
     }
-    /// Photos and files chosen together, from Files, a paste or the share sheet. A photo goes as a photo, made ready as one
-    /// from the library is, and is refused in the photos' own words where the box's model can't take photos. Everything else
-    /// goes as a file. The whole choice is checked first: when its files are past the limits, counting the photos chosen with
+    /// Photos, files and videos chosen together, from the photo library, Files, a paste or the share sheet. A photo goes as a
+    /// photo, made ready as one from the library is, and is refused in the photos' own words where the box's model can't take
+    /// photos. A video from the library or Files goes as a video (ADR-0131, November 9 amendment); everything else goes as a
+    /// file. The whole choice is checked first: when its files and videos are past the limits, counting the photos chosen with
     /// them, nothing of it is attached.
-    func attach(_ box: PhotoBox, photos: [PhotoSource], files: [FileSource]) {
+    func attach(_ box: PhotoBox, photos: [PhotoSource], files: [FileSource], videos: [VideoSource] = []) {
         let photoRefusal = photos.isEmpty ? nil : photoSupport(box).reason(computer: name(box.hostID), watcher: box.isWatcher)
         // A box that takes no files still takes the photos chosen with them, and says why the files stayed out.
-        if !files.isEmpty, let reason = fileSupport(box).reason(computer: name(box.hostID)) {
+        if !files.isEmpty || !videos.isEmpty, let reason = fileSupport(box).reason(computer: name(box.hostID)) {
             if photoRefusal == nil { attachPhotos(box, from: photos) }
             photoNotices[box.id] = reason
             return
         }
         let chosenPhotos = photoRefusal == nil ? photos.count : 0
-        let others = self.photos(box).map { $0.prepared?.byteCount ?? 0 } + self.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
-        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
-            photoNotices[box.id] = refusal
-            return
+        let others = attachmentSizes(in: box) + Array(repeating: AttachmentSize(bytes: 0), count: chosenPhotos)
+        if !files.isEmpty || !videos.isEmpty {
+            // Files first, each held to a file's 25 MB, then all of it together.
+            let fileSizes: [(name: String, bytes: Int)] = files.map { (name: $0.name, bytes: $0.sizeBytes ?? 0) }
+            var added: [AttachmentSize] = fileSizes.map { AttachmentSize(bytes: $0.bytes, video: Videos.isVideo(Files.mimeType(forName: $0.name))) }
+            added += videos.map { AttachmentSize(bytes: $0.sizeBytes ?? 0, video: true) }
+            let refusal = fileRefusal(adding: fileSizes, to: [], in: box, eachOnly: true)
+                ?? Videos.refusal(adding: added, to: others, computer: name(box.hostID), staging: stagesVideos(box.hostID))
+            if let refusal { photoNotices[box.id] = refusal; return }
         }
         attachFiles(box, from: files)
+        attachVideos(box, from: videos)
         if let photoRefusal { photoNotices[box.id] = photoRefusal } else { attachPhotos(box, from: photos) }
+    }
+    /// What a box holds, as its limits count it; `besides` leaves one of its files out.
+    private func attachmentSizes(in box: PhotoBox, besides id: UUID? = nil) -> [AttachmentSize] {
+        photos(box).map { AttachmentSize(bytes: $0.prepared?.byteCount ?? 0) }
+            + files(box).filter { $0.id != id }.map { AttachmentSize(bytes: $0.sizeBytes, video: Videos.isVideo($0.mimeType)) }
+    }
+    /// Why files held in memory can't join a box holding `existing`, or nil. Each keeps a file's 25 MB, a pasted or shared
+    /// video too, since only one chosen from the library or Files goes from a copy on disk; then the box's limits, where a
+    /// computer that lists `video-staging` counts a video with the videos. With `eachOnly`, only the first.
+    private func fileRefusal(adding files: [(name: String, bytes: Int)], to existing: [AttachmentSize], in box: PhotoBox, eachOnly: Bool = false) -> String? {
+        if files.contains(where: { $0.bytes > FileLimits.bytesEach }) { return FileWords.tooLarge }
+        guard !eachOnly else { return nil }
+        let added = files.map { AttachmentSize(bytes: $0.bytes, video: Videos.isVideo(Files.mimeType(forName: $0.name))) }
+        return Videos.refusal(adding: added, to: existing, computer: name(box.hostID), staging: stagesVideos(box.hostID))
     }
     private func readFile(_ id: UUID, in box: PhotoBox, from source: FileSource) async {
         // Removed while it waited its turn: nothing is read.
@@ -3796,10 +3957,11 @@ struct RailAsk: Equatable {
         do {
             let bytes = try await loaded(source.load, for: id)
             guard file(id, in: box) != nil else { return }
-            guard !bytes.isEmpty else { throw ClientError.rejected(FileWords.empty) }
-            let others = photos(box).compactMap { $0.prepared?.byteCount } + files(box).filter { $0.id != id }.map(\.sizeBytes)
+            guard !bytes.isEmpty, let name = file(id, in: box)?.name else { throw ClientError.rejected(FileWords.empty) }
             // The size the Files app gave may not have been the file's own.
-            if let refusal = Files.refusal(adding: [bytes.count], to: others) { throw ClientError.rejected(refusal) }
+            if let refusal = fileRefusal(adding: [(name: name, bytes: bytes.count)], to: attachmentSizes(in: box, besides: id), in: box) {
+                throw ClientError.rejected(refusal)
+            }
             let digest = await Task.detached { Files.digest(bytes) }.value
             changeFile(id, in: box) { $0.bytes = bytes; $0.sizeBytes = bytes.count; $0.digest = digest }
             // Staged on its own, so a slow computer never holds up reading the files chosen after it.
@@ -3809,9 +3971,11 @@ struct RailAsk: Equatable {
             dropFile(id, in: box, reason: reason ?? FileWords.unreadable)
         }
     }
-    /// A file's staging, started now unless it is already under way: a file is never staged twice at once.
+    /// A file's staging, started now unless it is already under way: a file is never staged twice at once. A video's is
+    /// `videoStaging`.
     private func fileStaging(_ id: UUID, in box: PhotoBox) -> Task<Bool, Never>? {
         if let running = fileStagingTasks[id] { return running }
+        if file(id, in: box)?.video != nil { return videoStaging(id, in: box) }
         guard let file = file(id, in: box), let bytes = file.bytes, let digest = file.digest else { return nil }
         changeFile(id, in: box) { $0.progress = 0 }
         let task = Task { [weak self] () -> Bool in
@@ -3824,28 +3988,32 @@ struct RailAsk: Equatable {
         return task
     }
     /// Stages one file on its thread's computer with `stage-file-part`, its parts in order as one large request, so no other
-    /// upload on this iPhone comes between them: the computer keeps one upload a client. The last part's answer is the
-    /// handle. A file that couldn't reach the computer stays in the box and is staged when the reply is sent; one the
-    /// computer refused for what it is leaves the box, with its reason.
+    /// request on this iPhone comes between them, and as the computer's one upload for this client, so no video's parts do
+    /// either: the computer keeps one upload a client. The last part's answer is the handle. A file that couldn't reach the
+    /// computer stays in the box and is staged when the reply is sent; one the computer refused for what it is leaves the
+    /// box, with its reason.
     private func requestFileStaging(_ name: String, mimeType: String, bytes: Data, digest: String, as id: UUID, in box: PhotoBox) async -> Bool {
         let over = generations[box.hostID]
         let ranges = Files.partRanges(bytes.count), upload = UUID()
         do {
-            let handle = try await largeRequest(on: box.hostID) { [weak self] connection -> StagedFile in
-                for (index, range) in ranges.enumerated() {
-                    // A file removed while it goes stops going; the computer lets the parts it has go.
-                    guard self?.file(id, in: box) != nil else { throw CancellationError() }
-                    let operation = try await Task.detached {
-                        try Files.stagePart(uploadID: upload, index: index, count: ranges.count, name: name, mimeType: mimeType,
-                                            sizeBytes: bytes.count, digest: digest, data: bytes.subdata(in: range))
-                    }.value
-                    let answer = try await connection.call(operation, as: Optional<StagedFile>.self)
-                    self?.changeFile(id, in: box) { $0.progress = Double(index + 1) / Double(ranges.count) }
-                    guard index == ranges.count - 1 else { if answer != nil { throw ClientError.invalidProtocol }; continue }
-                    guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == bytes.count else { throw ClientError.invalidProtocol }
-                    return answer
+            let handle = try await self.upload(on: box.hostID) { [weak self] () -> StagedFile in
+                guard let self else { throw CancellationError() }
+                return try await self.largeRequest(on: box.hostID) { [weak self] connection -> StagedFile in
+                    for (index, range) in ranges.enumerated() {
+                        // A file removed while it goes stops going; the computer lets the parts it has go.
+                        guard self?.file(id, in: box) != nil else { throw CancellationError() }
+                        let operation = try await Task.detached {
+                            try Files.stagePart(uploadID: upload, index: index, count: ranges.count, name: name, mimeType: mimeType,
+                                                sizeBytes: bytes.count, digest: digest, data: bytes.subdata(in: range))
+                        }.value
+                        let answer = try await connection.call(operation, as: Optional<StagedFile>.self)
+                        self?.changeFile(id, in: box) { $0.progress = Double(index + 1) / Double(ranges.count) }
+                        guard index == ranges.count - 1 else { if answer != nil { throw ClientError.invalidProtocol }; continue }
+                        guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == bytes.count else { throw ClientError.invalidProtocol }
+                        return answer
+                    }
+                    throw ClientError.invalidProtocol
                 }
-                throw ClientError.invalidProtocol
             }
             changeFile(id, in: box) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
             return true
@@ -3875,13 +4043,238 @@ struct RailAsk: Equatable {
         guard let index = draftFiles[box.id]?.firstIndex(where: { $0.id == id }) else { return }
         edit(&draftFiles[box.id]![index])
     }
-    /// Takes a file out of its reply box, saying why when it wasn't the user's choice.
+    /// Takes a file out of its reply box, saying why when it wasn't the user's choice. A video's temporary copy goes with it.
     private func dropFile(_ id: UUID, in box: PhotoBox, reason: String?) {
         guard file(id, in: box) != nil else { return }
         photoLoads[id]?.finish(.failure(CancellationError()))
+        videoLoads[id]?.finish(.failure(CancellationError()))
         draftFiles[box.id]?.removeAll { $0.id == id }
         if draftFiles[box.id]?.isEmpty == true { draftFiles[box.id] = nil }
         photoNotices[box.id] = reason
+        sweepVideoCopies()
+    }
+    /// One upload at a time to each computer: it keeps one upload for this client, and a first part replaces any other. A
+    /// video's parts each go as a large request of their own, so a file waits for the whole video, not just its next part.
+    private func upload<T: Sendable>(on hostID: String, _ work: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = uploads[hostID]
+        let task = Task<T, Error> {
+            await previous?.value
+            return try await work()
+        }
+        uploads[hostID] = Task { _ = try? await task.value }
+        return try await task.value
+    }
+
+    // MARK: Videos in the reply box (ADR-0131, November 9 amendment)
+
+    /// Adds videos to a reply box, a thread's or Watcher's, where it takes files. Nothing is attached when one is past the
+    /// limits, by the sizes known before any arrives: Files gives one, the photo library none. Each then arrives as its
+    /// temporary copy, is checked again by its own size, hashed and has its frame read, one at a time, and starts uploading
+    /// on its own. A computer without `video-staging` takes one of 25 MB or less, as a file.
+    func attachVideos(_ box: PhotoBox, from sources: [VideoSource]) {
+        guard !sources.isEmpty, fileSupport(box) == .available, !preparingSends.contains(box.id) else { return }
+        if let refusal = Videos.refusal(adding: sources.map { AttachmentSize(bytes: $0.sizeBytes ?? 0, video: true) }, to: attachmentSizes(in: box),
+                                        computer: name(box.hostID), staging: stagesVideos(box.hostID)) {
+            photoNotices[box.id] = refusal
+            return
+        }
+        let added = sources.map { source in
+            (file: DraftFile(name: source.name, mimeType: Videos.mimeType(forName: source.name), sizeBytes: source.sizeBytes ?? 0, video: DraftVideo()),
+             source: source)
+        }
+        draftFiles[box.id, default: []] += added.map { $0.file }
+        for item in added { videoBoxes[item.file.id] = box }
+        photoNotices[box.id] = nil
+        attachHaptics[box.id, default: 0] += 1
+        let previous = videoWork
+        videoWork = Task { [weak self] in
+            await previous?.value
+            for item in added { await self?.readVideo(item.file.id, in: box, from: item.source) }
+        }
+    }
+    private func readVideo(_ id: UUID, in box: PhotoBox, from source: VideoSource) async {
+        // Removed while it waited its turn: nothing is fetched.
+        guard file(id, in: box) != nil else { return }
+        videosArriving += 1
+        defer { videosArriving -= 1; sweepVideoCopies() }
+        var copy: VideoCopy?
+        do {
+            let arrived = try await arrivedVideo(source, for: id, in: box)
+            copy = arrived
+            guard file(id, in: box) != nil else { throw CancellationError() }
+            let url = arrived.url
+            let size = try await Task.detached { try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 }.value
+            guard size > 0 else { throw ClientError.rejected(FileWords.empty) }
+            // The size Files gave, or none from the photo library, may not have been the video's own.
+            if let refusal = Videos.refusal(adding: [AttachmentSize(bytes: size, video: true)], to: attachmentSizes(in: box, besides: id),
+                                            computer: name(box.hostID), staging: stagesVideos(box.hostID)) {
+                throw ClientError.rejected(refusal)
+            }
+            changeFile(id, in: box) {
+                $0.name = arrived.name; $0.mimeType = Videos.mimeType(forName: arrived.name); $0.sizeBytes = size
+                $0.video?.url = url; $0.video?.arriving = nil
+            }
+            // The box holds the copy now: it goes when the video leaves the box or its reply is taken.
+            copy = nil
+            let digest = try await Task.detached { try Videos.digest(of: url) }.value
+            let frame = await readVideoFrame(url)
+            guard file(id, in: box) != nil else { return }
+            videoFrames.keep(frame, digest: digest)
+            changeFile(id, in: box) {
+                $0.digest = digest; $0.video?.poster = frame.poster; $0.video?.duration = frame.duration; $0.video?.phase = .paused
+            }
+            // Uploaded on its own, so a slow computer never holds up the videos chosen after it.
+            _ = fileStaging(id, in: box)
+        } catch {
+            if let copy { videoCopies.remove(copy.url) }
+            let reason: String?
+            if (error as? PhotoPipelineError) == .tooSlow { reason = VideoWords.tooSlow }
+            else if Videos.isOutOfSpace(error) { reason = VideoWords.noRoom }
+            else { reason = (error as? ClientError)?.errorDescription }
+            dropFile(id, in: box, reason: reason ?? FileWords.unreadable)
+        }
+    }
+    /// A video's temporary copy, or `tooSlow` once ten minutes pass, so one that never arrives can't hold up the videos
+    /// chosen after it, and removing the video ends the wait at once. How much has come from iCloud shows on its line.
+    private func arrivedVideo(_ source: VideoSource, for id: UUID, in box: PhotoBox) async throws -> VideoCopy {
+        let waiting = VideoLoad()
+        videoLoads[id] = waiting
+        defer { videoLoads[id] = nil }
+        let limit = videoArrivalLimit, copies = videoCopies
+        let arriving: @Sendable (Double) -> Void = { [weak self] value in
+            Task { @MainActor in self?.changeFile(id, in: box) { $0.video?.arriving = value } }
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            waiting.continuation = continuation
+            waiting.tasks = [
+                Task {
+                    do {
+                        let copy = try await source.copy(arriving)
+                        // One that arrives after the wait was over is nobody's.
+                        if !waiting.finish(.success(copy)) { copies.remove(copy.url) }
+                    } catch { waiting.finish(.failure(error)) }
+                },
+                Task { do { try await limit(); waiting.finish(.failure(PhotoPipelineError.tooSlow)) } catch {} },
+            ]
+        }
+    }
+    /// A video's upload, started now unless it is already under way. It starts on its own once the video is ready, and
+    /// carries on by itself when its computer is back, without waiting for Send.
+    private func videoStaging(_ id: UUID, in box: PhotoBox) -> Task<Bool, Never>? {
+        if let running = fileStagingTasks[id] { return running }
+        guard let file = file(id, in: box), file.video?.url != nil, file.digest != nil else { return nil }
+        let started = generations[box.hostID]
+        changeFile(id, in: box) { $0.video?.phase = .uploading }
+        let task = Task { [weak self] () -> Bool in
+            let staged = await self?.requestVideoStaging(id, in: box) ?? false
+            guard let self else { return staged }
+            self.fileStagingTasks[id] = nil
+            self.changeFile(id, in: box) { $0.video?.phase = staged ? .ready : .paused }
+            // The connection was replaced while a part was on its way: carry on over the new one.
+            if !staged, self.online(box.hostID), self.generations[box.hostID] != started, self.file(id, in: box) != nil {
+                _ = self.fileStaging(id, in: box)
+            }
+            return staged
+        }
+        fileStagingTasks[id] = task
+        return task
+    }
+    /// Stages one video on its box's computer from its temporary copy with `stage-file-part`. Each part is read from the
+    /// copy when its turn comes and goes as a large request of its own, so photos and reads to that computer go between
+    /// them, while the whole upload keeps the computer's one upload for this client, so no file's first part replaces it.
+    /// Where the computer lists `video-staging`, an upload that stopped asks `file-upload-progress` and carries on from the
+    /// parts the computer holds, or starts again under a new ID when it holds none; elsewhere the video goes as a file, from
+    /// its first part. A video that couldn't reach its computer stays in the box, paused; one the computer refused for what
+    /// it is leaves the box, with its reason.
+    private func requestVideoStaging(_ id: UUID, in box: PhotoBox) async -> Bool {
+        guard let file = file(id, in: box), let url = file.video?.url, let digest = file.digest else { return false }
+        let hostID = box.hostID, name = file.name, mimeType = file.mimeType, sizeBytes = file.sizeBytes
+        let ranges = Files.partRanges(sizeBytes), over = generations[hostID], resumable = stagesVideos(hostID)
+        do {
+            let handle = try await upload(on: hostID) { [weak self] () -> StagedFile in
+                guard let self else { throw CancellationError() }
+                var next = 0, restarted = false
+                if resumable, let video = self.file(id, in: box)?.video, let uploadID = video.uploadID, video.partsDone > 0 {
+                    let held = try await self.largeRequest(on: hostID) { connection in
+                        try await connection.call(Videos.uploadProgress(uploadID: uploadID), as: Optional<FileUploadProgress>.self)
+                    }
+                    next = Videos.carryOn(from: held, count: ranges.count) ?? 0
+                }
+                let start = Videos.bytes(inParts: next, of: sizeBytes)
+                self.changeFile(id, in: box) {
+                    if next == 0 { $0.video?.restart(); $0.video?.uploadID = UUID() }
+                    $0.video?.partsDone = next; $0.video?.bytesSent = start
+                    $0.video?.stretchBytes = start; $0.video?.stretchStart = Date()
+                    $0.progress = Double(start) / Double(sizeBytes)
+                }
+                var index = next
+                while index < ranges.count {
+                    // A video removed while it goes stops going; the computer lets the parts it has go.
+                    guard let uploadID = self.file(id, in: box)?.video?.uploadID else { throw CancellationError() }
+                    let range = ranges[index], count = ranges.count, part = index
+                    let operation = try await Task.detached { () -> [String: JSONValue] in
+                        let data = try Videos.part(of: url, range: range)
+                        // A computer without `video-staging` takes the video as a file, within a file's limits.
+                        if resumable {
+                            return try Videos.stagePart(uploadID: uploadID, index: part, count: count, name: name, mimeType: mimeType,
+                                                        sizeBytes: sizeBytes, digest: digest, data: data)
+                        }
+                        return try Files.stagePart(uploadID: uploadID, index: part, count: count, name: name, mimeType: mimeType,
+                                                   sizeBytes: sizeBytes, digest: digest, data: data)
+                    }.value
+                    let answer: StagedFile?
+                    do {
+                        answer = try await self.largeRequest(on: hostID) { connection in
+                            try await connection.call(operation, as: Optional<StagedFile>.self)
+                        }
+                    } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" && part > 0 && !restarted {
+                        // The computer no longer holds this upload: it starts again from the first part, once.
+                        restarted = true; index = 0
+                        self.changeFile(id, in: box) {
+                            $0.video?.restart(); $0.video?.uploadID = UUID(); $0.video?.stretchStart = Date(); $0.progress = 0
+                        }
+                        continue
+                    }
+                    self.changeFile(id, in: box) {
+                        $0.video?.partsDone = part + 1; $0.video?.bytesSent = range.upperBound
+                        $0.progress = Double(range.upperBound) / Double(sizeBytes)
+                    }
+                    guard part == count - 1 else {
+                        if answer != nil { throw ClientError.invalidProtocol }
+                        index += 1
+                        continue
+                    }
+                    guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == sizeBytes else { throw ClientError.invalidProtocol }
+                    return answer
+                }
+                throw ClientError.invalidProtocol
+            }
+            changeFile(id, in: box) {
+                $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over; $0.progress = nil
+                $0.video?.stagedAsVideo = resumable; $0.video?.uploadID = nil
+            }
+            videoFrames.staged(handle.id, digest: digest)
+            return true
+        } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" {
+            dropFile(id, in: box, reason: refusal.failure.message)
+        } catch {}
+        return false
+    }
+    /// Carries on every stopped video upload to this computer, now that it is back.
+    private func carryOnVideos(_ hostID: String) {
+        for (id, box) in videoBoxes where box.hostID == hostID {
+            guard let file = file(id, in: box), file.staged == nil, fileStagingTasks[id] == nil else { continue }
+            _ = fileStaging(id, in: box)
+        }
+    }
+    /// Removes every video's temporary copy that no box, reply on its way or reply that didn't go still holds. While a copy
+    /// is still arriving it waits, so a copy is never removed before its box holds it.
+    private func sweepVideoCopies() {
+        guard videosArriving == 0 else { return }
+        let held = [draftFiles, submittedFiles, failedFiles, watcherSendingFiles].flatMap { $0.values.flatMap { $0 } }
+        let ids = Set(held.map(\.id))
+        videoBoxes = videoBoxes.filter { ids.contains($0.key) }
+        videoCopies.removeAll(keeping: held.compactMap { $0.video?.url })
     }
     /// A sent file's bytes from the computer that keeps it, for Quick Look (`attachment-file`): part by part, each waiting
     /// its turn behind other large requests to that computer, and none asked for once nothing `wanted` it. The parts must
@@ -4047,7 +4440,9 @@ struct RailAsk: Equatable {
         if isUIFixture { pending = next; submitted.removeValue(forKey: id); sentFrom[id] = nil; return }
         #endif
         try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
-        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
+        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id)
+        // A reply taken, or one dismissed, lets its videos' temporary copies go; a refused one keeps them in `failedFiles`.
+        if submittedFiles.removeValue(forKey: id) != nil { sweepVideoCopies() }
         sentFrom[id] = nil
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
@@ -4306,7 +4701,8 @@ struct RailAsk: Equatable {
             draftPhotos[ref.id] = photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo }
         }
         if let files = failedFiles.removeValue(forKey: ref.id), !files.isEmpty {
-            draftFiles[ref.id] = files.map { var file = $0; file.staged = nil; file.stagedAt = nil; return file }
+            draftFiles[ref.id] = files.map { $0.unstaged() }
+            carryOnVideos(ref.hostID)
         }
     }
     func acknowledgeUnknown(_ id: String) {

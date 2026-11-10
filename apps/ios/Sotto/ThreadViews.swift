@@ -1287,16 +1287,19 @@ private struct MessageView: View, Equatable {
     }
 
     /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages,
-    /// and under the photos their files, each a pill that opens it in Quick Look where the computer hands files back.
+    /// then their videos as tiles that say where the video is (ADR-0131, November 9 amendment), and under them their files,
+    /// each a pill that opens it in Quick Look where the computer hands files back.
     private var userMessage: some View {
         let attachments = message.attachments ?? []
         let photos = attachments.filter(\.hasPreview)
-        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) } : []
+        let videos = attachments.filter { !$0.hasPreview && Videos.isVideo($0) }
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) && !Videos.isVideo($0) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
+            if !videos.isEmpty { SentVideoTiles(ref: ref, videos: videos) }
             if !files.isEmpty { SentFilePills(ref: ref, messageID: message.id, attachments: files) }
-            if !message.text.isEmpty || photos.count + files.count != attachments.count {
-                content(ink: Palette.bubbleInk, drawn: Set(files.map(\.id)))
+            if !message.text.isEmpty || photos.count + videos.count + files.count != attachments.count {
+                content(ink: Palette.bubbleInk, drawn: Set((videos + files).map(\.id)))
                     .padding(.horizontal, Space.s4)
                     .padding(.vertical, Space.dense(Space.s3, density))
                     .background(Palette.bubble, in: bubble)
