@@ -1789,7 +1789,7 @@ private struct ProportionalColumns: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard columns > 0 else { return .zero }
         let natural = naturalWidths(subviews)
-        let width = proposal.width ?? natural.reduce(0) { $0 + min($1, cap) }
+        let width = proposal.width ?? natural.reduce(CGFloat(0)) { $0 + min($1, cap) }
         let heights = rowHeights(subviews, widths: shares(natural, in: width))
         return CGSize(width: width, height: heights.reduce(0, +))
     }
@@ -1821,8 +1821,8 @@ private struct ProportionalColumns: Layout {
         var held = Set<Int>()
         while true {
             let open = natural.indices.filter { !held.contains($0) }
-            let room = width - held.reduce(0) { $0 + floors[$1] }
-            let words = open.reduce(0) { $0 + natural[$1] }
+            let room = width - held.reduce(CGFloat(0)) { $0 + floors[$1] }
+            let words = open.reduce(CGFloat(0)) { $0 + natural[$1] }
             guard words > 0 else { return floors }
             let short = open.filter { natural[$0] * room / words < floors[$0] }
             if short.isEmpty { return natural.indices.map { held.contains($0) ? floors[$0] : natural[$0] * room / words } }
