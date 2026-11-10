@@ -1001,6 +1001,7 @@ struct ThreadListRow: View, Equatable {
     }
     @Environment(\.duoLayout) private var duo
     @Environment(\.sottoTheme) private var theme
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
     /// What the row says under its title.
     private var line: String { words(duo: duo != .none) }
     /// What the row says under its title: the request it waits on, where a working thread lives, or for a recent one
@@ -1082,6 +1083,9 @@ struct ThreadListRow: View, Equatable {
         // Beside a thread on the Duo, the name has the row's whole width and up to two lines, and the time ends the second
         // line, where a column of times had cut nearly every name (Zach's pick C, November 8, 2026).
         let side = identifier == "sidebar-thread-" && !large
+        // Folded, a row's time ends its second line too, as the sidebar's does, so the name has its line to itself (Zach's
+        // round 6 pick A, November 10, 2026).
+        let timeEndsLine = side || (folded && !large)
         let started = row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
         // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
         let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
@@ -1104,7 +1108,7 @@ struct ThreadListRow: View, Equatable {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                                   tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
-                        if side, let ago {
+                        if timeEndsLine, let ago {
                             Spacer(minLength: 0)
                             Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).fixedSize()
                         }
@@ -1112,7 +1116,7 @@ struct ThreadListRow: View, Equatable {
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
                 Spacer(minLength: Space.s1)
-                if !large, !side, let ago {
+                if !large, !timeEndsLine, let ago {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
                 }
             }
