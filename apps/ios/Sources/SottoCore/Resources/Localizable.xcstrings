@@ -1345,6 +1345,198 @@
         }
       }
     },
+    "%@ can’t take videos over 25 MB yet. Update Sotto there to attach this one." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع %@ استقبال فيديوهات أكبر من 25 ميغابايت بعد. حدّث Sotto عليه لإرفاق هذا الفيديو."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ এখনও ২৫ MB-এর বেশি ভিডিও নিতে পারে না। এটি যোগ করতে সেখানে Sotto আপডেট করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ zatím nepřijímá videa větší než 25 MB. Chcete-li přiložit toto, aktualizujte tam Sotto."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kan ikke tage videoer over 25 MB endnu. Opdater Sotto der for at vedhæfte denne."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kann noch keine Videos über 25 MB annehmen. Aktualisiere Sotto dort, um dieses anzuhängen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο υπολογιστής %@ δεν δέχεται ακόμα βίντεο πάνω από 25 MB. Ενημερώστε εκεί το Sotto για να επισυνάψετε αυτό."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can’t take videos over 25 MB yet. Update Sotto there to attach this one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ aún no admite vídeos de más de 25 MB. Actualiza Sotto allí para adjuntar este."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ todavía no admite videos de más de 25 MB. Actualiza Sotto allá para adjuntar este."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ todavía no admite videos de más de 25 MB. Actualiza Sotto allá para adjuntar este."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ei vielä ota vastaan yli 25 Mt:n videoita. Päivitä Sotto siellä, niin voit liittää tämän."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne peut pas encore recevoir de vidéos de plus de 25 Mo. Mettez Sotto à jour sur celui-ci pour joindre celle-ci."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ अभी 25 MB से बड़े वीडियो नहीं ले सकता। इसे अटैच करने के लिए वहाँ Sotto अपडेट करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ még nem fogad 25 MB-nál nagyobb videókat. Ennek csatolásához frissítsd ott a Sottót."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non accetta ancora video oltre 25 MB. Aggiorna Sotto lì per allegare questo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はまだ 25 MB を超えるビデオを受け取れません。このビデオを添付するには、そちらの Sotto をアップデートしてください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ अजून 25 MB पेक्षा मोठे व्हिडिओ घेऊ शकत नाही. हा जोडण्यासाठी तिथे Sotto अपडेट करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kan ikke ta imot videoer over 25 MB ennå. Oppdater Sotto der for å legge ved denne."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kan nog geen video’s van meer dan 25 MB aannemen. Werk Sotto daar bij om deze bij te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nie przyjmuje jeszcze filmów większych niż 25 MB. Zaktualizuj tam Sotto, aby załączyć ten."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ainda não aceita vídeos com mais de 25 MB. Atualize o Sotto nele para anexar este."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ainda não aceita vídeos com mais de 25 MB. Atualize o Sotto nesse computador para anexar este."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nu poate primi încă videoclipuri de peste 25 MB. Actualizează Sotto acolo pentru a-l atașa pe acesta."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kan inte ta emot videor över 25 MB än. Uppdatera Sotto där för att bifoga den här."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ஆல் இன்னும் 25 MB க்கு மேற்பட்ட வீடியோக்களை ஏற்க முடியாது. இதைச் சேர்க்க அங்கே Sotto ஐப் புதுப்பிக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ఇంకా 25 MB కంటే పెద్ద వీడియోలను తీసుకోలేదు. దీన్ని జోడించడానికి అక్కడ Sottoను అప్‌డేట్ చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ henüz 25 MB’tan büyük videoları alamıyor. Bunu eklemek için oradaki Sotto’yu güncelleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ поки не приймає відео понад 25 МБ. Оновіть там Sotto, щоб додати це."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ابھی 25 MB سے بڑی ویڈیوز نہیں لے سکتا۔ اسے منسلک کرنے کے لیے وہاں Sotto اپ ڈیٹ کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 还无法接收超过 25 MB 的视频。请在那里更新 Sotto 后再附加这个视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 還無法接收超過 25 MB 的影片。請在那裡更新 Sotto 後再附加這部影片。"
+          }
+        }
+      }
+    },
     "%@ couldn’t give a summary of this command." : {
       "comment" : "%@ is the coding agent's name, such as Codex.",
       "extractionState" : "manual",
@@ -4797,6 +4989,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 已不再提供 %@，因此此對話現在使用 %@。"
+          }
+        }
+      }
+    },
+    "%@ of %@" : {
+      "comment" : "How much of a video has gone to its computer: two sizes, such as 13 MB of 84 MB",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ من %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@-এর মধ্যে %1$@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ z %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ af %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ von %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ από %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ of %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de %@"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de %@"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sur %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ में से %1$@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ di %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 中 %1$@"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ पैकी %1$@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ av %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ van %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ z %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de %@"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ de %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ din %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ av %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ இல் %1$@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@లో %1$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ з %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ میں سے %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，共 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，共 %@"
           }
         }
       }
@@ -36962,6 +37346,197 @@
         }
       }
     },
+    "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجب ألا يتجاوز حجم كل فيديو 500 ميغابايت. لم يُرفَق شيء. قصّه، أو اختر فيديو أقصر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "প্রতিটি ভিডিও ৫০০ MB বা তার ছোট হতে হবে। কিছুই যোগ করা হয়নি। এটি ছেঁটে নিন, অথবা একটি ছোট ভিডিও বেছে নিন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Každé video smí mít nejvýš 500 MB. Nic nebylo přiloženo. Zkraťte ho nebo vyberte kratší."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hver video må højst være på 500 MB. Intet blev vedhæftet. Klip den til, eller vælg en kortere."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jedes Video darf höchstens 500 MB groß sein. Es wurde nichts angehängt. Kürze es oder wähle ein kürzeres."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Κάθε βίντεο πρέπει να είναι έως 500 MB. Δεν επισυνάφθηκε τίποτα. Περικόψτε το ή επιλέξτε ένα μικρότερο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada vídeo debe ocupar 500 MB o menos. No se ha adjuntado nada. Recórtalo o elige uno más corto."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada video debe pesar 500 MB o menos. No se adjuntó nada. Recórtalo o elige uno más corto."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada video debe pesar 500 MB o menos. No se adjuntó nada. Recórtalo o elige uno más corto."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunkin videon on oltava enintään 500 Mt. Mitään ei liitetty. Lyhennä sitä tai valitse lyhyempi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque vidéo doit faire 500 Mo au maximum. Rien n’a été joint. Raccourcissez-la ou choisissez-en une plus courte."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हर वीडियो 500 MB या उससे छोटा होना चाहिए। कुछ भी अटैच नहीं किया गया। इसे ट्रिम करें, या कोई छोटा वीडियो चुनें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy videó legfeljebb 500 MB lehet. Semmi sem lett csatolva. Vágd meg, vagy válassz rövidebbet."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni video deve essere di 500 MB o meno. Non è stato allegato nulla. Taglialo o scegline uno più breve."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオは 1 本あたり 500 MB 以下にしてください。何も添付されていません。トリミングするか、短いビデオを選んでください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रत्येक व्हिडिओ 500 MB किंवा त्यापेक्षा लहान असावा. काहीही जोडले नाही. तो ट्रिम करा, किंवा छोटा व्हिडिओ निवडा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hver video kan være på høyst 500 MB. Ingenting ble lagt ved. Klipp den ned, eller velg en kortere."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elke video mag maximaal 500 MB zijn. Er is niets bijgevoegd. Kort hem in of kies een kortere."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Każdy film może mieć najwyżej 500 MB. Nic nie zostało załączone. Przytnij go albo wybierz krótszy."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada vídeo deve ter 500 MB ou menos. Nada foi anexado. Corte-o ou escolha um mais curto."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada vídeo deve ter 500 MB ou menos. Nada foi anexado. Corte-o ou escolha um mais curto."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiecare videoclip trebuie să aibă cel mult 500 MB. Nu s-a atașat nimic. Scurtează-l sau alege unul mai scurt."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varje video får vara högst 500 MB. Inget bifogades. Korta den eller välj en kortare."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒவ்வொரு வீடியோவும் 500 MB அல்லது அதற்குக் குறைவாக இருக்க வேண்டும். எதுவும் சேர்க்கப்படவில்லை. அதைக் குறைக்கவும், அல்லது சிறிய வீடியோவைத் தேர்வுசெய்யவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్రతి వీడియో 500 MB లేదా అంతకంటే చిన్నదిగా ఉండాలి. ఏదీ జోడించలేదు. దాన్ని ట్రిమ్ చేయండి, లేదా చిన్న వీడియోను ఎంచుకోండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her video en fazla 500 MB olmalıdır. Hiçbir şey eklenmedi. Videoyu kırpın ya da daha kısa bir video seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кожне відео має бути не більшим за 500 МБ. Нічого не додано. Обріжте його або виберіть коротше."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ہر ویڈیو 500 MB یا اس سے چھوٹی ہونی چاہیے۔ کچھ منسلک نہیں کیا گیا۔ اسے تراشیں، یا کوئی چھوٹی ویڈیو منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个视频不能超过 500 MB。未附加任何内容。请剪短它，或选择较短的视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每部影片不能超過 500 MB。未附加任何內容。請剪短它，或選擇較短的影片。"
+          }
+        }
+      }
+    },
     "Editing" : {
       "comment" : "The working line's verb while files change",
       "extractionState" : "manual",
@@ -41564,6 +42139,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完整存取"
+          }
+        }
+      }
+    },
+    "Getting it from iCloud · %@" : {
+      "comment" : "A video in the reply box still downloading from iCloud; %@ is how much has come, such as 42%",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ جلبه من iCloud · %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud থেকে আনা হচ্ছে · %@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stahuje se z iCloudu · %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hentes fra iCloud · %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird aus iCloud geladen · %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Λήψη από το iCloud · %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting it from iCloud · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargándolo de iCloud · %@"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargándolo de iCloud · %@"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargándolo de iCloud · %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ladataan iCloudista · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement depuis iCloud · %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud से लाया जा रहा है · %@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letöltés az iCloudból · %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download da iCloud · %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud から取得中 · %@"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud मधून आणत आहे · %@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hentes fra iCloud · %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wordt opgehaald uit iCloud · %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pobieranie z iCloud · %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baixando do iCloud · %@"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A transferir do iCloud · %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se descarcă din iCloud · %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hämtas från iCloud · %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud இலிருந்து பெறுகிறது · %@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud నుండి తెస్తోంది · %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud’dan alınıyor · %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завантаження з iCloud · %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud سے لائی جا رہی ہے · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在从 iCloud 获取 · %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在從 iCloud 取得 · %@"
           }
         }
       }
@@ -50569,6 +51336,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已暫停"
+          }
+        }
+      }
+    },
+    "Paused at %@ · waiting for %@" : {
+      "comment" : "A video's upload stopped while its computer can't be reached. The first %@ is how much had gone, such as 37%; the second is the computer's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف عند %@ · بانتظار %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-এ থেমে আছে · %@-এর অপেক্ষায়"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pozastaveno na %@ · čeká se na %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sat på pause ved %@ · venter på %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausiert bei %@ · wartet auf %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σε παύση στο %@ · αναμονή για %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused at %@ · waiting for %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa al %@ · esperando a %@"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa al %@ · esperando a %@"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa al %@ · esperando a %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tauolla kohdassa %@ · odotetaan tietokonetta %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pause à %@ · en attente de %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ पर रुका है · %@ का इंतज़ार"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szüneteltetve: %@ · várakozás erre: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In pausa al %@ · in attesa di %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で一時停止 · %@ を待っています"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ वर थांबले · %@ ची वाट पाहत आहे"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Satt på pause ved %@ · venter på %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gepauzeerd bij %@ · wacht op %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wstrzymano przy %@ · czekanie na %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausado em %@ · aguardando %@"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Em pausa a %@ · a aguardar %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Întrerupt la %@ · se așteaptă %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausad vid %@ · väntar på %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இல் இடைநிறுத்தப்பட்டது · %@ க்காகக் காத்திருக்கிறது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ వద్ద పాజ్ అయింది · %@ కోసం వేచి ఉంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ noktasında duraklatıldı · %@ bekleniyor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинено на %@ · очікування %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ پر رکا ہوا · %@ کا انتظار"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停于 %@ · 正在等待 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暫停於 %@ · 正在等待 %@"
           }
         }
       }
@@ -60426,6 +61385,197 @@
         }
       }
     },
+    "This iPhone doesn’t have room to keep a copy of this video while it uploads. Nothing was attached. Free up some space, then attach it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مساحة كافية على هذا iPhone للاحتفاظ بنسخة من هذا الفيديو أثناء رفعه. لم يُرفَق شيء. أفرِغ بعض المساحة، ثم أرفقه مرة أخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আপলোড হওয়ার সময় এই ভিডিওর একটি কপি রাখার মতো জায়গা এই iPhone-এ নেই। কিছুই যোগ করা হয়নি। কিছু জায়গা খালি করুন, তারপর আবার যোগ করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na tomto iPhonu není místo na kopii tohoto videa, dokud se nahrává. Nic nebylo přiloženo. Uvolněte trochu místa a přiložte ho znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der er ikke plads på denne iPhone til en kopi af videoen, mens den uploades. Intet blev vedhæftet. Frigør lidt plads, og vedhæft den igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone ist kein Platz für eine Kopie dieses Videos, solange es hochgeladen wird. Es wurde nichts angehängt. Schaffe etwas Platz und hänge es dann erneut an."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό το iPhone δεν έχει χώρο για να κρατήσει αντίγραφο αυτού του βίντεο όσο ανεβαίνει. Δεν επισυνάφθηκε τίποτα. Ελευθερώστε λίγο χώρο και επισυνάψτε το ξανά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone doesn’t have room to keep a copy of this video while it uploads. Nothing was attached. Free up some space, then attach it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no tiene espacio para guardar una copia de este vídeo mientras se sube. No se ha adjuntado nada. Libera algo de espacio y vuelve a adjuntarlo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no tiene espacio para guardar una copia de este video mientras se sube. No se adjuntó nada. Libera algo de espacio y vuelve a adjuntarlo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no tiene espacio para guardar una copia de este video mientras se sube. No se adjuntó nada. Libera algo de espacio y vuelve a adjuntarlo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tässä iPhonessa ei ole tilaa säilyttää kopiota tästä videosta sen latautuessa. Mitään ei liitetty. Vapauta tilaa ja liitä se sitten uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet iPhone n’a pas assez d’espace pour garder une copie de cette vidéo pendant son envoi. Rien n’a été joint. Libérez de l’espace, puis joignez-la à nouveau."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अपलोड होते समय इस वीडियो की एक कॉपी रखने के लिए इस iPhone में जगह नहीं है। कुछ भी अटैच नहीं किया गया। थोड़ी जगह खाली करें, फिर इसे दोबारा अटैच करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ezen az iPhone-on nincs hely a videó másolatának, amíg feltöltődik. Semmi sem lett csatolva. Szabadíts fel egy kis helyet, majd csatold újra."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Su questo iPhone non c’è spazio per tenere una copia di questo video durante il caricamento. Non è stato allegato nulla. Libera un po’ di spazio, poi allegalo di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップロード中にこのビデオのコピーを保管する空き容量がこの iPhone にありません。何も添付されていません。空き容量を増やしてから、もう一度添付してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अपलोड होत असताना या व्हिडिओची प्रत ठेवण्यासाठी या iPhone वर जागा नाही. काहीही जोडले नाही. थोडी जागा मोकळी करा, मग तो पुन्हा जोडा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne iPhonen har ikke plass til en kopi av videoen mens den lastes opp. Ingenting ble lagt ved. Frigjør litt plass, og legg den ved på nytt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze iPhone heeft geen ruimte om een kopie van deze video te bewaren terwijl hij wordt geüpload. Er is niets bijgevoegd. Maak wat ruimte vrij en voeg hem opnieuw toe."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na tym iPhonie nie ma miejsca na kopię tego filmu podczas wysyłania. Nic nie zostało załączone. Zwolnij trochę miejsca, a potem załącz go ponownie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone não tem espaço para guardar uma cópia deste vídeo durante o envio. Nada foi anexado. Libere um pouco de espaço e anexe-o novamente."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone não tem espaço para guardar uma cópia deste vídeo durante o envio. Nada foi anexado. Liberte algum espaço e anexe-o novamente."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acest iPhone nu are loc pentru a păstra o copie a videoclipului cât timp se încarcă. Nu s-a atașat nimic. Eliberează puțin spațiu, apoi atașează-l din nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den här iPhonen har inte plats för en kopia av videon medan den laddas upp. Inget bifogades. Frigör lite utrymme och bifoga den sedan igen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பதிவேற்றும்போது இந்த வீடியோவின் நகலை வைத்திருக்க இந்த iPhone இல் இடம் இல்லை. எதுவும் சேர்க்கப்படவில்லை. சிறிது இடத்தைக் காலிசெய்து, பிறகு மீண்டும் சேர்க்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "అప్‌లోడ్ అవుతున్నప్పుడు ఈ వీడియో కాపీని ఉంచడానికి ఈ iPhoneలో స్థలం లేదు. ఏదీ జోడించలేదు. కొంత స్థలాన్ని ఖాళీ చేసి, మళ్లీ జోడించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone’da, yüklenirken bu videonun bir kopyasını tutacak yer yok. Hiçbir şey eklenmedi. Biraz yer açın, sonra yeniden ekleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На цьому iPhone немає місця для копії цього відео, поки воно вивантажується. Нічого не додано. Звільніть трохи місця, а тоді додайте його знову."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اپ لوڈ ہوتے وقت اس ویڈیو کی کاپی رکھنے کے لیے اس iPhone میں جگہ نہیں ہے۔ کچھ منسلک نہیں کیا گیا۔ کچھ جگہ خالی کریں، پھر اسے دوبارہ منسلک کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 没有足够空间在上传期间保留这个视频的副本。未附加任何内容。请释放一些空间，然后重新附加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部 iPhone 沒有足夠空間在上傳期間保留這部影片的副本。未附加任何內容。請釋放一些空間，然後重新附加。"
+          }
+        }
+      }
+    },
     "This repository merges without one" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -61188,6 +62338,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此對話的模型無法接收照片。請在 %@ 上更改模型後再附加。"
+          }
+        }
+      }
+    },
+    "This video didn’t arrive within ten minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يصل هذا الفيديو خلال عشر دقائق، لذا لم يُضَف. إذا كان في iCloud، فحاول مرة أخرى بعد تنزيله."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই ভিডিওটি দশ মিনিটের মধ্যে আসেনি, তাই যোগ করা হয়নি। এটি iCloud-এ থাকলে, ডাউনলোড হওয়ার পর আবার চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toto video nedorazilo do deseti minut, takže nebylo přidáno. Pokud je na iCloudu, zkuste to znovu, až se stáhne."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoen kom ikke inden for ti minutter, så den blev ikke tilføjet. Hvis den ligger i iCloud, kan du prøve igen, når den er hentet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Video ist nicht innerhalb von zehn Minuten angekommen und wurde nicht hinzugefügt. Wenn es in iCloud liegt, versuch es erneut, sobald es geladen ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό το βίντεο δεν έφτασε μέσα σε δέκα λεπτά, οπότε δεν προστέθηκε. Αν βρίσκεται στο iCloud, δοκιμάστε ξανά μόλις γίνει λήψη του."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This video didn’t arrive within ten minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este vídeo no ha llegado en diez minutos, así que no se ha añadido. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este video no llegó en diez minutos, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este video no llegó en diez minutos, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video ei saapunut kymmenen minuutin kuluessa, joten sitä ei lisätty. Jos se on iCloudissa, yritä uudelleen, kun se on ladattu."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette vidéo n’est pas arrivée en dix minutes, elle n’a donc pas été ajoutée. Si elle est dans iCloud, réessayez une fois qu’elle sera téléchargée."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह वीडियो दस मिनट में नहीं आया, इसलिए नहीं जोड़ा गया। अगर यह iCloud में है, तो डाउनलोड होने के बाद फिर से कोशिश करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a videó tíz percen belül nem érkezett meg, ezért nem lett hozzáadva. Ha az iCloudban van, próbáld újra, amint letöltődött."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo video non è arrivato entro dieci minuti, quindi non è stato aggiunto. Se è su iCloud, riprova quando sarà scaricato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このビデオが 10 分以内に届かなかったため、追加されていません。iCloud にあるビデオの場合は、ダウンロードが終わってからもう一度お試しください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हा व्हिडिओ दहा मिनिटांत आला नाही, म्हणून जोडला नाही. तो iCloud मध्ये असेल, तर डाउनलोड झाल्यावर पुन्हा प्रयत्न करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoen kom ikke innen ti minutter, så den ble ikke lagt til. Hvis den ligger i iCloud, prøver du igjen når den er lastet ned."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze video is niet binnen tien minuten aangekomen, dus hij is niet toegevoegd. Staat hij in iCloud, probeer het dan opnieuw als hij is gedownload."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten film nie dotarł w ciągu dziesięciu minut, więc nie został dodany. Jeśli jest w iCloud, spróbuj ponownie, gdy się pobierze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este vídeo não chegou em dez minutos, então não foi adicionado. Se ele estiver no iCloud, tente novamente depois que o download terminar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este vídeo não chegou em dez minutos, por isso não foi adicionado. Se estiver em iCloud, tente novamente quando terminar a transferência."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoclipul nu a sosit în zece minute, așa că nu a fost adăugat. Dacă e în iCloud, încearcă din nou după ce s-a descărcat."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videon kom inte fram inom tio minuter, så den lades inte till. Om den finns i iCloud kan du försöka igen när den har laddats ned."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த வீடியோ பத்து நிமிடங்களுக்குள் வரவில்லை, எனவே அது சேர்க்கப்படவில்லை. அது iCloud இல் இருந்தால், பதிவிறக்கப்பட்டதும் மீண்டும் முயலவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ వీడియో పది నిమిషాల్లో రాలేదు, కాబట్టి దాన్ని జోడించలేదు. ఇది iCloudలో ఉంటే, డౌన్‌లోడ్ అయ్యాక మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu video on dakika içinde gelmedi, bu yüzden eklenmedi. iCloud’daysa indirildikten sonra yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це відео не надійшло протягом десяти хвилин, тож його не додано. Якщо воно в iCloud, спробуйте ще раз, коли його буде завантажено."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ ویڈیو دس منٹ میں نہیں پہنچی، اس لیے شامل نہیں کی گئی۔ اگر یہ iCloud میں ہے تو ڈاؤن لوڈ ہونے کے بعد دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个视频在十分钟内未载入，因此未添加。如果视频在 iCloud 中，请等它下载完成后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部影片未在十分鐘內載入，因此未加入。如果影片在 iCloud 中，請等它下載完成後再試一次。"
           }
         }
       }
@@ -62915,6 +64256,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新 %@ 上的 Sotto，即可從此 iPhone 傳送照片給 Watcher。"
+          }
+        }
+      }
+    },
+    "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجب ألا يتجاوز مجموع الفيديوهات 500 ميغابايت. لم يُرفَق شيء. أرسل هذه أولًا، أو أزِل فيديو."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সব ভিডিও মিলিয়ে ৫০০ MB বা তার কম হতে হবে। কিছুই যোগ করা হয়নি। আগে এগুলো পাঠান, অথবা একটি ভিডিও সরান।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videa smí mít dohromady nejvýš 500 MB. Nic nebylo přiloženo. Nejdřív odešlete tato, nebo jedno video odstraňte."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoer må højst fylde 500 MB i alt. Intet blev vedhæftet. Send disse først, eller fjern en video."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videos dürfen zusammen höchstens 500 MB groß sein. Es wurde nichts angehängt. Sende diese zuerst oder entferne ein Video."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Τα βίντεο πρέπει να είναι συνολικά έως 500 MB. Δεν επισυνάφθηκε τίποτα. Στείλτε πρώτα αυτά ή αφαιρέστε ένα βίντεο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los vídeos deben sumar 500 MB o menos. No se ha adjuntado nada. Envía estos primero o quita un vídeo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los videos deben sumar 500 MB o menos. No se adjuntó nada. Envía estos primero o quita un video."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los videos deben sumar 500 MB o menos. No se adjuntó nada. Envía estos primero o quita un video."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoiden yhteiskoko saa olla enintään 500 Mt. Mitään ei liitetty. Lähetä nämä ensin tai poista video."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les vidéos ne doivent pas dépasser 500 Mo au total. Rien n’a été joint. Envoyez d’abord celles-ci ou retirez une vidéo."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वीडियो कुल मिलाकर 500 MB या उससे कम होने चाहिए। कुछ भी अटैच नहीं किया गया। पहले इन्हें भेजें, या कोई वीडियो हटाएँ।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A videók együtt legfeljebb 500 MB-osak lehetnek. Semmi sem lett csatolva. Előbb küldd el ezeket, vagy távolíts el egy videót."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I video devono essere in tutto di 500 MB o meno. Non è stato allegato nulla. Invia prima questi o rimuovi un video."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオは合計 500 MB 以下にしてください。何も添付されていません。先にこれらを送信するか、ビデオを削除してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सर्व व्हिडिओ मिळून 500 MB किंवा त्यापेक्षा कमी असावेत. काहीही जोडले नाही. आधी हे पाठवा, किंवा एक व्हिडिओ काढा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoene kan til sammen være på høyst 500 MB. Ingenting ble lagt ved. Send disse først, eller fjern en video."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video’s mogen samen maximaal 500 MB zijn. Er is niets bijgevoegd. Verstuur deze eerst of verwijder een video."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filmy mogą mieć łącznie najwyżej 500 MB. Nic nie zostało załączone. Najpierw wyślij te albo usuń jeden film."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os vídeos devem somar 500 MB ou menos. Nada foi anexado. Envie estes primeiro ou remova um vídeo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os vídeos devem somar 500 MB ou menos. Nada foi anexado. Envie estes primeiro ou remova um vídeo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoclipurile trebuie să aibă în total cel mult 500 MB. Nu s-a atașat nimic. Trimite-le mai întâi pe acestea sau elimină un videoclip."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videorna får vara högst 500 MB tillsammans. Inget bifogades. Skicka de här först eller ta bort en video."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வீடியோக்கள் மொத்தம் 500 MB அல்லது அதற்குக் குறைவாக இருக்க வேண்டும். எதுவும் சேர்க்கப்படவில்லை. முதலில் இவற்றை அனுப்பவும், அல்லது ஒரு வீடியோவை அகற்றவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వీడియోలు మొత్తం 500 MB లేదా అంతకంటే తక్కువగా ఉండాలి. ఏదీ జోడించలేదు. ముందు వీటిని పంపండి, లేదా ఒక వీడియోను తీసివేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videoların toplamı en fazla 500 MB olmalıdır. Hiçbir şey eklenmedi. Önce bunları gönderin ya da bir videoyu kaldırın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відео разом мають займати не більше 500 МБ. Нічого не додано. Спершу надішліть ці або вилучіть одне відео."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ویڈیوز مجموعی طور پر 500 MB یا اس سے کم ہونی چاہئیں۔ کچھ منسلک نہیں کیا گیا۔ پہلے انہیں بھیجیں، یا کوئی ویڈیو ہٹائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频总计不能超过 500 MB。未附加任何内容。请先发送这些视频，或移除一个视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "影片總計不能超過 500 MB。未附加任何內容。請先傳送這些影片，或移除一部影片。"
           }
         }
       }
@@ -64835,6 +66367,390 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在工作：%@，目前已執行 %@"
+          }
+        }
+      }
+    },
+    "about %lld min left" : {
+      "comment" : "How long the rest of a video's upload takes, in minutes, such as about 3 min left",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتبقى نحو %lld دقيقة"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আনুমানিক %lld মিনিট বাকি"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zbývá asi %lld min"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ca. %lld min. tilbage"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "noch etwa %lld Min."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "απομένουν περίπου %lld λεπτ."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "about %lld min left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld min"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld min"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld min"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "noin %lld min jäljellä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "environ %lld min restantes"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "लगभग %lld मिनट बाकी"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kb. %lld perc van hátra"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "circa %lld min rimanenti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "残り約 %lld 分"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुमारे %lld मि. बाकी"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ca. %lld min igjen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nog ongeveer %lld min"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zostało ok. %lld min"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "faltam cerca de %lld min"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "faltam cerca de %lld min"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mai sunt circa %lld min"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cirka %lld min kvar"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "சுமார் %lld நிமி மீதம்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "సుమారు %lld ని మిగిలి ఉంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "yaklaşık %lld dk kaldı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "лишилося близько %lld хв"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقریباً %lld منٹ باقی"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还剩约 %lld 分钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還剩約 %lld 分鐘"
+          }
+        }
+      }
+    },
+    "about %lld s left" : {
+      "comment" : "How long the rest of a video's upload takes, in seconds, such as about 34 s left",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتبقى نحو %lld ثانية"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আনুমানিক %lld সেকেন্ড বাকি"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zbývá asi %lld s"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ca. %lld sek. tilbage"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "noch etwa %lld s"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "απομένουν περίπου %lld δευτ."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "about %lld s left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld s"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld s"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "quedan unos %lld s"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "noin %lld s jäljellä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "environ %lld s restantes"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "लगभग %lld सेकंड बाकी"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kb. %lld mp van hátra"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "circa %lld s rimanenti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "残り約 %lld 秒"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुमारे %lld से. बाकी"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ca. %lld sek. igjen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nog ongeveer %lld s"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zostało ok. %lld s"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "faltam cerca de %lld s"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "faltam cerca de %lld s"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mai sunt circa %lld s"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cirka %lld s kvar"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "சுமார் %lld வி மீதம்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "సుమారు %lld సె మిగిలి ఉంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "yaklaşık %lld sn kaldı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "лишилося близько %lld с"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقریباً %lld سیکنڈ باقی"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还剩约 %lld 秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還剩約 %lld 秒"
           }
         }
       }

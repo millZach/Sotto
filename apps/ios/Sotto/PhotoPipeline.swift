@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
@@ -113,5 +114,28 @@ enum PhotoPipeline {
         CGImageDestinationAddImage(destination, image, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
+    }
+}
+
+/// A video's first frame and its length, read from its temporary copy (ADR-0131, November 9 amendment). Never changed once
+/// made, so it crosses tasks freely.
+struct VideoFrame: @unchecked Sendable {
+    let poster: CGImage?
+    let duration: Double?
+}
+
+extension PhotoPipeline {
+    /// A video's frame is at most this many pixels on its longest side: about 300 points, enough for the sent tile.
+    static let posterEdge = 600
+    /// The first frame, upright, and the length of the video at `url`. Either is nil when the video doesn't say.
+    static func videoFrame(_ url: URL) async -> VideoFrame {
+        let asset = AVURLAsset(url: url)
+        let duration = try? await asset.load(.duration)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: posterEdge, height: posterEdge)
+        let poster = try? await generator.image(at: .zero).image
+        let seconds = duration.map(\.seconds).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        return VideoFrame(poster: poster, duration: seconds)
     }
 }

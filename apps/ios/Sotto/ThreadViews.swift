@@ -831,7 +831,7 @@ private struct Conversation: View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
-                        opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
+                        opensFiles: model.opensSentFiles(ref.hostID), showsVideos: model.stagesVideos(ref.hostID)) { viewing = $0 }.equatable()
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
@@ -1267,11 +1267,15 @@ private struct MessageView: View, Equatable {
     let ref: ThreadRef
     /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
     let opensFiles: Bool
+    /// Whether its computer takes videos (`video-staging`, with `attach-any-file`), so sent videos are tiles; elsewhere a
+    /// sent video is the file it was before.
+    var showsVideos = false
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
+            && a.showsVideos == b.showsVideos
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")
@@ -1289,16 +1293,19 @@ private struct MessageView: View, Equatable {
     }
 
     /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages,
-    /// and under the photos their files, each a pill that opens it in Quick Look where the computer hands files back.
+    /// then their videos as tiles that say where the video is (ADR-0131, November 9 amendment), and under them their files,
+    /// each a pill that opens it in Quick Look where the computer hands files back.
     private var userMessage: some View {
         let attachments = message.attachments ?? []
         let photos = attachments.filter(\.hasPreview)
-        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) } : []
+        let videos = showsVideos ? attachments.filter { !$0.hasPreview && Videos.isVideo($0) } : []
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) && !(showsVideos && Videos.isVideo($0)) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
+            if !videos.isEmpty { SentVideoTiles(ref: ref, videos: videos) }
             if !files.isEmpty { SentFilePills(ref: ref, messageID: message.id, attachments: files) }
-            if !message.text.isEmpty || photos.count + files.count != attachments.count {
-                content(ink: Palette.bubbleInk, drawn: Set(files.map(\.id)))
+            if !message.text.isEmpty || photos.count + videos.count + files.count != attachments.count {
+                content(ink: Palette.bubbleInk, drawn: Set((videos + files).map(\.id)))
                     .padding(.horizontal, Space.s4)
                     .padding(.vertical, Space.dense(Space.s3, density))
                     .background(Palette.bubble, in: bubble)

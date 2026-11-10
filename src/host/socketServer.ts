@@ -6,6 +6,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { isIP } from 'node:net'
+import { unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
@@ -19,8 +20,8 @@ import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/git/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
-import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
+import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, isLargeVideoPart, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { HOST_CANNOT_STAGE_VIDEOS, hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -453,13 +454,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && desktopListener)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
+    // Videos up to 500 MiB, their parts on disk and kept for the client to carry on, go with file staging (ADR-0131, November 9 amendment).
+    && (feature !== 'video-staging' || service.supportsFileStaging === true && service.stageAttachmentFile !== undefined && service.videoUploadFolder !== undefined)
     // A sent file's bytes for the iPhone's Quick Look go with file staging (ADR-0131, October 25 amendment).
     && (feature !== 'attachment-files' || service.supportsFileStaging === true && service.attachmentFile !== undefined))
   /**
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
    * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
-  const uploads = new FileUploads<string>()
+  // Each listener keeps its own clients' uploads in the store's one folder; what a stopped host left there goes when the store loads.
+  const uploads = new FileUploads<string>({ videoFolder: service.supportsFileStaging === true && service.stageAttachmentFile ? service.videoUploadFolder : undefined })
   /** The paired clients with a sent file's part being read for them, so a client has one such read at a time however many sockets it opens. */
   const fileReads = new Set<string>()
   const connected = (clientId: string): boolean => {
@@ -1908,22 +1912,34 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'stage-file-part': {
         if (!offers(peer, 'file-staging') || !service.stageAttachment) throw new Refusal('invalid_request')
-        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one 25 MiB
-        // upload held per paired client across all its sockets.
+        // A video larger than a file may be only to a client that accepted `video-staging`.
+        if (isLargeVideoPart(request.part) && !offers(peer, 'video-staging')) throw new Refusal('invalid_request', HOST_CANNOT_STAGE_VIDEOS)
+        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one upload
+        // held per paired client across all its sockets.
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try {
           let file
-          try { file = uploads.receive(peer.client.clientId, request.part) }
-          catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw error }
+          try { file = await uploads.receivePart(peer.client.clientId, request.part) }
+          catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw new Refusal('unavailable') }
           if (!file) return null
-          try { return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes }) }
+          try {
+            if ('bytes' in file) return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes })
+            if (!service.stageAttachmentFile) throw new Refusal('unavailable')
+            return await service.stageAttachmentFile({ name: file.name, mimeType: file.mimeType, path: file.path, checkedDigest: file.digest })
+          }
           catch (error) {
             // A file refused for what it is says so; anything else is the host's failure to keep it.
             if (error instanceof RefusedImage) throw new Refusal('invalid_request', error.message)
+            if (error instanceof Refusal) throw error
             throw new Refusal('unavailable')
-          }
+          } finally { if ('path' in file) await unlink(file.path).catch(() => undefined) }
         } finally { peer.preview = false }
+      }
+      case 'file-upload-progress': {
+        if (!offers(peer, 'video-staging')) throw new Refusal('invalid_request')
+        const parts = uploads.progress(peer.client.clientId, request.uploadId)
+        return parts === null ? null : { parts }
       }
       case 'attachment-content': {
         // Up to about 14 MB of base64: one at a time per peer, on the same guard as a preview.
@@ -2169,7 +2185,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

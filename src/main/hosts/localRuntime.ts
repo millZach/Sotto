@@ -7,7 +7,7 @@ type RunningRuntime = Awaited<ReturnType<typeof createAgentRuntime>>
 /** The desktop integrations shared by a running local host and its disabled state. */
 export type DesktopLocalRuntime = Omit<Partial<RunningRuntime>, 'agentControl' | 'agentHost' | 'hostService' | 'turns' | 'worktreeCleanup' | 'close' | 'threadRegistry'> & {
   agentControl: LocalHostControl & Pick<RunningRuntime['agentControl'],
-    'attachmentPreview' | 'stageAttachment' | 'attachmentContent' | 'gitRefs' | 'gitChangedFiles' | 'gitPullRequest' | 'gitPullRequestList' |
+    'attachmentPreview' | 'stageAttachment' | 'stageAttachmentFile' | 'attachmentContent' | 'gitRefs' | 'gitChangedFiles' | 'gitPullRequest' | 'gitPullRequestList' |
     'subscribeThreadDetail' | 'questionPage' | 'questionPageOpened' | 'useCouncil' | 'commandFromCouncil' | 'refreshCouncilObservation' |
     'hostId' | 'configuration' | 'command' | 'onThreadsDeleted' | 'checkClientsAfresh' | 'privacyChanged' |
     'dispose' | 'closed' | 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'useSottoRequests' |

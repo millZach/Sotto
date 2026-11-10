@@ -18,7 +18,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, STEER_NOT_TAKEN, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentFileUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -2374,6 +2374,15 @@ export class AgentControl {
     return this.attachments.stage(image)
   }
   /**
+   * Keeps a file from where it already is, never read whole: a video staged by path on the desktop, or a host's finished
+   * upload, moved in (ADR-0131, November 9 amendment). Unowned until a draft or follow-up names it, as any staged content.
+   */
+  stageAttachmentFile(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle> {
+    return this.attachments.stageFile(file, file.checkedDigest ? { move: { digest: file.checkedDigest } } : {})
+  }
+  /** Where a host writes a video's parts on their way to this store. */
+  get attachmentUploadFolder(): string { return this.attachments.uploadFolder }
+  /**
    * A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it.
    * A file draws no chip, so its bytes are never handed back (ADR-0131).
    */
@@ -2466,7 +2475,7 @@ export class AgentControl {
       const bytes = await this.attachments.read(digest)
       if (!bytes) throw new Error(this.attachments.missing)
       return bytes
-    } }
+    }, path: () => this.attachments.contentPath(digest) }
   }
   /** Configuration alone. get() copies every thread's history, which is costly on every provider event. */
   configuration(): AgentConfiguration {

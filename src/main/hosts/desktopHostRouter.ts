@@ -15,7 +15,7 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { mediaTileScale, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_VIDEOS, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
@@ -67,6 +67,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   mediaPart?(request: AgentThreadMediaPartRequest): Promise<ThreadVideoPart | null>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
   stage?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
+  /** Stages a video from its path on this computer, on the host that runs the thread (ADR-0131, November 9 amendment). */
+  stageFile?(file: AgentAttachmentFileUpload): Promise<AgentAttachmentHandle>
   content?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
@@ -1343,6 +1345,17 @@ export class DesktopHostRouter {
       throw new Error(isImageAttachment(request.mimeType) ? t`This host is disconnected. Connect again before attaching images. Nothing was attached.` : HOST_DISCONNECTED_BEFORE_FILES)
     }
     return connection.stage({ name: request.name, mimeType: request.mimeType, bytes: request.bytes, ...(request.dimensions ? { dimensions: request.dimensions } : {}) })
+  }
+  /**
+   * A video too large for the window goes from its path to the host that runs the thread: this computer's store reads it
+   * in a stream, and a remote host is sent it in parts (ADR-0131, November 9 amendment).
+   */
+  async stageAttachmentFile(request: AgentAttachmentStageFileRequest): Promise<AgentAttachmentHandle> {
+    if (this.options.attachAnyFile !== true) throw new Error(inInterfaceLanguage(SCREENSHOT_WRONG_TYPE))
+    const { connection } = this.target(request.threadId ?? undefined)
+    if (!connection.stageFile) throw new Error(inInterfaceLanguage(HOST_CANNOT_STAGE_VIDEOS))
+    if (connection.available?.() === false) throw new Error(HOST_DISCONNECTED_BEFORE_FILES)
+    return connection.stageFile({ name: request.name, mimeType: request.mimeType, path: request.path })
   }
   async attachmentContent(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null> {
     const { connection } = this.target(request.threadId ?? undefined)

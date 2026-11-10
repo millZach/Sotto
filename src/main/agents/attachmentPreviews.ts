@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
-import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature, isImageAttachment,
+import { AGENT_MAX_FILE_BYTES, agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature, isImageAttachment,
   type AgentAttachmentHandle, type AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { HOST_FILE_PART_BYTES, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
@@ -275,8 +275,10 @@ export class AttachmentPreviews {
     if (!entry) return null
     const message = snapshot.threads.find(thread => thread.id === request.threadId)?.messages.find(item => item.id === request.messageId)
     if (!message || !this.permits(message, entry)) return null
+    // A video larger than a file may be stays on its computer: the phone shows a sent video and never fetches it back
+    // (ADR-0131, November 9 amendment), and its parts would be more than `attachment-file` can name.
     const handle = entry.attachments.find(item => item.id === request.attachmentId && !isImageAttachment(item.mimeType))
-    if (!handle) return null
+    if (!handle || handle.sizeBytes > AGENT_MAX_FILE_BYTES) return null
     const { name, mimeType, sizeBytes, digest } = handle, part = request.part
     const parts = Math.max(1, Math.ceil(sizeBytes / HOST_FILE_PART_BYTES))
     if (!Number.isInteger(part) || part < 0 || part >= parts) return null

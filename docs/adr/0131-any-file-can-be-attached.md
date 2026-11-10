@@ -89,3 +89,39 @@ Consequences:
 
 - **No new host.** `HOST_FEATURES` gains `attachment-files`. Protocol version stays 1: a phone uses the request only when the host lists the feature, and a host never sends anything new unasked.
 - **Privacy.** The README's "Privacy and cost" gains one sentence: an opened file sits in the iPhone app's temporary folder until its preview closes.
+
+## Amendment, November 9, 2026: videos
+
+Zach asked to add videos from the iPhone. Before the prototype he chose, on cards, to **raise the cap for videos** and send the original file rather than a smaller copy, and that the agent gets **just the file**: Sotto pulls no frames and makes no transcript, and an agent that needs to see a video uses ffmpeg or the like itself. From `docs/prototypes/iphone-videos-prototype.html` (kept as the tag `prototype/iphone-videos`) he picked **A · Tile**, **500 MB**, **their own total**, **carry on where it stopped**, **with photos**, **shows only**, **the same limit on the desktop**, and **under `attach-any-file`**. The plan is `docs/plans/iphone-videos.md`.
+
+**An attached video** is an attached file whose type starts with `video/` (`isVideoAttachment`). Everything decision 1 and decisions 3 to 8 say of a file holds for it, with these changes.
+
+**Decision 1, the type.** When the browser gives a file no type, or the generic one, a known video extension names its type (`.mov` is `video/quicktime`, `.mp4` is `video/mp4`, and so on); anything else is still `application/octet-stream`. Chromium on Linux gives an `.MOV` no type, and Windows gives none for a format it has no entry for, and without this a video would be held to a file's 25 MB.
+
+**Decision 2, limits.** A video is at most 500 MiB. A set's videos are at most 500 MiB between them, and the 50 MiB decision 2 names now counts images and files that are not videos. The 8 attachments a set holds count videos too. The composer and the phone refuse past either before reading anything: "Each video must be 500 MB or smaller. Nothing was attached. Trim it, or choose a shorter one." and "Videos must total 500 MB or less. Nothing was attached. Send these first, or remove a video."
+
+**Decision 3, the store.** A video too large to pass through memory is staged from its path (`stageFile`): copied into the store and hashed as it is read, or, for a host's own finished upload, moved in. It is kept on disk whatever the history setting, as Zach chose for videos when he picked 500 MB over a 100 MB cap held in memory. The one-hour rule for content nothing owns is unchanged.
+
+**Decision 4, remote hosts.** The host feature `video-staging`, listed only with `file-staging`, lets `stage-file-part` name a video of up to 500 MiB in up to 63 parts. The host writes a video's parts to a file in its store's `uploads` folder, hashed as they arrive, rather than holding them in memory, and keeps the upload ten minutes after its last part even once every socket of its client has closed. A new request, `file-upload-progress`, names an upload and answers how many of its parts the host holds, or null, when the client starts again from part 0. A part file left by a host that stopped is removed when it starts. A file's upload is unchanged: in memory, let go two minutes after its last part or when its client leaves. A host without the feature refuses a video larger than a file: "This host cannot keep videos over 25 MB yet. Update Sotto there, then attach this one again. Nothing was attached." `attachment-file` answers nothing for a sent video larger than a file, since the phone shows a sent video and never fetches it back.
+
+**Decision 5, the working folder.** A video is copied into `.sotto/attachments/` by streaming from where the store keeps it, hashed as it is copied, and a copy that is not its content is removed and refused. The note names it like any file, by its extension: `(IMG_0412.MOV, MOV, 84 MB)`.
+
+**The desktop.** A video over 25 MiB is staged from the path of the file the user dropped or chose, which the preload finds; the window never reads its bytes or sees the path. One with no path, such as a pasted one, is refused: "This video has no place on this computer to read it from. Nothing was attached. Save it to a folder, then attach it from there." A thread on a remote host is sent the video from its path in parts. The composer draws a video as the pill it draws any file.
+
+**The iPhone.** This changes the October 25 amendment's "a file is read, not imported" and ADR-0031's October 3 rule that a photo waiting in a reply lives only in memory, for videos alone.
+
+- **Picked with photos.** The + menu's Photo library becomes **Photos and videos**, one system picker showing both, which hands over the original file without converting it. A file chosen in **Files** whose type is a movie is a video too.
+- **A temporary copy while it waits.** The picker hands a video over as a file, which Sotto moves into its own folder of random name under the app's temporary directory, with complete file protection and excluded from backup. The video is hashed, and read for upload one 8 MiB part at a time, from that file; it is never held whole in memory. The copy is removed when the video is removed from the box, when its reply is sent and accepted, and, for anything a crash left, at the next launch. Its bytes are never logged.
+- **A tile in the photo strip.** It shows the video's first frame, its length, a ring with the percentage while it uploads, and **×**. One line beneath the strip says how far it has got and about how long is left, "Paused at 37% · waiting for <computer>" while the connection is down, and "Getting it from iCloud" while the video downloads first.
+- **It carries on where it stopped.** When the connection drops or the app goes to the background, the upload stops, and a part cut off on its way is sent again. When it is back, the phone asks `file-upload-progress` and carries on from there, without waiting for Send, or starts again when the computer no longer holds it.
+- **A sent video shows only.** It stands above its words as a tile with its frame while the phone still has it, and its length. Pressing it says the video is on the computer, in the thread's working folder under `.sotto/attachments`.
+- A computer without `video-staging` takes a video of 25 MB or less as a file, as before, and the phone refuses a larger one, saying to update Sotto there.
+
+**Not in this amendment.** Share to Sotto and paste keep the 25 MB file limit for videos. Android attaches nothing yet (ADR-0059).
+
+Consequences:
+
+- **No new host.** A video goes to the computer that runs the thread, and from there to the thread's working folder, like any file. `HOST_FEATURES` gains `video-staging`; protocol version stays 1.
+- **Privacy.** A video waiting in an iPhone reply is on the phone's disk, protected while the phone is locked and kept out of backups, until it is sent or removed. On the computer a video is written to disk even with history off, and its parts are on disk while they arrive. The README's "Privacy and cost" says both.
+- **Cost.** A 500 MB video takes 500 MB in the store for its hour, and as much again in the working folder until the user removes it. Over cellular it takes as long to upload as the phone's connection needs.
+

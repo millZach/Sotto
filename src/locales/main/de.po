@@ -816,6 +816,10 @@ msgstr ""
 msgid "File checkpoint capture was unavailable."
 msgstr ""
 
+#: src/main/agents/ipc.ts
+msgid "Files cannot be attached in this window. Nothing was attached."
+msgstr ""
+
 #: src/main/files/ipc.ts
 msgid "Files cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr ""

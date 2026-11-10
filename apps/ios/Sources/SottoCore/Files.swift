@@ -36,7 +36,7 @@ public enum FileWords {
 
 /// A staged file's handle (ADR-0131): what the host answered the last `stage-file-part` with, and what a reply carries in
 /// place of the file. The bytes stay on the thread's computer, which saves them in the thread's working folder when the
-/// reply is sent.
+/// reply is sent. A video's handle may name up to 500 MiB (November 9 amendment).
 public struct StagedFile: Decodable, Equatable, Sendable {
     public let id: String; public let name: String; public let mimeType: String; public let sizeBytes: Int; public let digest: String
     public init(id: String, name: String, mimeType: String, sizeBytes: Int, digest: String) {
@@ -47,8 +47,8 @@ public struct StagedFile: Decodable, Equatable, Sendable {
         let idCharacters = id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
         let validID = !id.isEmpty && id.count <= 128 && idCharacters
         let validName = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.utf16.count <= 255
-        return validID && validName && Files.validDigest(digest) && Files.validMimeType(mimeType)
-            && (1...(PhotoLimits.mimeTypes.contains(mimeType) ? PhotoLimits.bytesEach : FileLimits.bytesEach)).contains(sizeBytes)
+        let limit = PhotoLimits.mimeTypes.contains(mimeType) ? PhotoLimits.bytesEach : Videos.isVideo(mimeType) ? VideoLimits.bytesEach : FileLimits.bytesEach
+        return validID && validName && Files.validDigest(digest) && Files.validMimeType(mimeType) && (1...limit).contains(sizeBytes)
     }
     public var wire: JSONValue {
         .object(["id": .string(id), "name": .string(name), "mimeType": .string(mimeType), "sizeBytes": .number(Double(sizeBytes)), "digest": .string(digest)])
@@ -121,8 +121,14 @@ public enum Files {
     /// The request that sends one part of a file to its computer. `data` is the part's own bytes, at most 8 MiB.
     public static func stagePart(uploadID: UUID, index: Int, count: Int, name: String, mimeType: String, sizeBytes: Int, digest: String,
                                  data: Data) throws -> [String: JSONValue] {
-        guard (1...FileLimits.partsMax).contains(count), (0..<count).contains(index), (1...FileLimits.bytesEach).contains(sizeBytes),
-              !data.isEmpty, data.count <= FileLimits.partBytes, validMimeType(mimeType), validDigest(digest),
+        guard (1...FileLimits.partsMax).contains(count), (1...FileLimits.bytesEach).contains(sizeBytes) else { throw ClientError.invalidRequest }
+        return try partRequest(uploadID: uploadID, index: index, count: count, name: name, mimeType: mimeType, sizeBytes: sizeBytes,
+                               digest: digest, data: data)
+    }
+    /// A part as the host's schema takes it, once its file's own limits have been checked.
+    static func partRequest(uploadID: UUID, index: Int, count: Int, name: String, mimeType: String, sizeBytes: Int, digest: String,
+                            data: Data) throws -> [String: JSONValue] {
+        guard (0..<count).contains(index), !data.isEmpty, data.count <= FileLimits.partBytes, validMimeType(mimeType), validDigest(digest),
               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ClientError.invalidRequest }
         return ["op": .string("stage-file-part"), "part": .object([
             "uploadId": .string(uploadID.uuidString.lowercased()), "index": .number(Double(index)), "count": .number(Double(count)),

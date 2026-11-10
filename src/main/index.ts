@@ -1245,7 +1245,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
     mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
-    stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
+    stage: image => agentControl.stageAttachment(image), stageFile: file => agentControl.stageAttachmentFile(file), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request), gitPullRequestList: request => agentControl.gitPullRequestList(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
