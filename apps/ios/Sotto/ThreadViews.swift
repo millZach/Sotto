@@ -425,9 +425,11 @@ struct ThreadMenu: View {
                 .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: railOnLeft ? .leading : .trailing) {
                     // A solid card a step off the sheets, like Sotto's cards, where iOS's glass showed a moving light that
                     // read as a smudge, and the thread's reply box steps away while it is open, as it does beside a sheet
-                    // (Zach's pick A, November 9, 2026, round 4).
+                    // (Zach's pick A, November 9, 2026, round 4). Its fill is the overlay surface, a step past a card's,
+                    // so its edge reads against the words it covers rather than the page running into it (his round 6
+                    // pick A, November 10, 2026).
                     railCard(chips).presentationCompactAdaptation(.popover)
-                        .presentationBackground(Palette.raised)
+                        .presentationBackground(Palette.overlay)
                         .overThread()
                 }
             } else {
