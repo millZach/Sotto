@@ -360,7 +360,15 @@ private struct PullRequestBody: View {
         }
         // A jump to this part leaves its heading room under the chips' line, on the Duo.
         .padding(.top, duo == .none ? 0 : Space.s3)
-        .id(which)
+        // A jump lands on this mark. Folded, it stands above the part, so the part's heading lands below the clock
+        // rather than its count running under it: what stands beside the clock keeps clear of the strip (Zach's
+        // round 5 pick A, November 9, 2026).
+        .overlay(alignment: .top) {
+            Color.clear.frame(height: 1)
+                .alignmentGuide(.top) { _ in foldedStrip > 0 ? Space.s6 : 0 }
+                .accessibilityHidden(true)
+                .id(which)
+        }
         .background(alignment: .top) {
             GeometryReader { proxy in
                 Color.clear.preference(key: PartTops.self, value: [which: proxy.frame(in: .named(Self.space)).minY])
