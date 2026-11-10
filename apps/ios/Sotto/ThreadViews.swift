@@ -1700,6 +1700,9 @@ private struct MarkdownTableView: View {
     /// On the Duo held sideways, a column whose words run no wider than this keeps them on one line.
     @ScaledMetric(relativeTo: .footnote) private var shortColumn: CGFloat = 120
     @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// How wide the cards stand, so a folded card can tell which of its values fit on one line (`shortFields`).
+    @State private var cardsWidth: CGFloat = 0
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         ViewThatFits(in: .horizontal) {
@@ -1795,12 +1798,15 @@ private struct MarkdownTableView: View {
                 .padding(.vertical, Space.dense(Space.s3, density))
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
+            // Folded, once any row has a short field the table's cards take the shorter form (`shortCard`).
+            let short = duo.isFolded && table.rows.contains { !shortFields($0).isEmpty }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(table.rows.enumerated()), id: \.offset) { index, row in
                     if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1) }
-                    card(row)
+                    if short { shortCard(row) } else { card(row) }
                 }
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { cardsWidth = $0 }
         }
     }
 
@@ -1814,23 +1820,29 @@ private struct MarkdownTableView: View {
         return line
     }
 
-    /// A card titled by the row's first cell, at the trailing edge when its column is set there.
-    private func card(_ row: [MarkdownInline]) -> some View {
+    /// A card's title: the row's first cell under its column's small label, at the trailing edge when its column is set
+    /// there.
+    private func cardTitle(_ row: [MarkdownInline]) -> some View {
         let trailing = table.alignments[0] == .trailing
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            VStack(alignment: trailing ? .trailing : .leading, spacing: Space.s1) {
-                if !table.header[0].source.isEmpty {
-                    Text(InlineStyle.render(table.header[0], theme: theme))
-                        .font(.sotto(.caption, .semibold))
-                        .foregroundStyle(Palette.muted)
-                }
-                Text(InlineStyle.render(row[0], theme: theme))
-                    .font(.sotto(.body, .semibold).monospacedDigit())
-                    .multilineTextAlignment(trailing ? .trailing : .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+        return VStack(alignment: trailing ? .trailing : .leading, spacing: Space.s1) {
+            if !table.header[0].source.isEmpty {
+                Text(InlineStyle.render(table.header[0], theme: theme))
+                    .font(.sotto(.caption, .semibold))
+                    .foregroundStyle(Palette.muted)
             }
-            .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+            Text(InlineStyle.render(row[0], theme: theme))
+                .font(.sotto(.body, .semibold).monospacedDigit())
+                .multilineTextAlignment(trailing ? .trailing : .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+
+    /// A card titled by the row's first cell, with every other column a label and its value.
+    private func card(_ row: [MarkdownInline]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            cardTitle(row)
             if row.count > 1 {
                 Grid(alignment: .topLeading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                     ForEach(1..<row.count, id: \.self) { column in
@@ -1851,6 +1863,66 @@ private struct MarkdownTableView: View {
         .padding(.vertical, Space.dense(Space.s3, density))
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Folded, a card whose label and value lines made a tall form of every record: its title as before, then its short
+    /// fields on one quiet line joined with " · ", in the table's own words, and each other field under its own small
+    /// label at the card's full width (Zach's round 8 pick A, November 10, 2026). VoiceOver still hears each short field's
+    /// label with its value.
+    private func shortCard(_ row: [MarkdownInline]) -> some View {
+        let short = shortFields(row)
+        let rest = row.indices.dropFirst().filter { !short.contains($0) && !row[$0].source.isEmpty }
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            VStack(alignment: .leading, spacing: 2) {
+                cardTitle(row)
+                if !short.isEmpty {
+                    Text(joined(short.map { row[$0] }))
+                        .font(.sotto(.small).monospacedDigit())
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .accessibilityLabel(short.map { "\(table.header[$0].text), \(row[$0].text)" }.joined(separator: ", "))
+                }
+            }
+            ForEach(rest, id: \.self) { column in
+                VStack(alignment: .leading, spacing: 2) {
+                    if !table.header[column].source.isEmpty {
+                        Text(InlineStyle.render(table.header[column], theme: theme))
+                            .font(.sotto(.caption, .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    value(row[column], trailing: table.alignments[column] == .trailing)
+                }
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.dense(Space.s3, density))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The columns between a row's first and last whose values fit on one line of the card, empty ones left out.
+    private func shortFields(_ row: [MarkdownInline]) -> [Int] {
+        guard row.count > 2, cardsWidth > 0 else { return [] }
+        let traits = UITraitCollection(preferredContentSizeCategory: FilledLines.category(typeSize))
+        let font = UIFont.figtree(TextScale.small.size, .footnote, .regular, traits: traits)
+        let room = cardsWidth - Space.s4 * 2
+        return (1..<(row.count - 1)).filter { column in
+            let words = row[column].text
+            guard !words.isEmpty, !words.contains("\n") else { return false }
+            return ceil((words as NSString).size(withAttributes: [.font: font]).width) <= room
+        }
+    }
+
+    /// Cells on one line, each with its inline Markdown, joined with " · ".
+    private func joined(_ cells: [MarkdownInline]) -> AttributedString {
+        var line = AttributedString()
+        for (index, cell) in cells.enumerated() {
+            if index > 0 { line.append(AttributedString(" · ")) }
+            line.append(InlineStyle.render(cell, theme: theme))
+        }
+        return line
     }
 
     /// A card's value; a centred column reads as leading, since a card has no column to centre it in.

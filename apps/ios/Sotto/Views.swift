@@ -1662,7 +1662,7 @@ struct FilledLines: UIViewRepresentable {
         if label.numberOfLines != lines { label.numberOfLines = lines }
     }
 
-    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+    static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
         switch size {
         case .xSmall: return .extraSmall
         case .small: return .small
