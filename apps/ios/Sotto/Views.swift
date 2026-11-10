@@ -246,6 +246,9 @@ struct MainTabs: View {
         .overlay(alignment: .leading) {
             if case .strip(trailing: false, width: let strip) = place { rail(shown, top: duo.clockClearance, duo: duo).frame(width: strip).offset(x: -strip) }
         }
+        // Behind the Duo's own sheet every glow goes out, so nothing under the scrim competes with it (Zach's pick B,
+        // November 9, 2026, round 5).
+        .modifier(GlowsOutBehindSheet(host: sheetHost))
         // Held sideways, a sheet stands over the page from the sidebar's edge to the rail (Zach's pick A, round 4).
         .overlayPreferenceValue(DuoPageFrame.self) { anchor in
             if duo.sideways, let anchor {
@@ -334,8 +337,15 @@ struct MainTabs: View {
                 if !tight { newThread }
                 Spacer(minLength: tight ? 0 : Space.s3)
                 if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
+                // Held sideways, the tabs step away while the keyboard is up, where they showed through its corner, and
+                // come back when it goes (Zach's pick A, November 9, 2026, round 5). The thread's pill above them stays.
+                let underKeyboard = keyboard && duo.sideways
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                         style: .rail, reselect: reselect)
+                    .opacity(underKeyboard ? 0 : 1)
+                    .allowsHitTesting(!underKeyboard)
+                    .accessibilityHidden(underKeyboard)
+                    .animation(.easeInOut(duration: 0.2), value: underKeyboard)
             }
             .padding(.top, top)
             .padding(.bottom, Space.s5)
@@ -985,6 +995,7 @@ struct ThreadListRow: View, Equatable {
         }
     }
     @Environment(\.duoLayout) private var duo
+    @Environment(\.sottoTheme) private var theme
     /// What the row says under its title.
     private var line: String { words(duo: duo != .none) }
     /// What the row says under its title: the request it waits on, where a working thread lives, or for a recent one
@@ -995,6 +1006,12 @@ struct ThreadListRow: View, Equatable {
         let place = duo ? Words.placeWithoutProvider(row) : Words.place(row)
         switch kind {
         case .needs:
+            // On the Duo a request waiting in a delegated thread reads as any waiting row does, by the delegated thread's
+            // own request; VoiceOver still names the thread it waits in (round 5).
+            if let asking, duo {
+                let short = ThreadState(asking.thread) == .needsAnswer ? String(localized: "Permission") : String(localized: "Question")
+                return "\(short) · \(row.computer)"
+            }
             if let asking {
                 let provider = Words.provider(row.thread.providerId)
                 return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
@@ -1061,15 +1078,24 @@ struct ThreadListRow: View, Equatable {
         // line, where a column of times had cut nearly every name (Zach's pick C, November 8, 2026).
         let side = identifier == "sidebar-thread-" && !large
         let started = row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
-        let ago = wakeTime ?? (side ? Words.agoShort(started) : Words.ago(started))
+        // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
+        let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
                 // On the Duo a thread that just finished carries a check in its light, so it can't pass for one at
                 // work (Zach's pick A, November 9, 2026).
                 Light(tone: tone, breathing: kind == .working, finished: unread && duo != .none).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
-                        .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : side ? 2 : 1)
+                    if side {
+                        // Beside a thread a name fills its first line before it wraps: Text moves a word down so no last
+                        // line is a lone word, which broke names at about 60% of the row (Zach's pick A, November 9, 2026,
+                        // round 5).
+                        FilledLines(text: row.thread.title, weight: unread ? .bold : .semibold,
+                                    color: theme.color(chosen ? .accentText : .ink), lines: 2)
+                    } else {
+                        Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
+                            .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
+                    }
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                                   tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
@@ -1541,6 +1567,75 @@ private struct DuoItemSheetPresenter<Item: Identifiable, Sheet: View>: ViewModif
     }
 }
 
+/// Words over up to `lines` lines at the body step, in Figtree as `Font.sotto(.body, weight)` draws them, that fill each
+/// line before they wrap and end in an ellipsis past the last. SwiftUI's `Text` moves a word down so a last line is
+/// never a single word, which left a two-line name's first line short.
+struct FilledLines: UIViewRepresentable {
+    let text: String
+    let weight: Font.Weight
+    let color: Color
+    var lines = 2
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakStrategy = []
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.isAccessibilityElement = false
+        return label
+    }
+
+    func updateUIView(_ label: UILabel, context: Context) {
+        style(label)
+        label.textColor = UIColor(color)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
+        style(uiView)
+        let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        return CGSize(width: bounded ?? ceil(fitted.width), height: ceil(fitted.height))
+    }
+
+    private func style(_ label: UILabel) {
+        let traits = UITraitCollection(preferredContentSizeCategory: Self.category(typeSize))
+        let font = UIFont.figtree(TextScale.body.size, .body, weight, traits: traits)
+        if label.font != font { label.font = font }
+        if label.text != text { label.text = text }
+        if label.numberOfLines != lines { label.numberOfLines = lines }
+    }
+
+    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        default: return .large
+        }
+    }
+}
+
+/// Puts out every glow under it while the Duo's own sheet is up. Only this modifier watches the host, so a sheet coming
+/// or going redraws the glows rather than all of `MainTabs`.
+private struct GlowsOutBehindSheet: ViewModifier {
+    @ObservedObject var host: DuoSheetHost
+    @Environment(\.sottoGlow) private var glow
+    func body(content: Content) -> some View {
+        content.environment(\.sottoGlow, host.shown == nil ? glow : PhoneGlow(0))
+    }
+}
+
 /// Where the page stands beside the sidebar and the rail, for the Duo's own sheet.
 struct DuoPageFrame: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
@@ -1561,7 +1656,9 @@ struct DuoSheetLayer: View {
     var body: some View {
         ZStack {
             if let shown = host.shown {
-                Rectangle().fill(Color.black.opacity(0.36)).ignoresSafeArea()
+                // Darker than iOS's own dimming, so the page below the sheet's foot and the lights behind it don't read
+                // through (Zach's pick B, November 9, 2026, round 5).
+                Rectangle().fill(Color.black.opacity(0.62)).ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { shown.close() }
                     .accessibilityHidden(true)

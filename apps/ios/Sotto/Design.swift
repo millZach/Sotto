@@ -21,6 +21,9 @@ private struct DensityKey: EnvironmentKey {
 private struct GlowKey: EnvironmentKey {
     static var defaultValue: PhoneGlow { PhonePreferences().glow }
 }
+private struct ProseScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
 
 private struct ScreenKey: EnvironmentKey {
     static let defaultValue = CGSize(width: 430, height: 932)
@@ -36,6 +39,12 @@ extension EnvironmentValues {
     var sottoDensity: PhoneDensity {
         get { self[DensityKey.self] }
         set { self[DensityKey.self] = newValue }
+    }
+    /// How much larger a conversation's words are drawn than the type scale's: a step larger in a thread held
+    /// sideways on the Duo (Zach's pick, November 9, 2026, round 5), 1 everywhere else.
+    var proseScale: CGFloat {
+        get { self[ProseScaleKey.self] }
+        set { self[ProseScaleKey.self] = newValue }
     }
     /// How strongly the lights shine. Set once at the root from the stored preference.
     var sottoGlow: PhoneGlow {
@@ -247,6 +256,10 @@ extension Font {
     /// Figtree at a step of the type scale.
     static func sotto(_ scale: TextScale, _ weight: Font.Weight = .regular) -> Font {
         .figtree(scale.size, scale.style, weight)
+    }
+    /// Figtree at a step of the type scale, `times` larger: the conversation held sideways on the Duo (`proseScale`).
+    static func sotto(_ scale: TextScale, _ weight: Font.Weight = .regular, times: CGFloat) -> Font {
+        .figtree(scale.size * times, scale.style, weight)
     }
     /// Figtree draws Latin only. Every other script falls through, glyph by glyph, to the iPhone's own fonts, which
     /// the root's typesetting language points at the interface language (ADR-0123). Urdu is set in the iPhone's

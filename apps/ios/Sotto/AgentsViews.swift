@@ -138,6 +138,9 @@ private struct AgentsSheet: View {
     /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
     private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
     let ref: ThreadRef
     let open: (ThreadRef) -> Void
     @State private var delegations: [DelegatedThreadRecord]?
@@ -166,8 +169,10 @@ private struct AgentsSheet: View {
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("agents-done")
                 }
+                .padding(.trailing, foldedStrip)
                 if let title = source?.owner.title {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .padding(.trailing, foldedStrip)
                 }
                 if duo == .none {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
@@ -225,6 +230,7 @@ private struct AgentsSheet: View {
             .padding(.bottom, Space.s6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .refreshable { await refresh() }
         .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         // Ends when nothing is running or the sheet goes.
@@ -406,7 +412,9 @@ private struct RowBody: View {
                 HStack(spacing: 6) {
                     // A finished task carries the finished check, where a hollow ring read as still waiting (Zach's
                     // pick B, November 9, 2026, round 4).
-                    if row.tone == .done { Light(tone: .accent, size: 7, finished: true) }
+                    // The check's disc is 14 points across, wider than the light's own frame, so it takes its full room
+                    // here rather than reaching over the word and past the text's edge.
+                    if row.tone == .done { Light(tone: .accent, size: 7, finished: true).frame(width: 14, height: 14) }
                     else { Light(tone: row.tone.light, size: 7, breathing: row.tone == .working) }
                     Text(status)
                 }

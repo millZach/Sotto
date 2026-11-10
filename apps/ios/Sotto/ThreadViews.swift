@@ -559,8 +559,14 @@ struct ThreadMenu: View {
             showingCard = false
             action()
         } label: {
-            HStack(spacing: Space.s3) {
-                if let icon { Image(systemName: icon).iconFont(14, weight: .medium).foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            // The marks stand in one column with the facts' above, and every row's words start at one edge with theirs,
+            // a row without a mark included (round 5).
+            HStack(spacing: Space.s2) {
+                Group {
+                    if let icon { Image(systemName: icon).iconFont(14, weight: .medium).foregroundStyle(Palette.muted) } else { Color.clear.frame(height: 1) }
+                }
+                .frame(width: 18)
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: title).font(.sotto(.body)).foregroundStyle(enabled ? Palette.ink : Palette.muted)
                     if let detail { Text(verbatim: detail).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true) }
@@ -773,6 +779,9 @@ private struct Conversation: View {
         ScrollViewReader { proxy in
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
+                    // Held sideways, the conversation's words are a step larger, so its broad lines are easier to follow
+                    // from one to the next; folded is unchanged (Zach's pick A, November 9, 2026, round 5).
+                    .environment(\.proseScale, duo.sideways ? 1.065 : 1)
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
                     .tapPutsAwayKeyboard { [model, ref] in !model.replyHoldsAnything(ref) }
                     .benchEnvironment("EnvironmentUnderThread")
@@ -835,8 +844,21 @@ private struct Conversation: View {
                            topMoved: { top in follow.heroTop = top; refreshBar() },
                            titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                     .equatable()
+            } else if case .folded = duo {
+                // Folded, with no sidebar beside it to say which thread is open, the thread's name heads its conversation,
+                // quiet and one line long, and scrolls away with it: still no bar (Zach's pick A, November 9, 2026, round 5).
+                Text(verbatim: thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .font(.sotto(.body, .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s3)
+                    .padding(.bottom, Space.s1)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("thread-title")
             } else {
-                // The Duo draws no title (`ThreadMenu` holds it), but VoiceOver still reads the page's name first.
+                // Unfolded, the Duo draws no title (`ThreadMenu` holds it, and the sidebar marks the thread), but VoiceOver
+                // still reads the page's name first.
                 Color.clear
                     .frame(height: Space.s3)
                     .accessibilityElement()
@@ -1504,12 +1526,13 @@ private struct MarkdownBlockView: View, Equatable {
     @Environment(\.replyQuoteBox) private var quoteBox
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
+    @Environment(\.proseScale) private var scale
     var body: some View {
         let _ = BenchProbe.body("MarkdownBlockView")
         switch block {
         case .heading(let level, let text):
             Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(level <= 2 ? .lead : .body, .semibold))
+                .font(.sotto(level <= 2 ? .lead : .body, .semibold, times: scale))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, first ? 0 : Space.dense(Space.s2, density))
                 .accessibilityAddTraits(.isHeader)
@@ -1518,7 +1541,7 @@ private struct MarkdownBlockView: View, Equatable {
                 ReplyText(inline: text, ink: .ink, box: quoteBox)
             } else {
                 Text(InlineStyle.render(text, theme: theme))
-                    .font(.sotto(.body))
+                    .font(.sotto(.body, times: scale))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -1533,7 +1556,7 @@ private struct MarkdownBlockView: View, Equatable {
                     ReplyText(inline: text, ink: .muted, box: quoteBox)
                 } else {
                     Text(InlineStyle.render(text, theme: theme))
-                        .font(.sotto(.body))
+                        .font(.sotto(.body, times: scale))
                         .foregroundStyle(Palette.muted)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1720,6 +1743,7 @@ private struct MarkdownListView: View {
     let quoteBox: ReplyQuoteBox?
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
+    @Environment(\.proseScale) private var scale
     @ScaledMetric(relativeTo: .body) private var digit: CGFloat = 9
     var body: some View {
         let width = markerWidth
@@ -1731,7 +1755,7 @@ private struct MarkdownListView: View {
                         ReplyText(inline: item.text, ink: .ink, box: quoteBox)
                     } else {
                         Text(InlineStyle.render(item.text, theme: theme))
-                            .font(.sotto(.body))
+                            .font(.sotto(.body, times: scale))
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -1752,11 +1776,11 @@ private struct MarkdownListView: View {
     @ViewBuilder private func marker(_ marker: MarkdownListItem.Marker, width: CGFloat) -> some View {
         switch marker {
         case .bullet:
-            Text("•").font(.sotto(.body, .bold)).foregroundStyle(Palette.muted)
+            Text("•").font(.sotto(.body, .bold, times: scale)).foregroundStyle(Palette.muted)
                 .frame(width: width, alignment: .center)
                 .accessibilityHidden(true)
         case .number(let number):
-            Text("\(number).").font(.sotto(.body).monospacedDigit()).foregroundStyle(Palette.muted)
+            Text("\(number).").font(.sotto(.body, times: scale).monospacedDigit()).foregroundStyle(Palette.muted)
                 .frame(width: width, alignment: .trailing)
         }
     }
@@ -1903,11 +1927,12 @@ private enum InlineStyle {
     }
     /// The words as `render` draws them at the body step, for a text view: Figtree in the ink given, code on the code
     /// surface, a key chord on the raised one, scaled to the text size in `traits`.
-    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection) -> NSAttributedString {
+    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection,
+                           scale: CGFloat = 1) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
-        let regular = UIFont.figtree(TextScale.body.size, .body, traits: traits)
-        let bold = UIFont.figtree(TextScale.body.size, .body, .bold, traits: traits)
+        let regular = UIFont.figtree(TextScale.body.size * scale, .body, traits: traits)
+        let bold = UIFont.figtree(TextScale.body.size * scale, .body, .bold, traits: traits)
         let parsed = inline.cachedAttributed()
         let out = NSMutableAttributedString()
         for run in parsed.runs {
@@ -1979,6 +2004,7 @@ private struct ReplyText: UIViewRepresentable {
     @Environment(\.sottoTheme) private var theme
     /// Read so a change of text size draws the words again.
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.proseScale) private var scale
 
     func makeCoordinator() -> Coordinator { Coordinator(box: box) }
 
@@ -2000,9 +2026,9 @@ private struct ReplyText: UIViewRepresentable {
         BenchProbe.count("textview.update")
         context.coordinator.box = box
         // Set only when the words or their look change, so a selection survives the page drawing again.
-        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
+        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection, scale: scale)
         if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
-        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection)
+        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection, scale: scale)
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -2013,7 +2039,7 @@ private struct ReplyText: UIViewRepresentable {
         // Laying words out is the costly part of a text view, and SwiftUI asks for the same size several times while
         // a row is made, and again when a row scrolled away is made again. The same words at the same width measure
         // the same, so each is measured once.
-        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection)
+        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection, scale: scale)
         let key = MeasuredWords.Key(words: words, width: bounded ?? -1)
         let fitted: CGSize
         if let known = MeasuredWords.size(for: key) {
@@ -2076,10 +2102,12 @@ private struct ReplyText: UIViewRepresentable {
         let inline: MarkdownInline
         let size: UIContentSizeCategory
         let weight: UILegibilityWeight
-        init(inline: MarkdownInline, traits: UITraitCollection) {
+        let scale: CGFloat
+        init(inline: MarkdownInline, traits: UITraitCollection, scale: CGFloat) {
             self.inline = inline
             size = traits.preferredContentSizeCategory
             weight = traits.legibilityWeight
+            self.scale = scale
         }
     }
     struct Key: Hashable {
@@ -2433,28 +2461,46 @@ private struct StepLine: View {
         Group {
             if duo == .none {
                 line(whole: false)
+            } else if running {
+                // On the Duo the running step's command always stands on its own line under Running and its timer, a size
+                // larger and at the conversation's full strength, where beside them it was a fine grey strand (Zach's pick
+                // A, November 9, 2026, round 5).
+                stacked(strong: true)
             } else {
                 // On the Duo a command that doesn't fit beside its step goes whole on a line under it, rather than cut in
                 // the middle (Zach, November 9, 2026, the Duo design climb's round 2).
                 ViewThatFits(in: .horizontal) {
                     line(whole: true)
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 7) {
-                            mark.frame(width: markRoom, height: markRoom)
-                            verb
-                            Spacer(minLength: Space.s2)
-                            meta
-                        }
-                        .frame(minHeight: 26)
-                        if let subject {
-                            subjectText(subject).fixedSize(horizontal: false, vertical: true).padding(.leading, markRoom + 7)
-                        }
-                    }
+                    stacked(strong: false)
                 }
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("step-\(record.id)")
+    }
+
+    /// The step over two lines: its kind and time, then its command whole under them, `strong` a size larger in ink.
+    private func stacked(strong: Bool) -> some View {
+        VStack(alignment: .leading, spacing: strong ? 3 : 1) {
+            HStack(spacing: 7) {
+                mark.frame(width: markRoom, height: markRoom)
+                verb
+                Spacer(minLength: Space.s2)
+                meta
+            }
+            .frame(minHeight: 26)
+            if let subject {
+                Group {
+                    if strong {
+                        Text(subject).font(.system(.footnote, design: .monospaced)).foregroundStyle(Palette.ink)
+                    } else {
+                        subjectText(subject)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, markRoom + 7)
+            }
+        }
     }
 
     /// The step on one line; `whole` keeps the command whole, so it fits or doesn't, where elsewhere it is cut.
@@ -3907,6 +3953,7 @@ private struct OptionLabel: View {
     let chosen: Bool
     var multiple = false
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark.padding(.top, 1)
@@ -3922,7 +3969,9 @@ private struct OptionLabel: View {
         let shape = RoundedRectangle(cornerRadius: multiple ? 6 : 11, style: .continuous)
         return ZStack {
             shape.fill(chosen ? theme.color(.accent) : Color.clear)
-            shape.strokeBorder(chosen ? Color.clear : theme.color(.border), lineWidth: 1.5)
+            // On the Duo an empty mark is a thicker ring in the words' muted grey, where the thin border sank into the
+            // choice's fill (Zach's pick A, November 9, 2026, round 5).
+            shape.strokeBorder(chosen ? Color.clear : theme.color(duo != .none ? .muted : .border), lineWidth: duo != .none ? 2.25 : 1.5)
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Palette.onAccent)

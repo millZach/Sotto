@@ -112,3 +112,25 @@ Zach's picks, from `docs/prototypes/ios-duo-climb/round-4.html`:
 | Small fixes | All four: the provider's mark on a turn, grey Send in light, the sidebar's fade, the lighter chosen segment |
 
 Held, raised by one judge: Settings' density (Sol).
+
+### Round 4 (November 9, 2026)
+
+Captures: `duo-captures/round-4` (run 42720538255). Scores: GPT-6.1 Sol 9, Claude Opus 5.5 8.5, Claude Fable 5.2 8.5. Fable asked for two reversals, both prototyped and put to Zach.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-5.html`:
+
+| Surface | Pick |
+|---|---|
+| Which thread, folded (Fable's reversal) | A, the name heads the conversation, quiet, and scrolls away; no bar |
+| Below the reply box (Fable's reversal) | As it is, a second time |
+| Folded sheets' right side | A, the Agents, pull request and New thread sheets run wide below the clock |
+| A running step's command | A, its own line under Running and the timer, a size larger at full strength |
+| Reading size sideways | A, a step larger |
+| Question choices' circles | A, a stronger ring |
+| Below a sheet sideways | B, a darker scrim, glows out behind it |
+| Tabs behind the keyboard | A, they step away |
+| Where a sidebar name wraps | A, it fills the first line |
+
+Fixed without a pick, each against a decision already made: the folded list's times are short ("2m"), as round 4's prototype said they were; a row waiting in a delegated thread reads Question and the computer; the Agents sheet names a model as the computer does and gives the finished check its room; the ••• card's words start at one edge; the pull request sheet's branch breaks after its slash.
+
+Held, each raised by one judge: Computers sideways (Fable), the New thread sheet's width sideways (Fable), the overview's empty lower half (Opus), the Settings theme grid (Fable).

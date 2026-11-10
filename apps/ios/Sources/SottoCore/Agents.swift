@@ -426,7 +426,7 @@ public enum AgentsRoster {
                 // An agent whose start was not reported goes by when it was last seen.
                 agentStart = started(entry.row)
             }
-            agentBlock.append(agentRow(entry.row, depth: entry.depth, quiet: quiet))
+            agentBlock.append(agentRow(entry.row, depth: entry.depth, quiet: quiet, models: models))
         }
         if !agentBlock.isEmpty { blocks.append(Block(start: agentStart, index: blocks.count, rows: agentBlock)) }
         let ordered = blocks.sorted { first, second in
@@ -533,7 +533,7 @@ public enum AgentsRoster {
                          elapsed: elapsed, status: status, tone: tone, waitingFor: waiting)
     }
 
-    static func agentRow(_ row: SubagentRow, depth: Int, quiet: Bool) -> AgentsRow {
+    static func agentRow(_ row: SubagentRow, depth: Int, quiet: Bool, models: [ThreadModel] = []) -> AgentsRow {
         let running = row.status == "running"
         let start = row.startedAt.flatMap { Stamp.date($0) }
         let end = (row.completedAt ?? row.lastObservedAt).flatMap { Stamp.date($0) }
@@ -552,7 +552,8 @@ public enum AgentsRoster {
                 : String(localized: "Agent task", bundle: .module, comment: "Stands in for a sub-agent's title when it has none"))
             : row.title
         let preview: String? = row.description.isEmpty || row.description == row.title ? nil : row.description
-        let model = row.model ?? ""
+        // The model by the name the computer gives it ("GPT-6.1 Sol"), or as reported when the computer lists no such model.
+        let model = row.model.map { id in models.first { $0.id == id }?.name ?? id } ?? ""
         var result = AgentsRow(id: "agent:" + row.id, kind: .agent, level: depth + 1, title: title, threadID: nil, agentID: row.id, providerID: nil,
                                delegatedBy: nil, preview: preview, facts: [model.isEmpty ? String(localized: "Model not reported", bundle: .module) : model],
                                startedAt: start, elapsed: elapsed, status: agentWord(row.status), tone: tone, waitingFor: nil)

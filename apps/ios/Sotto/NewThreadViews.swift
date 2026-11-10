@@ -16,6 +16,9 @@ struct NewThreadSheet: View {
     private enum Step: Equatable { case computer, project, folders, options }
     @State private var step = Step.computer
     @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
     /// Whether the last move went forward, so the next page slides in from the side it came from.
     @State private var forward = true
     @State private var presses = 0
@@ -40,12 +43,13 @@ struct NewThreadSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            header.padding(.trailing, foldedStrip)
             // On the Duo the bars and the page's own heading say where you are, so the step's words go to VoiceOver alone
             // and the footer that only repeated them goes (Zach's pick B, November 9, 2026).
             if duo != .none {
                 StepBar(filled: stepNumber)
                     .padding(.horizontal, Space.gutter)
+                    .padding(.trailing, foldedStrip)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(stepLabel)
             } else {
@@ -66,6 +70,7 @@ struct NewThreadSheet: View {
                 .clipped()
             footer
         }
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .foregroundStyle(Palette.ink)
         .background { NewThreadBackground() }
         .environment(\.sottoOnSheet, true)

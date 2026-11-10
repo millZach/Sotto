@@ -14,6 +14,9 @@ struct PullRequestSheet: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
     let ref: ThreadRef
     let url: String
     let number: Int
@@ -34,10 +37,11 @@ struct PullRequestSheet: View {
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                header
-                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy) }
+                header.padding(.trailing, foldedStrip)
+                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy).padding(.trailing, foldedStrip) }
                 content
             }
+            .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: Space.s2) {
@@ -46,6 +50,7 @@ struct PullRequestSheet: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.bottom, Space.s2)
+            .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
             // On the Duo the words fade out over a longer reach above Babysit, where a short one left half a line cut
             // off over the dock (Zach's pick C, November 9, 2026).
             .dockFade(reach: duo == .none ? Space.s4 : Space.s8) { SheetBackdrop(wash: false) }
@@ -289,7 +294,7 @@ private struct PullRequestBody: View {
             if !detail.headBranch.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.branch").iconFont(11, weight: .semibold).accessibilityHidden(true)
-                    BranchName(name: detail.headBranch)
+                    BranchName(name: detail.headBranch, wraps: duo != .none)
                     Text("into", comment: "Between two branch names, as in: feature-branch into main.")
                     BranchName(name: detail.baseBranch)
                 }
@@ -662,11 +667,15 @@ private struct StatePill: View {
 
 private struct BranchName: View {
     let name: String
+    /// On the Duo the head branch wraps after a slash, never at a hyphen, as the ••• card writes it, rather than being
+    /// cut in the middle of a word (round 5).
+    var wraps = false
     var body: some View {
-        Text(verbatim: name)
+        Text(verbatim: wraps ? ThreadMenu.breaksAtSlashes(name) : name)
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1).truncationMode(.middle)
+            .lineLimit(wraps ? 2 : 1).truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: wraps)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Palette.fillSoft, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
