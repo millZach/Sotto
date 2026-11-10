@@ -550,3 +550,81 @@ describe('idle compaction on Claude Code’s page (ADR-0127)', () => {
     expect(screen.queryByRole('switch', { name: 'Compact idle threads' })).not.toBeInTheDocument()
   })
 })
+
+describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+  const withProblem = (id: ProviderId, problem: 'signed-out' | 'not-installed' | 'too-old' | 'cannot-start', error: string): AgentState => {
+    const state = fixture()
+    state.configuration = { ...state.configuration, enabledProviders: [...new Set([...state.configuration.enabledProviders ?? [], id])] }
+    state.host.providers = state.host.providers!.map(provider => provider.id === id ? { ...provider, connection: 'error' as const, problem, error } : provider)
+    return state
+  }
+
+  it('says Not signed in in a word, keeps the client’s sentence for the opened row, and signs Codex in from a dialog', async () => {
+    const waiting = { id: '11111111-1111-4111-8111-111111111111', provider: 'codex' as const, shape: 'device-code' as const, stage: 'waiting' as const, code: 'WDJB-MJHTQ', page: 'auth.openai.com' }
+    const signIn = vi.fn(async (step: { type: string }) => step.type === 'cancel' ? null : waiting)
+    vi.stubGlobal('sotto', { providerSignIn: { signIn } })
+    const { command } = provide(withProblem('codex', 'signed-out', 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.'))
+    render(<ProvidersSettings />)
+    expect(within(screen.getByRole('button', { name: 'Codex' })).getByText('Not signed in')).toBeInTheDocument()
+    // The folded row names the problem and offers the way past it; the client's own sentence is not an alert under it.
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Codex' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Sign in to Codex on This computer' })
+    expect(signIn).toHaveBeenCalledWith({ type: 'start', provider: 'codex' })
+    expect(await within(dialog).findByText('WDJB-MJHTQ')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open sign-in page' }))
+    await waitFor(() => expect(signIn).toHaveBeenCalledWith({ type: 'open', signInId: waiting.id }))
+    // Cancel stops the sign-in, and Sotto checks the provider again.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(signIn).toHaveBeenCalledWith({ type: 'cancel', signInId: waiting.id }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'codex' }))
+    expect(within(openRow('Codex')).getByText('Could not connect Codex. Sign in to Codex on this machine, then connect it again.')).toBeInTheDocument()
+  })
+
+  it('offers no Sign in where Sotto cannot run the sign-in, and shows Devin’s command with Copy instead', async () => {
+    const deliverOutput = vi.fn(async () => 'copied' as const)
+    vi.stubGlobal('sotto', { providerSignIn: { signIn: vi.fn() }, deliverOutput })
+    provide(withProblem('devin', 'signed-out', 'Sign in to Devin.'))
+    render(<ProvidersSettings />)
+    expect(within(screen.getByRole('button', { name: 'Devin' })).getByText('Not signed in')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sign in to Devin' })).toBeNull()
+    const row = openRow('Devin')
+    expect(within(row).getByText('devin auth login')).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Copy Devin login command' }))
+    expect(await within(row).findByText('Devin login command copied.')).toBeInTheDocument()
+  })
+
+  it('offers Install guide for a provider that is not installed, and says the address when the browser does not open', async () => {
+    const openExternalLink = vi.fn(async () => ({ ok: true as const }))
+    vi.stubGlobal('sotto', { openExternalLink })
+    provide(withProblem('grok', 'not-installed', 'Grok Build was not found.'))
+    const view = render(<ProvidersSettings />)
+    expect(within(screen.getByRole('button', { name: 'Grok Build' })).getByText('Not installed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sign in to Grok Build' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open the Grok Build install guide' }))
+    await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith('https://docs.x.ai/build/overview'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    view.unmount()
+    vi.stubGlobal('sotto', { openExternalLink: vi.fn(async () => ({ ok: false as const })) })
+    render(<ProvidersSettings />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open the Grok Build install guide' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your browser did not open. Go to docs.x.ai/build/overview to install Grok Build.')
+  })
+
+  it.each([['too-old', 'Too old to use'], ['cannot-start', 'Can’t be started']] as const)('says %s in the same words for every provider', (problem, word) => {
+    provide(withProblem('claude', problem, 'Claude Code said something of its own.'))
+    render(<ProvidersSettings />)
+    expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText(word.replace('’', "'"))).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('still says Needs attention, with the client’s sentence under the row, for a problem Sotto has no word for', () => {
+    const state = fixture()
+    state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Claude Code stopped answering.' }
+    provide(state)
+    render(<ProvidersSettings />)
+    expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText('Needs attention')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Claude Code stopped answering.')
+  })
+})

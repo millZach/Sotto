@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ChevronRight, CircleArrowUp, RefreshCw } from 'lucide-react'
+import { ChevronRight, CircleArrowUp, ExternalLink, RefreshCw } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -19,10 +19,17 @@ import { OwnModelServers, useOwnServersBridge } from '../../agents/OwnModelServe
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { localHostId, localProviders } from '../onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
+import { signsInHere, type LocalSignInProvider, type LocalSignInRequest } from '../../../../shared/localProviderSignIn'
+import { HostProviderSignIn } from './HostProviderSignIn'
 import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from './settingsTarget'
 import { shownWords, type LaterWords } from '../../agents/interfaceWords'
 import { effortLabel } from '../../agents/EffortPicker'
 import './providers.css'
+
+/** A provider's problem in a word, the same for every provider (ADR-0200); undefined for one Sotto has no word for. */
+function problemWord(problem: string | undefined): string | undefined {
+  return problem === 'signed-out' ? t`Not signed in` : problem === 'not-installed' ? t`Not installed` : problem === 'too-old' ? t`Too old to use` : problem === 'cannot-start' ? t`Can't be started` : undefined
+}
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes' }
 
@@ -112,6 +119,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
   const [loginCopied, showLoginCopied] = useTransientFlag<'copied'>()
+  /** The provider whose Sign in dialog is open (ADR-0200): Codex, Claude Code or Grok Build, on this computer. */
+  const [signInFor, setSignInFor] = useState<LocalSignInProvider | null>(null)
   /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
   const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
   const inFlight = useRef(new Set<ProviderId>())
@@ -192,6 +201,34 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     try { await writeClipboard('muse login'); showLoginCopied('copied') }
     catch { setErrors(previous => ({ ...previous, muse: msg`The command could not be copied. Select muse login and copy it yourself.` })) }
     finally { setCopyingLogin(false) }
+  }
+  const copyDevinLogin = async (): Promise<void> => {
+    setCopyingLogin(true)
+    setErrors(previous => ({ ...previous, devin: undefined }))
+    try { await writeClipboard('devin auth login'); showLoginCopied('copied') }
+    catch { setErrors(previous => ({ ...previous, devin: msg`The command could not be copied. Select devin auth login and copy it yourself.` })) }
+    finally { setCopyingLogin(false) }
+  }
+  // A provider this computer does not have, or has too old, opens its maker's install page, as first-run setup did.
+  const openInstallGuide = async (provider: ProviderId): Promise<void> => {
+    const guide = PROVIDER_INSTALL_GUIDES[provider].replace(/^https:\/\//u, ''), providerName = PROVIDER_LABELS[provider]
+    const failed = msg({ message: `Your browser did not open. Go to ${guide} to install ${providerName}.`, comment: '{guide} is a web address; {providerName} is a provider\'s name.' })
+    setErrors(previous => ({ ...previous, [provider]: undefined }))
+    try {
+      const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES[provider])
+      if (!result?.ok) setErrors(previous => ({ ...previous, [provider]: failed }))
+    } catch { setErrors(previous => ({ ...previous, [provider]: failed })) }
+  }
+  // Closing Sign in checks the provider again when it did not connect, and gives focus back to its row.
+  const closeSignIn = (): void => {
+    const provider = signInFor
+    setSignInFor(null)
+    if (!provider) return
+    if (statusFor(provider).connection !== 'connected' && !inFlight.current.has(provider)) void perform(provider, 'refresh')
+    setTimeout(() => {
+      const focused = document.activeElement
+      if (focused === null || focused === document.body || !focused.isConnected) triggerOf(provider)?.focus()
+    }, 0)
   }
   const openMuseGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
@@ -278,6 +315,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     // checks are on, as first-run setup offers it. A copy too old to use is most likely in ~/.opencode/bin, where both
     // generations' install scripts put it and Sotto looks first, so only OpenCode 2's script replaces it.
     const problem = 'problem' in status ? status.problem : undefined
+    const named = status.connection === 'error' && problemWord(problem) !== undefined
     const requiredVersion = 'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'
     const openCodeInstall = provider !== 'opencode' || connected ? undefined
       : problem === 'not-installed' ? t`OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.`
@@ -297,6 +335,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
           <div>
             <h4>{t`Local connection`}</h4>
             <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'hermes' ? t`Full access on this Mac. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
+            {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyDevinLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Devin login command copied.` : ''}</span></div>}
+            {named && status.error && !errors[provider] ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
             {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyMuseLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Muse login command copied.` : ''}</span></div>}
           </div>
           <div className="provider-client__actions">{connectButtons}</div>
@@ -387,15 +427,22 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const connecting = status.connection === 'connecting' || pending[provider]
     // While a sign-in waits on cursor.com, Cursor's row says so, live as a connect is, and holds its switch.
     const signingIn = provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing && status.connection !== 'connected'
-    const signedOut = provider === 'cursor' && status.connection === 'error' && 'problem' in status && status.problem === 'signed-out'
+    // A problem Sotto knows says so in a word, the same word for every provider (ADR-0200); the client's own sentence is in the opened row.
+    const problem = status.connection === 'error' && 'problem' in status ? status.problem : undefined
+    const named = problemWord(problem)
     const statusLabel = signingIn ? t`Signing in…` : pending[provider] === 'disconnect' ? t`Disconnecting…` : pending[provider] === 'refresh' ? t`Refreshing…` : connecting ? t`Connecting…`
-      : status.connection === 'connected' ? t({ message: 'Connected', comment: 'A provider\'s status.' }) : signedOut ? t`Not signed in` : status.connection === 'error' ? t({ message: 'Needs attention', comment: 'A provider\'s status.' })
-      : active ? t({ message: 'Not connected', comment: 'A provider\'s status.' }) : t({ message: 'Disabled', comment: 'A provider\'s status: switched off.' })
+      : status.connection === 'connected' ? t({ message: 'Connected', comment: 'A provider\'s status.' }) : named ?? (status.connection === 'error' ? t({ message: 'Needs attention', comment: 'A provider\'s status.' })
+      : active ? t({ message: 'Not connected', comment: 'A provider\'s status.' }) : t({ message: 'Disabled', comment: 'A provider\'s status: switched off.' }))
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
     const version = update?.published ?? ''
-    const error = cursorExplains(provider, status) ? undefined : errors[provider] ?? status.error
+    // Cursor's row keeps its own design (ADR-0128): its sentence under the header, and its guide in the opened row.
+    const plain = named !== undefined && provider !== 'cursor'
+    const error = cursorExplains(provider, status) ? undefined : errors[provider] ?? (plain ? undefined : status.error)
     const id = `${rowId}-${provider}`
+    // Sign in runs the client's own sign-in in a dialog (ADR-0200); Cursor signs in from its opened row (ADR-0128).
+    const signInHere = problem === 'signed-out' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
+    const installGuide = plain && (problem === 'not-installed' || problem === 'too-old') && !connecting
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
     const closeOnEscape = (event: KeyboardEvent<HTMLLIElement>): void => {
       if (event.key !== 'Escape' || !isOpen || event.defaultPrevented) return
@@ -422,6 +469,10 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
           ? <button type="button" className="provider-row__update tt-focusable" aria-label={providerUpdating ? t`Updating ${label} to ${version}` : t`Update ${label} to ${version}`}
             disabled={providerUpdating || Boolean(connecting) || updating || checkingUpdates} onClick={() => void runUpdate(provider)}>
             <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? t`Waiting to update` : t`Updating…` : t`Update to ${version}`}</button>
+          : signInHere ? <Button variant="secondary" className="provider-row__act" aria-label={t({ message: `Sign in to ${label}`, comment: '{label} is a provider\'s name.' })}
+            onClick={() => { setErrors(previous => ({ ...previous, [provider]: undefined })); if (signsInHere(provider)) setSignInFor(provider) }}>{t`Sign in`}</Button>
+          : installGuide ? <Button variant="ghost" className="provider-row__act" aria-label={t({ message: `Open the ${label} install guide`, comment: '{label} is a provider\'s name.' })}
+            onClick={() => void openInstallGuide(provider)}><ExternalLink size={14} aria-hidden="true" />{t`Install guide`}</Button>
           : <span className="provider-row__update-slot" />}
         <Toggle label={t({ message: `Enable ${label}`, comment: '{label} is a provider\'s name.' })} checked={active} disabled={signingIn || Boolean(connecting) || providerUpdating} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
       </div>
@@ -433,6 +484,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   return <div className="providers-settings">
     {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
+    {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
+      signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}
     <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
     <p className="providers-note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
     <div className="providers-updates">

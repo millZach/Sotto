@@ -1419,6 +1419,7 @@ msgid "Can you make the settings page shorter?"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Can't be started"
 msgstr ""
 
@@ -2098,6 +2099,10 @@ msgid "Copy command"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Copy Devin login command"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy Muse login command"
 msgstr ""
 
@@ -2320,6 +2325,10 @@ msgstr ""
 #. The field that picks the machine to add as a host.
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Device"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Devin login command copied."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -3118,6 +3127,10 @@ msgid "Install Devin CLI and run devin auth login before connecting."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Install guide"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Installation steps"
 msgstr ""
 
@@ -3906,6 +3919,7 @@ msgid "Not connected"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not installed"
 msgstr ""
 
@@ -4179,6 +4193,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Open System Settings"
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Open the {label} install guide"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -5451,11 +5470,17 @@ msgstr ""
 #. A step of adding a host: signing in to it over SSH.
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sign in"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sign in on {host} with:"
+msgstr ""
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sign in to {label}"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -6337,6 +6362,10 @@ msgstr ""
 msgid "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The command could not be copied. Select devin auth login and copy it yourself."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -6744,7 +6773,9 @@ msgstr ""
 msgid "this computer"
 msgstr ""
 
+#. The computer Sotto runs on, named where a paired host would be.
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
 msgstr ""
@@ -6899,6 +6930,7 @@ msgid "Too many copies of \"{name}\"."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Too old to use"
 msgstr ""
 
@@ -7764,6 +7796,11 @@ msgstr ""
 #. Stands in for the name of the user's account on a host, as in "a systemd user unit for {who}".
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "your account"
+msgstr ""
+
+#. {guide} is a web address; {providerName} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Your browser did not open. Go to {guide} to install {providerName}."
 msgstr ""
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx

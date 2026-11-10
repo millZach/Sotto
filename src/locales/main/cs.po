@@ -1287,6 +1287,10 @@ msgstr "Zobrazit Sotto"
 msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
 msgstr ""
 
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "Sign a provider in from the main Sotto window."
+msgstr ""
+
 #: src/main/agents/cursorSignInIpc.ts
 msgid "Sign Cursor in from the main Sotto window."
 msgstr ""
@@ -1775,6 +1779,10 @@ msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "That row has nothing to do now. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "That sign-in is not available right now. Nothing was changed."
 msgstr ""
 
 #: src/main/themes/ipc.ts
@@ -2479,6 +2487,7 @@ msgstr ""
 msgid "The sign-in page could not be opened from this window. Nothing was changed."
 msgstr ""
 
+#: src/main/agents/localProviderSignIn.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr ""
@@ -3099,6 +3108,7 @@ msgstr ""
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr ""
 
+#: src/main/agents/localProviderSignIn.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
 msgstr ""

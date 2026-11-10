@@ -27,6 +27,9 @@ import { CursorAcpHost } from './cursor'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
+import { LocalProviderSignIn } from './localProviderSignIn'
+import type { SignInCommand } from '../../host/providerSignIn'
+import type { LocalSignInProvider } from '../../shared/localProviderSignIn'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { openCodeForOwnServers } from '../ownModelServers/openCode'
 import { HeldProviderHost } from './heldProviderGate'
@@ -222,6 +225,8 @@ export interface AgentRuntimeOptions {
   historyEnabled: () => boolean
   observeActiveThread?: boolean
   openExternal: (url: string) => Promise<unknown>
+  /** How this computer's own provider sign-ins find their clients (ADR-0200); the adapters' own lookup by default. An end-to-end run finds none, so no test starts a real client's sign-in. */
+  signInCommand?: (provider: LocalSignInProvider) => Promise<SignInCommand | undefined>
   openThreadFolder?: ControlDependencies['openThreadFolder']
   authority?: ControlDependencies['authority']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
@@ -932,6 +937,17 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     },
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
+  // Signing Codex, Claude Code or Grok Build in from its row on this computer (ADR-0200); a headless host's are signed
+  // in by a desktop through the provider sign-in request instead (ADR-0037).
+  const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
+    openExternal: async url => { await options.openExternal(url) },
+    ...(options.signInCommand ? { command: options.signInCommand } : {}),
+    connect: async provider => {
+      const state = await agentControl.command({ type: 'connect', provider })
+      const status = state.host.providers?.find(item => item.id === provider)
+      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+    },
+  }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

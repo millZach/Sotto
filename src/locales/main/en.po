@@ -1288,6 +1288,10 @@ msgstr "Show Sotto"
 msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
 msgstr "Showing linked files is not part of this version of Sotto. Nothing was opened."
 
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "Sign a provider in from the main Sotto window."
+msgstr "Sign a provider in from the main Sotto window."
+
 #: src/main/agents/cursorSignInIpc.ts
 msgid "Sign Cursor in from the main Sotto window."
 msgstr "Sign Cursor in from the main Sotto window."
@@ -1777,6 +1781,10 @@ msgstr "That round has no kept evidence to export."
 #: src/main/council/councilService.ts
 msgid "That row has nothing to do now. Nothing was changed."
 msgstr "That row has nothing to do now. Nothing was changed."
+
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "That sign-in is not available right now. Nothing was changed."
+msgstr "That sign-in is not available right now. Nothing was changed."
 
 #: src/main/themes/ipc.ts
 msgid "That theme could not be exported."
@@ -2480,6 +2488,7 @@ msgstr "The shell did not save the owl’s place on the bar. Sotto restored the 
 msgid "The sign-in page could not be opened from this window. Nothing was changed."
 msgstr "The sign-in page could not be opened from this window. Nothing was changed."
 
+#: src/main/agents/localProviderSignIn.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
@@ -3100,6 +3109,7 @@ msgstr "This result belongs to an earlier connection. Nothing was saved. Refresh
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr "This result belongs to an earlier connection. Refresh the host."
 
+#: src/main/agents/localProviderSignIn.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
 msgstr "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
