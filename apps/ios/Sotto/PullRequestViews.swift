@@ -35,6 +35,10 @@ struct PullRequestSheet: View {
     @State private var jumping = false
     /// The pull request's scroll view's height, for landing a folded jump below the clock.
     @State private var viewport: CGFloat = 0
+    /// Folded, whether the page has scrolled from its top, which brings in the fade under the chips' line.
+    @State private var scrolled = false
+    /// Folded, how far under the chips' line a jump lands a part's top, so its heading and count clear the clock.
+    private static let foldedLanding: CGFloat = Space.s6 + Space.s1
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -133,7 +137,7 @@ struct PullRequestSheet: View {
         // step lower: what stands beside the clock keeps clear of the strip (Zach's round 5 pick A, November 9, 2026).
         // scrollTo lines up the anchor's point on the target with the same point on the scroll view; the target is a
         // mark with no height at the part's top, so that top lands `lift` of the scroll view's height below its top.
-        let lift: CGFloat = isFolded && viewport > 0 ? (Space.s6 + Space.s1) / viewport : 0
+        let lift: CGFloat = isFolded && viewport > 0 ? Self.foldedLanding / viewport : 0
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0, y: lift)) }
         Task { try? await Task.sleep(nanoseconds: 450_000_000); jumping = false }
     }
@@ -159,8 +163,26 @@ struct PullRequestSheet: View {
                     .padding(.horizontal, Space.s4)
                     .padding(.top, Space.s4)
                     .padding(.bottom, Space.s8)
+                    .onGeometryChange(for: Bool.self, of: { $0.frame(in: .named(PullRequestBody.space)).minY < -1 }) { scrolled = $0 }
             }
             .coordinateSpace(.named(PullRequestBody.space))
+            .overlay(alignment: .top) {
+                // Folded, a jump lands a part's top in the band under the chips' line, where the foot of the part
+                // before it showed. Once the page has scrolled, the sheet's fill covers that band and fades out at its
+                // foot, so a jump shows only the part it went to (the Duo design climb's round 6).
+                if isFolded {
+                    SheetBackdrop(wash: false)
+                        .mask {
+                            LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.6), .init(color: .clear, location: 1)],
+                                           startPoint: .top, endPoint: .bottom)
+                        }
+                        .frame(height: Self.foldedLanding)
+                        .opacity(scrolled ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: scrolled)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             .background {
                 GeometryReader { box in
                     Color.clear
