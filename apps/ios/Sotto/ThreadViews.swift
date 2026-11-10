@@ -488,6 +488,9 @@ private final class FollowBox {
     var followRequests = 0
     /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
     var endInPage: CGFloat = 0
+    /// How far the page's end sits under the reply box's top, as the scroll view says on iOS 18; nil on iOS 17. Kept so
+    /// that a move of the box alone, such as the keyboard opening, puts `sentinel` where the end now is.
+    var endUnderBox: CGFloat?
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -642,6 +645,9 @@ private struct Conversation: View {
     @Environment(\.duoLayout) private var duo
     private static let end = "thread-end"
     private static let pageSpace = "thread-page"
+    /// Where iOS 18 can say, the end is read from the scroll view itself (`onEndUnderBox`), not from where the end marker
+    /// is laid out.
+    private static let scrollReadsEnd: Bool = { if #available(iOS 18.0, *) { return true } else { return false } }()
     #if DEBUG
     /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
     private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
@@ -662,6 +668,12 @@ private struct Conversation: View {
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
+            .onEndUnderBox { underBox, pageHeight in
+                follow.endUnderBox = underBox
+                // Until the box is placed there is nothing to measure against. Its first place reads this then.
+                guard follow.dockTop < .greatestFiniteMagnitude / 2 else { follow.endInPage = pageHeight; return }
+                endMoved(follow.dockTop + underBox, inPage: pageHeight, proxy)
+            }
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
@@ -879,12 +891,19 @@ private struct Conversation: View {
         }
     }
 
-    /// The end of the conversation.
+    /// The end of the conversation, as iOS 17 reads it: where the end marker is laid out. iOS 18 reads the scroll view
+    /// instead, because the marker's place can be wrong. On the large iPhone it said the screen's bottom. The page was
+    /// resting against the reply box, 160 points higher. Following used to scroll 16 points, and that laid the marker out
+    /// again. Since the page ends at the marker (#2301), following has nothing to scroll, so the wrong place stayed.
     private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onAppear {
+                    guard !Self.scrollReadsEnd else { return }
+                    endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
                 .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    guard !Self.scrollReadsEnd else { return }
                     endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
                 }
         }
@@ -927,6 +946,7 @@ private struct Conversation: View {
     private func dockMoved(_ top: CGFloat, _ scroll: ScrollViewProxy) {
         let wasAtBottom = follow.atBottom
         follow.dockTop = top
+        if let under = follow.endUnderBox { follow.sentinel = top + under }
         updateVisible()
         if wasAtBottom { toBottom(scroll) } else { follow.settle() }
     }
@@ -992,6 +1012,29 @@ extension View {
             self
         }
     }
+
+    /// Says, from the scroll view, how far the page's end sits under the reply box's top, and how tall the page is. The
+    /// distance is positive under the box, negative above it and zero when the page rests against it, because the box's
+    /// room is the scroll view's bottom inset. A long page ends at its end marker. A short one ends below it, at the box.
+    /// iOS 17 can't say, so there the end marker's own place is read instead.
+    @ViewBuilder func onEndUnderBox(_ moved: @escaping (_ underBox: CGFloat, _ pageHeight: CGFloat) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollGeometryChange(for: ScrolledEnd.self) { geometry in
+                let shownBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+                return ScrolledEnd(underBox: geometry.contentSize.height - shownBottom, pageHeight: geometry.contentSize.height)
+            } action: { _, end in
+                moved(end.underBox, end.pageHeight)
+            }
+        } else {
+            self
+        }
+    }
+}
+
+/// How far the page's end sits under the reply box's top, and how tall the page is, for `onEndUnderBox`.
+private struct ScrolledEnd: Equatable {
+    let underBox: CGFloat
+    let pageHeight: CGFloat
 }
 
 // MARK: - Title block
