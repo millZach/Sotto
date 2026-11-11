@@ -85,11 +85,6 @@ msgstr "{0, plural, one {Show {label} models, # model} other {Show {label} model
 msgid "{0, plural, other {# needs you}}"
 msgstr "{0, plural, other {# needs you}}"
 
-#. placeholder {0}: catalogue.length
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "{0} APIs"
-msgstr "{0} APIs"
-
 #. placeholder {0}: model.context.toLocaleString()
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "{0} context"
@@ -7443,6 +7438,11 @@ msgstr "Screenshot files"
 #: src/renderer/src/agents/browserLine.ts
 msgid "scrolled the page"
 msgstr "scrolled the page"
+
+#. placeholder {0}: catalogue.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Search {0} APIs"
+msgstr "Search {0} APIs"
 
 #. {label} is a provider's name.
 #: src/renderer/src/agents/ProviderModelList.tsx

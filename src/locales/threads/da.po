@@ -85,11 +85,6 @@ msgstr ""
 msgid "{0, plural, other {# needs you}}"
 msgstr ""
 
-#. placeholder {0}: catalogue.length
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "{0} APIs"
-msgstr ""
-
 #. placeholder {0}: model.context.toLocaleString()
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "{0} context"
@@ -7442,6 +7437,11 @@ msgstr ""
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "scrolled the page"
+msgstr ""
+
+#. placeholder {0}: catalogue.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Search {0} APIs"
 msgstr ""
 
 #. {label} is a provider's name.
