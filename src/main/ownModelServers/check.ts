@@ -247,6 +247,14 @@ export async function checkOwnServer(typed: string, key: string | undefined, opt
   const ask = asker(trimmed || undefined, options, overall)
   const started = now()
   let answer: unknown
+  // OpenRouter's inventory is public. Its current-key route validates authentication without an inference request.
+  const url = new URL(place.address)
+  if (url.hostname === 'openrouter.ai' && url.pathname === '/api/v1') {
+    try { await ask.json('GET', `${place.address}/key`) } catch (error) {
+      if (error instanceof Answered && (error.status === 401 || error.status === 403)) return refused(trimmed ? 'key-refused' : 'key-needed', place.host)
+      return refused(error instanceof Answered ? 'not-openai' : 'unreachable', place.host)
+    }
+  }
   try { answer = await ask.json('GET', `${place.address}/models`) } catch (error) {
     if (error instanceof Answered) {
       if (error.status === 401 || error.status === 403) return refused(trimmed ? 'key-refused' : 'key-needed', place.host)

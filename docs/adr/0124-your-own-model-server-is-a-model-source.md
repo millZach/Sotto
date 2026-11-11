@@ -185,3 +185,10 @@ on a tie. This supplements ADR-0087's model-variant rules.
 The build fixes two prototype mistakes: the four-model list has no search or
 filters, and compact rows let more than two models fit at 820 by 560. The provider
 answer wins for prices and both limits even when the catalogue disagrees.
+
+
+OpenRouter's model list is public, so its key is checked first through its
+[current-key route](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key)
+(`GET /api/v1/key` at the chosen OpenRouter address). The answer is discarded;
+no inference is sent, and an unauthenticated key never reaches either keeper.
+Other APIs are checked through their own model-list authentication.

@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { checkOwnServer, serverRoot } from '../../../../src/main/ownModelServers/check'
 import { OWN_SERVER_WORDS, type CheckResult } from '../../../../src/shared/ownModelServers'
 
@@ -246,4 +247,21 @@ describe('what each kind of server says about its models', () => {
     expect(serverRoot('https://proxy.example.com/ollama/v1')).toBe('https://proxy.example.com/ollama')
     expect(serverRoot('http://localhost:8000/openai')).toBe('http://localhost:8000/openai')
   })
+})
+
+
+it('validates OpenRouter against its current-key route before trusting the public model list', async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('{}', { status: 401 }))
+  const result = await checkOwnServer('https://openrouter.ai/api/v1', randomUUID(), { fetch: request })
+  expect(result).toMatchObject({ status: 'refused', reason: 'key-refused' })
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(request.mock.calls[0]![0]).toBe('https://openrouter.ai/api/v1/key')
+})
+
+it('reads OpenRouter inventory only after its current-key check succeeds', async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('{"data":{}}')).mockResolvedValueOnce(new Response(JSON.stringify({ data: [
+    { id: 'example/model', context_length: 128000, supported_parameters: ['tools'] },
+  ] })))
+  expect(await checkOwnServer('https://openrouter.ai/api/v1', randomUUID(), { fetch: request })).toMatchObject({ status: 'ok' })
+  expect(request.mock.calls.map(call => call[0])).toEqual(['https://openrouter.ai/api/v1/key', 'https://openrouter.ai/api/v1/models'])
 })
