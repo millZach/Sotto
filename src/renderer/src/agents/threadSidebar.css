@@ -397,18 +397,21 @@
 .thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
 /* The current row's selection is a tint, so its amber takes the on-tint tone. */
 .thread-nav__row[data-current] :is(.thread-nav__branch[data-working-copy-state='error'], .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected]) { color: var(--tt-warning-on-tint); }
-/* The row's shortcuts stand at the second line's end in the clock's place. Reserve room for the buttons present
-   while they show, so the words end before them and a group's project name gives way before its status. */
+/* The row's shortcuts stand at the second line's end in the clock's place. While they show, the clock gives its column
+   up and the words keep clear of the buttons present and no more: the buttons stand 2px from the row's edge and the line
+   ends 18px from it (the row's padding and the column gap), so the line keeps the buttons' width less 10px, which leaves
+   it 6px of air before them. What the thread is doing and Watcher's owl leave the line meanwhile (below, in the narrow
+   sidebar), so the project and its computer keep the room (Zach's pick B2, November 11, 2026). */
 .thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 1px; right: 2px; padding-right: 0; opacity: 0; pointer-events: none; }
 .thread-nav .thread-nav__row--details .thread-nav__action { width: 24px; height: 24px; min-height: 24px; }
 /* They show under the pointer and with the keyboard's focus, not for the focus a click leaves behind, so the row just
    pressed reads as quietly as the rest once the pointer moves on. */
 .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
-.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: hidden; }
+.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { display: none; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(2)) { --thread-row-actions-width: 52px; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(3)) { --thread-row-actions-width: 78px; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(4)) { --thread-row-actions-width: 104px; }
-.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: var(--thread-row-actions-width, 26px); }
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: calc(var(--thread-row-actions-width, 26px) - 10px); }
 .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__branch { padding-right: 104px; }
 /* A resting row steps back to one line (Zach's pick C, ADR-0135, November 5, 2026): its name and, at the line's end, its
    time in the muted ink, with no ring, no mark and no word, so what is moving or waiting stands out down a long list. The
@@ -528,11 +531,15 @@
 @container thread-sidebar (max-width: 339px) {
   .thread-folder__toggle .host-badge { padding-inline: 5px; }
   .thread-folder__toggle .host-badge__name { display: none; }
+  /* Here the shortcuts share the words' line, so pointed at or reached by the keys, the row's word and Watcher's owl make
+     way for them. The pressed owl among the shortcuts still says Watcher is on it, and the word stays in the row's
+     description (Zach's pick B2, November 11, 2026). */
+  .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing > :is(.thread-nav__status, .watched-badge) { display: none; }
 }
 @container thread-sidebar (min-width: 340px) {
   .thread-nav__branch { display: flex; }
   /* Here the shortcuts have the branch's line, so the clock and the words keep theirs. */
-  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: visible; }
+  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { display: block; }
   .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 0; }
 }
 @container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
@@ -560,7 +567,10 @@
 .thread-nav .thread-group .thread-folder__toggle:hover { color: var(--tt-text); }
 .thread-nav .thread-group .thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: visible; }
 .thread-group { margin-bottom: 8px; }
-/* In a group, a row's words lead with its project, then a remote computer's badge, then what it is doing at the end. */
+/* In a group, a row's words lead with its project, then a remote computer's badge, then what it is doing at the end. The
+   badge is the computer's symbol, its name in the badge's tooltip and the row's description, so the project keeps the
+   room ("just use the symbol for forge", Zach, November 11, 2026). */
 .thread-nav__place { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.thread-nav__standing[data-placed] .host-badge { flex: 0 1 auto; }
+.thread-nav__standing[data-placed] .host-badge { flex: none; padding-inline: 5px; }
+.thread-nav__standing[data-placed] .host-badge__name { display: none; }
 .thread-nav__standing[data-placed] > .thread-nav__status { margin-left: auto; flex: none; }

@@ -171,7 +171,7 @@ for (const theme of DESIGN_CAPTURE_WIDGET_THEMES) {
 }
 
 for (const theme of DESIGN_CAPTURE_APP_THEMES) {
-  for (const state of ['split-workspace', 'split-focus-820', 'files-unavailable', 'new-thread-chooser']) {
+  for (const state of ['row-pointed-at', 'split-workspace', 'split-focus-820', 'files-unavailable', 'new-thread-chooser']) {
     add({ id: `threads-${state}-${theme}`, category: 'threads', state, theme })
   }
 }
