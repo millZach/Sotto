@@ -2578,10 +2578,11 @@ it('refuses a GO MERGE while another train pull request runs its required checks
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on dddddddddddd, its newest commit whose checks have finished; eeeeeeeeeeee, after it, has none finished yet.') })
   base = { branch: base.branch, head: base.head, state: 'passed' }
+  // The receipt names the commit it read (#2431): here #5's overridden send below says main passed on its newest commit.
   const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
   const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
   const sent = await f.call('send_to_thread', call)
-  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has its required checks running.'], overrideReason: reason } })
+  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has its required checks running.'], overrideReason: reason, note: 'main’s checks passed on its newest commit, dddddddddddd.' } })
   if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('refused')
   // A retry answers as the send did, and the room carries the reason for its receipt card.
   expect(await f.call('send_to_thread', call)).toEqual(sent)

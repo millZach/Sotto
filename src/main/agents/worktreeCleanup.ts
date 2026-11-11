@@ -483,9 +483,9 @@ const ROLLUP: Readonly<Record<string, BaseBranchChecks['state']>> = { SUCCESS: '
 type ChainCommit = { readonly oid?: unknown; readonly statusCheckRollup?: { readonly state?: unknown } | null; readonly parents?: { readonly nodes?: readonly ChainCommit[] } | null }
 /**
  * What GitHub's answer to BASE_BRANCH_CHECKS says of the base branch (#2229, #2431): its newest commit's checks when they
- * have finished, else those of the newest commit along its first parents whose checks have, which is how main last stood.
- * One that failed is a red branch, named by that commit, with the newest beside it; one that passed leaves the newest
- * pending. No finished checks in the commits read is unknown. Throws when the answer names no base branch.
+ * have finished, else those of the newest commit along its first parents whose checks have, which is how main last stood,
+ * named by that commit with the newest beside it. No finished checks in the commits read is unknown, whatever the newest
+ * says. Throws when the answer names no base branch.
  */
 export function baseBranchChecksOf(answer: unknown): BaseBranchChecks {
   const pr = (answer as { data?: { repository?: { pullRequest?: { baseRefName?: unknown; baseRef?: { target?: ChainCommit | null } | null } } } })?.data?.repository?.pullRequest
@@ -497,10 +497,9 @@ export function baseBranchChecksOf(answer: unknown): BaseBranchChecks {
   for (let commit = newest.parents?.nodes?.[0], read = 1; commit && read < BASE_BRANCH_COMMITS_READ; commit = commit.parents?.nodes?.[0], read++) {
     if (typeof commit.oid !== 'string') break
     const state = stateOf(commit)
-    if (state === 'failed') return { branch, head: commit.oid, state, newest: newest.oid }
-    if (state === 'passed') return { branch, head: newest.oid, state: 'pending' }
+    if (state === 'passed' || state === 'failed') return { branch, head: commit.oid, state, newest: newest.oid }
   }
-  return { branch, head: newest.oid, state: first }
+  return { branch, head: newest.oid, state: 'unknown' }
 }
 /**
  * The checks of the branch a pull request merges into, by the pull request's github.com URL (#2229), as `baseBranchChecksOf`

@@ -5387,12 +5387,16 @@ ${operation.draftId}`)
    */
   private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => MergeTurnChecked> {
     const ask = this.options.baseBranchChecks
-    let base: BaseBranchChecks | undefined, unread: string | undefined
+    let base: BaseBranchChecks | undefined, baseNote: string | undefined
     if (ask) {
       try {
         base = await ask(goMerge.pullRequest)
-        if (base.state === 'unknown') unread = `Sotto found no finished checks on ${base.branch}’s newest ${BASE_BRANCH_COMMITS_READ} commits, so they held nothing.`
-      } catch { unread = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
+        // The receipt names the commit it read (#2431); a failure is said in what held the send instead.
+        if (base.state === 'unknown') baseNote = `Sotto found no finished checks on ${base.branch}’s newest ${BASE_BRANCH_COMMITS_READ} commits, so they held nothing.`
+        else if (base.state === 'passed') baseNote = base.newest === undefined ? `${base.branch}’s checks passed on its newest commit, ${base.head.slice(0, 12)}.`
+          : `${base.branch}’s checks last passed on ${base.head.slice(0, 12)}; ${base.newest.slice(0, 12)}, after it, has none finished yet.`
+        else if (base.state === 'pending') baseNote = `${base.branch}’s checks are still running on its newest commit, ${base.head.slice(0, 12)}, so they held nothing.`
+      } catch { baseNote = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
     }
     return () => {
       const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
@@ -5403,7 +5407,7 @@ ${operation.draftId}`)
         ...holds.running.map(item => `${name(item)} has its required checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
-      const note = [unread, outside].filter(Boolean).join(' ') || undefined
+      const note = [baseNote, outside].filter(Boolean).join(' ') || undefined
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
         refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)

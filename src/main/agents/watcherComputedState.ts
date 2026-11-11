@@ -59,8 +59,8 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
 export const BASE_BRANCH_COMMITS_READ = 10
 /**
  * The checks of the branch a pull request merges into, as GitHub reports them when a GO MERGE asks: those of `head`, its
- * newest commit, or, when that has no finished checks yet and an older one along its first parents failed, that older
- * commit's, with the newest as `newest` (#2431). Unknown when none of the commits read has finished checks.
+ * newest commit, or, when that has no finished checks yet, those of the newest commit along its first parents that has,
+ * with the newest as `newest` (#2431). Unknown when none of the commits read has finished checks.
  */
 export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown'; readonly newest?: string }
 

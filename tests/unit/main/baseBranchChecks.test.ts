@@ -20,10 +20,10 @@ it('reads main by its newest finished checks, naming the commit that failed besi
   expect(baseBranchChecksOf(answer(['SUCCESS', 'FAILURE']))).toEqual({ branch: 'main', head: newest, state: 'passed' })
   // November 10, 2026: three merges in a row whose runs had not started, after one that failed. Main is red.
   expect(baseBranchChecksOf(answer(['PENDING', null, null, 'ERROR', 'SUCCESS']))).toEqual({ branch: 'main', head: '3'.repeat(40), state: 'failed', newest })
-  // After one that passed, it waits on the newest run and holds nothing.
-  expect(baseBranchChecksOf(answer([null, null, 'SUCCESS', 'FAILURE']))).toEqual({ branch: 'main', head: newest, state: 'pending' })
-  // No finished checks in the commits read says so, and so does a branch with no checks at all.
-  expect(baseBranchChecksOf(answer(['PENDING', null, null]))).toEqual({ branch: 'main', head: newest, state: 'pending' })
+  // After one that passed, it names that one, and holds nothing.
+  expect(baseBranchChecksOf(answer([null, null, 'SUCCESS', 'FAILURE']))).toEqual({ branch: 'main', head: '2'.repeat(40), state: 'passed', newest })
+  // No finished checks in the commits read is unknown, even with the newest running.
+  expect(baseBranchChecksOf(answer(['PENDING', null, null]))).toEqual({ branch: 'main', head: newest, state: 'unknown' })
   expect(baseBranchChecksOf(answer([null, null]))).toEqual({ branch: 'main', head: newest, state: 'unknown' })
   expect(() => baseBranchChecksOf({ data: { repository: { pullRequest: null } } })).toThrow('did not describe the base branch')
 })
