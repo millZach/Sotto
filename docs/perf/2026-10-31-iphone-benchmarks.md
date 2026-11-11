@@ -82,8 +82,9 @@ Then:
    In the idle phases the driver stops its own display link and its report's half-second timer, which would wake the
    app's main thread at every refresh, and counts the main run loop's wake-ups instead. The display link ticks at every
    refresh whether anything was drawn or not, so it cannot count frames drawn; a frame the app commits needs its main
-   thread awake, so the wake-ups bound them. The background wash and a working card's breathing dot, glow and streak are
-   Core Animation loops, which the render server draws without waking the app, so the next step measures them apart.
+   thread awake, so the wake-ups bound them. The background wash and a working row's breathing light are Core Animation
+   loops, which the render server draws without waking the app, so the next step measures them apart. So are a working
+   card's glow and runner, which only the unfolded Duo shows and no benchmark opens.
 3. **The idle phases with the loops running and stopped**, in a short journey of their own from a cold launch
    (`--bench-journey idle`: `settle-others`, `idle-list`, `open`, `end-turn`, `idle-thread`), three times as the app
    runs and three times with `--ui-still`, which stops every looping animation, taking turns. The difference is what

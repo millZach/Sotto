@@ -31,18 +31,21 @@ frame the app commits needs its main thread awake, so the wake-ups bound the fra
 
 ## What the loops cost
 
-The background wash and a working card's breathing dot, glow and streak are Core Animation loops (`LoopingView` in
+The background wash and a working thread's breathing light are Core Animation loops (`LoopingView` in
 `apps/ios/Sotto/Design.swift`). The render server draws them without waking the app, so the idle phases' own numbers
 cannot tell them apart from the rest. So the benchmarks walk the two idle phases again in a short journey of their own
 from a cold launch (`--bench-journey idle`), three times as the app runs and three times with `--ui-still`, which stops
 every looping animation, taking turns so a runner that slows down weighs on both alike. The difference is what the loops
 cost the app:
 
-- On the list, `idle-list.loops.app_cpu` is the wash and one working card.
+- On the list, `idle-list.loops.app_cpu` is the wash and one working row's breathing light.
 - On the thread, `idle-thread.loops.app_cpu` is the wash alone, as a thread that has stopped shows no working loops.
-- The first less the second is about what one working card's loops cost.
+- The first less the second is about what one breathing light costs.
 
-A working card's one-second clock (`ElapsedText`) is not a loop: it runs in both, so it falls out of the difference.
+The benchmarks run on an iPhone 16 Pro Max held upright, where the list shows a working thread as a row with that light
+(`ThreadListRow` in `apps/ios/Sotto/Views.swift`). The working card, with its glow, its runner along the bottom and its
+one-second clock (`WorkingCard` in `TabViews.swift`), is drawn only in the unfolded Duo's columns, which no benchmark
+opens: what its loops cost is not measured here.
 `<idle>.loops.spread` is how far the three runs on either side went apart on their own; a difference smaller than that
 is the runner's, not the loops'.
 
@@ -147,11 +150,11 @@ Owed with the baseline. A share of one core is the CPU time over the phase's 30,
 - **At rest on the list**, with one thread working, the app spent … ms of CPU in 30 seconds (…% of one core), its main
   thread woke … times a second, and … view bodies ran.
 - **At rest on a thread that has stopped**, … ms (…% of one core), … wake-ups a second, … view bodies.
-- **The loops** cost the app … ms of the list's 30 seconds (the wash and one working card) and … ms of the thread's (the
+- **The loops** cost the app … ms of the list's 30 seconds (the wash and one row's breathing light) and … ms of the thread's (the
   wash alone), against runs … ms and … ms apart on their own. Then one of:
   - Each share is inside its spread: the loops cost the app nothing the benchmark can tell from the runner, and they stay
     as they are.
-  - A share is past its spread: the [wash / working card's loops] cost the app …% of one core while the page sits still,
+  - A share is past its spread: the [wash / breathing light] cost the app …% of one core while the page sits still,
     which is enough to change, and an issue holds the number.
 
   What they cost the render server is not measured: the app cannot read it, and Instruments on a real iPhone would.
