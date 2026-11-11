@@ -2927,6 +2927,10 @@ msgid "Get started"
 msgstr "Get started"
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Get Tailscale"
+msgstr "Get Tailscale"
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Get the iPhone beta"
 msgstr "Get the iPhone beta"
 
@@ -4977,6 +4981,14 @@ msgstr "Phone access could not be saved. Nothing was changed. Try again."
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
 msgstr "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on."
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Pick light or dark and a theme. The window and the owl follow your choice."
