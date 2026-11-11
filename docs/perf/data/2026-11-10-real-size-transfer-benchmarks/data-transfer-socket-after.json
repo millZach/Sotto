@@ -1,0 +1,1431 @@
+{
+ "track": "owl",
+ "long": true,
+ "accepts": {
+  "desktop": [
+   "client-liveness",
+   "detail-delta",
+   "message-aliases",
+   "answer-receipts",
+   "model-catalog-revision",
+   "activity-bodies",
+   "changed-thread-records",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "watcher-reads"
+  ],
+  "phone": [
+   "detail-delta",
+   "client-liveness",
+   "activity-summaries",
+   "model-catalog-revision",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "changed-thread-records",
+   "reply-thread-records",
+   "provider-mode-lists",
+   "settled-threads-on-request",
+   "usable-models",
+   "command-changed-thread-records",
+   "step-window",
+   "watcher-phone",
+   "watcher-phone-stop-all",
+   "watcher-phone-manage",
+   "watcher-phone-steer",
+   "watcher-phone-machines",
+   "watcher-phone-composer"
+  ]
+ },
+ "watcherReads": true,
+ "helloBytes": {
+  "desktop": 609390,
+  "phone": 476592
+ },
+ "openBytes": {
+  "desktop": 3654601,
+  "phone": 87235
+ },
+ "streamThreads": 3,
+ "1 streaming": {
+  "seconds": 4,
+  "processCpuMs": 2654,
+  "clientPushes": 60,
+  "desktopWindow": {
+   "broadcasts": 60,
+   "bytes": 167932
+  },
+  "desktop": {
+   "events": {
+    "watcher-state": {
+     "frames": 23,
+     "bytes": 45684762,
+     "deflated": 6853787,
+     "max": 1986294
+    },
+    "shell": {
+     "frames": 23,
+     "bytes": 4600735,
+     "deflated": 1111428,
+     "max": 200788
+    },
+    "detail-delta": {
+     "frames": 16,
+     "bytes": 5437,
+     "deflated": 2921,
+     "max": 399
+    }
+   },
+   "shell": {
+    "pushes": 23,
+    "bytesPerPush": 200032,
+    "deflatedPerPush": 48323,
+    "unchangedPartsPerPush": 42,
+    "unchangedBytesPerPush": 197217,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 2594837,
+      "unchanged": 23
+     },
+     "deliveries": {
+      "bytes": 1021591,
+      "unchanged": 23
+     },
+     "deliveredDrafts": {
+      "bytes": 297367,
+      "unchanged": 23
+     },
+     "obsoleteDrafts": {
+      "bytes": 297367,
+      "unchanged": 23
+     },
+     "followupReceipts": {
+      "bytes": 183540,
+      "unchanged": 23
+     },
+     "host.projects": {
+      "bytes": 63572,
+      "unchanged": 23
+     },
+     "host.providers": {
+      "bytes": 52049,
+      "unchanged": 23
+     },
+     "(changed thread records)": {
+      "bytes": 49035,
+      "unchanged": 0
+     },
+     "configuration": {
+      "bytes": 11477,
+      "unchanged": 23
+     },
+     "host.capabilities": {
+      "bytes": 4117,
+      "unchanged": 23
+     },
+     "voice": {
+      "bytes": 1334,
+      "unchanged": 23
+     },
+     "eventPage": {
+      "bytes": 1334,
+      "unchanged": 23
+     },
+     "credentials": {
+      "bytes": 1219,
+      "unchanged": 23
+     },
+     "membership": {
+      "bytes": 1035,
+      "unchanged": 23
+     },
+     "host.hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "clientCapabilities": {
+      "bytes": 437,
+      "unchanged": 23
+     },
+     "host.name": {
+      "bytes": 414,
+      "unchanged": 23
+     },
+     "speech": {
+      "bytes": 414,
+      "unchanged": 23
+     },
+     "notice": {
+      "bytes": 391,
+      "unchanged": 23
+     },
+     "connection": {
+      "bytes": 253,
+      "unchanged": 23
+     },
+     "composing": {
+      "bytes": 115,
+      "unchanged": 23
+     },
+     "globalLaneBusy": {
+      "bytes": 115,
+      "unchanged": 23
+     },
+     "host.connected": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "activeThreadId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "activeProjectId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "draftThreadId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "draftRequestId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "error": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "providerUpgrade": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "historyEnabled": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "host.version": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "host.threads": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "draft": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "draftAttachments": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "threadDrafts": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "reasoningAccounts": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "followups": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "threadDraftPersistence": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "assignments": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "queue": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "pendingRequest": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "host.modelsRevision": {
+      "bytes": 23,
+      "unchanged": 23
+     }
+    }
+   },
+   "watcherState": {
+    "pushes": 23,
+    "bytesPerPush": 1986294,
+    "deflatedPerPush": 297991,
+    "unchangedPartsPerPush": 5.96,
+    "unchangedBytesPerPush": 1909877,
+    "progressOnly": {
+     "pushes": 22,
+     "bytesPerPush": 1986294,
+     "deflatedPerPush": 297991
+    },
+    "requests": 925,
+    "operations": 929,
+    "progress": 130,
+    "parts": {
+     "requests": {
+      "bytes": 27086433,
+      "unchanged": 22
+     },
+     "operations": {
+      "bytes": 18011231,
+      "unchanged": 23
+     },
+     "progress": {
+      "bytes": 574103,
+      "unchanged": 0
+     },
+     "master": {
+      "bytes": 6210,
+      "unchanged": 23
+     },
+     "revision": {
+      "bytes": 1518,
+      "unchanged": 0
+     },
+     "hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "observedAt": {
+      "bytes": 598,
+      "unchanged": 0
+     },
+     "evidence": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "standingWatches": {
+      "bytes": 46,
+      "unchanged": 23
+     }
+    }
+   }
+  },
+  "phone": {
+   "events": {
+    "detail-delta": {
+     "frames": 60,
+     "bytes": 16125,
+     "deflated": 0,
+     "max": 269
+    },
+    "shell": {
+     "frames": 6,
+     "bytes": 1194802,
+     "deflated": 0,
+     "max": 199134
+    }
+   },
+   "shell": {
+    "pushes": 6,
+    "bytesPerPush": 199134,
+    "deflatedPerPush": 0,
+    "unchangedPartsPerPush": 43,
+    "unchangedBytesPerPush": 197218,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 676914,
+      "unchanged": 6
+     },
+     "deliveries": {
+      "bytes": 266502,
+      "unchanged": 6
+     },
+     "deliveredDrafts": {
+      "bytes": 77574,
+      "unchanged": 6
+     },
+     "obsoleteDrafts": {
+      "bytes": 77574,
+      "unchanged": 6
+     },
+     "followupReceipts": {
+      "bytes": 47880,
+      "unchanged": 6
+     },
+     "host.projects": {
+      "bytes": 16584,
+      "unchanged": 6
+     },
+     "host.providers": {
+      "bytes": 13578,
+      "unchanged": 6
+     },
+     "(changed thread records)": {
+      "bytes": 7282,
+      "unchanged": 0
+     },
+     "configuration": {
+      "bytes": 2994,
+      "unchanged": 6
+     },
+     "host.capabilities": {
+      "bytes": 1074,
+      "unchanged": 6
+     },
+     "voice": {
+      "bytes": 348,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytes": 348,
+      "unchanged": 6
+     },
+     "credentials": {
+      "bytes": 318,
+      "unchanged": 6
+     },
+     "membership": {
+      "bytes": 270,
+      "unchanged": 6
+     },
+     "host.hostId": {
+      "bytes": 228,
+      "unchanged": 6
+     },
+     "hostId": {
+      "bytes": 228,
+      "unchanged": 6
+     },
+     "clientCapabilities": {
+      "bytes": 114,
+      "unchanged": 6
+     },
+     "host.name": {
+      "bytes": 108,
+      "unchanged": 6
+     },
+     "speech": {
+      "bytes": 108,
+      "unchanged": 6
+     },
+     "notice": {
+      "bytes": 102,
+      "unchanged": 6
+     },
+     "connection": {
+      "bytes": 66,
+      "unchanged": 6
+     },
+     "composing": {
+      "bytes": 30,
+      "unchanged": 6
+     },
+     "globalLaneBusy": {
+      "bytes": 30,
+      "unchanged": 6
+     },
+     "host.connected": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "activeThreadId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "activeProjectId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "draftThreadId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "draftRequestId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "error": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "providerUpgrade": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "historyEnabled": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "host.version": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "host.threads": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "draft": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "draftAttachments": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "threadDrafts": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "reasoningAccounts": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "followups": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "threadDraftPersistence": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "assignments": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "queue": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "pendingRequest": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "host.modelsRevision": {
+      "bytes": 6,
+      "unchanged": 6
+     },
+     "settledHeldBack": {
+      "bytes": 6,
+      "unchanged": 6
+     }
+    }
+   }
+  }
+ },
+ "3 streaming": {
+  "seconds": 4,
+  "processCpuMs": 2884,
+  "clientPushes": 61,
+  "desktopWindow": {
+   "broadcasts": 61,
+   "bytes": 431535
+  },
+  "desktop": {
+   "events": {
+    "watcher-state": {
+     "frames": 23,
+     "bytes": 45683037,
+     "deflated": 6847670,
+     "max": 1986219
+    },
+    "shell": {
+     "frames": 23,
+     "bytes": 4696107,
+     "deflated": 1115379,
+     "max": 206520
+    },
+    "detail-delta": {
+     "frames": 57,
+     "bytes": 18514,
+     "deflated": 10326,
+     "max": 375
+    }
+   },
+   "shell": {
+    "pushes": 23,
+    "bytesPerPush": 204179,
+    "deflatedPerPush": 48495,
+    "unchangedPartsPerPush": 42,
+    "unchangedBytesPerPush": 197217,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 2594837,
+      "unchanged": 23
+     },
+     "deliveries": {
+      "bytes": 1021591,
+      "unchanged": 23
+     },
+     "deliveredDrafts": {
+      "bytes": 297367,
+      "unchanged": 23
+     },
+     "obsoleteDrafts": {
+      "bytes": 297367,
+      "unchanged": 23
+     },
+     "followupReceipts": {
+      "bytes": 183540,
+      "unchanged": 23
+     },
+     "(changed thread records)": {
+      "bytes": 144407,
+      "unchanged": 0
+     },
+     "host.projects": {
+      "bytes": 63572,
+      "unchanged": 23
+     },
+     "host.providers": {
+      "bytes": 52049,
+      "unchanged": 23
+     },
+     "configuration": {
+      "bytes": 11477,
+      "unchanged": 23
+     },
+     "host.capabilities": {
+      "bytes": 4117,
+      "unchanged": 23
+     },
+     "voice": {
+      "bytes": 1334,
+      "unchanged": 23
+     },
+     "eventPage": {
+      "bytes": 1334,
+      "unchanged": 23
+     },
+     "credentials": {
+      "bytes": 1219,
+      "unchanged": 23
+     },
+     "membership": {
+      "bytes": 1035,
+      "unchanged": 23
+     },
+     "host.hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "clientCapabilities": {
+      "bytes": 437,
+      "unchanged": 23
+     },
+     "host.name": {
+      "bytes": 414,
+      "unchanged": 23
+     },
+     "speech": {
+      "bytes": 414,
+      "unchanged": 23
+     },
+     "notice": {
+      "bytes": 391,
+      "unchanged": 23
+     },
+     "connection": {
+      "bytes": 253,
+      "unchanged": 23
+     },
+     "composing": {
+      "bytes": 115,
+      "unchanged": 23
+     },
+     "globalLaneBusy": {
+      "bytes": 115,
+      "unchanged": 23
+     },
+     "host.connected": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "activeThreadId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "activeProjectId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "draftThreadId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "draftRequestId": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "error": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "providerUpgrade": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "historyEnabled": {
+      "bytes": 92,
+      "unchanged": 23
+     },
+     "host.version": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "host.threads": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "draft": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "draftAttachments": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "threadDrafts": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "reasoningAccounts": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "followups": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "threadDraftPersistence": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "assignments": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "queue": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "pendingRequest": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "host.modelsRevision": {
+      "bytes": 23,
+      "unchanged": 23
+     }
+    }
+   },
+   "watcherState": {
+    "pushes": 23,
+    "bytesPerPush": 1986219,
+    "deflatedPerPush": 297725,
+    "unchangedPartsPerPush": 6,
+    "unchangedBytesPerPush": 1961005,
+    "progressOnly": {
+     "pushes": 23,
+     "bytesPerPush": 1986219,
+     "deflatedPerPush": 297725
+    },
+    "requests": 925,
+    "operations": 929,
+    "progress": 130,
+    "parts": {
+     "requests": {
+      "bytes": 27084708,
+      "unchanged": 23
+     },
+     "operations": {
+      "bytes": 18011231,
+      "unchanged": 23
+     },
+     "progress": {
+      "bytes": 574103,
+      "unchanged": 0
+     },
+     "master": {
+      "bytes": 6210,
+      "unchanged": 23
+     },
+     "revision": {
+      "bytes": 1518,
+      "unchanged": 0
+     },
+     "hostId": {
+      "bytes": 874,
+      "unchanged": 23
+     },
+     "observedAt": {
+      "bytes": 598,
+      "unchanged": 0
+     },
+     "evidence": {
+      "bytes": 46,
+      "unchanged": 23
+     },
+     "standingWatches": {
+      "bytes": 46,
+      "unchanged": 23
+     }
+    }
+   }
+  },
+  "phone": {
+   "events": {
+    "detail-delta": {
+     "frames": 180,
+     "bytes": 48427,
+     "deflated": 0,
+     "max": 271
+    },
+    "shell": {
+     "frames": 6,
+     "bytes": 1208957,
+     "deflated": 0,
+     "max": 201494
+    }
+   },
+   "shell": {
+    "pushes": 6,
+    "bytesPerPush": 201493,
+    "deflatedPerPush": 0,
+    "unchangedPartsPerPush": 43,
+    "unchangedBytesPerPush": 197218,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 676914,
+      "unchanged": 6
+     },
+     "deliveries": {
+      "bytes": 266502,
+      "unchanged": 6
+     },
+     "deliveredDrafts": {
+      "bytes": 77574,
+      "unchanged": 6
+     },
+     "obsoleteDrafts": {
+      "bytes": 77574,
+      "unchanged": 6
+     },
+     "followupReceipts": {
+      "bytes": 47880,
+      "unchanged": 6
+     },
+     "(changed thread records)": {
+      "bytes": 21437,
+      "unchanged": 0
+     },
+     "host.projects": {
+      "bytes": 16584,
+      "unchanged": 6
+     },
+     "host.providers": {
+      "bytes": 13578,
+      "unchanged": 6
+     },
+     "configuration": {
+      "bytes": 2994,
+      "unchanged": 6
+     },
+     "host.capabilities": {
+      "bytes": 1074,
+      "unchanged": 6
+     },
+     "voice": {
+      "bytes": 348,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytes": 348,
+      "unchanged": 6
+     },
+     "credentials": {
+      "bytes": 318,
+      "unchanged": 6
+     },
+     "membership": {
+      "bytes": 270,
+      "unchanged": 6
+     },
+     "host.hostId": {
+      "bytes": 228,
+      "unchanged": 6
+     },
+     "hostId": {
+      "bytes": 228,
+      "unchanged": 6
+     },
+     "clientCapabilities": {
+      "bytes": 114,
+      "unchanged": 6
+     },
+     "host.name": {
+      "bytes": 108,
+      "unchanged": 6
+     },
+     "speech": {
+      "bytes": 108,
+      "unchanged": 6
+     },
+     "notice": {
+      "bytes": 102,
+      "unchanged": 6
+     },
+     "connection": {
+      "bytes": 66,
+      "unchanged": 6
+     },
+     "composing": {
+      "bytes": 30,
+      "unchanged": 6
+     },
+     "globalLaneBusy": {
+      "bytes": 30,
+      "unchanged": 6
+     },
+     "host.connected": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "activeThreadId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "activeProjectId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "draftThreadId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "draftRequestId": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "error": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "providerUpgrade": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "historyEnabled": {
+      "bytes": 24,
+      "unchanged": 6
+     },
+     "host.version": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "host.threads": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "draft": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "draftAttachments": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "threadDrafts": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "reasoningAccounts": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "followups": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "threadDraftPersistence": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "assignments": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "queue": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "pendingRequest": {
+      "bytes": 12,
+      "unchanged": 6
+     },
+     "host.modelsRevision": {
+      "bytes": 6,
+      "unchanged": 6
+     },
+     "settledHeldBack": {
+      "bytes": 6,
+      "unchanged": 6
+     }
+    }
+   }
+  }
+ },
+ "sendError": "Error: The send was refused: The draft now belongs to a different thread. Review it and send again. Your draft is kept.",
+ "send": {
+  "desktop": {
+   "events": {
+    "watcher-state": {
+     "frames": 1,
+     "bytes": 1986219,
+     "deflated": 297722,
+     "max": 1986219
+    },
+    "shell": {
+     "frames": 2,
+     "bytes": 404752,
+     "deflated": 96363,
+     "max": 206719
+    }
+   },
+   "shell": {
+    "pushes": 2,
+    "bytesPerPush": 202376,
+    "deflatedPerPush": 48182,
+    "unchangedPartsPerPush": 40.5,
+    "unchangedBytesPerPush": 174998,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 225638,
+      "unchanged": 2
+     },
+     "deliveries": {
+      "bytes": 88766,
+      "unchanged": 1
+     },
+     "deliveredDrafts": {
+      "bytes": 25858,
+      "unchanged": 2
+     },
+     "obsoleteDrafts": {
+      "bytes": 25858,
+      "unchanged": 2
+     },
+     "followupReceipts": {
+      "bytes": 15960,
+      "unchanged": 2
+     },
+     "(changed thread records)": {
+      "bytes": 8857,
+      "unchanged": 0
+     },
+     "host.projects": {
+      "bytes": 5528,
+      "unchanged": 2
+     },
+     "host.providers": {
+      "bytes": 4526,
+      "unchanged": 2
+     },
+     "configuration": {
+      "bytes": 998,
+      "unchanged": 2
+     },
+     "host.capabilities": {
+      "bytes": 358,
+      "unchanged": 2
+     },
+     "voice": {
+      "bytes": 116,
+      "unchanged": 2
+     },
+     "eventPage": {
+      "bytes": 116,
+      "unchanged": 2
+     },
+     "notice": {
+      "bytes": 109,
+      "unchanged": 1
+     },
+     "credentials": {
+      "bytes": 106,
+      "unchanged": 2
+     },
+     "error": {
+      "bytes": 96,
+      "unchanged": 1
+     },
+     "membership": {
+      "bytes": 90,
+      "unchanged": 2
+     },
+     "host.hostId": {
+      "bytes": 76,
+      "unchanged": 2
+     },
+     "hostId": {
+      "bytes": 76,
+      "unchanged": 2
+     },
+     "clientCapabilities": {
+      "bytes": 38,
+      "unchanged": 2
+     },
+     "host.name": {
+      "bytes": 36,
+      "unchanged": 2
+     },
+     "speech": {
+      "bytes": 36,
+      "unchanged": 2
+     },
+     "connection": {
+      "bytes": 22,
+      "unchanged": 2
+     },
+     "composing": {
+      "bytes": 10,
+      "unchanged": 2
+     },
+     "globalLaneBusy": {
+      "bytes": 10,
+      "unchanged": 2
+     },
+     "host.connected": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "activeThreadId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "activeProjectId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "draftThreadId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "draftRequestId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "providerUpgrade": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "historyEnabled": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "host.version": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "host.threads": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "draft": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "draftAttachments": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "threadDrafts": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "reasoningAccounts": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "followups": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "threadDraftPersistence": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "assignments": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "queue": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "pendingRequest": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "host.modelsRevision": {
+      "bytes": 2,
+      "unchanged": 2
+     }
+    }
+   },
+   "watcherState": {
+    "pushes": 1,
+    "bytesPerPush": 1986219,
+    "deflatedPerPush": 297722,
+    "unchangedPartsPerPush": 6,
+    "unchangedBytesPerPush": 1961005,
+    "progressOnly": {
+     "pushes": 1,
+     "bytesPerPush": 1986219,
+     "deflatedPerPush": 297722
+    },
+    "requests": 925,
+    "operations": 929,
+    "progress": 130,
+    "parts": {
+     "requests": {
+      "bytes": 1177596,
+      "unchanged": 1
+     },
+     "operations": {
+      "bytes": 783097,
+      "unchanged": 1
+     },
+     "progress": {
+      "bytes": 24961,
+      "unchanged": 0
+     },
+     "master": {
+      "bytes": 270,
+      "unchanged": 1
+     },
+     "revision": {
+      "bytes": 66,
+      "unchanged": 0
+     },
+     "hostId": {
+      "bytes": 38,
+      "unchanged": 1
+     },
+     "observedAt": {
+      "bytes": 26,
+      "unchanged": 0
+     },
+     "evidence": {
+      "bytes": 2,
+      "unchanged": 1
+     },
+     "standingWatches": {
+      "bytes": 2,
+      "unchanged": 1
+     }
+    }
+   }
+  },
+  "phone": {
+   "events": {
+    "shell": {
+     "frames": 2,
+     "bytes": 396293,
+     "deflated": 0,
+     "max": 198238
+    }
+   },
+   "shell": {
+    "pushes": 2,
+    "bytesPerPush": 198147,
+    "deflatedPerPush": 0,
+    "unchangedPartsPerPush": 40,
+    "unchangedBytesPerPush": 152786,
+    "parts": {
+     "skillCatalogs": {
+      "bytes": 225638,
+      "unchanged": 2
+     },
+     "deliveries": {
+      "bytes": 89045,
+      "unchanged": 0
+     },
+     "deliveredDrafts": {
+      "bytes": 25858,
+      "unchanged": 2
+     },
+     "obsoleteDrafts": {
+      "bytes": 25858,
+      "unchanged": 2
+     },
+     "followupReceipts": {
+      "bytes": 15960,
+      "unchanged": 2
+     },
+     "host.projects": {
+      "bytes": 5528,
+      "unchanged": 2
+     },
+     "host.providers": {
+      "bytes": 4526,
+      "unchanged": 2
+     },
+     "configuration": {
+      "bytes": 998,
+      "unchanged": 2
+     },
+     "host.capabilities": {
+      "bytes": 358,
+      "unchanged": 2
+     },
+     "voice": {
+      "bytes": 116,
+      "unchanged": 2
+     },
+     "eventPage": {
+      "bytes": 116,
+      "unchanged": 2
+     },
+     "notice": {
+      "bytes": 109,
+      "unchanged": 1
+     },
+     "credentials": {
+      "bytes": 106,
+      "unchanged": 2
+     },
+     "error": {
+      "bytes": 96,
+      "unchanged": 1
+     },
+     "membership": {
+      "bytes": 90,
+      "unchanged": 2
+     },
+     "(changed thread records)": {
+      "bytes": 80,
+      "unchanged": 0
+     },
+     "host.hostId": {
+      "bytes": 76,
+      "unchanged": 2
+     },
+     "hostId": {
+      "bytes": 76,
+      "unchanged": 2
+     },
+     "clientCapabilities": {
+      "bytes": 38,
+      "unchanged": 2
+     },
+     "host.name": {
+      "bytes": 36,
+      "unchanged": 2
+     },
+     "speech": {
+      "bytes": 36,
+      "unchanged": 2
+     },
+     "connection": {
+      "bytes": 22,
+      "unchanged": 2
+     },
+     "composing": {
+      "bytes": 10,
+      "unchanged": 2
+     },
+     "globalLaneBusy": {
+      "bytes": 9,
+      "unchanged": 0
+     },
+     "host.connected": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "activeThreadId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "activeProjectId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "draftThreadId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "draftRequestId": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "providerUpgrade": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "historyEnabled": {
+      "bytes": 8,
+      "unchanged": 2
+     },
+     "host.version": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "host.threads": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "draft": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "draftAttachments": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "threadDrafts": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "reasoningAccounts": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "followups": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "threadDraftPersistence": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "assignments": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "queue": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "pendingRequest": {
+      "bytes": 4,
+      "unchanged": 2
+     },
+     "host.modelsRevision": {
+      "bytes": 2,
+      "unchanged": 2
+     },
+     "settledHeldBack": {
+      "bytes": 2,
+      "unchanged": 2
+     }
+    }
+   }
+  }
+ }
+}

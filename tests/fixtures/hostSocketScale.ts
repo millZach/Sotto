@@ -1,0 +1,251 @@
+import { deflateRawSync } from 'node:zlib'
+import { startSocketServer } from '../../src/host/socketServer'
+import { LocalHostService } from '../../src/main/agents/hostService'
+import { PairedClients } from '../../src/main/agents/pairing'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
+import type { AgentThread } from '../../src/shared/agents'
+import type { WatcherIdentity } from '../../src/shared/watcher'
+import { iphoneAccepts } from './iphoneAccepts.mjs'
+import type { OwnerScale } from './ownerScale'
+import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from './ownerScalePipeline'
+import { rawPeer } from './rawHostPeer'
+
+/**
+ * The paired desktop's own Watcher, as it names itself to the host: a Watcher on another computer, made on October 28,
+ * when forge's record of the laptop's work begins.
+ */
+export const DESKTOP_WATCHER: WatcherIdentity = { target: { hostId: '7d3e2a10-4b5c-4d6e-8f70-1a2b3c4d5e6f', threadId: '0b1c2d3e-4f50-4a61-b728-394a5b6c7d8e' },
+  projectId: 'synthetic-watcher-project', provider: 'claude', creationOperationId: '5e6f7a8b-9cad-4bef-8012-3456789abcde', createdAt: '2026-10-28T09:00:00.000Z' }
+
+/** The test's fake clock, stepped with file work settling between steps, as the benchmark that builds main steps it. */
+export interface StepClock {
+  until<T>(work: Promise<T>): Promise<T>
+  step(): Promise<void>
+  pass(ms: number): Promise<void>
+}
+
+type Peer = Awaited<ReturnType<typeof rawPeer>>
+
+export interface HostSocketScale {
+  readonly p: OwnerScalePipeline
+  /** The desktop, on the host's own listener, recorded as a desktop: it negotiates compression and is sent Watcher's projection. */
+  readonly desktop: Peer
+  /** The iPhone, on the phone listener. */
+  readonly phone: Peer
+  /** What the desktop's hello accepted: what Sotto's own client of a paired host accepts of this host (`SocketHostService`). */
+  readonly desktopAccepts: readonly string[]
+  /** What the phone's hello accepted: the iPhone's own list, read from its Swift source. */
+  readonly phoneAccepts: readonly string[]
+  /** Each hello's answer, in bytes of JSON. */
+  readonly helloBytes: { readonly desktop: number; readonly phone: number }
+  /** Whether the desktop read its Watcher's projection, so the host pushes it `watcher-state`: on Owl, where Watcher runs. */
+  readonly watcherReads: boolean
+  /** The threads that stream, as this host names them, in order. */
+  readonly streamIds: readonly string[]
+  /** Sotto's own client of this host, paired as a third client and connected, for a benchmark of the desktop's own work. */
+  readonly client: SocketHostService
+  readonly hostId: string
+  /** Real socket I/O between steps of the fake clock. */
+  io(turns?: number): Promise<void>
+  /** Sends `operation` from `peer` and waits for its answer. */
+  ask(peer: Peer, id: string, operation: Record<string, unknown>): Promise<Record<string, unknown>>
+  /**
+   * `chunks` chunks of a reply to `reply` in each of `sessions`, twenty a second as a provider streams them. Every
+   * `usageEvery` chunks the thread's token usage moves, as Claude's adapter reports it while a reply streams; that is what
+   * a phone, which reads no reply text in a thread list push, is pushed a thread list for.
+   */
+  stream(sessions: readonly string[], reply: string, chunks: number, usageEvery?: number): Promise<void>
+  close(): Promise<void>
+}
+
+/**
+ * A host at forge's scale with a desktop and an iPhone paired and connected over its socket (November 10, 2026 audit):
+ * owner-scale main holding what a running host holds (`ownerScalePipeline`'s `host`), its own listener with the desktop
+ * recorded as a desktop, and a phone listener. The desktop says hello with what Sotto's own client of a paired host
+ * accepts, found by connecting that client and reading its hello, and reads its Watcher's projection with no call, as
+ * the desktop's Watcher does, so the host pushes it `watcher-state` (`docs/host-protocol.md`, "Watcher on a paired host").
+ * The phone says hello with the iPhone's own list. Neither observes a thread yet. `prepare` runs on main before any
+ * client connects.
+ */
+export async function hostSocketScale(root: string, clock: StepClock, options: { track?: OwnerScaleTrack; scale?: OwnerScale; storeWorker?: string | undefined
+  prepare?: (p: OwnerScalePipeline) => Promise<void> } = {}): Promise<HostSocketScale> {
+  const track = options.track ?? 'owl', owl = track === 'owl'
+  const io = async (turns = 20): Promise<void> => { for (let index = 0; index < turns; index++) await new Promise<void>(resolve => { setImmediate(resolve) }) }
+  const settle = async (done: () => boolean, what: string): Promise<void> => {
+    for (let waited = 0; !done(); waited++) { if (waited > 4_000) throw new Error(what); await clock.step(); await io(2) }
+  }
+  // Paired before main is built, so main's Watcher record can hold the desktop's work under the desktop's own pairing.
+  const pairing = new PairedClients(root)
+  await clock.until(pairing.load())
+  const pair = async (name: string) => clock.until(pairing.redeem(pairing.issuePairingCode().code, name))
+  const desktopPairing = await pair('Desktop'), phonePairing = await pair('iPhone'), clientPairing = await pair('Main desktop')
+  const p = await clock.until(ownerScalePipeline(root, options.scale ?? { threads: 1, history: 1 }, 3, track,
+    { storeWorker: options.storeWorker, host: { desktop: { clientId: desktopPairing.clientId, master: DESKTOP_WATCHER } } }))
+  await clock.pass(1_000)
+  await options.prepare?.(p)
+  const service = new LocalHostService({ control: p.control, events: p.workspace, ...(p.watcher ? { watcher: p.watcher } : {}) })
+  // Recorded as desktops, as the launch script records a desktop that pairs over SSH: forge's host knows the laptop so.
+  const desktops = new Set([desktopPairing.clientId, clientPairing.clientId])
+  const server = await clock.until(startSocketServer({ service, pairing, port: 0, watcherDesktops: { refresh: async () => undefined, has: id => desktops.has(id) } }))
+  // Phones on a listener of their own, as the desktop's phone listener runs (admin: false): its peers are phones.
+  const phoneServer = await clock.until(startSocketServer({ service, pairing, port: 0, admin: false, observationKey: 'phones' }))
+  const hostId = p.control.hostId()!
+
+  // Sotto's own client of this host, with the switches an Owl or a stable desktop gives it. What its hello accepts is
+  // what the desktop accepts of this host, its features filtered by what the host offers.
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: clientPairing.token, watcherEnabled: owl, crossMachineEnabled: owl,
+    pairedHostBrowser: owl, ...(owl ? { nextPromptsWanted: () => true } : {}), productEventAnswer: () => 'off' })
+  let accepted: string[] | undefined
+  const inner = client as unknown as { call(operation: { op: string; accepts?: string[] }, ...rest: unknown[]): Promise<unknown> }
+  const call = inner.call.bind(client)
+  inner.call = (operation, ...rest) => { if (operation.op === 'hello') accepted = [...operation.accepts ?? []]; return call(operation, ...rest) }
+  {
+    let failure: unknown, done = false
+    void client.connect().then(() => { done = true }, error => { failure = error; done = true })
+    await settle(() => done, 'The desktop\'s client did not connect')
+    if (failure !== undefined || !accepted) throw new Error(`The desktop's client did not connect: ${String(failure)}`)
+  }
+  const desktopAccepts = accepted, phoneAccepts = iphoneAccepts()
+
+  const desktopSession = pairing.signSession(desktopPairing.clientId), phoneSession = pairing.signSession(phonePairing.clientId)
+  const desktop = await rawPeer(server.descriptor.port, desktopSession, { offer: 'permessage-deflate; client_no_context_takeover; server_no_context_takeover' })
+  const phone = await rawPeer(phoneServer.descriptor.port, phoneSession)
+  const sessions = new Map<Peer, string>([[desktop, desktopSession], [phone, phoneSession]])
+  const ask = async (peer: Peer, id: string, operation: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    peer.frames.send({ v: 1, id, session: sessions.get(peer), ...operation })
+    await settle(() => peer.messages.some(message => message.id === id), `No answer to ${id}`)
+    return peer.messages.find(message => message.id === id)!
+  }
+  const hello = { desktop: await ask(desktop, 'hello', { op: 'hello', afterSeq: Number.MAX_SAFE_INTEGER, accepts: desktopAccepts }),
+    phone: await ask(phone, 'hello', { op: 'hello', afterSeq: Number.MAX_SAFE_INTEGER, accepts: phoneAccepts }) }
+  if (hello.desktop.ok !== true || hello.phone.ok !== true) throw new Error('The host refused a hello.')
+  const helloBytes = { desktop: Buffer.byteLength(JSON.stringify(hello.desktop)), phone: Buffer.byteLength(JSON.stringify(hello.phone)) }
+  // The desktop's Watcher reads its projection with no call, which registers it for pushes, as `scheduleRemote` does.
+  const features = (hello.desktop.result as { features?: string[] } | undefined)?.features ?? []
+  const watcherReads = desktopAccepts.includes('watcher-reads') && features.includes('watcher-reads')
+  if (watcherReads) {
+    const read = await ask(desktop, 'watcher-scope', { op: 'watcher-read', request: { master: DESKTOP_WATCHER } })
+    if (read.ok !== true) throw new Error('The host refused the desktop\'s read of its Watcher.')
+  }
+  const streamIds = p.streamSessions.map(session => p.control.shell().host.threads.find(thread => thread.title === `Synthetic thread ${session}`)?.id).filter((id): id is string => id !== undefined)
+
+  const stream = async (streaming: readonly string[], reply: string, chunks: number, usageEvery = 10): Promise<void> => {
+    for (let chunk = 0; chunk < chunks; chunk++) {
+      for (const session of streaming) {
+        p.adapter.log.appendText(session, reply, ` word${chunk} and some more text`)
+        if ((chunk + 1) % usageEvery === 0) {
+          const thread = p.adapter.state.threads.find(item => item.id === session)!
+          thread.usage = grown(thread.usage)
+          p.adapter.mark(session)
+        }
+      }
+      p.adapter.publish(true)
+      for (let elapsed = 0; elapsed < 50; elapsed += 5) { await clock.step(); await io(2) }
+    }
+  }
+  const close = async (): Promise<void> => {
+    await client.close()
+    desktop.frames.close(); phone.frames.close()
+    await clock.until(server.close()); await clock.until(phoneServer.close()); await clock.until(p.stop())
+  }
+  return { p, desktop, phone, desktopAccepts, phoneAccepts, helloBytes, watcherReads, streamIds, client, hostId, io, ask, stream, close }
+}
+
+/** Usage after another stretch of a reply: a few hundred tokens more, the context fuller. */
+function grown(usage: AgentThread['usage']): AgentThread['usage'] {
+  if (!usage?.latest || !usage.total) return usage
+  return { ...usage, latest: { ...usage.latest, output: (usage.latest.output ?? 0) + 240 }, total: { ...usage.total, output: (usage.total.output ?? 0) + 240 },
+    contextUsed: (usage.contextUsed ?? 0) + 240 }
+}
+
+export interface EventTally { frames: number; bytes: number; deflated: number; max: number }
+export interface PartTally { bytes: number; unchanged: number }
+/** A peer's thread list pushes: their size, and each part's bytes and how many pushes left it as the push before had it. */
+export interface ShellTally {
+  pushes: number; bytesPerPush: number; deflatedPerPush: number
+  unchangedPartsPerPush: number; unchangedBytesPerPush: number
+  parts: Record<string, PartTally>
+}
+/** A peer's `watcher-state` pushes, and those whose only change from the push before was the progress list. */
+export interface WatcherStateTally {
+  pushes: number; bytesPerPush: number; deflatedPerPush: number
+  unchangedPartsPerPush: number; unchangedBytesPerPush: number
+  progressOnly: { pushes: number; bytesPerPush: number; deflatedPerPush: number }
+  requests: number; operations: number; progress: number
+  parts: Record<string, PartTally>
+}
+export interface PeerTally { events: Record<string, EventTally>; shell?: ShellTally; watcherState?: WatcherStateTally }
+
+/** Each top-level part of a message, as JSON: a shell's state and its host by key, its changed records and event page. */
+function shellParts(message: Record<string, unknown>): Map<string, string> {
+  const parts = new Map<string, string>()
+  const put = (key: string, value: unknown): void => { if (value !== undefined) parts.set(key, JSON.stringify(value)) }
+  for (const [key, value] of Object.entries((message.state ?? {}) as Record<string, unknown>)) {
+    if (key === 'host') for (const [inner, innerValue] of Object.entries(value as Record<string, unknown>)) put(`host.${inner}`, innerValue)
+    else put(key, value)
+  }
+  put('(changed thread records)', message.threads)
+  put('eventPage', message.eventPage)
+  return parts
+}
+function projectionParts(message: Record<string, unknown>): Map<string, string> {
+  return new Map(Object.entries((message.projection ?? {}) as Record<string, unknown>).map(([key, value]) => [key, JSON.stringify(value)]))
+}
+/** The parts of a projection that are Watcher's work rather than where its threads have got. */
+const WORK_PARTS = ['requests', 'operations', 'standingWatches', 'evidence', 'master', 'hostId'] as const
+
+/**
+ * What `messages` from `from` on are, by event: frames, bytes of JSON, and bytes at deflate level 6 when `deflate`, as a
+ * desktop's permessage-deflate sends them. For thread list pushes and `watcher-state`, each part's bytes and how many
+ * pushes left it unchanged from the push before, the last before `from` included.
+ */
+export function tallyPeer(messages: readonly Record<string, unknown>[], from: number, deflate: boolean): PeerTally {
+  const events: Record<string, EventTally> = {}
+  const shell = { pushes: 0, bytes: 0, deflated: 0, unchangedParts: 0, unchangedBytes: 0, parts: {} as Record<string, PartTally> }
+  const watcher = { pushes: 0, bytes: 0, deflated: 0, unchangedParts: 0, unchangedBytes: 0, progressOnly: { pushes: 0, bytes: 0, deflated: 0 }, requests: 0, operations: 0, progress: 0, parts: {} as Record<string, PartTally> }
+  const earlier = messages.slice(0, from), lastShell = earlier.findLast(message => message.event === 'shell'), lastProjection = earlier.findLast(message => message.event === 'watcher-state')
+  let shellBefore = lastShell ? shellParts(lastShell) : undefined, projectionBefore = lastProjection ? projectionParts(lastProjection) : undefined
+  for (const message of messages.slice(from)) {
+    const text = JSON.stringify(message), bytes = Buffer.byteLength(text)
+    const deflated = deflate ? deflateRawSync(text, { level: 6 }).byteLength : 0
+    const name = String(message.event ?? (message.id !== undefined ? 'reply' : 'other'))
+    const entry = events[name] ??= { frames: 0, bytes: 0, deflated: 0, max: 0 }
+    entry.frames++; entry.bytes += bytes; entry.deflated += deflated; entry.max = Math.max(entry.max, bytes)
+    if (name === 'shell') {
+      const parts = shellParts(message)
+      shell.pushes++; shell.bytes += bytes; shell.deflated += deflated
+      for (const [key, value] of parts) {
+        const part = shell.parts[key] ??= { bytes: 0, unchanged: 0 }
+        part.bytes += Buffer.byteLength(value)
+        if (shellBefore?.get(key) === value) { part.unchanged++; shell.unchangedParts++; shell.unchangedBytes += Buffer.byteLength(value) }
+      }
+      shellBefore = parts
+    } else if (name === 'watcher-state') {
+      const parts = projectionParts(message), projection = message.projection as { requests: unknown[]; operations: unknown[]; progress: unknown[] }
+      watcher.pushes++; watcher.bytes += bytes; watcher.deflated += deflated
+      watcher.requests = projection.requests.length; watcher.operations = projection.operations.length; watcher.progress = projection.progress.length
+      for (const [key, value] of parts) {
+        const part = watcher.parts[key] ??= { bytes: 0, unchanged: 0 }
+        part.bytes += Buffer.byteLength(value)
+        if (projectionBefore?.get(key) === value) { part.unchanged++; watcher.unchangedParts++; watcher.unchangedBytes += Buffer.byteLength(value) }
+      }
+      if (projectionBefore && WORK_PARTS.every(key => projectionBefore!.get(key) === parts.get(key)) && projectionBefore.get('progress') !== parts.get('progress')) {
+        watcher.progressOnly.pushes++; watcher.progressOnly.bytes += bytes; watcher.progressOnly.deflated += deflated
+      }
+      projectionBefore = parts
+    }
+  }
+  const per = (total: number, count: number): number => count ? Math.round(total / count) : 0
+  const per2 = (total: number, count: number): number => count ? Math.round(total / count * 100) / 100 : 0
+  return {
+    events,
+    ...shell.pushes ? { shell: { pushes: shell.pushes, bytesPerPush: per(shell.bytes, shell.pushes), deflatedPerPush: per(shell.deflated, shell.pushes),
+      unchangedPartsPerPush: per2(shell.unchangedParts, shell.pushes), unchangedBytesPerPush: per(shell.unchangedBytes, shell.pushes),
+      parts: Object.fromEntries(Object.entries(shell.parts).sort((a, b) => b[1].bytes - a[1].bytes)) } } : {},
+    ...watcher.pushes ? { watcherState: { pushes: watcher.pushes, bytesPerPush: per(watcher.bytes, watcher.pushes), deflatedPerPush: per(watcher.deflated, watcher.pushes),
+      unchangedPartsPerPush: per2(watcher.unchangedParts, watcher.pushes), unchangedBytesPerPush: per(watcher.unchangedBytes, watcher.pushes),
+      progressOnly: { pushes: watcher.progressOnly.pushes, bytesPerPush: per(watcher.progressOnly.bytes, watcher.progressOnly.pushes), deflatedPerPush: per(watcher.progressOnly.deflated, watcher.progressOnly.pushes) },
+      requests: watcher.requests, operations: watcher.operations, progress: watcher.progress,
+      parts: Object.fromEntries(Object.entries(watcher.parts).sort((a, b) => b[1].bytes - a[1].bytes)) } } : {},
+  }
+}

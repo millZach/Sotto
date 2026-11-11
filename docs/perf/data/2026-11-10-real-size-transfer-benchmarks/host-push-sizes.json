@@ -1,0 +1,20 @@
+{
+ "desktop": {
+  "pushes": 15,
+  "bytesPerPush": 199863,
+  "unchangedPartsPerPush": 42
+ },
+ "phone": {
+  "pushes": 4,
+  "bytesPerPush": 198970,
+  "unchangedPartsPerPush": 43
+ },
+ "watcherState": {
+  "pushes": 15,
+  "unchangedPartsPerPush": 6,
+  "progressOnly": {
+   "pushes": 15,
+   "bytesPerPush": 1986099
+  }
+ }
+}
