@@ -1198,12 +1198,16 @@ private struct Conversation: View {
         if nowTitled != titled { titled = nowTitled }
     }
 
-    /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
-    /// Requests made in the same moment scroll once, and only the latest looks again. None scrolls while the user moves
-    /// the page; the page owes it to them for when they let go.
+    /// Scrolls to the end at once, again once the new layout is in, and once more a moment later, after photos have settled
+    /// their height. The first scroll lands in the update that asked for it. In that update the scroll view's bottom anchor
+    /// has already put the page's own bottom at the reply box, and that bottom sits 16 points under the end marker. When
+    /// following waited, a frame could be drawn in between, with the words 16 points too high for a moment after Send
+    /// (#2301). Requests made in the same moment scroll later once, and only the latest looks again. None scrolls while
+    /// the user moves the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
         guard !box.userScrolling else { box.missedFollow = true; return }
+        scroll.scrollTo(Self.end, anchor: .bottom)
         box.followRequests += 1
         let request = box.followRequests
         Task { @MainActor in
