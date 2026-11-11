@@ -73,7 +73,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
   try {
     launched = await launch()
     const { page } = launched
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
     const panel = await providerPanel(page)
     await page.getByRole('button', { name: 'Muse', exact: true }).focus()
@@ -331,7 +331,7 @@ test('turns Muse’s shell sandbox off for this computer from the keyboard and a
     launched = await launchSotto('success', profile)
     const { page } = launched
     page.on('pageerror', error => pageErrors.push(error.message))
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     // No client update card over the row: this journey is about the switch, not updates.
     await page.evaluate(() => window.sotto!.agents!.command({ type: 'configure', patch: { checkClientUpdates: false } }))
     await page.reload()
