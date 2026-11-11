@@ -1009,8 +1009,20 @@ export class PiHost implements ProviderHost {
     for (const rpc of this.processes) rpc.close()
     this.connections.clear(); this.loading.clear(); this.loaded.clear(); this.outdated.clear()
     const tools = this.tools; this.tools = new PiTools()
-    this.toolClosing = Promise.all([this.toolClosing, tools.close()]).then(() => undefined)
+    const previous = this.toolClosing
+    this.toolClosing = (async () => {
+      const results = await Promise.allSettled([previous, (async () => tools.close())()])
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    })()
+    // A disconnect starts closing now; closed() later reports any failure after every resource drains.
+    void this.toolClosing.catch(() => undefined)
     this.state.connected = false; this.emit()
   }
-  async closed(): Promise<void> { await this.toolClosing; await Promise.all([...this.processes].map(rpc => rpc.closed)); await Promise.all([...this.stopping.values()].map(work => work.catch(() => undefined))); await this.writing }
+  async closed(): Promise<void> {
+    const results = await Promise.allSettled([this.toolClosing, ...[...this.processes].map(rpc => rpc.closed),
+      ...[...this.stopping.values()].map(work => work.catch(() => undefined)), this.writing])
+    const failure = results.find(result => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+  }
 }

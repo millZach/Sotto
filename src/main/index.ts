@@ -299,6 +299,8 @@ import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { PI_RENDERER_ARGUMENT } from '../shared/piSignIn'
 import { registerPiSignInIpc } from './agents/piSignInIpc'
+import { PiSignIn } from './agents/piSignIn'
+import { PiHost } from './agents/pi'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
 import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
@@ -1144,6 +1146,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     // An end-to-end run starts no real client's sign-in: this computer's own sign-ins find no client there (ADR-0200).
     ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
+    createPiHost: (directory, options) => new PiHost(directory, options),
+    createPiSignIn: (host, options) => new PiSignIn(host.accounts, options),
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),

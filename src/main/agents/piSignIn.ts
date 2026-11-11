@@ -20,11 +20,18 @@ interface Attempt {
   id: string; source: PiSource; expiresAt: number; process?: PiLoginProcess; url?: string; code?: string | undefined
   timer?: ReturnType<typeof setTimeout>; outcome?: SignInWait; completion?: Promise<void>; stopped: boolean
 }
+export interface PiSignInOptions {
+  changed(): Promise<void>
+  modelsChanged?(models: AgentModel[]): void
+  openExternal(url: string): Promise<void>
+  spawn?: PiLoginSpawner
+  lifetimeMs?: number
+}
 export class PiSignIn {
   private closed = false
   private active: Attempt | undefined
   private readonly attempts = new Map<string, Attempt>()
-  constructor(readonly accounts: PiAccounts, private readonly options: { changed(): Promise<void>; modelsChanged?(models: AgentModel[]): void; openExternal(url: string): Promise<void>; spawn?: PiLoginSpawner; lifetimeMs?: number }) {}
+  constructor(readonly accounts: PiAccounts, private readonly options: PiSignInOptions) {}
   async sources() { const read = await this.accounts.read(); this.options.modelsChanged?.(read.models); return read.sources }
   private async success(attempt: Attempt): Promise<void> {
     await this.accounts.remember(attempt.source.id, true)
@@ -134,5 +141,10 @@ export class PiSignIn {
       return { status: 'ok', sources: await this.sources() }
     } catch { return refused(PI_SIGN_IN_WORDS.signOut) }
   }
-  async close(): Promise<void> { this.closed = true; await Promise.all([...this.attempts.values()].map(attempt => this.cancel({ attemptId: attempt.id }))) }
+  async close(): Promise<void> {
+    this.closed = true
+    const results = await Promise.allSettled([...this.attempts.values()].map(attempt => this.cancel({ attemptId: attempt.id })))
+    const failure = results.find(result => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+  }
 }
