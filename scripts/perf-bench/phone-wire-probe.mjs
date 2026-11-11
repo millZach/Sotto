@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import process from 'node:process'
 import { clearInterval, setInterval, setTimeout } from 'node:timers'
 import { fileURLToPath } from 'node:url'
 import { deflateRawSync, constants as zlib } from 'node:zlib'
@@ -52,7 +53,10 @@ function post(port, path, token, body) {
     const request = httpRequest({ host: '127.0.0.1', port, path, method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) } }, response => {
       const parts = []
       response.on('data', part => parts.push(part))
-      response.on('end', () => { const answer = Buffer.concat(parts).toString('utf8'); if (response.statusCode !== 200) reject(new Error(`${path} answered ${response.statusCode}`)); else resolve(JSON.parse(answer)) })
+      response.on('end', () => {
+        if (response.statusCode !== 200) { reject(new Error(`${path} answered ${response.statusCode}`)); return }
+        try { resolve(JSON.parse(Buffer.concat(parts).toString('utf8'))) } catch { reject(new Error(`${path} answered something that is not JSON`)) }
+      })
     })
     request.on('error', reject); request.end(text)
   })
@@ -135,6 +139,14 @@ try { phonePort = JSON.parse(readFileSync(join(data, 'phone-access.json'), 'utf8
 const accepts = iphoneAccepts()
 const report = { hostVersion: listener.sottoVersion, accepts: accepts.length }
 let clientId
+/** Removes the throwaway pairing. It runs when the probe ends, fails, or is stopped with Ctrl-C or a signal. */
+const unpair = async () => {
+  if (!clientId) return
+  const id = clientId; clientId = undefined
+  const gone = await post(listener.port, '/v1/admin/revoke-client', listener.adminToken, { clientId: id }).catch(error => ({ revoked: false, error: String(error) }))
+  report.pairingRemoved = gone.revoked === true
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(signal, () => { void unpair().finally(() => process.exit(130)) })
 try {
   const { code } = await post(listener.port, '/v1/admin/pairing-code', listener.adminToken)
   const paired = await post(phonePort, '/v1/pair', undefined, { v: 1, code, name: 'Audit probe (temporary)' }).catch(() => post(listener.port, '/v1/pair', undefined, { v: 1, code, name: 'Audit probe (temporary)' }))
@@ -182,6 +194,6 @@ try {
   }
   clearInterval(pings); peer.close()
 } finally {
-  if (clientId) { const gone = await post(listener.port, '/v1/admin/revoke-client', listener.adminToken, { clientId }).catch(error => ({ revoked: false, error: String(error) })); report.pairingRemoved = gone.revoked === true }
+  await unpair()
 }
 console.log(JSON.stringify(report, null, 1))
