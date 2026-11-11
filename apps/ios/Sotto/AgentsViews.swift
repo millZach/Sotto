@@ -38,9 +38,11 @@ struct AgentsButton: View {
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button(action: action) {
             if tile {
+                // The badge counts only the delegated threads that wait on the user, in amber, so amber still means
+                // Needs you; the sheet counts the rest (Zach's pick B, November 9, 2026, round 4).
                 AgentMark(size: 24, relativeTo: .footnote)
                     .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
-                    .overlay(alignment: .topTrailing) { DuoRailBadge(count: count.total, warning: needs) }
+                    .overlay(alignment: .topTrailing) { if needs { DuoRailBadge(count: count.needs, warning: true) } }
                     .foregroundStyle(Palette.muted)
                     .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                     .contentShape(Circle())
@@ -100,7 +102,7 @@ private struct AgentsPresenter: ViewModifier {
     @State private var reopen = false
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $open, onDismiss: {
+            .duoSheet(isPresented: $open, toFoot: true, onDismiss: {
                 guard let next = pending else { closed(); return }
                 pending = nil
                 reopen = true
@@ -112,6 +114,7 @@ private struct AgentsPresenter: ViewModifier {
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .overThread()
             }
             .navigationDestination(item: $pushed) { target in ThreadView(ref: target, nested: true) }
             // Only once the delegated thread has gone: a swipe back that is cancelled leaves it open, and the sheet shut.
@@ -130,7 +133,21 @@ private struct AgentsPresenter: ViewModifier {
 /// agents again every few seconds, since nothing tells the phone of an agent's new update until its counts change.
 private struct AgentsSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
+    @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    /// Folded, where the sheet's left edge stands on the screen, and so how far in from its right edge the strip
+    /// reaches: the title row and the thread's name end there (`DuoLayout.stripReach`).
+    @State private var sheetLeft: CGFloat = 0
+    private var stripReach: CGFloat { duo.stripReach(sheetLeft: sheetLeft) }
+    /// Folded, how far the title row and the thread's name stand lower, so the two centre in the clock's band rather
+    /// than pinning to the sheet's top; the first section stands where it did (Zach's round 8 pick A, November 10, 2026).
+    private static let foldedBandDrop: CGFloat = 10
     let ref: ThreadRef
     let open: (ThreadRef) -> Void
     @State private var delegations: [DelegatedThreadRecord]?
@@ -159,16 +176,32 @@ private struct AgentsSheet: View {
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("agents-done")
                 }
+                .padding(.trailing, max(0, stripReach - Space.gutter))
+                .padding(.top, foldedStrip > 0 ? Self.foldedBandDrop : 0)
                 if let title = source?.owner.title {
                     Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .padding(.trailing, max(0, stripReach - Space.gutter))
+                        // Held sideways, the thread's name stands as far above the first section's heading as a
+                        // section's last words stand above the next heading: a row's own 12 under its words and the
+                        // sections' 12 between them. Closer, the heading's light reached the name, and the grey name
+                        // read as one more heading (the Duo design climb's round 8).
+                        .padding(.bottom, duo.sideways ? Space.s3 : 0)
                 }
-                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Spacer(minLength: Space.s2)
-                    Text(counts.detail).font(.sotto(.small, needs ? .semibold : .regular)).foregroundStyle(needs ? Palette.warningText : Palette.muted)
+                // Folded, the first section's heading and its rows start below the clock, where a row's button had run
+                // into it once rows went wide. Only the thread's name stands beside the clock, and the first heading
+                // keeps the same gap above its rows as the others (Zach's round 7 pick A, November 10, 2026).
+                if foldedStrip > 0 { Color.clear.frame(height: Space.s5 - Self.foldedBandDrop) }
+                if duo == .none {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                        Spacer(minLength: Space.s2)
+                        Text(counts.detail).font(.sotto(.small, needs ? .semibold : .regular)).foregroundStyle(needs ? Palette.warningText : Palette.muted)
+                    }
+                    .padding(.top, Space.s2)
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(.top, Space.s2)
-                .accessibilityElement(children: .combine)
+                // On the Duo the sections count themselves, so the summary of counts over them goes (Zach's pick B,
+                // November 9, 2026).
                 if problem {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Couldn’t read the agents on \(model.name(ref.hostID)). Nothing was changed. Try again.")
@@ -187,23 +220,26 @@ private struct AgentsSheet: View {
                         .font(.sotto(.body)).foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
                         .paragraphDirection()
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                            if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
-                            switch row.kind {
-                            case .thread:
-                                AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
-                                    if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
-                                }
-                            case .agent:
-                                AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)
+                } else if duo != .none {
+                    // On the Duo they stand under what they're doing, what needs the user first (Zach's pick B, November 8,
+                    // 2026). A section's heading says what its rows' status lines would; Finished and Failed rows keep
+                    // theirs, since the words differ row to row.
+                    ForEach(AgentsSection.sections(rows)) { section in
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            HStack(spacing: Space.s2) {
+                                Light(tone: section.tone.light, size: 7, breathing: section.tone == .working)
+                                Text(section.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).accessibilityAddTraits(.isHeader)
+                                Text("\(section.rows.count)").font(.sotto(.small)).monospacedDigit().foregroundStyle(Palette.muted)
                             }
+                            .padding(.horizontal, Space.s1)
+                            .accessibilityElement(children: .combine)
+                            agentRows(section.rows)
+                                .environment(\.agentsInSection, section.showsStatus)
                         }
                     }
-                    .sottoCard(.plain)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Delegated threads and agents, newest first")
+                } else {
+                    agentRows(rows)
+                        .accessibilityLabel("Delegated threads and agents, newest first")
                 }
             }
             .padding(.horizontal, Space.gutter)
@@ -211,6 +247,8 @@ private struct AgentsSheet: View {
             .padding(.bottom, Space.s6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+        .sheetLeft($sheetLeft)
         .refreshable { await refresh() }
         .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         // Ends when nothing is running or the sheet goes.
@@ -219,6 +257,24 @@ private struct AgentsSheet: View {
         .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
+    }
+
+    private func agentRows(_ rows: [AgentsRow]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
+                switch row.kind {
+                case .thread:
+                    AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
+                        if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
+                    }
+                case .agent:
+                    AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)
+                }
+            }
+        }
+        .sottoCard(.plain)
+        .accessibilityElement(children: .contain)
     }
 
     /// The user's own refresh: the list, and every opened agent's task and result with it.
@@ -272,6 +328,36 @@ private extension AgentsRow.Tone {
     }
 }
 
+/// The rows that are doing one thing, on the Duo's Agents sheet.
+private struct AgentsSection: Identifiable {
+    let tone: AgentsRow.Tone
+    let title: String
+    let showsStatus: Bool
+    let rows: [AgentsRow]
+    var id: String { title }
+    static func sections(_ rows: [AgentsRow]) -> [AgentsSection] {
+        let all = [
+            AgentsSection(tone: .needs, title: String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), showsStatus: false,
+                          rows: rows.filter { $0.tone == .needs }),
+            AgentsSection(tone: .working, title: String(localized: "Working", comment: "A thread's state in its bar"), showsStatus: false,
+                          rows: rows.filter { $0.tone == .working }),
+            AgentsSection(tone: .failed, title: String(localized: "Failed"), showsStatus: true, rows: rows.filter { $0.tone == .failed }),
+            AgentsSection(tone: .done, title: String(localized: "Finished", comment: "The heading over delegated threads and agents that have stopped working."), showsStatus: true,
+                          rows: rows.filter { $0.tone == .done || $0.tone == .quiet }),
+        ]
+        return all.filter { !$0.rows.isEmpty }
+    }
+}
+
+private struct AgentsInSectionKey: EnvironmentKey { static let defaultValue: Bool? = nil }
+private extension EnvironmentValues {
+    /// Whether a row in a section says its status; nil for a row in the one list.
+    var agentsInSection: Bool? {
+        get { self[AgentsInSectionKey.self] }
+        set { self[AgentsInSectionKey.self] = newValue }
+    }
+}
+
 /// How long a row has worked, counting each second while it does.
 private struct RowElapsed: View {
     let elapsed: AgentsElapsed
@@ -292,8 +378,72 @@ private struct RowBody: View {
     let mark: AnyView
     /// Whether Watcher watches the sheet's own thread, which reaches a thread below through the one that delegated it.
     var sheetWatched = false
+    /// Room kept at the end of the name's line in the Duo's sections, for Open to answer standing there.
+    var nameRoom: CGFloat = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.agentsInSection) private var inSection
     var body: some View {
+        if RowBody.sectioned(inSection, typeSize) { sectioned } else { listed }
+    }
+    /// Whether a row takes the Duo's sectioned layout: in a section, below the accessibility text sizes.
+    static func sectioned(_ inSection: Bool?, _ typeSize: DynamicTypeSize) -> Bool { inSection != nil && !typeSize.isAccessibilitySize }
+    /// In the Duo's sections the mark sits beside the name, so the words below take the row's whole width; the kind, the
+    /// time and the clock share a line, and where it runs is one line cut at its end (Zach's pick B, November 9, 2026).
+    private var sectioned: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: Space.s2) {
+                mark
+                    .frame(width: 24, height: 24)
+                    .background(Palette.fillSoft, in: Circle())
+                    .foregroundStyle(Palette.ink)
+                    .accessibilityHidden(true)
+                title.fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.trailing, nameRoom)
+            HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                Text(tag)
+                if case .unknown = row.elapsed {} else {
+                    Text(verbatim: "·")
+                    RowElapsed(elapsed: row.elapsed).monospacedDigit()
+                }
+                if let started = row.startedAt {
+                    Text(verbatim: "·")
+                    Text(started.formatted(date: .omitted, time: .shortened))
+                }
+            }
+            .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+            if let by = row.delegatedBy {
+                (row.watchedThrough(sheetWatched: sheetWatched)
+                    ? Text("Delegated by \(by) · Watched by Watcher through it", comment: "A delegated thread's line on the Agents sheet while Watcher watches the thread this sheet belongs to, which reaches it through the thread named; %@ is that thread's title.")
+                    : Text("Delegated by \(by)"))
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+            if let preview = row.preview {
+                Text(preview).font(.sotto(.small)).foregroundStyle(Palette.ink.opacity(0.86)).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !row.facts.isEmpty {
+                Text(verbatim: row.facts.joined(separator: " · "))
+                    .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+            if let status = row.status, inSection != false {
+                HStack(spacing: 6) {
+                    // A finished task carries the finished check, where a hollow ring read as still waiting (Zach's
+                    // pick B, November 9, 2026, round 4).
+                    // The check's disc is 14 points across, wider than the light's own frame, so it takes its full room
+                    // here rather than reaching over the word and past the text's edge.
+                    if row.tone == .done { Light(tone: .accent, size: 7, finished: true).frame(width: 14, height: 14) }
+                    else { Light(tone: row.tone.light, size: 7, breathing: row.tone == .working) }
+                    Text(status)
+                }
+                .font(.sotto(.small, row.tone == .done || row.tone == .quiet ? .regular : .semibold))
+                .foregroundStyle(row.tone.words)
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private var listed: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark
                 .frame(width: 28, height: 28)
@@ -301,7 +451,17 @@ private struct RowBody: View {
                 .foregroundStyle(Palette.ink)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                if typeSize.isAccessibilitySize {
+                if inSection != nil {
+                    // In a section the name has the row's whole width, with the kind and the time under it.
+                    title.fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                        Text(tag).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        if case .unknown = row.elapsed {} else {
+                            Text(verbatim: "·").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                            RowElapsed(elapsed: row.elapsed).font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+                        }
+                    }
+                } else if typeSize.isAccessibilitySize {
                     // At the largest sizes the kind and the time go under the name, which beside them was cut to a few
                     // letters.
                     title.lineLimit(4)
@@ -326,7 +486,7 @@ private struct RowBody: View {
                 }
                 Text(row.meta(clock: { $0.formatted(date: .omitted, time: .shortened) }))
                     .font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(2)
-                if let status = row.status {
+                if let status = row.status, inSection != false {
                     HStack(spacing: 6) {
                         Light(tone: row.tone.light, size: 7, breathing: row.tone == .working)
                         Text(status)
@@ -338,8 +498,8 @@ private struct RowBody: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // A row under another is set in, as Tools › Agents sets it.
-        .padding(.leading, CGFloat(min(row.level - 1, 3)) * 18)
+        // A row under another is set in, as Tools › Agents sets it. In a section it may stand apart from the row it's under.
+        .padding(.leading, inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18)
     }
     private var title: Text { Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
     private var kind: some View {
@@ -362,14 +522,24 @@ private struct AgentsThreadRow: View {
     let row: AgentsRow
     let sheetWatched: Bool
     let open: () -> Void
+    @Environment(\.agentsInSection) private var inSection
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// How wide Open to answer stands at the end of the name's line, so the name keeps clear of it.
+    @State private var answerWidth: CGFloat = 0
+    /// In the Duo's sections Open to answer ends the name's line in the chevron's place, so the brief gets the room
+    /// below (Zach's pick B, November 9, 2026, round 4).
+    private var answerBesideName: Bool { row.waitingFor != nil && RowBody.sectioned(inSection, typeSize) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
                 HStack(alignment: .center, spacing: Space.s2) {
                     RowBody(row: row, tag: String(localized: "Thread", comment: "The tag on a row of the Agents sheet that is a delegated thread."), mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
-                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))), sheetWatched: sheetWatched)
-                    Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
-                        .accessibilityHidden(true)
+                        : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))), sheetWatched: sheetWatched,
+                            nameRoom: answerBesideName ? answerWidth + Space.s2 : 0)
+                    if !answerBesideName {
+                        Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .padding(.horizontal, Space.s4)
                 .padding(.vertical, Space.s3)
@@ -379,15 +549,26 @@ private struct AgentsThreadRow: View {
             .buttonStyle(PressStyle())
             .accessibilityLabel(row.spokenLabel)
             .accessibilityIdentifier("agents-row-\(row.id)")
-            if row.waitingFor != nil {
-                Button("Open to answer", action: open)
-                    .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                    .padding(.leading, Space.s4 + 28 + Space.s3 + CGFloat(min(row.level - 1, 3)) * 18)
+            .overlay(alignment: .topTrailing) {
+                if answerBesideName {
+                    answer
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { answerWidth = $0 }
+                        .padding(.top, Space.s3 - 6)
+                        .padding(.trailing, Space.s3)
+                }
+            }
+            if row.waitingFor != nil, !answerBesideName {
+                answer
+                    .padding(.leading, Space.s4 + 28 + Space.s3 + (inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18))
                     .padding(.bottom, Space.s3)
-                    .accessibilityLabel("Open \(row.title) to answer its request")
-                    .accessibilityIdentifier("agents-answer-\(row.id)")
             }
         }
+    }
+    private var answer: some View {
+        Button("Open to answer", action: open)
+            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .accessibilityLabel("Open \(row.title) to answer its request")
+            .accessibilityIdentifier("agents-answer-\(row.id)")
     }
 }
 
@@ -399,6 +580,7 @@ private struct AgentsAgentRow: View {
     let row: AgentsRow
     /// The sheet's count of the user's refreshes: each one reads an opened agent again.
     let refreshes: Int
+    @Environment(\.agentsInSection) private var inSection
     @State private var open = false
     @State private var assignment: SubagentAssignment?
     @State private var failed = false
@@ -447,7 +629,7 @@ private struct AgentsAgentRow: View {
                 Text("Loading its result…").font(.sotto(.small)).foregroundStyle(Palette.muted).padding(.top, Space.s2)
             }
         }
-        .padding(.leading, Space.s4 + 28 + Space.s3 + CGFloat(min(row.level - 1, 3)) * 18)
+        .padding(.leading, Space.s4 + 28 + Space.s3 + (inSection != nil ? 0 : CGFloat(min(row.level - 1, 3)) * 18))
         .padding(.trailing, Space.s4)
         .padding(.bottom, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
