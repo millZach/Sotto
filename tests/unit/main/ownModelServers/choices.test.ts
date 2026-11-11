@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ModelCatalogue } from '../../../../src/main/ownModelServers/catalogue'
 import { OwnServers } from '../../../../src/main/ownModelServers/service'
 import { keptModels, type CheckResult } from '../../../../src/shared/ownModelServers'
 
@@ -15,7 +16,7 @@ async function fixture() {
   const key = randomUUID(), key2 = randomUUID(), keys = new Map<string, string>()
   const keepKey = vi.fn(async (id: string, value: string) => { keys.set(id, value) })
   const check = vi.fn<(_address: string, _key: string | undefined) => Promise<CheckResult>>(async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }))
-  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey, forgetKey: async id => { keys.delete(id) } }), readKey: async id => keys.get(id), check })
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey, forgetKey: async id => { keys.delete(id) } }), readKey: async id => keys.get(id), check, catalogue: new ModelCatalogue(async () => { throw new Error('No network in a unit test') }) })
   const added = await service.add({ name: 'Example', address: 'https://example.test/v1', key, models: [model], inventory: [model], keptModelIds: ['one'] })
   if (added.status !== 'ok') throw new Error('Fixture add failed')
   return { service, directory, server: added.server, key, key2, keys, keepKey, check }
@@ -83,4 +84,29 @@ it('updates an existing Hermes copy while the adapter is held', async () => {
   expect((await service.replaceKey({ id: saved.server.id, key: next })).status).toBe('ok')
   expect(replaceHeldHermesKey).toHaveBeenCalledWith(saved.server.id, next)
   expect((await service.list())[0]).toEqual(saved.server)
+})
+
+it('reads the catalogue on Check again, so an API saved before the catalogue existed gets its thinking levels', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-')); paths.push(directory)
+  const request = vi.fn(async () => new Response(JSON.stringify({ example: { name: 'Example', npm: '@ai-sdk/openai-compatible', api: 'https://example.test/v1',
+    models: { one: { name: 'One', reasoning: true, reasoning_options: [{ type: 'toggle' }, { type: 'effort', values: ['low', 'high'] }], limit: { context: 131072, output: 8192 } } } } })))
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey: async () => undefined, forgetKey: async () => undefined }), catalogue: new ModelCatalogue(request),
+    check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [{ id: 'one', name: 'one' }] }) })
+  const added = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (added.status !== 'ok') throw new Error('The fixture was not added.')
+  // Add never opened in this run: nothing but Check again asks for the catalogue.
+  expect(request).not.toHaveBeenCalled()
+  expect(await service.checkSaved({ id: added.server.id })).toMatchObject({ status: 'ok', models: [{ id: 'one', reasoningEfforts: ['none', 'low', 'high'] }] })
+  expect((await service.list())[0]!.models[0]).toMatchObject({ reasoningEfforts: ['none', 'low', 'high'], output: 8192 })
+})
+
+it('asks no catalogue when Check again is for a server on plain http', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-')); paths.push(directory)
+  const request = vi.fn(async () => new Response('{}'))
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey: async () => undefined, forgetKey: async () => undefined }), catalogue: new ModelCatalogue(request),
+    check: async () => ({ status: 'ok', address: 'http://spark-head:8888/v1', kind: 'sglang', answeredMs: 1, models: [{ id: 'one', name: 'one', context: 131072 }] }) })
+  const added = await service.add({ name: 'Spark', address: 'http://spark-head:8888', models: [model] })
+  if (added.status !== 'ok') throw new Error('The fixture was not added.')
+  await service.checkSaved({ id: added.server.id })
+  expect(request).not.toHaveBeenCalled()
 })

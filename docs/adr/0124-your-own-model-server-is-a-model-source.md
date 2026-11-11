@@ -142,7 +142,9 @@ amendment supersedes the original dialog, discovery and thinking decisions above
 It remains behind `own-model-servers` and `hermes`; stable starts and shows none.
 
 Settings > Providers has **APIs and your own model servers**, with one Add dialog.
-Main downloads `https://models.dev/api.json` when the dialog opens, without a key,
+Main downloads `https://models.dev/api.json` when the dialog opens, or on Check
+again for a saved https address so a record older than the catalogue gets its
+facts, without a key,
 cookies or user data. It reads a bounded response, caches it in memory for this
 app run, never logs it and never writes it to disk. Failure leaves Another address
 available and offers a retry. Only catalogue entries with an `api` address and

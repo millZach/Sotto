@@ -154,6 +154,8 @@ export class OwnServers {
     return this.inTurn(async () => {
       const servers = await this.servers(), server = servers.find(item => item.id === id)
       if (!server) return this.checked(refusal('not-found', OWN_SERVER_WORDS.notFound))
+      // A hosted API's saved facts come from the catalogue too, and Check again may be pressed before Add ever opened.
+      if (server.address.startsWith('https://')) await this.catalogueSource.load()
       const now = this.options.now ?? Date.now, started = now()
       const key = server.keyed ? await this.options.readKey?.(id) : undefined
       const result = this.enrich(await this.run(server.address, key), server.catalogueId, server.inventory ?? server.models)

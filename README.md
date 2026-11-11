@@ -117,7 +117,7 @@ First-run setup takes a few minutes, and every step after the welcome can be ski
 
 ## Privacy and cost
 
-In Sotto Owl, opening Add an API or server downloads the public model catalogue from **models.dev**, with no key or user data. Checking an API sends its key only to the address shown in the dialog, supplied by the catalogue or entered by you.
+In Sotto Owl, opening Add an API or server, or pressing Check again on a saved https address, downloads the public model catalogue from **models.dev**, with no key or user data. Checking an API sends its key only to the address shown in the dialog, supplied by the catalogue or entered by you.
 
 Sotto has no account of its own and no crash reports. It does send **product events** unless you turn them off: which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys.
 
