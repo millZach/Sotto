@@ -181,6 +181,10 @@ msgid "{count, plural, one {{files} file} other {{files} files}}"
 msgstr "{count, plural, one {{files} file} other {{files} files}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{count, plural, one {{label} {threads} thread} other {{label} {threads} threads}}"
+msgstr "{count, plural, one {{label} {threads} thread} other {{label} {threads} threads}}"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{count, plural, one {{projectTitle} {threads} thread} other {{projectTitle} {threads} threads}}"
 msgstr "{count, plural, one {{projectTitle} {threads} thread} other {{projectTitle} {threads} threads}}"
 
@@ -6040,6 +6044,11 @@ msgstr "Open this thread"
 msgid "Open thread"
 msgstr "Open thread"
 
+#. The sidebar's open threads grouped by status, as a screen reader names the part.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Open threads"
+msgstr "Open threads"
+
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open to answer the approval in {title}"
 msgstr "Open to answer the approval in {title}"
@@ -6691,6 +6700,11 @@ msgstr "Reasoning"
 #: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Reasoning effort"
 msgstr "Reasoning effort"
+
+#. A sidebar group: every other open thread, newest first.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Recent"
+msgstr "Recent"
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Recent worktrees"
@@ -9967,6 +9981,11 @@ msgstr "Working for {took}"
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Working in the background."
 msgstr "Working in the background."
+
+#. A sidebar group: the open threads whose agent is working.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Working now"
+msgstr "Working now"
 
 #. {prompt} is your last message to the thread.
 #: src/renderer/src/agents/threadFacts.ts

@@ -42,6 +42,14 @@ async function loaded(page: HostBrowserPage, path: string): Promise<void> {
   await until(() => page.state.url === origin + path && page.state.status === 'ready', `${path} to load`)
 }
 
+/**
+ * The deadline of the journey that starts a real Chromium and drives it through every action. It takes about 12 seconds on
+ * CI's Linux runner (11.7 s on November 10, 2026), so the suite's 15 seconds left it no room: on a busier runner it timed
+ * out on every run while every other test of the file passed (#2426). Waiting is not the assertion (AGENTS.md), and a
+ * deadline that is never reached costs nothing.
+ */
+const REAL_CHROMIUM_JOURNEY_MS = 60_000
+
 describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requires SOTTO_REAL_BROWSER=1)', () => {
   beforeAll(async () => {
     server = createServer((request, response) => {
@@ -103,7 +111,7 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     await loaded(page, '/b')
     await page.close()
     expect(page.closed).toBe(true)
-  })
+  }, REAL_CHROMIUM_JOURNEY_MS)
 
   it('sends pictures to a pane at its size, newest first, until it stops watching', async () => {
     const page = await browser.open('workspace-1')
