@@ -347,6 +347,8 @@ import { isImmutableActivities } from './agents/activitySnapshots'
 import type { AgentActivity } from '../shared/agentActivity'
 import { installRemoteHostE2E } from './e2e/remoteHost'
 import { installBabysitPassE2E } from './e2e/babysitPass'
+import { exposeStartupMarksForE2E } from './e2e/startupMarks'
+import { markStartup } from './performance/startupMarks'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -356,7 +358,11 @@ import { probeMemoryStore } from './memory/probe'
 
 export { probeMemoryStore }
 
+// The first line of main that runs, once every import above has loaded.
+markStartup('main-bundle-evaluated')
+
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
+exposeStartupMarksForE2E(e2eConfiguration)
 if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E
   delete process.env.SOTTO_E2E_SCENARIO
