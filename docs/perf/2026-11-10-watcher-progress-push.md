@@ -35,9 +35,9 @@ was sent 1,640,095 bytes a step in both runs, 177,842 compressed after and 177,8
 
 The synthetic record compresses better than forge's: its whole push is 1.64 MB of JSON and 178 KB compressed, where
 forge's was 1.98 MB and 366 KB. The progress push does not depend on the record's size, so on forge the fall on the wire
-should be larger, not smaller. `tests/perf/watcherStatePush.perf.test.ts` times what one whole push costs each end, 27 ms
-on the host and 16 ms on the laptop's main process for forge's record; a progress push does none of that work, but its
-own time was not measured here.
+should be larger, not smaller. `tests/perf/watcherStatePush.perf.test.ts` times what one whole push costs each end, about
+18 ms on the host and 13.5 ms on the laptop's main process for forge's record (the audit's revised figures); a progress
+push does none of that work, but its own time was not measured here.
 
 ## What still goes whole
 
