@@ -16,7 +16,11 @@ November 11, 2026. Zach's pick B2 from `prototype/sidebar-hover-row`, with the c
 
 The fixture has no remote computer, so each proof added a `host-badge` with the app's own markup ("forge") to the grouped rows in the page before capturing. Hover states were captured with Electron's `webContents.capturePage()`: under xvfb, Playwright's screenshots of the window returned a frame from before the pointer moved.
 
+## On Windows
+
+November 11, 2026, on `main` at #2472's merge, with `npm run design:capture` on the Windows laptop. The new [dark](../../artifacts/design/app-review/baseline/threads-row-pointed-at-dark.png) and [light](../../artifacts/design/app-review/baseline/threads-row-pointed-at-light.png) baselines show "Footer links" with the keys' focus ring and its three shortcuts, its word and time making way. The first run also moved `threads-open-running`: the new step left the keys' focus on "Footer links", and the click that then opened it kept that focus, so the open row read as pointed at, with its ring and shortcuts in place of "Working 3 min". A click shows no ring, so the capture now drops the keys' focus before that click. Retaken, `threads-open-running` matches its baseline again: dark byte for byte and light within 4 pixels. No existing Threads capture changed. The others that the runs rewrote differed only by raster noise.
+
 ## Not checked here
 
-- Windows and macOS. The design baselines are Windows captures; `threads-row-pointed-at-dark.png` and `threads-row-pointed-at-light.png` are new and are taken on Windows with `npm run design:capture`, which also shows whether any existing threads capture moved.
+- macOS.
 - A real remote computer on the row, and two remote computers at once, which now look alike until pointed at.

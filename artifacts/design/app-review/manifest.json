@@ -17,7 +17,7 @@
     "Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.",
     "Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta."
   ],
-  "count": 142,
+  "count": 144,
   "entries": [
     {
       "theme": "dark",
@@ -1614,6 +1614,34 @@
       "width": 1080,
       "height": 720,
       "sha256": "2ebf08366ab4283ac30340bc09846d88e52df8190536724eae37ac16a6f696a8"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "threads-row-pointed-at-dark",
+      "category": "threads",
+      "state": "row-pointed-at",
+      "relativePath": "artifacts/design/app-review/baseline/threads-row-pointed-at-dark.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "4219e0377dff721a496eb3e552fa6e694d8563f04824518763cc9609412ec484"
+    },
+    {
+      "theme": "light",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "threads-row-pointed-at-light",
+      "category": "threads",
+      "state": "row-pointed-at",
+      "relativePath": "artifacts/design/app-review/baseline/threads-row-pointed-at-light.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "a7b088ebe28bde30373f3f44984d101a4dfc3b44a030bc64b59a2820800bd6fe"
     },
     {
       "theme": "dark",
