@@ -75,7 +75,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
   const [error, setError] = useState<LaterWords | null>(null)
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
   const tailscale = useTailscale(hostsBridge)
-  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, tailscale.summary?.state === 'missing')
+  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, { tailscaleMissing: tailscale.summary?.state === 'missing', readTailscale: hostsBridge ? () => hostsBridge.tailscale() : undefined })
   const [copied, setCopied] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<LaterWords>('')
@@ -194,7 +194,8 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       <Toggle setting="phone-access" label={t`Let phones connect`} checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); access.turn(enabled) }}
         description={t`Adds this computer to Tailscale Serve, on port 8443 or 10000, while this is on and Sotto is open. Only phones you pair can connect.`} />
-      {access.needsTailscale ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on.</Trans></p> : null}
+      {access.needsTailscale === 'off' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on.</Trans></p> : null}
+      {access.needsTailscale === 'still-on' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on.</Trans></p> : null}
       {access.saveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></p> : null}
     </div>
     <ol className="phones-steps" aria-label={t({ message: 'Setup', comment: 'The steps that set up phone access.' })} aria-busy={starting || undefined}>

@@ -106,10 +106,12 @@ it('closes Add host with one Escape while the device list is as it opened, and t
   settings(bridge)
   const first = await openAddHost(user)
   expect(within(first.dialog).getByRole('combobox', { name: 'Device' }).getAttribute('aria-expanded')).toBe('true')
+  // The pointer passing over the list, which opens under wherever it already is, does not make the list the user's.
+  await user.hover(within(first.dialog).getAllByRole('option')[1]!)
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('dialog')).toBeNull()
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add host' })))
-  // Moving in the list makes it the user's: Escape closes it, and the next one closes the dialog.
+  // Moving in the list from the keyboard makes it the user's: Escape closes it, and the next one closes the dialog.
   const second = await openAddHost(user)
   const picker = within(second.dialog).getByRole('combobox', { name: 'Device' })
   await user.keyboard('{ArrowDown}')

@@ -275,6 +275,35 @@ it('Tailscale not installed, found when phone access checks: the switch goes bac
   expect(within(container.querySelector('.phones-switch')!).getByRole('alert')).toHaveTextContent(NEEDS_TAILSCALE)
 })
 
+it('asks Tailscale before saving when the page has not read it yet, so nothing is left on if the page closes (ADR-0200)', async () => {
+  const { bridge } = fixture(OFF)
+  const update = vi.fn(async () => true), user = userEvent.setup()
+  // The page's own read never answers; the press's read says Tailscale is not installed.
+  const tailscale = vi.fn<() => Promise<{ state: 'missing' }>>().mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValue({ state: 'missing' })
+  const { container } = render(<PhonesSettings phoneAccess={false} phoneAccessName="" onUpdateSettings={update} onOpenHosts={vi.fn()} bridge={bridge} hostsBridge={{ tailscale } as unknown as HostsBridge} />)
+  await user.click(screen.getByRole('switch', { name: 'Let phones connect' }))
+  expect(await within(container.querySelector('.phones-switch')!).findByRole('alert')).toHaveTextContent(NEEDS_TAILSCALE)
+  expect(update).not.toHaveBeenCalled()
+})
+
+it('does not say the switch stayed off when turning it back off could not be saved', async () => {
+  const { bridge, push } = fixture(OFF)
+  const user = userEvent.setup()
+  function Page(): React.ReactNode {
+    const [on, setOn] = React.useState(false)
+    return <PhonesSettings phoneAccess={on} phoneAccessName="" onOpenHosts={vi.fn()} bridge={bridge}
+      onUpdateSettings={async patch => { if (patch.phoneAccess === true) { setOn(true); return true } return false }} />
+  }
+  const { container } = render(<Page />)
+  const toggle = screen.getByRole('switch', { name: 'Let phones connect' })
+  await user.click(toggle)
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
+  push({ enabled: true, phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+  expect(await within(container.querySelector('.phones-switch')!).findByText('Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on.')).toBeInTheDocument()
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  expect(screen.queryByText(NEEDS_TAILSCALE)).toBeNull()
+})
+
 it('a switch that was already on when Tailscale went away is left on, with the failed step and Try again', async () => {
   const { update } = show({ ...READY, phase: 'failed', tailscale: { status: 'failed', reason: 'missing' }, serve: { status: 'waiting' }, address: null })
   await screen.findByRole('img', { name: 'Failed' })

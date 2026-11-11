@@ -3,6 +3,7 @@ import { Circle, CircleCheck, CircleX, Smartphone } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { PairedPhone, PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
+import type { TailscaleSummary } from '../../../../shared/hostDevices'
 import { Button } from '../../components/Button'
 
 /** Pieces of phone access that this computer's Phones page and a remote host's Phones dialog share (ADR-0033, ADR-0050). */
@@ -10,25 +11,34 @@ import { Button } from '../../components/Button'
 export type Step = 'ok' | 'failed' | 'waiting'
 
 /**
- * Let phones connect, wherever its switch is shown (ADR-0200). Phones reach this computer over Tailscale, so turning
- * the switch on where Tailscale is not installed turns it back off and says so, rather than leaving it on beside a
- * step that failed. `tailscaleMissing` is what the page already knows, which spares the switch going on at all; the
- * check phone access makes itself catches the rest. A switch that was already on when Tailscale went away is left
- * alone: that is a failed step with Try again, and phone access comes back with Tailscale.
+ * Let phones connect, wherever its switch is shown (ADR-0200). Phones reach this computer over Tailscale, so a press
+ * that would turn the switch on where Tailscale is not installed leaves it off and says so, rather than leaving it on
+ * beside a step that failed. The press asks Tailscale first (`readTailscale`, or what the page already knows in
+ * `tailscaleMissing`) and saves nothing when it is missing, so nothing is left on if the page closes meanwhile. Where
+ * Tailscale could not be asked, the switch is saved on and phone access's own check turns it back off. A switch that
+ * was already on when Tailscale went away is left alone: that is a failed step with Try again, and phone access comes
+ * back with Tailscale.
  */
-export function usePhoneAccessSwitch(phoneAccess: boolean, state: PhonesState | null, onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>, tailscaleMissing = false): {
+export function usePhoneAccessSwitch(phoneAccess: boolean, state: PhonesState | null, onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>,
+  options: { readonly tailscaleMissing?: boolean; readonly readTailscale?: (() => Promise<TailscaleSummary>) | undefined } = {}): {
   readonly turn: (enabled: boolean) => void
-  /** The last press could not turn phone access on because Tailscale is not installed on this computer. */
-  readonly needsTailscale: boolean
+  /**
+   * What the last press that turned the switch on met: `off` when it stayed or went back off because Tailscale is not
+   * installed, `still-on` when it could not be turned back off.
+   */
+  readonly needsTailscale: 'off' | 'still-on' | null
   readonly saveFailed: boolean
 } {
-  const [needsTailscale, setNeedsTailscale] = useState(false)
+  const { tailscaleMissing = false, readTailscale } = options
+  const [needsTailscale, setNeedsTailscale] = useState<'off' | 'still-on' | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
-  /** True from a press that turned the switch on until phone access has checked Tailscale for it. */
+  /** True from a press that saved the switch on until phone access has checked Tailscale for it. */
   const pressed = useRef(false)
+  /** The newest press, so an answer about Tailscale that arrives after a later press changes nothing. */
+  const press = useRef(0)
   const update = useRef(onUpdateSettings)
   update.current = onUpdateSettings
-  const save = (enabled: boolean): void => { void update.current({ phoneAccess: enabled }).then(saved => setSaveFailed(!saved), () => setSaveFailed(true)) }
+  const save = (enabled: boolean): Promise<boolean> => update.current({ phoneAccess: enabled }).catch(() => false)
   const tailscale = state?.tailscale
   const found = tailscale?.status === 'ok'
   const missing = tailscale?.status === 'failed' && tailscale.reason === 'missing'
@@ -37,18 +47,27 @@ export function usePhoneAccessSwitch(phoneAccess: boolean, state: PhonesState | 
     if (found) { pressed.current = false; return }
     if (!missing) return
     pressed.current = false
-    setNeedsTailscale(true)
-    save(false)
+    // It says the switch went back off only once it has.
+    void save(false).then(saved => setNeedsTailscale(saved ? 'off' : 'still-on'))
   }, [found, missing, phoneAccess])
   // Once Tailscale is here, the sentence about it has nothing left to say.
-  useEffect(() => { if (found) setNeedsTailscale(false) }, [found])
-  useEffect(() => { if (!tailscaleMissing) setNeedsTailscale(false) }, [tailscaleMissing])
+  useEffect(() => { if (found) setNeedsTailscale(null) }, [found])
+  useEffect(() => { if (!tailscaleMissing) setNeedsTailscale(current => current === 'off' ? null : current) }, [tailscaleMissing])
   const turn = (enabled: boolean): void => {
+    const mine = ++press.current
     setSaveFailed(false)
-    if (enabled && tailscaleMissing) { setNeedsTailscale(true); return }
-    setNeedsTailscale(false)
-    pressed.current = enabled
-    save(enabled)
+    if (!enabled) { pressed.current = false; setNeedsTailscale(null); void save(false).then(saved => { if (mine === press.current) setSaveFailed(!saved) }); return }
+    if (tailscaleMissing) { setNeedsTailscale('off'); return }
+    setNeedsTailscale(null)
+    void (async () => {
+      const summary = readTailscale ? await readTailscale().catch(() => null) : null
+      if (mine !== press.current) return
+      if (summary?.state === 'missing') { setNeedsTailscale('off'); return }
+      // Tailscale is there, or could not be asked: phone access checks it again itself.
+      pressed.current = true
+      const saved = await save(true)
+      if (mine === press.current) setSaveFailed(!saved)
+    })()
   }
   return { turn, needsTailscale, saveFailed }
 }

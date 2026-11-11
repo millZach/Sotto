@@ -367,7 +367,7 @@ export function HostDialog({ mode, bridge, state, tailscale, agentSetup = true, 
         <p className="tt-field__description tt-paragraph" id={hintId}>{editing ? t`An alias from your SSH configuration, or a host name.`
           : <>{t`A host name, an alias from your SSH configuration or user@server.`} <button type="button" className="hosts-devices__back tt-focusable" disabled={fieldsDisabled} onClick={chooseFromDevices}>{t`Choose from your devices`}</button></>}</p>
       </div> : <DevicePicker devices={devices?.devices ?? null} failed={devices?.failed === true} tailscale={tailscale?.summary ?? devices?.tailscale ?? null} saved={saved} value={picked}
-        onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} />}
+        onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} cameBack={entry === 'back'} />}
       {!editing && agentSetup ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
         onModel={setModelId} disabled={fieldsDisabled} /> : null}
       {serveShown ? <p className="tt-field__description tt-paragraph" id={serveId}><Trans>Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</Trans></p> : null}

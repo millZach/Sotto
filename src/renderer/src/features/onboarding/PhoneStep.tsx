@@ -31,7 +31,8 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
   const [error, setError] = useState<LaterWords | null>(null)
   const tailscale = useTailscale(window.sotto?.hosts)
-  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, tailscale.summary?.state === 'missing')
+  const hosts = window.sotto?.hosts
+  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, { tailscaleMissing: tailscale.summary?.state === 'missing', readTailscale: hosts ? () => hosts.tailscale() : undefined })
   const [now, setNow] = useState(() => Date.now())
   const showButton = useRef<HTMLButtonElement>(null)
   const codeBox = useRef<HTMLDivElement>(null)
@@ -114,7 +115,8 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
               onCheckedChange={enabled => { setError(null); access.turn(enabled) }}
             />
             {!localHostRunning ? <span className="onboarding-recovery"><Trans>Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.</Trans></span> : null}
-            {access.needsTailscale ? <span className="onboarding-recovery" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on.</Trans></span> : null}
+            {access.needsTailscale === 'off' ? <span className="onboarding-recovery" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on.</Trans></span> : null}
+            {access.needsTailscale === 'still-on' ? <span className="onboarding-recovery" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on.</Trans></span> : null}
             {access.needsTailscale ? <Button variant="secondary" onClick={tailscale.getTailscale}><Trans>Get Tailscale</Trans></Button> : null}
             {access.needsTailscale && tailscale.notice ? <span role="status">{tailscale.notice}</span> : null}
             {access.saveFailed ? <span className="onboarding-recovery" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></span> : null}

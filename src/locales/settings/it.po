@@ -4507,6 +4507,10 @@ msgid "Phones paired with {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+msgstr ""
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
 msgstr ""
 
