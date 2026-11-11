@@ -85,3 +85,7 @@ What it reaches is the light: a status light's halo (thread, computer and Watche
 ## November 8, 2026 amendment: on the Duo only New thread glows at rest
 
 Two judges of the Duo design climb found Back, the sidebar's button and Open on GitHub glowing as strongly at rest as what needs the user. Zach picked C of `docs/prototypes/ios-duo-climb/index.html`: on the iPhone Duo those round buttons stand flat, and New thread keeps the glow this ADR gives it. Status lights, cards and chosen controls are unchanged, the slider still reaches all of them, and every other iPhone keeps the look as drawn.
+
+## November 9 and 10, 2026 amendments: the Duo's glow in light and on Working cards
+
+From Zach's later picks in the same climb, on the iPhone Duo alone. In light a status light's halo and a card's glow reach a third as far at the same strength (round 4, B), and then keep their core and fall off much sooner (round 6, A); both prototypes showed lights and cards, so a control's glow, under Send or New thread, is as this ADR gives it. On the Threads overview a Working card's glow reaches about half as far as a Needs you card's, so the amber of what needs the user leads (round 8, A); `CardGlowReach` in `Design.swift` keeps both reaches. Dark keeps the reach this ADR gives, the slider still scales every glow, and every other iPhone is unchanged.

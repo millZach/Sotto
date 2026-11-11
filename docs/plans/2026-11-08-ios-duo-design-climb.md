@@ -9,7 +9,7 @@ The iPhone Duo folds (ADR-0151). Folded, its cover screen is compact width, with
 ## The method
 
 1. **Captures from the real app.** `apps/ios/Scripts/duo-captures.sh` runs `DuoCaptureTests` on the iPhone Duo simulator on the `xcode-27` runner, folded and unfolded sideways, and keeps a picture of each surface in dark and light and a short video of each movement. The simulator can't turn the unfolded Duo upright (`--ui-orientation` and `XCUIDevice` both leave it sideways), so the judges score folded and sideways from the real app; upright changes are checked in their prototypes and on Zach's Duo. A push to a `duo-captures/<name>` branch runs it (`.github/workflows/ios-duo-captures.yml`), so a round's captures never restart the pull request's CI. `duo-captures/climb-before` is `main` at `235dd51b4` with only the capture lane added: the before of every image.
-2. **Judges.** Each round, three fresh judges (GPT-6.1 Sol, Claude Opus 5.5 and Claude Fable 5.2, Zach's pick; Fable 5.2 took GPT-6 Astra's seat from round 2 on, November 9, 2026) score the Duo layout out of 10 against the comparison set, from that round's captures, with no tools beyond reading the files they are given and no memory of earlier rounds. The comparison set is T3 Code, Claude and ChatGPT with Codex from Zach's own screenshots on his Duo, folded, sideways and upright, with T3's App Store images for its thread and approval views (Zach's T3 was offline), and Cursor's for the folded set. Those screenshots stay out of the repository: they show his own thread titles and tailnet addresses. Their brief carries the decisions below as fixed. The climb ends when every judge scores Sotto 9.5 or higher.
+2. **Judges.** Each round, three fresh judges (GPT-6.1 Sol, Claude Opus 5.5 and Claude Fable 5.2, Zach's pick; Fable 5.2 took GPT-6 Astra's seat from round 2 on, November 9, 2026) score the Duo layout out of 10 against the comparison set, from that round's captures, with no tools beyond reading the files they are given and no memory of earlier rounds. The comparison set is T3 Code, Claude and ChatGPT with Codex from Zach's own screenshots on his Duo, folded, sideways and upright, with T3's App Store images for its thread and approval views (Zach's T3 was offline), and Cursor's for the folded set. Those screenshots stay out of the repository: they show his own thread titles and tailnet addresses. Their brief carries the decisions below as fixed. The climb was to end when every judge scored Sotto 9.5 or higher; after round 7, with the scores holding between 8.5 and 9.5 as each round found new small things, Zach chose to end it with round 8 and open the pull request whatever its scores.
 3. **Zach decides.** A judge's finding becomes a change only through Zach. For each surface the judges want changed, a prototype with variants A, B and C opens on the Duo from a tailnet link, and a question card asks which to build, with a recommendation. Only the pick is built. A finding that would reverse an ADR gets its own prototype and question first, and the ADR is amended only on his answer.
 4. **Batched rounds.** A capture run takes most of an hour, so each round builds every pick Zach has made, then captures once and judges once.
 5. **One pull request** carries the capture lane, every change, the verification note with a before and after image of each surface and a short before and after video of each change, and the ADR amendments. The last check is Zach's on a TestFlight build on his Duo.
@@ -134,3 +134,74 @@ Zach's picks, from `docs/prototypes/ios-duo-climb/round-5.html`:
 Fixed without a pick, each against a decision already made: the folded list's times are short ("2m"), as round 4's prototype said they were; a row waiting in a delegated thread reads Question and the computer; the Agents sheet names a model as the computer does and gives the finished check its room; the ••• card's words start at one edge; the pull request sheet's branch breaks after its slash.
 
 Held, each raised by one judge: Computers sideways (Fable), the New thread sheet's width sideways (Fable), the overview's empty lower half (Opus), the Settings theme grid (Fable).
+### Round 5 (November 10, 2026)
+
+Captures: `duo-captures/round-5` (run 42755336243). Scores: GPT-6.1 Sol 9, Claude Opus 5.5 9.0, Claude Fable 5.2 8.5. Fable asked again to end the conversation at the reply box. Zach kept it a third time and on November 10 called it his favourite feature, so from round 8 the brief tells the judges not to score it down or list it as a reversal.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-6.html`:
+
+| Surface | Pick |
+|---|---|
+| Below the reply box | As it is, a third time |
+| Computers | As they are |
+| Folded Threads' top | A, the computer menu and search on the title's row |
+| New thread sideways | B, two cards to a row |
+| The glow in light | A, the same cores with a much tighter falloff |
+| A folded row's time | A, it ends the second line |
+| The ••• card | A, a step lighter |
+| Not now in light | A, an outline pill |
+| One-line code block | A, Copy at the code's right end, no header bar |
+| Theme grid | A, four across sideways, three folded |
+
+Fixed without a pick, each against a decision already made: a table's columns by their words, ↪ on a wrapped step command, the rail's word and gaps, a card's title filling its first line, the Needs you card's rhythm, a pull request jump landing below the clock, and the page still reading below a sideways sheet.
+
+### Round 6 (November 10, 2026)
+
+Captures: `duo-captures/round-6` (run 42868879865). Scores: GPT-6.1 Sol 9.5, Claude Opus 5.5 9.3, Claude Fable 5.2 8.5. No reversals asked.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-7.html`:
+
+| Surface | Pick |
+|---|---|
+| State on the rail | B, the word at the sidebar's second-line size, its time for VoiceOver |
+| Folded Agents' first label | A, below the clock, only the thread's name beside it |
+| New thread sideways | A, as tall as its step, with a floor |
+| Scrim in light | A, a neutral near-black at about 55% |
+| Send answer dimmed in dark | A, grey until a choice |
+| Reply box in dark | B, a step lighter fill |
+| Settled on the overview | A, the Recent card's last row |
+| Pull request chips | A, no dots |
+| Pull request Summary | A, no grey label |
+| Answerable card's lines | A, "1 more request" folds into Review |
+
+Fixed without a pick: hiding the sidebar keeps the conversation on its newest turn, one clock for a waiting thread, the Text size track, the New thread sheet's seam sideways, the ••• card's +/− mark, the Tabs setting's wording, the folded list's edges.
+
+### Round 7 (November 10, 2026)
+
+Captures: `duo-captures/round-7b` (run 42890714850). Scores: GPT-6.1 Sol 9.0, Claude Opus 5.5 9.0, Claude Fable 5.2 8.5. Zach chose to make round 8 the last: prototype the open findings on one card, build his picks with the fixes, judge once more, then open the pull request.
+
+Zach's picks, from `docs/prototypes/ios-duo-climb/round-8.html`, every one A:
+
+| Surface | Pick |
+|---|---|
+| The ••• card's edge | A hairline and a soft shadow, the page undimmed |
+| Folded Settings | Tighter, Message density and Tabs on the first screen |
+| Folded pull request's top | The state row and chips closer |
+| Folded table cards | The title, the short fields on one quiet line, the long field at full width |
+| Folded New thread | As tall as its step, with a floor |
+| Folded sheets beside the clock | Short headers end on the clock strip's edge, the heading block centred in its band |
+| Not now in dark | An outline too |
+| The rail's word | 12.5 points, tracked tighter |
+| Foot of a sideways sheet | Agents and pull request run to the screen's foot |
+| Working cards' first line | No word line: the light starts the name's row, the time ends it |
+| Teal against amber | Working cards' glow reaches about half as far |
+
+Fixed without a pick: Review beside Send answer when both fit, folded Watcher's last item above the box with the keyboard up, the sideways Agents subtitle's gap, the question sheet's band above its footer, Watcher's halo clear of its working line.
+
+### Round 8 (November 10, 2026), the last
+
+Captures: `duo-captures/round-8` (run 42912729577). Scores: GPT-6.1 Sol 9.5, Claude Opus 5.5 9.2, Claude Fable 5.2 8.5. No reversals asked. Sol and Fable both found the folded table card's bare "No" (fixed below).
+
+After judging, `main` was merged in (main had given each step pictures and videos at its line's end), and one finding was fixed against Zach's pick: a folded table card's bare answer, number or mark keeps its column's name on the quiet line ("Fixed: No"), where the prototype's values named themselves. `duo-captures/round-8-final` (run 42928343792) is the after of every image in the verification note.
+
+Held as follow-ups, outside this climb: Watcher's reply box shows no Stop while it works; a sideways thread with the sidebar hidden doesn't name itself; Settings' density; the Watch owl's mark, Computers sideways, the Glow slider's dot, short threads sitting high, and the Agents sheet's lines of detail; the sideways sidebar's chosen row with its title in teal (Sol); amber on the pull request sheet's "behind main" and its repeated check count (Opus).
