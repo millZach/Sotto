@@ -1,0 +1,159 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Open this file in a browser.
+
+  Question (Zach, November 11, 2026: "Look at how crowded this is when hovering a thread, this needs corrected."):
+  a two-line Threads sidebar row, pointed at, at the default 280px sidebar, with all four shortcuts (Open beside,
+  Watch, Snooze, Settle). After #2463 the shortcuts no longer cover the status, but the project name shrinks to a
+  letter or less and the host badge to its icon. What should the pointed-at row look like?
+
+  Variants (?variant=now|A|B|C|D, or ← → when focus is not in a field):
+    now  As it is on main today (after #2463), for comparison. Not an option.
+    A    Shortcuts on the name's line.
+    B    Same shortcuts, the room corrected.
+    C    Two shortcuts: ··· and Settle.
+    D    Shortcuts float over the row's corner.
+
+  The sidebar is Sotto's own: markup copied from the running app (Owl, design fixture) and the app's own compiled
+  stylesheet rules for the sidebar, at commit 7bf1c3679 (which carries #2463). Theme colours are the app's default
+  dark and light themes. Each variant adds a few lines of CSS (see VARIANT_CSS). The featured row is held in its
+  pointed-at state so a phone shows it; on a computer, pointing at any other row shows it too.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — the pointed-at sidebar row, prototype</title>
+<style id="font">@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: block; src: url(data:font/woff2;base64,/*FONT*/) format('woff2'); }</style>
+<script>window.PAYLOAD = /*PAYLOAD*/;</script>
+</head>
+<body>
+<script>
+const P = window.PAYLOAD
+const params = new URLSearchParams(location.search)
+const VARIANTS = [
+  { key: 'B3', name: 'B3 — B2, but In Needs you stays', line: 'Zach\'s pick of round three, as he asked: on a pointed-at row the word (Done, Working) and Watcher\'s owl leave the second line, except In Needs you, which stays. At rest every row is as before. Three rows are held pointed at here.', adr: 'Amends ADR-0201 decision 5 (what it is doing at the line\'s end): while pointed at, the word leaves unless it is In Needs you.' },
+  { key: 'B1', name: 'B1 — B, and a pointed-at Done leaves with its owl', line: 'Zach\'s pick of round two, as he asked: B, and on a pointed-at row a plain Done and Watcher\'s owl after it leave the second line (the pressed owl among the shortcuts still says Watcher is on it). Any other word stays: a pointed-at Working or In Needs you row keeps its word. At rest every row is as before. Three rows are held pointed at here.', adr: 'No ADR decision changes.' },
+  { key: 'B2', name: 'B2 — B, and every pointed-at word leaves with the owl', line: 'The same, for every word: pointed at, any row\'s word (Done, Working, In Needs you) and Watcher\'s owl leave the second line, which then reads the project and the computer before the shortcuts. At rest every row is as before. Three rows are held pointed at here.', adr: 'Amends ADR-0201 decision 5 (what it is doing at the line\'s end): while pointed at, the word leaves.' },
+  { key: 'now', name: 'Now (main, after #2463)', line: 'For comparison, not an option. Pointed at, the time hides but keeps its column, and the line also keeps clear of the shortcuts\' whole width, so the project shrinks to a letter or nothing and the computer badge to its icon.', adr: '' },
+  { key: 'A', name: 'A — Shortcuts on the name\'s line', line: 'Pointed at, the four shortcuts stand at the end of the name\'s line, as a one-line resting row already has them. The second line stays exactly as at rest, its time included. The name is cut shorter while pointed at; its full name stays the tooltip.', adr: 'No ADR decision changes.' },
+  { key: 'B', name: 'B — Same shortcuts, the room corrected', line: 'The four shortcuts stay where they are. The hidden time gives up its space, and the line keeps clear only of the shortcuts, so the line gets back about 60px. With the computer as its symbol, the project, the computer and the status fit beside all four shortcuts at 280px; a long project name is still cut.', adr: 'No ADR decision changes. The smallest change.' },
+  { key: 'C', name: 'C — Two shortcuts: ··· and Settle', line: 'Pointed at, the row shows two shortcuts: ··· opens the row\'s menu (Open beside, Rename, Watch, Snooze…, Settle, the same menu a right-click opens) and Settle. With B\'s corrected room, the second line keeps the project, the computer and the status whole.', adr: 'Changes ADR-0175 decision 1 (Snooze\'s clock among a row\'s hover icons) and the hover icons ADR-0164 names: Open beside, Watch and Snooze move into the menu for the pointer.' },
+  { key: 'D', name: 'D — Shortcuts float over the row\'s corner', line: 'Pointed at, the four shortcuts stand in a small raised bar on the row\'s top edge, over the end of its name and the corner of the line above. Nothing on either line moves or shortens; the time stays.', adr: 'No ADR decision changes.' },
+]
+const variant = VARIANTS.some(v => v.key === params.get('variant')) ? params.get('variant') : 'B3'
+const frame = params.get('frame')
+
+// The few lines each variant adds to Sotto's own sidebar rules. H is "pointed at": hover, keyboard focus, or held.
+const H = ':is(:hover, [data-pv-hover], :has(:focus-visible))'
+const TWO = '.thread-nav .thread-nav__row--details:not([data-steps-back])'
+// The second line's room, corrected: the hidden time gives up its column, and the line keeps clear only of the shortcuts.
+const ROOM = `
+    ${TWO}${H} .thread-nav__time { display: none; }
+    ${TWO}${H} .thread-nav__standing { padding-right: calc(var(--thread-row-actions-width, 26px) - 10px); }`
+// Zach's note on the first round (November 11, 2026): "All of those say forge, just use the symbol for forge". In every
+// option the computer badge shows its symbol only; its name stays the badge's tooltip ("On forge"). Now keeps main's.
+const SYMBOL = `
+    .thread-nav__standing .host-badge { flex: none; padding: 0 5px; }
+    .thread-nav__standing .host-badge__name { display: none; }`
+const VARIANT_CSS = {
+  B3: SYMBOL + ROOM + `
+    ${TWO}${H} .thread-nav__standing > :is(.thread-nav__status:not([data-in-queue], [data-state='needs']), .watched-badge) { display: none; }`,
+  B1: SYMBOL + ROOM + `
+    ${TWO}${H} .thread-nav__standing:has(> .thread-nav__status[data-state='done']) > :is(.thread-nav__status, .watched-badge) { display: none; }`,
+  B2: SYMBOL + ROOM + `
+    ${TWO}${H} .thread-nav__standing > :is(.thread-nav__status, .watched-badge) { display: none; }`,
+  now: '',
+  A: SYMBOL + `
+    ${TWO} .thread-nav__row-actions { top: 2px; bottom: auto; }
+    ${TWO}${H} .thread-nav__standing { padding-right: 0; }
+    ${TWO}${H} .thread-nav__time { visibility: visible; }
+    ${TWO}${H} .thread-nav__title { padding-right: calc(var(--thread-row-actions-width, 26px) - 6px); }`,
+  B: SYMBOL + ROOM,
+  C: SYMBOL + ROOM,
+  D: SYMBOL + `
+    ${TWO} .thread-nav__row-actions { top: -12px; bottom: auto; right: 6px; z-index: 3; gap: 0; padding: 2px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-sm); }
+    ${TWO}${H} { z-index: 3; }
+    ${TWO}${H} .thread-nav__standing { padding-right: 0; }
+    ${TWO}${H} .thread-nav__time { visibility: visible; }`,
+}
+
+const I = P.icons
+const ROWS = [
+  { group: 'working', hold: true, title: 'Fix the iPhone history pager', provider: 'codex', model: 'Codex · GPT-5.5', place: 'Sotto', host: 'forge', state: 'working', status: 'Working', time: '3 min' },
+  { group: 'working', title: 'Weekly note', provider: 'claude', model: 'Claude Code · Opus 5.5', place: 'notes', state: 'working', status: 'Working', time: '10 min' },
+  { group: 'recent', featured: true, title: 'Desktop sidebar grouped by status', provider: 'claude', model: 'Claude Code · Opus 5.5', place: 'Sotto', host: 'forge', state: 'done', status: 'Done', watched: true, time: '12:51 am' },
+  { group: 'recent', hold: true, title: 'Release notes 1.4', provider: 'codex', model: 'Codex · GPT-5.5', place: 'sotto-site', host: 'forge', state: 'needs', status: 'In Needs you', queued: true, time: '12:41 pm' },
+  { group: 'recent', title: 'Grok voice previews', provider: 'claude', model: 'Claude Code · Sonnet 4.5', place: 'workshop', state: 'done', status: 'Done', resting: true, time: '7:58 am' },
+  { group: 'recent', title: 'Merge train receipts', provider: 'claude', model: 'Claude Code · Opus 5.5', place: 'Sotto', host: 'forge', state: 'done', status: 'Done', watched: true, time: '11:20 pm' },
+]
+const ARROW = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg>'
+
+function actions(row) {
+  const b = (label, icon, extra = '') => `<button type="button" class="thread-nav__action tt-focusable${extra}" tabindex="-1" aria-label="${label} ${row.title}" title="${label}">${icon}</button>`
+  if (variant === 'C') return b('More actions for', I.more) + b('Settle', I.archive)
+  return b('Open beside', I.columns) + b('Watch', I.owl16, ' watch-row-toggle').replace('<button', `<button aria-pressed="${row.watched ? 'true' : 'false'}"`) + b('Snooze', I.alarm) + b('Settle', I.archive)
+}
+function rowHtml(row) {
+  const status = row.queued
+    ? `<span class="thread-nav__status" data-in-queue="" title="${row.status}">${ARROW}In Needs you</span>`
+    : `<span class="thread-nav__status" data-state="${row.state}" title="${row.status}">${row.status}</span>`
+  const host = row.host ? `<span class="host-badge" data-kind="remote" aria-hidden="true" title="On ${row.host}">${I.server}<span class="host-badge__name">${row.host}</span></span>` : ''
+  const owl = row.watched ? `<span class="watched-badge" role="img" aria-label="Watched by Watcher" title="Watched by Watcher">${I.owl12}</span>` : ''
+  const attrs = [row.resting ? 'data-resting="true" data-steps-back="true"' : '', row.queued ? 'data-in-queue="x"' : '', row.featured || (row.hold && variant.startsWith('B') && variant !== 'B') ? 'data-pv-hover="" data-featured=""' : ''].join(' ')
+  return `<li class="thread-nav__row thread-nav__row--details" ${attrs}><button type="button" class="thread-nav__item tt-focusable" aria-label="${row.title}" title="${row.title}" tabindex="-1">`
+    + `<span class="thread-nav__ring" data-state="${row.state}" aria-hidden="true"></span><span class="thread-nav__title">${row.title}</span>`
+    + `<time class="thread-nav__time">${row.time}</time>`
+    + `<span class="thread-nav__metadata"><span class="thread-nav__provider" title="${row.model}"><span class="thread-nav__mark" data-provider="${row.provider}">${I[row.provider]}</span></span>`
+    + `<span class="thread-nav__standing" data-placed="true"><span class="thread-nav__place" aria-hidden="true">${row.place}</span>${host}${status}${owl}</span></span>`
+    + `</button><span class="thread-nav__row-actions" data-row-actions="">${actions(row)}</span></li>`
+}
+function group(key, name) {
+  const rows = ROWS.filter(r => r.group === key)
+  return `<div class="thread-folder thread-group" data-group="${key}"><div class="thread-folder__head"><button type="button" class="thread-folder__toggle thread-group__toggle tt-focusable" aria-expanded="true">${I.chevron}<span class="thread-folder__title">${name}</span><span class="thread-folder__count" aria-hidden="true">${rows.length}</span></button></div><ul class="thread-folder__rows">${rows.map(rowHtml).join('')}</ul></div>`
+}
+
+if (frame) {
+  // One sidebar in one theme: Sotto's own rules, the theme's roles on the root, 280px wide.
+  const root = document.documentElement
+  root.setAttribute('data-theme', frame); root.setAttribute('data-theme-id', 't3-code'); root.setAttribute('data-brand', 'app-icon'); root.setAttribute('data-variant', variant)
+  root.setAttribute('style', P.rootStyle[frame])
+  const style = document.createElement('style'); style.textContent = P.css + '\n' + VARIANT_CSS[variant]
+  document.head.append(style)
+  const shell = document.createElement('style')
+  shell.textContent = 'html, body { margin: 0; height: 100%; overflow: hidden; } body { background: var(--threads-sidebar, var(--tt-sidebar)); } .thread-nav { height: 100%; }'
+  document.head.append(shell)
+  document.body.innerHTML = `<aside class="thread-nav" aria-label="Thread sidebar" data-region="sidebar" data-mode="threads" style="width: 280px;"><div class="thread-nav__expanded"><div class="thread-nav__scroll" style="padding-top: 14px"><div class="thread-nav__list"><section aria-label="Open threads">${group('working', 'Working now')}${group('recent', 'Recent')}</section></div></div></div></aside>`
+} else {
+  // The page around the two sidebars: deliberately plain, not part of the design.
+  const v = VARIANTS.find(x => x.key === variant)
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    :root { color-scheme: light dark; font-family: Figtree, system-ui, sans-serif; }
+    body { margin: 0; padding: 16px 16px 96px; background: #77777722; color: CanvasText; }
+    h1 { font-size: 18px; margin: 0 0 4px; } .q { margin: 0 0 14px; font-size: 14px; opacity: .8; max-width: 720px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .tabs a { padding: 8px 12px; border-radius: 8px; border: 1px solid #8886; color: inherit; text-decoration: none; font-size: 14px; font-weight: 600; }
+    .tabs a[aria-current] { background: CanvasText; color: Canvas; }
+    .card { max-width: 720px; margin-bottom: 14px; font-size: 14px; line-height: 1.45; } .card b { display: block; font-size: 16px; margin-bottom: 4px; }
+    .adr { margin-top: 6px; font-size: 13px; opacity: .85; }
+    .frames { display: flex; flex-wrap: wrap; gap: 16px; } .frames figure { margin: 0; } figcaption { font-size: 12px; opacity: .7; margin-bottom: 4px; }
+    iframe { width: 280px; height: 370px; border: 1px solid #8886; border-radius: 10px; display: block; }
+    .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 999px; background: #111; color: #fff; box-shadow: 0 6px 24px #0006; font-size: 13px; z-index: 9; }
+    @media (max-width: 700px) { .bar { position: static; transform: none; margin: 16px 0 0; width: max-content; } body { padding-bottom: 24px; } }
+    .bar button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: #333; color: #fff; font-size: 16px; } .bar span { padding: 0 6px; white-space: nowrap; }
+  </style>`)
+  const tabs = VARIANTS.map(x => `<a href="?variant=${x.key}" ${x.key === variant ? 'aria-current="page"' : ''}>${x.key === 'now' ? 'Now' : x.key}</a>`).join('')
+  document.body.innerHTML = `<h1>The pointed-at sidebar row</h1>
+    <p class="q">Round four: Zach picked B2 with In Needs you kept; B3 is that. Round three: Zach picked B and asked for the pointed-at Done and its owl to go; B1 is that, B2 the same for every word. Earlier rounds follow. Round two: in A to D the computer badge shows only its symbol, with “On forge” as its tooltip, at rest and pointed at (Now is main as it is). Sidebar at its default 280px. “Desktop sidebar grouped by status” is held pointed at, with all four shortcuts (Open beside, Watch, Snooze, Settle). On a computer, point at any other row too.</p>
+    <nav class="tabs">${tabs}</nav>
+    <div class="card"><b>${v.name}</b>${v.line}${v.adr ? `<div class="adr">${v.adr}</div>` : ''}</div>
+    <div class="frames"><figure><figcaption>Dark</figcaption><iframe title="Dark sidebar" src="?frame=dark&variant=${variant}"></iframe></figure>
+    <figure><figcaption>Light</figcaption><iframe title="Light sidebar" src="?frame=light&variant=${variant}"></iframe></figure></div>
+    <div class="bar"><button type="button" aria-label="Previous variant" data-step="-1">←</button><span>${v.key === 'now' ? 'Now' : v.key}</span><button type="button" aria-label="Next variant" data-step="1">→</button></div>`
+  const go = step => { const i = VARIANTS.findIndex(x => x.key === variant); location.search = '?variant=' + VARIANTS[(i + step + VARIANTS.length) % VARIANTS.length].key }
+  document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => go(Number(b.dataset.step))))
+  addEventListener('keydown', e => { if (e.target.closest('input, textarea, [contenteditable]')) return; if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1) })
+}
+</script>
+</body>
+</html>
