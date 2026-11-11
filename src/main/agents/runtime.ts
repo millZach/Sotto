@@ -25,6 +25,7 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import { PiSignIn } from './piSignIn'
 import { PiHost } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
@@ -844,6 +845,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
+      await piSignIn?.close()
       projectCopies?.close()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
@@ -946,6 +948,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
   const piHost = providers.pi instanceof PiHost ? providers.pi : undefined
+  const piSignIn = piHost && options.runsAs !== 'headless-host' ? new PiSignIn(piHost.accounts, {
+    modelsChanged: models => piHost.setAccountModels(models),
+    openExternal: async url => { await options.openExternal(url) },
+    changed: async () => {
+      if (piHost.isConnected()) await piHost.accountsChanged()
+      else await agentControl.command({ type: 'connect', provider: 'pi', notice: false })
+    },
+  }) : undefined
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
@@ -967,5 +977,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

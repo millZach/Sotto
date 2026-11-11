@@ -30,6 +30,7 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT, PI_SIGN_IN, piSignInCallSchema, type PiSignInBridge } from '../shared/piSignIn'
 import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
@@ -450,6 +451,7 @@ export function createSottoBridge(
   dictationTiming = false,
   /** Dynamic threads' record in Settings and Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
   dynamicThreadsEnabled = false,
+  piEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -526,6 +528,17 @@ export function createSottoBridge(
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
+    ...(piEnabled ? { pi: Object.freeze<PiSignInBridge>({
+      sources: async () => invokeParsed(renderer, PI_SIGN_IN, modelSourcesSchema, piSignInCallSchema.parse({ action: 'sources' })),
+      signInWithKey: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'key', request })),
+      startBrowserSignIn: async request => invokeParsed(renderer, PI_SIGN_IN, signInStartSchema, piSignInCallSchema.parse({ action: 'browser', request })),
+      useExternalSignIn: async () => ({ status: 'refused', message: 'Pi uses its own sign-in.' }),
+      wait: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'wait', request })),
+      finish: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'finish', request })),
+      reopen: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'reopen', request })),
+      cancel: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'cancel', request })),
+      signOut: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'sign-out', request })),
+    }) } : {}),
     ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
       sources: async () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
       signInWithKey: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
@@ -935,7 +948,7 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(PI_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

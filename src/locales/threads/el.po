@@ -1650,6 +1650,10 @@ msgstr ""
 msgid "Access token"
 msgstr ""
 
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Account"
+msgstr ""
+
 #: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Action failed"
@@ -4856,6 +4860,10 @@ msgstr ""
 msgid "Its models join the model menu under OpenCode, billed to your {sourceName} account."
 msgstr ""
 
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Its models join the model menu under Pi, billed to your {sourceName} account."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Its models will leave the menu. Existing threads keep their messages. Add it again before sending to it from those threads."
 msgstr ""
@@ -5279,6 +5287,10 @@ msgstr ""
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Model sources Sotto’s OpenCode on {host} can use"
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Model sources Sotto’s Pi can use"
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -6318,6 +6330,10 @@ msgstr ""
 msgid "Opens the {sourceName} sign-in page in your browser on this computer. Sotto’s OpenCode on {host} keeps the sign-in in its own folder there, and Sotto keeps no copy."
 msgstr ""
 
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Opens the {sourceName} sign-in page in your browser. Pi keeps the sign-in in Sotto’s own Pi folder."
+msgstr ""
+
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Opens the {sourceName} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy."
@@ -6490,8 +6506,24 @@ msgstr ""
 msgid "Personal"
 msgstr ""
 
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Pi checks the key when a thread first uses it. If it is refused, sign out and paste the key again."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Pi could not confirm sign-out. Check its model sources before trying again."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Pi could not read its model sources. Try again."
+msgstr ""
+
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Pi has Full access and does not ask before running tools, changing files or using the network."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Pi keeps the key in Sotto’s own Pi folder. Sotto keeps no copy."
 msgstr ""
 
 #. Snooze a thread until a date and time the user picks.
@@ -6862,6 +6894,10 @@ msgstr ""
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Reading what Sotto’s OpenCode on {host} is signed in to…"
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Reading what Sotto’s Pi is signed in to…"
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -7802,6 +7838,10 @@ msgstr ""
 msgid "Sign in to {sourceName} with this key"
 msgstr ""
 
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Sign in to a model source to use its models in Pi threads. That account pays for them."
+msgstr ""
+
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads on {host}. That account pays for them."
@@ -7847,11 +7887,31 @@ msgid "Sign Sotto’s OpenCode on {host} in to a model source to use its models 
 msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Sign Sotto’s Pi in to a model source to use its models in Pi threads. That account pays for them."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Sign-in needs attention. Sign out and sign in again."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Signed in"
 msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Signed in on cursor.com. Connecting Cursor…"
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Signed in to {source}. Its available models are listed under Pi."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Signed in to {source}. Pi lists no models for it yet, so none are in the model menu."
+msgstr ""
+
+#: src/renderer/src/agents/OpenCodeModelSources.tsx
+msgid "Signed out of {source}. Its sign-in is gone from Sotto’s Pi."
 msgstr ""
 
 #. {sourceName} is a model source, such as Anthropic.
