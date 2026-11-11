@@ -17,13 +17,13 @@ const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 
 async function ownedProfile(prefix: string): Promise<string> {
   const profile = (await ownedE2EProfile({ prefix: prefix })).directory
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, threadListGrouping: 'project' }))
   return profile
 }
 
 async function connectAndOpenThreads(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true })
+    await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
@@ -299,7 +299,7 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
 
 async function designProfile(prefix: string, settings: Record<string, unknown> = {}): Promise<string> {
   const profile = (await ownedE2EProfile({ prefix: prefix })).directory
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, threadListGrouping: 'project', ...settings }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
     activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
