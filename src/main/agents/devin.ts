@@ -15,7 +15,7 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { AdapterThreadChanges, restOf, ThreadMarkingMap } from './adapterThreadChanges'
 import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -314,10 +314,15 @@ export class DevinAcpHost implements ProviderHost {
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
-      isBusy: id => this.dispatching.has(id) || this.active.has(id) || this.loading.has(id) || this.reading.has(id) || this.thread(id).requests.length > 0,
+      isBusy: id => this.working(id) || this.thread(id).requests.length > 0,
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.thread(id).requests.length > 0 }),
       stop: id => this.stopSession(id),
     })
   }
+  /** A dispatch, a prompt, a load or a read: everything that holds a session open but an unanswered request. */
+  private working(id: string): boolean { return this.dispatching.has(id) || this.active.has(id) || this.loading.has(id) || this.reading.has(id) }
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.connections.get(id)?.rpc.pid) }
   private persist(): Promise<void> {
     this.writing = this.aliasStore.write(structuredClone(this.aliases))
     return this.writing
