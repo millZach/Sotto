@@ -1,6 +1,6 @@
-# The living night scene: line art, depth and the owls
+# The living night scene
 
-November 10, 2026. [ADR-0199](../adr/0199-watchers-night-scene-comes-to-life.md), decisions 1 to 8. Owl only, behind `living-night-scene`. Prototype: tag `prototype/watcher-scene-life`. The drawing was checked first; the owls, at the end of this note, after.
+November 10, 2026. [ADR-0199](../adr/0199-watchers-night-scene-comes-to-life.md), all eleven decisions. Owl only, behind `living-night-scene`. Prototype: tag `prototype/watcher-scene-life`. The drawing was checked first, then the owls, then the wood's life, each on its own build; the later two are at the end of this note.
 
 ## What was run
 
@@ -33,14 +33,24 @@ The same specs, by name, after the owls were built, on a fresh build:
 8. `watcher-column.spec.ts`: every word keeps 4.5:1 over the scene in every theme and place and over a ripple, six tests, passed. **An owl crossing the column** failed as it stood: it waited for Watcher's owl to fly at random, which the living scene no longer does. It now has Watcher send the first watched thread a message fifteen seconds after the room opens; the owl flies across the column to call to that thread's owl, shows behind the words at 4.5:1 or better, never over them, and leaves nothing behind. It passed.
 9. `watcher-scene-steady.spec.ts`: passed.
 
+## The wood's life
+
+The same specs, by name, after the wood's life was built, on a fresh build:
+
+10. `watcher-night-scene.spec.ts`: the seven tests passed. The night wood now paints eight times a second at rest; the test that holds a resting scene under 8.5 a second passed, and so did the one that expects it to leave that rate only when an owl flies.
+11. `watcher-column.spec.ts`: every word keeps 4.5:1 over the scene in every theme and place, over a ripple, and with the owl crossing to call, seven tests, passed, with the mist, the glints and the fireflies drawn under the column's ceiling like everything else.
+12. `watcher-scene-steady.spec.ts`: passed.
+
 ## What it looks like
 
 - [room-dark-1600.png](../../artifacts/living-night-scene/room-dark-1600.png): Watcher's room at 1600 by 1000, dark. The trunks have edges of `|`, the bare tree's branches are `/`, `\` and `|`, the ridges in the margins are lines of `_` and `-`, the river is a run of `/` in the accent, and the moon stands in its halo. Under the conversation the hills are rows of dots.
 - [room-light-1280.png](../../artifacts/living-night-scene/room-light-1280.png): the same room at 1280 by 800, light.
 - [owls-dark-1600.png](../../artifacts/living-night-scene/owls-dark-1600.png): the owls on a running clock, on the bare tree's branch: one looking up, one waving a wing under its `!` in its glow, and a working one turned round.
+- [wood-dark-1600.png](../../artifacts/living-night-scene/wood-dark-1600.png): the same room with the wood's life: wisps of mist in the right margin and along the ground on the left, and the river's glints in the accent at the foot of the left margin.
 
 ## Not checked here
 
+- The wood's events in the built app: a gust, a shooting star, the bats, the meteor shower, the fox, the fish, the cloud and the owl's dive. Each needs the room to change or to rest a while, and no spec waits for one. They were watched in the prototype; here `watcherWoodLife.test.ts` holds what each draws and when it starts. The owl's dive is the least covered: its flight to the ground and back is the scene's own code and has no test.
 - The owls' lives by eye over time. The captures are single frames; the poses, the `z`s, the sparks and the call's note were watched moving in the prototype, and here are checked by `watcherOwlLife.test.ts` and by the crossing in 8.
 - The pointer: Watcher's owl's eyes following it, and a thread owl hopping when pointed at. No spec moves the pointer over the margin and looks.
 - macOS and Linux.

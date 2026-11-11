@@ -28,6 +28,8 @@ import { watcherRecordFixture } from '../fixtures/watcher'
 const RECORD = process.env.SOTTO_AUDIT_WATCHER_RECORD
 const ROUNDS = 15
 const AT = '2026-11-10T12:00:00.000Z'
+/** The fields `withoutOutcome` leaves out of a projected operation; the same five, kept here because the host's list is not exported. */
+const OUTCOME_FIELDS: readonly string[] = ['outcome', 'outcomeAt', 'turnMessageId', 'nativeTurnId', 'replyMessageId']
 
 /** Requests and operations as a host holds them for one paired desktop's Watcher: `count` of each, every request closed. */
 function fixtureWork(count: number): { requests: WatcherRequest[]; operations: WatcherOperation[] } {
@@ -56,8 +58,8 @@ it.skipIf(!PERF_BENCH)('times one watcher-state push on the host and on the desk
     if (!first) throw new Error('The record holds no request.')
     const master = first.remoteOrigin?.master ?? { target: first.watcher, projectId: randomUUID(), provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: AT }
     const targets = [...new Map(work.requests.flatMap(request => request.participants.map(item => [`${item.target.hostId}/${item.target.threadId}`, item.target] as const))).values()].slice(-1_000)
-    // Outcomes stay on the host (`withoutOutcome` in `src/main/agents/watcher.ts`).
-    const operations = work.operations.map(operation => Object.fromEntries(Object.entries(operation).filter(([key]) => key !== 'outcome' && key !== 'outcomeAt')))
+    // An operation's outcome stays on the host that observed it (`OUTCOME_FIELDS` and `withoutOutcome` in `src/main/agents/watcher.ts`).
+    const operations = work.operations.map(operation => Object.fromEntries(Object.entries(operation).filter(([key]) => !OUTCOME_FIELDS.includes(key))))
     const push = { v: 1, event: 'watcher-state', projection: { hostId: randomUUID(), master, requests: work.requests, operations, evidence: [],
       progress: targets.map((target, index) => ({ target, fingerprint: index.toString(16).padStart(64, '0') })), standingWatches: [], revision: 'r'.repeat(64), observedAt: AT } }
     const checked = hostPushSchema.safeParse(push)

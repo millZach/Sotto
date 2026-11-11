@@ -18,7 +18,7 @@ import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { createBridge, createController } from '../../fixtures/renderer/appHarness'
-import { hostStatus, hostsBridgeFixture } from '../../fixtures/renderer/hostBridges'
+import { hostsBridgeFixture } from '../../fixtures/renderer/hostBridges'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 
@@ -330,7 +330,7 @@ describe('Cursor’s sign-in on a host', () => {
     const signIn = vi.fn(async (request: HostSignInRequest) => request.type === 'cancel' ? null : view)
     const { bridge } = hostsBridgeFixture({ commands: { signIn } })
     const user = userEvent.setup()
-    render(<HostProviderSignIn host={hostStatus({ id: HOST, hostId: HOST, name: 'forge', target: 'forge' })} provider="cursor" bridge={bridge} onClose={vi.fn()} />)
+    render(<HostProviderSignIn place="forge" provider="cursor" signIn={step => bridge.signIn({ ...step, id: HOST } as HostSignInRequest)} onClose={vi.fn()} />)
     const dialog = await screen.findByRole('dialog', { name: 'Sign in to Cursor on forge' })
     expect(await within(dialog).findByText('Cursor signs in on cursor.com in this computer\'s browser. forge finishes signing in by itself once you do.')).toBeVisible()
     await user.click(within(dialog).getByRole('button', { name: 'Open sign-in page' }))

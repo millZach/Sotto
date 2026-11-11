@@ -67,15 +67,16 @@ Watcher has ever made on that host.
 - That is 860 KB a second, after compression. A second two minutes, with less work going on, carried 19.2 MB, 160 KB
   a second, in 48 Watcher pushes and 27 thread list pushes. Watcher's share was 91%. So the rate moves with the work
   and the share does not.
-- The kernel's own counter for the connection (`ss -Htni`) rose by 1.42 GB over 38 minutes of the audit: 608 KB a
+- The kernel's own counter for the connection (`ss -Htni`) rose by 1.42 GB over 38 minutes of the audit: 623 KB a
   second, 2.24 GB an hour, on average. It stood at 6.47 GB when the audit started, on a host 5.4 hours up.
 - Each `watcher-state` push is 1.98 MB of JSON: requests 995 KB, operations 953 KB, progress 25 KB. Only the progress
   had changed.
 - forge's record holds 925 requests and 929 operations, from October 28 to today. 920 of the requests are closed or
   stopped. Five are active.
-- One push costs the host about 27 ms, nearly all of it compressing, and the laptop's main process about 16 ms: 4.6 ms
-  to inflate, 3.0 ms to parse and 8.9 ms to check it against the schema. The benchmark builds its push from forge's
-  whole saved record, 2.21 MB, which is 12% larger than the 1.98 MB pushes the tally saw, so these are estimates. That is forge's CPU, timing the wire work only. What the
+- One push costs the host about 18 ms, most of it compressing, and the laptop's main process about 13.5 ms: 3.1 ms to
+  inflate, 2.5 ms to parse and 7.9 ms to check it against the schema. The benchmark builds its push from forge's whole
+  saved record with the fields a host keeps to itself left out: 2.09 MB of JSON and 374 KB compressed, against the
+  1.98 MB and 366 KB of the pushes the tally saw. That is forge's CPU, timing the wire work only. What the
   laptop then does with each projection is not in it: the reconcile benchmark
   (`tests/perf/watcherRemoteReconcile.perf.test.ts`, 1.5 to 1.9 ms a pass today) runs on a record of 253 to 260 KB.
 
@@ -314,7 +315,7 @@ minified window, are not done, and the issue has had no comment or linked change
 ### 8. The laptop's Sotto is busy and large while forge works
 
 **Measured.** Two 30-second readings of the laptop's Sotto processes, an Owl build, while forge's threads worked and the
-host sent it 330 to 860 KB a second:
+host sent it 340 to 860 KB a second:
 
 | Process | CPU, share of one core | Working set |
 |---|---:|---:|
@@ -323,8 +324,8 @@ host sent it 330 to 860 KB a second:
 | The GPU process | 16.0%, 17.4% | 335 MB |
 | Every Sotto process | about 60% to 80% | about 2.15 GB |
 
-**What is and is not explained.** The wire work of finding 1 is about 3.5% of a core on main by the benchmark's
-estimate, and finding 2's about 1%. That leaves most of main's 25-38% unexplained. A GPU process at 16% while nothing is being typed
+**What is and is not explained.** The wire work of finding 1 is about 3% of a core on main by the benchmark, and
+finding 2's about 1%. That leaves most of main's 25-38% unexplained. A GPU process at 16% while nothing is being typed
 means something on the page is drawing all the time. Neither was traced: that needs a profile of main and a trace of the
 window on the laptop, which this audit did not take.
 
