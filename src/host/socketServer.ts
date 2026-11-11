@@ -166,7 +166,9 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * With `step-window` (ADR-0194), where each observed thread's window starts for this client, as cut for the last whole it
    * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
    */
-  stepWindows?: Map<string, StepWindowCut> | undefined }
+  stepWindows?: Map<string, StepWindowCut> | undefined
+  /** Whether its hello accepted `thread-media-edge`: it may name the longest edge of a picture it asks for (ADR-0170). */
+  pictureEdges?: boolean }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -377,6 +379,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
+    // A copy at a longest edge needs image tools, which only the desktop has (ADR-0170, November 10 amendment).
+    && (feature !== 'thread-media-edge' || service.supportsPictureEdges === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -1535,6 +1539,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
+        peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1964,12 +1969,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })
       case 'opencode-sign-in': return opencodeCall(peer, request.op, request.call)
       case 'preview':
+        // Only a client that accepted `thread-media-edge` names an edge (ADR-0170, November 10 amendment).
+        if (request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
       // A picture an activity record names (ADR-0170), on the same one-at-a-time guard as a preview: one large frame a socket.
       case 'thread-media':
-        if (!offers(peer, 'thread-media') || !service.threadMedia) throw new Refusal('invalid_request')
+        if (!offers(peer, 'thread-media') || !service.threadMedia || request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.threadMedia(request.request) } finally { peer.preview = false }

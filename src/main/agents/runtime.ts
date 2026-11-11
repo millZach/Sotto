@@ -1,4 +1,5 @@
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
+import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
@@ -204,6 +205,11 @@ export interface AgentRuntimeOptions {
   showEveryAgentPicture?: () => boolean
   /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
   threadMedia?: ThreadMediaStore
+  /**
+   * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment), made
+   * with the process owner's image tools: the desktop's alone, since a headless host has none and answers pictures whole.
+   */
+  reducedPictures?: ReducedPictures
   /**
    * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed.
    * `nextPromptChanged` hears each change: the desktop tells its window, and a headless host its desktops (ADR-0173).
@@ -919,6 +925,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
+    ...(options.reducedPictures ? { reducedPictures: options.reducedPictures } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
