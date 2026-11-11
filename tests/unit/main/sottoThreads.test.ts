@@ -179,6 +179,21 @@ describe('Sotto thread interface', () => {
     expect(f.inner.live).toEqual(['session-workshop'])
   })
 
+  it('reads the adapter’s held sessions under Sotto thread IDs, and never hands on a provider session ID (#2398)', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    Object.assign(f.inner, { heldSessions: () => [
+      { id: 'session-workshop', idleMs: 7_200_000, holds: ['live-session'], pid: 4242 },
+      { id: 'session-nobody-owns', idleMs: 60_000, holds: ['none'] },
+    ] })
+    const held = f.host.heldThreadSessions()
+    expect(held).toEqual([
+      { threadId: snapshot.threads[0]!.id, idleMs: 7_200_000, holds: ['live-session'], pid: 4242 },
+      { idleMs: 60_000, holds: ['none'] },
+    ])
+    expect(JSON.stringify(held)).not.toContain('session-')
+  })
+
   it.each(['send', 'answer', 'interrupt'] as const)('rejects an unknown Sotto ID for %s', async type => {
     const f = await fixture()
     await f.host.connect()
