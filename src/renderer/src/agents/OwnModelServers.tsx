@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Server, MoreHorizontal } from 'lucide-react'
+import { Plus, Server, MoreHorizontal, Search } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import {
@@ -236,26 +236,29 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
     onFocus={event => { const buttons = root.current?.querySelectorAll<HTMLButtonElement>('.own-api-option'); buttons?.forEach(button => { button.tabIndex = button === event.currentTarget ? 0 : -1 }) }}
     onClick={() => { const custom = item.api.includes('${'); setByAddress(custom); setApi(item); setAddress(item.api); setName(item.name); setPage(custom ? 'address' : 'key'); setQuery('') }}>{item.name}</button>
   return createPortal(<div className="tt-dialog-backdrop own-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
-    <section ref={element => { dialog.current = element; root.current = element }} className="tt-dialog own-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || loading}>
+    <section ref={element => { dialog.current = element; root.current = element }} className="tt-dialog own-dialog" data-page={mode === 'add' ? page : undefined} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || loading}>
       <h2 id={titleId}>{title}</h2>
       <p className="tt-dialog__description">{mode === 'replace' ? t`The saved key keeps working until the new one passes. Your model choices stay the same.` :
         mode === 'remove' ? t`Its models will leave the menu. Existing threads keep their messages. Add it again before sending to it from those threads.` :
           page === 'apis' ? t`Choose an API and paste its key, or add the address of a server you run.` : t`Use its models with a connected provider.`}</p>
       <div className="own-dialog__body">
         {error ? <p id={errorId} className="provider-detail__error" role="alert">{error}</p> : null}
-        {busy || loading ? <p ref={status} tabIndex={-1} role="status">{loading ? t`Getting the list of APIs…` : writing ? t`Saving…` : t`Checking the key and reading models…`}</p> : null}
-        {mode === 'add' && page === 'apis' && !loading ? <>
-          {available ? <><input ref={focus} className="tt-input" aria-label={t`Search APIs`} placeholder={t`Search APIs`} value={query} onChange={event => setQuery(event.target.value)} />
-            <p className="own-model__note">{t`${catalogue.length} APIs`}</p>
-            <div className="own-api-list" onKeyDown={listKeys}>
-              {common.length ? <><p className="own-model__note">{t`Common`}</p>{common.map(apiButton)}<p className="own-model__note">{t`Every API, A to Z`}</p></> : null}
+        {(busy || loading) && !(mode === 'add' && page === 'apis') ? <p ref={status} tabIndex={-1} role="status">{loading ? t`Getting the list of APIs…` : writing ? t`Saving…` : t`Checking the key and reading models…`}</p> : null}
+        {mode === 'add' && page === 'apis' ? <>
+          {available && !loading ? <div className="own-api-search">
+            <Search size={15} strokeWidth={1.8} aria-hidden="true" />
+            <input ref={focus} className="tt-input" aria-label={t`Search APIs`} placeholder={t`Search ${catalogue.length} APIs`} value={query} onChange={event => setQuery(event.target.value)}
+              onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); root.current?.querySelector<HTMLButtonElement>('.own-api-option')?.focus() } }} />
+          </div> : null}
+          <div className="own-api-list" onKeyDown={listKeys}>
+            {loading ? <p ref={status} tabIndex={-1} className="own-api-message" role="status">{t`Getting the list of APIs…`}</p> : available ? <>
+              {common.length ? <><p className="own-api-section">{t`Common`}</p>{common.map(apiButton)}<p className="own-api-section">{t`Every API, A to Z`}</p></> : null}
               {remaining.map((item, index) => apiButton(item, index + common.length))}
-            </div>
-            {['openai', 'anthropic', 'google', 'xai', 'x.ai'].includes(notListed) ? <p>{t`This API cannot be added with just a key here. This list has only APIs that supply an OpenAI-compatible address.`} {notListed === 'openai' ? t`For OpenAI, connect Codex under Providers.` : notListed === 'anthropic' ? t`For Anthropic, connect Claude Code under Providers.` : ['xai', 'x.ai'].includes(notListed) ? t`For xAI, connect Grok Build under Providers.` : t`You can use Another address if you have an OpenAI-compatible API address.`}</p> : null}
-            {query && !catalogue.some(item => `${item.name} ${item.id}`.toLowerCase().includes(notListed)) ? <p>{t`No matching API. Use Another address to enter an OpenAI-compatible address.`}</p> : null}
-          </> : <p role="alert">{t`The list of APIs could not be fetched. Nothing was added. Try again, or choose Another address below.`}</p>}
-          <Button data-another-address variant="secondary" onClick={() => { setByAddress(true); setApi(null); setPage('address') }}>{t`Another address`}</Button>
-          <p className="own-privacy">{t`The list comes from models.dev. Sotto downloads it when this opens and sends nothing of yours.`}</p>
+              {['openai', 'anthropic', 'google', 'xai', 'x.ai'].includes(notListed) ? <p className="own-api-message">{t`This API cannot be added with just a key here. This list has only APIs that supply an OpenAI-compatible address.`} {notListed === 'openai' ? t`For OpenAI, connect Codex under Providers.` : notListed === 'anthropic' ? t`For Anthropic, connect Claude Code under Providers.` : ['xai', 'x.ai'].includes(notListed) ? t`For xAI, connect Grok Build under Providers.` : t`You can use Another address if you have an OpenAI-compatible API address.`}</p> : null}
+              {query && !catalogue.some(item => `${item.name} ${item.id}`.toLowerCase().includes(notListed)) ? <p className="own-api-message">{t`No matching API. Use Another address to enter an OpenAI-compatible address.`}</p> : null}
+            </> : <p className="own-api-message" role="alert">{t`The list of APIs could not be fetched. Nothing was added. Try again, or choose Another address below.`}</p>}
+          </div>
+          <p className="own-api-privacy">{t`The list comes from models.dev. Sotto downloads it when this opens and sends nothing of yours.`}</p>
         </> : null}
         {(page === 'key' || page === 'address' || (page === 'models' && byAddress && mode === 'add')) && !busy ? <>
           {mode === 'add' ? <Button variant="ghost" onClick={() => { setPage('apis'); setKey(''); setError('') }}>{t`All APIs`}</Button> : null}
@@ -298,6 +301,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
         {page === 'done' ? <p role="status">{t`Added. Its models are in the model menu.`}</p> : null}
       </div>
       <div className="tt-dialog__actions">
+        {mode === 'add' && page === 'apis' && !loading ? <Button data-another-address variant="secondary" onClick={() => { setByAddress(true); setApi(null); setPage('address') }}>{t`Another address`}</Button> : null}
         {page === 'models' ? <span className="own-model-count" role="status">{t`${kept.size} of ${models.length} models selected`}</span> : null}
         <Button variant="secondary" disabled={writing} onClick={close}>{page === 'done' ? t`Done` : t`Cancel`}</Button>
         {page === 'apis' && !available ? <Button variant="primary" onClick={load}>{t`Try again`}</Button> : null}
