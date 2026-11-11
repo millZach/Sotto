@@ -32,18 +32,19 @@ function add(requirement) {
 }
 
 for (const [id, category, state] of [
-  // First-run setup's nine steps: Welcome, Look, Microphone, Speech model, Shortcut, Coding agents, First
-  // project, Other computers, iPhone. Each id's number is that step's own position.
-  ['onboarding-step-1-welcome', 'onboarding', 'welcome'],
-  ['onboarding-step-2-look', 'onboarding', 'look'],
-  ['onboarding-step-3-microphone-ready', 'onboarding', 'microphone-ready'],
-  ['onboarding-step-4-speech-model', 'onboarding', 'speech-model'],
-  ['onboarding-step-5-shortcut', 'onboarding', 'shortcut-paste'],
-  ['onboarding-step-6-agents', 'onboarding', 'coding-agents'],
-  ['onboarding-step-7-project', 'onboarding', 'first-project'],
-  ['onboarding-step-8-computers', 'onboarding', 'other-computers'],
-  ['onboarding-step-9-phone', 'onboarding', 'iphone'],
-  ['threads-tour-projects', 'threads', 'tour-projects'],
+  // First-run setup is a walk of notes over the real pages (ADR-0200). Each capture is the window at one stop: the
+  // page, the control the stop lights and the note beside it. A capture profile has no agent connected, so the walk
+  // passes over its project and thread stops; Omarchy's stop is Linux only. The microphone stop is captured once
+  // Settings' test has heard a voice.
+  ['setup-welcome', 'setup', 'welcome'],
+  ['setup-agents', 'setup', 'agents'],
+  ['setup-microphone', 'setup', 'microphone'],
+  ['setup-speech-model', 'setup', 'speech-model'],
+  ['setup-shortcut', 'setup', 'shortcut'],
+  ['setup-tailscale', 'setup', 'tailscale'],
+  ['setup-computers', 'setup', 'computers'],
+  ['setup-iphone', 'setup', 'iphone'],
+  ['setup-end', 'setup', 'end'],
   ['dictate-ready', 'dictate', 'ready'],
   ['dictate-listening', 'dictate', 'listening'],
   // Pasted returns directly to Ready; the live journey asserts delivery before Ready.
@@ -88,7 +89,7 @@ for (const [id, category, state, focusTarget] of [
 // The light room repeats every surface family, its feedback and error states,
 // native selects and provider controls.
 for (const [id, category, state] of [
-  ['onboarding-step-4-speech-model-light', 'onboarding', 'speech-model'],
+  ['setup-speech-model-light', 'setup', 'speech-model'],
   ['dictate-ready-light', 'dictate', 'ready'],
   ['dictate-listening-light', 'dictate', 'listening'],
   ['dictate-error-light', 'dictate', 'error'],
@@ -139,7 +140,7 @@ for (const theme of DESIGN_CAPTURE_APP_THEMES) {
 
 for (const scalePercent of DESIGN_CAPTURE_SCALES) {
   for (const [surface, state] of [
-    ['onboarding', 'onboarding-model'],
+    ['setup', 'setup-speech-model'],
     ['dictate', 'dictate-ready'],
     ['journal', 'journal-full'],
     ['settings', 'settings-full'],
