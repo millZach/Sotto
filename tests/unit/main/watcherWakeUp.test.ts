@@ -1217,16 +1217,17 @@ it('counts background work and the roster\'s working sub-agents once where they 
   expect(f.wakes.news().find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(3)
 })
 
-it('tells a held busy finish once a new turn begins, and owes it no work-settled news', async () => {
+it('wakes no one for a held busy finish once a new turn begins, owes it no work-settled news, and lets the next finish stand for it', async () => {
   const f = fixture()
   f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe(); await f.advance(2_000)
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.thread.backgroundWork = []; f.wakes.observe()
   await f.advance(2_000)
-  expect(turnKinds(f.delivered)).not.toContain('work-settled')
+  // The thread is working again, so its old finish wakes no one (#2434).
+  expect(f.delivered).toEqual([])
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
-  // The first finish waited on its work; once the next turn began it is told all the same, never dropped (#1190).
+  // The next turn's finish wakes Watcher and says all the first one would have.
   expect(f.delivered.flatMap(news => news.events).filter(event => event.kind !== 'evidence-changed').map(event => [event.kind, event.turnId]))
-    .toEqual([['turn-finished', 'turn-1'], ['turn-finished', 'turn-2']])
+    .toEqual([['turn-finished', 'turn-2']])
 })
 
 function restarted(f: ReturnType<typeof fixture>, restoredEvents?: WatcherWakeOptions['restoredEvents']) {
@@ -2203,7 +2204,7 @@ it('records a delegated thread’s card for Watcher’s pane on the delegated th
   expect(watcherNewsAsks([news]).map(ask => ask.target)).toEqual([centerTarget, { hostId: centerTarget.hostId, threadId: 'delegated' }])
 })
 
-it('tells a held busy finish whose thread moved on even after a wake-up before it missed', async () => {
+it('carries a held busy finish whose thread moved on with the next wake, even after a wake-up before it missed', async () => {
   const f = fixture()
   f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
   f.thread.requests = []
@@ -2211,6 +2212,9 @@ it('tells a held busy finish whose thread moved on even after a wake-up before i
   f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
   expect(f.delivered).toHaveLength(1)
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  // Moved on, it wakes no one by itself (#2434), and rides with the next news that does.
+  expect(f.delivered).toHaveLength(1)
+  f.thread.requests.push(question('later')); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
   expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
 })
 
@@ -2223,7 +2227,7 @@ it('says a busy finish waits for work-settled news only unless its thread begins
 it('lets a held finish earn its retry again when a wake-up that went without it missed', async () => {
   const f = fixture(), second = secondWorker(f)
   gitFixture(f)
-  // A busy finish waits for its thread's Git read, and its thread begins another turn: it now needs Watcher.
+  // A busy finish waits for its thread's Git read, and its thread begins another turn: it rides with the next wake (#2434).
   f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe()
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
   // A question elsewhere goes first, without the finish still held for its Git read, and that wake-up misses.
@@ -2233,6 +2237,8 @@ it('lets a held finish earn its retry again when a wake-up that went without it 
   second.requests = []
   f.wakes.settled(first.events, 'failed'); await f.wakes.drained()
   f.wakes.observe(); await f.advance(10_000)
+  expect(f.delivered.at(-1)).toBe(first)
+  second.requests.push(question('again')); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
   expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
 })
 
