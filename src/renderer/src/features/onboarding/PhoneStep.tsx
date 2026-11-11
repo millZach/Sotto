@@ -9,7 +9,8 @@ import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { shownWords, type LaterWords } from '../settings/laterWords'
 import { phonesFailure } from '../settings/PhonesSettings'
-import { countdown } from '../settings/phoneParts'
+import { countdown, usePhoneAccessSwitch } from '../settings/phoneParts'
+import { useTailscale } from '../settings/TailscaleConnect'
 
 export interface PhoneStepProps {
   readonly heading: ReactNode
@@ -29,7 +30,9 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   const [state, setState] = useState<PhonesState | null>(null)
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
   const [error, setError] = useState<LaterWords | null>(null)
-  const [saveFailed, setSaveFailed] = useState(false)
+  const tailscale = useTailscale(window.sotto?.hosts)
+  const hosts = window.sotto?.hosts
+  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, { tailscaleMissing: tailscale.summary?.state === 'missing', readTailscale: hosts ? () => hosts.tailscale() : undefined })
   const [now, setNow] = useState(() => Date.now())
   const showButton = useRef<HTMLButtonElement>(null)
   const codeBox = useRef<HTMLDivElement>(null)
@@ -109,10 +112,14 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
               checked={phoneAccess}
               disabled={!bridge || (!localHostRunning && !phoneAccess)}
               description={t`Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect.`}
-              onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setSaveFailed(!saved)) }}
+              onCheckedChange={enabled => { setError(null); access.turn(enabled) }}
             />
             {!localHostRunning ? <span className="onboarding-recovery"><Trans>Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.</Trans></span> : null}
-            {saveFailed ? <span className="onboarding-recovery" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></span> : null}
+            {access.needsTailscale === 'off' ? <span className="onboarding-recovery" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on.</Trans></span> : null}
+            {access.needsTailscale === 'still-on' ? <span className="onboarding-recovery" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on.</Trans></span> : null}
+            {access.needsTailscale ? <Button variant="secondary" onClick={tailscale.getTailscale}><Trans>Get Tailscale</Trans></Button> : null}
+            {access.needsTailscale && tailscale.notice ? <span role="status">{tailscale.notice}</span> : null}
+            {access.saveFailed ? <span className="onboarding-recovery" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></span> : null}
             {phoneAccess && state?.phase === 'starting' ? <span role="status"><Trans>Checking Tailscale on this computer…</Trans></span> : null}
             {failure ? <span className="onboarding-recovery" role="alert">{failure}</span> : null}
             {failure ? <Button variant="secondary" onClick={() => void run({ type: 'retry' })}><Trans>Try again</Trans></Button> : null}

@@ -1431,6 +1431,7 @@ msgid "Can you make the settings page shorter?"
 msgstr "Can you make the settings page shorter?"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Can't be started"
 msgstr "Can't be started"
 
@@ -2110,6 +2111,10 @@ msgid "Copy command"
 msgstr "Copy command"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Copy Devin login command"
+msgstr "Copy Devin login command"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy Muse login command"
 msgstr "Copy Muse login command"
 
@@ -2333,6 +2338,10 @@ msgstr "Details<0> of why {name} did not update</0>"
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Device"
 msgstr "Device"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Devin login command copied."
+msgstr "Devin login command copied."
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Devin updates with the Devin app."
@@ -2842,6 +2851,10 @@ msgstr "Get Tailscale"
 msgid "Get Tailscale to see the machines on your tailnet here."
 msgstr "Get Tailscale to see the machines on your tailnet here."
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Get the iPhone beta"
+msgstr "Get the iPhone beta"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3133,6 +3146,14 @@ msgstr "Install {extensionName}"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Install Devin CLI and run devin auth login before connecting."
 msgstr "Install Devin CLI and run devin auth login before connecting."
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Install guide"
+msgstr "Install guide"
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Install the beta"
+msgstr "Install the beta"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Installation steps"
@@ -3923,6 +3944,7 @@ msgid "Not connected"
 msgstr "Not connected"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not installed"
 msgstr "Not installed"
 
@@ -4198,6 +4220,11 @@ msgstr "Open sign-in page again"
 msgid "Open System Settings"
 msgstr "Open System Settings"
 
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Open the {label} install guide"
+msgstr "Open the {label} install guide"
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Open the branch bar’s branch chooser, in the focused pane."
 msgstr "Open the branch bar’s branch chooser, in the focused pane."
@@ -4259,6 +4286,10 @@ msgstr "OpenCode 2 is not installed on this computer. Install it with its instal
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Opened {page} in your browser."
 msgstr "Opened {page} in your browser."
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Opened in your browser"
+msgstr "Opened in your browser"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
@@ -4492,6 +4523,14 @@ msgstr "Phones on {name}"
 msgid "Phones paired with {name}"
 msgstr "Phones paired with {name}"
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Phones starting…"
 msgstr "Phones starting…"
@@ -4507,6 +4546,10 @@ msgstr "Pick a color from the app"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
 msgstr "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
+
+#: src/renderer/src/features/settings/HostDialog.tsx
+msgid "Pick a machine Sotto can reach over SSH, then add it."
+msgstr "Pick a machine Sotto can reach over SSH, then add it."
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Pieces"
@@ -5472,12 +5515,18 @@ msgstr "Sidebar selection"
 #. A step of adding a host: signing in to it over SSH.
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sign in"
 msgstr "Sign in"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sign in on {host} with:"
 msgstr "Sign in on {host} with:"
+
+#. {label} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sign in to {label}"
+msgstr "Sign in to {label}"
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sign in to {name} on {hostName}"
@@ -5640,6 +5689,10 @@ msgstr "Sotto does not know how {name} was installed, so it will not replace it.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Sotto does this"
 msgstr "Sotto does this"
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first."
+msgstr "Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first."
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
@@ -6358,15 +6411,15 @@ msgstr "The color a thread’s effort control turns at its highest level."
 msgid "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 msgstr "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The command could not be copied. Select {loginCommand} and copy it yourself."
+msgstr "The command could not be copied. Select {loginCommand} and copy it yourself."
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "The command could not be copied. Select it and copy it yourself."
 msgstr "The command could not be copied. Select it and copy it yourself."
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "The command could not be copied. Select muse login and copy it yourself."
-msgstr "The command could not be copied. Select muse login and copy it yourself."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "The composer’s own key. Shift+Enter adds a line."
@@ -6765,7 +6818,9 @@ msgstr "These shortcuts are Hyprland bindings, so keys Hyprland already uses can
 msgid "this computer"
 msgstr "this computer"
 
+#. The computer Sotto runs on, named where a paired host would be.
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
 msgstr "This computer"
@@ -6920,6 +6975,7 @@ msgid "Too many copies of \"{name}\"."
 msgstr "Too many copies of \"{name}\"."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Too old to use"
 msgstr "Too old to use"
 
@@ -7791,9 +7847,18 @@ msgstr "You can bring it back anytime by importing its JSON file."
 msgid "your account"
 msgstr "your account"
 
+#. {guide} is a web address; {providerName} is a provider's name.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Your browser did not open. Go to {guide} to install {providerName}."
+msgstr "Your browser did not open. Go to {guide} to install {providerName}."
+
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Your browser did not open. Go to tailscale.com/download to get Tailscale."
 msgstr "Your browser did not open. Go to tailscale.com/download to get Tailscale."
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Your browser did not open. On your iPhone, go to {betaAddress} instead."
+msgstr "Your browser did not open. On your iPhone, go to {betaAddress} instead."
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Your browser did not open. Open the Tailscale app on this computer and sign in there."

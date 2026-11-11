@@ -7,7 +7,7 @@ import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { opencodeNotOnHost } from '../../../../shared/opencodeSignIn'
-import { HOST_PROVIDER_JOB_WORDS, HOST_PROVIDERS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
+import { HOST_PROVIDER_JOB_WORDS, HOST_PROVIDERS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderId, type HostProviderJobCase, type HostProviderJobState, type HostSignInRequest } from '../../../../shared/hostProviders'
 import { useHeldProviders } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
 import { ProviderMark } from '../../agents/ProviderMark'
@@ -327,7 +327,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
       {heldProviders.has('opencode') || opencodeOnHost ? null : <p className="host-providers__foot">{opencodeNotOnHost(host.name)}</p>}
       <p className="host-providers__foot tt-paragraph"><Trans>{hostName} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</Trans></p>
     </div> : null}
-    {signingIn ? <HostProviderSignIn host={host} provider={signingIn} bridge={bridge} onClose={() => setSigningIn(null)} /> : null}
+    {signingIn ? <HostProviderSignIn place={host.name} provider={signingIn} signIn={step => bridge.signIn({ ...step, id: host.id } as HostSignInRequest)} onClose={() => setSigningIn(null)} /> : null}
     {agent ? <HostProviderAgent host={host} provider={agent.provider} jobCase={agent.jobCase} choice={choice} bridge={bridge} onClose={closeAgent} /> : null}
   </div>
 }

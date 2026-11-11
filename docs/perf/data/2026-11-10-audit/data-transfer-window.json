@@ -1,0 +1,965 @@
+{
+ "track": "owl",
+ "watcherScale": 1,
+ "long": true,
+ "counts": {
+  "threads": 250,
+  "remoteThreads": 40,
+  "retirements": 256,
+  "remoteRetirements": 40,
+  "watcherOwners": 4,
+  "operations": 150,
+  "requests": 160,
+  "watches": 5,
+  "delegations": 40
+ },
+ "wholeStateBytes": 634660,
+ "wholeStateJsonBytes": 852610,
+ "wholeStateThreads": 291,
+ "idle": {
+  "simulatedMs": 10000,
+  "cpuMs": 173.91,
+  "harnessMs": 2.95,
+  "channels": {
+   "store worker wire": {
+    "messages": 5,
+    "bytes": 93677,
+    "max": 93019,
+    "encodeMs": 0.19,
+    "perSecond": 0.5
+   },
+   "window watcher room": {
+    "messages": 6,
+    "bytes": 5712,
+    "max": 952,
+    "encodeMs": 0.1,
+    "perSecond": 0.6
+   },
+   "window state": {
+    "messages": 9,
+    "bytes": 252863,
+    "max": 225041,
+    "encodeMs": 0.6,
+    "perSecond": 0.9
+   }
+  },
+  "files": {
+   "workspace.json": {
+    "writes": 3,
+    "bytes": 1151264
+   },
+   "agents.json": {
+    "writes": 1,
+    "bytes": 777
+   }
+  },
+  "stringify": {
+   "calls": 347,
+   "chars": 697747,
+   "ms": 1.61
+  },
+  "clone": {
+   "calls": 8,
+   "ms": 0.09
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 1.56,
+   "max": 6
+  },
+  "wire": {
+   "ms": 0.96,
+   "ids": 6000,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "workspace.flush": {
+    "calls": 9,
+    "ms": 69.97,
+    "size": 0
+   },
+   "workspace.applyEvents": {
+    "calls": 11,
+    "ms": 2.16,
+    "size": 0
+   },
+   "control.persist": {
+    "calls": 9,
+    "ms": 6.53,
+    "size": 0
+   },
+   "store.readMessages": {
+    "calls": 1,
+    "ms": 0.04,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 754,
+    "ms": 0.31,
+    "size": 0
+   },
+   "store.summaryMessages": {
+    "calls": 4,
+    "ms": 0.17,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "host.clientHosts": 21175,
+   "models": 20257,
+   "threads": 5808,
+   "kept": 389,
+   "host.projects": 363,
+   "host.providers": 193,
+   "host.kept": 89,
+   "configuration": 31,
+   "host.name": 2,
+   "notice": 2
+  }
+ },
+ "commandReply": {
+  "changedThreadRecords": true,
+  "threads": 293,
+  "bytes": 12043,
+  "ipcCopyMs": 0.11,
+  "preloadCheckMs": 0.25,
+  "pageCompleteMs": 0.07,
+  "shareMs": 0.16
+ },
+ "shellCache": {
+  "chars": 298926,
+  "stringifyMs": 0.5
+ },
+ "1 streaming": {
+  "simulatedMs": 4000,
+  "cpuMs": 258.5,
+  "harnessMs": 3.15,
+  "channels": {
+   "window watcher room": {
+    "messages": 14,
+    "bytes": 13335,
+    "max": 953,
+    "encodeMs": 0.18,
+    "perSecond": 3.5
+   },
+   "window state": {
+    "messages": 62,
+    "bytes": 164072,
+    "max": 3483,
+    "encodeMs": 1.15,
+    "perSecond": 15.5
+   },
+   "window detail": {
+    "messages": 60,
+    "bytes": 13199,
+    "max": 222,
+    "encodeMs": 0.68,
+    "perSecond": 15
+   },
+   "store worker wire": {
+    "messages": 25,
+    "bytes": 5208,
+    "max": 308,
+    "encodeMs": 0.26,
+    "perSecond": 6.25
+   }
+  },
+  "files": {},
+  "stringify": {
+   "calls": 1944,
+   "chars": 1285384,
+   "ms": 4.26
+  },
+  "clone": {
+   "calls": 8,
+   "ms": 0.07
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0.97,
+   "max": 1
+  },
+  "wire": {
+   "ms": 0.04,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "store.readMessages": {
+    "calls": 72,
+    "ms": 8.41,
+    "size": 1002584
+   },
+   "store.summaryMessages": {
+    "calls": 72,
+    "ms": 3.71,
+    "size": 53912
+   },
+   "workspace.applyEvents": {
+    "calls": 121,
+    "ms": 37.58,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 60,
+    "ms": 0.07,
+    "size": 0
+   },
+   "control.persist": {
+    "calls": 121,
+    "ms": 5.33,
+    "size": 0
+   },
+   "workspace.flush": {
+    "calls": 13,
+    "ms": 29.17,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 2128,
+   "kept": 392,
+   "host.kept": 97,
+   "models": 3
+  }
+ },
+ "3 streaming": {
+  "simulatedMs": 4000,
+  "cpuMs": 314.64,
+  "harnessMs": 4.75,
+  "channels": {
+   "window watcher room": {
+    "messages": 14,
+    "bytes": 13342,
+    "max": 953,
+    "encodeMs": 0.18,
+    "perSecond": 3.5
+   },
+   "window state": {
+    "messages": 62,
+    "bytes": 422567,
+    "max": 9323,
+    "encodeMs": 1.5,
+    "perSecond": 15.5
+   },
+   "window detail": {
+    "messages": 180,
+    "bytes": 39694,
+    "max": 222,
+    "encodeMs": 1.58,
+    "perSecond": 45
+   },
+   "store worker wire": {
+    "messages": 25,
+    "bytes": 13753,
+    "max": 848,
+    "encodeMs": 0.29,
+    "perSecond": 6.25
+   }
+  },
+  "files": {},
+  "stringify": {
+   "calls": 2323,
+   "chars": 1313791,
+   "ms": 4.58
+  },
+  "clone": {
+   "calls": 8,
+   "ms": 0.06
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 2.9,
+   "max": 3
+  },
+  "wire": {
+   "ms": 0.05,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "store.readMessages": {
+    "calls": 216,
+    "ms": 21.93,
+    "size": 3015456
+   },
+   "store.summaryMessages": {
+    "calls": 216,
+    "ms": 10.04,
+    "size": 161736
+   },
+   "workspace.applyEvents": {
+    "calls": 121,
+    "ms": 67.74,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 180,
+    "ms": 0.11,
+    "size": 0
+   },
+   "control.persist": {
+    "calls": 121,
+    "ms": 5.22,
+    "size": 0
+   },
+   "workspace.flush": {
+    "calls": 13,
+    "ms": 41.46,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 6298,
+   "kept": 392,
+   "host.kept": 97,
+   "models": 3
+  }
+ },
+ "command output streaming": {
+  "simulatedMs": 4000,
+  "cpuMs": 271.62,
+  "harnessMs": 5.48,
+  "channels": {
+   "window watcher room": {
+    "messages": 13,
+    "bytes": 12389,
+    "max": 953,
+    "encodeMs": 0.21,
+    "perSecond": 3.25
+   },
+   "window state": {
+    "messages": 61,
+    "bytes": 34099,
+    "max": 559,
+    "encodeMs": 0.6,
+    "perSecond": 15.25
+   },
+   "window detail": {
+    "messages": 60,
+    "bytes": 36480,
+    "max": 608,
+    "encodeMs": 0.65,
+    "perSecond": 15
+   },
+   "store worker wire": {
+    "messages": 12,
+    "bytes": 530032,
+    "max": 55170,
+    "encodeMs": 0.54,
+    "perSecond": 3
+   }
+  },
+  "files": {},
+  "stringify": {
+   "calls": 1021,
+   "chars": 886939,
+   "ms": 2.88
+  },
+  "clone": {
+   "calls": 8,
+   "ms": 0.06
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0,
+   "max": 0
+  },
+  "wire": {
+   "ms": 2.97,
+   "ids": 24000,
+   "records": 12
+  },
+  "bigPosts": {},
+  "methods": {
+   "workspace.trackSubagents": {
+    "calls": 60,
+    "ms": 0.86,
+    "size": 0
+   },
+   "workspace.applyEvents": {
+    "calls": 60,
+    "ms": 5.27,
+    "size": 0
+   },
+   "control.persist": {
+    "calls": 60,
+    "ms": 2.24,
+    "size": 0
+   },
+   "workspace.flush": {
+    "calls": 12,
+    "ms": 32,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "kept": 392,
+   "host.kept": 97,
+   "threads": 41,
+   "models": 3
+  }
+ },
+ "saveAnswerDraft": {
+  "simulatedMs": 1000,
+  "cpuMs": 11.08,
+  "harnessMs": 0,
+  "channels": {},
+  "files": {
+   "request-drafts.json": {
+    "writes": 1,
+    "bytes": 65728
+   }
+  },
+  "stringify": {
+   "calls": 47,
+   "chars": 68409,
+   "ms": 0.07
+  },
+  "clone": {
+   "calls": 3,
+   "ms": 0.08
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0,
+   "max": 0
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {},
+  "statePartsBytesPerBroadcast": {}
+ },
+ "typeInComposer": {
+  "simulatedMs": 1000,
+  "cpuMs": 10.41,
+  "harnessMs": 0.11,
+  "channels": {
+   "window watcher room": {
+    "messages": 2,
+    "bytes": 1910,
+    "max": 955,
+    "encodeMs": 0.03,
+    "perSecond": 2
+   },
+   "window state": {
+    "messages": 3,
+    "bytes": 4355,
+    "max": 3237,
+    "encodeMs": 0.04,
+    "perSecond": 3
+   }
+  },
+  "files": {
+   "agents.json": {
+    "writes": 1,
+    "bytes": 2708
+   }
+  },
+  "stringify": {
+   "calls": 27,
+   "chars": 12280,
+   "ms": 0.06
+  },
+  "clone": {
+   "calls": 6,
+   "ms": 0.05
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0,
+   "max": 0
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "control.persist": {
+    "calls": 1,
+    "ms": 4.79,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "obsoleteDrafts": 760,
+   "kept": 374,
+   "host.kept": 97,
+   "threadDrafts": 80,
+   "threadDraftPersistence": 55,
+   "threads": 41,
+   "models": 3
+  }
+ },
+ "openThread": {
+  "simulatedMs": 1000,
+  "cpuMs": 15.05,
+  "harnessMs": 0.14,
+  "channels": {
+   "window watcher room": {
+    "messages": 2,
+    "bytes": 1910,
+    "max": 955,
+    "encodeMs": 0.03,
+    "perSecond": 2
+   },
+   "window state": {
+    "messages": 3,
+    "bytes": 10565,
+    "max": 9314,
+    "encodeMs": 0.05,
+    "perSecond": 3
+   }
+  },
+  "files": {
+   "agents.json": {
+    "writes": 2,
+    "bytes": 5382
+   }
+  },
+  "stringify": {
+   "calls": 39,
+   "chars": 13998,
+   "ms": 0.06
+  },
+  "clone": {
+   "calls": 8,
+   "ms": 0.05
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 1,
+   "max": 3
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "control.persist": {
+    "calls": 2,
+    "ms": 7.43,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 2959,
+   "kept": 381,
+   "host.kept": 97,
+   "activeThreadId": 27,
+   "activeProjectId": 18,
+   "models": 3
+  }
+ },
+ "send": {
+  "simulatedMs": 1050,
+  "cpuMs": 116.94,
+  "harnessMs": 0.35,
+  "channels": {
+   "window watcher room": {
+    "messages": 2,
+    "bytes": 1910,
+    "max": 955,
+    "encodeMs": 0.03,
+    "perSecond": 1.9
+   },
+   "window state": {
+    "messages": 6,
+    "bytes": 12321,
+    "max": 3919,
+    "encodeMs": 0.11,
+    "perSecond": 5.71
+   },
+   "store worker wire": {
+    "messages": 5,
+    "bytes": 662,
+    "max": 314,
+    "encodeMs": 0.05,
+    "perSecond": 4.76
+   },
+   "window detail": {
+    "messages": 2,
+    "bytes": 615,
+    "max": 346,
+    "encodeMs": 0.01,
+    "perSecond": 1.9
+   }
+  },
+  "files": {
+   "agents.json": {
+    "writes": 4,
+    "bytes": 13269
+   },
+   "workspace.json": {
+    "writes": 3,
+    "bytes": 1153675
+   }
+  },
+  "stringify": {
+   "calls": 651,
+   "chars": 198693,
+   "ms": 0.79
+  },
+  "clone": {
+   "calls": 16,
+   "ms": 0.33
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0.5,
+   "max": 1
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "control.persist": {
+    "calls": 10,
+    "ms": 22.58,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 254,
+    "ms": 0.07,
+    "size": 0
+   },
+   "workspace.applyEvents": {
+    "calls": 6,
+    "ms": 2.5,
+    "size": 0
+   },
+   "watcherProfiles.readIdentity": {
+    "calls": 1,
+    "ms": 9.51,
+    "size": 0
+   },
+   "workspace.flush": {
+    "calls": 3,
+    "ms": 20.27,
+    "size": 0
+   },
+   "store.readMessages": {
+    "calls": 3,
+    "ms": 0.23,
+    "size": 53
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 747,
+   "obsoleteDrafts": 404,
+   "kept": 348,
+   "deliveries": 267,
+   "host.kept": 97,
+   "threadDrafts": 45,
+   "threadDraftPersistence": 29,
+   "deliveredDrafts": 25,
+   "draftThreadId": 14,
+   "notice": 6,
+   "draft": 5,
+   "models": 3,
+   "globalLaneBusy": 1,
+   "composing": 1
+  }
+ },
+ "watcherToolCall": {
+  "simulatedMs": 1000,
+  "cpuMs": 15.91,
+  "harnessMs": 0.16,
+  "channels": {
+   "window watcher room": {
+    "messages": 3,
+    "bytes": 24679,
+    "max": 22769,
+    "encodeMs": 0.1,
+    "perSecond": 3
+   },
+   "window state": {
+    "messages": 3,
+    "bytes": 1677,
+    "max": 559,
+    "encodeMs": 0.03,
+    "perSecond": 3
+   }
+  },
+  "files": {},
+  "stringify": {
+   "calls": 53,
+   "chars": 4588,
+   "ms": 0.04
+  },
+  "clone": {
+   "calls": 4,
+   "ms": 0.04
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0,
+   "max": 0
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {},
+  "statePartsBytesPerBroadcast": {
+   "kept": 392,
+   "host.kept": 97,
+   "threads": 41,
+   "models": 3
+  }
+ },
+ "saveAnswerDraft again": {
+  "simulatedMs": 1000,
+  "cpuMs": 5.87,
+  "harnessMs": 0,
+  "channels": {},
+  "files": {
+   "request-drafts.json": {
+    "writes": 1,
+    "bytes": 65728
+   }
+  },
+  "stringify": {
+   "calls": 29,
+   "chars": 6914,
+   "ms": 0.03
+  },
+  "clone": {
+   "calls": 3,
+   "ms": 0.05
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0,
+   "max": 0
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {},
+  "statePartsBytesPerBroadcast": {}
+ },
+ "send again": {
+  "simulatedMs": 1000,
+  "cpuMs": 68.53,
+  "harnessMs": 0.23,
+  "channels": {
+   "window watcher room": {
+    "messages": 2,
+    "bytes": 1910,
+    "max": 955,
+    "encodeMs": 0.03,
+    "perSecond": 2
+   },
+   "window state": {
+    "messages": 5,
+    "bytes": 9943,
+    "max": 3159,
+    "encodeMs": 0.08,
+    "perSecond": 5
+   },
+   "store worker wire": {
+    "messages": 3,
+    "bytes": 588,
+    "max": 314,
+    "encodeMs": 0.03,
+    "perSecond": 3
+   },
+   "window detail": {
+    "messages": 2,
+    "bytes": 615,
+    "max": 346,
+    "encodeMs": 0.01,
+    "perSecond": 2
+   }
+  },
+  "files": {
+   "agents.json": {
+    "writes": 4,
+    "bytes": 16328
+   }
+  },
+  "stringify": {
+   "calls": 600,
+   "chars": 99853,
+   "ms": 0.4
+  },
+  "clone": {
+   "calls": 16,
+   "ms": 0.35
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0.6,
+   "max": 1
+  },
+  "wire": {
+   "ms": 0,
+   "ids": 0,
+   "records": 0
+  },
+  "bigPosts": {},
+  "methods": {
+   "control.persist": {
+    "calls": 8,
+    "ms": 22.13,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 254,
+    "ms": 0.07,
+    "size": 0
+   },
+   "workspace.applyEvents": {
+    "calls": 4,
+    "ms": 1.21,
+    "size": 0
+   },
+   "watcherProfiles.readIdentity": {
+    "calls": 1,
+    "ms": 0.03,
+    "size": 0
+   },
+   "store.readMessages": {
+    "calls": 3,
+    "ms": 0.26,
+    "size": 155
+   },
+   "workspace.flush": {
+    "calls": 1,
+    "ms": 1.49,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 918,
+   "deliveries": 495,
+   "kept": 375,
+   "host.kept": 97,
+   "deliveredDrafts": 58,
+   "models": 3,
+   "globalLaneBusy": 1
+  }
+ },
+ "background turns": {
+  "simulatedMs": 3800,
+  "cpuMs": 229.35,
+  "harnessMs": 1.58,
+  "channels": {
+   "store worker wire": {
+    "messages": 8,
+    "bytes": 71530,
+    "max": 35322,
+    "encodeMs": 0.19,
+    "perSecond": 2.11
+   },
+   "window watcher room": {
+    "messages": 12,
+    "bytes": 9315,
+    "max": 1904,
+    "encodeMs": 0.21,
+    "perSecond": 3.16
+   },
+   "window state": {
+    "messages": 16,
+    "bytes": 21663,
+    "max": 1851,
+    "encodeMs": 0.22,
+    "perSecond": 4.21
+   }
+  },
+  "files": {
+   "watcher-record.json": {
+    "writes": 1,
+    "bytes": 264435
+   },
+   "followups.json": {
+    "writes": 1,
+    "bytes": 35
+   },
+   "workspace.json": {
+    "writes": 4,
+    "bytes": 1538366
+   },
+   "agents.json": {
+    "writes": 3,
+    "bytes": 12262
+   }
+  },
+  "stringify": {
+   "calls": 1889,
+   "chars": 666287,
+   "ms": 1.68
+  },
+  "clone": {
+   "calls": 17,
+   "ms": 0.16
+  },
+  "threadsChangedPerBroadcast": {
+   "mean": 0.63,
+   "max": 1
+  },
+  "wire": {
+   "ms": 0.75,
+   "ids": 4000,
+   "records": 4
+  },
+  "bigPosts": {},
+  "methods": {
+   "store.summaryMessages": {
+    "calls": 4,
+    "ms": 0.28,
+    "size": 81
+   },
+   "workspace.applyEvents": {
+    "calls": 12,
+    "ms": 2.43,
+    "size": 0
+   },
+   "watcherRecords.mutate": {
+    "calls": 1,
+    "ms": 2.96,
+    "size": 0
+   },
+   "workspace.trackSubagents": {
+    "calls": 7,
+    "ms": 0.04,
+    "size": 0
+   },
+   "control.persist": {
+    "calls": 13,
+    "ms": 22.57,
+    "size": 0
+   },
+   "storeWorker.readAnswered": {
+    "calls": 8,
+    "ms": 2.64,
+    "size": 4000
+   },
+   "workspace.holdActivities": {
+    "calls": 2,
+    "ms": 0.26,
+    "size": 4000
+   },
+   "workspace.flush": {
+    "calls": 4,
+    "ms": 32.45,
+    "size": 0
+   }
+  },
+  "statePartsBytesPerBroadcast": {
+   "threads": 836,
+   "kept": 392,
+   "host.kept": 97,
+   "models": 3
+  }
+ }
+}

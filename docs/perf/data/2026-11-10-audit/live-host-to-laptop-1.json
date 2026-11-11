@@ -1,0 +1,166 @@
+{
+ "seconds": 120.0,
+ "wireBytes": 103233852,
+ "jsonBytes": 538797604,
+ "wireBytesPerSecond": 860282,
+ "wireBytesPerSecondMedian": 856823,
+ "wireBytesPerSecondMax": 4023142,
+ "events": {
+  "watcher-state": {
+   "frames": 254,
+   "wireBytes": 92897787,
+   "jsonBytes": 501955656,
+   "maxJsonBytes": 1976228,
+   "compressedFrames": 254
+  },
+  "shell": {
+   "frames": 103,
+   "wireBytes": 6207814,
+   "jsonBytes": 21697928,
+   "maxJsonBytes": 225305,
+   "compressedFrames": 103
+  },
+  "reply": {
+   "frames": 95,
+   "wireBytes": 3274903,
+   "jsonBytes": 11874161,
+   "maxJsonBytes": 1976220,
+   "compressedFrames": 15
+  },
+  "detail": {
+   "frames": 1,
+   "wireBytes": 852145,
+   "jsonBytes": 3268664,
+   "maxJsonBytes": 3268664,
+   "compressedFrames": 1
+  },
+  "next-prompt": {
+   "frames": 1,
+   "wireBytes": 941,
+   "jsonBytes": 937,
+   "maxJsonBytes": 937,
+   "compressedFrames": 0
+  },
+  "watcher-tell-ask": {
+   "frames": 1,
+   "wireBytes": 262,
+   "jsonBytes": 258,
+   "maxJsonBytes": 258,
+   "compressedFrames": 0
+  }
+ },
+ "control": {
+  "pong": 5
+ },
+ "shell": {
+  "bytesByTopField": {
+   "state": 21252286,
+   "threads": 433900,
+   "eventPage": 5974,
+   "v": 103
+  },
+  "bytesByStateField": {
+   "skillCatalogs": 11867969,
+   "deliveries": 4734807,
+   "deliveredDrafts": 1331687,
+   "obsoleteDrafts": 1331687,
+   "followupReceipts": 811537,
+   "clientUpdates": 148835,
+   "threadDrafts": 106730,
+   "threadDraftPersistence": 85181,
+   "configuration": 61388,
+   "activeProjectId": 6180,
+   "voice": 5974,
+   "notice": 5665,
+   "credentials": 5459,
+   "membership": 4635,
+   "activeThreadId": 3914,
+   "hostId": 3914,
+   "clientCapabilities": 1854,
+   "speech": 1854,
+   "connection": 1133,
+   "composing": 515,
+   "globalLaneBusy": 515,
+   "draftThreadId": 412,
+   "draftRequestId": 412,
+   "error": 412,
+   "providerUpgrade": 412
+  },
+  "bytesByHostField": {
+   "projects": 344638,
+   "providers": 284280,
+   "capabilities": 25235,
+   "hostId": 3914,
+   "name": 1854,
+   "connected": 412,
+   "version": 206,
+   "threads": 206,
+   "modelsRevision": 103
+  },
+  "changedRecords": 95,
+  "pushesByChangedRecordCount": {
+   "0": 19,
+   "1": 77,
+   "2": 3,
+   "3": 4
+  },
+  "distinctThreadsChanged": 5,
+  "pushesWithOrder": 0,
+  "pushesWithModels": 0,
+  "bytesByRecordField": {
+   "summary": 192776,
+   "worktree": 62129,
+   "usage": 46165,
+   "backgroundWork": 16902,
+   "lastTurn": 10115,
+   "requests": 10066,
+   "subagentSummary": 7222,
+   "workingDirectory": 6051,
+   "projectId": 5700,
+   "title": 5555,
+   "id": 3610,
+   "lastUserMessageId": 3610,
+   "hostId": 3610,
+   "compaction": 2890,
+   "modelId": 2532,
+   "runtimeMode": 1235,
+   "kind": 855,
+   "status": 846,
+   "providerId": 760,
+   "reasoningEffort": 571,
+   "titleSource": 570,
+   "resumeCompactionDismissed": 475,
+   "manualCompactionSupported": 380,
+   "providerSessionOpen": 380,
+   "workspaceSettledAt": 380
+  },
+  "bytesBySummaryField": {
+   "lastUser": 146400,
+   "lastAssistant": 31892,
+   "lastMessageAt": 2470,
+   "runningTurnStartedAt": 2054,
+   "activityCount": 302,
+   "messageCount": 162
+  }
+ },
+ "detailDelta": {
+  "distinctThreads": 0,
+  "bytesByField": {}
+ },
+ "watcher": {
+  "bytesByField": {
+   "projection.requests": 252793500,
+   "projection.operations": 241994690,
+   "projection.progress": 6340094,
+   "projection.standingWatches": 675988,
+   "projection.master": 76962,
+   "projection.revision": 16764,
+   "projection.hostId": 9652,
+   "projection.observedAt": 6604,
+   "projection.evidence": 508,
+   "v": 254
+  }
+ },
+ "resyncs": 0,
+ "undecoded": 0
+}
